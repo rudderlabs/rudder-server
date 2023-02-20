@@ -454,6 +454,9 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			return
 		}
 
+		schemaHandle.SkipDeprecatedColumns(job.schemaHandle.schemaInWarehouse)
+		schemaHandle.SkipDeprecatedColumns(job.schemaHandle.unrecognizedSchemaInWarehouse)
+
 		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(model.ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)
 		if err != nil {

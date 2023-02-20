@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -173,7 +174,30 @@ func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.Manager) (sc
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, err
 	}
+
+	sh.SkipDeprecatedColumns(schemaInWarehouse)
+	sh.SkipDeprecatedColumns(unrecognizedSchemaInWarehouse)
 	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
+}
+
+func (sh *SchemaHandleT) SkipDeprecatedColumns(schema warehouseutils.SchemaT) {
+	for tableName, columnMap := range schema {
+		for columnName := range columnMap {
+			if warehouseutils.DeprecatedColumnsRegex.MatchString(columnName) {
+				pkgLogger.Debugw("skipping deprecated column",
+					logfield.SourceID, sh.warehouse.Source.ID,
+					logfield.DestinationID, sh.warehouse.Destination.ID,
+					logfield.DestinationType, sh.warehouse.Destination.DestinationDefinition.Name,
+					logfield.WorkspaceID, sh.warehouse.WorkspaceID,
+					logfield.Namespace, sh.warehouse.Namespace,
+					logfield.TableName, tableName,
+					logfield.ColumnName, columnName,
+				)
+				delete(schema[tableName], columnName)
+				continue
+			}
+		}
+	}
 }
 
 func MergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
