@@ -1446,53 +1446,24 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 // statusInsertLoop will run in a separate goroutine
 // Blocking method, returns when rt.responseQ channel is closed.
 func (rt *HandleT) statusInsertLoop() {
-	var responseList []jobResponseT
-
-	// Wait for the responses from statusQ
-	lastUpdate := time.Now()
-
 	statusStat := stats.Default.NewTaggedStat("router_status_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.Default.NewTaggedStat("router_status_events", stats.CountType, stats.Tags{"destType": rt.destName})
-	timeout := time.After(maxStatusUpdateWait)
 
 	for {
-		select {
-		case jobStatus, hasMore := <-rt.responseQ:
-			if !hasMore {
-				if len(responseList) == 0 {
-					rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destName)
-					return
-				}
-
-				start := time.Now()
-				rt.commitStatusList(&responseList)
-				countStat.Count(len(responseList))
-				responseList = nil
-				statusStat.Since(start)
-
-				rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destName)
-				return
-			}
-			rt.logger.Debugf(
-				"[%v Router] :: Got back status error %v and state %v for job %v",
-				rt.destName,
-				jobStatus.status.ErrorCode,
-				jobStatus.status.JobState,
-				jobStatus.status.JobID,
-			)
-			responseList = append(responseList, jobStatus)
-		case <-timeout:
-			timeout = time.After(maxStatusUpdateWait)
-			// Ideally should sleep for duration maxStatusUpdateWait-(time.Now()-lastUpdate)
-			// but approx is good enough at the cost of reduced computation.
-		}
-		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
+		jobResponseBuffer, numJobResponses, _, isResponseQOpen := lo.BufferWithTimeout(
+			rt.responseQ,
+			updateStatusBatchSize,
+			maxStatusUpdateWait,
+		)
+		if numJobResponses > 0 {
 			start := time.Now()
-			rt.commitStatusList(&responseList)
-			countStat.Count(len(responseList))
-			responseList = nil
-			lastUpdate = time.Now()
+			rt.commitStatusList(&jobResponseBuffer)
+			countStat.Count(numJobResponses)
 			statusStat.Since(start)
+		}
+		if !isResponseQOpen {
+			rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destName)
+			return
 		}
 	}
 }
