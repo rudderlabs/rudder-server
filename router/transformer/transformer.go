@@ -6,12 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -139,6 +141,10 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 
 		if err != nil {
+			// Re-Initializing http client if connection got reset
+			if errors.Is(err, syscall.ECONNRESET) {
+				trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
+			}
 			trans.transformRequestTimerStat.SendTiming(time.Since(s))
 			reqFailed = true
 			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
