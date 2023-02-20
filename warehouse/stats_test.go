@@ -51,7 +51,7 @@ var _ = Describe("Stats", Ordered, func() {
 	})
 
 	Describe("Generate upload success metrics", func() {
-		var job *UploadJobT
+		var job *UploadJob
 
 		BeforeEach(func() {
 			mockStats, mockMeasurement := getMockStats(g)
@@ -59,7 +59,7 @@ var _ = Describe("Stats", Ordered, func() {
 			mockMeasurement.EXPECT().Count(4).Times(2)
 			mockMeasurement.EXPECT().Count(1).Times(1)
 
-			job = &UploadJobT{
+			job = &UploadJob{
 				upload: model.Upload{
 					ID:                 uploadID,
 					StagingFileStartID: 1,
@@ -80,14 +80,14 @@ var _ = Describe("Stats", Ordered, func() {
 	})
 
 	Describe("Generate upload aborted metrics", func() {
-		var job *UploadJobT
+		var job *UploadJob
 
 		BeforeEach(func() {
 			mockStats, mockMeasurement := getMockStats(g)
 			mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(2).Return(mockMeasurement)
 			mockMeasurement.EXPECT().Count(4).Times(2)
 
-			job = &UploadJobT{
+			job = &UploadJob{
 				upload: model.Upload{
 					ID:                 uploadID,
 					StagingFileStartID: 1,
@@ -113,7 +113,7 @@ var _ = Describe("Stats", Ordered, func() {
 		mockMeasurement.EXPECT().Count(4).Times(2)
 		mockMeasurement.EXPECT().Since(gomock.Any()).Times(1)
 
-		job := &UploadJobT{
+		job := &UploadJob{
 			upload: model.Upload{
 				WorkspaceID:        "workspaceID",
 				ID:                 uploadID,
@@ -133,7 +133,7 @@ var _ = Describe("Stats", Ordered, func() {
 		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(mockMeasurement)
 		mockMeasurement.EXPECT().SendTiming(gomock.Any()).Times(1)
 
-		job := &UploadJobT{
+		job := &UploadJob{
 			upload: model.Upload{
 				ID:                 uploadID,
 				StagingFileStartID: 1,

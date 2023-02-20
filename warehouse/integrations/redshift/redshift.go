@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/lib/pq"
@@ -140,7 +142,7 @@ type Redshift struct {
 	DB                            *sql.DB
 	Namespace                     string
 	Warehouse                     warehouseutils.Warehouse
-	Uploader                      warehouseutils.UploaderI
+	Uploader                      uploader.Uploader
 	ConnectTimeout                time.Duration
 	Logger                        logger.Logger
 	DedupWindow                   bool
@@ -944,7 +946,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	return
 }
 
-func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -46,7 +48,7 @@ type HandleT struct {
 	CloudProvider  string
 	ObjectStorage  string
 	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.UploaderI
+	Uploader       uploader.Uploader
 	ConnectTimeout time.Duration
 }
 
@@ -894,7 +896,7 @@ func (sf *HandleT) getConnectionCredentials(opts OptionalCredsT) SnowflakeCreden
 	}
 }
 
-func (sf *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (sf *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)

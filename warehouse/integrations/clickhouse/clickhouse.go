@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"golang.org/x/exp/slices"
@@ -143,7 +145,7 @@ type Clickhouse struct {
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.UploaderI
+	Uploader                    uploader.Uploader
 	stats                       stats.Stats
 	ConnectTimeout              time.Duration
 	Logger                      logger.Logger
@@ -1039,7 +1041,7 @@ func (ch *Clickhouse) TestConnection(warehouse warehouseutils.Warehouse) (err er
 	return nil
 }
 
-func (ch *Clickhouse) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (ch *Clickhouse) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader

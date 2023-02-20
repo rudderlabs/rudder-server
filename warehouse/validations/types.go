@@ -3,9 +3,9 @@ package validations
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -93,57 +93,14 @@ type CTHandleT struct {
 }
 
 type CTUploadJob struct {
+	uploader.Uploader
 	infoRequest *DestinationValidationRequest
-}
-
-func (*CTUploadJob) GetSchemaInWarehouse() warehouseutils.Schema {
-	return warehouseutils.Schema{}
-}
-
-func (*CTUploadJob) GetLocalSchema() warehouseutils.Schema {
-	return warehouseutils.Schema{}
-}
-
-func (*CTUploadJob) UpdateLocalSchema(_ warehouseutils.Schema) error {
-	return nil
-}
-
-func (*CTUploadJob) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
-}
-
-func (*CTUploadJob) GetTableSchemaInUpload(_ string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
-}
-
-func (*CTUploadJob) GetLoadFilesMetadata(_ warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
-	return []warehouseutils.LoadFileT{}
-}
-
-func (*CTUploadJob) GetSampleLoadFileLocation(_ string) (string, error) {
-	return "", nil
-}
-
-func (*CTUploadJob) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
-}
-
-func (*CTUploadJob) ShouldOnDedupUseNewRecord() bool {
-	return false
 }
 
 func (job *CTUploadJob) UseRudderStorage() bool {
 	return misc.IsConfiguredToUseRudderObjectStorage(job.infoRequest.Destination.Config)
 }
 
-func (*CTUploadJob) GetLoadFileGenStartTIme() time.Time {
-	return time.Time{}
-}
-
 func (job *CTUploadJob) GetLoadFileType() string {
 	return warehouseutils.GetLoadFileType(job.infoRequest.Destination.DestinationDefinition.Name)
-}
-
-func (*CTUploadJob) GetFirstLastEvent() (time.Time, time.Time) {
-	return time.Time{}, time.Time{}
 }

@@ -84,7 +84,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 		t.Run("Nil manager: "+destType, func(t *testing.T) {
 			t.Parallel()
 
-			er := &warehouse.ErrorHandler{Manager: nil}
+			er := &errors2.ErrorHandler{Manager: nil}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, string(model.Noop))
@@ -93,7 +93,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 		t.Run("Nil error: "+destType, func(t *testing.T) {
 			t.Parallel()
 
-			er := &warehouse.ErrorHandler{Manager: nil}
+			er := &errors2.ErrorHandler{Manager: nil}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, string(model.Noop))

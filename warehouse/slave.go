@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -647,7 +649,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
-	whasyncjob := &jobs.WhAsyncJob{}
+	whasyncjob := &uploader.Noop{}
 
 	var metadata warehouseutils.DeleteByMetaData
 	err = json.Unmarshal(asyncjob.MetaData, &metadata)

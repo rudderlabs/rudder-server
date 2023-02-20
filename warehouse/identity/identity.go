@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -32,7 +34,7 @@ type WarehouseManager interface {
 type HandleT struct {
 	Warehouse        warehouseutils.Warehouse
 	DbHandle         *sql.DB
-	Uploader         warehouseutils.UploaderI
+	Uploader         uploader.Uploader
 	UploadID         int64
 	WarehouseManager WarehouseManager
 }

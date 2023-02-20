@@ -20,7 +20,7 @@ func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
 	return misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6))
 }
 
-func (job *UploadJobT) warehouseID() string {
+func (job *UploadJob) warehouseID() string {
 	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID)
 }
 
@@ -28,7 +28,7 @@ func (jobRun *JobRunT) warehouseID() string {
 	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
 }
 
-func (job *UploadJobT) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+func (job *UploadJob) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -43,7 +43,7 @@ func (job *UploadJobT) timerStat(name string, extraTags ...warehouseutils.Tag) s
 	return job.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (job *UploadJobT) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+func (job *UploadJob) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -58,7 +58,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...warehouseutils.Tag)
 	return job.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func (job *UploadJobT) guageStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+func (job *UploadJob) guageStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":         moduleName,
 		"destType":       job.warehouse.Type,
@@ -104,7 +104,7 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...warehouseutils.Tag)
 	return jobRun.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func (job *UploadJobT) generateUploadSuccessMetrics() {
+func (job *UploadJob) generateUploadSuccessMetrics() {
 	// Total loaded events in the upload
 	numUploadedEvents, err := job.getTotalEventsUploaded(true)
 	if err != nil {
@@ -127,7 +127,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	}).Count(1)
 }
 
-func (job *UploadJobT) generateUploadAbortedMetrics() {
+func (job *UploadJob) generateUploadAbortedMetrics() {
 	// Total successfully loaded events in the upload
 	numUploadedEvents, err := job.getTotalEventsUploaded(true)
 	if err != nil {
@@ -146,7 +146,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 }
 
-func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
+func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
 	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
@@ -189,7 +189,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	}
 }
 
-func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
+func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
 	stmt := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM (f2.created_at - f1.created_at))::integer as delta
 		FROM (SELECT created_at FROM %[1]s WHERE id=%[2]d) f1
 		CROSS JOIN

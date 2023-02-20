@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
@@ -299,25 +301,10 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 }
 
 type mockUploader struct {
+	uploader.Noop
 	minioPort   string
 	tableSchema warehouseutils.TableSchema
 	metadata    []warehouseutils.LoadFileT
-}
-
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return warehouseutils.Schema{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
-func (*mockUploader) UseRudderStorage() bool                          { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                         { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)       { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
-}
-
-func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
 }
 
 func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {

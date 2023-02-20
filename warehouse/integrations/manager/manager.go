@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
@@ -24,7 +26,7 @@ import (
 )
 
 type Manager interface {
-	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) error
+	Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) error
 	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
 	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error)
 	CreateSchema() (err error)

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -116,7 +118,7 @@ type Deltalake struct {
 	Namespace              string
 	ObjectStorage          string
 	Warehouse              warehouseutils.Warehouse
-	Uploader               warehouseutils.UploaderI
+	Uploader               uploader.Uploader
 	ConnectTimeout         time.Duration
 	Logger                 logger.Logger
 	Stats                  stats.Stats
@@ -929,7 +931,7 @@ func (dl *Deltalake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 }
 
 // Setup populate the Deltalake
-func (dl *Deltalake) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (dl *Deltalake) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.Uploader = uploader

@@ -137,7 +137,7 @@ func TestColumnCountStat(t *testing.T) {
 				"test-destination": tc.columnCountLimit,
 			}
 
-			j := UploadJobT{
+			j := UploadJob{
 				upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
@@ -204,7 +204,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 	var (
 		pgResource *destination.PostgresResource
-		job        *UploadJobT
+		job        *UploadJob
 	)
 
 	BeforeAll(func() {
@@ -228,7 +228,7 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	BeforeEach(func() {
-		job = &UploadJobT{
+		job = &UploadJob{
 			warehouse: warehouseutils.Warehouse{
 				Type: destinationType,
 				Destination: backendconfig.DestinationT{
@@ -420,7 +420,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					rs.DB = pgResource.DB
 					rs.Namespace = testNamespace
 
-					job := &UploadJobT{
+					job := &UploadJob{
 						whManager: rs,
 						upload: model.Upload{
 							DestinationID:   testDestinationID,
@@ -487,7 +487,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			rs.DB = pgResource.DB
 			rs.Namespace = testNamespace
 
-			job := &UploadJobT{
+			job := &UploadJob{
 				whManager: rs,
 				upload: model.Upload{
 					DestinationID:   testDestinationID,
