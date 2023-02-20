@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/EagleChen/restrictor"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
