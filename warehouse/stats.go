@@ -144,17 +144,6 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	}
 
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
-
-	// Set the upload_aborted stat
-	attempts := job.getAttemptNumber()
-	tags := []warehouseutils.Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
-	valid, err := job.validateDestinationCredentials()
-	if err == nil {
-		// Only if error is nil, meaning we were able to
-		// successfully validate the creds, we set this tag
-		tags = append(tags, warehouseutils.Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
-	}
-	job.counterStat("upload_aborted", tags...).Count(1)
 }
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {

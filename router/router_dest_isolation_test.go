@@ -87,7 +87,7 @@ func Test_RouterDestIsolation(t *testing.T) {
 	webhook2 := createNewWebhook(t, 200)
 	defer webhook2.webhook.Close()
 
-	templateCtx := map[string]string{
+	templateCtx := map[string]any{
 		"webhookUrl1": webhook1.webhook.URL,
 		"webhookUrl2": webhook2.webhook.URL,
 		"writeKey":    writeKey,

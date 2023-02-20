@@ -650,7 +650,7 @@ func TestDeltalake_GetTotalCountInTable(t *testing.T) {
 				ErrorCode:    "42xxx",
 				ErrorMessage: "permission error",
 			},
-			wantError: errors.New("fetching table count with response: permission error"),
+			wantError: errors.New("fetching table count: permission error"),
 		},
 		{
 			name:  "Success",

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
@@ -141,6 +142,7 @@ type HandleT struct {
 	transientSources transientsource.Service
 	rsourcesService  rsources.JobService
 	debugger         destinationdebugger.DestinationDebugger
+	adaptiveLimit    func(int64) int64
 }
 
 type jobResponseT struct {
@@ -780,7 +782,11 @@ func (worker *workerT) processDestinationJobs() {
 		// elements in routerJobResponses have pointer to the right job.
 		_destinationJob := destinationJob
 
-		for _, destinationJobMetadata := range _destinationJob.JobMetadataArray {
+		// TODO: remove this once we enforce the necessary validations in the transformer's response
+		dedupedJobMetadata := lo.UniqBy(_destinationJob.JobMetadataArray, func(jobMetadata types.JobMetadataT) int64 {
+			return jobMetadata.JobID
+		})
+		for _, destinationJobMetadata := range dedupedJobMetadata {
 			_destinationJobMetadata := destinationJobMetadata
 			// assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
 			// elements in routerJobResponses have pointer to the right destinationJobMetadata.
@@ -1647,13 +1653,13 @@ func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
 				Optional: false,
 			}},
 			IgnoreCustomValFiltersInQuery: true,
-			PayloadSizeLimit:              rt.payloadLimit,
+			PayloadSizeLimit:              rt.adaptiveLimit(rt.payloadLimit),
 			JobsLimit:                     pickUpCount,
 		}
 	}
 	return jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{rt.destName},
-		PayloadSizeLimit: rt.payloadLimit,
+		PayloadSizeLimit: rt.adaptiveLimit(rt.payloadLimit),
 		JobsLimit:        pickUpCount,
 	}
 }
@@ -1785,7 +1791,15 @@ func Init() {
 }
 
 // Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationConfig destinationConfig, transientSources transientsource.Service, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger) {
+func (rt *HandleT) Setup(
+	backendConfig backendconfig.BackendConfig,
+	jobsDB jobsdb.MultiTenantJobsDB,
+	errorDB jobsdb.JobsDB,
+	destinationConfig destinationConfig,
+	transientSources transientsource.Service,
+	rsourcesService rsources.JobService,
+	debugger destinationdebugger.DestinationDebugger,
+) {
 	rt.backendConfig = backendConfig
 	rt.workspaceSet = make(map[string]struct{})
 	rt.debugger = debugger
@@ -1901,6 +1915,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 		rt.statusInsertLoop()
 		return nil
 	}))
+
+	if rt.adaptiveLimit == nil {
+		rt.adaptiveLimit = func(limit int64) int64 { return limit }
+	}
 
 	rruntime.Go(func() {
 		rt.backendConfigSubscriber()

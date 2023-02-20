@@ -41,7 +41,7 @@ func loadConfig() {
 }
 
 type HandleT struct {
-	Db             *sql.DB
+	DB             *sql.DB
 	Namespace      string
 	CloudProvider  string
 	ObjectStorage  string
@@ -201,7 +201,7 @@ func (sf *HandleT) createTable(tableName string, columns map[string]string) (err
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s."%s" ( %v )`, schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
+	_, err = sf.DB.Exec(sqlStatement)
 	return
 }
 
@@ -211,7 +211,7 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
    								 WHERE  table_schema = '%s'
    								 AND    table_name = '%s'
 								   )`, sf.Namespace, tableName)
-	err = sf.Db.QueryRow(sqlStatement).Scan(&exists)
+	err = sf.DB.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
 
@@ -222,13 +222,13 @@ func (sf *HandleT) columnExists(columnName, tableName string) (exists bool, err 
 									AND table_name = '%s'
 									AND column_name = '%s'
 								   )`, sf.Namespace, tableName, columnName)
-	err = sf.Db.QueryRow(sqlStatement).Scan(&exists)
+	err = sf.DB.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
 
 func (sf *HandleT) schemaExists() (exists bool, err error) {
 	sqlStatement := fmt.Sprintf("SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s' )", sf.Namespace)
-	r := sf.Db.QueryRow(sqlStatement)
+	r := sf.DB.QueryRow(sqlStatement)
 	err = r.Scan(&exists)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
@@ -241,7 +241,7 @@ func (sf *HandleT) createSchema() (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)
 	pkgLogger.Infof("SF: Creating schema name in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
+	_, err = sf.DB.Exec(sqlStatement)
 	return
 }
 
@@ -293,7 +293,7 @@ func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 		pkgLogger.Debugf("SF: Executing the sql statement %v", sqlStatement)
 
 		if enableDeleteByJobs {
-			_, err = sf.Db.Exec(sqlStatement)
+			_, err = sf.DB.Exec(sqlStatement)
 			if err != nil {
 				pkgLogger.Errorf("Error %s", err)
 				return err
@@ -696,7 +696,7 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, schemaIdentifier, tableName)
 	pkgLogger.Infof("SF: Dropping table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
+	_, err = sf.DB.Exec(sqlStatement)
 	return
 }
 
@@ -725,7 +725,7 @@ func (sf *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	query += ";"
 
 	pkgLogger.Infof("SF: Adding columns for destinationID: %s, tableName: %s with query: %v", sf.Warehouse.Destination.ID, tableName, query)
-	_, err = sf.Db.Exec(query)
+	_, err = sf.DB.Exec(query)
 
 	// Handle error in case of single column
 	if len(columnsInfo) == 1 {
@@ -755,7 +755,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		schemaIdentifier := sf.schemaIdentifier()
 		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s."%s"`, schemaIdentifier, tableName)
 		var totalRows int64
-		err = sf.Db.QueryRow(sqlStatement).Scan(&totalRows)
+		err = sf.DB.QueryRow(sqlStatement).Scan(&totalRows)
 		if err != nil {
 			return
 		}
@@ -789,7 +789,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s."%s" LIMIT %d OFFSET %d`, toSelectFields, schemaIdentifier, tableName, batchSize, offset)
 			pkgLogger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
 			var rows *sql.Rows
-			rows, err = sf.Db.Query(sqlStatement)
+			rows, err = sf.DB.Query(sqlStatement)
 			if err != nil {
 				return
 			}
@@ -847,11 +847,11 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	sf.Db, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	sf.DB, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return
 	}
-	defer sf.Db.Close()
+	defer sf.DB.Close()
 
 	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
 	for _, tableName := range tables {
@@ -866,7 +866,7 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 		schemaIdentifier := sf.schemaIdentifier()
 		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s."%s"`, schemaIdentifier, tableName)
 		var count int64
-		err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+		err = sf.DB.QueryRow(sqlStatement).Scan(&count)
 		if err != nil {
 			return
 		}
@@ -901,22 +901,22 @@ func (sf *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseu
 	sf.Uploader = uploader
 	sf.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
 
-	sf.Db, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	sf.DB, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	return err
 }
 
 func (sf *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	sf.Warehouse = warehouse
-	sf.Db, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	sf.DB, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return
 	}
-	defer sf.Db.Close()
+	defer sf.DB.Close()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), sf.ConnectTimeout)
 	defer cancel()
 
-	err = sf.Db.PingContext(ctx)
+	err = sf.DB.PingContext(ctx)
 	if err == context.DeadlineExceeded {
 		return fmt.Errorf("connection testing timed out after %d sec", sf.ConnectTimeout/time.Second)
 	}
@@ -988,8 +988,8 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 }
 
 func (sf *HandleT) Cleanup() {
-	if sf.Db != nil {
-		sf.Db.Close()
+	if sf.DB != nil {
+		sf.DB.Close()
 	}
 }
 
@@ -1002,14 +1002,20 @@ func (sf *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (sf *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s."%[2]s"`, schemaIdentifier, tableName)
-	err = sf.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		pkgLogger.Errorf(`SF: Error getting total count in table %s:%s`, schemaIdentifier, tableName)
-	}
-	return
+func (sf *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM %[1]s."%[2]s";
+	`,
+		sf.schemaIdentifier(),
+		tableName,
+	)
+	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
+	return total, err
 }
 
 func (sf *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
@@ -1040,7 +1046,7 @@ func (sf *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 		sf.authString(),
 	)
 
-	_, err = sf.Db.Exec(sqlStatement)
+	_, err = sf.DB.Exec(sqlStatement)
 	return
 }
 

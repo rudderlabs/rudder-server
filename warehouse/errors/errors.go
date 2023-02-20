@@ -32,6 +32,10 @@ type ErrorHandler struct {
 // and returns the corresponding joins of the matched error type
 // else returns UnknownError
 func (e *ErrorHandler) MatchErrorMappings(err error) warehouseutils.Tag {
+	if e.Manager == nil || err == nil {
+		return warehouseutils.Tag{Name: "error_mapping", Value: string(model.Noop)}
+	}
+
 	var (
 		errMappings []string
 		errString   = err.Error()

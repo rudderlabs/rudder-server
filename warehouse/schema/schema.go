@@ -11,11 +11,11 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"reflect"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -183,7 +183,30 @@ func (sh *Handler) FetchSchemaFromWarehouse(whManager manager.Manager) (schemaIn
 		sh.Logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return warehouseutils.Schema{}, warehouseutils.Schema{}, err
 	}
+
+	sh.SkipDeprecatedColumns(schemaInWarehouse)
+	sh.SkipDeprecatedColumns(unrecognizedSchemaInWarehouse)
 	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
+}
+
+func (sh *Handler) SkipDeprecatedColumns(schema warehouseutils.Schema) {
+	for tableName, columnMap := range schema {
+		for columnName := range columnMap {
+			if warehouseutils.DeprecatedColumnsRegex.MatchString(columnName) {
+				sh.Logger.Debugw("skipping deprecated column",
+					logfield.SourceID, sh.Warehouse.Source.ID,
+					logfield.DestinationID, sh.Warehouse.Destination.ID,
+					logfield.DestinationType, sh.Warehouse.Destination.DestinationDefinition.Name,
+					logfield.WorkspaceID, sh.Warehouse.WorkspaceID,
+					logfield.Namespace, sh.Warehouse.Namespace,
+					logfield.TableName, tableName,
+					logfield.ColumnName, columnName,
+				)
+				delete(schema[tableName], columnName)
+				continue
+			}
+		}
+	}
 }
 
 func MergeSchema(currentSchema warehouseutils.Schema, schemaList []warehouseutils.Schema, currentMergedSchema warehouseutils.Schema, warehouseType string) warehouseutils.Schema {
@@ -198,6 +221,10 @@ func MergeSchema(currentSchema warehouseutils.Schema, schemaList []warehouseutil
 		}
 		if columnTypeInDB == "string" && columnType == "text" {
 			currentMergedSchema[tableName][columnName] = columnType
+			return true
+		}
+		// if columnTypeInDB is text, then we should not change it to string
+		if currentMergedSchema[tableName][columnName] == "text" {
 			return true
 		}
 		// if columnTypeInDB is text, then we should not change it to string
