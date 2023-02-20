@@ -135,6 +135,11 @@ const (
 	MinioSecretAccessKey = "secretAccessKey"
 )
 
+// DeprecatedColumnsRegex
+// This regex is used to identify deprecated columns in the warehouse
+// Example: abc-deprecated-dba626a7-406a-4757-b3e0-3875559c5840
+var DeprecatedColumnsRegex = regexp.MustCompile(`.*-deprecated-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
 var (
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool

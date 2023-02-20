@@ -13,6 +13,7 @@ const (
 	Namespace             = "namespace"
 	Error                 = "error"
 	TableName             = "tableName"
+	ColumnName            = "columnName"
 	Priority              = "priority"
 	Retried               = "retried"
 	Attempt               = "attempt"
