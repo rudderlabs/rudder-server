@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 
 	"golang.org/x/sync/errgroup"
 
@@ -22,7 +21,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
-	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -48,8 +46,6 @@ type processorApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		enableProcessor    bool
-		enableRouter       bool
 		processorDSLimit   int
 		routerDSLimit      int
 		batchRouterDSLimit int
@@ -66,9 +62,6 @@ type processorApp struct {
 }
 
 func (a *processorApp) loadConfiguration() {
-	config.RegisterBoolConfigVariable(true, &a.config.enableProcessor, false, "enableProcessor")
-	config.RegisterBoolConfigVariable(true, &a.config.enableRouter, false, "enableRouter")
-
 	config.RegisterDurationConfigVariable(0, &a.config.http.ReadTimeout, false, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
 	config.RegisterDurationConfigVariable(0, &a.config.http.ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(10, &a.config.http.WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
@@ -200,22 +193,9 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}))
 	}
 
-	var modeProvider cluster.ChangeEventProvider
-
-	switch deploymentType {
-	case deployment.MultiTenantType:
-		a.log.Info("using ETCD Based Dynamic Cluster Manager")
-		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.DedicatedType:
-		// FIXME: hacky way to determine servermode
-		a.log.Info("using Static Cluster Manager")
-		if a.config.enableProcessor && a.config.enableRouter {
-			modeProvider = state.NewStaticProvider(servermode.NormalMode)
-		} else {
-			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
-		}
-	default:
-		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+	modeProvider, err := resolveModeProvider(a.log, deploymentType)
+	if err != nil {
+		return err
 	}
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)

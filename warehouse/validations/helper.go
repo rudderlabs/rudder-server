@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -40,11 +42,18 @@ func fileManager(req *DestinationValidationRequest) (fileManager filemanager.Fil
 			WorkspaceID:      req.Destination.WorkspaceID,
 		}),
 	})
-	fileManager.SetTimeout(fileManagerTimeout)
 	if err != nil {
-		pkgLogger.Errorf("[DCT]: Failed to initiate file manager config for testing this destination id %s: err %v", destination.ID, err)
+		pkgLogger.Warnw("unable to create filemanager while running validations",
+			logfield.DestinationID, destination.ID,
+			logfield.DestinationType, destination.DestinationDefinition.Name,
+			logfield.DestinationRevisionID, destination.RevisionID,
+			logfield.WorkspaceID, destination.WorkspaceID,
+			logfield.Provider, provider,
+			logfield.Error, err.Error(),
+		)
 		return
 	}
+	fileManager.SetTimeout(fileManagerTimeout)
 	return
 }
 
