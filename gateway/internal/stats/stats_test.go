@@ -36,7 +36,7 @@ func TestReport(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		counterMap[fmt.Sprint(i)] = &counter{}
 	}
-	newRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
 	for i := 0; i < 10; i++ {
 		sourceTag := fmt.Sprint(i)
 		sourceStat := statMap[sourceTag]

@@ -316,7 +316,7 @@ func newRandomJobs(num int) []*job {
 }
 
 func randomState() (state string, terminal bool) {
-	newRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
 	states := []string{
 		jobsdb.Failed.State, jobsdb.Failed.State, jobsdb.Failed.State,
 		jobsdb.Aborted.State, jobsdb.Aborted.State, jobsdb.Aborted.State,

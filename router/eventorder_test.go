@@ -321,7 +321,7 @@ func (m eventOrderMethods) newTestSpec(users, jobsPerUser int) *eventOrderSpec {
 
 func (eventOrderMethods) randomStatus() (status int, terminal bool) {
 	// playing with probabilities: 50% HTTP 500, 40% HTTP 200, 10% HTTP 400
-	newRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
 	statuses := []int{
 		http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest,
 		http.StatusOK, http.StatusOK, http.StatusOK, http.StatusOK,
@@ -337,7 +337,7 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 	wh.spec = spec
 
 	wh.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		newRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+		newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err, "should be able to read the request body")
 		testJobId := gjson.GetBytes(body, "testJobId")
@@ -378,7 +378,7 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 			time.Sleep(time.Duration(newRand.Intn(int(spec.responseDelay.Milliseconds()))) * time.Millisecond) // skipcq: GSC-G404
 		}
 		w.WriteHeader(responseCode)
-		_, err = w.Write([]byte(fmt.Sprintf("%d", responseCode)))
+		_, err = fmt.Fprintf(w, "%d", responseCode)
 		require.NoError(t, err, "should be able to write the response code to the response")
 	}))
 	return &wh
