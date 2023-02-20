@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"
@@ -32,7 +33,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 )
 
 func TestProcessorIsolation(t *testing.T) {
@@ -125,7 +125,6 @@ func BenchmarkProcessorIsolationModes(b *testing.B) {
 // - workspaces is the number of workspaces to use.
 // - eventsPerWorkspace is the number of events to send per workspace.
 func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, eventsPerWorkspace int) *ProcIsolationScenarioSpec {
-	rand.Seed(time.Now().UnixNano())
 	var s ProcIsolationScenarioSpec
 	s.isolationMode = isolationMode
 	s.jobs = make([]*procIsolationJobSpec, workspaces*eventsPerWorkspace)

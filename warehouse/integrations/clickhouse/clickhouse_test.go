@@ -301,7 +301,7 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 }
 
 type mockUploader struct {
-	uploader.Noop
+	uploader.NOOP
 	minioPort   string
 	tableSchema warehouseutils.TableSchema
 	metadata    []warehouseutils.LoadFileT
