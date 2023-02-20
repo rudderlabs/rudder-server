@@ -114,7 +114,12 @@ var BatchEvent = []byte(`
 const (
 	DELIMITER                 = string("<<>>")
 	eventStreamSourceCategory = "eventStream"
+	extractEvent              = "extract"
 )
+
+// identifiableEvents is a list of events types which are identified
+// without the need of a user id or an anonymous id
+var IdentifiableEventTypes = []string{extractEvent}
 
 func Init() {
 	loadConfig()
@@ -583,7 +588,8 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 		anonIDFromReq, _ := toSet["anonymousId"].(string)
 		userIDFromReq, _ := toSet["userId"].(string)
-		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
+		eventTypeFromReq, _ := toSet["type"].(string)
+		if isNonIdentifiable(anonIDFromReq, userIDFromReq, eventTypeFromReq) {
 			err = errors.New(response.NonIdentifiableRequest)
 			return
 		}
@@ -694,7 +700,10 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	return
 }
 
-func isNonIdentifiable(anonIDFromReq, userIDFromReq string) bool {
+func isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
+	if misc.Contains(IdentifiableEventTypes, eventType) {
+		return false
+	}
 	if anonIDFromReq == "" && userIDFromReq == "" {
 		return !allowReqsWithoutUserIDAndAnonymousID
 	}
@@ -855,6 +864,10 @@ func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request)
 
 func (gateway *HandleT) webAudienceListHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "audiencelist")
+}
+
+func (gateway *HandleT) webExtractHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "extract")
 }
 
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -1266,6 +1279,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/newEvent", gateway.webExtractHandler).Methods("POST")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
