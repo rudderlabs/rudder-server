@@ -7,6 +7,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -749,6 +751,143 @@ func TestMergeSchema(t *testing.T) {
 
 			actualSchema := MergeSchema(tc.localSchema, tc.schemaList, warehouseutils.SchemaT{}, destType)
 			require.Equal(t, actualSchema, tc.expectedSchema)
+		})
+	}
+}
+
+func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
+	Init4()
+
+	testCases := []struct {
+		name           string
+		schema         warehouseutils.SchemaT
+		expectedSchema warehouseutils.SchemaT
+	}{
+		{
+			name: "no deprecated columns",
+			schema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+					"test_datetime":  "datetime",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+					"test_datetime":  "datetime",
+				},
+			},
+		},
+		{
+			name: "invalid deprecated column format",
+			schema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+		},
+		{
+			name: "valid deprecated column format",
+			schema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+					"test-deprecated-546a4f59-c303-474e-b2c7-cf37361b5c2f": "int",
+					"test-deprecated-c60bf1e9-7cbd-42d4-8a7d-af01f5ff7d8b": "string",
+					"test-deprecated-bc3bbc6d-42c9-4d2c-b0e6-bf5820914b09": "boolean",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+		},
+	}
+
+	const (
+		sourceID    = "test-source-id"
+		destID      = "test-dest-id"
+		destType    = "RS"
+		workspaceID = "test-workspace-id"
+		namespace   = "test-namespace"
+	)
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sh := &SchemaHandleT{
+				warehouse: warehouseutils.Warehouse{
+					Source: backendconfig.SourceT{
+						ID: sourceID,
+					},
+					Destination: backendconfig.DestinationT{
+						ID: destID,
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: destType,
+						},
+					},
+					WorkspaceID: workspaceID,
+					Namespace:   namespace,
+				},
+			}
+
+			sh.SkipDeprecatedColumns(tc.schema)
+
+			require.Equal(t, tc.schema, tc.expectedSchema)
 		})
 	}
 }
