@@ -1008,27 +1008,23 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, payload json.Ra
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++
 
-		status.JobState = jobsdb.Failed.State
-
-		if respStatusCode >= 500 {
-			timeElapsed := time.Since(firstAttemptedAtTime)
-			if respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode {
-				if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
-					status.JobState = jobsdb.Aborted.State
-				} else {
-					status.RetryTime = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
+		retryLimitReached := func() bool {
+			if respStatusCode >= 500 && respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode {
+				if time.Since(firstAttemptedAtTime) > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
+					return true
 				}
 			}
-		} else if respStatusCode == 429 {
-			status.RetryTime = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
-		} else {
-			status.JobState = jobsdb.Aborted.State
+			return false
 		}
 
-		if status.JobState == jobsdb.Aborted.State {
+		if isJobTerminated(respStatusCode) || retryLimitReached() {
+			status.JobState = jobsdb.Aborted.State
 			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.WorkspaceId, status.ErrorCode, errorAt)
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) // NOTE: Old key used was "error_response"
+		} else {
+			status.JobState = jobsdb.Failed.State
+			status.RetryTime = status.ExecTime.Add(durationBeforeNextAttempt(status.AttemptNum))
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
@@ -1216,7 +1212,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	//#JobOrder (see other #JobOrder comment)
 	index := rt.getWorkerPartition(userID)
 	worker := rt.workers[index]
-	if worker.canBackoff(job) {
+	if time.Until(job.LastJobStatus.RetryTime) > 0 { // backoff
 		return
 	}
 	orderKey := fmt.Sprintf(`%s:%s`, userID, parameters.DestinationID)
@@ -1237,10 +1233,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	rt.logger.Debugf("EventOrder: job %d of user %s is blocked (previousFailedJobID: %s)", job.JobID, userID, previousFailedJobIDStr)
 	return nil
 	//#EndJobOrder
-}
-
-func (worker *workerT) canBackoff(job *jobsdb.JobT) (shouldBackoff bool) {
-	return time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
 func (rt *HandleT) getWorkerPartition(userID string) int {
