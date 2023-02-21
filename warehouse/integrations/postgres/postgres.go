@@ -98,6 +98,10 @@ var errorsMappings = []model.JobError{
 		Type:   model.PermissionError,
 		Format: regexp.MustCompile(`pq: password authentication failed for user`),
 	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`pq: permission denied`),
+	},
 }
 
 var rudderDataTypesMapToPostgres = map[string]string{
