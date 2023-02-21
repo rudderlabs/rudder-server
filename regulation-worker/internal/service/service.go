@@ -62,6 +62,9 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	deletionStart := time.Now()
 
 	status = js.Deleter.Delete(ctx, job, destDetail)
+	if status == model.JobStatusFailed && job.FailedAttempts >= 4 {
+		status = model.JobStatusAborted
+	}
 
 	stats.Default.NewTaggedStat("regulation_worker_deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(status)}).Since(deletionStart)
 	if status == model.JobStatusComplete {

@@ -5,6 +5,7 @@ type jobSchema struct {
 	WorkspaceId    string                 `json:"workspaceId"`
 	DestinationID  string                 `json:"destinationId"`
 	UserAttributes []userAttributesSchema `json:"userAttributes"`
+	FailedAttempts int                    `json:"failedAttempts"`
 }
 
 type statusJobSchema struct {
