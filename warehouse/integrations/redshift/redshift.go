@@ -184,7 +184,7 @@ func Init() {
 }
 
 func WithConfig(h *Redshift, config *config.Config) {
-	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", true)
+	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", false)
 	h.DedupWindowInHours = config.GetDuration("Warehouse.redshift.dedupWindowInHours", 720, time.Hour)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
@@ -465,7 +465,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	if rs.DedupWindow {
 		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
 			sqlStatement += fmt.Sprintf(`
-				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d DAY'
+				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d HOUR'
 `,
 				rs.Namespace,
 				tableName,
