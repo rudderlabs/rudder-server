@@ -587,11 +587,13 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			metadata->>'task_run_id'=$5; 
 	`
 
-	var actualStatus string
-	var actualWorkspaceID string
-	var actualSourceID string
-	var actualDestinationID string
-	var actualJobRunID string
+	var (
+		actualStatus        string
+		actualWorkspaceID   string
+		actualSourceID      string
+		actualDestinationID string
+		actualJobRunID      string
+	)
 	err = wareHouseTest.JobsDB.QueryRow(
 		sqlStatement,
 		wareHouseTest.SourceID,
