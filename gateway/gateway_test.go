@@ -746,18 +746,35 @@ var _ = Describe("Gateway", func() {
 			}
 		})
 
-		// It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
-		// 	validBody := `{"batch": [{"data": "valid-json", "type": "extract"}]}`
-		// 	expectHandlerResponse(
-		// 		gateway.webBatchHandler,
-		// 		authorizedRequest(
-		// 			WriteKeyEnabled,
-		// 			bytes.NewBufferString(validBody),
-		// 		),
-		// 		200,
-		// 		"OK",
-		// 	)
-		// })
+		It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
+			extractHandlers := map[string]http.HandlerFunc{
+				"batch":   gateway.webBatchHandler,
+				"import":  gateway.webImportHandler,
+				"extract": gateway.webExtractHandler,
+			}
+
+			c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any())
+			validBody := `{"batch": [{"data": "valid-json", "type": "extract"}]}`
+			for handlerType, handler := range extractHandlers {
+				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+					_ = f(jobsdb.EmptyStoreSafeTx())
+				}).Return(nil)
+				c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any())
+				if handlerType == "batch" || handlerType == "import" {
+					validBody = `{"batch": [{"data": "valid-json", "type": "extract"}]}`
+				}
+
+				expectHandlerResponse(
+					handler,
+					authorizedRequest(
+						WriteKeyEnabled,
+						bytes.NewBufferString(validBody),
+					),
+					200,
+					"OK",
+				)
+			}
+		})
 
 		It("should reject requests without request body", func() {
 			for _, handler := range allHandlers(gateway) {
