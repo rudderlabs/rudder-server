@@ -752,16 +752,16 @@ var _ = Describe("Gateway", func() {
 				"import":  gateway.webImportHandler,
 				"extract": gateway.webExtractHandler,
 			}
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+			c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
 
 			validBody := `{"batch": [{"data": "valid-json", "type": "extract"}]}`
 			for handlerType, handler := range extractHandlers {
 				if handlerType == "extract" {
 					validBody = `{"data": "valid-json", "type": "extract"}`
 				}
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-					_ = f(jobsdb.EmptyStoreSafeTx())
-				}).Return(nil)
-				c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 				expectHandlerResponse(
 					handler,
