@@ -124,12 +124,6 @@ var dataTypesMapToRudder = map[string]string{
 	"super":                       "json",
 }
 
-var primaryKeyMap = map[string]string{
-	"users":                      "id",
-	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id",
-}
-
 var partitionKeyMap = map[string]string{
 	"users":                      "id",
 	"identifies":                 "id",
@@ -143,8 +137,6 @@ type Redshift struct {
 	Uploader                      warehouseutils.UploaderI
 	ConnectTimeout                time.Duration
 	Logger                        logger.Logger
-	DedupWindow                   bool
-	DedupWindowInHours            time.Duration
 	SkipComputingUserLatestTraits bool
 	EnableDeleteByJobs            bool
 }
@@ -184,8 +176,6 @@ func Init() {
 }
 
 func WithConfig(h *Redshift, config *config.Config) {
-	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", true)
-	h.DedupWindowInHours = config.GetDuration("Warehouse.redshift.dedupWindowInHours", 720, time.Hour)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
 }
@@ -436,62 +426,10 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		return
 	}
 
-	var (
-		primaryKey   = "id"
-		partitionKey = "id"
-	)
+	partitionKey := "id"
 
-	if column, ok := primaryKeyMap[tableName]; ok {
-		primaryKey = column
-	}
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
-	}
-
-	sqlStatement = fmt.Sprintf(`
-		DELETE FROM
-			%[1]s.%[2]q
-		USING
-			%[1]s.%[3]q _source
-		WHERE
-			_source.%[4]s = %[1]s.%[2]q.%[4]s
-`,
-		rs.Namespace,
-		tableName,
-		stagingTableName,
-		primaryKey,
-	)
-
-	if rs.DedupWindow {
-		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
-			sqlStatement += fmt.Sprintf(`
-				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d DAY'
-`,
-				rs.Namespace,
-				tableName,
-				rs.DedupWindowInHours/time.Hour,
-			)
-		}
-	}
-
-	if tableName == warehouseutils.DiscardsTable {
-		sqlStatement += fmt.Sprintf(`
-			AND _source.%[3]s = %[1]s.%[2]q.%[3]s
-			AND _source.%[4]s = %[1]s.%[2]q.%[4]s
-`,
-			rs.Namespace,
-			tableName,
-			"table_name",
-			"column_name",
-		)
-	}
-
-	rs.Logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
-	if err != nil {
-		rs.Logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
-		return
 	}
 
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strKeys)
