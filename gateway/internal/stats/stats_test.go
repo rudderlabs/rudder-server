@@ -6,22 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
-	"github.com/stretchr/testify/require"
 )
-
-func getSourceStat(statMap map[string]*SourceStat, sourceTag string) {
-	statMap[sourceTag] = &SourceStat{
-		Source:      sourceTag,
-		SourceID:    trand.String(10),
-		WorkspaceID: trand.String(10),
-		WriteKey:    trand.String(10),
-		ReqType:     trand.String(10),
-		SourceType:  trand.String(10),
-		Version:     trand.String(10),
-	}
-}
 
 func TestReport(t *testing.T) {
 	// populate some SourceStats
@@ -174,6 +163,18 @@ func TestReport(t *testing.T) {
 				).LastValue(),
 			)
 		}
+	}
+}
+
+func getSourceStat(statMap map[string]*SourceStat, sourceTag string) {
+	statMap[sourceTag] = &SourceStat{
+		Source:      sourceTag,
+		SourceID:    trand.String(10),
+		WorkspaceID: trand.String(10),
+		WriteKey:    trand.String(10),
+		ReqType:     trand.String(10),
+		SourceType:  trand.String(10),
+		Version:     trand.String(10),
 	}
 }
 
