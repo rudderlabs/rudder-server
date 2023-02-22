@@ -107,6 +107,8 @@ var (
 	port                                           int
 )
 
+var defaultUploadPriority = 100
+
 // warehouses worker modes
 const (
 	MasterMode         = "master"
@@ -587,7 +589,7 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 
 	wh.areBeingEnqueuedLock.Lock()
 
-	priority := 0
+	priority := defaultUploadPriority
 	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
 	if uploadStatus == model.Waiting {
 		// If it is present do nothing else delete it
