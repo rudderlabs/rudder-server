@@ -29,6 +29,12 @@ type DestinationJobT struct {
 	Batched          bool                       `json:"batched"`
 	StatusCode       int                        `json:"statusCode"`
 	Error            string                     `json:"error"`
+	/**
+	For any OAuth destinations like GAEC, GAOC etc., this field will set as
+	- REFRESH_TOKEN -> when during transformation we get expired token error
+	Otherwise this field will be empty for any other errors thrown by transformer
+	*/
+	AuthErrorCategory string `json:"authErrorCategory,omitempty"`
 }
 
 // JobIDs returns the set of all job ids contained in the message

@@ -60,12 +60,13 @@ type tenantStats interface {
 }
 
 type HandleDestOAuthRespParamsT struct {
-	ctx            context.Context
-	destinationJob types.DestinationJobT
-	workerID       int
-	trRespStCd     int
-	trRespBody     string
-	secret         json.RawMessage
+	ctx               context.Context
+	destinationJob    types.DestinationJobT
+	workerID          int
+	trRespStCd        int
+	trRespBody        string
+	authErrorCategory string
+	secret            json.RawMessage
 }
 
 type DiagnosticT struct {
@@ -675,19 +676,6 @@ func (worker *workerT) processDestinationJobs() {
 									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobID)
-									authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
-									if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
-										pkgLogger.Debugf(`Sending for OAuth destination`)
-										// Token from header of the request
-										respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
-											ctx:            ctx,
-											destinationJob: destinationJob,
-											workerID:       worker.workerID,
-											trRespStCd:     respStatusCode,
-											trRespBody:     respBodyTemp,
-											secret:         firstJobMetadata.Secret,
-										})
-									}
 								} else {
 									sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 									rdlTime := time.Now()
@@ -769,6 +757,30 @@ func (worker *workerT) processDestinationJobs() {
 			respBody = destinationJob.Error
 			errorAt = routerutils.ERROR_AT_TF
 		}
+
+		// OAuth Handling section
+		// Start
+		authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
+		if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
+			pkgLogger.Debugf(`Sending for OAuth destination`)
+			// AuthErrorCategory is available at transformation in destinationJob object
+			authErrorCategory := destinationJob.AuthErrorCategory
+			// TODO: Don't need two conditions actually -- Think on a fitting condition and change this block
+			if errorAt == routerutils.ERROR_AT_DEL || !routerutils.IsNotEmptyString(authErrorCategory) {
+				authErrorCategory = gjson.GetBytes([]byte(respBody), "authErrorCategory").Str
+			}
+			// Token from header of the request
+			respStatusCode, respBody = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
+				ctx:               ctx,
+				destinationJob:    destinationJob,
+				workerID:          worker.workerID,
+				trRespStCd:        respStatusCode,
+				trRespBody:        respBody,
+				secret:            destinationJob.JobMetadataArray[0].Secret,
+				authErrorCategory: authErrorCategory,
+			})
+		}
+		// End
 
 		prevRespStatusCode = respStatusCode
 
@@ -2022,24 +2034,16 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 	destinationJob := params.destinationJob
 
 	if trRespStatusCode != http.StatusOK {
-		var destErrOutput integrations.TransResponseT
-		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
-			// Errors like OOM kills of transformer, transformer down etc...
-			// If destResBody comes out with a plain string, then this will occur
-			return http.StatusInternalServerError, fmt.Sprintf(`{
-				Error: %v,
-				(trRespStCd, trRespBody): (%v, %v),
-			}`, destError, trRespStatusCode, trRespBody)
-		}
 		workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
 		var errCatStatusCode int
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
 		rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config, oauth.DeliveryAccountIdKey)
 		if strings.TrimSpace(rudderAccountID) == "" {
+			rt.logger.Debugf("[OAuth request] For destinationId: %v, rudderAccountId is empty", destinationJob.Destination.ID)
 			return trRespStatusCode, trRespBody
 		}
-		switch destErrOutput.AuthErrorCategory {
+		switch params.authErrorCategory {
 		case oauth.DISABLE_DEST:
 			return rt.ExecDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
 		case oauth.REFRESH_TOKEN:
