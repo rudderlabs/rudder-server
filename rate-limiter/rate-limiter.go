@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/EagleChen/restrictor"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -53,5 +54,6 @@ func (rateLimiter *HandleT) SetUp() {
 
 // LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
 func (rateLimiter *HandleT) LimitReached(key string) bool {
-	return rateLimiter.restrictor.LimitReached(key)
+	ok, _ := rateLimiter.restrictor.LimitReached(key)
+	return ok
 }

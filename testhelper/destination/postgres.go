@@ -25,12 +25,21 @@ type PostgresResource struct {
 	Port     string
 }
 
-func SetupPostgres(pool *dockertest.Pool, d cleaner) (*PostgresResource, error) {
+func SetupPostgres(pool *dockertest.Pool, d cleaner, opts ...string) (*PostgresResource, error) {
+	cmd := []string{"postgres"}
+	for _, opt := range opts {
+		cmd = append(cmd, "-c", opt)
+	}
 	// pulls an image, creates a container based on it and runs it
-	postgresContainer, err := pool.Run("postgres", "15-alpine", []string{
-		"POSTGRES_DB=" + postgresDefaultDB,
-		"POSTGRES_USER=" + postgresDefaultUser,
-		"POSTGRES_PASSWORD=" + postgresDefaultPassword,
+	postgresContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "postgres",
+		Tag:        "15-alpine",
+		Env: []string{
+			"POSTGRES_PASSWORD=" + postgresDefaultPassword,
+			"POSTGRES_DB=" + postgresDefaultDB,
+			"POSTGRES_USER=" + postgresDefaultUser,
+		},
+		Cmd: cmd,
 	})
 	if err != nil {
 		return nil, err

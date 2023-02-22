@@ -1131,23 +1131,40 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 	return
 }
 
-func (bq *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s.%[2]s`, bq.namespace, tableName)
-	it, err := bq.db.Query(sqlStatement).Read(ctx)
-	if err != nil {
-		return 0, err
+func (bq *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+		ok           bool
+
+		it     *bigquery.RowIterator
+		values []bigquery.Value
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM %[1]s.%[2]s;
+	`,
+		bq.namespace,
+		tableName,
+	)
+
+	if it, err = bq.db.Query(sqlStatement).Read(ctx); err != nil {
+		return 0, fmt.Errorf("creating row iterator: %w", err)
 	}
-	var values []bigquery.Value
+
 	err = it.Next(&values)
 	if err == iterator.Done {
 		return 0, nil
 	}
 	if err != nil {
-		pkgLogger.Errorf("BQ: Error in processing totalRowsCount: %v", err)
-		return
+		return 0, fmt.Errorf("iterating through rows: %w", err)
 	}
-	total, _ = values[0].(int64)
-	return
+
+	if total, ok = values[0].(int64); !ok {
+		return 0, fmt.Errorf("converting value to int64: %w", err)
+	}
+
+	return total, nil
 }
 
 func (bq *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {

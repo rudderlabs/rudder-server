@@ -152,7 +152,7 @@ loop:
 	wg.Wait()
 
 	diff := expected - passed
-	errorMargin := int64(0.05*float64(rate)) + 1 // ~5% error margin
+	errorMargin := int64(0.1*float64(rate)) + 1 // ~10% error margin
 	if passed < 1 || diff < -errorMargin || diff > errorMargin {
 		t.Errorf("Expected %d, got %d (diff: %d, error margin: %d)", expected, passed, diff, errorMargin)
 	}

@@ -1051,13 +1051,20 @@ func (*Redshift) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, rs.Namespace, tableName)
+func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM "%[1]s"."%[2]s";
+	`,
+		rs.Namespace,
+		tableName,
+	)
 	err = rs.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		rs.Logger.Errorf(`RS: Error getting total count in table %s:%s`, rs.Namespace, tableName)
-	}
-	return
+	return total, err
 }
 
 func (rs *Redshift) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
