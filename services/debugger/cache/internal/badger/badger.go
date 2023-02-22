@@ -28,6 +28,10 @@ func (e *Cache[E]) loadCacheConfig() {
 	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache.queryTimeout")
 	config.RegisterIntConfigVariable(3, &e.retries, false, 1, "LiveEvent.cache.retries")
 	config.RegisterFloat64ConfigVariable(0.5, &e.gcDiscardRatio, false, "LiveEvent.cache.gcDiscardRatio")
+	config.RegisterIntConfigVariable(0, &e.numMemtables, false, 1, "LiveEvent.cache.NumMemtables")
+	config.RegisterIntConfigVariable(0, &e.numVersionsToKeep, false, 1, "LiveEvent.cache.NumVersionsToKeep")
+	config.RegisterIntConfigVariable(5, &e.numLevelZeroTables, false, 1, "LiveEvent.cache.NumLevelZeroTables")
+	config.RegisterIntConfigVariable(10, &e.numLevelZeroTablesStall, false, 1, "LiveEvent.cache.NumLevelZeroTablesStall")
 }
 
 /*
@@ -35,19 +39,23 @@ Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL
 key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
-	plocker        *rsync.PartitionLocker
-	limiter        int
-	retries        int
-	path           string
-	origin         string
-	done           chan struct{}
-	closed         chan struct{}
-	ticker         time.Duration
-	queryTimeout   time.Duration
-	cleanupFreq    time.Duration // TTL time on badgerDB
-	gcDiscardRatio float64
-	db             *badger.DB
-	logger         logger.Logger
+	plocker                 *rsync.PartitionLocker
+	limiter                 int
+	retries                 int
+	path                    string
+	origin                  string
+	done                    chan struct{}
+	closed                  chan struct{}
+	ticker                  time.Duration
+	queryTimeout            time.Duration
+	cleanupFreq             time.Duration // TTL time on badgerDB
+	gcDiscardRatio          float64
+	numMemtables            int
+	numVersionsToKeep       int
+	numLevelZeroTables      int
+	numLevelZeroTablesStall int
+	db                      *badger.DB
+	logger                  logger.Logger
 }
 
 type badgerLogger struct {
@@ -147,11 +155,11 @@ func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*C
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
-		WithNumMemtables(0).
+		WithNumMemtables(e.numMemtables).
 		WithBlockCacheSize(0).
-		WithNumVersionsToKeep(0).
-		WithNumLevelZeroTables(1).
-		WithNumLevelZeroTablesStall(5)
+		WithNumVersionsToKeep(e.numVersionsToKeep).
+		WithNumLevelZeroTables(e.numLevelZeroTables).
+		WithNumLevelZeroTablesStall(e.numLevelZeroTablesStall)
 
 	e.db, err = badger.Open(badgerOpts)
 	if err != nil {
