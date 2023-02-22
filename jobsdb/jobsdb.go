@@ -98,8 +98,6 @@ type GetQueryParamsT struct {
 	PayloadSizeLimit int64
 }
 
-var getTimeNowFunc = time.Now
-
 // Tx is a wrapper around sql.Tx that supports registering and executing
 // post-commit actions, a.k.a. success listeners.
 type Tx struct {
@@ -2382,10 +2380,10 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 									JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
 								    %[3]s
 									%[4]s
-									AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[5]s`,
+									ORDER BY jobs.job_id %[5]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, filterQuery, limitQuery)
 
-	args := []interface{}{getTimeNowFunc()}
+	var args []interface{}
 
 	var wrapQuery []string
 	if params.EventsLimit > 0 {
