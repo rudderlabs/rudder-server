@@ -24,9 +24,10 @@ This gives a feature of hot readability as well.
 func (e *Cache[E]) loadCacheConfig() {
 	config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
 	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache.limiter")
-	config.RegisterDurationConfigVariable(5, &e.ticker, false, time.Minute, "LiveEvent.cache.GCTime")
+	config.RegisterDurationConfigVariable(10, &e.ticker, false, time.Second, "LiveEvent.cache.GCTime")
 	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache.queryTimeout")
 	config.RegisterIntConfigVariable(3, &e.retries, false, 1, "LiveEvent.cache.retries")
+	config.RegisterFloat64ConfigVariable(0.5, &e.gcDiscardRatio, false, "LiveEvent.cache.gcDiscardRatio")
 }
 
 /*
@@ -34,18 +35,19 @@ Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL
 key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
-	plocker      *rsync.PartitionLocker
-	limiter      int
-	retries      int
-	path         string
-	origin       string
-	done         chan struct{}
-	closed       chan struct{}
-	ticker       time.Duration
-	queryTimeout time.Duration
-	cleanupFreq  time.Duration // TTL time on badgerDB
-	db           *badger.DB
-	logger       logger.Logger
+	plocker        *rsync.PartitionLocker
+	limiter        int
+	retries        int
+	path           string
+	origin         string
+	done           chan struct{}
+	closed         chan struct{}
+	ticker         time.Duration
+	queryTimeout   time.Duration
+	cleanupFreq    time.Duration // TTL time on badgerDB
+	gcDiscardRatio float64
+	db             *badger.DB
+	logger         logger.Logger
 }
 
 type badgerLogger struct {
@@ -146,7 +148,10 @@ func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*C
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
 		WithNumMemtables(0).
-		WithBlockCacheSize(0)
+		WithBlockCacheSize(0).
+		WithNumVersionsToKeep(0).
+		WithNumLevelZeroTables(1).
+		WithNumLevelZeroTablesStall(5)
 
 	e.db, err = badger.Open(badgerOpts)
 	if err != nil {
@@ -172,7 +177,7 @@ func (e *Cache[E]) gcBadgerDB() {
 			return
 		case <-ticker.C:
 		again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
-			err := e.db.RunValueLogGC(0.7)
+			err := e.db.RunValueLogGC(e.gcDiscardRatio)
 			if err == nil {
 				goto again
 			}
