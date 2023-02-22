@@ -177,7 +177,7 @@ func (e *Cache[E]) gcBadgerDB() {
 			return
 		case <-ticker.C:
 		again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
-			err := e.db.RunValueLogGC(0.5)
+			err := e.db.RunValueLogGC(e.gcDiscardRatio)
 			if err == nil {
 				goto again
 			}
