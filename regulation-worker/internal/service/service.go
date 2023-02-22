@@ -25,9 +25,10 @@ type deleter interface {
 }
 
 type JobSvc struct {
-	API        APIClient
-	Deleter    deleter
-	DestDetail destDetail
+	API               APIClient
+	Deleter           deleter
+	DestDetail        destDetail
+	MaxFailedAttempts int
 }
 
 // called by looper
@@ -62,7 +63,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	deletionStart := time.Now()
 
 	status = js.Deleter.Delete(ctx, job, destDetail)
-	if status == model.JobStatusFailed && job.FailedAttempts >= 4 {
+	if status == model.JobStatusFailed && job.FailedAttempts >= js.MaxFailedAttempts {
 		status = model.JobStatusAborted
 	}
 
