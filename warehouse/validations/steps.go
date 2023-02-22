@@ -34,39 +34,43 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 			break
 		}
 
-		steps = append(steps, &model.Step{
-			ID:   len(steps) + 1,
-			Name: model.VerifyingCreateSchema,
-		})
-		steps = append(steps, &model.Step{
-			ID:   len(steps) + 1,
-			Name: model.VerifyingCreateAndAlterTable,
-		})
-		steps = append(steps, &model.Step{
-			ID:   len(steps) + 1,
-			Name: model.VerifyingFetchSchema,
-		})
+		steps = append(steps,
+			&model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingCreateSchema,
+			},
+			&model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingCreateAndAlterTable,
+			},
+			&model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingFetchSchema,
+			},
+		)
 	default:
-		steps = append(steps, &model.Step{
-			ID:   len(steps) + 1,
-			Name: model.VerifyingConnections,
-		})
-		steps = append(steps, &model.Step{
-			ID:   len(steps) + 1,
-			Name: model.VerifyingCreateSchema,
-		})
-		steps = append(steps, &model.Step{
-			ID:   len(steps) + 1,
-			Name: model.VerifyingCreateAndAlterTable,
-		})
-		steps = append(steps, &model.Step{
-			ID:   len(steps) + 1,
-			Name: model.VerifyingFetchSchema,
-		})
-		steps = append(steps, &model.Step{
-			ID:   len(steps) + 1,
-			Name: model.VerifyingLoadTable,
-		})
+		steps = append(steps,
+			&model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingConnections,
+			},
+			&model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingCreateSchema,
+			},
+			&model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingCreateAndAlterTable,
+			},
+			&model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingFetchSchema,
+			},
+			&model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingLoadTable,
+			},
+		)
 	}
 	return &model.StepsResponse{
 		Steps: steps,

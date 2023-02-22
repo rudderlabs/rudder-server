@@ -967,7 +967,7 @@ func credentialsFromKey(key string) (credentials map[string]string) {
 		log.Print(fmt.Errorf("while setting up the workspace config: env %s does not exists", key))
 		return
 	}
-	if len(cred) == 0 {
+	if cred == "" {
 		log.Print(fmt.Errorf("while setting up the workspace config: env %s is empty", key))
 		return
 	}

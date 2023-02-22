@@ -813,7 +813,7 @@ func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
 	}
 
 	if valStr, ok := value.(string); ok {
-		return len(valStr) != 0
+		return valStr != ""
 	}
 	return false
 }
