@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -53,7 +55,7 @@ type loadTable struct {
 	table       string
 }
 
-type mockUploader struct {
+type dummyUploader struct {
 	dest *backendconfig.DestinationT
 }
 
@@ -63,34 +65,34 @@ type DestinationValidator interface {
 
 type destinationValidationImpl struct{}
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT     { return warehouseutils.SchemaT{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.SchemaT           { return warehouseutils.SchemaT{} }
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.SchemaT) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
-func (*mockUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
-func (*mockUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
+func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.SchemaT     { return warehouseutils.SchemaT{} }
+func (*dummyUploader) GetLocalSchema() warehouseutils.SchemaT           { return warehouseutils.SchemaT{} }
+func (*dummyUploader) UpdateLocalSchema(_ warehouseutils.SchemaT) error { return nil }
+func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
+func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
+func (*dummyUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
+func (*dummyUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
+func (*dummyUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (*mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
+func (*dummyUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return []warehouseutils.LoadFileT{}
 }
 
-func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
+func (*dummyUploader) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
 
-func (m *mockUploader) GetLoadFileType() string {
+func (m *dummyUploader) GetLoadFileType() string {
 	return warehouseutils.GetLoadFileType(m.dest.DestinationDefinition.Name)
 }
 
-func (m *mockUploader) UseRudderStorage() bool {
+func (m *dummyUploader) UseRudderStorage() bool {
 	return misc.IsConfiguredToUseRudderObjectStorage(m.dest.Config)
 }
 
@@ -115,10 +117,12 @@ func validateDestination(dest *backendconfig.DestinationT, stepToValidate string
 		err             error
 	)
 
-	pkgLogger.Infof("Validating destination configuration for destinationId: %s, destinationType: %s, step: %s",
-		destID,
-		destType,
-		stepToValidate,
+	pkgLogger.Infow("validate destination configuration",
+		logfield.DestinationID, destID,
+		logfield.DestinationType, destType,
+		logfield.DestinationRevisionID, dest.RevisionID,
+		logfield.WorkspaceID, dest.WorkspaceID,
+		logfield.DestinationValidationsStep, stepToValidate,
 	)
 
 	// check if req has specified a step in query params
@@ -155,25 +159,35 @@ func validateDestination(dest *backendconfig.DestinationT, stepToValidate string
 		if validator, err = NewValidator(step.Name, dest); err != nil {
 			err = fmt.Errorf("creating validator: %v", err)
 			step.Error = err.Error()
+
+			pkgLogger.Warnw("creating validator",
+				logfield.DestinationID, destID,
+				logfield.DestinationType, destType,
+				logfield.DestinationRevisionID, dest.RevisionID,
+				logfield.WorkspaceID, dest.WorkspaceID,
+				logfield.DestinationValidationsStep, step.Name,
+				logfield.Error, step.Error,
+			)
 			break
 		}
 
 		if stepError := validator.Validate(); stepError != nil {
 			err = stepError
 			step.Error = stepError.Error()
-
-			pkgLogger.Warnf("error occurred while destination configuration validation for destinationId: %s, destinationType: %s, step: %s with error: %s",
-				destID,
-				destType,
-				step.Name,
-				step.Error,
-			)
 		} else {
 			step.Success = true
 		}
 
 		// if any of steps fails, the whole validation fails
 		if !step.Success {
+			pkgLogger.Warnw("not able to validate destination configuration",
+				logfield.DestinationID, destID,
+				logfield.DestinationType, destType,
+				logfield.DestinationRevisionID, dest.RevisionID,
+				logfield.WorkspaceID, dest.WorkspaceID,
+				logfield.DestinationValidationsStep, step.Name,
+				logfield.Error, step.Error,
+			)
 			break
 		}
 	}
@@ -513,7 +527,7 @@ func createManager(dest *backendconfig.DestinationT) (manager.WarehouseOperation
 
 	operations.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
 
-	if err = operations.Setup(warehouse, &mockUploader{
+	if err = operations.Setup(warehouse, &dummyUploader{
 		dest: dest,
 	}); err != nil {
 		return nil, fmt.Errorf("setting up manager: %w", err)
