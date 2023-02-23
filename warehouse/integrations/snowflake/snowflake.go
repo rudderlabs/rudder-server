@@ -214,14 +214,14 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 
 // schemaIdentifier returns [DATABASE_NAME].[NAMESPACE] format to access the schema directly.
 func (sf *Snowflake) schemaIdentifier() string {
-	return fmt.Sprintf(`"%s"`,
+	return fmt.Sprintf(`%q`,
 		sf.Namespace,
 	)
 }
 
 func (sf *Snowflake) createTable(tableName string, columns map[string]string) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s."%s" ( %v )`, schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%q ( %v )`, schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""))
 	sf.Logger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.DB.Exec(sqlStatement)
 	return
@@ -366,7 +366,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload warehouseut
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s.%q`, schemaIdentifier, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -394,7 +394,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload warehouseut
 	}
 
 	stagingColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
-		return fmt.Sprintf(`staging."%s"`, name)
+		return fmt.Sprintf(`staging.%q`, name)
 	}, ",")
 	columnsWithValues := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
 		return fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, name)
@@ -462,7 +462,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable() (err error) {
 	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s.%q`, schemaIdentifier, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -509,7 +509,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s."%s" ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, schemaIdentifier, stagingTableName)
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s.%q ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, schemaIdentifier, stagingTableName)
 	sf.Logger.Infof("SF: Adding autoincrement column for table:%s at %s\n", stagingTableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil && !checkAndIgnoreAlreadyExistError(err) {
@@ -519,7 +519,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable() (err error) {
 
 	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement = fmt.Sprintf(`COPY INTO %v("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, stagingTableName), loadLocation, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s.%q`, schemaIdentifier, stagingTableName), loadLocation, sf.authString())
 
 	sf.Logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -575,12 +575,12 @@ func (sf *Snowflake) loadUserTables() (errorMap map[string]error) {
 		if colName == "ID" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
+		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
 		if _, ok := identifyColMap[colName]; ok {
-			identifyColNames = append(identifyColNames, fmt.Sprintf(`"%s"`, colName))
+			identifyColNames = append(identifyColNames, fmt.Sprintf(`%q`, colName))
 		} else {
 			// This is to handle cases when column in users table not present in identities table
-			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as "%s"`, colName))
+			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as %q`, colName))
 		}
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
@@ -766,7 +766,7 @@ func (sf *Snowflake) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error
 		}
 
 		schemaIdentifier := sf.schemaIdentifier()
-		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s."%s"`, schemaIdentifier, tableName)
+		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s.%q`, schemaIdentifier, tableName)
 		var totalRows int64
 		err = sf.DB.QueryRow(sqlStatement).Scan(&totalRows)
 		if err != nil {
@@ -799,7 +799,7 @@ func (sf *Snowflake) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error
 		var offset int64
 		for {
 			// TODO: Handle case for missing anonymous_id, user_id columns
-			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s."%s" LIMIT %d OFFSET %d`, toSelectFields, schemaIdentifier, tableName, batchSize, offset)
+			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s.%q LIMIT %d OFFSET %d`, toSelectFields, schemaIdentifier, tableName, batchSize, offset)
 			sf.Logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
 			var rows *sql.Rows
 			rows, err = sf.DB.Query(sqlStatement)
@@ -877,7 +877,7 @@ func (sf *Snowflake) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, er
 			continue
 		}
 		schemaIdentifier := sf.schemaIdentifier()
-		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s."%s"`, schemaIdentifier, tableName)
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%q`, schemaIdentifier, tableName)
 		var count int64
 		err = sf.DB.QueryRow(sqlStatement).Scan(&count)
 		if err != nil {
@@ -1050,8 +1050,8 @@ func (sf *Snowflake) LoadTestTable(location, tableName string, _ map[string]inte
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`,
-		fmt.Sprintf(`%s."%s"`, schemaIdentifier, tableName),
-		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`%s.%q`, schemaIdentifier, tableName),
+		fmt.Sprintf(`%q, %q`, "id", "val"),
 		loadFolder,
 		sf.authString(),
 	)

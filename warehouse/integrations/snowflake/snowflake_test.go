@@ -128,7 +128,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 				require.NoError(
 					t,
 					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, tc.schema))
+						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
 						return
 					}),
 					fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema),
