@@ -29,7 +29,6 @@ func TestIntegrationSnowflake(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
 
-	t.SkipNow()
 	t.Parallel()
 
 	snowflake.Init()
@@ -179,7 +178,6 @@ func TestConfigurationValidationSnowflake(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
 
-	t.SkipNow()
 	t.Parallel()
 
 	misc.Init()
