@@ -686,15 +686,20 @@ func getConsentCategories(dest *backendconfig.DestinationT) []string {
 	cookieCategories, _ := misc.MapLookup(
 		config,
 		"oneTrustCookieCategories",
-	).([]map[string]interface{})
+	).([]interface{})
 	if len(cookieCategories) == 0 {
 		return nil
 	}
 	return lo.FilterMap(
 		cookieCategories,
-		func(cookieCategory map[string]interface{}, _ int) (string, bool) {
-			category, ok := cookieCategory["oneTrustCookieCategory"].(string)
-			return category, ok && category != ""
+		func(cookieCategory interface{}, _ int) (string, bool) {
+			switch category := cookieCategory.(type) {
+			case map[string]interface{}:
+				cCategory, ok := category["oneTrustCookieCategory"].(string)
+				return cCategory, ok && cCategory != ""
+			default:
+				return "", false
+			}
 		},
 	)
 }

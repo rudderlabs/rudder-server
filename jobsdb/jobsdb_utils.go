@@ -134,11 +134,7 @@ func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilte
 	var allKeyValues, mandatoryKeyValues, opNullConditions []string
 	for _, parameter := range parameterFilters {
 		allKeyValues = append(allKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
-		if parameter.Optional {
-			opNullConditions = append(opNullConditions, fmt.Sprintf(`%q.parameters -> '%s' IS NULL`, alias, parameter.Name))
-		} else {
-			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
-		}
+		mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
 	}
 	opQuery := ""
 	if len(opNullConditions) > 0 {
