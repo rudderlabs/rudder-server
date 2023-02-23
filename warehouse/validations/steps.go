@@ -40,11 +40,11 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 				Name: model.VerifyingCreateSchema,
 			},
 			&model.Step{
-				ID:   len(steps) + 1,
+				ID:   len(steps) + 2,
 				Name: model.VerifyingCreateAndAlterTable,
 			},
 			&model.Step{
-				ID:   len(steps) + 1,
+				ID:   len(steps) + 3,
 				Name: model.VerifyingFetchSchema,
 			},
 		)
@@ -55,19 +55,19 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 				Name: model.VerifyingConnections,
 			},
 			&model.Step{
-				ID:   len(steps) + 1,
+				ID:   len(steps) + 2,
 				Name: model.VerifyingCreateSchema,
 			},
 			&model.Step{
-				ID:   len(steps) + 1,
+				ID:   len(steps) + 3,
 				Name: model.VerifyingCreateAndAlterTable,
 			},
 			&model.Step{
-				ID:   len(steps) + 1,
+				ID:   len(steps) + 4,
 				Name: model.VerifyingFetchSchema,
 			},
 			&model.Step{
-				ID:   len(steps) + 1,
+				ID:   len(steps) + 5,
 				Name: model.VerifyingLoadTable,
 			},
 		)
