@@ -43,7 +43,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	pkgLogger.Debugf("making http request to regulation manager to get new job")
 	url := j.URL()
 	pkgLogger.Debugf("making GET request to URL: %v", url)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		pkgLogger.Errorf("error while create new http request: %v", err)
 		return model.Job{}, err
@@ -169,10 +169,11 @@ func mapPayloadToJob(wjs jobSchema) (model.Job, error) {
 	}
 
 	return model.Job{
-		ID:            jobID,
-		WorkspaceID:   wjs.WorkspaceId,
-		DestinationID: wjs.DestinationID,
-		Status:        model.JobStatusRunning,
-		Users:         usrAttribute,
+		ID:             jobID,
+		WorkspaceID:    wjs.WorkspaceId,
+		DestinationID:  wjs.DestinationID,
+		Status:         model.JobStatusRunning,
+		Users:          usrAttribute,
+		FailedAttempts: wjs.FailedAttempts,
 	}, nil
 }
