@@ -45,7 +45,7 @@ func TestDelete(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -217,7 +217,7 @@ func TestOAuth(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -274,7 +274,7 @@ func TestOAuth(t *testing.T) {
 				ID:            2,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -335,7 +335,7 @@ func TestOAuth(t *testing.T) {
 				ID:            3,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -383,7 +383,7 @@ func TestOAuth(t *testing.T) {
 				ID:            3,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -434,7 +434,7 @@ func TestOAuth(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -482,7 +482,7 @@ func TestOAuth(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -527,7 +527,7 @@ func TestOAuth(t *testing.T) {
 				ID:            9,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine9",

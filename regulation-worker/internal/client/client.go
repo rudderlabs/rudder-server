@@ -174,7 +174,7 @@ func mapPayloadToJob(wjs jobSchema) (model.Job, error) {
 		ID:             jobID,
 		WorkspaceID:    wjs.WorkspaceId,
 		DestinationID:  wjs.DestinationID,
-		Status:         model.JobStatusRunning,
+		Status:         model.JobStatus{Status: model.JobStatusRunning},
 		Users:          usrAttribute,
 		FailedAttempts: wjs.FailedAttempts,
 	}, nil
