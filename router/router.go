@@ -400,8 +400,8 @@ func (worker *workerT) workerProcess() {
 
 					// mark job as waiting if prev job from same user has not succeeded yet
 					worker.rt.logger.Debugf(
-						"[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v",
-						worker.rt.destName, userID, previousFailedJobID, job.JobID,
+						"[%v Router] :: skipping processing job for orderKey: %v since prev failed job exists, prev id %v, current id %v",
+						worker.rt.destName, orderKey, previousFailedJobID, job.JobID,
 					)
 					resp := misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "blocking_id", *previousFailedJobID)
 					resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", userID)
@@ -1200,31 +1200,29 @@ func (rt *HandleT) stopWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]struct{}) (toSendWorker *workerT) {
+func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledOrderKeys map[string]struct{}) (toSendWorker *workerT) {
 	if rt.backgroundCtx.Err() != nil {
 		return
 	}
 
-	// checking if this job can be throttled
 	var parameters JobParametersT
-	userID := job.UserID
-
-	// checking if the user is in throttledMap. If yes, returning nil.
-	// this check is done to maintain order.
-	if _, ok := throttledUserMap[userID]; ok && rt.guaranteeUserEventOrder {
-		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as user has earlier jobs in throttled map`, rt.destName, job.JobID, userID)
-		return nil
-	}
-
 	err := json.Unmarshal(job.Parameters, &parameters)
 	if err != nil {
 		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
 		return
 	}
+	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
+
+	// checking if the orderKey is in throttledMap. If yes, returning nil.
+	// this check is done to maintain order.
+	if _, ok := throttledOrderKeys[orderKey]; ok {
+		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of orderKey:%s as orderKey has earlier jobs in throttled map`, rt.destName, job.JobID, orderKey)
+		return nil
+	}
 
 	if !rt.guaranteeUserEventOrder {
 		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
-		if rt.shouldThrottle(job, parameters, throttledUserMap) {
+		if rt.shouldThrottle(job, parameters) {
 			return
 		}
 		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
@@ -1232,16 +1230,16 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	}
 
 	//#JobOrder (see other #JobOrder comment)
-	index := rt.getWorkerPartition(userID)
+	index := rt.getWorkerPartition(orderKey)
 	worker := rt.workers[index]
 	if worker.canBackoff(job) {
 		return
 	}
-	orderKey := jobOrderKey(userID, parameters.DestinationID)
 	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
 	if enter {
-		rt.logger.Debugf("EventOrder: job %d of user %s is allowed to be processed", job.JobID, userID)
-		if rt.shouldThrottle(job, parameters, throttledUserMap) {
+		rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
+		if rt.shouldThrottle(job, parameters) {
+			throttledOrderKeys[orderKey] = struct{}{}
 			worker.barrier.Leave(orderKey, job.JobID)
 			return
 		}
@@ -1252,7 +1250,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	if previousFailedJobID != nil {
 		previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
 	}
-	rt.logger.Debugf("EventOrder: job %d of user %s is blocked (previousFailedJobID: %s)", job.JobID, userID, previousFailedJobIDStr)
+	rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
 	return nil
 	//#EndJobOrder
 }
@@ -1268,11 +1266,11 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT) (shouldBackoff bool) {
 	return false
 }
 
-func (rt *HandleT) getWorkerPartition(userID string) int {
-	return misc.GetHash(userID) % rt.noOfWorkers
+func (rt *HandleT) getWorkerPartition(key string) int {
+	return misc.GetHash(key) % rt.noOfWorkers
 }
 
-func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, throttledUserMap map[string]struct{}) (
+func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 	limited bool,
 ) {
 	if rt.throttlerFactory == nil {
@@ -1295,7 +1293,6 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, t
 		return false
 	}
 	if limited {
-		throttledUserMap[job.UserID] = struct{}{}
 		rt.throttledStat.Count(1)
 		rt.logger.Debugf(
 			"[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded",
@@ -1430,7 +1427,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		// Update the status
 		err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, nil)
+				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, rt.parameterFilters())
 				if err != nil {
 					return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
 				}
@@ -1648,12 +1645,8 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
 	if rt.destinationId != rt.destName {
 		return jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{rt.destName},
-			ParameterFilters: []jobsdb.ParameterFilterT{{
-				Name:     "destination_id",
-				Value:    rt.destinationId,
-				Optional: false,
-			}},
+			CustomValFilters:              []string{rt.destName},
+			ParameterFilters:              rt.parameterFilters(),
 			IgnoreCustomValFiltersInQuery: true,
 			PayloadSizeLimit:              rt.adaptiveLimit(rt.payloadLimit),
 			JobsLimit:                     pickUpCount,
@@ -1664,6 +1657,16 @@ func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
 		PayloadSizeLimit: rt.adaptiveLimit(rt.payloadLimit),
 		JobsLimit:        pickUpCount,
 	}
+}
+
+func (rt *HandleT) parameterFilters() []jobsdb.ParameterFilterT {
+	if rt.destinationId != rt.destName {
+		return []jobsdb.ParameterFilterT{{
+			Name:  "destination_id",
+			Value: rt.destinationId,
+		}}
+	}
+	return nil
 }
 
 func (rt *HandleT) readAndProcess() int {
@@ -1713,12 +1716,12 @@ func (rt *HandleT) readAndProcess() int {
 
 	var statusList []*jobsdb.JobStatusT
 	var toProcess []workerJobT
-	throttledUserMap := make(map[string]struct{})
+	throttledOrderKeys := make(map[string]struct{})
 
 	// Identify jobs which can be processed
 	for iterator.HasNext() {
 		job := iterator.Next()
-		w := rt.findWorker(job, throttledUserMap)
+		w := rt.findWorker(job, throttledOrderKeys)
 		if w != nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
@@ -1744,7 +1747,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	// Mark the jobs as executing
 	err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
-		return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destName}, nil)
+		return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destName}, rt.parameterFilters())
 	}, sendRetryUpdateStats)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
