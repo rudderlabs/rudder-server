@@ -981,7 +981,7 @@ func credentialsFromKey(key string) (credentials map[string]string) {
 	return
 }
 
-func SnowflakeCredentials() (credentials snowflake.SnowflakeCredentialsT, err error) {
+func SnowflakeCredentials() (credentials snowflake.Credentials, err error) {
 	cred, exists := os.LookupEnv(SnowflakeIntegrationTestCredentials)
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Snowflake test", SnowflakeIntegrationTestCredentials)

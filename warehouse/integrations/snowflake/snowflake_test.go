@@ -63,7 +63,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 	}{
 		{
 			name:          "Upload Job with Normal Database",
-			dbName:        credentials.DBName,
+			dbName:        credentials.Database,
 			schema:        schema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
@@ -78,7 +78,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 		},
 		{
 			name:          "Upload Job with Case Sensitive Database",
-			dbName:        strings.ToLower(credentials.DBName),
+			dbName:        strings.ToLower(credentials.Database),
 			schema:        caseSensitiveSchema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
@@ -93,7 +93,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 		},
 		{
 			name:          "Async Job with Sources",
-			dbName:        credentials.DBName,
+			dbName:        credentials.Database,
 			schema:        sourcesSchema,
 			tables:        []string{"tracks", "google_sheet"},
 			writeKey:      "2eSJyYtqwcFYerwzXv2fcNIrWO7",
@@ -120,7 +120,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 			t.Parallel()
 
 			credentialsCopy := credentials
-			credentialsCopy.DBName = tc.dbName
+			credentialsCopy.Database = tc.dbName
 
 			db, err := snowflake.Connect(credentialsCopy)
 			require.NoError(t, err)
