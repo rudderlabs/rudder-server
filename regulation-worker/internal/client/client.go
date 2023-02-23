@@ -114,9 +114,11 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 
 	url := fmt.Sprintf("%s/%d", j.URL(), jobID)
 	pkgLogger.Debugf("sending request to URL: %v", url)
-
 	statusSchema := statusJobSchema{
-		Status: string(status),
+		Status: string(status.Status),
+	}
+	if status.Error != nil {
+		statusSchema.Reason = status.Error.Error()
 	}
 	body, err := json.Marshal(statusSchema)
 	if err != nil {
