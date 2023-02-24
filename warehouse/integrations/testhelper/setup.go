@@ -857,6 +857,7 @@ func PopulateTemplateConfigurations() map[string]string {
 		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
 		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
+		"snowflakeRoleWriteKey":          "2eSafstqwcFYUILzXv2fcNIrWO7",
 		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
 
@@ -899,7 +900,7 @@ func enhanceWithSnowflakeConfigurations(values map[string]string) {
 		values[fmt.Sprintf("snowflake%s", k)] = v
 	}
 
-	values["snowflakeCaseSensitiveDBName"] = strings.ToLower(values["snowflakeDBName"])
+	values["snowflakeCaseSensitiveDatabase"] = strings.ToLower(values["snowflakeDatabase"])
 	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
 	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
 	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "sources")

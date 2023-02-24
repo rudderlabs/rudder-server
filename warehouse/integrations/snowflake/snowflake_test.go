@@ -40,13 +40,15 @@ func TestIntegrationSnowflake(t *testing.T) {
 		provider            = warehouseutils.SNOWFLAKE
 		jobsDB              = testhelper.SetUpJobsDB(t)
 		schema              = testhelper.Schema(provider, testhelper.SnowflakeIntegrationTestSchema)
+		roleSchema          = fmt.Sprintf("%s_%s", schema, "ROLE")
 		sourcesSchema       = fmt.Sprintf("%s_%s", schema, "SOURCES")
 		caseSensitiveSchema = fmt.Sprintf("%s_%s", schema, "CS")
 	)
 
 	testcase := []struct {
 		name                          string
-		dbName                        string
+		database                      string
+		role                          string
 		schema                        string
 		writeKey                      string
 		sourceID                      string
@@ -62,7 +64,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 	}{
 		{
 			name:          "Upload Job with Normal Database",
-			dbName:        credentials.Database,
+			database:      credentials.Database,
 			schema:        schema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
@@ -76,8 +78,24 @@ func TestIntegrationSnowflake(t *testing.T) {
 			},
 		},
 		{
+			name:          "Upload Job with Role",
+			database:      credentials.Database,
+			role:          credentials.Role,
+			schema:        roleSchema,
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:      "2eSafstqwcFYUILzXv2fcNIrWO7",
+			sourceID:      "24p1HhPsafaFBMKuzvx7GshCLKR",
+			destinationID: "24qeADObsdsJhijDnEppO6P1SNc",
+			stagingFilesEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+			},
+			stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+			},
+		},
+		{
 			name:          "Upload Job with Case Sensitive Database",
-			dbName:        strings.ToLower(credentials.Database),
+			database:      strings.ToLower(credentials.Database),
 			schema:        caseSensitiveSchema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
@@ -92,7 +110,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 		},
 		{
 			name:          "Async Job with Sources",
-			dbName:        credentials.Database,
+			database:      credentials.Database,
 			schema:        sourcesSchema,
 			tables:        []string{"tracks", "google_sheet"},
 			writeKey:      "2eSJyYtqwcFYerwzXv2fcNIrWO7",
@@ -119,7 +137,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 			t.Parallel()
 
 			credentialsCopy := credentials
-			credentialsCopy.Database = tc.dbName
+			credentialsCopy.Database = tc.database
+			credentialsCopy.Role = tc.role
 
 			db, err := snowflake.Connect(credentialsCopy)
 			require.NoError(t, err)
