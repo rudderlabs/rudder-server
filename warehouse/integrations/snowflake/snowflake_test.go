@@ -28,12 +28,18 @@ func TestIntegrationSnowflake(t *testing.T) {
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
+	if _, exists := os.LookupEnv(testhelper.SnowflakeRBACIntegrationTestCredentials); !exists {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeRBACIntegrationTestCredentials)
+	}
 
 	t.Parallel()
 
 	snowflake.Init()
 
-	credentials, err := testhelper.SnowflakeCredentials()
+	credentials, err := testhelper.SnowflakeCredentials(testhelper.SnowflakeIntegrationTestCredentials)
+	require.NoError(t, err)
+
+	rbacCrecentials, err := testhelper.SnowflakeCredentials(testhelper.SnowflakeRBACIntegrationTestCredentials)
 	require.NoError(t, err)
 
 	var (
@@ -43,12 +49,13 @@ func TestIntegrationSnowflake(t *testing.T) {
 		roleSchema          = fmt.Sprintf("%s_%s", schema, "ROLE")
 		sourcesSchema       = fmt.Sprintf("%s_%s", schema, "SOURCES")
 		caseSensitiveSchema = fmt.Sprintf("%s_%s", schema, "CS")
+		database            = credentials.Database
 	)
 
 	testcase := []struct {
 		name                          string
+		credentials                   snowflake.Credentials
 		database                      string
-		role                          string
 		schema                        string
 		writeKey                      string
 		sourceID                      string
@@ -64,7 +71,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 	}{
 		{
 			name:          "Upload Job with Normal Database",
-			database:      credentials.Database,
+			credentials:   credentials,
+			database:      database,
 			schema:        schema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
@@ -79,8 +87,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 		},
 		{
 			name:          "Upload Job with Role",
-			database:      credentials.Database,
-			role:          credentials.Role,
+			credentials:   rbacCrecentials,
+			database:      database,
 			schema:        roleSchema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSafstqwcFYUILzXv2fcNIrWO7",
@@ -95,7 +103,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 		},
 		{
 			name:          "Upload Job with Case Sensitive Database",
-			database:      strings.ToLower(credentials.Database),
+			credentials:   credentials,
+			database:      strings.ToLower(database),
 			schema:        caseSensitiveSchema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
@@ -110,7 +119,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 		},
 		{
 			name:          "Async Job with Sources",
-			database:      credentials.Database,
+			credentials:   credentials,
+			database:      database,
 			schema:        sourcesSchema,
 			tables:        []string{"tracks", "google_sheet"},
 			writeKey:      "2eSJyYtqwcFYerwzXv2fcNIrWO7",
@@ -136,9 +146,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			credentialsCopy := credentials
+			credentialsCopy := tc.credentials
 			credentialsCopy.Database = tc.database
-			credentialsCopy.Role = tc.role
 
 			db, err := snowflake.Connect(credentialsCopy)
 			require.NoError(t, err)

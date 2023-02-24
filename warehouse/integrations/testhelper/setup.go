@@ -56,10 +56,11 @@ const (
 )
 
 const (
-	SnowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
-	RedshiftIntegrationTestCredentials  = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
-	DeltalakeIntegrationTestCredentials = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
-	BigqueryIntegrationTestCredentials  = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
+	SnowflakeIntegrationTestCredentials     = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
+	SnowflakeRBACIntegrationTestCredentials = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
+	RedshiftIntegrationTestCredentials      = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
+	DeltalakeIntegrationTestCredentials     = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
+	BigqueryIntegrationTestCredentials      = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
 )
 
 const (
@@ -857,7 +858,7 @@ func PopulateTemplateConfigurations() map[string]string {
 		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
 		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-		"snowflakeRoleWriteKey":          "2eSafstqwcFYUILzXv2fcNIrWO7",
+		"snowflakeRBACWriteKey":          "2eSafstqwcFYUILzXv2fcNIrWO7",
 		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
 
@@ -895,16 +896,22 @@ func enhanceWithSnowflakeConfigurations(values map[string]string) {
 	if _, exists := os.LookupEnv(SnowflakeIntegrationTestCredentials); !exists {
 		return
 	}
+	if _, exists := os.LookupEnv(SnowflakeRBACIntegrationTestCredentials); !exists {
+		return
+	}
 
 	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("snowflake%s", k)] = v
 	}
+	for k, v := range credentialsFromKey(SnowflakeRBACIntegrationTestCredentials) {
+		values[fmt.Sprintf("snowflakeRBAC%s", k)] = v
+	}
 
 	values["snowflakeCaseSensitiveDatabase"] = strings.ToLower(values["snowflakeDatabase"])
 	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
-	values["snowflakeRoleNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "ROLE")
+	values["snowflakeRBACNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "ROLE")
 	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
-	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "sources")
+	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "SOURCES")
 }
 
 func enhanceWithRedshiftConfigurations(values map[string]string) {
@@ -983,10 +990,10 @@ func credentialsFromKey(key string) (credentials map[string]string) {
 	return
 }
 
-func SnowflakeCredentials() (credentials snowflake.Credentials, err error) {
-	cred, exists := os.LookupEnv(SnowflakeIntegrationTestCredentials)
+func SnowflakeCredentials(env string) (credentials snowflake.Credentials, err error) {
+	cred, exists := os.LookupEnv(env)
 	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Snowflake test", SnowflakeIntegrationTestCredentials)
+		err = fmt.Errorf("following %s does not exists while running the Snowflake test", env)
 		return
 	}
 
