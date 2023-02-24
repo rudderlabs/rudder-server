@@ -1997,9 +1997,9 @@
         {
           "config": {
             "account": "{{.snowflakeAccount}}",
-            "database": "{{.snowflakeDBName}}",
-            "warehouse": "{{.snowflakeWHName}}",
-            "user": "{{.snowflakeUsername}}",
+            "database": "{{.snowflakeDatabase}}",
+            "warehouse": "{{.snowflakeWarehouse}}",
+            "user": "{{.snowflakeUser}}",
             "password": "{{.snowflakePassword}}",
             "cloudProvider": "AWS",
             "bucketName": "{{.snowflakeBucketName}}",
