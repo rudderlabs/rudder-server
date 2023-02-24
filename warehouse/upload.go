@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
@@ -170,6 +171,10 @@ func setMaxParallelLoads() {
 }
 
 func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.Manager) *UploadJobT {
+	var stagingFileIDs []int64
+	lo.ForEach(dto.StagingFiles, func(stagingFile *model.StagingFile, _ int) {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	})
 	return &UploadJobT{
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
@@ -182,7 +187,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		upload:         dto.Upload,
 		warehouse:      dto.Warehouse,
 		stagingFiles:   dto.StagingFiles,
-		stagingFileIDs: repo.StagingFileIDs(dto.StagingFiles),
+		stagingFileIDs: stagingFileIDs,
 
 		hasAllTablesSkipped: false,
 		tableUploadStatuses: []*TableUploadStatusT{},
@@ -946,19 +951,15 @@ func (job *UploadJobT) addColumnsToWarehouse(tName string, columnsMap map[string
 		columnsToAdd = append(columnsToAdd, warehouseutils.ColumnInfo{Name: columnName, Type: columnType})
 	}
 
-	for i := 0; i < len(columnsToAdd); i += columnsBatchSize {
-		j := i + columnsBatchSize
-		if j > len(columnsToAdd) {
-			j = len(columnsToAdd)
-		}
-
-		err = job.whManager.AddColumns(tName, columnsToAdd[i:j])
+	chunks := lo.Chunk(columnsToAdd, columnsBatchSize)
+	for _, chunk := range chunks {
+		err = job.whManager.AddColumns(tName, chunk)
 		if err != nil {
 			err = fmt.Errorf("failed to add columns for table %s in namespace %s of destination %s:%s with error: %w", tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID, err)
 			break
 		}
 
-		job.counterStat("columns_added").Count(j - i + 1)
+		job.counterStat("columns_added").Count(len(chunk))
 	}
 	return err
 }

@@ -7,6 +7,10 @@ import (
 	"time"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+	"github.com/samber/lo"
+
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -16,10 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -152,7 +153,10 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 		return 0, 0, fmt.Errorf("populating destination revision ID: %w", err)
 	}
 
-	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
+	var stagingFileIDs []int64
+	lo.ForEach(toProcessStagingFiles, func(stagingFile *model.StagingFile, _ int) {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	})
 
 	err = lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs)
 	if err != nil {
@@ -177,15 +181,11 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 	var g errgroup.Group
 
 	var sampleError error
-	for i := 0; i < len(toProcessStagingFiles); i += publishBatchSize {
-		j := i + publishBatchSize
-		if j > len(toProcessStagingFiles) {
-			j = len(toProcessStagingFiles)
-		}
-
+	chunks := lo.Chunk(toProcessStagingFiles, publishBatchSize)
+	for _, chunk := range chunks {
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
-		for _, stagingFile := range toProcessStagingFiles[i:j] {
+		for _, stagingFile := range chunk {
 			payload := WorkerJobRequest{
 				UploadID:                     job.Upload.ID,
 				StagingFileID:                stagingFile.ID,
@@ -237,13 +237,11 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 		}
 		// set messages to nil to release mem allocated
 		messages = nil
-		batchStartIdx := i
-		batchEndIdx := j
-
+		startId := chunk[0].ID
+		endId := chunk[len(chunk)-1].ID
 		g.Go(func() error {
 			responses := <-ch
-			lf.Logger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
-
+			lf.Logger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", startId, endId, destType, destID)
 			var loadFiles []model.LoadFile
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
@@ -303,7 +301,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 		return 0, 0, err
 	}
 
-	loadFiles, err := lf.LoadRepo.GetByStagingFiles(ctx, repo.StagingFileIDs(toProcessStagingFiles))
+	loadFiles, err := lf.LoadRepo.GetByStagingFiles(ctx, stagingFileIDs)
 	if err != nil {
 		return 0, 0, fmt.Errorf("getting load files: %w", err)
 	}

@@ -129,7 +129,6 @@ const (
 	AWSAccessKey         = "accessKey"
 	AWSAccessSecret      = "accessKeyID"
 	AWSBucketNameConfig  = "bucketName"
-	AWSRegion            = "region"
 	AWSS3Prefix          = "prefix"
 	MinioAccessKeyID     = "accessKeyID"
 	MinioSecretAccessKey = "secretAccessKey"
@@ -433,14 +432,14 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
 func GetObjectName(location string, providerConfig interface{}, objectProvider string) (objectName string, err error) {
-	var config map[string]interface{}
+	var destConfig map[string]interface{}
 	var ok bool
-	if config, ok = providerConfig.(map[string]interface{}); !ok {
+	if destConfig, ok = providerConfig.(map[string]interface{}); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
 	fm, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: objectProvider,
-		Config:   config,
+		Config:   destConfig,
 	})
 	if err != nil {
 		return "", err
@@ -648,17 +647,17 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 }
 
 func GetConfigValue(key string, warehouse Warehouse) (val string) {
-	config := warehouse.Destination.Config
-	if config[key] != nil {
-		val, _ = config[key].(string)
+	destConfig := warehouse.Destination.Config
+	if destConfig[key] != nil {
+		val, _ = destConfig[key].(string)
 	}
 	return val
 }
 
 func GetConfigValueBoolString(key string, warehouse Warehouse) string {
-	config := warehouse.Destination.Config
-	if config[key] != nil {
-		if val, ok := config[key].(bool); ok {
+	destConfig := warehouse.Destination.Config
+	if destConfig[key] != nil {
+		if val, ok := destConfig[key].(bool); ok {
 			if val {
 				return "true"
 			}
@@ -959,30 +958,6 @@ func GetLoadFileFormat(whType string) string {
 	default:
 		return "csv.gz"
 	}
-}
-
-func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(config.GetWorkspaceToken(), "")
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = io.ReadAll(resp.Body)
-		func() { httputil.CloseResponse(resp) }()
-	}
-
-	return respBody, nil
 }
 
 func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, timeout time.Duration) ([]byte, error) {
