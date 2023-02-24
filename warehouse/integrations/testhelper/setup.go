@@ -902,6 +902,7 @@ func enhanceWithSnowflakeConfigurations(values map[string]string) {
 
 	values["snowflakeCaseSensitiveDatabase"] = strings.ToLower(values["snowflakeDatabase"])
 	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
+	values["snowflakeRoleNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "ROLE")
 	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
 	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "sources")
 }
