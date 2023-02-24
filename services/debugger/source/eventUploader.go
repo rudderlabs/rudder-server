@@ -74,7 +74,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (SourceDe
 	h.uploader = debugger.New[*GatewayEventBatchT](url, eventUploader)
 	h.uploader.Start()
 
-	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.BadgerCacheType)))
+	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.MemoryCacheType)))
 	h.eventsCache, err = cache.New[[]byte](cacheType, "source", h.log)
 	if err != nil {
 		return nil, err

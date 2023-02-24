@@ -474,9 +474,8 @@ type journalOpPayloadT struct {
 }
 
 type ParameterFilterT struct {
-	Name     string
-	Value    string
-	Optional bool
+	Name  string
+	Value string
 }
 
 var dbInvalidJsonErrors = map[string]struct{}{
