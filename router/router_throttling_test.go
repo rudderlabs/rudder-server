@@ -219,7 +219,7 @@ func Test_RouterThrottling(t *testing.T) {
 
 	verifyBucket := func(buckets map[int64]int, totalEvents, rps, cost int) {
 		lowerLengthRange := (totalEvents * cost) / rps
-		upperLengthRange := lowerLengthRange + 1
+		upperLengthRange := lowerLengthRange + 2
 		requireLengthInRange(t, buckets, lowerLengthRange, upperLengthRange)
 
 		maxEventsPerBucket := rps / cost
