@@ -45,6 +45,7 @@ type MultiTenantI interface {
 	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int) map[string]int
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
+	RemoveWorkspaceFromLatencyMap(workspaceID string)
 	lifecycle
 }
 
@@ -131,6 +132,14 @@ func (t *Stats) UpdateWorkspaceLatencyMap(destType, workspaceID string, val floa
 		t.routerTenantLatencyStat[destType][workspaceID] = metric.NewMovingAverage(metric.AVG_METRIC_AGE)
 	}
 	t.routerTenantLatencyStat[destType][workspaceID].Add(val)
+}
+
+func (t *Stats) RemoveWorkspaceFromLatencyMap(workspaceID string) {
+	t.routerLatencyMutex.Lock()
+	defer t.routerLatencyMutex.Unlock()
+	for _, destTypeMap := range t.routerTenantLatencyStat {
+		delete(destTypeMap, workspaceID)
+	}
 }
 
 func (t *Stats) CalculateSuccessFailureCounts(workspace, destType string, isSuccess, isDrained bool) {
@@ -324,7 +333,7 @@ func getWorkspacesWithPendingJobs(destType string) []string {
 		GetMetricsByName(fmt.Sprintf(rmetrics.JobsdbPendingEventsCount, "rt"))
 	for _, metricValueWithTag := range routerPendingEvents {
 		if metricValueWithTag.Tags["destType"] == destType {
-			workspace := metricValueWithTag.Tags["workspace"]
+			workspace := metricValueWithTag.Tags["workspaceId"]
 			count := metricValueWithTag.Value.(metric.Gauge).IntValue()
 			if count > 0 {
 				if workspace != rmetrics.All {

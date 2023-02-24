@@ -1382,7 +1382,7 @@ func TestCleanUpRetiredJobs(t *testing.T) {
 	)
 
 	require.Equal(t,
-		4,
+		5,
 		len(
 			metric.Instance.
 				GetRegistry(metric.PublishedMetrics).

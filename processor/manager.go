@@ -157,6 +157,10 @@ func (proc *Handle) doCleanupRetiredJobs(ctx context.Context, workspaceMap map[s
 			retiredRouterWorkspaces,
 		); err != nil {
 			proc.logger.Errorf("Error cleaning up retired jobs for router: %v", err)
+		} else {
+			lo.ForEach(retiredRouterWorkspaces, func(workspace string, _ int) {
+				proc.multitenantI.RemoveWorkspaceFromLatencyMap(workspace)
+			})
 		}
 	}
 
@@ -184,6 +188,10 @@ func (proc *Handle) doCleanupRetiredJobs(ctx context.Context, workspaceMap map[s
 			retiredBatchRouterWorkspaces,
 		); err != nil {
 			proc.logger.Errorf("Error cleaning up retired jobs for batch router: %v", err)
+		} else {
+			lo.ForEach(retiredBatchRouterWorkspaces, func(workspace string, _ int) {
+				proc.multitenantI.RemoveWorkspaceFromLatencyMap(workspace)
+			})
 		}
 	}
 }

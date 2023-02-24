@@ -196,7 +196,7 @@ func (jd *HandleT) CleanUpRetiredJobs(ctx context.Context, retiredWorkspaces []s
 							"Aborted %d %s-%s jobs due to workspace retirement",
 							count, workspace, customVal,
 						)
-						metric.DeletePendingEvents(
+						rmetrics.DecreasePendingEvents(
 							jd.tablePrefix,
 							workspace,
 							customVal,

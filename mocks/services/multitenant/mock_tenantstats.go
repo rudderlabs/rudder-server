@@ -60,6 +60,18 @@ func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, ar
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3)
 }
 
+// RemoveWorkspaceFromLatencyMap mocks base method.
+func (m *MockMultiTenantI) RemoveWorkspaceFromLatencyMap(arg0 string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RemoveWorkspaceFromLatencyMap", arg0)
+}
+
+// RemoveWorkspaceFromLatencyMap indicates an expected call of RemoveWorkspaceFromLatencyMap.
+func (mr *MockMultiTenantIMockRecorder) RemoveWorkspaceFromLatencyMap(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveWorkspaceFromLatencyMap", reflect.TypeOf((*MockMultiTenantI)(nil).RemoveWorkspaceFromLatencyMap), arg0)
+}
+
 // ReportProcLoopAddStats mocks base method.
 func (m *MockMultiTenantI) ReportProcLoopAddStats(arg0 map[string]map[string]int, arg1 string) {
 	m.ctrl.T.Helper()
