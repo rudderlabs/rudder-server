@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/maputil"
@@ -60,7 +61,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 		for _, configVal := range configValArr {
 			value := configVal.value
 			switch value := value.(type) {
-			case *int:
+			case *int, *Atomic[int]:
 				var _value int
 				var isSet bool
 				for _, key := range configVal.keys {
@@ -74,9 +75,17 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 					_value = configVal.defaultValue.(int)
 				}
 				_value = _value * configVal.multiplier.(int)
-				if _value != *value {
-					fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
-					*value = _value
+				if value, ok := value.(*int); ok {
+					if _value != *value {
+						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
+						*value = _value
+					}
+				} else {
+					atomicValue := configVal.value.(*Atomic[int])
+					if intValue := atomicValue.Load(); _value != intValue {
+						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, intValue, _value)
+						atomicValue.Store(_value)
+					}
 				}
 			case *int64:
 				var _value int64
@@ -207,6 +216,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 
 type configValue struct {
 	value        interface{}
+	valueMu      *sync.RWMutex
 	multiplier   interface{}
 	defaultValue interface{}
 	keys         []string

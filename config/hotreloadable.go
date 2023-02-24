@@ -1,6 +1,9 @@
 package config
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 
 // RegisterIntConfigVariable registers int config variable
 func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool, valueScale int, keys ...string) {
@@ -8,7 +11,29 @@ func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool,
 }
 
 // RegisterIntConfigVariable registers int config variable
+// Deprecated: use RegisterIntConfigVar or RegisterAtomicIntConfigVar instead
 func (c *Config) RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool, valueScale int, keys ...string) {
+	c.registerIntConfigVar(defaultValue, ptr, isHotReloadable, valueScale, func(v int) {
+		*ptr = v
+	}, keys...)
+}
+
+// RegisterIntConfigVar registers int config variable
+func (c *Config) RegisterIntConfigVar(defaultValue int, ptr *int, valueScale int, keys ...string) {
+	c.registerIntConfigVar(defaultValue, ptr, true, valueScale, func(v int) {
+		*ptr = v
+	}, keys...)
+}
+
+// RegisterAtomicIntConfigVar registers int config variable
+// Copy of RegisterAtomicIntConfigVar, but with a way to avoid data races for hot reloadable config variables
+func (c *Config) RegisterAtomicIntConfigVar(defaultValue int, ptr *Atomic[int], valueScale int, keys ...string) {
+	c.registerIntConfigVar(defaultValue, ptr, true, valueScale, func(v int) {
+		ptr.Store(v)
+	}, keys...)
+}
+
+func (c *Config) registerIntConfigVar(defaultValue int, ptr any, isHotReloadable bool, valueScale int, store func(int), keys ...string) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
 	c.hotReloadableConfigLock.Lock()
@@ -26,11 +51,11 @@ func (c *Config) RegisterIntConfigVariable(defaultValue int, ptr *int, isHotRelo
 
 	for _, key := range keys {
 		if c.IsSet(key) {
-			*ptr = c.GetInt(key, defaultValue) * valueScale
+			store(c.GetInt(key, defaultValue) * valueScale)
 			return
 		}
 	}
-	*ptr = defaultValue * valueScale
+	store(defaultValue * valueScale)
 }
 
 // RegisterBoolConfigVariable registers bool config variable
@@ -254,4 +279,16 @@ func (c *Config) appendVarToConfigMaps(key string, configVar *configValue) {
 		c.hotReloadableConfig[key] = make([]*configValue, 0)
 	}
 	c.hotReloadableConfig[key] = append(c.hotReloadableConfig[key], configVar)
+}
+
+type Atomic[T any] struct {
+	atomic.Value
+}
+
+func (a *Atomic[T]) Load() T {
+	return a.Value.Load().(T)
+}
+
+func (a *Atomic[T]) Store(v T) {
+	a.Value.Store(v)
 }
