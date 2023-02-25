@@ -880,13 +880,20 @@ func (*MSSQL) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (ms *MSSQL) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ms.Namespace, tableName)
+func (ms *MSSQL) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM "%[1]s"."%[2]s";
+	`,
+		ms.Namespace,
+		tableName,
+	)
 	err = ms.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		ms.Logger.Errorf(`MS: Error getting total count in table %s:%s`, ms.Namespace, tableName)
-	}
-	return
+	return total, err
 }
 
 func (ms *MSSQL) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {

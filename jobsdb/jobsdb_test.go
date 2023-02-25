@@ -1204,6 +1204,106 @@ func TestConstructParameterJSONQuery(t *testing.T) {
 	require.Equal(t, `(alias.parameters @> '{"name":"value"}' )`, q)
 }
 
+func TestGetActiveWorkspaces(t *testing.T) {
+	_ = startPostgres(t)
+	maxDSSize := 1
+	triggerAddNewDS := make(chan time.Time)
+	jobsDB := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+		MaxDSSize: &maxDSSize,
+	}
+	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	require.NoError(t, err)
+	defer jobsDB.TearDown()
+
+	require.Equal(t, 1, len(jobsDB.getDSList()))
+
+	generateJobs := func(workspaceID string, numOfJob int) []*JobT {
+		customVal := "MOCKDS"
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				WorkspaceId:  workspaceID,
+				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	// adding mock jobs to jobsDB
+	jobs := generateJobs("ws-1", 2)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+
+	activeWorkspaces, err := jobsDB.GetActiveWorkspaces(context.Background())
+	require.NoError(t, err)
+	require.Len(t, activeWorkspaces, 1)
+	require.ElementsMatch(t, []string{"ws-1"}, activeWorkspaces)
+
+	// triggerAddNewDS to trigger jobsDB to add new DS
+	triggerAddNewDS <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			t.Logf("tables %d", len(jobsDB.getDSList()))
+			return len(jobsDB.getDSList()) == 2
+		},
+		time.Second*5, time.Millisecond,
+		"expected number of tables to be 2")
+
+	jobs = generateJobs("ws-2", 2)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+
+	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background())
+	require.NoError(t, err)
+	require.Len(t, activeWorkspaces, 2)
+	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
+
+	triggerAddNewDS <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB.getDSList()) == 3
+		},
+		time.Second*5, time.Millisecond,
+		"expected number of tables to be 3")
+
+	jobs = generateJobs("ws-3", 2)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+
+	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParamsT{WorkspaceID: "ws-3", JobsLimit: 10})
+	require.NoError(t, err)
+	statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
+		return &JobStatusT{
+			JobID:       job.JobID,
+			JobState:    Succeeded.State,
+			AttemptNum:  1,
+			WorkspaceId: "ws-3",
+		}
+	})
+	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{}, []ParameterFilterT{}))
+
+	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background())
+	require.NoError(t, err)
+	require.Len(t, activeWorkspaces, 3)
+	require.ElementsMatch(t, []string{"ws-1", "ws-2", "ws-3"}, activeWorkspaces)
+
+	jobsDB.preciseActiveWsQuery = true
+	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background())
+	require.NoError(t, err)
+	require.Len(t, activeWorkspaces, 2)
+	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
+}
+
 type testingT interface {
 	Errorf(format string, args ...interface{})
 	FailNow()
@@ -1231,7 +1331,7 @@ func (*ginkgoTestingT) FailNow() {
 }
 
 func (*ginkgoTestingT) Setenv(key, value string) {
-	os.Setenv(key, value)
+	os.Setenv(key, value) // skipcq: GO-W1032
 }
 
 func (*ginkgoTestingT) Log(args ...interface{}) {

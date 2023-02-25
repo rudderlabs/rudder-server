@@ -78,6 +78,10 @@ var errorsMappings = []model.JobError{
 		Type:   model.PermissionError,
 		Format: regexp.MustCompile(`pq: password authentication failed for user`),
 	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`pq: permission denied`),
+	},
 }
 
 var rudderDataTypesMapToPostgres = map[string]string{
@@ -119,7 +123,7 @@ type Postgres struct {
 	LoadFileDownloader          load_file_downloader.LoadFileDownloader
 }
 
-type CredentialsT struct {
+type Credentials struct {
 	Host       string
 	DBName     string
 	User       string
@@ -154,7 +158,7 @@ func WithConfig(h *Postgres, config *config.Config) {
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 8)
 }
 
-func Connect(cred CredentialsT) (*sql.DB, error) {
+func Connect(cred Credentials) (*sql.DB, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -202,9 +206,9 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
 }
 
-func (pg *Postgres) getConnectionCredentials() CredentialsT {
+func (pg *Postgres) getConnectionCredentials() Credentials {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
-	creds := CredentialsT{
+	creds := Credentials{
 		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
 		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, pg.Warehouse),
@@ -542,13 +546,20 @@ func (*Postgres) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (pg *Postgres) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, pg.Namespace, tableName)
+func (pg *Postgres) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM "%[1]s"."%[2]s";
+	`,
+		pg.Namespace,
+		tableName,
+	)
 	err = pg.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		pg.Logger.Errorf(`PG: Error getting total count in table %s:%s`, pg.Namespace, tableName)
-	}
-	return
+	return total, err
 }
 
 func (pg *Postgres) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {

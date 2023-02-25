@@ -184,7 +184,7 @@ func Init() {
 }
 
 func WithConfig(h *Redshift, config *config.Config) {
-	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", true)
+	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", false)
 	h.DedupWindowInHours = config.GetDuration("Warehouse.redshift.dedupWindowInHours", 720, time.Hour)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
@@ -465,7 +465,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	if rs.DedupWindow {
 		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
 			sqlStatement += fmt.Sprintf(`
-				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d DAY'
+				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d HOUR'
 `,
 				rs.Namespace,
 				tableName,
@@ -1019,13 +1019,20 @@ func (*Redshift) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, rs.Namespace, tableName)
+func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM "%[1]s"."%[2]s";
+	`,
+		rs.Namespace,
+		tableName,
+	)
 	err = rs.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		rs.Logger.Errorf(`RS: Error getting total count in table %s:%s`, rs.Namespace, tableName)
-	}
-	return
+	return total, err
 }
 
 func (rs *Redshift) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {

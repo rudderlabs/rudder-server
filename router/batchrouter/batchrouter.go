@@ -132,6 +132,8 @@ type HandleT struct {
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
+
+	adaptiveLimit func(int64) int64
 }
 
 type BatchDestinationDataT struct {
@@ -313,9 +315,8 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 					parameterFilters := make([]jobsdb.ParameterFilterT, 0)
 					for _, param := range jobsdb.CacheKeyParameterFilters {
 						parameterFilter := jobsdb.ParameterFilterT{
-							Name:     param,
-							Value:    key,
-							Optional: false,
+							Name:  param,
+							Value: key,
 						}
 						parameterFilters = append(parameterFilters, parameterFilter)
 					}
@@ -326,7 +327,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								CustomValFilters: []string{brt.destType},
 								JobsLimit:        1,
 								ParameterFilters: parameterFilters,
-								PayloadSizeLimit: brt.payloadLimit,
+								PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),
 							},
 						)
 					}, sendQueryRetryStats)
@@ -380,7 +381,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											CustomValFilters: []string{brt.destType},
 											JobsLimit:        brt.maxEventsInABatch,
 											ParameterFilters: parameterFilters,
-											PayloadSizeLimit: brt.payloadLimit,
+											PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),
 										},
 									)
 								}, sendQueryRetryStats)
@@ -532,7 +533,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											CustomValFilters: []string{brt.destType},
 											JobsLimit:        brt.maxEventsInABatch,
 											ParameterFilters: parameterFilters,
-											PayloadSizeLimit: brt.payloadLimit,
+											PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),
 										},
 									)
 								}, sendQueryRetryStats)
@@ -1312,9 +1313,8 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 	if readPerDestination {
 		parameterFilters = []jobsdb.ParameterFilterT{
 			{
-				Name:     "destination_id",
-				Value:    batchJobs.BatchDestination.Destination.ID,
-				Optional: false,
+				Name:  "destination_id",
+				Value: batchJobs.BatchDestination.Destination.ID,
 			},
 		}
 	}
@@ -1465,9 +1465,8 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 
 	parameterFilters := []jobsdb.ParameterFilterT{
 		{
-			Name:     "destination_id",
-			Value:    asyncOutput.DestinationID,
-			Optional: false,
+			Name:  "destination_id",
+			Value: asyncOutput.DestinationID,
 		},
 	}
 
@@ -1591,9 +1590,8 @@ func (worker *workerT) constructParameterFilters(batchDest router_utils.BatchDes
 	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
 	for _, key := range jobsdb.CacheKeyParameterFilters {
 		parameterFilter := jobsdb.ParameterFilterT{
-			Name:     key,
-			Value:    worker.getValueForParameter(batchDest, key),
-			Optional: false,
+			Name:  key,
+			Value: worker.getValueForParameter(batchDest, key),
 		}
 		parameterFilters = append(parameterFilters, parameterFilter)
 	}
@@ -1618,7 +1616,7 @@ func (worker *workerT) workerProcess() {
 					JobsLimit:                     toQuery,
 					ParameterFilters:              parameterFilters,
 					IgnoreCustomValFiltersInQuery: true,
-					PayloadSizeLimit:              brt.payloadLimit,
+					PayloadSizeLimit:              brt.adaptiveLimit(brt.payloadLimit),
 				}
 
 				toRetry, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
@@ -1969,7 +1967,7 @@ func (brt *HandleT) readAndProcess() {
 			queryParams := jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{brt.destType},
 				JobsLimit:        brt.jobQueryBatchSize,
-				PayloadSizeLimit: brt.payloadLimit,
+				PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),
 			}
 			toRetry, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 				return brt.jobsDB.GetToRetry(ctx, queryParams)
@@ -2138,7 +2136,7 @@ func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT)
 					CustomValFilters: []string{brt.destType},
 					JobsLimit:        1,
 					ParameterFilters: parameterFilters,
-					PayloadSizeLimit: brt.payloadLimit,
+					PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit),
 				},
 			)
 		}, sendQueryRetryStats)
@@ -2267,7 +2265,17 @@ func Init() {
 }
 
 // Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger) {
+func (brt *HandleT) Setup(
+	backendConfig backendconfig.BackendConfig,
+	jobsDB,
+	errorDB jobsdb.JobsDB,
+	destType string,
+	reporting types.ReportingI,
+	multitenantStat multitenant.MultiTenantI,
+	transientSources transientsource.Service,
+	rsourcesService rsources.JobService,
+	debugger destinationdebugger.DestinationDebugger,
+) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
@@ -2371,6 +2379,10 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 		brt.asyncUploadWorker(ctx)
 		return nil
 	}))
+
+	if brt.adaptiveLimit == nil {
+		brt.adaptiveLimit = func(limit int64) int64 { return limit }
+	}
 
 	rruntime.Go(func() {
 		brt.backendConfigSubscriber()

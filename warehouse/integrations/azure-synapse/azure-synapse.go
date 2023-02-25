@@ -570,7 +570,7 @@ func (as *AzureSynapse) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');
 `, as.Namespace, as.Namespace)
-	as.Logger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
 	_, err = as.DB.Exec(sqlStatement)
 	if err == io.EOF {
 		return nil
@@ -833,13 +833,20 @@ func (*AzureSynapse) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (as *AzureSynapse) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, as.Namespace, tableName)
+func (as *AzureSynapse) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM "%[1]s"."%[2]s";
+	`,
+		as.Namespace,
+		tableName,
+	)
 	err = as.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		as.Logger.Errorf(`AZ: Error getting total count in table %s:%s`, as.Namespace, tableName)
-	}
-	return
+	return total, err
 }
 
 func (as *AzureSynapse) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {

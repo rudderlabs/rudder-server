@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -215,18 +217,25 @@ func Test_RouterThrottling(t *testing.T) {
 		atomic.LoadInt64(webhook1.count), atomic.LoadInt64(webhook2.count),
 	)
 
-	// with 100 events, 20 rps and a cost of 2 we expect 10-11 buckets tops
-	requireLengthInRange(t, webhook1.buckets, 10, 11)
-	for _, rate := range webhook1.buckets {
-		// throttling cost is 2 and rate is 20 per second, so we expect ~10 in each bucket
-		require.LessOrEqual(t, rate, 10)
+	verifyBucket := func(buckets map[int64]int, totalEvents, rps, cost int) {
+		lowerLengthRange := (totalEvents * cost) / rps
+		upperLengthRange := lowerLengthRange + 2
+		requireLengthInRange(t, buckets, lowerLengthRange, upperLengthRange)
+
+		maxEventsPerBucket := rps / cost
+		bucketKeys := lo.Map(lo.Keys(buckets), func(key int64, _ int) int {
+			return int(key)
+		})
+		sort.Ints(bucketKeys)
+		bucketKeys = lo.Drop(bucketKeys, 1) // drop the first bucket (burst)
+		for bucketKey := range bucketKeys {
+			rate := buckets[int64(bucketKey)]
+			require.LessOrEqual(t, rate, maxEventsPerBucket)
+		}
 	}
-	// with 100 events, 50 rps and a cost of 2 we expect 4-5 buckets tops
-	requireLengthInRange(t, webhook2.buckets, 4, 5)
-	for _, rate := range webhook2.buckets {
-		// throttling cost is 2 and rate is 50 per second, so we expect 25 in each bucket
-		require.LessOrEqual(t, rate, 25)
-	}
+
+	verifyBucket(webhook1.buckets, noOfEvents, 20, 2)
+	verifyBucket(webhook2.buckets, noOfEvents, 50, 2)
 }
 
 func requireLengthInRange(t *testing.T, x interface{}, min, max int) {
