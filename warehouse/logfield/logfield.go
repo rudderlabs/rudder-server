@@ -19,4 +19,5 @@ const (
 	StagingTableName = "stagingTableName"
 	Query            = "query"
 	QueryPlanner     = "queryPlan"
+	LoadFile         = "loadFile"
 )

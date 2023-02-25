@@ -69,7 +69,7 @@ func TestLoadTable_Load(t *testing.T) {
 		{
 			name:      "download error",
 			mockFiles: []string{"testdata/load.csv.gz"},
-			wantError: errors.New("downloading files: test error"),
+			wantError: errors.New("downloading load files: test error"),
 			mockError: errors.New("test error"),
 		},
 		{
@@ -80,7 +80,7 @@ func TestLoadTable_Load(t *testing.T) {
 		{
 			name:      "less records than expected",
 			mockFiles: []string{"testdata/less-records.csv.gz"},
-			wantError: errors.New("mismatch in number of columns in csv file: testdata/less-records.csv.gz, number of columns in files: 12, upload schema: 7, processed rows until now: 0"),
+			wantError: errors.New("missing columns in csv file: number of columns in files: 12, upload schema: 7, processed rows until now: 0"),
 		},
 		{
 			name:      "bad records",
@@ -290,6 +290,16 @@ func TestLoadUsersTable_Load(t *testing.T) {
 				"received_at":   "datetime",
 				"user_id":       "string",
 			},
+				warehouseutils.TableSchemaT{
+					"test_bool":     "boolean",
+					"test_datetime": "datetime",
+					"test_float":    "float",
+					"test_int":      "int",
+					"test_string":   "string",
+					"id":            "string",
+					"received_at":   "datetime",
+					"user_id":       "string",
+				},
 				warehouseutils.TableSchemaT{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",

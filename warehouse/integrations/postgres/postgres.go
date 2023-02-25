@@ -460,28 +460,33 @@ func (pg *Postgres) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 }
 
 func (pg *Postgres) LoadUserTables() map[string]error {
-	lut := LoadUsersTable{
-		Logger:             pg.Logger,
-		DB:                 pg.DB,
-		Namespace:          pg.Namespace,
-		Warehouse:          &pg.Warehouse,
-		Stats:              stats.Default,
-		Config:             config.Default,
-		LoadFileDownloader: pg.LoadFileDownloader,
-	}
-	identifiesSchema := pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
-	usersSchema := pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
+	var (
+		identifiesSchemaInUpload = pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
+		usersSchemaInUpload      = pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
+		usersSchemaInwarehouse   = pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 
-	errorMap := lut.Load(context.TODO(), identifiesSchema, usersSchema)
+		lut = LoadUsersTable{
+			Logger:             pg.Logger,
+			DB:                 pg.DB,
+			Namespace:          pg.Namespace,
+			Warehouse:          &pg.Warehouse,
+			Stats:              stats.Default,
+			Config:             config.Default,
+			LoadFileDownloader: pg.LoadFileDownloader,
+		}
+	)
+
+	errorMap := lut.Load(context.TODO(), identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInwarehouse)
 	for tableName, err := range errorMap {
 		if err != nil {
-			lut.Logger.Errorw("loading table",
+			lut.Logger.Warnw("loading users table",
 				logfield.SourceID, lut.Warehouse.Source.ID,
 				logfield.SourceType, lut.Warehouse.Source.SourceDefinition.Name,
 				logfield.DestinationID, lut.Warehouse.Destination.ID,
 				logfield.DestinationType, lut.Warehouse.Destination.DestinationDefinition.Name,
 				logfield.WorkspaceID, lut.Warehouse.WorkspaceID,
 				logfield.TableName, tableName,
+				logfield.Namespace, pg.Namespace,
 				logfield.Error, err.Error(),
 			)
 		}
@@ -502,13 +507,14 @@ func (pg *Postgres) LoadTable(tableName string) error {
 	tableSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(tableName)
 	_, err := lt.Load(context.TODO(), tableName, tableSchemaInUpload)
 	if err != nil {
-		lt.Logger.Errorw("loading table",
+		lt.Logger.Warnw("loading table",
 			logfield.SourceID, lt.Warehouse.Source.ID,
 			logfield.SourceType, lt.Warehouse.Source.SourceDefinition.Name,
 			logfield.DestinationID, lt.Warehouse.Destination.ID,
 			logfield.DestinationType, lt.Warehouse.Destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, lt.Warehouse.WorkspaceID,
 			logfield.TableName, tableName,
+			logfield.Namespace, pg.Namespace,
 			logfield.Error, err.Error(),
 		)
 
