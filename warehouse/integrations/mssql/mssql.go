@@ -64,7 +64,6 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"int":      "int",
 	"smallint": "int",
 	"tinyint":  "int",
-	"bit":      "int",
 	"integer":  "int",
 
 	"numeric":          "float",
@@ -94,6 +93,8 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"time":                     "datetime",
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
+
+	"bit": "boolean",
 
 	"jsonb": "json",
 }
