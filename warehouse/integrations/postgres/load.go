@@ -6,12 +6,10 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 	"io"
 	"os"
 	"strings"
-	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -71,7 +69,16 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		csvReader             *csv.Reader
 		loadFiles             []string
 		sortedColumnKeys      []string
+		diagnostic            Diagnostic
 	)
+
+	diagnostic = Diagnostic{
+		Logger:    lt.Logger,
+		Stats:     lt.Stats,
+		Config:    lt.Config,
+		Namespace: lt.Namespace,
+		Warehouse: lt.Warehouse,
+	}
 
 	sqlStatement = fmt.Sprintf(`SET search_path to %q`, lt.Namespace)
 	if _, err = lt.DB.ExecContext(ctx, sqlStatement); err != nil {
@@ -101,7 +108,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 	defer func() {
 		if err != nil {
-			lt.onTxnRollback(txn, tableName, stage)
+			diagnostic.onTxnRollback(txn, tableName, stage)
 		}
 	}()
 
@@ -266,7 +273,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		logfield.StagingTableName, stagingTableName,
 		logfield.Query, sqlStatement,
 	)
-	err = lt.handleExec(ctx, txn, tableName, sqlStatement)
+	err = diagnostic.handleExec(ctx, txn, tableName, sqlStatement)
 	if err != nil {
 		stage = deleteDedup
 		return "", fmt.Errorf("deleting from original table for dedup: %w", err)
@@ -311,7 +318,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		logfield.StagingTableName, stagingTableName,
 		logfield.Query, sqlStatement,
 	)
-	err = lt.handleExec(ctx, txn, tableName, sqlStatement)
+	err = diagnostic.handleExec(ctx, txn, tableName, sqlStatement)
 	if err != nil {
 		stage = insertDedup
 		return "", fmt.Errorf("inserting into original table: %w", err)
@@ -332,98 +339,6 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		logfield.StagingTableName, stagingTableName,
 	)
 	return stagingTableName, nil
-}
-
-func (lt *LoadTable) onTxnRollback(txn *sql.Tx, tableName, stage string) {
-	var (
-		c                  = make(chan struct{})
-		txnRollbackTimeout = lt.Config.GetDuration("Warehouse.postgres.txnRollbackTimeout", 30, time.Second)
-	)
-
-	go func() {
-		defer close(c)
-
-		if err := txn.Rollback(); err != nil {
-			lt.Logger.Warnw("rollback transaction",
-				logfield.SourceID, lt.Warehouse.Source.ID,
-				logfield.SourceType, lt.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, lt.Warehouse.Destination.ID,
-				logfield.DestinationType, lt.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, lt.Warehouse.WorkspaceID,
-				logfield.Namespace, lt.Namespace,
-				logfield.TableName, tableName,
-				logfield.Error, err.Error(),
-			)
-		}
-	}()
-
-	select {
-	case <-c:
-	case <-time.After(txnRollbackTimeout):
-		tags := stats.Tags{
-			"workspaceId": lt.Warehouse.WorkspaceID,
-			"namespace":   lt.Namespace,
-			"destType":    lt.Warehouse.Destination.DestinationDefinition.Name,
-			"destID":      lt.Warehouse.Destination.ID,
-			"tableName":   tableName,
-			"stage":       stage,
-		}
-
-		lt.Stats.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
-	}
-}
-
-// handleExec
-// Print execution plan if enableWithQueryPlan is set to true else return result set.
-// Currently, these statements are supported by EXPLAIN
-// Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
-func (lt *LoadTable) handleExec(ctx context.Context, txn *sql.Tx, tableName, query string) error {
-	enableSQLStatementExecutionPlanWorkspaceIDs := lt.Config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
-	enableSQLStatementExecutionPlan := lt.Config.GetBool("Warehouse.postgres.enableSQLStatementExecutionPlan", false)
-
-	canUseQueryPlanner := enableSQLStatementExecutionPlan || slices.Contains(enableSQLStatementExecutionPlanWorkspaceIDs, lt.Warehouse.WorkspaceID)
-	if !canUseQueryPlanner {
-		if _, err := txn.ExecContext(ctx, query); err != nil {
-			return fmt.Errorf("executing query: %w", err)
-		}
-		return nil
-	}
-
-	var (
-		err      error
-		rows     *sql.Rows
-		response []string
-		s        string
-	)
-
-	explainQuery := fmt.Sprintf("EXPLAIN %s", query)
-	if rows, err = txn.Query(explainQuery); err != nil {
-		return fmt.Errorf("executing explain query: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		if err = rows.Scan(&s); err != nil {
-			return fmt.Errorf("scanning explain query: %w", err)
-		}
-
-		response = append(response, s)
-	}
-	lt.Logger.Infow("execution query plan",
-		logfield.SourceID, lt.Warehouse.Source.ID,
-		logfield.SourceType, lt.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, lt.Warehouse.Destination.ID,
-		logfield.DestinationType, lt.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, lt.Warehouse.WorkspaceID,
-		logfield.TableName, tableName,
-		logfield.Query, explainQuery,
-		logfield.QueryPlanner, strings.Join(response, "\n"),
-	)
-
-	if _, err := txn.Exec(query); err != nil {
-		return fmt.Errorf("executing query: %w", err)
-	}
-	return nil
 }
 
 func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse warehouseutils.TableSchemaT) map[string]error {
@@ -458,6 +373,13 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		Stats:              lut.Stats,
 		Config:             lut.Config,
 		LoadFileDownloader: lut.LoadFileDownloader,
+	}
+	diagnostic := Diagnostic{
+		Logger:    lut.Logger,
+		Stats:     lut.Stats,
+		Config:    lut.Config,
+		Namespace: lut.Namespace,
+		Warehouse: lut.Warehouse,
 	}
 
 	if identifiesStagingTableName, err = lt.Load(ctx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload); err != nil {
@@ -511,7 +433,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 
 	defer func() {
 		if err != nil {
-			lt.onTxnRollback(txn, warehouseutils.UsersTable, stage)
+			diagnostic.onTxnRollback(txn, warehouseutils.UsersTable, stage)
 		}
 	}()
 
@@ -664,7 +586,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		logfield.Namespace, lut.Namespace,
 		logfield.Query, sqlStatement,
 	)
-	err = lt.handleExec(ctx, txn, warehouseutils.UsersTable, sqlStatement)
+	err = diagnostic.handleExec(ctx, txn, warehouseutils.UsersTable, sqlStatement)
 	if err != nil {
 		stage = deleteDedup
 		return map[string]error{
@@ -698,7 +620,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		logfield.Namespace, lut.Namespace,
 		logfield.Query, sqlStatement,
 	)
-	err = lt.handleExec(ctx, txn, warehouseutils.UsersTable, sqlStatement)
+	err = diagnostic.handleExec(ctx, txn, warehouseutils.UsersTable, sqlStatement)
 	if err != nil {
 		stage = insertDedup
 		return map[string]error{
