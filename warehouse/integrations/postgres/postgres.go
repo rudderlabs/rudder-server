@@ -395,7 +395,7 @@ func (pg *Postgres) Setup(
 	return err
 }
 
-func (pg *Postgres) CrashRecover(warehouse warehouseutils.Warehouse) error {
+func (pg *Postgres) CrashRecover(warehouseutils.Warehouse) error {
 	return nil
 }
 
@@ -599,6 +599,6 @@ func (pg *Postgres) SetConnectionTimeout(timeout time.Duration) {
 	pg.ConnectTimeout = timeout
 }
 
-func (pq *Postgres) ErrorMappings() []model.JobError {
+func (pg *Postgres) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
