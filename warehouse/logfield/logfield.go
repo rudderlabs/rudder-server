@@ -21,8 +21,8 @@ const (
 	ErrorMapping          = "errorMapping"
 	DestinationCredsValid = "destinationCredsValid"
 	Provider              = "provider"
-	StagingTableName = "stagingTableName"
-	Query            = "query"
-	QueryPlanner     = "queryPlan"
-	LoadFile         = "loadFile"
+	StagingTableName      = "stagingTableName"
+	Query                 = "query"
+	QueryPlanner          = "queryPlan"
+	LoadFile              = "loadFile"
 )
