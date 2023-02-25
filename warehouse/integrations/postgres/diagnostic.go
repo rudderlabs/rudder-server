@@ -4,14 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/exp/slices"
-	"strings"
-	"time"
 )
 
 type Diagnostic struct {

@@ -6,10 +6,11 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 	"io"
 	"os"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -80,7 +81,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		Warehouse: lt.Warehouse,
 	}
 
-	sqlStatement = fmt.Sprintf(`SET search_path to %q`, lt.Namespace)
+	sqlStatement = fmt.Sprintf(`SET search_path TO %q`, lt.Namespace)
 	if _, err = lt.DB.ExecContext(ctx, sqlStatement); err != nil {
 		return "", fmt.Errorf("setting search path: %w", err)
 	}
@@ -290,7 +291,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		  (
 			SELECT
 			  *,
-			  row_number() OVER (
+			  ROW_NUMBER() OVER (
 				PARTITION BY %[5]s
 				ORDER BY
 				  received_at DESC
@@ -298,7 +299,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 			FROM
 			  %[4]q
 		  ) AS _
-		where
+		WHERE
 		  _rudder_staging_row_number = 1;
 	`,
 		lt.Namespace,
@@ -349,7 +350,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		txn                        *sql.Tx
 	)
 
-	sqlStatement = fmt.Sprintf(`SET search_path to %q`, lut.Namespace)
+	sqlStatement = fmt.Sprintf(`SET search_path TO %q`, lut.Namespace)
 	if _, err = lut.DB.ExecContext(ctx, sqlStatement); err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("setting search path: %w", err),
@@ -475,7 +476,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 			FROM
 			  %[1]q.%[2]q
 			WHERE
-			  id in (
+			  id IN (
 				SELECT
 				  user_id
 				FROM
@@ -532,8 +533,8 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 				x.id,
 				%[2]s
 			  FROM
-				%[3]s as x
-			) as xyz
+				%[3]s AS x
+			) AS xyz
 		);
 `,
 		usersStagingTableName,
@@ -565,7 +566,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 	sqlStatement = fmt.Sprintf(`
 		DELETE FROM
 		  %[1]q.%[2]q using %[3]q _source
-		where
+		WHERE
 		  (
 			_source.%[4]s = %[1]s.%[2]s.%[4]s
 		  );
