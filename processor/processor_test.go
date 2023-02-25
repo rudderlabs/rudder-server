@@ -315,9 +315,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Enabled:            true,
 					IsProcessorEnabled: true,
 					Config: map[string]interface{}{
-						"oneTrustCookieCategories": []map[string]interface{}{
-							{"oneTrustCookieCategory": "category1"},
-							{"oneTrustCookieCategory": "category2"},
+						"oneTrustCookieCategories": []interface{}{
+							map[string]interface{}{"oneTrustCookieCategory": "category1"},
+							map[string]interface{}{"oneTrustCookieCategory": "category2"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -334,8 +334,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Enabled:            true,
 					IsProcessorEnabled: true,
 					Config: map[string]interface{}{
-						"oneTrustCookieCategories": []map[string]interface{}{
-							{"oneTrustCookieCategory": ""},
+						"oneTrustCookieCategories": []interface{}{
+							map[string]interface{}{"oneTrustCookieCategory": ""},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -367,8 +367,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Enabled:            true,
 					IsProcessorEnabled: true,
 					Config: map[string]interface{}{
-						"oneTrustCookieCategories": []map[string]interface{}{
-							{"oneTrustCookieCategory": "category2"},
+						"oneTrustCookieCategories": []interface{}{
+							map[string]interface{}{"oneTrustCookieCategory": "category2"},
 						},
 						"enableServerSideIdentify": false,
 					},

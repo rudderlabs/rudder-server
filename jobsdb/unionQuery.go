@@ -196,29 +196,11 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, picku
 
 	var rows *sql.Rows
 	var err error
-
-	stmt, err := mj.dbHandle.PrepareContext(ctx, queryString)
-	mj.logger.Debug(queryString)
+	rows, err = mj.dbHandle.QueryContext(ctx, queryString)
 	if err != nil {
 		return jobList, err
 	}
-	defer func(stmt *sql.Stmt) {
-		err := stmt.Close()
-		if err != nil {
-			mj.logger.Errorf("failed to closed the sql statement: %s", err.Error())
-		}
-	}(stmt)
-
-	rows, err = stmt.QueryContext(ctx, getTimeNowFunc())
-	if err != nil {
-		return jobList, err
-	}
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-			mj.logger.Errorf("failed to closed the result of sql query: %s", err.Error())
-		}
-	}(rows)
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var job JobT
@@ -333,22 +315,28 @@ func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, con
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = "AND (" + constructStateQuery("job_latest_state", "job_state", stateFilters, "OR") + ")"
-	} else {
-		stateQuery = ""
+		stateConditions := func() string {
+			var conditions []string
+			for _, stateFilter := range stateFilters {
+				switch stateFilter {
+				case NotProcessed.State:
+					conditions = append(conditions, "(job_latest_state.job_state is null)")
+				default:
+					conditions = append(conditions, fmt.Sprintf("(job_latest_state.job_state='%s')", stateFilter))
+				}
+			}
+			return strings.Join(conditions, " OR ")
+		}
+		stateQuery = "AND (" + stateConditions() + ")"
 	}
 
 	if len(customValFilters) > 0 && !conditions.IgnoreCustomValFiltersInQuery {
 		customValQuery = " AND " +
 			constructQueryOR("jobs.custom_val", customValFilters)
-	} else {
-		customValQuery = ""
 	}
 
 	if len(parameterFilters) > 0 {
 		sourceQuery += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
-	} else {
-		sourceQuery = ""
 	}
 
 	sqlStatement = fmt.Sprintf(

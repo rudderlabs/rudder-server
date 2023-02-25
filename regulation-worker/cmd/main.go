@@ -92,6 +92,7 @@ func Run(ctx context.Context) error {
 				OAuth:                        OAuth,
 				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
 			}),
+		MaxFailedAttempts: config.GetInt("REGULATION_DELETION_MAX_FAILED_ATTEMPTS", 4),
 	}
 
 	pkgLogger.Infof("calling looper with service: %v", svc)
