@@ -60,21 +60,25 @@ type LoadUsersTable struct {
 
 func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (string, error) {
 	var (
-		err                   error
-		query                 string
-		stagingTableName      string
-		txn                   *sql.Tx
-		stmt                  *sql.Stmt
-		gzFile                *os.File
-		gzReader              *gzip.Reader
-		csvRowsProcessedCount int
-		stage                 string
-		csvReader             *csv.Reader
-		loadFiles             []string
-		sortedColumnKeys      []string
-		diagnostic            Diagnostic
+		err                     error
+		query                   string
+		stagingTableName        string
+		txn                     *sql.Tx
+		result                  sql.Result
+		stmt                    *sql.Stmt
+		gzFile                  *os.File
+		gzReader                *gzip.Reader
+		csvRowsProcessedCount   int
+		rowsAffected            int64
+		stage                   string
+		csvReader               *csv.Reader
+		loadFiles               []string
+		sortedColumnKeys        []string
+		diagnostic              Diagnostic
+		skipDedupDestinationIDs []string
 	)
 
+	skipDedupDestinationIDs = lt.Config.GetStringSlice("Warehouse.postgres.skipDedupDestinationIDs", nil)
 	diagnostic = Diagnostic{
 		Logger:    lt.Logger,
 		Stats:     lt.Stats,
@@ -265,21 +269,38 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		additionalJoinClause,
 	)
 
-	lt.Logger.Infow("deduplication",
-		logfield.SourceID, lt.Warehouse.Source.ID,
-		logfield.SourceType, lt.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, lt.Warehouse.Destination.ID,
-		logfield.DestinationType, lt.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, lt.Warehouse.WorkspaceID,
-		logfield.Namespace, lt.Namespace,
-		logfield.TableName, tableName,
-		logfield.StagingTableName, stagingTableName,
-		logfield.Query, query,
-	)
-	err = diagnostic.TxnExecute(ctx, txn, tableName, query)
-	if err != nil {
-		stage = deleteDedup
-		return "", fmt.Errorf("deleting from original table for dedup: %w", err)
+	if !slices.Contains(skipDedupDestinationIDs, lt.Warehouse.Destination.ID) {
+		lt.Logger.Infow("deduplication",
+			logfield.SourceID, lt.Warehouse.Source.ID,
+			logfield.SourceType, lt.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, lt.Warehouse.Destination.ID,
+			logfield.DestinationType, lt.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, lt.Warehouse.WorkspaceID,
+			logfield.Namespace, lt.Namespace,
+			logfield.TableName, tableName,
+			logfield.StagingTableName, stagingTableName,
+			logfield.Query, query,
+		)
+
+		if result, err = txn.Exec(query); err != nil {
+			stage = deleteDedup
+			return "", fmt.Errorf("deleting from original table for dedup: %w", err)
+		}
+		if rowsAffected, err = result.RowsAffected(); err != nil {
+			stage = deleteDedup
+			return "", fmt.Errorf("getting rows affected for dedup: %w", err)
+		}
+
+		lt.Stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
+			"sourceID":     lt.Warehouse.Source.ID,
+			"sourceType":   lt.Warehouse.Source.SourceDefinition.Name,
+			"destID":       lt.Warehouse.Destination.ID,
+			"destType":     lt.Warehouse.Destination.DestinationDefinition.Name,
+			"workspaceId":  lt.Warehouse.WorkspaceID,
+			"namespace":    lt.Namespace,
+			"tableName":    tableName,
+			"rowsAffected": fmt.Sprintf("%d", rowsAffected),
+		})
 	}
 
 	// Deduplication
