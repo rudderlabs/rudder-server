@@ -109,6 +109,8 @@ func TestLoadTable_Load(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			pgResource, err := destination.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
@@ -234,6 +236,8 @@ func TestLoadUsersTable_Load(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			pgResource, err := destination.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
