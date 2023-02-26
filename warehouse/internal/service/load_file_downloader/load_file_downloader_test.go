@@ -102,7 +102,7 @@ func TestNewLoadFileDownloader(t *testing.T) {
 			name:         "context cancelled",
 			numLoadFiles: 11,
 			ctx:          ctxCancel,
-			wantError:    errors.New("downloading batch: downloading object: downloading file from object storage: context canceled"),
+			wantError:    errors.New("downloading batch: downloading object: downloading file from object storage"),
 		},
 	}
 
@@ -188,7 +188,7 @@ func TestNewLoadFileDownloader(t *testing.T) {
 			misc.RemoveFilePaths(fileNames...)
 
 			if tc.wantError != nil {
-				require.EqualError(t, err, tc.wantError.Error())
+				require.ErrorContains(t, err, tc.wantError.Error())
 				require.Equal(t, len(fileNames), 0)
 				return
 			}

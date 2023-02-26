@@ -64,45 +64,28 @@ func (l *loadFileDownloaderImpl) Download(ctx context.Context, tableName string)
 		return nil, fmt.Errorf("creating filemanager for destination: %w", err)
 	}
 
-	batches := l.batch(objects)
-	for _, batch := range batches {
-		g := errgroup.Group{}
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(l.numWorkers)
 
-		for _, object := range batch {
-			object := object
+	for _, object := range objects {
+		object := object
 
-			g.Go(func() error {
-				if objectName, err = l.downloadSingleObject(ctx, fileManager, object); err != nil {
-					return fmt.Errorf("downloading object: %w", err)
-				}
+		g.Go(func() error {
+			if objectName, err = l.downloadSingleObject(ctx, fileManager, object); err != nil {
+				return fmt.Errorf("downloading object: %w", err)
+			}
 
-				fileNamesLock.Lock()
-				fileNames = append(fileNames, objectName)
-				fileNamesLock.Unlock()
-				return nil
-			})
-		}
-		if err = g.Wait(); err != nil {
-			return nil, fmt.Errorf("downloading batch: %w", err)
-		}
+			fileNamesLock.Lock()
+			fileNames = append(fileNames, objectName)
+			fileNamesLock.Unlock()
+			return nil
+		})
+	}
+
+	if err = g.Wait(); err != nil {
+		return nil, fmt.Errorf("downloading batch: %w", err)
 	}
 	return fileNames, nil
-}
-
-func (l *loadFileDownloaderImpl) batch(objects []warehouseutils.LoadFileT) [][]warehouseutils.LoadFileT {
-	fileBatches := make([][]warehouseutils.LoadFileT, 0, len(objects)/l.numWorkers+1)
-
-	for len(objects) > 0 {
-		cut := l.numWorkers
-		if len(objects) < cut {
-			cut = len(objects)
-		}
-
-		fileBatches = append(fileBatches, objects[0:cut])
-		objects = objects[cut:]
-	}
-
-	return fileBatches
 }
 
 func (l *loadFileDownloaderImpl) downloadSingleObject(ctx context.Context, fileManager filemanager.FileManager, object warehouseutils.LoadFileT) (string, error) {
