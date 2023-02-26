@@ -3,6 +3,7 @@ package load_file_downloader_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -105,7 +106,8 @@ func TestNewLoadFileDownloader(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for i, tc := range testCases {
+		i := i
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
@@ -154,8 +156,8 @@ func TestNewLoadFileDownloader(t *testing.T) {
 				ctx = context.Background()
 			}
 
-			for i := 0; i < tc.numLoadFiles; i++ {
-				uploadOutput, err := fm.Upload(context.Background(), f, uuid.New().String())
+			for j := 0; j < tc.numLoadFiles; j++ {
+				uploadOutput, err := fm.Upload(context.Background(), f, fmt.Sprintf("%d", i), uuid.New().String())
 				require.NoError(t, err)
 
 				loadFiles = append(loadFiles, warehouseutils.LoadFileT{
