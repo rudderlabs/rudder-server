@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/docker/docker/pkg/fileutils"
+	"github.com/google/uuid"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
@@ -19,12 +23,32 @@ import (
 )
 
 type mockLoadFileUploader struct {
-	mockFiles []string
+	mockFiles map[string][]string
 	mockError error
 }
 
-func (m *mockLoadFileUploader) Download(context.Context, string) ([]string, error) {
-	return m.mockFiles, m.mockError
+func (m *mockLoadFileUploader) Download(_ context.Context, tableName string) ([]string, error) {
+	return m.mockFiles[tableName], m.mockError
+}
+
+func cloneFiles(t *testing.T, files []string) []string {
+	tempFiles := make([]string, len(files))
+	for i, file := range files {
+		src := fmt.Sprintf("testdata/%s", file)
+		dst := fmt.Sprintf("testdata/%s-%s", uuid.New().String(), file)
+
+		dirPath := filepath.Dir(dst)
+		err := os.MkdirAll(dirPath, os.ModePerm)
+		require.NoError(t, err)
+
+		_, err = fileutils.CopyFile(src, dst)
+		require.NoError(t, err)
+
+		t.Cleanup(func() { _ = os.Remove(dst) })
+
+		tempFiles[i] = dst
+	}
+	return tempFiles
 }
 
 func TestLoadTable_Load(t *testing.T) {
@@ -53,53 +77,54 @@ func TestLoadTable_Load(t *testing.T) {
 		skipTableCreation            bool
 		cancelContext                bool
 		mockFiles                    []string
+		additionalFiles              []string
 		queryExecEnabledWorkspaceIDs []string
 	}{
 		{
 			name:               "schema not present",
 			skipSchemaCreation: true,
-			mockFiles:          []string{"testdata/load.csv.gz"},
+			mockFiles:          []string{"load.csv.gz"},
 			wantError:          errors.New("creating temporary table: pq: schema \"test_namespace\" does not exist"),
 		},
 		{
 			name:              "table not present",
 			skipTableCreation: true,
-			mockFiles:         []string{"testdata/load.csv.gz"},
+			mockFiles:         []string{"load.csv.gz"},
 			wantError:         errors.New("creating temporary table: pq: relation \"test_namespace.test_table\" does not exist"),
 		},
 		{
 			name:      "download error",
-			mockFiles: []string{"testdata/load.csv.gz"},
+			mockFiles: []string{"load.csv.gz"},
 			wantError: errors.New("downloading load files: test error"),
 			mockError: errors.New("test error"),
 		},
 		{
-			name:      "load file not present",
-			mockFiles: []string{"testdata/random.csv.gz"},
-			wantError: errors.New("opening load file: open testdata/random.csv.gz: no such file or directory"),
+			name:            "load file not present",
+			additionalFiles: []string{"testdata/random.csv.gz"},
+			wantError:       errors.New("opening load file: open testdata/random.csv.gz: no such file or directory"),
 		},
 		{
 			name:      "less records than expected",
-			mockFiles: []string{"testdata/less-records.csv.gz"},
+			mockFiles: []string{"less-records.csv.gz"},
 			wantError: errors.New("missing columns in csv file: number of columns in files: 12, upload schema: 7, processed rows until now: 0"),
 		},
 		{
 			name:      "bad records",
-			mockFiles: []string{"testdata/bad.csv.gz"},
+			mockFiles: []string{"bad.csv.gz"},
 			wantError: errors.New("exec statement: pq: invalid input syntax for type timestamp: \"1\""),
 		},
 		{
 			name:      "success",
-			mockFiles: []string{"testdata/load.csv.gz"},
+			mockFiles: []string{"load.csv.gz"},
 		},
 		{
 			name:                         "enable query execution",
-			mockFiles:                    []string{"testdata/load.csv.gz"},
+			mockFiles:                    []string{"load.csv.gz"},
 			queryExecEnabledWorkspaceIDs: []string{workspaceID},
 		},
 		{
 			name:          "context cancelled",
-			mockFiles:     []string{"testdata/load.csv.gz"},
+			mockFiles:     []string{"load.csv.gz"},
 			wantError:     errors.New("setting search path: context canceled"),
 			cancelContext: true,
 		},
@@ -147,6 +172,10 @@ func TestLoadTable_Load(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			loadFiles := cloneFiles(t, tc.mockFiles)
+			loadFiles = append(loadFiles, tc.additionalFiles...)
+			require.NotEmpty(t, loadFiles)
+
 			lt := postgres.LoadTable{
 				Logger:    logger.NOP,
 				DB:        pgResource.DB,
@@ -169,7 +198,9 @@ func TestLoadTable_Load(t *testing.T) {
 				Stats:  store,
 				Config: c,
 				LoadFileDownloader: &mockLoadFileUploader{
-					mockFiles: tc.mockFiles,
+					mockFiles: map[string][]string{
+						tableName: loadFiles,
+					},
 					mockError: tc.mockError,
 				},
 			}
@@ -211,23 +242,27 @@ func TestLoadUsersTable_Load(t *testing.T) {
 	testCases := []struct {
 		name                       string
 		wantError                  error
-		mockFiles                  []string
+		mockUsersFiles             []string
+		mockIdentifiesFiles        []string
 		mockError                  error
 		skipSchemaCreation         bool
 		skipTableCreation          bool
 		skipUserTraitsWorkspaceIDs []string
 	}{
 		{
-			name:      "success",
-			mockFiles: []string{"testdata/users.csv.gz"},
+			name:                "success",
+			mockUsersFiles:      []string{"users.csv.gz"},
+			mockIdentifiesFiles: []string{"identifies.csv.gz"},
 		},
 		{
-			name:      "no users schema",
-			mockFiles: []string{"testdata/users.csv.gz"},
+			name:                "no users schema",
+			mockUsersFiles:      []string{"users.csv.gz"},
+			mockIdentifiesFiles: []string{"identifies.csv.gz"},
 		},
 		{
 			name:                       "skip computing users traits",
-			mockFiles:                  []string{"testdata/users.csv.gz"},
+			mockUsersFiles:             []string{"users.csv.gz"},
+			mockIdentifiesFiles:        []string{"identifies.csv.gz"},
 			skipUserTraitsWorkspaceIDs: []string{workspaceID},
 		},
 	}
@@ -271,6 +306,12 @@ func TestLoadUsersTable_Load(t *testing.T) {
 				}
 			}
 
+			usersLoadFiles := cloneFiles(t, tc.mockUsersFiles)
+			require.NotEmpty(t, usersLoadFiles)
+
+			identifiesLoadFiles := cloneFiles(t, tc.mockIdentifiesFiles)
+			require.NotEmpty(t, identifiesLoadFiles)
+
 			lt := postgres.LoadUsersTable{
 				Logger:    logger.NOP,
 				DB:        pgResource.DB,
@@ -293,7 +334,10 @@ func TestLoadUsersTable_Load(t *testing.T) {
 				Stats:  store,
 				Config: c,
 				LoadFileDownloader: &mockLoadFileUploader{
-					mockFiles: tc.mockFiles,
+					mockFiles: map[string][]string{
+						warehouseutils.UsersTable:      usersLoadFiles,
+						warehouseutils.IdentifiesTable: identifiesLoadFiles,
+					},
 					mockError: tc.mockError,
 				},
 			}

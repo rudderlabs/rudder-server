@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"io"
 	"os"
 	"strings"
@@ -98,7 +99,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	)
 
 	loadFiles, err = lt.LoadFileDownloader.Download(ctx, tableName)
-	// defer misc.RemoveFilePaths(fileNames...) // TODO: Till testing
+	defer misc.RemoveFilePaths(loadFiles...)
 	if err != nil {
 		return "", fmt.Errorf("downloading load files: %w", err)
 	}
