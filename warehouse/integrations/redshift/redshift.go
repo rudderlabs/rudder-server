@@ -626,7 +626,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		}
 
 		if rowsAffected, err = result.RowsAffected(); err != nil {
-			rs.Logger.Warnw("failed to get rows affected",
+			rs.Logger.Warnw("getting rows affected for dedup",
 				logfield.SourceID, rs.Warehouse.Source.ID,
 				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
 				logfield.DestinationID, rs.Warehouse.Destination.ID,
@@ -638,7 +638,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 				logfield.Error, err.Error(),
 			)
 
-			return "", fmt.Errorf("failed to get rows affected: %w", err)
+			return "", fmt.Errorf("getting rows affected for dedup: %w", err)
 		}
 
 		rs.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
