@@ -132,7 +132,7 @@ func NewMSSQL() *MSSQL {
 
 func WithConfig(h *MSSQL, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.mssql.enableDeleteByJobs", false)
-	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.mssql.numWorkersDownloadLoadFiles", 8)
+	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.mssql.numWorkersDownloadLoadFiles", 1)
 }
 
 func Connect(cred Credentials) (*sql.DB, error) {

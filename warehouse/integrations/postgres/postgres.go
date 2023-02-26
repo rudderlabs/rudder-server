@@ -155,7 +155,7 @@ func NewPostgres() *Postgres {
 
 func WithConfig(h *Postgres, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
-	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 8)
+	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
 }
 
 func Connect(cred Credentials) (*sql.DB, error) {

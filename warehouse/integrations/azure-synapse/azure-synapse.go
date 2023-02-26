@@ -122,7 +122,7 @@ func NewAzureSynapse() *AzureSynapse {
 }
 
 func WithConfig(h *AzureSynapse, config *config.Config) {
-	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.azure_synapse.numWorkersDownloadLoadFiles", 8)
+	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.azure_synapse.numWorkersDownloadLoadFiles", 1)
 }
 
 func connect(cred credentials) (*sql.DB, error) {
