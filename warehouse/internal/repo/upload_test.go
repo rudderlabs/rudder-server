@@ -51,7 +51,6 @@ func TestUploads_Get(t *testing.T) {
 		LastAttemptAt:      time.Time{},
 		Attempts:           0,
 		UploadSchema:       model.Schema{},
-		MergedSchema:       model.Schema{},
 	}
 
 	files := []model.StagingFile{
@@ -210,7 +209,6 @@ func TestUploads_Processing(t *testing.T) {
 		uploads[i].ID = id
 		uploads[i].Error = []byte("{}")
 		uploads[i].UploadSchema = model.Schema{}
-		uploads[i].MergedSchema = model.Schema{}
 		uploads[i].LoadFileType = "csv"
 		uploads[i].StagingFileStartID = int64(i + 1)
 		uploads[i].StagingFileEndID = int64(i + 1)
@@ -313,7 +311,6 @@ func TestUploads_UploadMetadata(t *testing.T) {
 		LastAttemptAt:      time.Time{},
 		Attempts:           0,
 		UploadSchema:       nil,
-		MergedSchema:       nil,
 	}
 	metadata := repo.ExtractUploadMetadata(upload)
 

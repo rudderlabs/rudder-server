@@ -221,9 +221,6 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 		}
 
 		schema := &job.Upload.UploadSchema
-		if job.Upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-			schema = &job.Upload.MergedSchema
-		}
 
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
 		messagePayload := pgnotifier.MessagePayload{

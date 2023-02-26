@@ -76,7 +76,6 @@ type Upload struct {
 	Attempts       int64
 
 	UploadSchema Schema
-	MergedSchema Schema
 }
 
 type Timings []map[string]time.Time

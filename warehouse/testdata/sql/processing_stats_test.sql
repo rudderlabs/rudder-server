@@ -2,7 +2,7 @@ BEGIN;
 INSERT INTO wh_uploads(id, source_id, namespace, destination_id, destination_type,
                        start_staging_file_id, end_staging_file_id, start_load_file_id,
                        end_load_file_id, status, schema, error, first_event_at, last_event_at,
-                       last_exec_at, timings, created_at, updated_at, metadata, mergedschema,
+                       last_exec_at, timings, created_at, updated_at, metadata,
                        in_progress, workspace_id)
 VALUES (1, 'test-sourceID', 'test-namespace', 'test-destinationID', 'POSTGRES', 0, 0,
         0, 0, 'exporting_data', '{}', '{}', NULL, NULL, NULL, NULL,

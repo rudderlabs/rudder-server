@@ -23,7 +23,6 @@ const (
 		id,
 		status,
 		schema,
-		mergedSchema,
 		namespace,
 		workspace_id,
 		source_id,
@@ -422,7 +421,6 @@ func (uploads *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error
 func scanUpload(scan scanFn, upload *model.Upload) error {
 	var (
 		schema                    []byte
-		mergedSchema              []byte
 		firstTiming               sql.NullString
 		lastTiming                sql.NullString
 		firstEventAt, lastEventAt sql.NullTime
@@ -434,7 +432,6 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 		&upload.ID,
 		&upload.Status,
 		&schema,
-		&mergedSchema,
 		&upload.Namespace,
 		&upload.WorkspaceID,
 		&upload.SourceID,
@@ -461,9 +458,6 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 
 	if err := json.Unmarshal(schema, &upload.UploadSchema); err != nil {
 		return fmt.Errorf("unmarshal upload schema: %w", err)
-	}
-	if err := json.Unmarshal(mergedSchema, &upload.MergedSchema); err != nil {
-		return fmt.Errorf("unmarshal merged schema: %w", err)
 	}
 	var metadata UploadMetadata
 	if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
