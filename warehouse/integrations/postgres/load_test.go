@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/docker/docker/pkg/fileutils"
-	"github.com/google/uuid"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/docker/docker/pkg/fileutils"
+	"github.com/google/uuid"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"

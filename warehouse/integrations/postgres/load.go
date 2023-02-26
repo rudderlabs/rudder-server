@@ -6,10 +6,11 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"io"
 	"os"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
