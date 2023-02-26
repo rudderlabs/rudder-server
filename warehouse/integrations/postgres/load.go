@@ -59,7 +59,8 @@ type LoadUsersTable struct {
 func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (string, error) {
 	var (
 		err                   error
-		sqlStatement          string
+		query                 string
+		queryArgs             []any
 		stagingTableName      string
 		txn                   *sql.Tx
 		stmt                  *sql.Stmt
@@ -81,8 +82,8 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		Warehouse: lt.Warehouse,
 	}
 
-	sqlStatement = fmt.Sprintf(`SET search_path TO %q`, lt.Namespace)
-	if _, err = lt.DB.ExecContext(ctx, sqlStatement); err != nil {
+	query = fmt.Sprintf(`SET search_path TO %q`, lt.Namespace)
+	if _, err = lt.DB.ExecContext(ctx, query); err != nil {
 		return "", fmt.Errorf("setting search path: %w", err)
 	}
 
@@ -109,14 +110,14 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 	defer func() {
 		if err != nil {
-			diagnostic.onTxnRollback(txn, tableName, stage)
+			diagnostic.TxnRollback(txn, tableName, stage)
 		}
 	}()
 
 	// Creating staging table
 	sortedColumnKeys = warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[2]s (LIKE %[1]q.%[3]q)
 		ON COMMIT PRESERVE ROWS;
 `,
@@ -133,10 +134,10 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		logfield.Namespace, lt.Namespace,
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
-		logfield.Query, sqlStatement,
+		logfield.Query, query,
 	)
 
-	if _, err = txn.ExecContext(ctx, sqlStatement); err != nil {
+	if _, err = txn.ExecContext(ctx, query); err != nil {
 		stage = createStagingTable
 		return "", fmt.Errorf("creating temporary table: %w", err)
 	}
@@ -248,12 +249,12 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 	// Deduplication
 	// Delete rows from the table which are already present in the staging table
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		DELETE FROM
 		  %[1]q.%[2]q USING %[3]q AS _source
 		WHERE
 		  (
-			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
+			_source.%[4]s = $1 %[5]s
 		  );
 	`,
 		lt.Namespace,
@@ -262,6 +263,14 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		primaryKey,
 		additionalJoinClause,
 	)
+	queryArgs = []any{
+		fmt.Sprintf("%[1]q.%[2]q.%[3]q %[4]s",
+			lt.Namespace,
+			tableName,
+			primaryKey,
+			additionalJoinClause,
+		),
+	}
 
 	lt.Logger.Infow("deduplication",
 		logfield.SourceID, lt.Warehouse.Source.ID,
@@ -272,9 +281,9 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		logfield.Namespace, lt.Namespace,
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
-		logfield.Query, sqlStatement,
+		logfield.Query, query,
 	)
-	err = diagnostic.handleExec(ctx, txn, tableName, sqlStatement)
+	err = diagnostic.TxnExecute(ctx, txn, tableName, query, queryArgs)
 	if err != nil {
 		stage = deleteDedup
 		return "", fmt.Errorf("deleting from original table for dedup: %w", err)
@@ -283,7 +292,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	// Deduplication
 	// Insert rows from staging table to the original table
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		INSERT INTO %[1]q.%[2]q (%[3]s)
 		SELECT
 		  %[3]s
@@ -308,6 +317,8 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		stagingTableName,
 		partitionKey,
 	)
+	queryArgs = []any{}
+
 	lt.Logger.Infow("inserting records",
 		logfield.SourceID, lt.Warehouse.Source.ID,
 		logfield.SourceType, lt.Warehouse.Source.SourceDefinition.Name,
@@ -317,9 +328,9 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		logfield.Namespace, lt.Namespace,
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
-		logfield.Query, sqlStatement,
+		logfield.Query, query,
 	)
-	err = diagnostic.handleExec(ctx, txn, tableName, sqlStatement)
+	err = diagnostic.TxnExecute(ctx, txn, tableName, query, queryArgs)
 	if err != nil {
 		stage = insertDedup
 		return "", fmt.Errorf("inserting into original table: %w", err)
@@ -345,13 +356,14 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse warehouseutils.TableSchemaT) map[string]error {
 	var (
 		err                        error
-		sqlStatement               string
+		query                      string
+		queryArgs                  []any
 		identifiesStagingTableName string
 		txn                        *sql.Tx
 	)
 
-	sqlStatement = fmt.Sprintf(`SET search_path TO %q`, lut.Namespace)
-	if _, err = lut.DB.ExecContext(ctx, sqlStatement); err != nil {
+	query = fmt.Sprintf(`SET search_path TO %q`, lut.Namespace)
+	if _, err = lut.DB.ExecContext(ctx, query); err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("setting search path: %w", err),
 		}
@@ -434,7 +446,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 
 	defer func() {
 		if err != nil {
-			diagnostic.onTxnRollback(txn, warehouseutils.UsersTable, stage)
+			diagnostic.TxnRollback(txn, warehouseutils.UsersTable, stage)
 		}
 	}()
 
@@ -467,7 +479,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[5]s AS (
 		  (
 			SELECT
@@ -513,9 +525,9 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, unionStagingTableName,
 		logfield.Namespace, lut.Namespace,
-		logfield.Query, sqlStatement,
+		logfield.Query, query,
 	)
-	if _, err = txn.ExecContext(ctx, sqlStatement); err != nil {
+	if _, err = txn.ExecContext(ctx, query); err != nil {
 		stage = createStagingTable
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
@@ -523,7 +535,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		}
 	}
 
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[1]s AS (
 		  SELECT
 			DISTINCT *
@@ -550,10 +562,10 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		logfield.WorkspaceID, lut.Warehouse.WorkspaceID,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, usersStagingTableName,
-		logfield.Query, sqlStatement,
+		logfield.Query, query,
 	)
 
-	if _, err = txn.ExecContext(ctx, sqlStatement); err != nil {
+	if _, err = txn.ExecContext(ctx, query); err != nil {
 		stage = createStagingTable
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
@@ -563,12 +575,12 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 
 	// Deduplication
 	// Delete from users table if the id is present in the staging table
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		DELETE FROM
 		  %[1]q.%[2]q using %[3]q _source
 		WHERE
 		  (
-			_source.%[4]s = %[1]s.%[2]s.%[4]s
+			_source.%[4]s = $1
 		  );
 `,
 		lut.Namespace,
@@ -576,6 +588,14 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		usersStagingTableName,
 		primaryKey,
 	)
+	queryArgs = []any{
+		fmt.Sprintf("%[1]s.%[2]s.%[3]s",
+			lut.Namespace,
+			warehouseutils.UsersTable,
+			primaryKey,
+		),
+	}
+
 	lut.Logger.Infow("deduplication for users table",
 		logfield.SourceID, lut.Warehouse.Source.ID,
 		logfield.SourceType, lut.Warehouse.Source.SourceDefinition.Name,
@@ -585,9 +605,9 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, usersStagingTableName,
 		logfield.Namespace, lut.Namespace,
-		logfield.Query, sqlStatement,
+		logfield.Query, query,
 	)
-	err = diagnostic.handleExec(ctx, txn, warehouseutils.UsersTable, sqlStatement)
+	err = diagnostic.TxnExecute(ctx, txn, warehouseutils.UsersTable, query, queryArgs)
 	if err != nil {
 		stage = deleteDedup
 		return map[string]error{
@@ -598,7 +618,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 
 	// Deduplication
 	// Insert rows from staging table to users table
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		INSERT INTO %[1]q.%[2]q (%[4]s)
 		SELECT
 		  %[4]s
@@ -619,9 +639,10 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, usersStagingTableName,
 		logfield.Namespace, lut.Namespace,
-		logfield.Query, sqlStatement,
+		logfield.Query, query,
 	)
-	err = diagnostic.handleExec(ctx, txn, warehouseutils.UsersTable, sqlStatement)
+	queryArgs = []any{}
+	err = diagnostic.TxnExecute(ctx, txn, warehouseutils.UsersTable, query, queryArgs)
 	if err != nil {
 		stage = insertDedup
 		return map[string]error{

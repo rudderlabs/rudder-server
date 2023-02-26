@@ -51,6 +51,7 @@ func TestLoadTable_Load(t *testing.T) {
 		mockError                    error
 		skipSchemaCreation           bool
 		skipTableCreation            bool
+		cancelContext                bool
 		mockFiles                    []string
 		queryExecEnabledWorkspaceIDs []string
 	}{
@@ -96,6 +97,12 @@ func TestLoadTable_Load(t *testing.T) {
 			mockFiles:                    []string{"testdata/load.csv.gz"},
 			queryExecEnabledWorkspaceIDs: []string{workspaceID},
 		},
+		{
+			name:          "context cancelled",
+			mockFiles:     []string{"testdata/load.csv.gz"},
+			wantError:     errors.New("setting search path: context canceled"),
+			cancelContext: true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -108,7 +115,13 @@ func TestLoadTable_Load(t *testing.T) {
 			store := memstats.New()
 			c := config.New()
 			c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", tc.queryExecEnabledWorkspaceIDs)
-			ctx := context.Background()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			if tc.cancelContext {
+				cancel()
+			} else {
+				defer cancel()
+			}
 
 			if !tc.skipSchemaCreation {
 				_, err = pgResource.DB.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
