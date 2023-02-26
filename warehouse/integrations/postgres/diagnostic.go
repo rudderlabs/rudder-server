@@ -71,7 +71,7 @@ func (d *Diagnostic) TxnRollback(txn Tx, tableName, stage string) {
 // Print execution plan if enableWithQueryPlan is set to true else return result set.
 // Currently, these statements are supported by EXPLAIN
 // Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
-func (d *Diagnostic) TxnExecute(ctx context.Context, txn *sql.Tx, tableName, query string, queryArgs []any) error {
+func (d *Diagnostic) TxnExecute(ctx context.Context, txn *sql.Tx, tableName, query string) error {
 	var (
 		enableSQLStatementExecutionPlanWorkspaceIDs = d.Config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
 		enableSQLStatementExecutionPlan             = d.Config.GetBool("Warehouse.postgres.enableSQLStatementExecutionPlan", false)
@@ -79,7 +79,7 @@ func (d *Diagnostic) TxnExecute(ctx context.Context, txn *sql.Tx, tableName, que
 	)
 
 	if !canUseQueryPlanner {
-		if _, err := txn.ExecContext(ctx, query, queryArgs...); err != nil {
+		if _, err := txn.ExecContext(ctx, query); err != nil {
 			return fmt.Errorf("executing query: %w", err)
 		}
 		return nil
@@ -93,7 +93,7 @@ func (d *Diagnostic) TxnExecute(ctx context.Context, txn *sql.Tx, tableName, que
 	)
 
 	explainQuery := fmt.Sprintf("EXPLAIN %s", query)
-	if rows, err = txn.QueryContext(ctx, explainQuery, queryArgs...); err != nil {
+	if rows, err = txn.QueryContext(ctx, explainQuery); err != nil {
 		return fmt.Errorf("executing explain query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -116,7 +116,7 @@ func (d *Diagnostic) TxnExecute(ctx context.Context, txn *sql.Tx, tableName, que
 		logfield.QueryPlanner, strings.Join(response, "\n"),
 	)
 
-	if _, err := txn.ExecContext(ctx, query, queryArgs...); err != nil {
+	if _, err := txn.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("executing query: %w", err)
 	}
 	return nil

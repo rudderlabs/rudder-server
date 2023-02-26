@@ -224,8 +224,6 @@ func TestDiagnostic_Execute(t *testing.T) {
 			store := memstats.New()
 
 			var (
-				queryArgs []any
-
 				query        = "SELECT 1"
 				explainQuery = "EXPLAIN SELECT 1"
 				queryPlanner = "Result  (cost=0.00..0.01 rows=1 width=4)"
@@ -264,7 +262,7 @@ func TestDiagnostic_Execute(t *testing.T) {
 			txn, err := pgResource.DB.Begin()
 			require.NoError(t, err)
 
-			err = d.TxnExecute(ctx, txn, tableName, query, queryArgs)
+			err = d.TxnExecute(ctx, txn, tableName, query)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 				return

@@ -25,11 +25,11 @@ import (
 
 type mockLoadFileUploader struct {
 	mockFiles map[string][]string
-	mockError error
+	mockError map[string]error
 }
 
 func (m *mockLoadFileUploader) Download(_ context.Context, tableName string) ([]string, error) {
-	return m.mockFiles[tableName], m.mockError
+	return m.mockFiles[tableName], m.mockError[tableName]
 }
 
 func cloneFiles(t *testing.T, files []string) []string {
@@ -62,7 +62,6 @@ func TestLoadTable_Load(t *testing.T) {
 
 	const (
 		namespace   = "test_namespace"
-		tableName   = "test_table"
 		sourceID    = "test_source_id"
 		destID      = "test_dest_id"
 		sourceType  = "test_source_type"
@@ -70,93 +69,113 @@ func TestLoadTable_Load(t *testing.T) {
 		workspaceID = "test_workspace_id"
 	)
 
-	testCases := []struct {
-		name                         string
-		wantError                    error
-		mockError                    error
-		skipSchemaCreation           bool
-		skipTableCreation            bool
-		cancelContext                bool
-		mockFiles                    []string
-		additionalFiles              []string
-		queryExecEnabledWorkspaceIDs []string
-	}{
-		{
-			name:               "schema not present",
-			skipSchemaCreation: true,
-			mockFiles:          []string{"load.csv.gz"},
-			wantError:          errors.New("creating temporary table: pq: schema \"test_namespace\" does not exist"),
+	warehouse := &warehouseutils.Warehouse{
+		Source: backendconfig.SourceT{
+			ID: sourceID,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: sourceType,
+			},
 		},
-		{
-			name:              "table not present",
-			skipTableCreation: true,
-			mockFiles:         []string{"load.csv.gz"},
-			wantError:         errors.New("creating temporary table: pq: relation \"test_namespace.test_table\" does not exist"),
+		Destination: backendconfig.DestinationT{
+			ID: destID,
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				Name: destType,
+			},
 		},
-		{
-			name:      "download error",
-			mockFiles: []string{"load.csv.gz"},
-			wantError: errors.New("downloading load files: test error"),
-			mockError: errors.New("test error"),
-		},
-		{
-			name:            "load file not present",
-			additionalFiles: []string{"testdata/random.csv.gz"},
-			wantError:       errors.New("opening load file: open testdata/random.csv.gz: no such file or directory"),
-		},
-		{
-			name:      "less records than expected",
-			mockFiles: []string{"less-records.csv.gz"},
-			wantError: errors.New("missing columns in csv file: number of columns in files: 12, upload schema: 7, processed rows until now: 0"),
-		},
-		{
-			name:      "bad records",
-			mockFiles: []string{"bad.csv.gz"},
-			wantError: errors.New("exec statement: pq: invalid input syntax for type timestamp: \"1\""),
-		},
-		{
-			name:      "success",
-			mockFiles: []string{"load.csv.gz"},
-		},
-		{
-			name:                         "enable query execution",
-			mockFiles:                    []string{"load.csv.gz"},
-			queryExecEnabledWorkspaceIDs: []string{workspaceID},
-		},
-		{
-			name:          "context cancelled",
-			mockFiles:     []string{"load.csv.gz"},
-			wantError:     errors.New("setting search path: context canceled"),
-			cancelContext: true,
-		},
+		WorkspaceID: workspaceID,
 	}
 
-	for _, tc := range testCases {
-		tc := tc
+	t.Run("Regular tables", func(t *testing.T) {
+		t.Parallel()
 
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		tableName := "test_table"
+		testCases := []struct {
+			name                         string
+			wantError                    error
+			mockError                    error
+			skipSchemaCreation           bool
+			skipTableCreation            bool
+			cancelContext                bool
+			mockFiles                    []string
+			additionalFiles              []string
+			queryExecEnabledWorkspaceIDs []string
+		}{
+			{
+				name:               "schema not present",
+				skipSchemaCreation: true,
+				mockFiles:          []string{"load.csv.gz"},
+				wantError:          errors.New("creating temporary table: pq: schema \"test_namespace\" does not exist"),
+			},
+			{
+				name:              "table not present",
+				skipTableCreation: true,
+				mockFiles:         []string{"load.csv.gz"},
+				wantError:         errors.New("creating temporary table: pq: relation \"test_namespace.test_table\" does not exist"),
+			},
+			{
+				name:      "download error",
+				mockFiles: []string{"load.csv.gz"},
+				wantError: errors.New("downloading load files: test error"),
+				mockError: errors.New("test error"),
+			},
+			{
+				name:            "load file not present",
+				additionalFiles: []string{"testdata/random.csv.gz"},
+				wantError:       errors.New("opening load file: open testdata/random.csv.gz: no such file or directory"),
+			},
+			{
+				name:      "less records than expected",
+				mockFiles: []string{"less-records.csv.gz"},
+				wantError: errors.New("missing columns in csv file: number of columns in files: 12, upload schema: 7, processed rows until now: 0"),
+			},
+			{
+				name:      "bad records",
+				mockFiles: []string{"bad.csv.gz"},
+				wantError: errors.New("exec statement: pq: invalid input syntax for type timestamp: \"1\""),
+			},
+			{
+				name:      "success",
+				mockFiles: []string{"load.csv.gz"},
+			},
+			{
+				name:                         "enable query execution",
+				mockFiles:                    []string{"load.csv.gz"},
+				queryExecEnabledWorkspaceIDs: []string{workspaceID},
+			},
+			{
+				name:          "context cancelled",
+				mockFiles:     []string{"load.csv.gz"},
+				wantError:     errors.New("setting search path: context canceled"),
+				cancelContext: true,
+			},
+		}
 
-			pgResource, err := destination.SetupPostgres(pool, t)
-			require.NoError(t, err)
+		for _, tc := range testCases {
+			tc := tc
 
-			store := memstats.New()
-			c := config.New()
-			c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", tc.queryExecEnabledWorkspaceIDs)
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
 
-			ctx, cancel := context.WithCancel(context.Background())
-			if tc.cancelContext {
-				cancel()
-			} else {
-				defer cancel()
-			}
-
-			if !tc.skipSchemaCreation {
-				_, err = pgResource.DB.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
+				pgResource, err := destination.SetupPostgres(pool, t)
 				require.NoError(t, err)
-			}
-			if !tc.skipTableCreation && !tc.skipSchemaCreation {
-				_, err = pgResource.DB.Exec(fmt.Sprintf(`
+
+				store := memstats.New()
+				c := config.New()
+				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", tc.queryExecEnabledWorkspaceIDs)
+
+				ctx, cancel := context.WithCancel(context.Background())
+				if tc.cancelContext {
+					cancel()
+				} else {
+					defer cancel()
+				}
+
+				if !tc.skipSchemaCreation {
+					_, err = pgResource.DB.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
+					require.NoError(t, err)
+				}
+				if !tc.skipTableCreation && !tc.skipSchemaCreation {
+					_, err = pgResource.DB.Exec(fmt.Sprintf(`
 					CREATE TABLE IF NOT EXISTS %s.%s (
 						test_bool boolean,
 						test_datetime timestamp,
@@ -167,60 +186,156 @@ func TestLoadTable_Load(t *testing.T) {
 						received_at timestamptz
 					)
 				`,
-					namespace,
-					tableName,
-				))
+						namespace,
+						tableName,
+					))
+					require.NoError(t, err)
+				}
+
+				loadFiles := cloneFiles(t, tc.mockFiles)
+				loadFiles = append(loadFiles, tc.additionalFiles...)
+				require.NotEmpty(t, loadFiles)
+
+				lt := postgres.LoadTable{
+					Logger:    logger.NOP,
+					DB:        pgResource.DB,
+					Namespace: namespace,
+					Warehouse: warehouse,
+					Stats:     store,
+					Config:    c,
+					LoadFileDownloader: &mockLoadFileUploader{
+						mockFiles: map[string][]string{
+							tableName: loadFiles,
+						},
+						mockError: map[string]error{
+							tableName: tc.mockError,
+						},
+					},
+				}
+				_, err = lt.Load(ctx, tableName, warehouseutils.TableSchemaT{
+					"test_bool":     "boolean",
+					"test_datetime": "datetime",
+					"test_float":    "float",
+					"test_int":      "int",
+					"test_string":   "string",
+					"id":            "string",
+					"received_at":   "datetime",
+				})
+				if tc.wantError != nil {
+					require.Equal(t, tc.wantError.Error(), err.Error())
+					return
+				}
 				require.NoError(t, err)
-			}
-
-			loadFiles := cloneFiles(t, tc.mockFiles)
-			loadFiles = append(loadFiles, tc.additionalFiles...)
-			require.NotEmpty(t, loadFiles)
-
-			lt := postgres.LoadTable{
-				Logger:    logger.NOP,
-				DB:        pgResource.DB,
-				Namespace: namespace,
-				Warehouse: &warehouseutils.Warehouse{
-					Source: backendconfig.SourceT{
-						ID: sourceID,
-						SourceDefinition: backendconfig.SourceDefinitionT{
-							Name: sourceType,
-						},
-					},
-					Destination: backendconfig.DestinationT{
-						ID: destID,
-						DestinationDefinition: backendconfig.DestinationDefinitionT{
-							Name: destType,
-						},
-					},
-					WorkspaceID: workspaceID,
-				},
-				Stats:  store,
-				Config: c,
-				LoadFileDownloader: &mockLoadFileUploader{
-					mockFiles: map[string][]string{
-						tableName: loadFiles,
-					},
-					mockError: tc.mockError,
-				},
-			}
-			_, err = lt.Load(ctx, tableName, warehouseutils.TableSchemaT{
-				"test_bool":     "boolean",
-				"test_datetime": "datetime",
-				"test_float":    "float",
-				"test_int":      "int",
-				"test_string":   "string",
-				"id":            "string",
-				"received_at":   "datetime",
 			})
-			if tc.wantError != nil {
-				require.Equal(t, tc.wantError.Error(), err.Error())
-				return
-			}
-			require.NoError(t, err)
-		})
-	}
+		}
+	})
+
+	t.Run("Discards tables", func(t *testing.T) {
+		t.Parallel()
+
+		tableName := warehouseutils.DiscardsTable
+
+		testCases := []struct {
+			name               string
+			wantError          error
+			mockError          error
+			skipSchemaCreation bool
+			skipTableCreation  bool
+			cancelContext      bool
+			mockFiles          []string
+		}{
+			{
+				name:               "schema not present",
+				skipSchemaCreation: true,
+				mockFiles:          []string{"discards.csv.gz"},
+				wantError:          errors.New("creating temporary table: pq: schema \"test_namespace\" does not exist"),
+			},
+			{
+				name:              "table not present",
+				skipTableCreation: true,
+				mockFiles:         []string{"discards.csv.gz"},
+				wantError:         errors.New("creating temporary table: pq: relation \"test_namespace.rudder_discards\" does not exist"),
+			},
+			{
+				name:      "download error",
+				mockFiles: []string{"discards.csv.gz"},
+				wantError: errors.New("downloading load files: test error"),
+				mockError: errors.New("test error"),
+			},
+			{
+				name:      "success",
+				mockFiles: []string{"discards.csv.gz"},
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				pgResource, err := destination.SetupPostgres(pool, t)
+				require.NoError(t, err)
+
+				store := memstats.New()
+				c := config.New()
+
+				ctx, cancel := context.WithCancel(context.Background())
+				if tc.cancelContext {
+					cancel()
+				} else {
+					defer cancel()
+				}
+
+				if !tc.skipSchemaCreation {
+					_, err = pgResource.DB.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
+					require.NoError(t, err)
+				}
+				if !tc.skipTableCreation && !tc.skipSchemaCreation {
+					_, err = pgResource.DB.Exec(fmt.Sprintf(`
+					CREATE TABLE IF NOT EXISTS %s.%s (
+						"column_name"  "varchar",
+						"column_value" "varchar",
+						"received_at"  "timestamptz",
+						"row_id"       "varchar",
+						"table_name"   "varchar",
+						"uuid_ts"      "timestamptz"
+					)
+				`,
+						namespace,
+						tableName,
+					))
+					require.NoError(t, err)
+				}
+
+				loadFiles := cloneFiles(t, tc.mockFiles)
+				require.NotEmpty(t, loadFiles)
+
+				lt := postgres.LoadTable{
+					Logger:    logger.NOP,
+					DB:        pgResource.DB,
+					Namespace: namespace,
+					Warehouse: warehouse,
+					Stats:     store,
+					Config:    c,
+					LoadFileDownloader: &mockLoadFileUploader{
+						mockFiles: map[string][]string{
+							tableName: loadFiles,
+						},
+						mockError: map[string]error{
+							tableName: tc.mockError,
+						},
+					},
+				}
+				_, err = lt.Load(ctx, tableName, warehouseutils.DiscardsSchema)
+				if tc.wantError != nil {
+					require.Equal(t, tc.wantError.Error(), err.Error())
+					return
+				}
+				require.NoError(t, err)
+			})
+		}
+	})
 }
 
 func TestLoadUsersTable_Load(t *testing.T) {
@@ -242,28 +357,62 @@ func TestLoadUsersTable_Load(t *testing.T) {
 
 	testCases := []struct {
 		name                       string
-		wantError                  error
+		wantErrorsMap              map[string]error
 		mockUsersFiles             []string
 		mockIdentifiesFiles        []string
-		mockError                  error
+		mockUsersError             error
+		mockIdentifiesError        error
 		skipSchemaCreation         bool
 		skipTableCreation          bool
 		skipUserTraitsWorkspaceIDs []string
+		usersSchemaInUpload        warehouseutils.TableSchemaT
 	}{
 		{
 			name:                "success",
 			mockUsersFiles:      []string{"users.csv.gz"},
 			mockIdentifiesFiles: []string{"identifies.csv.gz"},
-		},
-		{
-			name:                "no users schema",
-			mockUsersFiles:      []string{"users.csv.gz"},
-			mockIdentifiesFiles: []string{"identifies.csv.gz"},
+			wantErrorsMap: map[string]error{
+				warehouseutils.IdentifiesTable: nil,
+				warehouseutils.UsersTable:      nil,
+			},
 		},
 		{
 			name:                       "skip computing users traits",
 			mockUsersFiles:             []string{"users.csv.gz"},
 			mockIdentifiesFiles:        []string{"identifies.csv.gz"},
+			skipUserTraitsWorkspaceIDs: []string{workspaceID},
+			wantErrorsMap: map[string]error{
+				warehouseutils.IdentifiesTable: nil,
+				warehouseutils.UsersTable:      nil,
+			},
+		},
+		{
+			name:                "empty users schema",
+			mockUsersFiles:      []string{"users.csv.gz"},
+			mockIdentifiesFiles: []string{"identifies.csv.gz"},
+			usersSchemaInUpload: warehouseutils.TableSchemaT{},
+			wantErrorsMap: map[string]error{
+				warehouseutils.IdentifiesTable: nil,
+			},
+		},
+		{
+			name:                "download error for identifies",
+			mockUsersFiles:      []string{"users.csv.gz"},
+			mockIdentifiesFiles: []string{"identifies.csv.gz"},
+			wantErrorsMap: map[string]error{
+				warehouseutils.IdentifiesTable: errors.New("loading identifies table: downloading load files: test error"),
+			},
+			mockIdentifiesError: errors.New("test error"),
+		},
+		{
+			name:                "download error for users",
+			mockUsersFiles:      []string{"users.csv.gz"},
+			mockIdentifiesFiles: []string{"identifies.csv.gz"},
+			wantErrorsMap: map[string]error{
+				warehouseutils.IdentifiesTable: nil,
+				warehouseutils.UsersTable:      errors.New("loading users table: downloading load files: test error"),
+			},
+			mockUsersError:             errors.New("test error"),
 			skipUserTraitsWorkspaceIDs: []string{workspaceID},
 		},
 	}
@@ -339,20 +488,14 @@ func TestLoadUsersTable_Load(t *testing.T) {
 						warehouseutils.UsersTable:      usersLoadFiles,
 						warehouseutils.IdentifiesTable: identifiesLoadFiles,
 					},
-					mockError: tc.mockError,
+					mockError: map[string]error{
+						warehouseutils.UsersTable:      tc.mockUsersError,
+						warehouseutils.IdentifiesTable: tc.mockIdentifiesError,
+					},
 				},
 			}
-			errrosMap := lt.Load(ctx, warehouseutils.TableSchemaT{
-				"test_bool":     "boolean",
-				"test_datetime": "datetime",
-				"test_float":    "float",
-				"test_int":      "int",
-				"test_string":   "string",
-				"id":            "string",
-				"received_at":   "datetime",
-				"user_id":       "string",
-			},
-				warehouseutils.TableSchemaT{
+			var (
+				identifiesSchemaInUpload = warehouseutils.TableSchemaT{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",
@@ -361,25 +504,44 @@ func TestLoadUsersTable_Load(t *testing.T) {
 					"id":            "string",
 					"received_at":   "datetime",
 					"user_id":       "string",
-				},
-				warehouseutils.TableSchemaT{
-					"test_bool":     "boolean",
-					"test_datetime": "datetime",
-					"test_float":    "float",
-					"test_int":      "int",
-					"test_string":   "string",
-					"id":            "string",
-					"received_at":   "datetime",
-					"user_id":       "string",
-				},
-			)
-			require.NotEmpty(t, errrosMap)
-			for _, err := range errrosMap {
-				if tc.wantError != nil {
-					require.Equal(t, tc.wantError.Error(), err.Error())
-					return
 				}
-				require.NoError(t, err)
+				usersSchamaInUpload = warehouseutils.TableSchemaT{
+					"test_bool":     "boolean",
+					"test_datetime": "datetime",
+					"test_float":    "float",
+					"test_int":      "int",
+					"test_string":   "string",
+					"id":            "string",
+					"received_at":   "datetime",
+					"user_id":       "string",
+				}
+				usersSchamaInWarehouse = warehouseutils.TableSchemaT{
+					"test_bool":     "boolean",
+					"test_datetime": "datetime",
+					"test_float":    "float",
+					"test_int":      "int",
+					"test_string":   "string",
+					"id":            "string",
+					"received_at":   "datetime",
+					"user_id":       "string",
+				}
+			)
+
+			if tc.usersSchemaInUpload != nil {
+				usersSchamaInUpload = tc.usersSchemaInUpload
+			}
+
+			errorsMap := lt.Load(ctx, identifiesSchemaInUpload, usersSchamaInUpload, usersSchamaInWarehouse)
+			require.NotEmpty(t, errorsMap)
+			require.Len(t, errorsMap, len(tc.wantErrorsMap))
+			for table, err := range errorsMap {
+				require.Contains(t, tc.wantErrorsMap, table)
+				if err != nil {
+					require.NotNil(t, tc.wantErrorsMap[table])
+					require.Equal(t, tc.wantErrorsMap[table].Error(), err.Error())
+				} else {
+					require.Nil(t, tc.wantErrorsMap[table])
+				}
 			}
 		})
 	}
