@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.7.0-preview.1](https://github.com/rudderlabs/rudder-server/compare/v1.6.0...v1.7.0-preview.1) (2023-02-27)
+
+
+### Features
+
+* **warehouse:** snowflake roles support. ([#3031](https://github.com/rudderlabs/rudder-server/issues/3031)) ([98a413c](https://github.com/rudderlabs/rudder-server/commit/98a413c5df1e3011b2c774d3ea4d9054eab44a72))
+
+
+### Bug Fixes
+
+* inconsistent and leaky retry delay logic in router ([#3002](https://github.com/rudderlabs/rudder-server/issues/3002)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* **warehouse:** grouping uploads for processing pickup ([#3039](https://github.com/rudderlabs/rudder-server/issues/3039)) ([4832630](https://github.com/rudderlabs/rudder-server/commit/4832630e58db4aeaaaf5c65c634247ad5da8e12a))
+
+
+### Miscellaneous
+
+* abort job after 5 attempts at deletion-worker ([#3012](https://github.com/rudderlabs/rudder-server/issues/3012)) ([ed83eaa](https://github.com/rudderlabs/rudder-server/commit/ed83eaac2f56a7825a7ddd0e830bab0f21b13713))
+* don't include prereleases in docker latest tag ([#3006](https://github.com/rudderlabs/rudder-server/issues/3006)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* improve regulation-worker status capture ([#2837](https://github.com/rudderlabs/rudder-server/issues/2837)) ([6f1d07d](https://github.com/rudderlabs/rudder-server/commit/6f1d07df234a2a2c32cf0ecaac465a08ddfca2bc))
+* prefer using lo.BufferWithTimeout ([#2998](https://github.com/rudderlabs/rudder-server/issues/2998)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* upgrade all dependencies ([#2996](https://github.com/rudderlabs/rudder-server/issues/2996)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* **warehouse:** added support for observability for loading tables and made dedup optional for Redshift ([#3037](https://github.com/rudderlabs/rudder-server/issues/3037)) ([63fd288](https://github.com/rudderlabs/rudder-server/commit/63fd28852af9278ebaa7e9c55ee59a1449c139f1))
+* **warehouse:** additional error mappings ([#2994](https://github.com/rudderlabs/rudder-server/issues/2994)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* **warehouse:** default warehouse priority set to 100 ([#3026](https://github.com/rudderlabs/rudder-server/issues/3026)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* **warehouse:** use first_event_at while pickup for warehouse processing jobs ([#3036](https://github.com/rudderlabs/rudder-server/issues/3036)) ([7aeed3b](https://github.com/rudderlabs/rudder-server/commit/7aeed3bfcf9f3679eabfb9f6689f49ba04c62ad9))
+
 ## [1.6.0](https://github.com/rudderlabs/rudder-server/compare/v1.5.0...v1.6.0) (2023-02-23)
 
 
