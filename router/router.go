@@ -535,6 +535,8 @@ func (worker *workerT) processDestinationJobs() {
 	var respStatusCode, prevRespStatusCode int
 	var respBody string
 	var respBodyTemp string
+	// Used by OAuth destinations(majorly during delivery)
+	var latestErrorMsgBody string
 
 	var destinationResponseHandler ResponseHandlerI
 	worker.rt.configSubscriberLock.RLock()
@@ -688,32 +690,12 @@ func (worker *workerT) processDestinationJobs() {
 									respBodyArr = append(respBodyArr, respBodyTemp)
 								} else {
 									respBodyArr = []string{respBodyTemp}
+									latestErrorMsgBody = respBodyTemp
 									break
 								}
 							}
 						}
 						respBody = strings.Join(respBodyArr, " ")
-						if worker.rt.transformerProxy {
-							stats.Default.NewTaggedStat("transformer_proxy.input_events_count", stats.CountType, stats.Tags{
-								"destType":      worker.rt.destName,
-								"destinationId": destinationJob.Destination.ID,
-								"workspace":     workspaceID,
-								"workspaceId":   workspaceID,
-							}).Count(len(result))
-
-							pkgLogger.Debugf(`[TransformerProxy] (Dest-%v) {Job - %v} Input Router Events: %v, Out router events: %v`, worker.rt.destName,
-								destinationJob.JobMetadataArray[0].JobID,
-								len(result),
-								len(respBodyArr),
-							)
-
-							stats.Default.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
-								"destType":      worker.rt.destName,
-								"destinationId": destinationJob.Destination.ID,
-								"workspace":     workspaceID,
-								"workspaceId":   workspaceID,
-							}).Count(len(respBodyArr))
-						}
 					}
 				}
 				ch <- struct{}{}
@@ -763,10 +745,10 @@ func (worker *workerT) processDestinationJobs() {
 			pkgLogger.Debugf(`Sending for OAuth destination`)
 			// AuthErrorCategory is available at transformation in destinationJob object
 			authErrorCategory := destinationJob.AuthErrorCategory
-			// TODO: Don't need two conditions actually -- Think on a fitting condition and change this block
-			if errorAt == routerutils.ERROR_AT_DEL || !routerutils.IsNotEmptyString(authErrorCategory) {
-				authErrorCategory = gjson.GetBytes([]byte(respBody), "authErrorCategory").Str
+			if errorAt == routerutils.ERROR_AT_DEL {
+				authErrorCategory = gjson.GetBytes([]byte(latestErrorMsgBody), "authErrorCategory").Str
 			}
+			pkgLogger.Debugf("%v :: LatestErrorMsgBody: %v, AuthErrorCategory: %v", worker.rt.destName, latestErrorMsgBody, authErrorCategory)
 			// Token from header of the request
 			respStatusCode, respBody = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
 				ctx:               ctx,
