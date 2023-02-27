@@ -21,6 +21,5 @@ const (
 	ErrorMapping          = "errorMapping"
 	DestinationCredsValid = "destinationCredsValid"
 	Provider              = "provider"
-	ManifestLocation      = "manifestLocation"
 	Query                 = "query"
 )

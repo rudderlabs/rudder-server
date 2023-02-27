@@ -413,7 +413,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
-		logfield.ManifestLocation, manifestLocation,
+		"manifestLocation", manifestLocation,
 	)
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
@@ -439,7 +439,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	// create session token and temporary credentials
 	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
-		rs.Logger.Warnw("create temp s3 credentials",
+		rs.Logger.Warnw("getting temporary s3 credentials",
 			logfield.SourceID, rs.Warehouse.Source.ID,
 			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
 			logfield.DestinationID, rs.Warehouse.Destination.ID,
@@ -449,7 +449,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			logfield.TableName, tableName,
 			logfield.Error, err.Error(),
 		)
-		return "", fmt.Errorf("get temporary s3 credentials: %w", err)
+		return "", fmt.Errorf("getting temporary s3 credentials: %w", err)
 	}
 
 	if txn, err = rs.DB.Begin(); err != nil {
@@ -531,7 +531,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	)
 
 	if _, err := txn.Exec(query); err != nil {
-		rs.Logger.Warnw("failure executing copy command",
+		rs.Logger.Warnw("failure running copy command",
 			logfield.SourceID, rs.Warehouse.Source.ID,
 			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
 			logfield.DestinationID, rs.Warehouse.Destination.ID,
@@ -642,13 +642,13 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		}
 
 		rs.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-			"sourceID":     rs.Warehouse.Source.ID,
-			"sourceType":   rs.Warehouse.Source.SourceDefinition.Name,
-			"destID":       rs.Warehouse.Destination.ID,
-			"destType":     rs.Warehouse.Destination.DestinationDefinition.Name,
-			"workspaceId":  rs.Warehouse.WorkspaceID,
-			"namespace":    rs.Namespace,
-			"tableName":    tableName,
+			"sourceID":    rs.Warehouse.Source.ID,
+			"sourceType":  rs.Warehouse.Source.SourceDefinition.Name,
+			"destID":      rs.Warehouse.Destination.ID,
+			"destType":    rs.Warehouse.Destination.DestinationDefinition.Name,
+			"workspaceId": rs.Warehouse.WorkspaceID,
+			"namespace":   rs.Namespace,
+			"tableName":   tableName,
 		}).Count(int(rowsAffected))
 	}
 
