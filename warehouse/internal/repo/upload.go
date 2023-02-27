@@ -242,13 +242,12 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
 
-	//					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW() AND
 	sqlStatement := fmt.Sprintf(`
 			SELECT
 			`+uploadColumns+`
 			FROM (
 				SELECT
-					ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
+					ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, COALESCE(first_event_at, NOW()) ASC, id ASC) AS row_number,
 					t.*
 				FROM
 					`+uploadsTableName+` t
@@ -264,7 +263,8 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 				grouped_uploads.row_number = 1
 			ORDER BY
 				COALESCE(metadata->>'priority', '100')::int ASC,
-				COALESCE(first_event_at, NOW()) ASC
+				COALESCE(first_event_at, NOW()) ASC,
+				id ASC
 			LIMIT %d;
 `,
 		partitionIdentifierSQL,
