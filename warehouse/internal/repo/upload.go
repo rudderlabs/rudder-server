@@ -242,7 +242,6 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
 
-	//					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW() AND
 	sqlStatement := fmt.Sprintf(`
 			SELECT
 			`+uploadColumns+`
