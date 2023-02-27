@@ -303,7 +303,6 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		})
 	}
 
-	// Deduplication
 	// Insert rows from staging table to the original table
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
 	query = fmt.Sprintf(`
@@ -621,7 +620,6 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		}
 	}
 
-	// Deduplication
 	// Insert rows from staging table to users table
 	query = fmt.Sprintf(`
 		INSERT INTO %[1]q.%[2]q (%[4]s)
