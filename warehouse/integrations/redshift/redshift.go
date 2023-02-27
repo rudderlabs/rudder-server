@@ -649,8 +649,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			"workspaceId":  rs.Warehouse.WorkspaceID,
 			"namespace":    rs.Namespace,
 			"tableName":    tableName,
-			"rowsAffected": fmt.Sprintf("%d", rowsAffected),
-		})
+		}).Count(int(rowsAffected))
 	}
 
 	// Deduplication
