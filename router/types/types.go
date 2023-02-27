@@ -6,6 +6,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/samber/lo"
 )
 
 const (
@@ -35,6 +36,12 @@ type DestinationJobT struct {
 	Otherwise this field will be empty for any other errors thrown by transformer
 	*/
 	AuthErrorCategory string `json:"authErrorCategory,omitempty"`
+}
+
+func (dj *DestinationJobT) MinJobID() int64 {
+	return lo.Min(lo.Map(dj.JobMetadataArray, func(item JobMetadataT, _ int) int64 {
+		return item.JobID
+	}))
 }
 
 // JobIDs returns the set of all job ids contained in the message

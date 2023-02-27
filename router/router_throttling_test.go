@@ -217,9 +217,9 @@ func Test_RouterThrottling(t *testing.T) {
 		atomic.LoadInt64(webhook1.count), atomic.LoadInt64(webhook2.count),
 	)
 
-	verifyBucket := func(buckets map[int64]int, totalEvents, rps, burst, cost int) {
-		lowerLengthRange := (totalEvents*cost - burst) / rps
-		upperLengthRange := lowerLengthRange + 1
+	verifyBucket := func(buckets map[int64]int, totalEvents, rps, cost int) {
+		lowerLengthRange := (totalEvents * cost) / rps
+		upperLengthRange := lowerLengthRange + 2
 		requireLengthInRange(t, buckets, lowerLengthRange, upperLengthRange)
 
 		maxEventsPerBucket := rps / cost
@@ -234,8 +234,8 @@ func Test_RouterThrottling(t *testing.T) {
 		}
 	}
 
-	verifyBucket(webhook1.buckets, noOfEvents, 20, 20, 2)
-	verifyBucket(webhook2.buckets, noOfEvents, 50, 20, 2)
+	verifyBucket(webhook1.buckets, noOfEvents, 20, 2)
+	verifyBucket(webhook2.buckets, noOfEvents, 50, 2)
 }
 
 func requireLengthInRange(t *testing.T, x interface{}, min, max int) {

@@ -109,7 +109,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (Transfor
 	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", h.configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
 
-	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.BadgerCacheType)))
+	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.MemoryCacheType)))
 	h.transformationCacheMap, err = cache.New[TransformationStatusT](cacheType, "transformation", h.log)
 	if err != nil {
 		return nil, err
