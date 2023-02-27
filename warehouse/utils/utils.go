@@ -191,7 +191,6 @@ const (
 
 var (
 	pkgLogger              logger.Logger
-	useParquetLoadFilesRS  bool
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string
 	parquetParallelWriters int64
@@ -214,7 +213,6 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
 	config.RegisterInt64ConfigVariable(8, &parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
 }
 
@@ -929,9 +927,6 @@ func GetLoadFileType(wh string) string {
 	case BQ:
 		return LOAD_FILE_TYPE_JSON
 	case RS:
-		if useParquetLoadFilesRS {
-			return LOAD_FILE_TYPE_PARQUET
-		}
 		return LOAD_FILE_TYPE_CSV
 	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
 		return LOAD_FILE_TYPE_PARQUET
@@ -949,9 +944,6 @@ func GetLoadFileFormat(whType string) string {
 	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
 		return "parquet"
 	case RS:
-		if useParquetLoadFilesRS {
-			return "parquet"
-		}
 		return "csv.gz"
 	case DELTALAKE:
 		return "csv.gz"

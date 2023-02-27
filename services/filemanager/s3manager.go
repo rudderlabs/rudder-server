@@ -16,9 +16,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/mitchellh/mapstructure"
+	"github.com/samber/lo"
+
 	appConfig "github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
-	"github.com/samber/lo"
 )
 
 // Upload passed in file to s3

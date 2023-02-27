@@ -15,9 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/samber/lo"
+
 	SpacesManager "github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/samber/lo"
 )
 
 func (manager *DOSpacesManager) getSession() (*session.Session, error) {
