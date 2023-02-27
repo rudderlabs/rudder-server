@@ -10,6 +10,7 @@ type jobSchema struct {
 
 type statusJobSchema struct {
 	Status string `json:"status"`
+	Reason string `json:"reason"`
 }
 
 type userAttributesSchema map[string]string

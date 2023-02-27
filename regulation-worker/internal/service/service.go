@@ -1,7 +1,5 @@
 package service
 
-// TODO: appropriate error handling via model.Errors
-// TODO: appropriate status var update and handling via model.status
 import (
 	"context"
 	"time"
@@ -45,8 +43,8 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 
 	// once job is successfully received, calling updatestatus API to update the status of job to running.
-	status := model.JobStatusRunning
-	err = js.updateStatus(ctx, status, job.ID)
+	jobStatus := model.JobStatus{Status: model.JobStatusRunning}
+	err = js.updateStatus(ctx, jobStatus, job.ID)
 	if err != nil {
 		return err
 	}
@@ -55,25 +53,25 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	if err != nil {
 		pkgLogger.Errorf("error while getting destination details: %v", err)
 		if err == model.ErrInvalidDestination {
-			return js.updateStatus(ctx, model.JobStatusAborted, job.ID)
+			return js.updateStatus(ctx, model.JobStatus{Status: model.JobStatusAborted, Error: model.ErrInvalidDestination}, job.ID)
 		}
-		return js.updateStatus(ctx, model.JobStatusFailed, job.ID)
+		return js.updateStatus(ctx, model.JobStatus{Status: model.JobStatusFailed, Error: err}, job.ID)
 	}
 
 	deletionStart := time.Now()
 
-	status = js.Deleter.Delete(ctx, job, destDetail)
-	if status == model.JobStatusFailed && job.FailedAttempts >= js.MaxFailedAttempts {
-		status = model.JobStatusAborted
+	jobStatus = js.Deleter.Delete(ctx, job, destDetail)
+	if jobStatus.Status == model.JobStatusFailed && job.FailedAttempts >= js.MaxFailedAttempts {
+		jobStatus.Status = model.JobStatusAborted
 	}
 
-	stats.Default.NewTaggedStat("regulation_worker_deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(status)}).Since(deletionStart)
-	if status == model.JobStatusComplete {
+	stats.Default.NewTaggedStat("regulation_worker_deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(jobStatus.Status)}).Since(deletionStart)
+	if jobStatus.Status == model.JobStatusComplete {
 		stats.Default.NewTaggedStat("regulation_worker_deleted_user_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name}).Count(len(job.Users))
 	}
-	stats.Default.NewTaggedStat("regulation_worker_loop_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(status)}).Since(loopStart)
+	stats.Default.NewTaggedStat("regulation_worker_loop_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(jobStatus.Status)}).Since(loopStart)
 
-	return js.updateStatus(ctx, status, job.ID)
+	return js.updateStatus(ctx, jobStatus, job.ID)
 }
 
 func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {

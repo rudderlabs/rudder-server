@@ -18,6 +18,6 @@ INSERT INTO wh_uploads(id, source_id, namespace, destination_id, destination_typ
                        last_event_at, last_exec_at, timings, created_at, updated_at, metadata,
                        in_progress, workspace_id)
 VALUES (1, 'test-sourceID', 'test-namespace', 'test-destinationID', 'POSTGRES', 0, 0, 0, 0, 'exported_data', '{}',
-        '{}', NULL, NULL, NULL, NULL, '2022-12-06 15:30:00', '2022-12-06 15:45:00', '{}', '{}', TRUE,
+        '{}', NULL, NULL, NULL, NULL, '2022-12-06 15:30:00', '2022-12-06 15:45:00', '{}', TRUE,
         'test-workspaceID');
 COMMIT;

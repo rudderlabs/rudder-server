@@ -42,9 +42,9 @@ func TestJobSvc(t *testing.T) {
 				ID:          1,
 				WorkspaceID: "1234",
 			},
-			expectedStatus:           model.JobStatusRunning,
-			deleteJobStatusByDeleter: model.JobStatusComplete,
-			finalDeleteJobStatus:     model.JobStatusComplete,
+			expectedStatus:           model.JobStatus{Status: model.JobStatusRunning},
+			deleteJobStatusByDeleter: model.JobStatus{Status: model.JobStatusComplete},
+			finalDeleteJobStatus:     model.JobStatus{Status: model.JobStatusComplete},
 			dest: model.Destination{
 				Config:        config,
 				DestinationID: "1111",
@@ -78,9 +78,9 @@ func TestJobSvc(t *testing.T) {
 			updateStatusAfterCallCount:  1,
 			deleteJobCallCount:          1,
 			getDestDetailsCount:         1,
-			expectedStatus:              model.JobStatusRunning,
-			deleteJobStatusByDeleter:    model.JobStatusFailed,
-			finalDeleteJobStatus:        model.JobStatusAborted,
+			expectedStatus:              model.JobStatus{Status: model.JobStatusRunning},
+			deleteJobStatusByDeleter:    model.JobStatus{Status: model.JobStatusFailed},
+			finalDeleteJobStatus:        model.JobStatus{Status: model.JobStatusAborted},
 		},
 	}
 
