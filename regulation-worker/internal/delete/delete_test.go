@@ -25,7 +25,7 @@ func TestDelete(t *testing.T) {
 			destDetail: model.Destination{
 				Name: "d1",
 			},
-			expectedStatus:                    model.JobStatusComplete,
+			expectedStatus:                    model.JobStatus{Status: model.JobStatusComplete},
 			md1CallCount:                      1,
 			getSupportedDestinationsCallCount: 1,
 		},
@@ -34,7 +34,7 @@ func TestDelete(t *testing.T) {
 			destDetail: model.Destination{
 				Name: "d5",
 			},
-			expectedStatus: model.JobStatusAborted,
+			expectedStatus: model.JobStatus{Status: model.JobStatusAborted, Error: model.ErrDestNotSupported},
 		},
 	}
 
@@ -49,7 +49,7 @@ func TestDelete(t *testing.T) {
 	for _, tt := range testData {
 		md1.EXPECT().GetSupportedDestinations().Return([]string{"d1", "d2"}).Times(tt.getSupportedDestinationsCallCount)
 		md2.EXPECT().GetSupportedDestinations().Return([]string{"d3", "d4"}).Times(tt.getSupportedDestinationsCallCount)
-		md1.EXPECT().Delete(ctx, tt.job, tt.destDetail).Return(model.JobStatusComplete).Times(tt.md1CallCount)
+		md1.EXPECT().Delete(ctx, tt.job, tt.destDetail).Return(tt.expectedStatus).Times(tt.md1CallCount)
 		status := r.Delete(ctx, tt.job, tt.destDetail)
 		require.Equal(t, tt.expectedStatus, status, "actual status different than expected")
 	}
