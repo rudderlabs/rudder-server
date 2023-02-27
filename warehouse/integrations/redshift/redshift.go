@@ -13,23 +13,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"golang.org/x/exp/slices"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/lib/pq"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/tidwall/gjson"
 )
 
 var pkgLogger logger.Logger
@@ -1053,7 +1051,7 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 		rs.Logger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
 		return false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -1250,7 +1248,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	if err != nil {
 		return
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 
 	schema = make(warehouseutils.SchemaT)
 	unrecognizedSchema = make(warehouseutils.SchemaT)
@@ -1282,7 +1280,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			sqlStatement)
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var tName, cName, cType string
 		var charLength sql.NullInt64
@@ -1326,7 +1324,7 @@ func (rs *Redshift) TestConnection(warehouse warehouseutils.Warehouse) (err erro
 	if err != nil {
 		return
 	}
-	defer rs.DB.Close()
+	defer func() { _ = rs.DB.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
 	defer cancel()
@@ -1345,7 +1343,7 @@ func (rs *Redshift) TestConnection(warehouse warehouseutils.Warehouse) (err erro
 func (rs *Redshift) Cleanup() {
 	if rs.DB != nil {
 		rs.dropDanglingStagingTables()
-		rs.DB.Close()
+		_ = rs.DB.Close()
 	}
 }
 
@@ -1356,7 +1354,7 @@ func (rs *Redshift) CrashRecover(warehouse warehouseutils.Warehouse) (err error)
 	if err != nil {
 		return err
 	}
-	defer rs.DB.Close()
+	defer func() { _ = rs.DB.Close() }()
 	rs.dropDanglingStagingTables()
 	return
 }
