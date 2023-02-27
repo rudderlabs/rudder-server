@@ -54,11 +54,14 @@ func NewDefaultProvider() Provider {
 type provider struct {
 	onceInit        sync.Once
 	init            chan struct{}
+	mu              sync.RWMutex
 	storageSettings map[string]StorageSettings
 }
 
 func (p *provider) GetFileManager(workspaceID string) (filemanager.FileManager, error) {
 	<-p.init
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	settings, ok := p.storageSettings[workspaceID]
 	if !ok {
 		return nil, fmt.Errorf("no storage settings found for workspace: %s", workspaceID)
@@ -71,6 +74,8 @@ func (p *provider) GetFileManager(workspaceID string) (filemanager.FileManager, 
 
 func (p *provider) GetStoragePreferences(workspaceID string) (backendconfig.StoragePreferences, error) {
 	<-p.init
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	var prefs backendconfig.StoragePreferences
 	settings, ok := p.storageSettings[workspaceID]
 	if !ok {
@@ -83,9 +88,8 @@ func (p *provider) GetStoragePreferences(workspaceID string) (backendconfig.Stor
 func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.BackendConfig) {
 	ch := backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 
-	settings := make(map[string]StorageSettings)
-
 	for ev := range ch {
+		settings := make(map[string]StorageSettings)
 		configs := ev.Data.(map[string]backendconfig.ConfigT)
 		for workspaceId, c := range configs {
 
@@ -98,6 +102,11 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 				bucket = overrideWithSettings(defaultBucket.Config, settings, workspaceId)
 			} else {
 				bucket = getDefaultBucket(ctx, config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
+				switch c.Settings.DataRetention.RetentionPeriod {
+				case "default":
+					bucket.Config["prefix"] = config.GetString("JOBS_BACKUP_STORAGE_DEFAULT_PREFIX", "7dayretention")
+				default:
+				}
 			}
 			// bucket type and configuration must not be empty
 			if bucket.Type != "" && len(bucket.Config) > 0 {
@@ -108,7 +117,9 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 				Preferences: preferences,
 			}
 		}
+		p.mu.Lock()
 		p.storageSettings = settings
+		p.mu.Unlock()
 		p.onceInit.Do(func() {
 			close(p.init)
 		})
