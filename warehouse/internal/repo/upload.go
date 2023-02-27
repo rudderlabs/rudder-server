@@ -263,7 +263,7 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 				grouped_uploads.row_number = 1
 			ORDER BY
 				COALESCE(metadata->>'priority', '100')::int ASC,
-				id ASC
+				COALESCE(first_event_at, NOW()) ASC
 			LIMIT %d;
 `,
 		partitionIdentifierSQL,
