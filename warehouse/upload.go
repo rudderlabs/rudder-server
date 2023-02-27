@@ -1997,8 +1997,8 @@ func (job *UploadJobT) GetFirstLastEvent() (time.Time, time.Time) {
 	return job.upload.FirstEventAt, job.upload.LastEventAt
 }
 
-func (job *UploadJobT) DTO() model.UploadJob {
-	return model.UploadJob{
+func (job *UploadJobT) DTO() *model.UploadJob {
+	return &model.UploadJob{
 		Warehouse:    job.warehouse,
 		Upload:       job.upload,
 		StagingFiles: job.stagingFiles,
