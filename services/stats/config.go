@@ -2,14 +2,16 @@ package stats
 
 import (
 	"sync"
+	"sync/atomic"
+
+	"gopkg.in/alexcesaro/statsd.v2"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/metric"
-	"gopkg.in/alexcesaro/statsd.v2"
 )
 
 type statsdConfig struct {
-	enabled         bool
+	enabled         atomic.Bool
 	tagsFormat      string
 	excludedTags    []string
 	statsdServerURL string
