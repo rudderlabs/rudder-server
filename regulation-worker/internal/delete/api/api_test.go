@@ -35,7 +35,6 @@ func TestDelete(t *testing.T) {
 		destConfig           map[string]interface{}
 		destName             string
 		respCode             int
-		respBodyStatus       model.JobStatus
 		respBodyErr          error
 		expectedDeleteStatus model.JobStatus
 		expectedPayload      string
@@ -46,7 +45,7 @@ func TestDelete(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -79,56 +78,49 @@ func TestDelete(t *testing.T) {
 			},
 			destName:             "amplitude",
 			respCode:             200,
-			respBodyStatus:       "complete",
-			expectedDeleteStatus: model.JobStatusComplete,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
 			expectedPayload:      `[{"jobId":"1","destType":"amplitude","config":{"accessKey":"xyz","accessKeyID":"abc","bucketName":"regulation-test-data","enableSSE":false,"prefix":"reg-original"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 429",
 			destName:             "amplitude",
 			respCode:             429,
-			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 429, body: [{  }]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed-error returned 408",
 			destName:             "amplitude",
 			respCode:             408,
-			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 408, body: [{  }]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 504",
 			destName:             "amplitude",
 			respCode:             504,
-			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 504, body: [{  }]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 400",
 			destName:             "amplitude",
 			respCode:             400,
-			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusAborted,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 400, body: [{  }]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 401",
 			destName:             "amplitude",
 			respCode:             401,
-			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusAborted,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 401, body: [{  }]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 405",
 			destName:             "amplitude",
 			respCode:             405,
-			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusNotSupported,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("destination not supported by transformer")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 	}
@@ -151,6 +143,7 @@ func TestDelete(t *testing.T) {
 				Name:   tt.destName,
 			}
 			status := api.Delete(ctx, tt.job, dest)
+			fmt.Println("status", status)
 			require.Equal(t, tt.expectedDeleteStatus, status)
 			require.Equal(t, tt.expectedPayload, d.payload)
 		})
@@ -160,7 +153,7 @@ func TestDelete(t *testing.T) {
 type deleteAPI struct {
 	payload         string
 	respStatusCode  int
-	respBodyStatus  model.JobStatus
+	respBodyStatus  model.Status
 	respBodyErr     error
 	authErrCategory string
 }
@@ -172,6 +165,7 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 	_, err := buf.ReadFrom(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	d.payload = buf.String()
 
@@ -195,6 +189,7 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 	_, err = w.Write(body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -222,7 +217,7 @@ func TestOAuth(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -270,7 +265,7 @@ func TestOAuth(t *testing.T) {
 					response: `{"secret": {"access_token": "valid_access_token","refresh_token":"valid_refresh_token"}}`,
 				},
 			},
-			expectedDeleteStatus: model.JobStatusComplete,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
 			expectedPayload:      `[{"jobId":"1","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293437@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad853601942465969121327991@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
 		},
 		{
@@ -279,7 +274,7 @@ func TestOAuth(t *testing.T) {
 				ID:            2,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -331,7 +326,7 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 500, body: [{failed [GA] invalid credentials REFRESH_TOKEN}]")},
 			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293438@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279982@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
 		},
 		{
@@ -340,7 +335,7 @@ func TestOAuth(t *testing.T) {
 				ID:            3,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -379,7 +374,7 @@ func TestOAuth(t *testing.T) {
 			},
 			deleteResponses: []deleteResponseParams{{}},
 
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA][FetchToken] Error in Token Fetch statusCode: 500\t error: Unmarshal of response unsuccessful: Internal Server Error")},
 			expectedPayload:      "", // since request has not gone to transformer at all!
 		},
 		{
@@ -388,7 +383,7 @@ func TestOAuth(t *testing.T) {
 				ID:            3,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -429,7 +424,7 @@ func TestOAuth(t *testing.T) {
 
 			oauthHttpClientTimeout: 1 * time.Second,
 
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Client.Timeout exceeded while awaiting headers")},
 			expectedPayload:      "", // since request has not gone to transformer at all!
 		},
 		{
@@ -439,7 +434,7 @@ func TestOAuth(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -477,7 +472,7 @@ func TestOAuth(t *testing.T) {
 			},
 			cpResponses:          []cpResponseParams{},
 			deleteResponses:      []deleteResponseParams{{}},
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
 			expectedPayload:      "",
 		},
 		{
@@ -487,7 +482,7 @@ func TestOAuth(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -523,7 +518,7 @@ func TestOAuth(t *testing.T) {
 			},
 			cpResponses:          []cpResponseParams{},
 			deleteResponses:      []deleteResponseParams{{}},
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
 			expectedPayload:      "",
 		},
 		{
@@ -532,7 +527,7 @@ func TestOAuth(t *testing.T) {
 				ID:            9,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine9",
@@ -582,7 +577,7 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 
-			expectedDeleteStatus: model.JobStatusFailed,
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] invalid credentials")},
 			expectedPayload:      `[{"jobId":"9","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane9@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine9"},{"email":"dshirilad9@gmail.com","userId":"Mercie9"}]}]`,
 		},
 	}
@@ -617,8 +612,11 @@ func TestOAuth(t *testing.T) {
 			}
 
 			status := api.Delete(ctx, tt.job, tt.dest)
-
-			require.Equal(t, tt.expectedDeleteStatus, status)
+			require.Equal(t, tt.expectedDeleteStatus.Status, status.Status)
+			if tt.expectedDeleteStatus.Status != model.JobStatusComplete {
+				require.Contains(t, status.Error.Error(), tt.expectedDeleteStatus.Error.Error())
+			}
+			// require.Equal(t, tt.expectedDeleteStatus, status)
 			// TODO: Compare input payload for all "/deleteUsers" requests
 			require.Equal(t, tt.expectedPayload, deleteRespProducer.GetCurrent().actualPayload)
 		})
@@ -670,6 +668,7 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *mux.Router {
 		if err != nil {
 			fmt.Printf("I'm here!!!! Some shitty response!!")
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+			return
 		}
 	})
 	return srvMux
@@ -710,6 +709,7 @@ func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *mux.Router 
 		_, bufErr := buf.ReadFrom(req.Body)
 		if bufErr != nil {
 			http.Error(w, bufErr.Error(), http.StatusInternalServerError)
+			return
 		}
 		// useful in validating the payload(sent in request body to transformer)
 		delRespProducer.GetCurrent().actualPayload = buf.String()
@@ -726,6 +726,7 @@ func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *mux.Router 
 		if err != nil {
 			fmt.Printf("I'm here!!!! Some shitty response!!")
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+			return
 		}
 	}).Methods(http.MethodPost)
 	return srvMux
