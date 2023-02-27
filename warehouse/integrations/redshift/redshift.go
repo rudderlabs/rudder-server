@@ -498,8 +498,8 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			TRIMBLANKS
 			ACCEPTINVCHARS
 			COMPUPDATE OFF
-			STATUPDATE OFF';
-		'`,
+			STATUPDATE OFF;
+		`,
 			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName),
 			sortedColumnNames,
 			manifestS3Location,
