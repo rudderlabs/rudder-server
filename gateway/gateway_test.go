@@ -941,6 +941,51 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
 			Expect(jobData.job).To(BeNil())
 		})
+
+		It("accepts events with non-string type anonymousId and/or userId", func() {
+			// map type usreId
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":   "track",
+						"userId": map[string]interface{}{"id": 456},
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			_, err = gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			// int type anonymousId
+			payloadMap = map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":   "track",
+						"userId": 456,
+					},
+				},
+			}
+			payload, err = json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			Expect(err).To(BeNil())
+			req = &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			_, err = gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+		})
 	})
 })
 

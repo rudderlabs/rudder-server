@@ -581,8 +581,8 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			return
 		}
 
-		anonIDFromReq, _ := toSet["anonymousId"].(string)
-		userIDFromReq, _ := toSet["userId"].(string)
+		anonIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["anonymousId"]))
+		userIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["userId"]))
 		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
 			err = errors.New(response.NonIdentifiableRequest)
 			return
