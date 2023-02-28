@@ -196,7 +196,6 @@ func TestUploads_GetToProcess(t *testing.T) {
 			LastAttemptAt:      time.Time{},
 			Attempts:           0,
 			UploadSchema:       model.Schema{},
-			MergedSchema:       model.Schema{},
 
 			UseRudderStorage: true,
 			SourceTaskRunID:  sourceTaskRunID,
