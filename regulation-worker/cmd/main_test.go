@@ -146,13 +146,13 @@ func TestFlow(t *testing.T) {
 			respBody:          `{"jobId":"1","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
 			getJobRespCode:    200,
 			updateJobRespCode: 201,
-			status:            "pending",
+			status:            model.JobStatus{Status: model.JobStatusPending},
 		},
 		{
 			respBody:          `{"jobId":"2","destinationId":"destId-s3-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
 			getJobRespCode:    200,
 			updateJobRespCode: 201,
-			status:            "pending",
+			status:            model.JobStatus{Status: model.JobStatusPending},
 		},
 	}
 	multiTenantTestData = []test{
@@ -160,13 +160,13 @@ func TestFlow(t *testing.T) {
 			respBody:          `{"jobId":"1","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
 			getJobRespCode:    200,
 			updateJobRespCode: 201,
-			status:            "pending",
+			status:            model.JobStatus{Status: model.JobStatusPending},
 		},
 		{
 			respBody:          `{"jobId":"2","destinationId":"destId-s3-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
 			getJobRespCode:    200,
 			updateJobRespCode: 201,
-			status:            "pending",
+			status:            model.JobStatus{Status: model.JobStatusPending},
 		},
 	}
 	// starting http server to mock regulation-manager
@@ -205,7 +205,7 @@ func TestFlow(t *testing.T) {
 			testDataMu.Lock()
 			defer testDataMu.Unlock()
 			for _, test := range singleTenantTestData {
-				if test.status == "pending" && test.getJobRespCode == 200 {
+				if test.status.Status == model.JobStatusPending && test.getJobRespCode == 200 {
 					return false
 				}
 			}
@@ -231,7 +231,7 @@ func TestFlow(t *testing.T) {
 			testDataMu.Lock()
 			defer testDataMu.Unlock()
 			for _, test := range multiTenantTestData {
-				if test.status == "pending" && test.getJobRespCode == 200 {
+				if test.status.Status == model.JobStatusPending && test.getJobRespCode == 200 {
 					return false
 				}
 			}
@@ -263,7 +263,7 @@ func getSingleTenantJob(w http.ResponseWriter, _ *http.Request) {
 	testDataMu.Lock()
 	defer testDataMu.Unlock()
 	for i, test := range singleTenantTestData {
-		if test.status == "pending" {
+		if test.status.Status == model.JobStatusPending {
 			w.WriteHeader(singleTenantTestData[i].getJobRespCode)
 			_, _ = w.Write([]byte(singleTenantTestData[i].respBody))
 			return
@@ -278,7 +278,7 @@ func getMultiTenantJob(w http.ResponseWriter, _ *http.Request) {
 	testDataMu.Lock()
 	defer testDataMu.Unlock()
 	for i, test := range multiTenantTestData {
-		if test.status == "pending" {
+		if test.status.Status == model.JobStatusPending {
 			w.WriteHeader(multiTenantTestData[i].getJobRespCode)
 			_, _ = w.Write([]byte(multiTenantTestData[i].respBody))
 			return
@@ -297,8 +297,8 @@ func updateSingleTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	testDataMu.Lock()
-	if status.Status == "complete" {
-		singleTenantTestData[jobID-1].status = "complete"
+	if status.Status == string(model.JobStatusComplete) {
+		singleTenantTestData[jobID-1].status.Status = model.JobStatusComplete
 	}
 	updateJobRespCode := singleTenantTestData[jobID-1].updateJobRespCode
 	testDataMu.Unlock()
@@ -322,8 +322,8 @@ func updateMultiTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	testDataMu.Lock()
-	if status.Status == "complete" {
-		multiTenantTestData[jobID-1].status = "complete"
+	if status.Status == string(model.JobStatusComplete) {
+		multiTenantTestData[jobID-1].status.Status = model.JobStatusComplete
 	}
 	updateJobRespCode := multiTenantTestData[jobID-1].updateJobRespCode
 	testDataMu.Unlock()
@@ -577,4 +577,5 @@ type test struct {
 
 type statusJobSchema struct {
 	Status string `json:"status"`
+	Reason string `json:"reason"`
 }

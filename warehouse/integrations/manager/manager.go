@@ -67,8 +67,9 @@ func New(destType string) (Manager, error) {
 		var bq bigquery.HandleT
 		return &bq, nil
 	case warehouseutils.SNOWFLAKE:
-		var sf snowflake.HandleT
-		return &sf, nil
+		sf := snowflake.NewSnowflake()
+		snowflake.WithConfig(sf, config.Default)
+		return sf, nil
 	case warehouseutils.POSTGRES:
 		pg := postgres.NewPostgres()
 		postgres.WithConfig(pg, config.Default)
@@ -107,8 +108,9 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		var bq bigquery.HandleT
 		return &bq, nil
 	case warehouseutils.SNOWFLAKE:
-		var sf snowflake.HandleT
-		return &sf, nil
+		sf := snowflake.NewSnowflake()
+		snowflake.WithConfig(sf, config.Default)
+		return sf, nil
 	case warehouseutils.POSTGRES:
 		pg := postgres.NewPostgres()
 		postgres.WithConfig(pg, config.Default)
