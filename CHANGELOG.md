@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.2](https://github.com/rudderlabs/rudder-server/compare/v1.6.1...v1.6.2) (2023-02-28)
+
+
+### Bug Fixes
+
+* payload limiter gauge reports invalid value type ([#3048](https://github.com/rudderlabs/rudder-server/issues/3048)) ([5605abc](https://github.com/rudderlabs/rudder-server/commit/5605abcc1bbfe43c0a9baaae9ebf66d616664897))
+* user/anonymous id read at gateway ([#3051](https://github.com/rudderlabs/rudder-server/issues/3051)) ([b87cc25](https://github.com/rudderlabs/rudder-server/commit/b87cc25ad79c7b70d3a102f949b99f71c9f58c37))
+
 ## [1.6.1](https://github.com/rudderlabs/rudder-server/compare/v1.6.0...v1.6.1) (2023-02-28)
 
 
