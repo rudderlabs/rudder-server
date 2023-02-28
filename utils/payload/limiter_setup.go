@@ -57,7 +57,7 @@ func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimite
 				stats.Default.NewStat(
 					"adaptive_payload_limiter_state",
 					stats.GaugeType,
-				).Gauge(float64(limiterStats.State))
+				).Gauge(int(limiterStats.State))
 				stats.Default.NewStat(
 					"adaptive_payload_limiter_threshold_factor",
 					stats.GaugeType,
