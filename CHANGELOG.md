@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/rudderlabs/rudder-server/compare/v1.6.0...v1.6.1) (2023-02-28)
+
+
+### Miscellaneous
+
+* debugger's badgerdb cache optimisations ([#3042](https://github.com/rudderlabs/rudder-server/issues/3042)) ([34602c3](https://github.com/rudderlabs/rudder-server/commit/34602c34924f2f007874009f6fdc69bbfb1fae44))
+
 ## [1.6.0](https://github.com/rudderlabs/rudder-server/compare/v1.5.0...v1.6.0) (2023-02-23)
 
 
