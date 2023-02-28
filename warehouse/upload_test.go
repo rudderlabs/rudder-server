@@ -271,14 +271,6 @@ var _ = Describe("Upload", Ordered, func() {
 		Expect(tus).Should(HaveLen(2))
 	})
 
-	DescribeTable("Are all table skip errors", func(loadErrors []error, expected bool) {
-		Expect(areAllTableSkipErrors(loadErrors)).To(Equal(expected))
-	},
-		Entry(nil, []error{}, true),
-		Entry(nil, []error{&TableSkipError{}}, true),
-		Entry(nil, []error{errors.New("some-error")}, false),
-	)
-
 	DescribeTable("Get table upload status map", func(tableUploadStatuses []*TableUploadStatusT, expected map[int64]map[string]*TableUploadStatusInfoT) {
 		Expect(getTableUploadStatusMap(tableUploadStatuses)).To(Equal(expected))
 	},

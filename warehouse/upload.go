@@ -184,7 +184,6 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		stagingFiles:   dto.StagingFiles,
 		stagingFileIDs: repo.StagingFileIDs(dto.StagingFiles),
 
-		hasAllTablesSkipped: false,
 		tableUploadStatuses: []*TableUploadStatusT{},
 
 		RefreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
@@ -639,7 +638,6 @@ func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (
 		if err != nil {
 			return
 		}
-		job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 		if len(loadErrors) > 0 {
 			err = misc.ConcatErrors(loadErrors)
@@ -662,7 +660,6 @@ func (job *UploadJobT) exportIdentities() (err error) {
 			if err != nil {
 				return
 			}
-			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 			if len(loadErrors) > 0 {
 				err = misc.ConcatErrors(loadErrors)
@@ -680,7 +677,6 @@ func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTabl
 	defer loadTimeStat.RecordDuration()()
 
 	loadErrors := job.loadAllTablesExcept(specialTables, loadFilesTableMap)
-	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 	if len(loadErrors) > 0 {
 		err = misc.ConcatErrors(loadErrors)
@@ -688,17 +684,6 @@ func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTabl
 	}
 
 	return
-}
-
-func areAllTableSkipErrors(loadErrors []error) bool {
-	res := true
-	for _, lErr := range loadErrors {
-		if _, ok := lErr.(*TableSkipError); !ok {
-			res = false
-			break
-		}
-	}
-	return res
 }
 
 // TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destination_id and namespace
@@ -963,17 +948,6 @@ func (job *UploadJobT) addColumnsToWarehouse(tName string, columnsMap map[string
 	return err
 }
 
-// TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
-type TableSkipError struct {
-	tableName        string
-	previousJobID    int64
-	previousJobError string
-}
-
-func (tse *TableSkipError) Error() string {
-	return fmt.Sprintf("Skipping %s table because it previously failed to load in an earlier job: %d with error: %s", tse.tableName, tse.previousJobID, tse.previousJobError)
-}
-
 func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFilesTableMap map[tableNameT]bool) []error {
 	uploadSchema := job.upload.UploadSchema
 	var parallelLoads int
@@ -1010,7 +984,8 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 			continue
 		}
 		if prevJobStatus, ok := previouslyFailedTables[tableName]; ok {
-			loadErrors = append(loadErrors, &TableSkipError{tableName: tableName, previousJobID: prevJobStatus.uploadID, previousJobError: prevJobStatus.error})
+			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with error: %s", tableName, prevJobStatus.uploadID, prevJobStatus.error)
+			loadErrors = append(loadErrors, skipError)
 			wg.Done()
 			continue
 		}
@@ -1201,8 +1176,8 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tName := range userTables {
 		if prevJobStatus, ok := previouslyFailedTables[tName]; ok {
-			err = &TableSkipError{tableName: tName, previousJobID: prevJobStatus.uploadID, previousJobError: prevJobStatus.error}
-			return []error{err}, nil
+			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with error: %s", tName, prevJobStatus.uploadID, prevJobStatus.error)
+			return []error{skipError}, nil
 		}
 	}
 	for _, tName := range userTables {
@@ -1258,7 +1233,8 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tableName := range identityTables {
 		if prevJobStatus, ok := previouslyFailedTables[tableName]; ok {
-			return []error{&TableSkipError{tableName: tableName, previousJobID: prevJobStatus.uploadID, previousJobError: prevJobStatus.error}}, nil
+			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with error: %s", tableName, prevJobStatus.uploadID, prevJobStatus.error)
+			return []error{skipError}, nil
 		}
 	}
 
