@@ -536,3 +536,73 @@ func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destination
 
 	return destinationIDs, nil
 }
+
+func (uploads *Uploads) PendingTablsUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
+	pendingTableUploads := make([]model.PendingTableUpload, 0)
+
+	rows, err := uploads.db.QueryContext(ctx, `
+		SELECT
+		  UT.id,
+		  UT.destination_id,
+		  UT.namespace,
+		  TU.table_name,
+		  TU.status,
+		  TU.error
+		FROM
+			`+uploadsTableName+` UT
+		INNER JOIN
+			`+tableUploadTableName+` TU
+		ON
+			UT.id = TU.wh_upload_id
+		WHERE
+		  	UT.id <= $1 AND
+			UT.destination_id = $2 AND
+		   	UT.namespace = $3 AND
+		  	UT.status != $4 AND
+		  	UT.status != $5 AND
+		  	TU.table_name in (
+				SELECT
+				  table_name
+				FROM
+				  `+tableUploadTableName+` TU1
+				WHERE
+				  TU1.wh_upload_id = $1
+		  )
+		ORDER BY
+		  UT.id ASC;
+`,
+		uploadID,
+		destID,
+		namespace,
+		model.ExportedData,
+		model.Aborted,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("pending table uploads: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var pendingTableUpload model.PendingTableUpload
+
+		err := rows.Scan(
+			&pendingTableUpload.UploadID,
+			&pendingTableUpload.DestinationID,
+			&pendingTableUpload.Namespace,
+			&pendingTableUpload.TableName,
+			&pendingTableUpload.Status,
+			&pendingTableUpload.Error,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+
+		pendingTableUploads = append(pendingTableUploads, pendingTableUpload)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+	return pendingTableUploads, nil
+}

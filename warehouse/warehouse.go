@@ -290,7 +290,7 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
-	for config := range wh.tenantManager.WatchConfig(ctx) {
+	for workspaceConfig := range wh.tenantManager.WatchConfig(ctx) {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.Warehouse{}
 		sourceIDsByWorkspaceLock.Lock()
@@ -300,7 +300,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		wh.workspaceBySourceIDs = map[string]string{}
 
 		wh.Logger.Info(`Received updated workspace config`)
-		for workspaceID, wConfig := range config {
+		for workspaceID, wConfig := range workspaceConfig {
 			for _, source := range wConfig.Sources {
 				if _, ok := sourceIDsByWorkspace[workspaceID]; !ok {
 					sourceIDsByWorkspace[workspaceID] = []string{}

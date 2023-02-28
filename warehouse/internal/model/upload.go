@@ -96,6 +96,15 @@ type UploadJob struct {
 	LoadFileGenStartTime time.Time
 }
 
+type PendingTableUpload struct {
+	UploadID      int64
+	DestinationID string
+	Namespace string
+	TableName string
+	Status string
+	Error  string
+}
+
 type Matcher interface {
 	MatchString(string) bool
 }

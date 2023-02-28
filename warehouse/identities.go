@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -424,7 +425,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			Warehouse: warehouse,
 		}, whManager)
 
-		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)
+		tableUploadsCreated, _ := job.tableUploadsRepo.ExistsForUpload(context.TODO(), job.upload.ID)
 		if !tableUploadsCreated {
 			err := job.initTableUploads()
 			if err != nil {
