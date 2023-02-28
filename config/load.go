@@ -61,7 +61,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 		for _, configVal := range configValArr {
 			value := configVal.value
 			switch value := value.(type) {
-			case *int, *Atomic[int]:
+			case *int, *Atomic[int]: // @TODO remove *int once all configs are migrated to atomic
 				var _value int
 				var isSet bool
 				for _, key := range configVal.keys {
@@ -75,7 +75,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 					_value = configVal.defaultValue.(int)
 				}
 				_value = _value * configVal.multiplier.(int)
-				if value, ok := value.(*int); ok {
+				if value, ok := value.(*int); ok { // @TODO remove this IF once all configs are migrated to atomic
 					if _value != *value {
 						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
 						*value = _value
