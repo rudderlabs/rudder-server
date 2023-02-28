@@ -474,9 +474,7 @@ func (job *UploadJobT) run() (err error) {
 		case model.ExportedData:
 			newStatus = nextUploadState.failed
 
-			var (
-				currentJobSucceededTables map[string]model.PendingTableUpload
-			)
+			var currentJobSucceededTables map[string]model.PendingTableUpload
 
 			if _, currentJobSucceededTables, err = job.TablesToSkip(); err != nil {
 				err = fmt.Errorf("tables to skip: %w", err)
@@ -681,28 +679,6 @@ func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTabl
 	}
 
 	return
-}
-
-// TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destination_id and namespace
-type TableUploadStatusT struct {
-	uploadID      int64
-	destinationID string
-	namespace     string
-	tableName     string
-	status        string
-	error         string
-}
-
-// TableUploadStatusInfoT captures the status and error for [uploadID][tableName]
-type TableUploadStatusInfoT struct {
-	status string
-	error  string
-}
-
-// TableUploadIDInfoT captures the uploadID and error for [uploadID][tableName]
-type TableUploadIDInfoT struct {
-	uploadID int64
-	error    string
 }
 
 func (job *UploadJobT) TablesToSkip() (map[string]model.PendingTableUpload, map[string]model.PendingTableUpload, error) {

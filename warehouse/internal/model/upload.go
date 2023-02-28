@@ -99,10 +99,10 @@ type UploadJob struct {
 type PendingTableUpload struct {
 	UploadID      int64
 	DestinationID string
-	Namespace string
-	TableName string
-	Status string
-	Error  string
+	Namespace     string
+	TableName     string
+	Status        string
+	Error         string
 }
 
 type Matcher interface {
