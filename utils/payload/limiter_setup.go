@@ -54,14 +54,25 @@ func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimite
 			case <-time.After(statsFrequency):
 				limiterStats := limiter.Stats()
 
-				stats.Default.NewStat("adaptive_payload_limiter_state", stats.GaugeType).Gauge(limiterStats.State)
-				stats.Default.NewStat("adaptive_payload_limiter_threshold_factor", stats.GaugeType).Gauge(limiterStats.ThresholdFactor)
+				stats.Default.NewStat(
+					"adaptive_payload_limiter_state",
+					stats.GaugeType,
+				).Gauge(float64(limiterStats.State))
+				stats.Default.NewStat(
+					"adaptive_payload_limiter_threshold_factor",
+					stats.GaugeType,
+				).Gauge(limiterStats.ThresholdFactor)
 				if memStats, err := mem.Get(); err == nil {
-					stats.Default.NewStat("mem_total_bytes", stats.GaugeType).Gauge(memStats.Total)
-					stats.Default.NewStat("mem_available_bytes", stats.GaugeType).Gauge(memStats.Available)
-					stats.Default.NewStat("mem_available_percent", stats.GaugeType).Gauge(memStats.AvailablePercent)
-					stats.Default.NewStat("mem_used_bytes", stats.GaugeType).Gauge(memStats.Used)
-					stats.Default.NewStat("mem_used_percent", stats.GaugeType).Gauge(memStats.UsedPercent)
+					stats.Default.NewStat("mem_total_bytes", stats.GaugeType).
+						Gauge(memStats.Total)
+					stats.Default.NewStat("mem_available_bytes", stats.GaugeType).
+						Gauge(memStats.Available)
+					stats.Default.NewStat("mem_available_percent", stats.GaugeType).
+						Gauge(memStats.AvailablePercent)
+					stats.Default.NewStat("mem_used_bytes", stats.GaugeType).
+						Gauge(memStats.Used)
+					stats.Default.NewStat("mem_used_percent", stats.GaugeType).
+						Gauge(memStats.UsedPercent)
 				}
 			}
 		}
