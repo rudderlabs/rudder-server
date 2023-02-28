@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
@@ -368,42 +369,27 @@ func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestW
 //
 // Every webRequestWorker keeps doing this concurrently.
 func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
-	reqBuffer := make([]*webRequestT, 0)
-	timeout := time.After(userWebRequestBatchTimeout)
-	var start time.Time
 	for {
-		select {
-		case req, ok := <-userWebRequestWorker.webRequestQ:
-			if !ok {
-				breq := batchWebRequestT{batchRequest: reqBuffer}
+		reqBuffer, numWebRequests, bufferTime, isWebRequestQOpen := lo.BufferWithTimeout(
+			userWebRequestWorker.webRequestQ,
+			maxUserWebRequestBatchSize,
+			userWebRequestBatchTimeout,
+		)
+		if numWebRequests > 0 {
+			if numWebRequests == maxUserWebRequestBatchSize {
 				userWebRequestWorker.bufferFullStat.Count(1)
-				start = time.Now()
-				userWebRequestWorker.batchRequestQ <- &breq
-				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
-				close(userWebRequestWorker.batchRequestQ)
-				return
 			}
-
-			// Append to request buffer
-			reqBuffer = append(reqBuffer, req)
-			if len(reqBuffer) == maxUserWebRequestBatchSize {
-				breq := batchWebRequestT{batchRequest: reqBuffer}
-				userWebRequestWorker.bufferFullStat.Count(1)
-				start = time.Now()
-				userWebRequestWorker.batchRequestQ <- &breq
-				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
-				reqBuffer = make([]*webRequestT, 0)
-			}
-		case <-timeout:
-			timeout = time.After(userWebRequestBatchTimeout)
-			if len(reqBuffer) > 0 {
-				breq := batchWebRequestT{batchRequest: reqBuffer}
+			if bufferTime >= userWebRequestBatchTimeout {
 				userWebRequestWorker.timeOutStat.Count(1)
-				start = time.Now()
-				userWebRequestWorker.batchRequestQ <- &breq
-				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
-				reqBuffer = make([]*webRequestT, 0)
 			}
+			breq := batchWebRequestT{batchRequest: reqBuffer}
+			start := time.Now()
+			userWebRequestWorker.batchRequestQ <- &breq
+			gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
+		}
+		if !isWebRequestQOpen {
+			close(userWebRequestWorker.batchRequestQ)
+			return
 		}
 	}
 }

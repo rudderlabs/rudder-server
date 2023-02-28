@@ -181,8 +181,6 @@ type workerT struct {
 	workerID                  int                 // identifies the worker
 	failedJobs                int                 // counts the failed jobs of a worker till it gets reset by external channel
 	barrier                   *eventorder.Barrier
-	retryForJobMap            map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex       sync.RWMutex            // lock to protect structure above
 	routerJobs                []types.RouterJobT      // slice to hold router jobs to send to destination transformer
 	destinationJobs           []types.DestinationJobT // slice to hold destination jobs
 	rt                        *HandleT                // handle to router
@@ -998,12 +996,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, payload json.Ra
 		status.JobState = jobsdb.Succeeded.State
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
-
-		// Deleting jobID from retryForJobMap. jobID goes into retryForJobMap if it is failed with 5xx or 429.
-		// It's safe to delete from the map, even if jobID is not present.
-		worker.retryForJobMapMutex.Lock()
-		delete(worker.retryForJobMap, destinationJobMetadata.JobID)
-		worker.retryForJobMapMutex.Unlock()
 	} else {
 		// Saving payload to DB only
 		// 1. if job failed and
@@ -1017,34 +1009,23 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, payload json.Ra
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++
 
-		status.JobState = jobsdb.Failed.State
-
-		if respStatusCode >= 500 {
-			timeElapsed := time.Since(firstAttemptedAtTime)
-			if respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode {
-				if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
-					status.JobState = jobsdb.Aborted.State
-					worker.retryForJobMapMutex.Lock()
-					delete(worker.retryForJobMap, destinationJobMetadata.JobID)
-					worker.retryForJobMapMutex.Unlock()
-				} else {
-					worker.retryForJobMapMutex.Lock()
-					worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
-					worker.retryForJobMapMutex.Unlock()
+		retryLimitReached := func() bool {
+			if respStatusCode >= 500 && respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode {
+				if time.Since(firstAttemptedAtTime) > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
+					return true
 				}
 			}
-		} else if respStatusCode == 429 {
-			worker.retryForJobMapMutex.Lock()
-			worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
-			worker.retryForJobMapMutex.Unlock()
-		} else {
-			status.JobState = jobsdb.Aborted.State
+			return false
 		}
 
-		if status.JobState == jobsdb.Aborted.State {
+		if isJobTerminated(respStatusCode) || retryLimitReached() {
+			status.JobState = jobsdb.Aborted.State
 			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.WorkspaceId, status.ErrorCode, errorAt)
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) // NOTE: Old key used was "error_response"
+		} else {
+			status.JobState = jobsdb.Failed.State
+			status.RetryTime = status.ExecTime.Add(durationBeforeNextAttempt(status.AttemptNum))
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
@@ -1165,7 +1146,6 @@ func (rt *HandleT) initWorkers() {
 					"batching":         strconv.FormatBool(rt.enableBatching),
 					"transformerProxy": strconv.FormatBool(rt.transformerProxy),
 				})),
-			retryForJobMap:            make(map[int64]time.Time),
 			workerID:                  i,
 			failedJobs:                0,
 			routerJobs:                make([]types.RouterJobT, 0),
@@ -1232,7 +1212,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledOrderKeys map[string]st
 	//#JobOrder (see other #JobOrder comment)
 	index := rt.getWorkerPartition(orderKey)
 	worker := rt.workers[index]
-	if worker.canBackoff(job) {
+	if time.Until(job.LastJobStatus.RetryTime) > 0 { // backoff
 		return
 	}
 	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
@@ -1253,17 +1233,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledOrderKeys map[string]st
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
 	return nil
 	//#EndJobOrder
-}
-
-func (worker *workerT) canBackoff(job *jobsdb.JobT) (shouldBackoff bool) {
-	// if the same job has failed before, check for next retry time
-	worker.retryForJobMapMutex.RLock()
-	defer worker.retryForJobMapMutex.RUnlock()
-	if nextRetryTime, ok := worker.retryForJobMap[job.JobID]; ok && time.Until(nextRetryTime) > 0 {
-		worker.rt.logger.Debugf("[%v Router] :: Less than next retry time: %v", worker.rt.destName, nextRetryTime)
-		return true
-	}
-	return false
 }
 
 func (rt *HandleT) getWorkerPartition(key string) int {
@@ -1476,53 +1445,24 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 // statusInsertLoop will run in a separate goroutine
 // Blocking method, returns when rt.responseQ channel is closed.
 func (rt *HandleT) statusInsertLoop() {
-	var responseList []jobResponseT
-
-	// Wait for the responses from statusQ
-	lastUpdate := time.Now()
-
 	statusStat := stats.Default.NewTaggedStat("router_status_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.Default.NewTaggedStat("router_status_events", stats.CountType, stats.Tags{"destType": rt.destName})
-	timeout := time.After(maxStatusUpdateWait)
 
 	for {
-		select {
-		case jobStatus, hasMore := <-rt.responseQ:
-			if !hasMore {
-				if len(responseList) == 0 {
-					rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destName)
-					return
-				}
-
-				start := time.Now()
-				rt.commitStatusList(&responseList)
-				countStat.Count(len(responseList))
-				responseList = nil
-				statusStat.Since(start)
-
-				rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destName)
-				return
-			}
-			rt.logger.Debugf(
-				"[%v Router] :: Got back status error %v and state %v for job %v",
-				rt.destName,
-				jobStatus.status.ErrorCode,
-				jobStatus.status.JobState,
-				jobStatus.status.JobID,
-			)
-			responseList = append(responseList, jobStatus)
-		case <-timeout:
-			timeout = time.After(maxStatusUpdateWait)
-			// Ideally should sleep for duration maxStatusUpdateWait-(time.Now()-lastUpdate)
-			// but approx is good enough at the cost of reduced computation.
-		}
-		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
+		jobResponseBuffer, numJobResponses, _, isResponseQOpen := lo.BufferWithTimeout(
+			rt.responseQ,
+			updateStatusBatchSize,
+			maxStatusUpdateWait,
+		)
+		if numJobResponses > 0 {
 			start := time.Now()
-			rt.commitStatusList(&responseList)
-			countStat.Count(len(responseList))
-			responseList = nil
-			lastUpdate = time.Now()
+			rt.commitStatusList(&jobResponseBuffer)
+			countStat.Count(numJobResponses)
 			statusStat.Since(start)
+		}
+		if !isResponseQOpen {
+			rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destName)
+			return
 		}
 	}
 }

@@ -19,7 +19,6 @@ const (
 )
 
 func TestSimulateBarrier(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	const (
 		channelSize = 200
 		batchSize   = 50
@@ -317,12 +316,13 @@ func newRandomJobs(num int) []*job {
 }
 
 func randomState() (state string, terminal bool) {
+	newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
 	states := []string{
 		jobsdb.Failed.State, jobsdb.Failed.State, jobsdb.Failed.State,
 		jobsdb.Aborted.State, jobsdb.Aborted.State, jobsdb.Aborted.State,
 		jobsdb.Succeeded.State, jobsdb.Succeeded.State, jobsdb.Succeeded.State,
 	}
-	state = states[rand.Intn(len(states))] // skipcq: GSC-G404
+	state = states[newRand.Intn(len(states))] // skipcq: GSC-G404
 	terminal = state == jobsdb.Succeeded.State || state == jobsdb.Aborted.State
 	return state, terminal
 }
