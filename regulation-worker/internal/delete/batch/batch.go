@@ -100,8 +100,7 @@ func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string)
 	defer func() {
 		_ = f.Close()
 	}()
-
-	if _, err := io.WriteString(f, fmt.Sprintf("%s\n", fileName)); err != nil {
+	if _, err := fmt.Fprintf(f, "%s\n", fileName); err != nil {
 		return fmt.Errorf("error while writing to statusTrackerFile: %w", err)
 	}
 
@@ -133,7 +132,7 @@ func (*Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]st
 
 	if len(byt) == 0 {
 		// insert <jobID> in 1st line
-		if _, err := io.WriteString(f, fmt.Sprintf("%s\n", jobID)); err != nil {
+		if _, err := fmt.Fprintf(f, "%s\n", jobID); err != nil {
 			return nil, fmt.Errorf("writing jobId: %s to status tracker file: %s, err: %w", jobID, StatusTrackerFileName, err)
 		}
 		return nil, nil
@@ -157,8 +156,7 @@ func (*Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]st
 		if _, err := f.Seek(0, 0); err != nil {
 			return nil, fmt.Errorf("moving seek pointer: %s to zero location: %w", path, err)
 		}
-
-		if _, err := io.WriteString(f, fmt.Sprintf("%s\n", jobID)); err != nil {
+		if _, err := fmt.Fprintf(f, "%s\n", jobID); err != nil {
 			return nil, fmt.Errorf("writing to status tracker file:%s, err: %w", StatusTrackerFileName, err)
 		}
 
@@ -329,14 +327,14 @@ func (bm *BatchManager) Delete(
 	fm, err := bm.FMFactory.New(&filemanager.SettingsT{Provider: destName, Config: destConfig})
 	if err != nil {
 		pkgLogger.Errorf("fetching file manager for destination: %s,  %w", destName, err)
-		return model.JobStatusNotSupported // terminal state
+		return model.JobStatus{Status: model.JobStatusAborted, Error: err}
 	}
 
 	// parent directory of all the temporary files created/downloaded in the process of deletion.
 	baseDIR, err := os.MkdirTemp("", "")
 	if err != nil {
 		pkgLogger.Errorf("error while creating temporary directory to store all temporary files during deletion: %v", err)
-		return model.JobStatusFailed
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 
 	batch := Batch{
@@ -356,7 +354,7 @@ func (bm *BatchManager) Delete(
 		files, err := batch.listFiles(ctx, prefix, bm.FilesLimit)
 		if err != nil {
 			pkgLogger.Errorf("error while getting files list: %v", err)
-			return model.JobStatusFailed
+			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
 		if len(files) == 0 {
@@ -366,13 +364,13 @@ func (bm *BatchManager) Delete(
 
 		fName, err := batch.download(ctx, filepath.Join(prefix, StatusTrackerFileName))
 		if err != nil {
-			return model.JobStatusFailed
+			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
 		cleanedFiles, err := batch.cleanedFiles(ctx, fName, &job)
 		if err != nil {
 			pkgLogger.Errorf("error while getting status tracker file: %v", err)
-			return model.JobStatusFailed
+			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
 		if len(cleanedFiles) != 0 {
@@ -435,13 +433,13 @@ func (bm *BatchManager) Delete(
 		err = g.Wait()
 		if err != nil {
 			pkgLogger.Errorf("user identity deletion job failed with error: %v", err)
-			return model.JobStatusFailed
+			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
 		pkgLogger.Infof("successfully completed loop of ")
 	}
 
-	return model.JobStatusComplete
+	return model.JobStatus{Status: model.JobStatusComplete}
 }
 
 func LocalFileHandlerFactory(dest, upstreamFilePath string) filehandler.LocalFileHandler {

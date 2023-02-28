@@ -156,7 +156,8 @@ func TestRedisDeletion(t *testing.T) {
 
 	// deleting the last key inserted
 	status := kvstore.Delete(ctx, deleteJob, dest)
-	require.Equal(t, model.JobStatusComplete, status, "actual deletion status different than expected")
+	fmt.Println("status: ", status)
+	require.Equal(t, model.JobStatus{Status: model.JobStatusComplete}, status, "actual deletion status different than expected")
 
 	fieldCountAfterDelete := make([]int, len(inputTestData))
 	for i, test := range inputTestData {
