@@ -8,13 +8,18 @@ import (
 func GetMemoryUsage(basePath string) int64 {
 	n, err := getMemStat(basePath, "memory.usage_in_bytes")
 	if err == nil {
-		return n
+		wss := getWSSMemory(basePath, n)
+		rss := getRSSMemory(basePath)
+		if wss > rss {
+			return wss
+		}
+		return rss
 	}
 	n, err = getMemStatV2(basePath, "memory.current")
 	if err != nil {
 		return 0
 	}
-	return n
+	return getWSSMemoryV2(basePath, n)
 }
 
 // GetMemoryLimit returns the cgroup's (v1 or v2) memory limit, or [totalMem] if there is no limit set.
@@ -63,11 +68,51 @@ func getMemStat(basePath, statName string) (int64, error) {
 // GetHierarchicalMemoryLimit returns hierarchical memory limit
 // https://www.kernel.org/doc/Documentation/cgroup-v1/memory.txt
 func GetHierarchicalMemoryLimit(basePath string) int64 {
+	return memStat(basePath, "hierarchical_memory_limit")
+}
+
+func getRSSMemory(basePath string) int64 {
+	return memStat(basePath, "total_rss")
+}
+
+func getWSSMemory(basePath string, used int64) int64 {
+	inactive := memStat(basePath, "total_inactive_file")
+	if used < inactive {
+		return 0
+	}
+	return used - inactive
+}
+
+func getWSSMemoryV2(basePath string, used int64) int64 {
+	inactive := memStatV2(basePath, "inactive_file")
+	if used < inactive {
+		return 0
+	}
+	return used - inactive
+}
+
+func memStat(basePath, key string) int64 {
 	data, err := getFileContents("memory.stat", basePath+"/sys/fs/cgroup/memory", basePath+"/proc/self/cgroup", "memory")
 	if err != nil {
 		return 0
 	}
-	memStat, err := grepFirstMatch(data, "hierarchical_memory_limit", 1, " ")
+	memStat, err := grepFirstMatch(data, key, 1, " ")
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.ParseInt(memStat, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func memStatV2(basePath, key string) int64 {
+	data, err := getFileContents("memory.stat", basePath+"/sys/fs/cgroup", basePath+"/proc/self/cgroup", "")
+	if err != nil {
+		return 0
+	}
+	memStat, err := grepFirstMatch(data, key, 1, " ")
 	if err != nil {
 		return 0
 	}
