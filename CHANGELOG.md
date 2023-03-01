@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/rudderlabs/rudder-server/compare/v1.6.2...v1.6.3) (2023-03-01)
+
+
+### Bug Fixes
+
+* limiter deadlock while trying to notify a dynamic priority item ([#3056](https://github.com/rudderlabs/rudder-server/issues/3056)) ([5f967dc](https://github.com/rudderlabs/rudder-server/commit/5f967dc77a2e14338e8a7a79e60dd705cb2bc213))
+
 ## [1.6.2](https://github.com/rudderlabs/rudder-server/compare/v1.6.1...v1.6.2) (2023-02-28)
 
 
