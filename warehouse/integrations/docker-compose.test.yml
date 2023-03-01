@@ -50,7 +50,7 @@ services:
     ports:
       - "9090"
   wh-databricks-connector:
-    image: rudderstack/rudder-databricks-connector:v1.3.0
+    image: rudderstack/rudder-databricks-connector:v1.4.2
     container_name: wh-databricks-connector
     ports:
       - "50051"
