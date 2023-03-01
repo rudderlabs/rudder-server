@@ -422,7 +422,7 @@ func (pg *Postgres) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 		WHERE
 		  table_schema = $1
 		  AND table_name NOT LIKE $2;
-		`
+	`
 	rows, err := dbHandle.Query(
 		sqlStatement,
 		pg.Namespace,
