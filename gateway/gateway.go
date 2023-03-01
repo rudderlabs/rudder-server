@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -25,7 +27,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -99,7 +100,7 @@ var (
 	gwAllowPartialWriteWithErrors                                                     bool
 	pkgLogger                                                                         logger.Logger
 	Diagnostics                                                                       diagnostics.DiagnosticsI
-	semverRegexp                                                                      *regexp.Regexp = regexp.MustCompile(`^v?([0-9]+)(\.[0-9]+)?(\.[0-9]+)?(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?$`)
+	semverRegexp                                                                      = regexp.MustCompile(`^v?([0-9]+)(\.[0-9]+)?(\.[0-9]+)?(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?$`)
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -146,7 +147,6 @@ type userWebRequestWorkerT struct {
 	webRequestQ                 chan *webRequestT
 	batchRequestQ               chan *batchWebRequestT
 	reponseQ                    chan map[uuid.UUID]string
-	workerID                    int
 	batchTimeStat               stats.Measurement
 	bufferFullStat, timeOutStat stats.Measurement
 }
@@ -204,17 +204,13 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		gateway.logger.Debug("User Web Request Worker Started", i)
-		tags := map[string]string{
-			"workerId": strconv.Itoa(i),
-		}
 		userWebRequestWorker := &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
-			workerID:       i,
-			batchTimeStat:  gateway.stats.NewTaggedStat("gateway.batch_time", stats.TimerType, tags),
-			bufferFullStat: gateway.stats.NewTaggedStat("gateway.user_request_worker_buffer_full", stats.CountType, tags),
-			timeOutStat:    gateway.stats.NewTaggedStat("gateway.user_request_worker_time_out", stats.CountType, tags),
+			batchTimeStat:  gateway.stats.NewStat("gateway.batch_time", stats.TimerType),
+			bufferFullStat: gateway.stats.NewStat("gateway.user_request_worker_buffer_full", stats.CountType),
+			timeOutStat:    gateway.stats.NewStat("gateway.user_request_worker_time_out", stats.CountType),
 		}
 		gateway.userWebRequestWorkers[i] = userWebRequestWorker
 	}
@@ -567,8 +563,8 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			return
 		}
 
-		anonIDFromReq, _ := toSet["anonymousId"].(string)
-		userIDFromReq, _ := toSet["userId"].(string)
+		anonIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["anonymousId"]))
+		userIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["userId"]))
 		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
 			err = errors.New(response.NonIdentifiableRequest)
 			return
