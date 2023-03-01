@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 
@@ -345,6 +346,7 @@ func runAllInit() {
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
+	postgreslegacy.Init()
 	redshift.Init()
 	snowflake.Init()
 	deltalake.Init()

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 
@@ -29,10 +29,10 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	postgres.Init()
+	postgreslegacy.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
-	db, err := postgres.Connect(postgres.Credentials{
+	db, err := postgreslegacy.Connect(postgreslegacy.Credentials{
 		DBName:   configurations["privatePostgresDatabase"],
 		Password: configurations["privatePostgresPassword"],
 		User:     configurations["privatePostgresUser"],
@@ -125,9 +125,9 @@ func TestIntegrationPostgres(t *testing.T) {
 
 	t.Parallel()
 
-	postgres.Init()
+	postgreslegacy.Init()
 
-	db, err := postgres.Connect(postgres.Credentials{
+	db, err := postgreslegacy.Connect(postgreslegacy.Credentials{
 		DBName:   "rudderdb",
 		Password: "rudder-password",
 		User:     "rudder",
@@ -234,7 +234,7 @@ func TestConfigurationValidationPostgres(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	postgres.Init()
+	postgreslegacy.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
