@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
@@ -71,6 +73,12 @@ func New(destType string) (Manager, error) {
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
+		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
+			pg := postgreslegacy.NewHandle()
+			postgreslegacy.WithConfig(pg, config.Default)
+			return pg, nil
+		}
+
 		pg := postgres.NewPostgres()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
@@ -112,6 +120,12 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
+		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
+			pg := postgreslegacy.NewHandle()
+			postgreslegacy.WithConfig(pg, config.Default)
+			return pg, nil
+		}
+
 		pg := postgres.NewPostgres()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
