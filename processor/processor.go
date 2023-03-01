@@ -1897,10 +1897,10 @@ type transformSrcDestOutput struct {
 
 func (proc *Handle) transformSrcDest(
 	ctx context.Context,
-// main inputs
+	// main inputs
 	srcAndDestKey string, eventList []transformer.TransformerEventT,
 
-// helpers
+	// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},

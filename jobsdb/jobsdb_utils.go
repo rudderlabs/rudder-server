@@ -241,7 +241,7 @@ func generateStatTags(params GetQueryParamsT) statTags {
 	if len(params.StateFilters) > 0 {
 		tags.StateFilters = params.StateFilters
 	}
-	
+
 	if shouldSendWorkspaceTag(params.WorkspaceID) {
 		tags.WorkspaceID = params.WorkspaceID
 	}
