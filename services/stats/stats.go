@@ -84,7 +84,6 @@ func NewStats(config *config.Config, loggerFactory *logger.Factory, metricManage
 	s := &statsdStats{
 		log: loggerFactory.NewLogger().Child("stats"),
 		conf: &statsdConfig{
-			enabled:         config.GetBool("enableStats", true),
 			tagsFormat:      config.GetString("statsTagsFormat", "influxdb"),
 			excludedTags:    config.GetStringSlice("statsExcludedTags", nil),
 			statsdServerURL: config.GetString("STATSD_SERVER_URL", "localhost:8125"),
@@ -105,6 +104,7 @@ func NewStats(config *config.Config, loggerFactory *logger.Factory, metricManage
 			pendingClients: make(map[string]*statsdClient),
 		},
 	}
+	s.conf.enabled.Store(config.GetBool("enableStats", true))
 	return s
 }
 
@@ -116,13 +116,13 @@ type statsdStats struct {
 }
 
 func (s *statsdStats) Start(ctx context.Context) {
-	if !s.conf.enabled {
+	if !s.conf.enabled.Load() {
 		return
 	}
 	s.state.conn = statsd.Address(s.conf.statsdServerURL)
 	// since, we don't want setup to be a blocking call, creating a separate `go routine`` for retry to get statsd client.
 	var err error
-	// NOTE: this is to get atleast a dummy client, even if there is a failure. So, that nil pointer error is not received when client is called.
+	// NOTE: this is to get at least a dummy client, even if there is a failure. So, that nil pointer error is not received when client is called.
 	s.state.client.statsd, err = statsd.New(s.state.conn, s.conf.statsdTagsFormat(), s.conf.statsdDefaultTags())
 	if err == nil {
 		s.state.clientsLock.Lock()
@@ -133,7 +133,7 @@ func (s *statsdStats) Start(ctx context.Context) {
 		if err != nil {
 			s.state.client.statsd, err = s.getNewStatsdClientWithExpoBackoff(ctx, s.state.conn, s.conf.statsdTagsFormat(), s.conf.statsdDefaultTags())
 			if err != nil {
-				s.conf.enabled = false
+				s.conf.enabled.Store(false)
 				s.log.Errorf("error while creating new statsd client: %v", err)
 			} else {
 				s.state.clientsLock.Lock()
@@ -202,7 +202,7 @@ func (s *statsdStats) collectPeriodicStats() {
 func (s *statsdStats) Stop() {
 	s.state.clientsLock.RLock()
 	defer s.state.clientsLock.RUnlock()
-	if !s.conf.enabled || !s.state.connEstablished {
+	if !s.conf.enabled.Load() || !s.state.connEstablished {
 		return
 	}
 	if s.state.rc.done != nil {
@@ -228,7 +228,7 @@ func (s *statsdStats) NewSampledTaggedStat(Name, StatType string, tags Tags) (m 
 
 func (s *statsdStats) internalNewTaggedStat(name, statType string, tags Tags, samplingRate float32) (m Measurement) {
 	// If stats is not enabled, returning a dummy struct
-	if !s.conf.enabled {
+	if !s.conf.enabled.Load() {
 		return newStatsdMeasurement(s.conf, s.log, name, statType, &statsdClient{})
 	}
 
