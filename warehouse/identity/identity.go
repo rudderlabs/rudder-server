@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -37,7 +37,7 @@ type HandleT struct {
 	Uploader           warehouseutils.UploaderI
 	UploadID           int64
 	WarehouseManager   WarehouseManager
-	LoadFileDownloader load_file_downloader.LoadFileDownloader
+	LoadFileDownloader downloader.Downloader
 }
 
 func (idr *HandleT) mergeRulesTable() string {

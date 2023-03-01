@@ -17,7 +17,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -91,7 +91,7 @@ type MSSQL struct {
 	EnableDeleteByJobs          bool
 	Logger                      logger.Logger
 	NumWorkersDownloadLoadFiles int
-	LoadFileDownLoader          load_file_downloader.LoadFileDownloader
+	LoadFileDownLoader          downloader.Downloader
 }
 
 type Credentials struct {
@@ -720,7 +720,7 @@ func (ms *MSSQL) Setup(warehouse warehouseutils.Warehouse, uploader warehouseuti
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
-	ms.LoadFileDownLoader = load_file_downloader.NewLoadFileDownloader(&warehouse, uploader, ms.NumWorkersDownloadLoadFiles)
+	ms.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, ms.NumWorkersDownloadLoadFiles)
 
 	ms.DB, err = Connect(ms.getConnectionCredentials())
 	return err

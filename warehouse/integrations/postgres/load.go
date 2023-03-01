@@ -10,9 +10,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -45,7 +45,7 @@ type LoadTable struct {
 	Warehouse          *warehouseutils.Warehouse
 	Stats              stats.Stats
 	Config             *config.Config
-	LoadFileDownloader load_file_downloader.LoadFileDownloader
+	LoadFileDownloader downloader.Downloader
 }
 
 type LoadUsersTable struct {
@@ -55,7 +55,7 @@ type LoadUsersTable struct {
 	Warehouse          *warehouseutils.Warehouse
 	Stats              stats.Stats
 	Config             *config.Config
-	LoadFileDownloader load_file_downloader.LoadFileDownloader
+	LoadFileDownloader downloader.Downloader
 }
 
 func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (string, error) {

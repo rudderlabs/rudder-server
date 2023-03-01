@@ -1,4 +1,4 @@
-package load_file_downloader_test
+package downloader_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -49,7 +49,7 @@ func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT)
 	return m.loadFiles
 }
 
-func TestNewLoadFileDownloader(t *testing.T) {
+func TestDownloader(t *testing.T) {
 	misc.Init()
 
 	pool, err := dockertest.NewPool("")
@@ -166,7 +166,7 @@ func TestNewLoadFileDownloader(t *testing.T) {
 			}
 			loadFiles = append(loadFiles, tc.loadFiles...)
 
-			lfd := load_file_downloader.NewLoadFileDownloader(
+			lfd := downloader.NewDownloader(
 				&warehouseutils.Warehouse{
 					Destination: backendconfig.DestinationT{
 						ID:     destinationID,

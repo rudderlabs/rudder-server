@@ -1,4 +1,4 @@
-package load_file_downloader
+package downloader
 
 import (
 	"context"
@@ -14,29 +14,29 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type LoadFileDownloader interface {
+type Downloader interface {
 	Download(ctx context.Context, tableName string) ([]string, error)
 }
 
-type loadFileDownloaderImpl struct {
+type downloaderImpl struct {
 	warehouse  *warehouseutils.Warehouse
 	uploader   warehouseutils.UploaderI
 	numWorkers int
 }
 
-func NewLoadFileDownloader(
+func NewDownloader(
 	warehouse *warehouseutils.Warehouse,
 	uploader warehouseutils.UploaderI,
 	numWorkers int,
-) LoadFileDownloader {
-	return &loadFileDownloaderImpl{
+) Downloader {
+	return &downloaderImpl{
 		warehouse:  warehouse,
 		uploader:   uploader,
 		numWorkers: numWorkers,
 	}
 }
 
-func (l *loadFileDownloaderImpl) Download(ctx context.Context, tableName string) ([]string, error) {
+func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]string, error) {
 	var (
 		fileNames     []string
 		objectName    string
@@ -88,7 +88,7 @@ func (l *loadFileDownloaderImpl) Download(ctx context.Context, tableName string)
 	return fileNames, nil
 }
 
-func (l *loadFileDownloaderImpl) downloadSingleObject(ctx context.Context, fileManager filemanager.FileManager, object warehouseutils.LoadFileT) (string, error) {
+func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager filemanager.FileManager, object warehouseutils.LoadFileT) (string, error) {
 	var (
 		objectName string
 		tmpDirPath string

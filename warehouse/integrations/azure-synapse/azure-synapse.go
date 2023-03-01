@@ -16,7 +16,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -89,7 +89,7 @@ type AzureSynapse struct {
 	Uploader                    warehouseutils.UploaderI
 	NumWorkersDownloadLoadFiles int
 	Logger                      logger.Logger
-	LoadFileDownLoader          load_file_downloader.LoadFileDownloader
+	LoadFileDownLoader          downloader.Downloader
 	ConnectTimeout              time.Duration
 }
 
@@ -672,7 +672,7 @@ func (as *AzureSynapse) Setup(warehouse warehouseutils.Warehouse, uploader wareh
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader
 	as.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.AZURE_SYNAPSE, warehouse.Destination.Config, as.Uploader.UseRudderStorage())
-	as.LoadFileDownLoader = load_file_downloader.NewLoadFileDownloader(&warehouse, uploader, as.NumWorkersDownloadLoadFiles)
+	as.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, as.NumWorkersDownloadLoadFiles)
 
 	as.DB, err = connect(as.getConnectionCredentials())
 	return err

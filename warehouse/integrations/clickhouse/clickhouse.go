@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -158,7 +158,7 @@ type Clickhouse struct {
 	LoadTableFailureRetries     int
 	NumWorkersDownloadLoadFiles int
 	S3EngineEnabledWorkspaceIDs []string
-	LoadFileDownloader          load_file_downloader.LoadFileDownloader
+	LoadFileDownloader          downloader.Downloader
 }
 
 type Credentials struct {
@@ -953,7 +953,7 @@ func (ch *Clickhouse) Setup(warehouse warehouseutils.Warehouse, uploader warehou
 	ch.Uploader = uploader
 	ch.stats = stats.Default
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
-	ch.LoadFileDownloader = load_file_downloader.NewLoadFileDownloader(&warehouse, uploader, ch.NumWorkersDownloadLoadFiles)
+	ch.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, ch.NumWorkersDownloadLoadFiles)
 
 	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
 	return err

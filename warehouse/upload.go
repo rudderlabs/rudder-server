@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -837,7 +837,7 @@ func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err e
 		UploadID:           job.upload.ID,
 		Uploader:           job,
 		WarehouseManager:   job.whManager,
-		LoadFileDownloader: load_file_downloader.NewLoadFileDownloader(&job.warehouse, job, 8),
+		LoadFileDownloader: downloader.NewDownloader(&job.warehouse, job, 8),
 	}
 	if populateHistoricIdentities {
 		return idr.ResolveHistoricIdentities()

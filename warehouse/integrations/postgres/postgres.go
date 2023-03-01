@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -120,7 +120,7 @@ type Postgres struct {
 	Logger                      logger.Logger
 	EnableDeleteByJobs          bool
 	NumWorkersDownloadLoadFiles int
-	LoadFileDownloader          load_file_downloader.LoadFileDownloader
+	LoadFileDownloader          downloader.Downloader
 }
 
 type Credentials struct {
@@ -389,7 +389,7 @@ func (pg *Postgres) Setup(
 	pg.Namespace = warehouse.Namespace
 	pg.Uploader = uploader
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
-	pg.LoadFileDownloader = load_file_downloader.NewLoadFileDownloader(&warehouse, uploader, pg.NumWorkersDownloadLoadFiles)
+	pg.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, pg.NumWorkersDownloadLoadFiles)
 
 	pg.DB, err = Connect(pg.getConnectionCredentials())
 	return err
