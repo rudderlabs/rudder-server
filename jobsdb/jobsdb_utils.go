@@ -214,10 +214,8 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 			statTagsMap["stateFilters"] = stateFiltersTag
 		}
 
-		if tags.WorkspaceID != "" {
+		if tags.WorkspaceID != "" && tags.WorkspaceID != allWorkspaces {
 			statTagsMap["workspaceId"] = tags.WorkspaceID
-		} else {
-			statTagsMap["workspaceId"] = allWorkspaces
 		}
 
 		for _, paramTag := range tags.ParameterFilters {
