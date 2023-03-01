@@ -205,13 +205,13 @@ func (c metricStatsCollector) outputStats() {
 		m := key.(metric.Measurement)
 		switch value := value.(type) {
 		case metric.Gauge:
-			c.stats.NewTaggedStat(m.GetName(), GaugeType, Tags(m.GetTags())).
+			c.stats.NewTaggedStat(m.GetName(), GaugeType, m.GetTags()).
 				Gauge(value.Value())
 		case metric.Counter:
-			c.stats.NewTaggedStat(m.GetName(), CountType, Tags(m.GetTags())).
+			c.stats.NewTaggedStat(m.GetName(), CountType, m.GetTags()).
 				Count(int(value.Value()))
 		case metric.MovingAverage:
-			c.stats.NewTaggedStat(m.GetName(), GaugeType, Tags(m.GetTags())).
+			c.stats.NewTaggedStat(m.GetName(), GaugeType, m.GetTags()).
 				Gauge(value.Value())
 		}
 		return true

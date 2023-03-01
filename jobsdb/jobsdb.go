@@ -35,8 +35,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -2317,12 +2318,7 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 		return JobsResult{}, false, nil
 	}
 
-	tags := statTags{
-		CustomValFilters: params.CustomValFilters,
-		StateFilters:     params.StateFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      workspaceID,
-	}
+	tags := generateStatTags(params)
 
 	defer jd.getTimerStat("processed_ds_time", &tags).RecordDuration()()
 
@@ -2492,11 +2488,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 		return JobsResult{}, false, nil
 	}
 
-	tags := statTags{
-		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      workspaceID,
-	}
+	tags := generateStatTags(params)
 	defer jd.getTimerStat("unprocessed_ds_time", &tags).RecordDuration()()
 
 	skipCacheResult := params.AfterJobID != nil
@@ -3298,11 +3290,7 @@ func (jd *HandleT) GetUnprocessed(ctx context.Context, params GetQueryParamsT) (
 		return JobsResult{}, nil
 	}
 
-	tags := statTags{
-		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      params.WorkspaceID,
-	}
+	tags := generateStatTags(params)
 	command := func() interface{} {
 		return queryResultWrapper(jd.getUnprocessed(ctx, params))
 	}
@@ -3319,11 +3307,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 		return JobsResult{}, nil
 	}
 
-	tags := statTags{
-		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      params.WorkspaceID,
-	}
+	tags := generateStatTags(params)
 	defer jd.getTimerStat(
 		"unprocessed_jobs_time",
 		&tags,
@@ -3404,12 +3388,7 @@ func (jd *HandleT) GetImporting(ctx context.Context, params GetQueryParamsT) (Jo
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Importing.State}
-	tags := statTags{
-		CustomValFilters: params.CustomValFilters,
-		StateFilters:     params.StateFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      params.WorkspaceID,
-	}
+	tags := generateStatTags(params)
 	command := func() interface{} {
 		return queryResultWrapper(jd.getImportingList(ctx, params))
 	}
@@ -3435,15 +3414,10 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 	if params.JobsLimit <= 0 {
 		return JobsResult{}, nil
 	}
-
+	tags := generateStatTags(params)
 	defer jd.getTimerStat(
 		"processed_jobs_time",
-		&statTags{
-			CustomValFilters: params.CustomValFilters,
-			StateFilters:     params.StateFilters,
-			ParameterFilters: params.ParameterFilters,
-			WorkspaceID:      params.WorkspaceID,
-		},
+		&tags,
 	).RecordDuration()()
 
 	// The order of lock is very important. The migrateDSLoop
@@ -3538,12 +3512,7 @@ func (jd *HandleT) GetToRetry(ctx context.Context, params GetQueryParamsT) (Jobs
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Failed.State}
-	tags := statTags{
-		CustomValFilters: params.CustomValFilters,
-		StateFilters:     params.StateFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      params.WorkspaceID,
-	}
+	tags := generateStatTags(params)
 	command := func() interface{} {
 		return queryResultWrapper(jd.getToRetry(ctx, params))
 	}
@@ -3568,12 +3537,7 @@ func (jd *HandleT) GetWaiting(ctx context.Context, params GetQueryParamsT) (Jobs
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Waiting.State}
-	tags := statTags{
-		CustomValFilters: params.CustomValFilters,
-		StateFilters:     params.StateFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      params.WorkspaceID,
-	}
+	tags := generateStatTags(params)
 	command := func() interface{} {
 		return queryResultWrapper(jd.getWaiting(ctx, params))
 	}
@@ -3594,12 +3558,7 @@ func (jd *HandleT) GetExecuting(ctx context.Context, params GetQueryParamsT) (Jo
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Executing.State}
-	tags := statTags{
-		CustomValFilters: params.CustomValFilters,
-		StateFilters:     params.StateFilters,
-		ParameterFilters: params.ParameterFilters,
-		WorkspaceID:      params.WorkspaceID,
-	}
+	tags := generateStatTags(params)
 	command := func() interface{} {
 		return queryResultWrapper(jd.getExecuting(ctx, params))
 	}

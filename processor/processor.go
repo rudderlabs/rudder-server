@@ -14,11 +14,12 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	jsoniter "github.com/json-iterator/go"
 	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -1896,10 +1897,10 @@ type transformSrcDestOutput struct {
 
 func (proc *Handle) transformSrcDest(
 	ctx context.Context,
-	// main inputs
+// main inputs
 	srcAndDestKey string, eventList []transformer.TransformerEventT,
 
-	// helpers
+// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},

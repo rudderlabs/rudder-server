@@ -190,6 +190,13 @@ type statTags struct {
 	WorkspaceID      string
 }
 
+func shouldSendWorkspaceTag(workspaceID string) bool {
+	if workspaceID != allWorkspaces && workspaceID != "" {
+		return false
+	}
+	return true
+}
+
 func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.Measurement {
 	return stats.Default.NewTaggedStat(
 		stat,
@@ -214,10 +221,8 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 			statTagsMap["stateFilters"] = stateFiltersTag
 		}
 
-		if tags.WorkspaceID != "" {
+		if shouldSendWorkspaceTag(tags.WorkspaceID) {
 			statTagsMap["workspaceId"] = tags.WorkspaceID
-		} else {
-			statTagsMap["workspaceId"] = allWorkspaces
 		}
 
 		for _, paramTag := range tags.ParameterFilters {
@@ -226,4 +231,19 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 	}
 
 	return statTagsMap
+}
+
+func generateStatTags(params GetQueryParamsT) statTags {
+	var tags statTags
+	tags.CustomValFilters = params.CustomValFilters
+	tags.ParameterFilters = params.ParameterFilters
+
+	if len(params.StateFilters) > 0 {
+		tags.StateFilters = params.StateFilters
+	}
+	
+	if shouldSendWorkspaceTag(params.WorkspaceID) {
+		tags.WorkspaceID = params.WorkspaceID
+	}
+	return tags
 }
