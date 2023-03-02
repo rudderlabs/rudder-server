@@ -35,8 +35,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -3018,7 +3019,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
 
 	if count == 0 {
-		// Nothing to recoer
+		// Nothing to recover
 		return
 	}
 

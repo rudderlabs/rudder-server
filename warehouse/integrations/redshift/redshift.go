@@ -252,24 +252,54 @@ func (rs *Redshift) schemaExists(_ string) (exists bool, err error) {
 
 func (rs *Redshift) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
 	for _, columnInfo := range columnsInfo {
+		columnType := getRSDataType(columnInfo.Type)
 		query := fmt.Sprintf(`
-		ALTER TABLE
-		  %q.%q
-		ADD
-		  COLUMN %q %s;
+			ALTER TABLE
+			  %q.%q
+			ADD
+			  COLUMN %q %s;
 	`,
 			rs.Namespace,
 			tableName,
 			columnInfo.Name,
-			getRSDataType(columnInfo.Type),
+			columnType,
 		)
-		rs.Logger.Infof("AZ: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
+		rs.Logger.Infof("RS: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
 
 		if _, err := rs.DB.Exec(query); err != nil {
+			if CheckAndIgnoreColumnAlreadyExistError(err) {
+				rs.Logger.Infow("column already exists",
+					logfield.SourceID, rs.Warehouse.Source.ID,
+					logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+					logfield.DestinationID, rs.Warehouse.Destination.ID,
+					logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+					logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+					logfield.Schema, rs.Namespace,
+					logfield.TableName, tableName,
+					logfield.ColumnName, columnInfo.Name,
+					logfield.ColumnType, columnType,
+					logfield.Error, err.Error(),
+					logfield.Query, query,
+				)
+				continue
+			}
+
 			return err
 		}
 	}
 	return nil
+}
+
+func CheckAndIgnoreColumnAlreadyExistError(err error) bool {
+	if err != nil {
+		if e, ok := err.(*pq.Error); ok {
+			if e.Code == "42701" {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 func (rs *Redshift) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
