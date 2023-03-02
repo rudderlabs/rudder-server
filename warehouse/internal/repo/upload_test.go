@@ -764,3 +764,70 @@ func TestUploads_InterruptedDestinations(t *testing.T) {
 
 	require.Equal(t, []string{"1", "2", "3"}, ids)
 }
+
+func TestUploads_PendingTableUploads(t *testing.T) {
+	t.Parallel()
+	db := setupDB(t)
+
+	const (
+		uploadID  = 1
+		namespace = "test_namespace"
+		destID    = "1"
+	)
+
+	_, err := db.Exec(`INSERT INTO wh_uploads (id, destination_id, source_id, in_progress, destination_type, status, namespace, schema, created_at, updated_at)
+		VALUES
+		(1, 1, 1, true, 'RS', 'exporting_data', 'test_namespace', '{}', NOW(), NOW()),
+		(2, 1, 1, true, 'RS', 'aborted', 'test_namespace', '{}', NOW(), NOW())
+	`)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`INSERT INTO wh_table_uploads (id, wh_upload_id, table_name, status, error, created_at, updated_at)
+		VALUES
+		(1, 1, 'test_table_1','exporting_data', '{}', NOW(), NOW()),
+		(2, 1, 'test_table_2','exporting_data_failed', 'error loading data', NOW(), NOW())
+	`)
+	require.NoError(t, err)
+
+	t.Run("should return pending table uploads", func(t *testing.T) {
+		repoUpload := repo.NewUploads(db)
+		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, uploadID, destID)
+		require.NoError(t, err)
+		require.NotEmpty(t, pendingTableUploads)
+
+		expectedPendingTableUploads := []model.PendingTableUpload{
+			{
+				UploadID:      uploadID,
+				DestinationID: destID,
+				Namespace:     namespace,
+				TableName:     "test_table_1",
+				Status:        "exporting_data",
+				Error:         "{}",
+			},
+			{
+				UploadID:      uploadID,
+				DestinationID: destID,
+				Namespace:     namespace,
+				TableName:     "test_table_2",
+				Status:        "exporting_data_failed",
+				Error:         "error loading data",
+			},
+		}
+		require.Equal(t, expectedPendingTableUploads, pendingTableUploads)
+	})
+
+	t.Run("should return empty pending table uploads", func(t *testing.T) {
+		repoUpload := repo.NewUploads(db)
+		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, int64(-1), destID)
+		require.NoError(t, err)
+		require.Empty(t, pendingTableUploads)
+	})
+
+	t.Run("cancelled context", func(t *testing.T) {
+		repoUpload := repo.NewUploads(db)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := repoUpload.PendingTableUploads(ctx, namespace, uploadID, destID)
+		require.EqualError(t, err, "pending table uploads: context canceled")
+	})
+}

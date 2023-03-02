@@ -695,7 +695,7 @@ func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTabl
 
 func (job *UploadJobT) TablesToSkip() (map[string]model.PendingTableUpload, map[string]model.PendingTableUpload, error) {
 	job.pendingTableUploadsOnce.Do(func() {
-		job.pendingTableUploads, job.pendingTableUploadsError = repo.NewUploads(job.dbHandle).PendingTablsUploads(
+		job.pendingTableUploads, job.pendingTableUploadsError = repo.NewUploads(job.dbHandle).PendingTableUploads(
 			context.TODO(),
 			job.upload.Namespace,
 			job.upload.ID,
