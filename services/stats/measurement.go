@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"gopkg.in/alexcesaro/statsd.v2"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // Counter represents a counter metric
@@ -52,7 +53,7 @@ type statsdMeasurement struct {
 
 // skip returns true if the stat should be skipped (stats disabled or client not ready)
 func (m *statsdMeasurement) skip() bool {
-	return !m.conf.enabled || !m.client.ready()
+	return !m.conf.enabled.Load() || !m.client.ready()
 }
 
 // Count default behavior is to panic as not supported operation

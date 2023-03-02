@@ -102,11 +102,13 @@ func NewLimiter(ctx context.Context, wg *sync.WaitGroup, name string, limit int,
 type limiter struct {
 	name          string
 	limit         int
-	count         int
-	mu            sync.Mutex
-	waitList      queue.PriorityQueue[chan struct{}]
 	dynamicPeriod time.Duration
-	stats         struct {
+
+	mu       sync.Mutex // protects count and waitList below
+	count    int
+	waitList queue.PriorityQueue[chan struct{}]
+
+	stats struct {
 		triggerFunc       func() <-chan time.Time
 		stat              stats.Stats
 		waitGauge         stats.Measurement // gauge showing number of operations waiting in the queue
@@ -136,14 +138,15 @@ func (l *limiter) BeginWithPriority(key string, priority LimiterPriorityValue) (
 	end = func() {
 		defer l.stats.stat.NewTaggedStat(l.name+"_limiter_working", stats.TimerType, stats.Tags{"key": key}).Since(start)
 		l.mu.Lock()
-		defer l.mu.Unlock()
 		l.count--
 		if len(l.waitList) == 0 {
+			l.mu.Unlock()
 			return
 		}
 		next := heap.Pop(&l.waitList).(*queue.Item[chan struct{}])
-		next.Value <- struct{}{}
 		l.count++
+		l.mu.Unlock()
+		next.Value <- struct{}{}
 		close(next.Value)
 	}
 	return end

@@ -76,6 +76,9 @@ func (pq *PriorityQueue[T]) GetIndex(x interface{}) int {
 
 // Update updates the attributes of an element in the priority queue.
 func (pq *PriorityQueue[T]) Update(item *Item[T], priority int) {
+	if item.index == -1 {
+		return
+	}
 	item.Priority = priority
 	heap.Fix(pq, item.index)
 }

@@ -9,7 +9,7 @@ import (
 
 func TestMemCollector(t *testing.T) {
 	const expectedCgroupsTotal = 100000 // setting a pretty low value to make sure the system running the test will have more memory than this
-	const expectedCgroupsUsed = 10000
+	const expectedCgroupsUsed = 9000
 	mem, err := gomem.VirtualMemory()
 	require.NoError(t, err)
 	require.Greater(t, mem.Total, uint64(expectedCgroupsTotal), "cgroups total should be less than the actual total memory of the system running the tests")
