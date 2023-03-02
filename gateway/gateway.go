@@ -681,6 +681,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 func isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
 	if eventType == extractEvent {
+		// extract event is allowed without user id and anonymous id
 		return false
 	}
 	if anonIDFromReq == "" && userIDFromReq == "" {
