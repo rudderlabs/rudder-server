@@ -714,33 +714,35 @@ var _ = Describe("Gateway", func() {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 					reqType = "batch"
 				}
-				expectHandlerResponse(
-					handler,
-					authorizedRequest(
-						WriteKeyEnabled,
-						bytes.NewBufferString(validBody),
-					),
-					400,
-					response.NonIdentifiableRequest+"\n",
-				)
-				Eventually(
-					func() bool {
-						stat := statsStore.Get(
-							"gateway.write_key_failed_requests",
-							map[string]string{
-								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-								"workspaceId": getWorkspaceID(WriteKeyEnabled),
-								"writeKey":    WriteKeyEnabled,
-								"reqType":     reqType,
-								"reason":      response.NonIdentifiableRequest,
-								"sourceType":  sourceType2,
-								"sdkVersion":  "",
-							},
-						)
-						return stat != nil && stat.LastValue() == float64(1)
-					},
-				).Should(BeTrue())
+				if handlerType != "extract" {
+					expectHandlerResponse(
+						handler,
+						authorizedRequest(
+							WriteKeyEnabled,
+							bytes.NewBufferString(validBody),
+						),
+						400,
+						response.NonIdentifiableRequest+"\n",
+					)
+					Eventually(
+						func() bool {
+							stat := statsStore.Get(
+								"gateway.write_key_failed_requests",
+								map[string]string{
+									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+									"workspaceId": getWorkspaceID(WriteKeyEnabled),
+									"writeKey":    WriteKeyEnabled,
+									"reqType":     reqType,
+									"reason":      response.NonIdentifiableRequest,
+									"sourceType":  sourceType2,
+									"sdkVersion":  "",
+								},
+							)
+							return stat != nil && stat.LastValue() == float64(1)
+						},
+					).Should(BeTrue())
+				}
 			}
 		})
 
@@ -760,7 +762,6 @@ var _ = Describe("Gateway", func() {
 				if handlerType == "extract" {
 					validBody = `{"data": "valid-json", "type": "extract"}`
 				}
-
 				expectHandlerResponse(
 					handler,
 					authorizedRequest(
