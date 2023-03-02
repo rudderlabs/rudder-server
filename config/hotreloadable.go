@@ -20,7 +20,7 @@ func (c *Config) RegisterIntConfigVariable(defaultValue int, ptr *int, isHotRelo
 
 // RegisterIntConfigVar registers int config variable
 func (c *Config) RegisterIntConfigVar(defaultValue int, ptr *int, valueScale int, keys ...string) {
-	c.registerIntConfigVar(defaultValue, ptr, true, valueScale, func(v int) {
+	c.registerIntConfigVar(defaultValue, ptr, false, valueScale, func(v int) {
 		*ptr = v
 	}, keys...)
 }
