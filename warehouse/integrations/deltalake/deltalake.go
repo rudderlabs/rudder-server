@@ -7,20 +7,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/rudderlabs/rudder-server/config"
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -44,6 +41,7 @@ const (
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
 const (
 	tableOrViewNotFound = "42S02"
+	columnNotFound      = "42000"
 	databaseNotFound    = "42000"
 	partitionNotFound   = "42000"
 )
@@ -811,10 +809,11 @@ func (dl *Deltalake) DropTable(tableName string) (err error) {
 	return
 }
 
-func (dl *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (dl *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
 	var (
 		query        string
 		queryBuilder strings.Builder
+		err          error
 	)
 
 	queryBuilder.WriteString(fmt.Sprintf(`
@@ -833,8 +832,27 @@ func (dl *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.C
 	query += ");"
 
 	dl.Logger.Infof("DL: Adding columns for destinationID: %s, tableName: %s with query: %v", dl.Warehouse.Destination.ID, tableName, query)
-	err = dl.ExecuteSQLClient(dl.Client, query)
-	return
+	executeResponse, err := dl.Client.Client.Execute(dl.Client.Context, &proto.ExecuteRequest{
+		Config:       dl.Client.CredConfig,
+		Identifier:   dl.Client.CredIdentifier,
+		SqlStatement: query,
+	})
+	if err != nil {
+		return fmt.Errorf("add columns: %w", err)
+	}
+
+	// Handle error in case of single column
+	if len(columnsInfo) == 1 {
+		if !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), columnNotFound) {
+			return fmt.Errorf("add columns: %s", executeResponse.GetErrorMessage())
+		}
+		return nil
+	}
+
+	if executeResponse.GetErrorCode() != "" {
+		return fmt.Errorf("add columns: %s", executeResponse.GetErrorMessage())
+	}
+	return nil
 }
 
 // CreateSchema checks if schema exists or not. If it does not exist, it creates the schema.

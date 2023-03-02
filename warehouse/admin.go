@@ -107,11 +107,7 @@ func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Config
 	pkgLogger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
 	destinationValidator := validations.NewDestinationValidator()
-	req := &validations.DestinationValidationRequest{Destination: warehouse.Destination}
-	res, err := destinationValidator.ValidateCredentials(req)
-	if err != nil {
-		return fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)
-	}
+	res := destinationValidator.Validate(&warehouse.Destination)
 
 	reply.Valid = res.Success
 	reply.Error = res.Error

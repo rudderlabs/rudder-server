@@ -15,7 +15,7 @@ func TestCgroupMemory(t *testing.T) {
 		limit := cgroup.GetMemoryLimit(basePath, totalMem)
 
 		require.EqualValues(t, 25*bytesize.GB, limit, "when a limit is set, this limit should be returned")
-		require.EqualValues(t, 9456156672, cgroup.GetMemoryUsage(basePath))
+		require.EqualValues(t, 7873486848, cgroup.GetMemoryUsage(basePath))
 	})
 
 	t.Run("cgroups v1 with self limit", func(t *testing.T) {
@@ -24,7 +24,7 @@ func TestCgroupMemory(t *testing.T) {
 		limit := cgroup.GetMemoryLimit(basePath, totalMem)
 
 		require.EqualValues(t, 25*bytesize.GB, limit, "when a limit is set, this limit should be returned")
-		require.EqualValues(t, 9456156672, cgroup.GetMemoryUsage(basePath))
+		require.EqualValues(t, 9456156572, cgroup.GetMemoryUsage(basePath))
 	})
 
 	t.Run("cgroups v1 with hierarchical limit", func(t *testing.T) {
@@ -33,7 +33,7 @@ func TestCgroupMemory(t *testing.T) {
 		limit := cgroup.GetMemoryLimit(basePath, totalMem)
 
 		require.EqualValues(t, 25*bytesize.GB, limit, "when a hierarchical limit is set, this limit should be returned")
-		require.EqualValues(t, 9456156672, cgroup.GetMemoryUsage(basePath))
+		require.EqualValues(t, 7873486848, cgroup.GetMemoryUsage(basePath))
 	})
 
 	t.Run("cgroups v1 no limit", func(t *testing.T) {
@@ -42,7 +42,7 @@ func TestCgroupMemory(t *testing.T) {
 		limit := cgroup.GetMemoryLimit(basePath, totalMem)
 
 		require.EqualValues(t, totalMem, limit, "when no limit is set, total memory should be returned")
-		require.EqualValues(t, 9456156672, cgroup.GetMemoryUsage(basePath))
+		require.EqualValues(t, 7873486848, cgroup.GetMemoryUsage(basePath))
 	})
 
 	t.Run("cgroups v2 with limit", func(t *testing.T) {
@@ -51,7 +51,7 @@ func TestCgroupMemory(t *testing.T) {
 		limit := cgroup.GetMemoryLimit(basePath, totalMem)
 
 		require.EqualValues(t, 32*bytesize.GB, limit, "when a limit is set, this limit should be returned")
-		require.EqualValues(t, 34263040, cgroup.GetMemoryUsage(basePath))
+		require.EqualValues(t, 26071040, cgroup.GetMemoryUsage(basePath))
 	})
 
 	t.Run("cgroups v2 no limit", func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestCgroupMemory(t *testing.T) {
 		limit := cgroup.GetMemoryLimit(basePath, totalMem)
 
 		require.EqualValues(t, totalMem, limit, "when no limit is set, total memory should be returned")
-		require.EqualValues(t, 34263040, cgroup.GetMemoryUsage(basePath))
+		require.EqualValues(t, 26071040, cgroup.GetMemoryUsage(basePath))
 	})
 
 	t.Run("no cgroups info", func(t *testing.T) {
