@@ -537,7 +537,8 @@ func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destination
 	return destinationIDs, nil
 }
 
-func (uploads *Uploads) PendingTablsUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
+// PendingTableUploads returns a list of pending table uploads for a given upload.
+func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
 	pendingTableUploads := make([]model.PendingTableUpload, 0)
 
 	rows, err := uploads.db.QueryContext(ctx, `
@@ -551,7 +552,7 @@ func (uploads *Uploads) PendingTablsUploads(ctx context.Context, namespace strin
 		FROM
 			`+uploadsTableName+` UT
 		INNER JOIN
-			`+tableUploadTableName+` TU
+			`+warehouseutils.WarehouseTableUploadsTable+` TU
 		ON
 			UT.id = TU.wh_upload_id
 		WHERE
@@ -564,7 +565,7 @@ func (uploads *Uploads) PendingTablsUploads(ctx context.Context, namespace strin
 				SELECT
 				  table_name
 				FROM
-				  `+tableUploadTableName+` TU1
+				  `+warehouseutils.WarehouseTableUploadsTable+` TU1
 				WHERE
 				  TU1.wh_upload_id = $1
 		  )

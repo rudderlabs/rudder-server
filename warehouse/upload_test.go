@@ -49,7 +49,7 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 		},
 		{
 			InitialErrorState: []byte(`{"internal_processing_failed": {"errors": ["account locked", "account locked again"], "attempt": 2}}`),
-			CurrentErrorState: model.TableUploadExportingFailed,
+			CurrentErrorState: TableUploadExportingFailed,
 			CurrentError:      errors.New("failed to load data because failed in earlier job"),
 			ErrorCount:        1,
 		},
