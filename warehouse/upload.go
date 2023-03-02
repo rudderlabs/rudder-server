@@ -1148,14 +1148,14 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 
 	// Load all user tables
 	status := model.TableUploadExecuting
-	if err := job.tableUploadsRepo.Set(context.TODO(),job.upload.ID, job.identifiesTableName(), repo.TableUploadSetOptions{
+	if err := job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, job.identifiesTableName(), repo.TableUploadSetOptions{
 		Status: &status,
 	}); err != nil {
 		return []error{}, fmt.Errorf("set table upload status failed: %w", err)
 	}
 	alteredIdentitySchema, err := job.updateSchema(job.identifiesTableName())
 	if err != nil {
-		status =  model.TableUploadUpdatingSchemaFailed
+		status = model.TableUploadUpdatingSchemaFailed
 		if err := job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, job.identifiesTableName(), repo.TableUploadSetOptions{
 			Status: &status,
 		}); err != nil {
@@ -1224,7 +1224,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 
 	var (
 		alteredSchema bool
-		status string
+		status        string
 	)
 	for _, tableName := range identityTables {
 		if _, loaded := currentJobSucceededTables[tableName]; loaded {
@@ -1300,7 +1300,7 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 			status := model.TableUploadExportingFailed
 			tableUploadErr = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tName, repo.TableUploadSetOptions{
 				Status: &status,
-				Error: &errorsString,
+				Error:  &errorsString,
 			})
 		} else {
 			status := model.TableUploadExported
