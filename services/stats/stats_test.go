@@ -350,7 +350,7 @@ func Test_Periodic_stats(t *testing.T) {
 			c.Set("RuntimeStats.enableGCStats", false)
 			m.GetRegistry(metric.PUBLISHED_METRICS).MustGetGauge(metric.PendingEventsMeasurement("table", "workspace", "destType")).Set(1.0)
 		}, []string{
-			"jobsdb_table_pending_events_count,instanceName=test,destType=destType,workspace=workspace,workspaceId=workspace",
+			"jobsdb_table_pending_events_count,instanceName=test,destType=destType,workspaceId=workspace",
 		})
 	})
 }
