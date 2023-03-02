@@ -9,11 +9,13 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// TODO: Remove warehouseutils.POSTGRES once the postgres new implementation is stable
 var crashRecoverWarehouses = []string{
 	warehouseutils.RS,
 	warehouseutils.MSSQL,
 	warehouseutils.AZURE_SYNAPSE,
 	warehouseutils.DELTALAKE,
+	warehouseutils.POSTGRES,
 }
 
 type repo interface {

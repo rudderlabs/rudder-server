@@ -59,6 +59,7 @@ type WarehouseOperations interface {
 }
 
 // New is a Factory function that returns a Manager of a given destination-type
+// TODO: Remove flag for useLegacy once the postgres new implementation is stable
 func New(destType string) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
@@ -106,6 +107,7 @@ func New(destType string) (Manager, error) {
 }
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
+// TODO: Remove flag for useLegacy once the postgres new implementation is stable
 func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:

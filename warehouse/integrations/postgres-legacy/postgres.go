@@ -230,7 +230,7 @@ func Connect(cred Credentials) (*sql.DB, error) {
 }
 
 func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres-legacy")
 }
 
 func (pg *Handle) getConnectionCredentials() Credentials {
