@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -523,10 +522,7 @@ func TestStagingFileIDs(t *testing.T) {
 			ID: 3,
 		},
 	}
-	var ids []int64
-	lo.ForEach(sfs, func(sf *model.StagingFile, _ int) {
-		ids = append(ids, sf.ID)
-	})
+	ids := repo.StagingFileIDs(sfs)
 	require.Equal(t, []int64{1, 2, 3}, ids)
 }
 

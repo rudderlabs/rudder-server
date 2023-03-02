@@ -48,6 +48,14 @@ type metadataSchema struct {
 	DestinationRevisionID string `json:"destination_revision_id"`
 }
 
+func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
+	var stagingFileIDs []int64
+	for _, stagingFile := range stagingFiles {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	}
+	return stagingFileIDs
+}
+
 func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	return metadataSchema{
 		UseRudderStorage:      stagingFile.UseRudderStorage,

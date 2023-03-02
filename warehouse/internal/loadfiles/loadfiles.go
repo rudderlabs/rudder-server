@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/samber/lo"
 
 	"golang.org/x/exp/slices"
@@ -19,7 +18,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -153,11 +155,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		return 0, 0, fmt.Errorf("populating destination revision ID: %w", err)
 	}
 
-	var stagingFileIDs []int64
-	lo.ForEach(toProcessStagingFiles, func(stagingFile *model.StagingFile, _ int) {
-		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
-	})
-
+	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
 	err = lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs)
 	if err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
@@ -238,7 +236,12 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		endId := chunk[len(chunk)-1].ID
 		g.Go(func() error {
 			responses := <-ch
-			lf.Logger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", startId, endId, destType, destID)
+			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from PgNotifier",
+				"startId", startId,
+				"endID", endId,
+				logfield.DestinationID, destType,
+				logfield.DestinationType, destID,
+			)
 			var loadFiles []model.LoadFile
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
