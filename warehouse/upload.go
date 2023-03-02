@@ -1121,9 +1121,6 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 			break
 		}
 	}
-	if err != nil {
-		return []error{err}, nil
-	}
 
 	if !hasLoadFiles {
 		return []error{}, nil
