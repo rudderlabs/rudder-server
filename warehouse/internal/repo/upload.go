@@ -551,7 +551,7 @@ func (uploads *Uploads) PendingTablsUploads(ctx context.Context, namespace strin
 		FROM
 			`+uploadsTableName+` UT
 		INNER JOIN
-			`+tableUploadTableName+` TU
+			`+warehouseutils.WarehouseTableUploadsTable+` TU
 		ON
 			UT.id = TU.wh_upload_id
 		WHERE
@@ -564,7 +564,7 @@ func (uploads *Uploads) PendingTablsUploads(ctx context.Context, namespace strin
 				SELECT
 				  table_name
 				FROM
-				  `+tableUploadTableName+` TU1
+				  `+warehouseutils.WarehouseTableUploadsTable+` TU1
 				WHERE
 				  TU1.wh_upload_id = $1
 		  )

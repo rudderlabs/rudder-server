@@ -263,6 +263,57 @@ var _ = Describe("Upload", Ordered, func() {
 		Expect(count).To(BeEquivalentTo(5))
 	})
 
+	It("Fetch pending upload status", func() {
+		job.upload.ID = 5
+
+		tus := job.fetchPendingUploadTableStatus()
+		Expect(tus).NotTo(BeNil())
+		Expect(tus).Should(HaveLen(2))
+	})
+
+	DescribeTable("Are all table skip errors", func(loadErrors []error, expected bool) {
+		Expect(areAllTableSkipErrors(loadErrors)).To(Equal(expected))
+	},
+		Entry(nil, []error{}, true),
+		Entry(nil, []error{&TableSkipError{}}, true),
+		Entry(nil, []error{errors.New("some-error")}, false),
+	)
+
+	DescribeTable("Get table upload status map", func(tableUploadStatuses []*TableUploadStatusT, expected map[int64]map[string]*TableUploadStatusInfoT) {
+		Expect(getTableUploadStatusMap(tableUploadStatuses)).To(Equal(expected))
+	},
+		Entry(nil, []*TableUploadStatusT{}, map[int64]map[string]*TableUploadStatusInfoT{}),
+
+		Entry(nil,
+			[]*TableUploadStatusT{
+				{
+					uploadID:  1,
+					tableName: "test-tableName-1",
+				},
+				{
+					uploadID:  2,
+					tableName: "test-tableName-2",
+				},
+			},
+			map[int64]map[string]*TableUploadStatusInfoT{
+				1: {
+					"test-tableName-1": {},
+				},
+				2: {
+					"test-tableName-2": {},
+				},
+			},
+		),
+	)
+
+	It("Getting tables to skip", func() {
+		job.upload.ID = 5
+
+		previousFailedMap, currentSuceededMap := job.getTablesToSkip()
+		Expect(previousFailedMap).Should(HaveLen(1))
+		Expect(currentSuceededMap).Should(HaveLen(0))
+	})
+
 	It("Get uploads timings", func() {
 		exportedData, _ := time.ParseDateTime("2020-04-21T15:26:34.344356")
 		exportingData, _ := time.ParseDateTime("2020-04-21T15:16:19.687716")
