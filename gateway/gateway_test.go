@@ -714,35 +714,33 @@ var _ = Describe("Gateway", func() {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 					reqType = "batch"
 				}
-				if !misc.Contains(EventTypesSkipUserCheck, handlerType) {
-					expectHandlerResponse(
-						handler,
-						authorizedRequest(
-							WriteKeyEnabled,
-							bytes.NewBufferString(validBody),
-						),
-						400,
-						response.NonIdentifiableRequest+"\n",
-					)
-					Eventually(
-						func() bool {
-							stat := statsStore.Get(
-								"gateway.write_key_failed_requests",
-								map[string]string{
-									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-									"workspaceId": getWorkspaceID(WriteKeyEnabled),
-									"writeKey":    WriteKeyEnabled,
-									"reqType":     reqType,
-									"reason":      response.NonIdentifiableRequest,
-									"sourceType":  sourceType2,
-									"sdkVersion":  "",
-								},
-							)
-							return stat != nil && stat.LastValue() == float64(1)
-						},
-					).Should(BeTrue())
-				}
+				expectHandlerResponse(
+					handler,
+					authorizedRequest(
+						WriteKeyEnabled,
+						bytes.NewBufferString(validBody),
+					),
+					400,
+					response.NonIdentifiableRequest+"\n",
+				)
+				Eventually(
+					func() bool {
+						stat := statsStore.Get(
+							"gateway.write_key_failed_requests",
+							map[string]string{
+								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+								"workspaceId": getWorkspaceID(WriteKeyEnabled),
+								"writeKey":    WriteKeyEnabled,
+								"reqType":     reqType,
+								"reason":      response.NonIdentifiableRequest,
+								"sourceType":  sourceType2,
+								"sdkVersion":  "",
+							},
+						)
+						return stat != nil && stat.LastValue() == float64(1)
+					},
+				).Should(BeTrue())
 			}
 		})
 
@@ -971,6 +969,51 @@ var _ = Describe("Gateway", func() {
 			jobData, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
 			Expect(jobData.job).To(BeNil())
+		})
+
+		It("accepts events with non-string type anonymousId and/or userId", func() {
+			// map type usreId
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":   "track",
+						"userId": map[string]interface{}{"id": 456},
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			_, err = gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			// int type anonymousId
+			payloadMap = map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":   "track",
+						"userId": 456,
+					},
+				},
+			}
+			payload, err = json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			Expect(err).To(BeNil())
+			req = &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			_, err = gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
 		})
 
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {
