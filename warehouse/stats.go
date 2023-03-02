@@ -111,7 +111,7 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...Tag) stats.Measurem
 
 func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total loaded events in the upload
-	numUploadedEvents, err := job.tableUploadsRepo.GetTotalExportedEvents(context.TODO(), job.upload.ID, []string{})
+	numUploadedEvents, err := job.tableUploadsRepo.GetSumOfTotalExportedEventsForUploadID(context.TODO(), job.upload.ID, []string{})
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
@@ -134,7 +134,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 
 func (job *UploadJobT) generateUploadAbortedMetrics() {
 	// Total successfully loaded events in the upload
-	numUploadedEvents, err := job.tableUploadsRepo.GetTotalExportedEvents(context.TODO(), job.upload.ID, []string{})
+	numUploadedEvents, err := job.tableUploadsRepo.GetSumOfTotalExportedEventsForUploadID(context.TODO(), job.upload.ID, []string{})
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
