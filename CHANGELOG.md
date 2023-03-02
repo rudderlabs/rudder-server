@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.4](https://github.com/rudderlabs/rudder-server/compare/v1.6.3...v1.6.4) (2023-03-02)
+
+
+### Miscellaneous
+
+* **jobsdb:** omit workspaceId tag when it doesn't correspond to an actual workspace ([#3064](https://github.com/rudderlabs/rudder-server/issues/3064)) ([f0207b6](https://github.com/rudderlabs/rudder-server/commit/f0207b6f02fba9dc4a11e50e4e0dee9fb56b3599))
+
 ## [1.6.3](https://github.com/rudderlabs/rudder-server/compare/v1.6.2...v1.6.3) (2023-03-01)
 
 
