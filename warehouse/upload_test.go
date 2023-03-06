@@ -6,20 +6,20 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	time2 "time"
 
 	"github.com/aws/smithy-go/time"
-	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/stretchr/testify/require"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -49,7 +49,7 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 		},
 		{
 			InitialErrorState: []byte(`{"internal_processing_failed": {"errors": ["account locked", "account locked again"], "attempt": 2}}`),
-			CurrentErrorState: TableUploadExportingFailed,
+			CurrentErrorState: model.TableUploadExportingFailed,
 			CurrentError:      errors.New("failed to load data because failed in earlier job"),
 			ErrorCount:        1,
 		},
