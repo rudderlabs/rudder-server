@@ -176,7 +176,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		recovery:             f.recovery,
 		pgNotifier:           f.pgNotifier,
 		whManager:            whManager,
-		destinationValidator: validations.NewDestinationValidator(),
+		destinationValidator: f.destinationValidator,
 		stats:                f.stats,
 
 		upload:         dto.Upload,
@@ -1760,13 +1760,8 @@ func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
 	if job.destinationValidator == nil {
 		return false, errors.New("failed to validate as destinationValidator is not set")
 	}
-	validationResult, err := job.destinationValidator.ValidateCredentials(&validations.DestinationValidationRequest{Destination: job.warehouse.Destination})
-	if err != nil {
-		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
-		return false, err
-	}
-
-	return validationResult.Success, nil
+	response := job.destinationValidator.Validate(&job.warehouse.Destination)
+	return response.Success, nil
 }
 
 func (job *UploadJobT) getAttemptNumber() int {

@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"path"
+	"strconv"
 	"sync"
 	"time"
 
@@ -44,7 +46,6 @@ type uploaderImpl[E any] struct {
 	Client                                 sysUtils.HTTPClientI
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
-	timingStat                             stats.Measurement
 	region                                 string
 
 	bgWaitGroup sync.WaitGroup
@@ -62,7 +63,6 @@ func (uploader *uploaderImpl[E]) Setup() {
 	config.RegisterDurationConfigVariable(2, &uploader.batchTimeout, true, time.Second, "Debugger.batchTimeoutInS")
 	config.RegisterDurationConfigVariable(100, &uploader.retrySleep, true, time.Millisecond, "Debugger.retrySleepInMS")
 	uploader.region = config.GetString("region", "")
-	uploader.timingStat = stats.Default.NewStat("debugger_upload", stats.TimerType)
 }
 
 func New[E any](url string, transformer Transformer[E]) Uploader[E] {
@@ -115,6 +115,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 	for {
 		var resp *http.Response
 		startTime := time.Now()
+		resource := path.Base(url)
 		req, err := Http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
 			pkgLogger.Errorf("[Uploader] Failed to create new http request. Err: %v", err)
@@ -129,9 +130,11 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
 		resp, err = uploader.Client.Do(req)
-		uploader.timingStat.SendTiming(time.Since(startTime))
 		if err != nil {
 			pkgLogger.Error("Config Backend connection error", err)
+			stats.Default.NewTaggedStat("debugger_http_errors", stats.CountType, map[string]string{
+				"resource": resource,
+			}).Increment()
 			if retryCount >= uploader.maxRetry {
 				pkgLogger.Errorf("Max retries exceeded trying to connect to config backend")
 				return
@@ -141,6 +144,12 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			// Refresh the connection
 			continue
 		}
+
+		stats.Default.NewTaggedStat("debugger_http_requests", stats.TimerType, stats.Tags{
+			"responseCode": strconv.Itoa(resp.StatusCode),
+			"resource":     resource,
+		}).Since(startTime)
+
 		func() { httputil.CloseResponse(resp) }()
 		if resp.StatusCode != http.StatusOK {
 			pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)

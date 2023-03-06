@@ -54,12 +54,12 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 
 	reqBody, err := json.Marshal(bodySchema)
 	if err != nil {
-		return model.JobStatusFailed
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(reqBody))
 	if err != nil {
-		return model.JobStatusFailed
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -70,13 +70,13 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		oAuthDetail, err = api.getOAuthDetail(&destination, job.WorkspaceID)
 		if err != nil {
 			pkgLogger.Error(err)
-			return model.JobStatusFailed
+			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 		err = setOAuthHeader(oAuthDetail.secretToken, req)
 		if err != nil {
 			pkgLogger.Errorf("[%v] error occurred while setting oauth header for workspace: %v, destination: %v", destination.Name, job.WorkspaceID, destination.DestinationID)
 			pkgLogger.Error(err)
-			return model.JobStatusFailed
+			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 	}
 
@@ -94,17 +94,17 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		if os.IsTimeout(err) {
 			stats.Default.NewStat("regulation_worker_delete_api_timeout", stats.CountType).Count(1)
 		}
-		return model.JobStatusFailed
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 	defer func() { httputil.CloseResponse(resp) }()
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return model.JobStatusFailed
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 
 	var jobResp []JobRespSchema
 	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
-		return model.JobStatusFailed
+		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 	jobStatus := getJobStatus(resp.StatusCode, jobResp)
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", destination.Name, job.ID, jobStatus)
@@ -113,7 +113,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
 		if err != nil {
 			pkgLogger.Error(err)
-			return model.JobStatusFailed
+			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 		// retry the request
 		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
@@ -130,21 +130,14 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 }
 
 func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
-	errorStatus := model.JobStatusFailed
 	switch statusCode {
 	case http.StatusOK:
-		return model.JobStatusComplete
+		return model.JobStatus{Status: model.JobStatusComplete}
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
-		errorStatus = model.JobStatusNotSupported
-	case http.StatusTooManyRequests, http.StatusRequestTimeout:
-		errorStatus = model.JobStatusFailed
+		return model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("destination not supported by transformer")}
 	default:
-		if statusCode >= 400 && statusCode < 500 {
-			errorStatus = model.JobStatusAborted
-		}
+		return model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: %d, body: %s", statusCode, jobResp)}
 	}
-	pkgLogger.Warnf("Error Status: %d - %v", statusCode, jobResp)
-	return errorStatus
 }
 
 func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {
