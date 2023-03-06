@@ -1024,8 +1024,10 @@ func (job *UploadJobT) loadTable(tName string) (bool, error) {
 	)
 
 	status := model.TableUploadExecuting
+	lastExecTime := time.Now()
 	_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tName, repo.TableUploadSetOptions{
-		Status: &status,
+		Status:       &status,
+		LastExecTime: &lastExecTime,
 	})
 
 	generateTableLoadCountVerificationsMetrics := config.GetBool("Warehouse.generateTableLoadCountMetrics", true)
@@ -1166,8 +1168,10 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 
 	// Load all user tables
 	status := model.TableUploadExecuting
+	lastExecTime := time.Now()
 	_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, job.identifiesTableName(), repo.TableUploadSetOptions{
-		Status: &status,
+		Status:       &status,
+		LastExecTime: &lastExecTime,
 	})
 
 	alteredIdentitySchema, err := job.updateSchema(job.identifiesTableName())
@@ -1182,9 +1186,11 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 	}
 	var alteredUserSchema bool
 	if _, ok := job.upload.UploadSchema[job.usersTableName()]; ok {
-		status = model.TableUploadExecuting
+		status := model.TableUploadExecuting
+		lastExecTime := time.Now()
 		_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, job.usersTableName(), repo.TableUploadSetOptions{
-			Status: &status,
+			Status:       &status,
+			LastExecTime: &lastExecTime,
 		})
 		alteredUserSchema, err = job.updateSchema(job.usersTableName())
 		if err != nil {
@@ -1268,8 +1274,10 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		}
 
 		status := model.TableUploadExecuting
+		lastExecTime := time.Now()
 		err = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tableName, repo.TableUploadSetOptions{
-			Status: &status,
+			Status:       &status,
+			LastExecTime: &lastExecTime,
 		})
 		if err != nil {
 			errorMap[tableName] = err
