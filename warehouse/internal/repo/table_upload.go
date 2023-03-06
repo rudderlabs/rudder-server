@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -40,6 +41,7 @@ type TableUploadSetOptions struct {
 	Error        *string
 	LastExecTime *time.Time
 	Location     *string
+	TotalEvents  *int64
 }
 
 func NewTableUploads(db *sql.DB, opts ...Opt) *TableUploads {
@@ -258,7 +260,7 @@ func (repo *TableUploads) GetSumOfTotalExportedEventsForUploadID(ctx context.Con
 
 	err = repo.db.QueryRowContext(ctx, `
 			SELECT
-				sum(total_events)
+				COALESCE(sum(total_events), 0) AS total
 			FROM
 				`+tableUploadTableName+`
 			WHERE
@@ -266,7 +268,10 @@ func (repo *TableUploads) GetSumOfTotalExportedEventsForUploadID(ctx context.Con
 				status = $2 AND
 				table_name != ALL($3);
 `,
-		uploadId, model.ExportedData, pq.Array(skipTables)).Scan(&count)
+		uploadId,
+		model.ExportedData,
+		pq.Array(skipTables),
+	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf(`counting total exported events: %w`, err)
 	}
@@ -274,7 +279,7 @@ func (repo *TableUploads) GetSumOfTotalExportedEventsForUploadID(ctx context.Con
 		return count.Int64, nil
 	}
 
-	return 0, nil
+	return 0, errors.New(`count is not valid`)
 }
 
 func (repo *TableUploads) Set(ctx context.Context, uploadId int64, tableName string, options TableUploadSetOptions) error {
@@ -305,6 +310,10 @@ func (repo *TableUploads) Set(ctx context.Context, uploadId int64, tableName str
 	if options.Location != nil {
 		setQuery.WriteString(fmt.Sprintf(`location = $%d,`, len(queryArgs)+1))
 		queryArgs = append(queryArgs, *options.Location)
+	}
+	if options.TotalEvents != nil {
+		setQuery.WriteString(fmt.Sprintf(`total_events = $%d,`, len(queryArgs)+1))
+		queryArgs = append(queryArgs, *options.TotalEvents)
 	}
 
 	if setQuery.Len() == 0 {

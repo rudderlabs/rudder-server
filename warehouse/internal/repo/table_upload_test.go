@@ -121,6 +121,7 @@ func TestTableUploadRepo(t *testing.T) {
 			lastExecTime = now.UTC()
 			location     = "test_location"
 			table        = tables[0]
+			totalEvents  = int64(100)
 		)
 
 		t.Run("no set options", func(t *testing.T) {
@@ -203,12 +204,25 @@ func TestTableUploadRepo(t *testing.T) {
 			require.Equal(t, now, tableUpload.UpdatedAt)
 		})
 
+		t.Run("set total events", func(t *testing.T) {
+			err := r.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
+				TotalEvents: &totalEvents,
+			})
+			require.NoError(t, err)
+
+			tableUpload, err := r.GetByUploadIDAndTableName(ctx, uploadID, table)
+			require.NoError(t, err)
+			require.Equal(t, totalEvents, tableUpload.TotalEvents)
+			require.Equal(t, now, tableUpload.UpdatedAt)
+		})
+
 		t.Run("set all", func(t *testing.T) {
 			err := r.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
 				Status:       &status,
 				Error:        &errorStatus,
 				LastExecTime: &lastExecTime,
 				Location:     &location,
+				TotalEvents:  &totalEvents,
 			})
 			require.NoError(t, err)
 
