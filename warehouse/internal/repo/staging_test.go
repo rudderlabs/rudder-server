@@ -187,134 +187,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		stagingFiles[i].CreatedAt = now
 		stagingFiles[i].UpdatedAt = now
 	}
-
-	t.Run("GetInRange", func(t *testing.T) {
-		t.Parallel()
-
-		testcases := []struct {
-			name          string
-			sourceID      string
-			destinationID string
-			startID       int64
-			endID         int64
-
-			expected []model.StagingFile
-		}{
-			{
-				name:          "get all",
-				sourceID:      "source_id",
-				destinationID: "destination_id",
-				startID:       0,
-				endID:         10,
-
-				expected: stagingFiles,
-			},
-			{
-				name:          "get all with start id",
-				sourceID:      "source_id",
-				destinationID: "destination_id",
-				startID:       5,
-				endID:         10,
-
-				expected: stagingFiles[4:],
-			},
-			{
-				name:          "get all with end id",
-				sourceID:      "source_id",
-				destinationID: "destination_id",
-				startID:       0,
-				endID:         5,
-
-				expected: stagingFiles[:5],
-			},
-			{
-				name:          "missing source id",
-				sourceID:      "bad_source_id",
-				destinationID: "destination_id",
-				startID:       0,
-				endID:         10,
-
-				expected: []model.StagingFile(nil),
-			},
-			{
-				name:          "missing destination id",
-				sourceID:      "source_id",
-				destinationID: "bad_destination_id",
-				startID:       0,
-				endID:         10,
-
-				expected: []model.StagingFile(nil),
-			},
-		}
-
-		for _, tc := range testcases {
-			tc := tc
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-				retrieved, err := r.GetInRange(ctx, tc.sourceID, tc.destinationID, tc.startID, tc.endID)
-				require.NoError(t, err)
-
-				require.Equal(t, tc.expected, retrieved)
-			})
-		}
-	})
-
-	t.Run("GetAfterID", func(t *testing.T) {
-		t.Parallel()
-
-		testcases := []struct {
-			name          string
-			sourceID      string
-			destinationID string
-			startID       int64
-
-			expected []model.StagingFile
-		}{
-			{
-				name:          "get all",
-				sourceID:      "source_id",
-				destinationID: "destination_id",
-				startID:       0,
-
-				expected: stagingFiles,
-			},
-			{
-				name:          "get all with start id",
-				sourceID:      "source_id",
-				destinationID: "destination_id",
-				startID:       5,
-
-				expected: stagingFiles[5:],
-			},
-			{
-				name:          "missing source id",
-				sourceID:      "bad_source_id",
-				destinationID: "destination_id",
-				startID:       0,
-
-				expected: []model.StagingFile(nil),
-			},
-			{
-				name:          "missing destination id",
-				sourceID:      "source_id",
-				destinationID: "bad_destination_id",
-				startID:       0,
-
-				expected: []model.StagingFile(nil),
-			},
-		}
-
-		for _, tc := range testcases {
-			tc := tc
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-				retrieved, err := r.GetAfterID(ctx, tc.sourceID, tc.destinationID, tc.startID)
-				require.NoError(t, err)
-				t.Log(retrieved, tc.expected)
-				require.Equal(t, tc.expected, retrieved)
-			})
-		}
-	})
 }
 
 func TestStagingFileRepo_Pending(t *testing.T) {
@@ -467,7 +339,7 @@ func TestStagingFileRepo_Status(t *testing.T) {
 				)
 				require.NoError(t, err)
 
-				files, err := r.GetInRange(ctx, "source_id", "destination_id", 0, 3)
+				files, err := r.GetForUploadID(ctx, "source_id", "destination_id", 1)
 				require.NoError(t, err)
 
 				for _, file := range files {
