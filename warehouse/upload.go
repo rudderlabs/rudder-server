@@ -99,17 +99,21 @@ type UploadJobT struct {
 	stats                stats.Stats
 	LoadFileGenStartTime time.Time
 
-	upload                    model.Upload
-	warehouse                 warehouseutils.Warehouse
-	stagingFiles              []*model.StagingFile
-	stagingFileIDs            []int64
-	schemaLock                sync.Mutex
-	uploadLock                sync.Mutex
-	pendingTableUploads       []model.PendingTableUpload
-	pendingTableUploadsOnce   sync.Once
-	pendingTableUploadsError  error
+	upload                   model.Upload
+	warehouse                warehouseutils.Warehouse
+	stagingFiles             []*model.StagingFile
+	stagingFileIDs           []int64
+	schemaLock               sync.Mutex
+	uploadLock               sync.Mutex
+	pendingTableUploads      []model.PendingTableUpload
+	pendingTableUploadsOnce  sync.Once
+	pendingTableUploadsError error
+	AlertSender              alerta.AlertSender
+	Now                      func() time.Time
+
 	RefreshPartitionBatchSize int
-	AlertSender               alerta.AlertSender
+	RetryTimeWindow           time.Duration
+	MinRetryAttempts          int
 
 	ErrorHandler ErrorHandler
 }
@@ -188,10 +192,13 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		pendingTableUploads: []model.PendingTableUpload{},
 
 		RefreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
+		RetryTimeWindow:           retryTimeWindow,
+		MinRetryAttempts:          minRetryAttempts,
 
 		AlertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
 		),
+		Now: timeutil.Now,
 
 		ErrorHandler: ErrorHandler{whManager},
 	}
@@ -356,7 +363,7 @@ func (job *UploadJobT) run() (err error) {
 
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
-	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadLastExecAtField, Value: timeutil.Now()}, {Column: UploadInProgress, Value: true}}})
+	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadLastExecAtField, Value: job.Now()}, {Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("no staging files found")
@@ -561,7 +568,7 @@ func (job *UploadJobT) run() (err error) {
 
 			wg.Wait()
 
-			if err = job.RefreshPartitions(job.upload.LoadFileStartID, job.upload.LoadFileEndID); err != nil {
+			if err := job.RefreshPartitions(job.upload.LoadFileStartID, job.upload.LoadFileEndID); err != nil {
 				loadErrors = append(loadErrors, fmt.Errorf("refresh partitions: %w", err))
 			}
 
@@ -1273,7 +1280,7 @@ func (job *UploadJobT) getNewTimings(status string) ([]byte, model.Timings) {
 	if err != nil {
 		pkgLogger.Error("error getting timing, scrapping them", err)
 	}
-	timing := map[string]time.Time{status: timeutil.Now()}
+	timing := map[string]time.Time{status: job.Now()}
 	timings = append(timings, timing)
 	marshalledTimings, err := json.Marshal(timings)
 	if err != nil {
@@ -1316,7 +1323,7 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 	opts := []UploadColumnT{
 		{Column: UploadStatusField, Value: statusOpts.Status},
 		{Column: UploadTimingsField, Value: marshalledTimings},
-		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
+		{Column: UploadUpdatedAtField, Value: job.Now()},
 	}
 
 	job.upload.Status = statusOpts.Status
@@ -1438,7 +1445,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	uploadColumns := []UploadColumnT{
 		{Column: "status", Value: newJobState},
 		{Column: "metadata", Value: metadataJSON},
-		{Column: "updated_at", Value: timeutil.Now()},
+		{Column: "updated_at", Value: job.Now()},
 	}
 
 	txn, err := job.dbHandle.Begin()
@@ -1491,15 +1498,14 @@ func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, 
 	return uploadErrors, nil
 }
 
-// Aborted makes a check that if the state of the job
-// should be aborted
+// Aborted returns true if the job has been aborted
 func (job *UploadJobT) Aborted(attempts int, startTime time.Time) bool {
 	// Defensive check to prevent garbage startTime
 	if startTime.IsZero() {
 		return false
 	}
 
-	return attempts > minRetryAttempts && timeutil.Now().Sub(startTime) > retryTimeWindow
+	return attempts > job.MinRetryAttempts && job.Now().Sub(startTime) > job.RetryTimeWindow
 }
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (string, error) {
@@ -1554,7 +1560,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 
 	metadata := repo.ExtractUploadMetadata(job.upload)
 
-	metadata.NextRetryTime = timeutil.Now().Add(DurationBeforeNextAttempt(upload.Attempts + 1))
+	metadata.NextRetryTime = job.Now().Add(DurationBeforeNextAttempt(upload.Attempts + 1))
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
@@ -1566,7 +1572,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		{Column: "status", Value: state},
 		{Column: "metadata", Value: metadataJSON},
 		{Column: "error", Value: serializedErr},
-		{Column: "updated_at", Value: timeutil.Now()},
+		{Column: "updated_at", Value: job.Now()},
 	}
 
 	txn, err := job.dbHandle.Begin()

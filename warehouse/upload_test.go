@@ -6,20 +6,20 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	time2 "time"
 
 	"github.com/aws/smithy-go/time"
-	"github.com/rudderlabs/rudder-server/services/alerta"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
-
+	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/stretchr/testify/require"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -506,4 +506,57 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestUploadJobT_Aborted(t *testing.T) {
+	var (
+		minAttempts    = 3
+		minRetryWindow = 3 * time2.Hour
+		now            = time2.Date(2021, 1, 1, 6, 0, 0, 0, time2.UTC)
+	)
+
+	testCases := []struct {
+		name      string
+		attempts  int
+		startTime time2.Time
+		expected  bool
+	}{
+		{
+			name:      "empty start time",
+			startTime: time2.Time{},
+			expected:  false,
+		},
+		{
+			name:      "crossing max attempts but not retry window",
+			attempts:  5,
+			startTime: time2.Date(2021, 1, 1, 5, 30, 0, 0, time2.UTC),
+			expected:  false,
+		},
+		{
+			name:      "crossing max retry window but not attempts",
+			attempts:  2,
+			startTime: time2.Date(2021, 1, 1, 2, 0, 0, 0, time2.UTC),
+			expected:  false,
+		},
+		{
+			name:      "crossing max retry window but not attempts",
+			attempts:  5,
+			startTime: time2.Date(2021, 1, 1, 2, 0, 0, 0, time2.UTC),
+			expected:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			job := &UploadJobT{
+				MinRetryAttempts: minAttempts,
+				RetryTimeWindow:  minRetryWindow,
+				Now:              func() time2.Time { return now },
+			}
+
+			require.Equal(t, tc.expected, job.Aborted(tc.attempts, tc.startTime))
+		})
+	}
 }
