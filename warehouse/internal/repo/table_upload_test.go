@@ -165,7 +165,7 @@ func TestTableUploadRepo(t *testing.T) {
 			err := r.Set(ctx, uploadID, randomTable, repo.TableUploadSetOptions{
 				Status: &status,
 			})
-			require.EqualError(t, err, fmt.Sprintf("no rows affected"))
+			require.EqualError(t, err, errors.New("no rows affected").Error())
 		})
 
 		t.Run("set error", func(t *testing.T) {
