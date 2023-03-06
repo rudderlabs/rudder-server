@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	svcMetric "github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -52,7 +53,14 @@ func Run(ctx context.Context) error {
 	diagnostics.Init()
 	backendconfig.Init()
 
-	stats.Default.Start(ctx)
+	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
+		stats.WithServiceName("regulation-worker"),
+	)
+	if err := stats.Default.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start stats: %w", err)
+	}
+	defer stats.Default.Stop()
+
 	if err := backendconfig.Setup(nil); err != nil {
 		return fmt.Errorf("setting up backend config: %w", err)
 	}
