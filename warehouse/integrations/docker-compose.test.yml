@@ -50,7 +50,7 @@ services:
     ports:
       - "9090"
   wh-databricks-connector:
-    image: rudderstack/rudder-databricks-connector:v1.3.0
+    image: rudderstack/rudder-databricks-connector:v1.4.2
     container_name: wh-databricks-connector
     ports:
       - "50051"
@@ -254,7 +254,7 @@ services:
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
       interval: 5s
-      retries: 50
+      retries: 100
   start_warehouse_integration:
     image: alpine:latest
     depends_on:

@@ -8,20 +8,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"cloud.google.com/go/bigquery"
+	"golang.org/x/exp/slices"
+	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/exp/slices"
-	"google.golang.org/api/googleapi"
-	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 )
 
 var (
@@ -131,7 +130,7 @@ func (bq *HandleT) DeleteTable(tableName string) (err error) {
 	return
 }
 
-func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) error {
 	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	sampleSchema := getTableSchema(columnMap)
 	metaData := &bigquery.TableMetadata{
@@ -139,15 +138,17 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		TimePartitioning: &bigquery.TimePartitioning{},
 	}
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	err = tableRef.Create(bq.backgroundContext, metaData)
+	err := tableRef.Create(bq.backgroundContext, metaData)
 	if !checkAndIgnoreAlreadyExistError(err) {
-		return
+		return fmt.Errorf("create table: %w", err)
 	}
 
 	if !dedupEnabled() {
-		err = bq.createTableView(tableName, columnMap)
+		if err = bq.createTableView(tableName, columnMap); err != nil {
+			return fmt.Errorf("create view: %w", err)
+		}
 	}
-	return
+	return nil
 }
 
 func (bq *HandleT) DropTable(tableName string) (err error) {
@@ -529,7 +530,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	viewExists, _ := bq.tableExists(warehouseutils.UsersView)
 	if !viewExists {
 		pkgLogger.Infof("BQ: Creating view: %s in bigquery dataset: %s in project: %s", warehouseutils.UsersView, bq.namespace, bq.projectID)
-		bq.createTableView(warehouseutils.UsersTable, userColMap)
+		_ = bq.createTableView(warehouseutils.UsersTable, userColMap)
 	}
 
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
@@ -721,7 +722,7 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	if err != nil {
 		return
 	}
-	defer bq.db.Close()
+	defer func() { _ = bq.db.Close() }()
 	bq.dropDanglingStagingTables()
 	return
 }
@@ -786,7 +787,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 	if err != nil {
 		return
 	}
-	defer bq.db.Close()
+	defer func() { _ = bq.db.Close() }()
 
 	tables := []string{"tracks", "pages", "screens", "identifies", "aliases"}
 	for _, tableName := range tables {
@@ -833,7 +834,7 @@ func (bq *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	if err != nil {
 		return
 	}
-	defer bq.db.Close()
+	defer func() { _ = bq.db.Close() }()
 	return
 }
 
@@ -897,7 +898,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 	if err != nil {
 		return
 	}
-	defer dbClient.Close()
+	defer func() { _ = dbClient.Close() }()
 
 	schema = make(warehouseutils.SchemaT)
 	unrecognizedSchema = make(warehouseutils.SchemaT)
@@ -971,7 +972,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 
 func (bq *HandleT) Cleanup() {
 	if bq.db != nil {
-		bq.db.Close()
+		_ = bq.db.Close()
 	}
 }
 
@@ -1108,7 +1109,7 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				if err != nil {
 					break
 				}
-				gzWriter.WriteGZ(string(bytes) + "\n")
+				_ = gzWriter.WriteGZ(string(bytes) + "\n")
 			}
 
 			offset += batchSize
