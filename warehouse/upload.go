@@ -122,6 +122,7 @@ const (
 	UploadUpdatedAtField       = "updated_at"
 	UploadTimingsField         = "timings"
 	UploadSchemaField          = "schema"
+	MergedSchemaField          = "mergedschema"
 	UploadLastExecAtField      = "last_exec_at"
 	UploadInProgress           = "in_progress"
 )
@@ -234,6 +235,7 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 	schemaHandle.uploadSchema = schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema()
 	// set upload schema
+	_ = job.setMergedSchema(schemaHandle.uploadSchema)
 	err := job.setUploadSchema(schemaHandle.uploadSchema)
 	return err
 }
@@ -1424,6 +1426,15 @@ func (job *UploadJobT) setUploadSchema(consolidatedSchema warehouseutils.SchemaT
 	}
 	job.upload.UploadSchema = consolidatedSchema
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadSchemaField, Value: marshalledSchema}}})
+}
+
+func (job *UploadJobT) setMergedSchema(mergedSchema warehouseutils.SchemaT) error {
+	marshalledSchema, err := json.Marshal(mergedSchema)
+	if err != nil {
+		panic(err)
+	}
+	job.upload.MergedSchema = mergedSchema
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: MergedSchemaField, Value: marshalledSchema}}})
 }
 
 // Set LoadFileIDs
