@@ -99,17 +99,19 @@ type UploadJobT struct {
 	stats                stats.Stats
 	LoadFileGenStartTime time.Time
 
-	upload                   model.Upload
-	warehouse                warehouseutils.Warehouse
-	stagingFiles             []*model.StagingFile
-	stagingFileIDs           []int64
-	schemaLock               sync.Mutex
-	uploadLock               sync.Mutex
+	upload         model.Upload
+	warehouse      warehouseutils.Warehouse
+	stagingFiles   []*model.StagingFile
+	stagingFileIDs []int64
+	schemaLock     sync.Mutex
+	uploadLock     sync.Mutex
+	AlertSender    alerta.AlertSender
+	Now            func() time.Time
+
 	pendingTableUploads      []model.PendingTableUpload
+	pendingTableUploadsRepo  pendingTableUploadsRepo
 	pendingTableUploadsOnce  sync.Once
 	pendingTableUploadsError error
-	AlertSender              alerta.AlertSender
-	Now                      func() time.Time
 
 	RefreshPartitionBatchSize int
 	RetryTimeWindow           time.Duration
@@ -121,6 +123,10 @@ type UploadJobT struct {
 type UploadColumnT struct {
 	Column string
 	Value  interface{}
+}
+
+type pendingTableUploadsRepo interface {
+	PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error)
 }
 
 const (
@@ -189,7 +195,8 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		stagingFiles:   dto.StagingFiles,
 		stagingFileIDs: repo.StagingFileIDs(dto.StagingFiles),
 
-		pendingTableUploads: []model.PendingTableUpload{},
+		pendingTableUploadsRepo: repo.NewUploads(f.dbHandle),
+		pendingTableUploads:     []model.PendingTableUpload{},
 
 		RefreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
 		RetryTimeWindow:           retryTimeWindow,
@@ -702,7 +709,7 @@ func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTabl
 
 func (job *UploadJobT) TablesToSkip() (map[string]model.PendingTableUpload, map[string]model.PendingTableUpload, error) {
 	job.pendingTableUploadsOnce.Do(func() {
-		job.pendingTableUploads, job.pendingTableUploadsError = repo.NewUploads(job.dbHandle).PendingTableUploads(
+		job.pendingTableUploads, job.pendingTableUploadsError = job.pendingTableUploadsRepo.PendingTableUploads(
 			context.TODO(),
 			job.upload.Namespace,
 			job.upload.ID,
@@ -719,13 +726,13 @@ func (job *UploadJobT) TablesToSkip() (map[string]model.PendingTableUpload, map[
 		currentlySucceededTableMap = make(map[string]model.PendingTableUpload)
 
 		// Previous upload and table upload failed
-		skipStatus = func(status string) bool {
+		exportingfailedStatus = func(status string) bool {
 			return status == TableUploadExportingFailed || status == UserTableUploadExportingFailed || status == IdentityTableUploadExportingFailed
 		}
 	)
 
 	for _, pendingTableUpload := range job.pendingTableUploads {
-		if pendingTableUpload.UploadID < job.upload.ID && skipStatus(pendingTableUpload.Status) {
+		if pendingTableUpload.UploadID < job.upload.ID && exportingfailedStatus(pendingTableUpload.Status) {
 			previouslyFailedTableMap[pendingTableUpload.TableName] = pendingTableUpload
 		}
 		if pendingTableUpload.UploadID == job.upload.ID && pendingTableUpload.Status == TableUploadExported { // Current upload and table upload succeeded

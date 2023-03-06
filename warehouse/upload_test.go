@@ -560,3 +560,122 @@ func TestUploadJobT_Aborted(t *testing.T) {
 		})
 	}
 }
+
+type mockPendingTablesRepo struct {
+	pendingTables []model.PendingTableUpload
+	err           error
+	called        int
+}
+
+func (m *mockPendingTablesRepo) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
+	m.called++
+	return m.pendingTables, m.err
+}
+
+func TestUploadJobT_TablesToSkip(t *testing.T) {
+	t.Run("repo error", func(t *testing.T) {
+		t.Parallel()
+
+		job := &UploadJobT{
+			upload: model.Upload{
+				ID: 1,
+			},
+			pendingTableUploadsRepo: &mockPendingTablesRepo{
+				err: errors.New("some error"),
+			},
+		}
+
+		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
+		require.EqualError(t, err, "pending table uploads: some error")
+		require.Empty(t, previouslyFailedTables)
+		require.Empty(t, currentJobSucceededTables)
+	})
+
+	t.Run("should populate only once", func(t *testing.T) {
+		t.Parallel()
+
+		ptRepo := &mockPendingTablesRepo{}
+
+		job := &UploadJobT{
+			upload: model.Upload{
+				ID: 1,
+			},
+			pendingTableUploadsRepo: ptRepo,
+		}
+
+		for i := 0; i < 5; i++ {
+			_, _, _ = job.TablesToSkip()
+			require.Equal(t, 1, ptRepo.called)
+		}
+	})
+
+	t.Run("skip tables", func(t *testing.T) {
+		t.Parallel()
+
+		const (
+			namespace = "namespace"
+			destID    = "destID"
+		)
+
+		pendingTables := []model.PendingTableUpload{
+			{
+				UploadID:      1,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        TableUploadExportingFailed,
+				TableName:     "previously_failed_table_1",
+				Error:         "some error",
+			},
+			{
+				UploadID:      1,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        TableUploadUpdatingSchemaFailed,
+				TableName:     "previously_failed_table_2",
+				Error:         "",
+			},
+			{
+				UploadID:      1,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        TableUploadExported,
+				TableName:     "previously_succeeded_table_1",
+				Error:         "",
+			},
+			{
+				UploadID:      5,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        TableUploadExportingFailed,
+				TableName:     "current_failed_table_1",
+				Error:         "some error",
+			},
+			{
+				UploadID:      5,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        TableUploadExported,
+				TableName:     "current_succeeded_table_1",
+				Error:         "",
+			},
+		}
+
+		job := &UploadJobT{
+			upload: model.Upload{
+				ID: 5,
+			},
+			pendingTableUploadsRepo: &mockPendingTablesRepo{
+				pendingTables: pendingTables,
+			},
+		}
+
+		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
+		require.NoError(t, err)
+		require.Equal(t, previouslyFailedTables, map[string]model.PendingTableUpload{
+			"previously_failed_table_1": pendingTables[0],
+		})
+		require.Equal(t, currentJobSucceededTables, map[string]model.PendingTableUpload{
+			"current_succeeded_table_1": pendingTables[4],
+		})
+	})
+}
