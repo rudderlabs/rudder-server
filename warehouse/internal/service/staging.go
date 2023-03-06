@@ -5,8 +5,8 @@ import (
 )
 
 // StageFileBatching batches staging files.
-func StageFileBatching(files []model.StagingFile, batchSize int) [][]model.StagingFile {
-	fileBatches := make([][]model.StagingFile, 0, len(files)/batchSize+1)
+func StageFileBatching(files []*model.StagingFile, batchSize int) [][]*model.StagingFile {
+	fileBatches := make([][]*model.StagingFile, 0, len(files)/batchSize+1)
 	for {
 		if len(files) == 0 {
 			break

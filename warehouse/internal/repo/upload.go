@@ -91,7 +91,7 @@ func ExtractUploadMetadata(upload model.Upload) UploadMetadata {
 	}
 }
 
-func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Upload, files []model.StagingFile) (int64, error) {
+func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Upload, files []*model.StagingFile) (int64, error) {
 	startJSONID := files[0].ID
 	endJSONID := files[len(files)-1].ID
 

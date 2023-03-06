@@ -141,10 +141,10 @@ func TestStagingFileRepo(t *testing.T) {
 	})
 }
 
-func manyStagingFiles(size int, now time.Time) []model.StagingFile {
-	files := make([]model.StagingFile, size)
+func manyStagingFiles(size int, now time.Time) []*model.StagingFile {
+	files := make([]*model.StagingFile, size)
 	for i := range files {
-		files[i] = model.StagingFile{
+		files[i] = &model.StagingFile{
 			WorkspaceID:           "workspace_id",
 			Location:              fmt.Sprintf("s3://bucket/path/to/file-%d", i),
 			SourceID:              "source_id",
@@ -430,7 +430,7 @@ func BenchmarkFiles(b *testing.B) {
 		_, err = uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
 			SourceID:      "source_id",
 			DestinationID: "destination_id",
-		}, []model.StagingFile{
+		}, []*model.StagingFile{
 			{
 				ID:            id,
 				SourceID:      "source_id",

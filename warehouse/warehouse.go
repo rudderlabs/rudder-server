@@ -452,6 +452,18 @@ func (wh *HandleT) isUploadJobInProgress(warehouse warehouseutils.Warehouse, job
 	return wh.checkInProgressMap(jobID, identifier)
 }
 
+func (wh *HandleT) getInProgressNamespaces() []string {
+	wh.inProgressMapLock.RLock()
+	defer wh.inProgressMapLock.RUnlock()
+	var identifiers []string
+	for k, v := range wh.inProgressMap {
+		if len(v) >= wh.maxConcurrentUploadJobs {
+			identifiers = append(identifiers, string(k))
+		}
+	}
+	return identifiers
+}
+
 func (wh *HandleT) checkInProgressMap(jobID int64, identifier string) (int, bool) {
 	for idx, id := range wh.inProgressMap[WorkerIdentifierT(identifier)] {
 		if jobID == int64(id) {
@@ -490,7 +502,7 @@ func setLastProcessedMarker(warehouse warehouseutils.Warehouse, lastProcessedTim
 	lastProcessedMarkerExp.Set(warehouse.Identifier, lastProcessedTime)
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehouse warehouseutils.Warehouse, stagingFiles []model.StagingFile, priority int, uploadStartAfter time.Time) error {
+func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehouse warehouseutils.Warehouse, stagingFiles []*model.StagingFile, priority int, uploadStartAfter time.Time) error {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -671,25 +683,21 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 func (wh *HandleT) processingStats(availableWorkers int, jobStats model.UploadJobsStats) {
 	// Get pending jobs
 	pendingJobsStat := wh.stats.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
-		"module":   moduleName,
 		"destType": wh.destType,
 	})
 	pendingJobsStat.Gauge(int(jobStats.PendingJobs))
 
 	availableWorkersStat := wh.stats.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
-		"module":   moduleName,
 		"destType": wh.destType,
 	})
 	availableWorkersStat.Gauge(availableWorkers)
 
 	pickupLagStat := wh.stats.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
-		"module":   moduleName,
 		"destType": wh.destType,
 	})
 	pickupLagStat.SendTiming(jobStats.PickupLag)
 
 	pickupWaitTimeStat := wh.stats.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
-		"module":   moduleName,
 		"destType": wh.destType,
 	})
 	pickupWaitTimeStat.SendTiming(jobStats.PickupWaitTime)
@@ -738,11 +746,6 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			return nil, err
 		}
 
-		stagingFileListPtr := make([]*model.StagingFile, len(stagingFilesList))
-		for i := range stagingFilesList {
-			stagingFileListPtr[i] = &stagingFilesList[i]
-		}
-
 		whManager, err := manager.New(wh.destType)
 		if err != nil {
 			return nil, err
@@ -750,7 +753,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
 			Warehouse:    warehouse,
 			Upload:       upload,
-			StagingFiles: stagingFileListPtr,
+			StagingFiles: stagingFilesList,
 		}, whManager)
 
 		uploadJobs = append(uploadJobs, uploadJob)
@@ -767,17 +770,6 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 	wh.processingStats(availableWorkers, jobsStats)
 
 	return uploadJobs, nil
-}
-
-func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
-	wh.inProgressMapLock.Lock()
-	defer wh.inProgressMapLock.Unlock()
-	for k, v := range wh.inProgressMap {
-		if len(v) >= wh.maxConcurrentUploadJobs {
-			identifiers = append(identifiers, string(k))
-		}
-	}
-	return
 }
 
 func (wh *HandleT) runUploadJobAllocator(ctx context.Context) {
@@ -1410,8 +1402,8 @@ func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func isUploadTriggered(wh warehouseutils.Warehouse) bool {
-	triggerUploadsMapLock.Lock()
-	defer triggerUploadsMapLock.Unlock()
+	triggerUploadsMapLock.RLock()
+	defer triggerUploadsMapLock.RUnlock()
 	return triggerUploadsMap[wh.Identifier]
 }
 

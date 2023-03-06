@@ -57,7 +57,7 @@ func TestUploads_Get(t *testing.T) {
 		MergedSchema:       model.Schema{},
 	}
 
-	files := []model.StagingFile{
+	files := []*model.StagingFile{
 		{
 			ID:           1,
 			FirstEventAt: time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -205,7 +205,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 			SourceJobRunID:   sourceTaskRunID,
 		}
 
-		files := []model.StagingFile{
+		files := []*model.StagingFile{
 			{
 				ID:           startStagingFileID,
 				FirstEventAt: firstEventAt,
@@ -561,7 +561,7 @@ func TestUploads_Processing(t *testing.T) {
 		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 		require.NoError(t, err)
 
-		id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []model.StagingFile{{
+		id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []*model.StagingFile{{
 			ID:            stagingID,
 			SourceID:      uploads[i].SourceID,
 			DestinationID: uploads[i].DestinationID,
@@ -720,7 +720,7 @@ func TestUploads_Delete(t *testing.T) {
 		SourceID:      "source_id",
 		DestinationID: "destination_id",
 		Status:        model.Waiting,
-	}, []model.StagingFile{
+	}, []*model.StagingFile{
 		{
 			ID:            stagingID,
 			SourceID:      "source_id",

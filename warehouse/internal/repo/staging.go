@@ -167,8 +167,8 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 }
 
 // praseRow is a helper for mapping a row of tableColumns to a model.StagingFile.
-func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
-	var stagingFiles []model.StagingFile
+func (*StagingFiles) parseRows(rows *sql.Rows) ([]*model.StagingFile, error) {
+	var stagingFiles []*model.StagingFile
 
 	defer func() { _ = rows.Close() }()
 
@@ -222,7 +222,7 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 		}
 
 		m.SetStagingFile(&stagingFile)
-		stagingFiles = append(stagingFiles, stagingFile)
+		stagingFiles = append(stagingFiles, &stagingFile)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -249,7 +249,7 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 		return model.StagingFile{}, fmt.Errorf("no staging file found with id: %d", ID)
 	}
 
-	return entries[0], err
+	return *entries[0], err
 }
 
 // GetSchemaByID returns staging file schema field the given ID.
@@ -271,7 +271,7 @@ func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (jsonstd.
 }
 
 // GetForUploadID returns staging files in [startID, endID] range inclusive.
-func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinationID string, uploadId int64) ([]model.StagingFile, error) {
+func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinationID string, uploadId int64) ([]*model.StagingFile, error) {
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST
 	WHERE
 		upload_id = $1
@@ -288,11 +288,11 @@ func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinat
 	return repo.parseRows(rows)
 }
 
-func (repo *StagingFiles) GetForUpload(ctx context.Context, upload model.Upload) ([]model.StagingFile, error) {
+func (repo *StagingFiles) GetForUpload(ctx context.Context, upload model.Upload) ([]*model.StagingFile, error) {
 	return repo.GetForUploadID(ctx, upload.SourceID, upload.DestinationID, upload.ID)
 }
 
-func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]model.StagingFile, error) {
+func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]*model.StagingFile, error) {
 	var (
 		uploadID               int64
 		lastStartStagingFileID int64
