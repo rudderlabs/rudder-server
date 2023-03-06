@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	time2 "time"
 
 	"github.com/aws/smithy-go/time"
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -624,7 +625,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      1,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadExportingFailed,
+				Status:        model.TableUploadExportingFailed,
 				TableName:     "previously_failed_table_1",
 				Error:         "some error",
 			},
@@ -632,7 +633,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      1,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadUpdatingSchemaFailed,
+				Status:        model.TableUploadUpdatingSchemaFailed,
 				TableName:     "previously_failed_table_2",
 				Error:         "",
 			},
@@ -640,7 +641,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      1,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadExported,
+				Status:        model.TableUploadExported,
 				TableName:     "previously_succeeded_table_1",
 				Error:         "",
 			},
@@ -648,7 +649,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      5,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadExportingFailed,
+				Status:        model.TableUploadExportingFailed,
 				TableName:     "current_failed_table_1",
 				Error:         "some error",
 			},
@@ -656,7 +657,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      5,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadExported,
+				Status:        model.TableUploadExported,
 				TableName:     "current_succeeded_table_1",
 				Error:         "",
 			},

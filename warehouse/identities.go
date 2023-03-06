@@ -435,7 +435,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 				logfield.DestinationID, job.upload.DestinationID,
 				logfield.DestinationType, job.upload.DestinationType,
 				logfield.WorkspaceID, job.upload.WorkspaceID,
-				logfield.Error, tableUploadsErr,
+				logfield.Error, tableUploadsErr.Error(),
 			)
 			return
 		}

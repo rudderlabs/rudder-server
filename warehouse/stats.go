@@ -129,7 +129,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 			logfield.DestinationID, job.upload.DestinationID,
 			logfield.DestinationType, job.upload.DestinationType,
 			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Error, err,
+			logfield.Error, err.Error(),
 		)
 		return
 	}
@@ -145,7 +145,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 			logfield.DestinationID, job.upload.DestinationID,
 			logfield.DestinationType, job.upload.DestinationType,
 			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Error, err,
+			logfield.Error, err.Error(),
 		)
 		return
 	}
@@ -178,7 +178,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 			logfield.DestinationID, job.upload.DestinationID,
 			logfield.DestinationType, job.upload.DestinationType,
 			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Error, err,
+			logfield.Error, err.Error(),
 		)
 		return
 	}
@@ -194,7 +194,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 			logfield.DestinationID, job.upload.DestinationID,
 			logfield.DestinationType, job.upload.DestinationType,
 			logfield.WorkspaceID, job.upload.WorkspaceID,
-			logfield.Error, err,
+			logfield.Error, err.Error(),
 		)
 		return
 	}
