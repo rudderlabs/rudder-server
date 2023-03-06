@@ -547,6 +547,8 @@ func TestUploadJobT_Aborted(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -567,7 +569,7 @@ type mockPendingTablesRepo struct {
 	called        int
 }
 
-func (m *mockPendingTablesRepo) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
+func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, int64, string) ([]model.PendingTableUpload, error) {
 	m.called++
 	return m.pendingTables, m.err
 }
