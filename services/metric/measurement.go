@@ -23,6 +23,7 @@ func IncreasePendingEvents(tablePrefix, workspace, destType string, value float6
 	PendingEvents(tablePrefix, All, destType).Add(value)
 	PendingEvents(tablePrefix, All, All).Add(value)
 	Instance.GetRegistry(PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Add(value)
+	Instance.GetRegistry(PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Add(value)
 }
 
 // DecreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
@@ -31,6 +32,7 @@ func DecreasePendingEvents(tablePrefix, workspace, destType string, value float6
 	PendingEvents(tablePrefix, All, destType).Sub(value)
 	PendingEvents(tablePrefix, All, All).Sub(value)
 	Instance.GetRegistry(PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Sub(value)
+	Instance.GetRegistry(PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Sub(value)
 }
 
 // PendingEvents gets the measurement for pending events metric
