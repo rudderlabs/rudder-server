@@ -222,7 +222,7 @@ func TestLoadTable_Load(t *testing.T) {
 					"received_at":   "datetime",
 				})
 				if tc.wantError != nil {
-					require.Equal(t, tc.wantError.Error(), err.Error())
+					require.EqualError(t, err, tc.wantError.Error())
 					return
 				}
 				require.NoError(t, err)
@@ -329,7 +329,7 @@ func TestLoadTable_Load(t *testing.T) {
 				}
 				_, err = lt.Load(ctx, tableName, warehouseutils.DiscardsSchema)
 				if tc.wantError != nil {
-					require.Equal(t, tc.wantError.Error(), err.Error())
+					require.EqualError(t, err, tc.wantError.Error())
 					return
 				}
 				require.NoError(t, err)
