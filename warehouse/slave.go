@@ -590,14 +590,14 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	return loadFileUploadOutputs, err
 }
 
-func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+func processClaimedUploadJob(claimedJob pgnotifier.Claim, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
 		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
 	}()
-	handleErr := func(err error, claim pgnotifier.ClaimT) {
+	handleErr := func(err error, claim pgnotifier.Claim) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
-		response := pgnotifier.ClaimResponseT{
+		response := pgnotifier.ClaimResponse{
 			Err: err,
 		}
 		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
@@ -619,7 +619,7 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	}
 	job.Output = loadFileOutputs
 	output, err := json.Marshal(job)
-	response := pgnotifier.ClaimResponseT{
+	response := pgnotifier.ClaimResponse{
 		Err:     err,
 		Payload: output,
 	}
@@ -674,11 +674,11 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
 	return asyncJobRunResult, err
 }
 
-func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
+func processClaimedAsyncJob(claimedJob pgnotifier.Claim) {
 	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
-	handleErr := func(err error, claim pgnotifier.ClaimT) {
+	handleErr := func(err error, claim pgnotifier.Claim) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
-		response := pgnotifier.ClaimResponseT{
+		response := pgnotifier.ClaimResponse{
 			Err: err,
 		}
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
@@ -700,7 +700,7 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 		handleErr(err, claimedJob)
 		return
 	}
-	response := pgnotifier.ClaimResponseT{
+	response := pgnotifier.ClaimResponse{
 		Err:     err,
 		Payload: marshalledResult,
 	}

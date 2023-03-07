@@ -272,9 +272,9 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 }
 
 func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.Warehouse) model.Upload {
-	schema := make(warehouseutils.SchemaT)
+	schema := make(warehouseutils.Schema)
 	// TODO: DRY this code
-	identityRules := map[string]string{
+	identityRules := warehouseutils.TableSchema{
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_type"):  "string",
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_value"): "string",
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_type"):  "string",
@@ -283,7 +283,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMergeRulesTable)] = identityRules
 
 	// add rudder_identity_mappings table
-	identityMappings := map[string]string{
+	identityMappings := warehouseutils.TableSchema{
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_type"):  "string",
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_value"): "string",
 		warehouseutils.ToProviderCase(wh.destType, "rudder_id"):            "string",

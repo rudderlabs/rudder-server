@@ -85,11 +85,11 @@ type HandleT struct {
 	Namespace      string
 	ObjectStorage  string
 	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.UploaderI
+	Uploader       warehouseutils.Uploader
 	ConnectTimeout time.Duration
 }
 
-type credentialsT struct {
+type credentials struct {
 	host     string
 	dbName   string
 	user     string
@@ -111,7 +111,7 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func connect(cred credentialsT) (*sql.DB, error) {
+func connect(cred credentials) (*sql.DB, error) {
 	// Create connection string
 	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -149,8 +149,8 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("synapse")
 }
 
-func (as *HandleT) getConnectionCredentials() credentialsT {
-	return credentialsT{
+func (as *HandleT) getConnectionCredentials() credentials {
+	return credentials{
 		host:     warehouseutils.GetConfigValue(host, as.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(dbName, as.Warehouse),
 		user:     warehouseutils.GetConfigValue(user, as.Warehouse),
@@ -161,7 +161,7 @@ func (as *HandleT) getConnectionCredentials() credentialsT {
 	}
 }
 
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func columnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
@@ -228,7 +228,7 @@ func (as *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, nil
 }
 
-func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	pkgLogger.Infof("AZ: Starting load for table:%s", tableName)
 
 	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(as.Uploader.GetTableSchemaInWarehouse(tableName))
@@ -627,7 +627,7 @@ func (as *HandleT) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (as *HandleT) createTable(name string, columns map[string]string) (err error) {
+func (as *HandleT) createTable(name string, columns warehouseutils.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, columnsWithDataTypes(columns, ""))
 
@@ -636,7 +636,7 @@ func (as *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (as *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (as *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = as.createTable(as.Namespace+"."+tableName, columnMap)
 	return err
@@ -719,7 +719,7 @@ func (as *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	return nil
 }
 
-func (as *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (as *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader
@@ -783,7 +783,7 @@ func (as *HandleT) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
-func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())
@@ -792,8 +792,8 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(warehouseutils.Schema)
+	unrecognizedSchema = make(warehouseutils.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
@@ -828,7 +828,7 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(warehouseutils.TableSchema)
 		}
 		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype

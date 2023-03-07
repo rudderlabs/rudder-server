@@ -136,7 +136,7 @@ func TestColumnCountStat(t *testing.T) {
 				"test-destination": tc.columnCountLimit,
 			}
 
-			j := UploadJobT{
+			j := UploadJob{
 				upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
@@ -155,8 +155,8 @@ func TestColumnCountStat(t *testing.T) {
 				},
 				stats: store,
 				schemaHandle: &SchemaHandleT{
-					schemaInWarehouse: warehouseutils.SchemaT{
-						tableName: map[string]string{
+					schemaInWarehouse: warehouseutils.Schema{
+						tableName: warehouseutils.TableSchema{
 							"test-column-1": "string",
 							"test-column-2": "string",
 							"test-column-3": "string",
@@ -203,7 +203,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 	var (
 		pgResource *destination.PostgresResource
-		job        *UploadJobT
+		job        *UploadJob
 	)
 
 	BeforeAll(func() {
@@ -227,7 +227,7 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	BeforeEach(func() {
-		job = &UploadJobT{
+		job = &UploadJob{
 			warehouse: warehouseutils.Warehouse{
 				Type: destinationType,
 				Destination: backendconfig.DestinationT{
@@ -279,13 +279,13 @@ var _ = Describe("Upload", Ordered, func() {
 		Entry(nil, []error{errors.New("some-error")}, false),
 	)
 
-	DescribeTable("Get table upload status map", func(tableUploadStatuses []*TableUploadStatusT, expected map[int64]map[string]*TableUploadStatusInfoT) {
+	DescribeTable("Get table upload status map", func(tableUploadStatuses []*TableUploadStatus, expected map[int64]map[string]*TableUploadStatusInfo) {
 		Expect(getTableUploadStatusMap(tableUploadStatuses)).To(Equal(expected))
 	},
-		Entry(nil, []*TableUploadStatusT{}, map[int64]map[string]*TableUploadStatusInfoT{}),
+		Entry(nil, []*TableUploadStatus{}, map[int64]map[string]*TableUploadStatusInfo{}),
 
 		Entry(nil,
-			[]*TableUploadStatusT{
+			[]*TableUploadStatus{
 				{
 					uploadID:  1,
 					tableName: "test-tableName-1",
@@ -295,7 +295,7 @@ var _ = Describe("Upload", Ordered, func() {
 					tableName: "test-tableName-2",
 				},
 			},
-			map[int64]map[string]*TableUploadStatusInfoT{
+			map[int64]map[string]*TableUploadStatusInfo{
 				1: {
 					"test-tableName-1": {},
 				},
@@ -419,7 +419,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					rs.DB = pgResource.DB
 					rs.Namespace = testNamespace
 
-					job := &UploadJobT{
+					job := &UploadJob{
 						whManager: rs,
 						upload: model.Upload{
 							DestinationID:   testDestinationID,
@@ -458,7 +458,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					}
 
 					err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
-						AlteredColumnMap: map[string]string{
+						AlteredColumnMap: warehouseutils.TableSchema{
 							testColumn: testColumnType,
 						},
 					})
@@ -486,7 +486,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			rs.DB = pgResource.DB
 			rs.Namespace = testNamespace
 
-			job := &UploadJobT{
+			job := &UploadJob{
 				whManager: rs,
 				upload: model.Upload{
 					DestinationID:   testDestinationID,
@@ -536,7 +536,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			alteredColumnsMap := map[string]string{}
+			alteredColumnsMap := warehouseutils.TableSchema{}
 			for i := range [10]int{} {
 				alteredColumnsMap[fmt.Sprintf("%s_%d", testColumn, i)] = testColumnType
 			}

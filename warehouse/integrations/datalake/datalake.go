@@ -35,10 +35,10 @@ func Init() {
 type HandleT struct {
 	SchemaRepository schemarepository.SchemaRepository
 	Warehouse        warehouseutils.Warehouse
-	Uploader         warehouseutils.UploaderI
+	Uploader         warehouseutils.Uploader
 }
 
-func (wh *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (wh *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	wh.Warehouse = warehouse
 	wh.Uploader = uploader
 
@@ -51,7 +51,7 @@ func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return nil
 }
 
-func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
+func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error) {
 	return wh.SchemaRepository.FetchSchema(warehouse)
 }
 
@@ -59,7 +59,7 @@ func (wh *HandleT) CreateSchema() (err error) {
 	return wh.SchemaRepository.CreateSchema()
 }
 
-func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (wh *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	return wh.SchemaRepository.CreateTable(tableName, columnMap)
 }
 

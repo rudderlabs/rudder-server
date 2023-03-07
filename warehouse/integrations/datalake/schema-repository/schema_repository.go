@@ -39,12 +39,12 @@ var (
 )
 
 type SchemaRepository interface {
-	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error)
+	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error)
 	CreateSchema() (err error)
-	CreateTable(tableName string, columnMap map[string]string) (err error)
+	CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
-	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error
+	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFile) error
 }
 
 func UseGlue(w *warehouseutils.Warehouse) bool {
@@ -53,7 +53,7 @@ func UseGlue(w *warehouseutils.Warehouse) bool {
 	return glueConfig == "true" && hasAWSRegion
 }
 
-func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (SchemaRepository, error) {
+func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.Uploader) (SchemaRepository, error) {
 	if UseGlue(&wh) {
 		return NewGlueSchemaRepository(wh)
 	}
@@ -61,8 +61,8 @@ func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.Up
 }
 
 // LoadFileBatching batches load files for refresh partitions
-func LoadFileBatching(files []warehouseutils.LoadFileT, batchSize int) [][]warehouseutils.LoadFileT {
-	fileBatches := make([][]warehouseutils.LoadFileT, 0, len(files)/batchSize+1)
+func LoadFileBatching(files []warehouseutils.LoadFile, batchSize int) [][]warehouseutils.LoadFile {
+	fileBatches := make([][]warehouseutils.LoadFile, 0, len(files)/batchSize+1)
 
 	for len(files) > 0 {
 		cut := batchSize

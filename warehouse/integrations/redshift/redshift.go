@@ -143,7 +143,7 @@ type Redshift struct {
 	DB             *sql.DB
 	Namespace      string
 	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.UploaderI
+	Uploader       warehouseutils.Uploader
 	ConnectTimeout time.Duration
 	Logger         logger.Logger
 	stats          stats.Stats
@@ -203,7 +203,7 @@ func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
 	// TODO: do we need sorted order here?
 	var keys []string
 	for colName := range columns {
@@ -218,7 +218,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (rs *Redshift) CreateTable(tableName string, columns map[string]string) (err error) {
+func (rs *Redshift) CreateTable(tableName string, columns warehouseutils.TableSchema) (err error) {
 	name := fmt.Sprintf(`%q.%q`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
@@ -342,7 +342,7 @@ func (rs *Redshift) createSchema() (err error) {
 	return
 }
 
-func (rs *Redshift) generateManifest(tableName string, _ map[string]string) (string, error) {
+func (rs *Redshift) generateManifest(tableName string) (string, error) {
 	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3Manifest
@@ -408,7 +408,7 @@ func (rs *Redshift) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (string, error) {
+func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchema, skipTempTableDelete bool) (string, error) {
 	var (
 		err              error
 		query            string
@@ -428,7 +428,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		logfield.TableName, tableName,
 	)
 
-	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload)
+	manifestLocation, err := rs.generateManifest(tableName)
 	if err != nil {
 		return "", fmt.Errorf("generating manifest: %w", err)
 	}
@@ -1271,7 +1271,7 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace
-func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
@@ -1280,8 +1280,8 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	}
 	defer func() { _ = dbHandle.Close() }()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(warehouseutils.Schema)
+	unrecognizedSchema = make(warehouseutils.Schema)
 
 	sqlStatement := `
 			SELECT
@@ -1320,7 +1320,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(warehouseutils.TableSchema)
 		}
 		if datatype, ok := dataTypesMapToRudder[cType]; ok {
 			if datatype == "string" && charLength.Int64 > rudderStringLength {
@@ -1339,7 +1339,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	return
 }
 
-func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader

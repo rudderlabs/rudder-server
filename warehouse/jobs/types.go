@@ -23,10 +23,10 @@ type StartJobReqPayload struct {
 	WorkspaceID   string `json:"workspace_id"`
 }
 
-type AsyncJobWhT struct {
+type AsyncJobWh struct {
 	dbHandle              *sql.DB
 	enabled               bool
-	pgnotifier            *pgnotifier.PgNotifierT
+	pgnotifier            *pgnotifier.PGNotifier
 	context               context.Context
 	logger                logger.Logger
 	MaxBatchSizeToProcess int

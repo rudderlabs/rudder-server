@@ -91,7 +91,7 @@ func TestUploads_Get(t *testing.T) {
 	ogUpload.SourceTaskRunID = "source_task_run_id"
 	ogUpload.SourceJobID = "source_job_id"
 	ogUpload.SourceJobRunID = "source_job_run_id"
-	ogUpload.MergedSchema = warehouseutils.SchemaT{}
+	ogUpload.MergedSchema = warehouseutils.Schema{}
 
 	t.Run("Get", func(t *testing.T) {
 		upload, err := repoUpload.Get(ctx, id)
@@ -573,7 +573,7 @@ func TestUploads_Processing(t *testing.T) {
 		uploads[i].LoadFileType = "csv"
 		uploads[i].StagingFileStartID = int64(i + 1)
 		uploads[i].StagingFileEndID = int64(i + 1)
-		uploads[i].MergedSchema = warehouseutils.SchemaT{}
+		uploads[i].MergedSchema = warehouseutils.Schema{}
 		require.NoError(t, err)
 	}
 

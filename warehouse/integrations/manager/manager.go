@@ -24,11 +24,11 @@ import (
 )
 
 type Manager interface {
-	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) error
+	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) error
 	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
-	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error)
+	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error)
 	CreateSchema() (err error)
-	CreateTable(tableName string, columnMap map[string]string) (err error)
+	CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
 	LoadTable(tableName string) error

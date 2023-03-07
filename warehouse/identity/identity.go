@@ -32,7 +32,7 @@ type WarehouseManager interface {
 type HandleT struct {
 	Warehouse        warehouseutils.Warehouse
 	DbHandle         *sql.DB
-	Uploader         warehouseutils.UploaderI
+	Uploader         warehouseutils.Uploader
 	UploadID         int64
 	WarehouseManager WarehouseManager
 }

@@ -183,7 +183,7 @@ type Snowflake struct {
 	CloudProvider  string
 	ObjectStorage  string
 	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.UploaderI
+	Uploader       warehouseutils.Uploader
 	ConnectTimeout time.Duration
 	Logger         logger.Logger
 
@@ -325,7 +325,7 @@ func (sf *Snowflake) DeleteBy(tableNames []string, params warehouseutils.DeleteB
 	return nil
 }
 
-func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadResp, err error) {
+func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadResp, err error) {
 	sf.Logger.Infof("SF: Starting load for table:%s\n", tableName)
 
 	if dbHandle == nil {
@@ -446,7 +446,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable() (err error) {
 	sf.Logger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
 
 	sf.Logger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
-	var loadFile warehouseutils.LoadFileT
+	var loadFile warehouseutils.LoadFile
 	loadFile, err = sf.Uploader.GetSingleLoadFile(identityMergeRulesTable)
 	if err != nil {
 		return err
@@ -485,7 +485,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable() (err error) {
 func (sf *Snowflake) LoadIdentityMappingsTable() (err error) {
 	sf.Logger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
 	sf.Logger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
-	var loadFile warehouseutils.LoadFileT
+	var loadFile warehouseutils.LoadFile
 
 	loadFile, err = sf.Uploader.GetSingleLoadFile(identityMappingsTable)
 	if err != nil {
@@ -904,7 +904,7 @@ func (sf *Snowflake) getConnectionCredentials(opts optionalCreds) Credentials {
 	}
 }
 
-func (sf *Snowflake) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (sf *Snowflake) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
@@ -938,7 +938,7 @@ func (sf *Snowflake) TestConnection(warehouse warehouseutils.Warehouse) (err err
 }
 
 // FetchSchema queries snowflake and returns the schema associated with provided namespace
-func (sf *Snowflake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (sf *Snowflake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(sf.getConnectionCredentials(optionalCreds{}))
@@ -947,8 +947,8 @@ func (sf *Snowflake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(warehouseutils.Schema)
+	unrecognizedSchema = make(warehouseutils.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 		SELECT

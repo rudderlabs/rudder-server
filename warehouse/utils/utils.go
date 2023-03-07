@@ -253,14 +253,14 @@ func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	return false
 }
 
-type DestinationT struct {
+type Destination struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 }
 
 type (
-	SchemaT      map[string]TableSchemaT
-	TableSchemaT map[string]string
+	Schema      map[string]TableSchema
+	TableSchema map[string]string
 )
 
 type KeyValue struct {
@@ -268,15 +268,15 @@ type KeyValue struct {
 	Value interface{}
 }
 
-type UploaderI interface {
-	GetSchemaInWarehouse() SchemaT
-	GetLocalSchema() SchemaT
-	UpdateLocalSchema(schema SchemaT) error
-	GetTableSchemaInWarehouse(tableName string) TableSchemaT
-	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFilesMetadata(options GetLoadFilesOptionsT) []LoadFileT
+type Uploader interface {
+	GetSchemaInWarehouse() Schema
+	GetLocalSchema() Schema
+	UpdateLocalSchema(schema Schema) error
+	GetTableSchemaInWarehouse(tableName string) TableSchema
+	GetTableSchemaInUpload(tableName string) TableSchema
+	GetLoadFilesMetadata(options GetLoadFilesOptionsT) []LoadFile
 	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetSingleLoadFile(tableName string) (LoadFileT, error)
+	GetSingleLoadFile(tableName string) (LoadFile, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
@@ -291,7 +291,7 @@ type GetLoadFilesOptionsT struct {
 	Limit   int64
 }
 
-type LoadFileT struct {
+type LoadFile struct {
 	Location string
 	Metadata json.RawMessage
 }
@@ -403,7 +403,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	return
 }
 
-func GetColumnsFromTableSchema(schema TableSchemaT) []string {
+func GetColumnsFromTableSchema(schema TableSchema) []string {
 	keys := reflect.ValueOf(schema).MapKeys()
 	strKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
@@ -513,7 +513,7 @@ func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocations(loadFiles []LoadFileT, options GCSLocationOptionsT) (gcsLocations []string) {
+func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptionsT) (gcsLocations []string) {
 	for _, loadFile := range loadFiles {
 		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}
@@ -535,15 +535,15 @@ func GetAzureBlobLocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
+func GetS3Locations(loadFiles []LoadFile) []LoadFile {
 	for idx, loadFile := range loadFiles {
 		loadFiles[idx].Location, _ = GetS3Location(loadFile.Location)
 	}
 	return loadFiles
 }
 
-func JSONSchemaToMap(rawMsg json.RawMessage) SchemaT {
-	schema := make(SchemaT)
+func JSONSchemaToMap(rawMsg json.RawMessage) Schema {
+	schema := make(Schema)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))

@@ -33,7 +33,7 @@ var _ = Describe("Constraint", func() {
 			&BatchRouterEventT{
 				Metadata: MetadataT{
 					Table: "rudder_identity_merge_rules",
-					Columns: map[string]string{
+					Columns: warehouseutils.TableSchema{
 						"merge_property_1_type":  "string",
 						"merge_property_1_value": "string",
 					},
@@ -52,7 +52,7 @@ var _ = Describe("Constraint", func() {
 			&BatchRouterEventT{
 				Metadata: MetadataT{
 					Table: "rudder_identity_merge_rules",
-					Columns: map[string]string{
+					Columns: warehouseutils.TableSchema{
 						"merge_property_1_type":  "string",
 						"merge_property_1_value": "string",
 					},

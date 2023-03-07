@@ -60,9 +60,9 @@ func TestUseGlue(t *testing.T) {
 func TestLoadFileBatching(t *testing.T) {
 	batchSize := 10
 
-	var loadFiles []warehouseutils.LoadFileT
+	var loadFiles []warehouseutils.LoadFile
 	for i := 1; i <= 83; i += 1 {
-		loadFiles = append(loadFiles, warehouseutils.LoadFileT{
+		loadFiles = append(loadFiles, warehouseutils.LoadFile{
 			Location: "s3://test_bucket/test_path",
 		})
 	}
@@ -70,7 +70,7 @@ func TestLoadFileBatching(t *testing.T) {
 	batches := schemarepository.LoadFileBatching(loadFiles, batchSize)
 	require.Equal(t, 1+(len(loadFiles)/batchSize), len(batches))
 
-	var reconstruct []warehouseutils.LoadFileT
+	var reconstruct []warehouseutils.LoadFile
 	for i := range batches {
 		require.LessOrEqual(t, len(batches[i]), batchSize)
 		reconstruct = append(reconstruct, batches[i]...)

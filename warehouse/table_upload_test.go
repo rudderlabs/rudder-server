@@ -63,7 +63,7 @@ var _ = Describe("TableUpload", func() {
 		})
 
 		Describe("Operations for table uploads", func() {
-			var tu *TableUploadT
+			var tu *TableUpload
 			var tableName string
 
 			BeforeEach(func() {
@@ -72,7 +72,7 @@ var _ = Describe("TableUpload", func() {
 			})
 
 			It("Create table upload", func() {
-				err = tu.updateTableEventsCount(&UploadJobT{
+				err = tu.updateTableEventsCount(&UploadJob{
 					stagingFileIDs: stagingFileIDs,
 					upload: model.Upload{
 						ID: uploadID,
@@ -105,10 +105,10 @@ var _ = Describe("TableUpload", func() {
 			})
 
 			Describe("Getting number of events", func() {
-				var job *UploadJobT
+				var job *UploadJob
 
 				BeforeEach(func() {
-					job = &UploadJobT{
+					job = &UploadJob{
 						upload: model.Upload{
 							ID: uploadID,
 						},

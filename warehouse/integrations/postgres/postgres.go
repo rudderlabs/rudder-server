@@ -135,7 +135,7 @@ type Handle struct {
 	Namespace                                   string
 	ObjectStorage                               string
 	Warehouse                                   warehouseutils.Warehouse
-	Uploader                                    warehouseutils.UploaderI
+	Uploader                                    warehouseutils.Uploader
 	ConnectTimeout                              time.Duration
 	logger                                      logger.Logger
 	SkipComputingUserLatestTraits               bool
@@ -252,7 +252,7 @@ func (pg *Handle) getConnectionCredentials() Credentials {
 	return creds
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
@@ -341,7 +341,7 @@ func (pg *Handle) runRollbackWithTimeout(f func() error, onTimeout func(tags sta
 	}
 }
 
-func (pg *Handle) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (pg *Handle) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)
 	if err != nil {
@@ -821,7 +821,7 @@ func (pg *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error)
 
 func (pg *Handle) Setup(
 	warehouse warehouseutils.Warehouse,
-	uploader warehouseutils.UploaderI,
+	uploader warehouseutils.Uploader,
 ) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
@@ -887,7 +887,7 @@ func (pg *Handle) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (pg *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(pg.getConnectionCredentials())
@@ -896,8 +896,8 @@ func (pg *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrec
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(warehouseutils.Schema)
+	unrecognizedSchema = make(warehouseutils.Schema)
 
 	sqlStatement := `
 		SELECT

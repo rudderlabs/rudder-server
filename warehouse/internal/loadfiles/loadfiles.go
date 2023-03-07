@@ -34,7 +34,7 @@ const (
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
 type Notifier interface {
-	Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.SchemaT, priority int) (ch chan []pgnotifier.ResponseT, err error)
+	Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (ch chan []pgnotifier.Response, err error)
 }
 
 type StageFileRepo interface {
@@ -80,7 +80,7 @@ type WorkerJobRequest struct {
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
-	UploadSchema                 map[string]map[string]string
+	UploadSchema                 warehouseutils.Schema
 	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string

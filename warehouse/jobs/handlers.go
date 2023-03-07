@@ -19,7 +19,7 @@ import (
 )
 
 // AddWarehouseJobHandler The following handler gets called for adding async
-func (a *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
+func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	a.logger.Info("[WH-Jobs] Got Async Job Add Request")
 	a.logger.LogRequest(r)
 	body, err := io.ReadAll(r.Body)
@@ -104,7 +104,7 @@ func (a *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Requ
 	_, _ = w.Write(response)
 }
 
-func (a *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
+func (a *AsyncJobWh) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		a.logger.Info("Got Async Job Status Request")
 		a.logger.LogRequest(r)

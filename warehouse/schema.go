@@ -18,10 +18,10 @@ type SchemaHandleT struct {
 	dbHandle                      *sql.DB
 	stagingFiles                  []*model.StagingFile
 	warehouse                     warehouseutils.Warehouse
-	localSchema                   warehouseutils.SchemaT
-	schemaInWarehouse             warehouseutils.SchemaT
-	unrecognizedSchemaInWarehouse warehouseutils.SchemaT
-	uploadSchema                  warehouseutils.SchemaT
+	localSchema                   warehouseutils.Schema
+	schemaInWarehouse             warehouseutils.Schema
+	unrecognizedSchemaInWarehouse warehouseutils.Schema
+	uploadSchema                  warehouseutils.Schema
 }
 
 func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
@@ -67,7 +67,7 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 	return newColumnVal, err
 }
 
-func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT) {
+func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Schema) {
 	sourceID := sh.warehouse.Source.ID
 	destID := sh.warehouse.Destination.ID
 	namespace := sh.warehouse.Namespace
@@ -109,7 +109,7 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", rawSchema, err))
 	}
-	currentSchema = warehouseutils.SchemaT{}
+	currentSchema = warehouseutils.Schema{}
 	for tableName, columnMapInterface := range schemaMapInterface {
 		columnMap := make(map[string]string)
 		columns := columnMapInterface.(map[string]interface{})
@@ -121,7 +121,7 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT)
 	return currentSchema
 }
 
-func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT) error {
+func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Schema) error {
 	namespace := sh.warehouse.Namespace
 	sourceID := sh.warehouse.Source.ID
 	destID := sh.warehouse.Destination.ID
@@ -167,11 +167,11 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 	return err
 }
 
-func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse warehouseutils.SchemaT, err error) {
+func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse warehouseutils.Schema, err error) {
 	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-		return warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, err
+		return warehouseutils.Schema{}, warehouseutils.Schema{}, err
 	}
 
 	sh.SkipDeprecatedColumns(schemaInWarehouse)
@@ -179,7 +179,7 @@ func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.Manager) (sc
 	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
-func (sh *SchemaHandleT) SkipDeprecatedColumns(schema warehouseutils.SchemaT) {
+func (sh *SchemaHandleT) SkipDeprecatedColumns(schema warehouseutils.Schema) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
 			if warehouseutils.DeprecatedColumnsRegex.MatchString(columnName) {
@@ -199,12 +199,12 @@ func (sh *SchemaHandleT) SkipDeprecatedColumns(schema warehouseutils.SchemaT) {
 	}
 }
 
-func MergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
+func MergeSchema(currentSchema warehouseutils.Schema, schemaList []warehouseutils.Schema, currentMergedSchema warehouseutils.Schema, warehouseType string) warehouseutils.Schema {
 	if len(currentMergedSchema) == 0 {
-		currentMergedSchema = warehouseutils.SchemaT{}
+		currentMergedSchema = warehouseutils.Schema{}
 	}
 
-	setColumnTypeFromExistingSchema := func(refSchema warehouseutils.SchemaT, tableName, refTableName, columnName, refColumnName, columnType string) bool {
+	setColumnTypeFromExistingSchema := func(refSchema warehouseutils.Schema, tableName, refTableName, columnName, refColumnName, columnType string) bool {
 		columnTypeInDB, ok := refSchema[refTableName][refColumnName]
 		if !ok {
 			return false
@@ -230,7 +230,7 @@ func MergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 				currentMergedSchema[tableName] = make(map[string]string)
 			}
 			var toInferFromIdentifies bool
-			var refSchema warehouseutils.SchemaT
+			var refSchema warehouseutils.Schema
 			if tableName == usersTableName {
 				if _, ok := currentSchema[identifiesTableName]; ok {
 					toInferFromIdentifies = true
@@ -308,10 +308,10 @@ func (sh *SchemaHandleT) isIDResolutionEnabled() bool {
 	return warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT {
+func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.Schema {
 	schemaInLocalDB := sh.localSchema
 
-	consolidatedSchema := warehouseutils.SchemaT{}
+	consolidatedSchema := warehouseutils.Schema{}
 	count := 0
 	for {
 		lastIndex := count + stagingFilesSchemaPaginationSize
@@ -340,14 +340,14 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 		}
 
-		var schemas []warehouseutils.SchemaT
+		var schemas []warehouseutils.Schema
 		for rows.Next() {
 			var s json.RawMessage
 			err := rows.Scan(&s)
 			if err != nil {
 				panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 			}
-			var schema warehouseutils.SchemaT
+			var schema warehouseutils.Schema
 			err = json.Unmarshal(s, &schema)
 			if err != nil {
 				panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(s), err))
@@ -382,7 +382,7 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 // hasSchemaChanged Default behaviour is to do the deep equals.
 // If we are skipping deep equals, then we are validating local schemas against warehouse schemas only.
 // Not the other way around.
-func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
+func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.Schema) bool {
 	if !skipDeepEqualSchemas {
 		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
 		return !eq
@@ -410,7 +410,7 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) boo
 	return false
 }
 
-func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
+func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.Schema) (diff warehouseutils.TableSchemaDiffT) {
 	diff = warehouseutils.TableSchemaDiffT{
 		ColumnMap:        make(map[string]string),
 		UpdatedSchema:    make(map[string]string),

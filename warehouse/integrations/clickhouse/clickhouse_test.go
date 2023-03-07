@@ -300,24 +300,24 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 
 type mockUploader struct {
 	minioPort   string
-	tableSchema warehouseutils.TableSchemaT
-	metadata    []warehouseutils.LoadFileT
+	tableSchema warehouseutils.TableSchema
+	metadata    []warehouseutils.LoadFile
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT     { return warehouseutils.SchemaT{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.SchemaT           { return warehouseutils.SchemaT{} }
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.SchemaT) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
+func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return warehouseutils.Schema{} }
+func (*mockUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
+func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
 func (*mockUploader) UseRudderStorage() bool                           { return false }
 func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
 func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
 func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{}
 }
 
-func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
+func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFile, error) {
+	return warehouseutils.LoadFile{}, nil
 }
 
 func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
@@ -328,11 +328,11 @@ func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	return sampleLocation, nil
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
+func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
 	return m.tableSchema
 }
 
-func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFile {
 	return m.metadata
 }
 
@@ -450,7 +450,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 				},
 			}
 			mockUploader := &mockUploader{
-				tableSchema: warehouseutils.TableSchemaT{
+				tableSchema: warehouseutils.TableSchema{
 					"alter_test_bool":     "boolean",
 					"alter_test_datetime": "datetime",
 					"alter_test_float":    "float",
@@ -497,7 +497,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			uploadOutput, err := fm.Upload(context.TODO(), f, fmt.Sprintf("test_prefix_%d", i))
 			require.NoError(t, err)
 
-			mockUploader.metadata = append(mockUploader.metadata, warehouseutils.LoadFileT{
+			mockUploader.metadata = append(mockUploader.metadata, warehouseutils.LoadFile{
 				Location: uploadOutput.Location,
 			})
 
@@ -524,7 +524,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Log("Creating table")
-			err = ch.CreateTable(table, map[string]string{
+			err = ch.CreateTable(table, warehouseutils.TableSchema{
 				"id":                  "string",
 				"test_int":            "int",
 				"test_float":          "float",
@@ -594,7 +594,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 
 			t.Log("Creating users identifies and table")
 			for _, tableName := range []string{warehouseutils.IdentifiesTable, warehouseutils.UsersTable} {
-				err = ch.CreateTable(tableName, map[string]string{
+				err = ch.CreateTable(tableName, warehouseutils.TableSchema{
 					"id":            "string",
 					"user_id":       "string",
 					"test_int":      "int",
@@ -732,7 +732,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 		provider     = "MINIO"
 		host         = "localhost"
 		tableName    = warehouseutils.CTStagingTablePrefix + "_test_table"
-		testColumns  = map[string]string{
+		testColumns  = warehouseutils.TableSchema{
 			"id":  "int",
 			"val": "string",
 		}
@@ -861,7 +861,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		err = ch.CreateSchema()
 		require.NoError(t, err)
 
-		err = ch.CreateTable(table, map[string]string{
+		err = ch.CreateTable(table, warehouseutils.TableSchema{
 			"id":                  "string",
 			"test_int":            "int",
 			"test_float":          "float",
@@ -1010,7 +1010,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		require.NotEmpty(t, schema)
 		require.NotEmpty(t, unrecognizedSchema)
 
-		require.Equal(t, unrecognizedSchema, warehouseutils.SchemaT{
+		require.Equal(t, unrecognizedSchema, warehouseutils.Schema{
 			table: {
 				"x": "<missing_datatype>",
 			},

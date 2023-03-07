@@ -17,16 +17,16 @@ const (
 	createTableUploadsBatchSize      = 500
 )
 
-type TableUploadT struct {
+type TableUpload struct {
 	uploadID  int64
 	tableName string
 }
 
-func NewTableUpload(uploadID int64, tableName string) *TableUploadT {
-	return &TableUploadT{uploadID: uploadID, tableName: tableName}
+func NewTableUpload(uploadID int64, tableName string) *TableUpload {
+	return &TableUpload{uploadID: uploadID, tableName: tableName}
 }
 
-func (job *UploadJobT) getTotalEventsUploaded(includeDiscards bool) (int64, error) {
+func (job *UploadJob) getTotalEventsUploaded(includeDiscards bool) (int64, error) {
 	var total sql.NullInt64
 	var discardsStatement string
 	if !includeDiscards {
@@ -115,7 +115,7 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 	return
 }
 
-func (tableUpload *TableUploadT) setStatus(status string) (err error) {
+func (tableUpload *TableUpload) setStatus(status string) (err error) {
 	// set last_exec_time only if status is executing
 	execValues := []interface{}{status, timeutil.Now(), tableUpload.uploadID, tableUpload.tableName}
 	var lastExec string
@@ -142,7 +142,7 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 	return err
 }
 
-func (tableUpload *TableUploadT) getTotalEvents() (int64, error) {
+func (tableUpload *TableUpload) getTotalEvents() (int64, error) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  total_events
@@ -161,7 +161,7 @@ func (tableUpload *TableUploadT) getTotalEvents() (int64, error) {
 	return total.Int64, err
 }
 
-func (tableUpload *TableUploadT) setError(status string, statusError error) (err error) {
+func (tableUpload *TableUpload) setError(status string, statusError error) (err error) {
 	tableName := tableUpload.tableName
 	uploadID := tableUpload.uploadID
 	pkgLogger.Errorf("[WH]: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
@@ -190,7 +190,7 @@ func (tableUpload *TableUploadT) setError(status string, statusError error) (err
 	return err
 }
 
-func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err error) {
+func (tableUpload *TableUpload) updateTableEventsCount(job *UploadJob) (err error) {
 	subQuery := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
 		  SELECT
@@ -240,7 +240,7 @@ func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err er
 	return
 }
 
-func (tableUpload *TableUploadT) getNumEvents() (total int64, err error) {
+func (tableUpload *TableUpload) getNumEvents() (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  total_events

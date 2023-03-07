@@ -3,6 +3,7 @@ package validations
 import (
 	"encoding/json"
 	"fmt"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -23,7 +24,7 @@ var (
 )
 
 var (
-	TableSchemaMap = map[string]string{
+	TableSchemaMap = warehouseutils.TableSchema{
 		"id":  "int",
 		"val": "string",
 	}
@@ -31,7 +32,7 @@ var (
 		"id":  1,
 		"val": "RudderStack",
 	}
-	AlterColumnMap = map[string]string{
+	AlterColumnMap = warehouseutils.TableSchema{
 		"val_alter": "string",
 	}
 	Namespace = "rudderstack_setup_test"
