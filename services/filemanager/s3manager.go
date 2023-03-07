@@ -16,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/mitchellh/mapstructure"
+	"github.com/samber/lo"
+
 	appConfig "github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
@@ -122,15 +124,12 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 	svc := s3.New(sess)
 
 	batchSize := 1000 // max accepted by DeleteObjects API
-	for i := 0; i < len(objects); i += batchSize {
-		j := i + batchSize
-		if j > len(objects) {
-			j = len(objects)
-		}
+	chunks := lo.Chunk(objects, batchSize)
+	for _, chunk := range chunks {
 		input := &s3.DeleteObjectsInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Delete: &s3.Delete{
-				Objects: objects[i:j],
+				Objects: chunk,
 			},
 		}
 

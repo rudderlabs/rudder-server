@@ -6,7 +6,10 @@ import (
 	"strings"
 	"time"
 
-	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+	"github.com/samber/lo"
+
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -15,11 +18,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -109,7 +112,7 @@ func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 }
 
 // CreateLoadFiles for the staging files that have not been successfully processed.
-func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.UploadJob) (int64, int64, error) {
+func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job *model.UploadJob) (int64, int64, error) {
 	stagingFiles := job.StagingFiles
 
 	var toProcessStagingFiles []*model.StagingFile
@@ -124,11 +127,11 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 }
 
 // ForceCreateLoadFiles creates load files for the staging files, regardless if they are already successfully processed.
-func (lf *LoadFileGenerator) ForceCreateLoadFiles(ctx context.Context, job model.UploadJob) (int64, int64, error) {
+func (lf *LoadFileGenerator) ForceCreateLoadFiles(ctx context.Context, job *model.UploadJob) (int64, int64, error) {
 	return lf.createFromStaging(ctx, job, job.StagingFiles)
 }
 
-func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.UploadJob, toProcessStagingFiles []*model.StagingFile) (int64, int64, error) {
+func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.UploadJob, toProcessStagingFiles []*model.StagingFile) (int64, int64, error) {
 	destID := job.Upload.DestinationID
 	destType := job.Upload.DestinationType
 
@@ -153,7 +156,6 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 	}
 
 	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
-
 	err = lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs)
 	if err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
@@ -177,15 +179,11 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 	var g errgroup.Group
 
 	var sampleError error
-	for i := 0; i < len(toProcessStagingFiles); i += publishBatchSize {
-		j := i + publishBatchSize
-		if j > len(toProcessStagingFiles) {
-			j = len(toProcessStagingFiles)
-		}
-
+	chunks := lo.Chunk(toProcessStagingFiles, publishBatchSize)
+	for _, chunk := range chunks {
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
-		for _, stagingFile := range toProcessStagingFiles[i:j] {
+		for _, stagingFile := range chunk {
 			payload := WorkerJobRequest{
 				UploadID:                     job.Upload.ID,
 				StagingFileID:                stagingFile.ID,
@@ -221,9 +219,6 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 		}
 
 		schema := &job.Upload.UploadSchema
-		if job.Upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-			schema = &job.Upload.MergedSchema
-		}
 
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
 		messagePayload := pgnotifier.MessagePayload{
@@ -237,13 +232,16 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 		}
 		// set messages to nil to release mem allocated
 		messages = nil
-		batchStartIdx := i
-		batchEndIdx := j
-
+		startId := chunk[0].ID
+		endId := chunk[len(chunk)-1].ID
 		g.Go(func() error {
 			responses := <-ch
-			lf.Logger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
-
+			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from PgNotifier",
+				"startId", startId,
+				"endID", endId,
+				logfield.DestinationID, destType,
+				logfield.DestinationType, destID,
+			)
 			var loadFiles []model.LoadFile
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
@@ -303,7 +301,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 		return 0, 0, err
 	}
 
-	loadFiles, err := lf.LoadRepo.GetByStagingFiles(ctx, repo.StagingFileIDs(toProcessStagingFiles))
+	loadFiles, err := lf.LoadRepo.GetByStagingFiles(ctx, stagingFileIDs)
 	if err != nil {
 		return 0, 0, fmt.Errorf("getting load files: %w", err)
 	}
@@ -330,7 +328,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 	return loadFiles[0].ID, loadFiles[len(loadFiles)-1].ID, nil
 }
 
-func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job model.UploadJob) (revisionIDMap map[string]backendconfig.DestinationT, err error) {
+func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *model.UploadJob) (revisionIDMap map[string]backendconfig.DestinationT, err error) {
 	revisionIDMap = make(map[string]backendconfig.DestinationT)
 
 	// TODO: ensure DestinationRevisionID is populated

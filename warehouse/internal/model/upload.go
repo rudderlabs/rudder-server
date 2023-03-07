@@ -19,11 +19,9 @@ const (
 	GeneratedLoadFiles        = "generated_load_files"
 	UpdatedTableUploadsCounts = "updated_table_uploads_counts"
 	CreatedRemoteSchema       = "created_remote_schema"
-	ExportedUserTables        = "exported_user_tables"
 	ExportedData              = "exported_data"
 	ExportingData             = "exporting_data"
 	ExportingDataFailed       = "exporting_data_failed"
-	ExportedIdentities        = "exported_identities"
 	Aborted                   = "aborted"
 	Failed                    = "failed"
 )
