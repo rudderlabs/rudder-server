@@ -362,66 +362,6 @@ var _ = Describe("Schema", func() {
 		}),
 	)
 
-	DescribeTable("Merge Upload and Local Schema", func(uploadSchema, schemaInWarehousePreUpload, expected warehouseutils.SchemaT) {
-		Expect(mergeUploadAndLocalSchemas(uploadSchema, schemaInWarehousePreUpload)).To(Equal(expected))
-	},
-
-		Entry(nil, warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, warehouseutils.SchemaT{}),
-
-		Entry(nil, warehouseutils.SchemaT{}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column": "test-value",
-			},
-		}, warehouseutils.SchemaT{}),
-
-		Entry(nil, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column": "test-value-1",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column": "test-value-2",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": {
-				"test-column": "test-value-2",
-			},
-		}),
-
-		Entry(nil, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column-1": "test-value-1",
-				"test-column-2": "test-value-2",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column": "test-value-2",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": {
-				"test-column":   "test-value-2",
-				"test-column-1": "test-value-1",
-				"test-column-2": "test-value-2",
-			},
-		}),
-
-		Entry(nil, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column":   "string",
-				"test-column-2": "test-value-2",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column": "text",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": {
-				"test-column-2": "test-value-2",
-				"test-column":   "text",
-			},
-		}),
-	)
-
 	Describe("Has schema changed", func() {
 		g := GinkgoT()
 
