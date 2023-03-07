@@ -167,11 +167,10 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 }
 
 // praseRow is a helper for mapping a row of tableColumns to a model.StagingFile.
-func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
-	var stagingFiles []model.StagingFile
+func (*StagingFiles) parseRows(rows *sql.Rows) ([]*model.StagingFile, error) {
+	var stagingFiles []*model.StagingFile
 
 	defer func() { _ = rows.Close() }()
-
 	for rows.Next() {
 		var (
 			stagingFile model.StagingFile
@@ -222,7 +221,7 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 		}
 
 		m.SetStagingFile(&stagingFile)
-		stagingFiles = append(stagingFiles, stagingFile)
+		stagingFiles = append(stagingFiles, &stagingFile)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -249,7 +248,7 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 		return model.StagingFile{}, fmt.Errorf("no staging file found with id: %d", ID)
 	}
 
-	return entries[0], err
+	return *entries[0], err
 }
 
 // GetSchemaByID returns staging file schema field the given ID.
@@ -270,39 +269,17 @@ func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (jsonstd.
 	return schema, err
 }
 
-// GetInRange returns staging files in [startID, endID] range inclusive.
-func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]model.StagingFile, error) {
+// GetForUploadID returns all the staging files for that uploadID
+func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinationID string, uploadId int64) ([]*model.StagingFile, error) {
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST
 	WHERE
-		id >= $1 AND id <= $2
-		AND source_id = $3
-		AND destination_id = $4
-	ORDER BY
-		id ASC;`
-
-	rows, err := repo.db.QueryContext(ctx, query, startID, endID, sourceID, destinationID)
-	if err != nil {
-		return nil, fmt.Errorf("querying staging files: %w", err)
-	}
-
-	return repo.parseRows(rows)
-}
-
-func (repo *StagingFiles) GetForUpload(ctx context.Context, upload model.Upload) ([]model.StagingFile, error) {
-	return repo.GetInRange(ctx, upload.SourceID, upload.DestinationID, upload.StagingFileStartID, upload.StagingFileEndID)
-}
-
-// GetAfterID returns staging files in (startID, +Inf) range.
-func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationID string, startID int64) ([]model.StagingFile, error) {
-	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + `
-	WHERE
-		id > $1
+		upload_id = $1
 		AND source_id = $2
 		AND destination_id = $3
 	ORDER BY
 		id ASC;`
 
-	rows, err := repo.db.QueryContext(ctx, query, startID, sourceID, destinationID)
+	rows, err := repo.db.QueryContext(ctx, query, uploadId, sourceID, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying staging files: %w", err)
 	}
@@ -310,19 +287,19 @@ func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationI
 	return repo.parseRows(rows)
 }
 
-func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]model.StagingFile, error) {
+func (repo *StagingFiles) GetForUpload(ctx context.Context, upload model.Upload) ([]*model.StagingFile, error) {
+	return repo.GetForUploadID(ctx, upload.SourceID, upload.DestinationID, upload.ID)
+}
+
+func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]*model.StagingFile, error) {
 	var (
 		uploadID               int64
 		lastStartStagingFileID int64
-		lastEndStagingFileID   int64
-		useUploadID            sql.NullBool
 	)
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT
 			id,
-			start_staging_file_id,
-			end_staging_file_id,
-			metadata->>'use_upload_id' AS use_upload_id
+			start_staging_file_id
 		FROM
 		`+uploadsTableName+`
 		WHERE
@@ -334,33 +311,10 @@ func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID s
 	).Scan(
 		&uploadID,
 		&lastStartStagingFileID,
-		&lastEndStagingFileID,
-		&useUploadID,
 	)
-
-	if err == sql.ErrNoRows {
-		lastEndStagingFileID = 0
-	} else if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("querying uploads: %w", err)
 	}
-
-	// Legacy path:
-	// staging files are not associated with uploads,
-	// so we need to get them by range.
-	if !useUploadID.Bool {
-		stagingFilesList, err := repo.GetAfterID(
-			ctx,
-			sourceID,
-			destinationID,
-			lastEndStagingFileID,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		return stagingFilesList, nil
-	}
-
 	// lastStartStagingFileID is used as an optimization to avoid scanning the whole table.
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + `
 	WHERE
