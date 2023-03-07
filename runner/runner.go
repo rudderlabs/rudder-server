@@ -11,20 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-
-	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
-
 	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/rudderlabs/rudder-server/info"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
@@ -37,6 +24,7 @@ import (
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
@@ -55,6 +43,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	svcMetric "github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -64,6 +53,16 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
+	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -169,10 +168,18 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	// Start stats
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
-	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType && (!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
+	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
+		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
 		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
-	stats.Default.Start(ctx)
+	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
+		stats.WithServiceName(r.appType),
+		stats.WithServiceVersion(r.releaseInfo.Version),
+	)
+	if err := stats.Default.Start(ctx); err != nil {
+		r.logger.Errorf("Failed to start stats: %v", err)
+		return 1
+	}
 	stats.Default.NewTaggedStat("rudder_server_config",
 		stats.GaugeType,
 		stats.Tags{

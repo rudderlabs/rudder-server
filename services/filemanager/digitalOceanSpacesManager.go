@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/samber/lo"
+
 	SpacesManager "github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -179,15 +181,12 @@ func (manager *DOSpacesManager) DeleteObjects(ctx context.Context, keys []string
 	svc := s3.New(sess)
 
 	batchSize := 1000 // max accepted by DeleteObjects API
-	for i := 0; i < len(objects); i += batchSize {
-		j := i + batchSize
-		if j > len(objects) {
-			j = len(objects)
-		}
+	chunks := lo.Chunk(objects, batchSize)
+	for _, chunk := range chunks {
 		input := &s3.DeleteObjectsInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Delete: &s3.Delete{
-				Objects: objects[i:j],
+				Objects: chunk,
 			},
 		}
 
