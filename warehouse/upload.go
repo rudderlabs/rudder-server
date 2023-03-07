@@ -147,13 +147,14 @@ func init() {
 
 func setMaxParallelLoads() {
 	maxParallelLoads = map[string]int{
-		warehouseutils.BQ:         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
-		warehouseutils.RS:         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
-		warehouseutils.POSTGRES:   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
-		warehouseutils.MSSQL:      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
-		warehouseutils.SNOWFLAKE:  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
-		warehouseutils.CLICKHOUSE: config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
-		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
+		warehouseutils.BQ:          config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
+		warehouseutils.RS:          config.GetInt("Warehouse.redshift.maxParallelLoads", 8),
+		warehouseutils.POSTGRES:    config.GetInt("Warehouse.postgres.maxParallelLoads", 8),
+		warehouseutils.MSSQL:       config.GetInt("Warehouse.mssql.maxParallelLoads", 8),
+		warehouseutils.SNOWFLAKE:   config.GetInt("Warehouse.snowflake.maxParallelLoads", 8),
+		warehouseutils.CLICKHOUSE:  config.GetInt("Warehouse.clickhouse.maxParallelLoads", 8),
+		warehouseutils.DELTALAKE:   config.GetInt("Warehouse.deltalake.maxParallelLoads", 8),
+		warehouseutils.S3_DATALAKE: config.GetInt("Warehouse.s3_datalake.maxParallelLoads", 8),
 	}
 	columnCountLimitMap = map[string]int{
 		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024),
