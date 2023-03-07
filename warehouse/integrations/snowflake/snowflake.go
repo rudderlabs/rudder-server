@@ -43,7 +43,6 @@ var pkgLogger logger.Logger
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
 	"int":      "number",
-	"bigint":   "number",
 	"float":    "double precision",
 	"string":   "varchar",
 	"datetime": "timestamp",
@@ -68,8 +67,6 @@ var dataTypesMapToRudder = map[string]string{
 	"DOUBLE PRECISION": "float",
 	"REAL":             "float",
 
-	"BOOLEAN": "boolean",
-
 	"VARCHAR":       "string",
 	"CHAR":          "string",
 	"CHARACTER":     "string",
@@ -82,10 +79,12 @@ var dataTypesMapToRudder = map[string]string{
 	"NCHAR VARYING": "string",
 	"BINARY":        "string",
 	"VARBINARY":     "string",
+	"DATE":          "string",
+	"TIME":          "string",
 
-	"DATE":          "datetime",
+	"BOOLEAN": "boolean",
+
 	"DATETIME":      "datetime",
-	"TIME":          "datetime",
 	"TIMESTAMP":     "datetime",
 	"TIMESTAMP_LTZ": "datetime",
 	"TIMESTAMP_NTZ": "datetime",
