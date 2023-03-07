@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"net/http"
 	"os"
 	"runtime"
@@ -332,6 +333,7 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	bigquery.Init()
 	clickhouse.Init()
 	archiver.Init()
