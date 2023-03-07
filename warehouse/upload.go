@@ -343,7 +343,7 @@ func (job *UploadJobT) matchRowsInStagingAndLoadFiles(ctx context.Context) error
 
 func (job *UploadJobT) run() (err error) {
 	timerStat := job.timerStat("upload_time")
-	start := time.Now()
+	start := job.Now()
 	ch := job.trackLongRunningUpload()
 	defer func() {
 		_ = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadInProgress, Value: false}}})
@@ -404,7 +404,7 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	for {
-		stateStartTime := time.Now()
+		stateStartTime := job.Now()
 		err = nil
 
 		_ = job.setUploadStatus(UploadStatusOpts{Status: nextUploadState.inProgress})
@@ -1012,7 +1012,7 @@ func (job *UploadJobT) loadTable(tName string) (bool, error) {
 	)
 
 	status := model.TableUploadExecuting
-	lastExecTime := time.Now()
+	lastExecTime := job.Now()
 	_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tName, repo.TableUploadSetOptions{
 		Status:       &status,
 		LastExecTime: &lastExecTime,
@@ -1156,7 +1156,7 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 
 	// Load all user tables
 	status := model.TableUploadExecuting
-	lastExecTime := time.Now()
+	lastExecTime := job.Now()
 	_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, job.identifiesTableName(), repo.TableUploadSetOptions{
 		Status:       &status,
 		LastExecTime: &lastExecTime,
@@ -1175,7 +1175,7 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 	var alteredUserSchema bool
 	if _, ok := job.upload.UploadSchema[job.usersTableName()]; ok {
 		status := model.TableUploadExecuting
-		lastExecTime := time.Now()
+		lastExecTime := job.Now()
 		_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, job.usersTableName(), repo.TableUploadSetOptions{
 			Status:       &status,
 			LastExecTime: &lastExecTime,
@@ -1262,7 +1262,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		}
 
 		status := model.TableUploadExecuting
-		lastExecTime := time.Now()
+		lastExecTime := job.Now()
 		err = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tableName, repo.TableUploadSetOptions{
 			Status:       &status,
 			LastExecTime: &lastExecTime,
@@ -1492,7 +1492,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 
 	metadata := repo.ExtractUploadMetadata(job.upload)
 
-	metadata.NextRetryTime = time.Now().Add(-time.Hour * 1)
+	metadata.NextRetryTime = job.Now().Add(-time.Hour * 1)
 	metadata.Retried = true
 	metadata.Priority = 50
 
