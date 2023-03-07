@@ -383,69 +383,58 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				strValue := value.(string)
 				switch valueType {
 				case "int":
-					{
-						var convertedValue int
-						if convertedValue, err = strconv.Atoi(strValue); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
-							finalColumnValues = append(finalColumnValues, nil)
-						} else {
-							finalColumnValues = append(finalColumnValues, convertedValue)
-						}
-
+					var convertedValue int
+					if convertedValue, err = strconv.Atoi(strValue); err != nil {
+						pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+						finalColumnValues = append(finalColumnValues, nil)
+					} else {
+						finalColumnValues = append(finalColumnValues, convertedValue)
 					}
 				case "float":
-					{
-						var convertedValue float64
-						if convertedValue, err = strconv.ParseFloat(strValue, 64); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
-							finalColumnValues = append(finalColumnValues, nil)
-						} else {
-							finalColumnValues = append(finalColumnValues, convertedValue)
-						}
+					var convertedValue float64
+					if convertedValue, err = strconv.ParseFloat(strValue, 64); err != nil {
+						pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+						finalColumnValues = append(finalColumnValues, nil)
+					} else {
+						finalColumnValues = append(finalColumnValues, convertedValue)
 					}
 				case "datetime":
-					{
-						var convertedValue time.Time
-						// TODO : handling milli?
-						if convertedValue, err = time.Parse(time.RFC3339, strValue); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
-							finalColumnValues = append(finalColumnValues, nil)
-						} else {
-							finalColumnValues = append(finalColumnValues, convertedValue)
-						}
-						// TODO : handling all cases?
+					var convertedValue time.Time
+					// TODO : handling milli?
+					if convertedValue, err = time.Parse(time.RFC3339, strValue); err != nil {
+						pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+						finalColumnValues = append(finalColumnValues, nil)
+					} else {
+						finalColumnValues = append(finalColumnValues, convertedValue)
 					}
+					// TODO : handling all cases?
 				case "boolean":
-					{
-						var convertedValue bool
-						if convertedValue, err = strconv.ParseBool(strValue); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
-							finalColumnValues = append(finalColumnValues, nil)
-						} else {
-							finalColumnValues = append(finalColumnValues, convertedValue)
-						}
+					var convertedValue bool
+					if convertedValue, err = strconv.ParseBool(strValue); err != nil {
+						pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+						finalColumnValues = append(finalColumnValues, nil)
+					} else {
+						finalColumnValues = append(finalColumnValues, convertedValue)
 					}
 				case "string":
-					{
-						// This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
-						// A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
-						// An alternate to this approach is to use nvarchar(instead of varchar)
-						if len(strValue) > mssqlStringLengthLimit {
-							strValue = strValue[:mssqlStringLengthLimit]
+					// This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
+					// A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
+					// An alternate to this approach is to use nvarchar(instead of varchar)
+					if len(strValue) > mssqlStringLengthLimit {
+						strValue = strValue[:mssqlStringLengthLimit]
+					}
+					var byteArr []byte
+					if hasDiacritics(strValue) {
+						pkgLogger.Debug("diacritics " + strValue)
+						byteArr = str2ucs2(strValue)
+						// This is needed as with above operation every character occupies 2 bytes
+						if len(byteArr) > mssqlStringLengthLimit {
+							byteArr = byteArr[:mssqlStringLengthLimit]
 						}
-						var byteArr []byte
-						if hasDiacritics(strValue) {
-							pkgLogger.Debug("diacritics " + strValue)
-							byteArr = str2ucs2(strValue)
-							// This is needed as with above operation every character occupies 2 bytes
-							if len(byteArr) > mssqlStringLengthLimit {
-								byteArr = byteArr[:mssqlStringLengthLimit]
-							}
-							finalColumnValues = append(finalColumnValues, byteArr)
-						} else {
-							pkgLogger.Debug("non-diacritic : " + strValue)
-							finalColumnValues = append(finalColumnValues, strValue)
-						}
+						finalColumnValues = append(finalColumnValues, byteArr)
+					} else {
+						pkgLogger.Debug("non-diacritic : " + strValue)
+						finalColumnValues = append(finalColumnValues, strValue)
 					}
 				default:
 					finalColumnValues = append(finalColumnValues, value)
@@ -564,7 +553,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
+		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
 		caseSubQuery := fmt.Sprintf(`case
 						  when (exists(select 1)) then (
 						  	select "%[1]s" from %[2]s
@@ -961,10 +950,10 @@ func (ms *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, e
 }
 
 func (ms *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
+	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		ms.Namespace,
 		tableName,
-		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+		fmt.Sprintf(`%q, %q`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
 	_, err = ms.DB.Exec(sqlStatement)
