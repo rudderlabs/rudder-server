@@ -128,39 +128,13 @@ func constructQueryOR(paramKey string, paramList []string) string {
 	return "(" + strings.Join(queryList, " OR ") + ")"
 }
 
-// constructStateQuery construct query from provided state filters
-func constructStateQuery(alias, paramKey string, paramList []string, queryType string) string {
-	var queryList []string
-	// Building state query for non executing states
-	for _, p := range paramList {
-		if p != NotProcessed.State {
-			queryList = append(queryList, "("+alias+"."+paramKey+"='"+p+"')")
-		}
-	}
-	temp := "((" + strings.Join(queryList, " "+queryType+" ") + ")" + " and " + alias + ".retry_time < $1)"
-
-	// Building state query for executing states
-	for _, p := range paramList {
-		if p == NotProcessed.State {
-			temp = temp + " " + queryType + " " + alias + ".job_id is null"
-			break
-		}
-	}
-
-	return temp
-}
-
 // constructParameterJSONQuery construct and return query
 func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilterT) string {
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
 	var allKeyValues, mandatoryKeyValues, opNullConditions []string
 	for _, parameter := range parameterFilters {
 		allKeyValues = append(allKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
-		if parameter.Optional {
-			opNullConditions = append(opNullConditions, fmt.Sprintf(`%q.parameters -> '%s' IS NULL`, alias, parameter.Name))
-		} else {
-			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
-		}
+		mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
 	}
 	opQuery := ""
 	if len(opNullConditions) > 0 {
@@ -240,10 +214,8 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 			statTagsMap["stateFilters"] = stateFiltersTag
 		}
 
-		if tags.WorkspaceID != "" {
+		if tags.WorkspaceID != "" && tags.WorkspaceID != allWorkspaces {
 			statTagsMap["workspaceId"] = tags.WorkspaceID
-		} else {
-			statTagsMap["workspaceId"] = allWorkspaces
 		}
 
 		for _, paramTag := range tags.ParameterFilters {

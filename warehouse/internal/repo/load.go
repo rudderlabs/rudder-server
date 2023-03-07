@@ -17,13 +17,13 @@ const (
 	loadTableName    = warehouseutils.WarehouseLoadFilesTable
 	loadTableColumns = `
 		id,
-		staging_file_id, 
-		location, 
-		source_id, 
-		destination_id, 
-		destination_type, 
-		table_name, 
-		total_events, 
+		staging_file_id,
+		location,
+		source_id,
+		destination_id,
+		destination_type,
+		table_name,
+		total_events,
 		metadata
 `
 )
@@ -70,7 +70,7 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 	if err != nil {
 		return fmt.Errorf(`inserting load files: CopyIn: %w`, err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, loadFile := range loadFiles {
 		metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)

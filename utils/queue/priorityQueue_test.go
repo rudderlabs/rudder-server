@@ -54,4 +54,19 @@ func TestPriorityQueue(t *testing.T) {
 		require.Nil(t, pq.Pop())
 		require.Equal(t, 0, pq.Len())
 	})
+
+	t.Run("pop then try to update", func(t *testing.T) {
+		pq := make(PriorityQueue[any], 3)
+
+		for i := 0; i < 3; i++ {
+			pq[i] = &Item[any]{
+				Priority:  1,
+				timeStamp: int64(i),
+			}
+		}
+		i1 := pq.Pop().((*Item[any])) // remove the item
+		require.Len(t, pq, 2, "pq should have 2 elements after pop")
+		pq.Update(i1, i1.Priority+1) // try to update the removed item
+		require.Len(t, pq, 2, "pq should still have 2 elements after updating the popped item")
+	})
 }

@@ -35,8 +35,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -97,8 +98,6 @@ type GetQueryParamsT struct {
 	// only values greater than zero are considered as valid limits.
 	PayloadSizeLimit int64
 }
-
-var getTimeNowFunc = time.Now
 
 // Tx is a wrapper around sql.Tx that supports registering and executing
 // post-commit actions, a.k.a. success listeners.
@@ -476,9 +475,8 @@ type journalOpPayloadT struct {
 }
 
 type ParameterFilterT struct {
-	Name     string
-	Value    string
-	Optional bool
+	Name  string
+	Value string
 }
 
 var dbInvalidJsonErrors = map[string]struct{}{
@@ -2382,10 +2380,10 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 									JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
 								    %[3]s
 									%[4]s
-									AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[5]s`,
+									ORDER BY jobs.job_id %[5]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, filterQuery, limitQuery)
 
-	args := []interface{}{getTimeNowFunc()}
+	var args []interface{}
 
 	var wrapQuery []string
 	if params.EventsLimit > 0 {
@@ -3021,7 +3019,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
 
 	if count == 0 {
-		// Nothing to recoer
+		// Nothing to recover
 		return
 	}
 

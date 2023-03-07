@@ -2,83 +2,78 @@ package validations
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/config"
-	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
-	connectionTestingFolder string
-	pkgLogger               logger.Logger
-	fileManagerFactory      filemanager.FileManagerFactory
-	fileManagerTimeout      time.Duration
+	connectionTestingFolder        string
+	pkgLogger                      logger.Logger
+	fileManagerFactory             filemanager.FileManagerFactory
+	objectStorageValidationTimeout time.Duration
 )
 
 var (
-	TestTableSchemaMap = map[string]string{
+	TableSchemaMap = map[string]string{
 		"id":  "int",
 		"val": "string",
 	}
-	TestPayloadMap = map[string]interface{}{
+	PayloadMap = map[string]interface{}{
 		"id":  1,
 		"val": "RudderStack",
 	}
-	TestNamespace  = "rudderstack_setup_test"
 	AlterColumnMap = map[string]string{
 		"val_alter": "string",
 	}
+	Namespace = "rudderstack_setup_test"
+	Table     = "setup_test_staging"
 )
 
-const (
-	verifyingObjectStorage       = "Verifying Object Storage"
-	verifyingConnections         = "Verifying Connections"
-	verifyingCreateSchema        = "Verifying Create Schema"
-	verifyingCreateAndAlterTable = "Verifying Create and Alter Table"
-	verifyingFetchSchema         = "Verifying Fetch Schema"
-	verifyingLoadTable           = "Verifying Load Table"
-)
+type validationFunc struct {
+	Func func(*backendconfig.DestinationT, string) (json.RawMessage, error)
+}
 
 func Init() {
 	connectionTestingFolder = config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("validations")
 	fileManagerFactory = filemanager.DefaultFileManagerFactory
-	fileManagerTimeout = 15 * time.Second
+	objectStorageValidationTimeout = 15 * time.Second
 }
 
-// Validating Facade for Global invoking validation
-func (ct *CTHandleT) Validating(req *proto.WHValidationRequest) (response *proto.WHValidationResponse, err error) {
-	f, ok := ct.validationFunctions()[req.Path]
+// Validate the destination by running all the validation steps
+func Validate(req *model.ValidationRequest) (*model.ValidationResponse, error) {
+	res := &model.ValidationResponse{}
+
+	f, ok := validationFunctions()[req.Path]
 	if !ok {
-		err = errors.New("path not found")
-		return
+		return res, fmt.Errorf("invalid path: %s", req.Path)
 	}
 
-	result, requestError := f.Func(json.RawMessage(req.Body), req.Step)
-	response = &proto.WHValidationResponse{
-		Data: string(result),
-	}
+	result, requestError := f.Func(req.Destination, req.Step)
+	res.Data = string(result)
 
 	if requestError != nil {
-		response.Error = requestError.Error()
+		res.Error = requestError.Error()
 	}
-	return
+	return res, nil
 }
 
-// validationFunctions returns validating functions for validation
-func (ct *CTHandleT) validationFunctions() map[string]*validationFunc {
+func validationFunctions() map[string]*validationFunc {
 	return map[string]*validationFunc{
 		"validate": {
-			Path: "/validate",
-			Func: ct.validateDestinationFunc,
+			Func: validateDestinationFunc,
 		},
 		"steps": {
-			Path: "/steps",
-			Func: ct.validationStepsFunc,
+			Func: validateStepFunc,
 		},
 	}
 }
