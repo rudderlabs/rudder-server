@@ -495,7 +495,7 @@ func TestDoubleQuoteAndJoinByComma(t *testing.T) {
 }
 
 func TestSortColumnKeysFromColumnMap(t *testing.T) {
-	columnMap := map[string]string{"k5": "V5", "k4": "V4", "k3": "V3", "k2": "V2", "k1": "V1"}
+	columnMap := TableSchema{"k5": "V5", "k4": "V4", "k3": "V3", "k2": "V2", "k1": "V1"}
 	want := []string{"k1", "k2", "k3", "k4", "k5"}
 	got := SortColumnKeysFromColumnMap(columnMap)
 	require.Equal(t, got, want)

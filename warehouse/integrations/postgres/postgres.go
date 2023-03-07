@@ -728,14 +728,14 @@ func (pg *Handle) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (pg *Handle) createTable(name string, columns map[string]string) (err error) {
+func (pg *Handle) createTable(name string, columns warehouseutils.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pg.logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.DB.Exec(sqlStatement)
 	return
 }
 
-func (pg *Handle) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (pg *Handle) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)
@@ -932,14 +932,14 @@ func (pg *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrec
 			return
 		}
 		if _, ok := schema[tName.String]; !ok {
-			schema[tName.String] = make(map[string]string)
+			schema[tName.String] = make(warehouseutils.TableSchema)
 		}
 		if cName.Valid && cType.Valid {
 			if datatype, ok := postgresDataTypesMapToRudder[cType.String]; ok {
 				schema[tName.String][cName.String] = datatype
 			} else {
 				if _, ok := unrecognizedSchema[tName.String]; !ok {
-					unrecognizedSchema[tName.String] = make(map[string]string)
+					unrecognizedSchema[tName.String] = make(warehouseutils.TableSchema)
 				}
 				unrecognizedSchema[tName.String][cType.String] = warehouseutils.MISSING_DATATYPE
 
