@@ -1,4 +1,4 @@
-package warehouseutils
+package encoding
 
 import (
 	"encoding/csv"

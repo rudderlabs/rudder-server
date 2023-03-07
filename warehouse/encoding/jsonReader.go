@@ -1,4 +1,4 @@
-package warehouseutils
+package encoding
 
 import (
 	"bufio"
@@ -9,8 +9,6 @@ import (
 type JsonReader struct {
 	scanner *bufio.Scanner
 }
-
-var maxStagingFileReadBufferCapacityInK int
 
 func (js *JsonReader) Read(columnNames []string) (record []string, err error) {
 	ok := js.scanner.Scan()

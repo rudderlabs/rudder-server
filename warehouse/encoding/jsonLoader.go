@@ -1,7 +1,8 @@
-package warehouseutils
+package encoding
 
 import (
 	"encoding/json"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const LOADED_AT_COLUMN = "loaded_at"
@@ -11,37 +12,37 @@ const LOADED_AT_COLUMN = "loaded_at"
 type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
-	fileWriter LoadFileWriterI
+	fileWriter warehouseutils.LoadFileWriterI
 }
 
-func NewJSONLoader(destType string, writer LoadFileWriterI) *JsonLoader {
+func NewJSONLoader(destType string, writer warehouseutils.LoadFileWriterI) *JsonLoader {
 	loader := &JsonLoader{destType: destType, fileWriter: writer}
 	loader.columnData = make(map[string]interface{})
 	return loader
 }
 
 func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN) || columnName == ToProviderCase(loader.destType, LOADED_AT_COLUMN)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUID_TS_COLUMN) || columnName == warehouseutils.ToProviderCase(loader.destType, LOADED_AT_COLUMN)
 }
 
 func (loader *JsonLoader) GetLoadTimeFormat(columnName string) string {
 	switch columnName {
-	case ToProviderCase(loader.destType, UUID_TS_COLUMN):
-		return BQUuidTSFormat
-	case ToProviderCase(loader.destType, LOADED_AT_COLUMN):
-		return BQLoadedAtFormat
+	case warehouseutils.ToProviderCase(loader.destType, UUID_TS_COLUMN):
+		return warehouseutils.BQUuidTSFormat
+	case warehouseutils.ToProviderCase(loader.destType, LOADED_AT_COLUMN):
+		return warehouseutils.BQLoadedAtFormat
 	}
 	return ""
 }
 
 func (loader *JsonLoader) AddColumn(columnName, _ string, val interface{}) {
-	providerColumnName := ToProviderCase(loader.destType, columnName)
+	providerColumnName := warehouseutils.ToProviderCase(loader.destType, columnName)
 	loader.columnData[providerColumnName] = val
 }
 
 func (loader *JsonLoader) AddRow(columnNames, row []string) {
 	for i, columnName := range columnNames {
-		providerColumnName := ToProviderCase(loader.destType, columnName)
+		providerColumnName := warehouseutils.ToProviderCase(loader.destType, columnName)
 		loader.columnData[providerColumnName] = row[i]
 	}
 }

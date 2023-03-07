@@ -1,9 +1,10 @@
-package warehouseutils
+package encoding
 
 import (
 	"bytes"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -15,10 +16,10 @@ type CsvLoader struct {
 	csvRow     []string
 	buff       bytes.Buffer
 	csvWriter  *csv.Writer
-	fileWriter LoadFileWriterI
+	fileWriter warehouseutils.LoadFileWriterI
 }
 
-func NewCSVLoader(destType string, writer LoadFileWriterI) *CsvLoader {
+func NewCSVLoader(destType string, writer warehouseutils.LoadFileWriterI) *CsvLoader {
 	loader := &CsvLoader{destType: destType, fileWriter: writer}
 	loader.csvRow = []string{}
 	loader.buff = bytes.Buffer{}
@@ -27,7 +28,7 @@ func NewCSVLoader(destType string, writer LoadFileWriterI) *CsvLoader {
 }
 
 func (loader *CsvLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUID_TS_COLUMN)
 }
 
 func (*CsvLoader) GetLoadTimeFormat(_ string) string {

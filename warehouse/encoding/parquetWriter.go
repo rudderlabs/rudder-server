@@ -1,8 +1,9 @@
-package warehouseutils
+package encoding
 
 import (
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"os"
 	"sort"
 
@@ -19,7 +20,7 @@ const (
 )
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
-	RS: {
+	warehouseutils.RS: {
 		"bigint":   PARQUET_INT_64,
 		"int":      PARQUET_INT_64,
 		"boolean":  PARQUET_BOOLEAN,
@@ -28,7 +29,7 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"text":     PARQUET_STRING,
 		"datetime": PARQUET_TIMESTAMP_MICROS,
 	},
-	S3_DATALAKE: {
+	warehouseutils.S3_DATALAKE: {
 		"bigint":   PARQUET_INT_64,
 		"int":      PARQUET_INT_64,
 		"boolean":  PARQUET_BOOLEAN,
@@ -37,14 +38,14 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"text":     PARQUET_STRING,
 		"datetime": PARQUET_TIMESTAMP_MICROS,
 	},
-	GCS_DATALAKE: {
+	warehouseutils.GCS_DATALAKE: {
 		"int":      PARQUET_INT_64,
 		"boolean":  PARQUET_BOOLEAN,
 		"float":    PARQUET_DOUBLE,
 		"string":   PARQUET_STRING,
 		"datetime": PARQUET_TIMESTAMP_MICROS,
 	},
-	AZURE_DATALAKE: {
+	warehouseutils.AZURE_DATALAKE: {
 		"int":      PARQUET_INT_64,
 		"boolean":  PARQUET_BOOLEAN,
 		"float":    PARQUET_DOUBLE,
@@ -59,7 +60,7 @@ type ParquetWriter struct {
 	schema     []string
 }
 
-func CreateParquetWriter(schema TableSchema, outputFilePath, destType string) (*ParquetWriter, error) {
+func CreateParquetWriter(schema warehouseutils.TableSchema, outputFilePath, destType string) (*ParquetWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
 	if err != nil {
 		return nil, err
@@ -105,7 +106,7 @@ func (p *ParquetWriter) GetLoadFile() *os.File {
 	return p.fileWriter.GetFile()
 }
 
-func getSortedTableColumns(schema TableSchema) []string {
+func getSortedTableColumns(schema warehouseutils.TableSchema) []string {
 	var sortedColumns []string
 	for col := range schema {
 		sortedColumns = append(sortedColumns, col)
@@ -114,14 +115,14 @@ func getSortedTableColumns(schema TableSchema) []string {
 	return sortedColumns
 }
 
-func getParquetSchema(schema TableSchema, destType string) ([]string, error) {
+func getParquetSchema(schema warehouseutils.TableSchema, destType string) ([]string, error) {
 	whTypeMap, ok := rudderDataTypeToParquetDataType[destType]
 	if !ok {
 		return nil, errors.New("unsupported warehouse for parquet load files")
 	}
 	var pSchema []string
 	for _, col := range getSortedTableColumns(schema) {
-		pType := fmt.Sprintf("name=%s, %s", ToProviderCase(destType, col), whTypeMap[schema[col]])
+		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), whTypeMap[schema[col]])
 		pSchema = append(pSchema, pType)
 	}
 	return pSchema, nil

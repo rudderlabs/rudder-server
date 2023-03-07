@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -385,7 +386,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	}
 
 	if warehouseutils.GetLoadFileType(destinationType) == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		writer, err = warehouseutils.CreateParquetWriter(TableSchemaMap, filePath, destinationType)
+		writer, err = encoding.CreateParquetWriter(TableSchemaMap, filePath, destinationType)
 	} else {
 		writer, err = misc.CreateGZ(filePath)
 	}
@@ -393,7 +394,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
 
-	eventLoader := warehouseutils.GetNewEventLoader(destinationType, warehouseutils.GetLoadFileType(destinationType), writer)
+	eventLoader := encoding.GetNewEventLoader(destinationType, warehouseutils.GetLoadFileType(destinationType), writer)
 	for _, column := range []string{"id", "val"} {
 		eventLoader.AddColumn(column, TableSchemaMap[column], PayloadMap[column])
 	}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -331,7 +332,7 @@ func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWrite
 		var err error
 		outputFilePath := jobRun.getLoadFilePath(tableName)
 		if jobRun.job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
+			writer, err = encoding.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
 		} else {
 			writer, err = misc.CreateGZ(outputFilePath)
 		}
@@ -469,7 +470,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			return nil, err
 		}
 
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
+		eventLoader := encoding.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFormat(columnName)
@@ -755,7 +756,7 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVa
 		}
 	}
 	if hasID && hasReceivedAt {
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
+		eventLoader := encoding.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)
