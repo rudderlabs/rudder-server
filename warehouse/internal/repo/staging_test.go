@@ -438,7 +438,6 @@ func TestStagingFileIDs(t *testing.T) {
 			ID: 3,
 		},
 	}
-
 	ids := repo.StagingFileIDs(sfs)
 	require.Equal(t, []int64{1, 2, 3}, ids)
 }
