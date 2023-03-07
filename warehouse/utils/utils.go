@@ -300,9 +300,9 @@ func IDResolutionEnabled() bool {
 type TableSchemaDiffT struct {
 	Exists           bool
 	TableToBeCreated bool
-	ColumnMap        map[string]string
-	UpdatedSchema    map[string]string
-	AlteredColumnMap map[string]string
+	ColumnMap        TableSchema
+	UpdatedSchema    TableSchema
+	AlteredColumnMap TableSchema
 }
 
 type QueryResult struct {
@@ -670,7 +670,7 @@ func GetConfigValueAsMap(key string, config map[string]interface{}) map[string]i
 	return value
 }
 
-func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
+func SortColumnKeysFromColumnMap(columnMap TableSchema) []string {
 	columnKeys := make([]string, 0, len(columnMap))
 	for k := range columnMap {
 		columnKeys = append(columnKeys, k)

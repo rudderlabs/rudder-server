@@ -111,7 +111,7 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Schema) 
 	}
 	currentSchema = warehouseutils.Schema{}
 	for tableName, columnMapInterface := range schemaMapInterface {
-		columnMap := make(map[string]string)
+		columnMap := make(warehouseutils.TableSchema)
 		columns := columnMapInterface.(map[string]interface{})
 		for cName, cTypeInterface := range columns {
 			columnMap[cName] = cTypeInterface.(string)
@@ -227,7 +227,7 @@ func MergeSchema(currentSchema warehouseutils.Schema, schemaList []warehouseutil
 	for _, schema := range schemaList {
 		for tableName, columnMap := range schema {
 			if currentMergedSchema[tableName] == nil {
-				currentMergedSchema[tableName] = make(map[string]string)
+				currentMergedSchema[tableName] = make(warehouseutils.TableSchema)
 			}
 			var toInferFromIdentifies bool
 			var refSchema warehouseutils.Schema
@@ -273,8 +273,8 @@ func (sh *SchemaHandleT) safeName(columnName string) string {
 	return warehouseutils.ToProviderCase(sh.warehouse.Type, columnName)
 }
 
-func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
-	discards := map[string]string{}
+func (sh *SchemaHandleT) getDiscardsSchema() warehouseutils.TableSchema {
+	discards := warehouseutils.TableSchema{}
 	for colName, colType := range warehouseutils.DiscardsSchema {
 		discards[sh.safeName(colName)] = colType
 	}
@@ -286,8 +286,8 @@ func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
 	return discards
 }
 
-func (sh *SchemaHandleT) getMergeRulesSchema() map[string]string {
-	return map[string]string{
+func (sh *SchemaHandleT) getMergeRulesSchema() warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{
 		sh.safeName("merge_property_1_type"):  "string",
 		sh.safeName("merge_property_1_value"): "string",
 		sh.safeName("merge_property_2_type"):  "string",
@@ -295,8 +295,8 @@ func (sh *SchemaHandleT) getMergeRulesSchema() map[string]string {
 	}
 }
 
-func (sh *SchemaHandleT) getIdentitiesMappingsSchema() map[string]string {
-	return map[string]string{
+func (sh *SchemaHandleT) getIdentitiesMappingsSchema() warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{
 		sh.safeName("merge_property_type"):  "string",
 		sh.safeName("merge_property_value"): "string",
 		sh.safeName("rudder_id"):            "string",
@@ -412,12 +412,12 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.Schema) bool
 
 func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.Schema) (diff warehouseutils.TableSchemaDiffT) {
 	diff = warehouseutils.TableSchemaDiffT{
-		ColumnMap:        make(map[string]string),
-		UpdatedSchema:    make(map[string]string),
-		AlteredColumnMap: make(map[string]string),
+		ColumnMap:        make(warehouseutils.TableSchema),
+		UpdatedSchema:    make(warehouseutils.TableSchema),
+		AlteredColumnMap: make(warehouseutils.TableSchema),
 	}
 
-	var currentTableSchema map[string]string
+	var currentTableSchema warehouseutils.TableSchema
 	var ok bool
 	if currentTableSchema, ok = currentSchema[tableName]; !ok {
 		if _, ok := uploadSchema[tableName]; !ok {
@@ -434,7 +434,7 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 		diff.UpdatedSchema[columnName] = columnType
 	}
 
-	diff.ColumnMap = make(map[string]string)
+	diff.ColumnMap = make(warehouseutils.TableSchema)
 	for columnName, columnType := range uploadSchema[tableName] {
 		if _, ok := currentTableSchema[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType

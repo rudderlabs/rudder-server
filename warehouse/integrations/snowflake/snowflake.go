@@ -204,7 +204,7 @@ func WithConfig(h *Snowflake, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
@@ -219,7 +219,7 @@ func (sf *Snowflake) schemaIdentifier() string {
 	)
 }
 
-func (sf *Snowflake) createTable(tableName string, columns map[string]string) (err error) {
+func (sf *Snowflake) createTable(tableName string, columns warehouseutils.TableSchema) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%q ( %v )`, schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""))
 	sf.Logger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
@@ -701,7 +701,7 @@ func (sf *Snowflake) CreateSchema() (err error) {
 	return sf.createSchema()
 }
 
-func (sf *Snowflake) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (sf *Snowflake) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	return sf.createTable(tableName, columnMap)
 }
 

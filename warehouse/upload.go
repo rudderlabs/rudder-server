@@ -921,7 +921,7 @@ func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap warehouse
 	return nil
 }
 
-func (job *UploadJob) addColumnsToWarehouse(tName string, columnsMap map[string]string) (err error) {
+func (job *UploadJob) addColumnsToWarehouse(tName string, columnsMap warehouseutils.TableSchema) (err error) {
 	pkgLogger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	destType := job.upload.DestinationType
@@ -1310,7 +1310,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 	return job.processLoadTableResponse(errorMap)
 }
 
-func (job *UploadJob) setUpdatedTableSchema(tableName string, updatedSchema map[string]string) {
+func (job *UploadJob) setUpdatedTableSchema(tableName string, updatedSchema warehouseutils.TableSchema) {
 	job.schemaLock.Lock()
 	job.schemaHandle.schemaInWarehouse[tableName] = updatedSchema
 	job.schemaLock.Unlock()

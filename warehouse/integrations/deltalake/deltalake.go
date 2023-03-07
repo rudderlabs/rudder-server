@@ -166,7 +166,7 @@ func getDeltaLakeDataType(columnType string) string {
 }
 
 // ColumnsWithDataTypes returns columns with specified prefix and data type
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
 		if _, ok := excludeColumnsMap[name]; ok {
@@ -488,9 +488,9 @@ func (dl *Deltalake) getLoadFolder(location string) (loadFolder string) {
 
 func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchema) (diff warehouseutils.TableSchemaDiffT) {
 	diff = warehouseutils.TableSchemaDiffT{
-		ColumnMap: make(map[string]string),
+		ColumnMap: make(warehouseutils.TableSchema),
 	}
-	diff.ColumnMap = make(map[string]string)
+	diff.ColumnMap = make(warehouseutils.TableSchema)
 	for columnName, columnType := range tableSchemaAfterUpload {
 		if _, ok := tableSchemaInUpload[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType
@@ -771,7 +771,7 @@ func (dl *Deltalake) connectToWarehouse() (Client *client.Client, err error) {
 }
 
 // CreateTable creates tables with table name and columns
-func (dl *Deltalake) CreateTable(tableName string, columns map[string]string) (err error) {
+func (dl *Deltalake) CreateTable(tableName string, columns warehouseutils.TableSchema) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
 
 	tableLocationSql := dl.getTableLocationSql(tableName)
@@ -930,13 +930,13 @@ func (dl *Deltalake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 			}
 
 			if _, ok := schema[tableName]; !ok {
-				schema[tableName] = make(map[string]string)
+				schema[tableName] = make(warehouseutils.TableSchema)
 			}
 			if datatype, ok := dataTypesMapToRudder[item.GetDataType()]; ok {
 				schema[tableName][item.GetColName()] = datatype
 			} else {
 				if _, ok := unrecognizedSchema[tableName]; !ok {
-					unrecognizedSchema[tableName] = make(map[string]string)
+					unrecognizedSchema[tableName] = make(warehouseutils.TableSchema)
 				}
 				unrecognizedSchema[tableName][item.GetColName()] = warehouseutils.MISSING_DATATYPE
 
