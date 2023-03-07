@@ -34,6 +34,7 @@ func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, e
 		ExposedPorts: []string{"9090"},
 		Env: []string{
 			"CONFIG_BACKEND_URL=https://api.rudderstack.com",
+			"ENABLE_NEW_ROUTES=true",
 		},
 	})
 	if err != nil {
