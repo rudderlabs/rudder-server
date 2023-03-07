@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_LoadFiles(t *testing.T) {
