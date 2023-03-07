@@ -171,7 +171,6 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]*model.StagingFile, error) {
 	var stagingFiles []*model.StagingFile
 
 	defer func() { _ = rows.Close() }()
-
 	for rows.Next() {
 		var (
 			stagingFile model.StagingFile
@@ -270,7 +269,7 @@ func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (jsonstd.
 	return schema, err
 }
 
-// GetForUploadID returns staging files in [startID, endID] range inclusive.
+// GetForUploadID returns all the staging files for that uploadID
 func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinationID string, uploadId int64) ([]*model.StagingFile, error) {
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST
 	WHERE
