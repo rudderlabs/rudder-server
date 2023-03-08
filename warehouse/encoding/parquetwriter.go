@@ -12,45 +12,45 @@ import (
 )
 
 const (
-	PARQUET_INT_64           = "type=INT64, repetitiontype=OPTIONAL"
-	PARQUET_BOOLEAN          = "type=BOOLEAN, repetitiontype=OPTIONAL"
-	PARQUET_DOUBLE           = "type=DOUBLE, repetitiontype=OPTIONAL"
-	PARQUET_STRING           = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
-	PARQUET_TIMESTAMP_MICROS = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
+	ParquetInt64           = "type=INT64, repetitiontype=OPTIONAL"
+	ParquetBoolean         = "type=BOOLEAN, repetitiontype=OPTIONAL"
+	ParquetDouble          = "type=DOUBLE, repetitiontype=OPTIONAL"
+	ParquetString          = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
+	ParquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
 	warehouseutils.RS: {
-		"bigint":   PARQUET_INT_64,
-		"int":      PARQUET_INT_64,
-		"boolean":  PARQUET_BOOLEAN,
-		"float":    PARQUET_DOUBLE,
-		"string":   PARQUET_STRING,
-		"text":     PARQUET_STRING,
-		"datetime": PARQUET_TIMESTAMP_MICROS,
+		"bigint":   ParquetInt64,
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"text":     ParquetString,
+		"datetime": ParquetTimestampMicros,
 	},
 	warehouseutils.S3_DATALAKE: {
-		"bigint":   PARQUET_INT_64,
-		"int":      PARQUET_INT_64,
-		"boolean":  PARQUET_BOOLEAN,
-		"float":    PARQUET_DOUBLE,
-		"string":   PARQUET_STRING,
-		"text":     PARQUET_STRING,
-		"datetime": PARQUET_TIMESTAMP_MICROS,
+		"bigint":   ParquetInt64,
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"text":     ParquetString,
+		"datetime": ParquetTimestampMicros,
 	},
 	warehouseutils.GCS_DATALAKE: {
-		"int":      PARQUET_INT_64,
-		"boolean":  PARQUET_BOOLEAN,
-		"float":    PARQUET_DOUBLE,
-		"string":   PARQUET_STRING,
-		"datetime": PARQUET_TIMESTAMP_MICROS,
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"datetime": ParquetTimestampMicros,
 	},
 	warehouseutils.AZURE_DATALAKE: {
-		"int":      PARQUET_INT_64,
-		"boolean":  PARQUET_BOOLEAN,
-		"float":    PARQUET_DOUBLE,
-		"string":   PARQUET_STRING,
-		"datetime": PARQUET_TIMESTAMP_MICROS,
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"datetime": ParquetTimestampMicros,
 	},
 }
 

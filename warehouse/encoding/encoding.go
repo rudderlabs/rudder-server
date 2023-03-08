@@ -2,18 +2,20 @@ package encoding
 
 import (
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+)
+
+const (
+	UuidTsColumn   = "uuid_ts"
+	LoadedAtColumn = "loaded_at"
 )
 
 var (
 	maxStagingFileReadBufferCapacityInK int
 	parquetParallelWriters              int64
-	pkgLogger                           logger.Logger
 )
 
 func Init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("encoding")
 }
 
 func loadConfig() {

@@ -2,8 +2,6 @@ package encoding
 
 import "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-const UUID_TS_COLUMN = "uuid_ts"
-
 type EventLoader interface {
 	IsLoadTimeColumn(columnName string) bool
 	GetLoadTimeFormat(columnName string) string

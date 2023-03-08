@@ -2,19 +2,19 @@ package encoding
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const LOADED_AT_COLUMN = "loaded_at"
-
-// JsonLoader is only for BQ now. Treat this is as custom BQ loader.
-// If more warehouses are added in the future, change this accordingly.
 type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
 	fileWriter warehouseutils.LoadFileWriterI
 }
 
+// NewJSONLoader returns a new JsonLoader
+// JsonLoader is only for BQ now. Treat this is as custom BQ loader.
+// If more warehouses are added in the future, change this accordingly.
 func NewJSONLoader(destType string, writer warehouseutils.LoadFileWriterI) *JsonLoader {
 	loader := &JsonLoader{destType: destType, fileWriter: writer}
 	loader.columnData = make(map[string]interface{})
@@ -22,14 +22,14 @@ func NewJSONLoader(destType string, writer warehouseutils.LoadFileWriterI) *Json
 }
 
 func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == warehouseutils.ToProviderCase(loader.destType, UUID_TS_COLUMN) || columnName == warehouseutils.ToProviderCase(loader.destType, LOADED_AT_COLUMN)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UuidTsColumn) || columnName == warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn)
 }
 
 func (loader *JsonLoader) GetLoadTimeFormat(columnName string) string {
 	switch columnName {
-	case warehouseutils.ToProviderCase(loader.destType, UUID_TS_COLUMN):
+	case warehouseutils.ToProviderCase(loader.destType, UuidTsColumn):
 		return warehouseutils.BQUuidTSFormat
-	case warehouseutils.ToProviderCase(loader.destType, LOADED_AT_COLUMN):
+	case warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn):
 		return warehouseutils.BQLoadedAtFormat
 	}
 	return ""
@@ -52,19 +52,25 @@ func (loader *JsonLoader) AddEmptyColumn(columnName string) {
 }
 
 func (loader *JsonLoader) WriteToString() (string, error) {
-	jsonData, err := json.Marshal(loader.columnData)
-	if err != nil {
-		pkgLogger.Errorf(`[JSONWriter]: Error writing discardRow to buffer: %v`, err)
-		return "", err
+	var (
+		jsonData []byte
+		err      error
+	)
+
+	if jsonData, err = json.Marshal(loader.columnData); err != nil {
+		return "", fmt.Errorf("json.Marshal: %w", err)
 	}
 	return string(jsonData) + "\n", nil
 }
 
 func (loader *JsonLoader) Write() error {
-	eventData, err := loader.WriteToString()
-	if err != nil {
-		return err
-	}
+	var (
+		eventData string
+		err       error
+	)
 
+	if eventData, err = loader.WriteToString(); err != nil {
+		return fmt.Errorf("writeToString: %w", err)
+	}
 	return loader.fileWriter.WriteGZ(eventData)
 }
