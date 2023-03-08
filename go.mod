@@ -65,7 +65,7 @@ require (
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/viper v1.15.0
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/thoas/go-funk v0.9.3
 	github.com/throttled/throttled/v2 v2.9.1
 	github.com/tidwall/gjson v1.14.4
