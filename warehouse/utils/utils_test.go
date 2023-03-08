@@ -255,7 +255,7 @@ func TestGetGCSLocation(t *testing.T) {
 		},
 	}
 	for _, input := range inputs {
-		gcsLocation := GetGCSLocation(input.location, GCSLocationOptionsT{
+		gcsLocation := GetGCSLocation(input.location, GCSLocationOptions{
 			TLDFormat: input.format,
 		})
 		require.Equal(t, gcsLocation, input.gcsLocation)
@@ -277,7 +277,7 @@ func TestGetGCSLocationFolder(t *testing.T) {
 		},
 	}
 	for _, input := range inputs {
-		gcsLocationFolder := GetGCSLocationFolder(input.location, GCSLocationOptionsT{})
+		gcsLocationFolder := GetGCSLocationFolder(input.location, GCSLocationOptions{})
 		require.Equal(t, gcsLocationFolder, input.gcsLocationFolder)
 	}
 }
@@ -296,7 +296,7 @@ func TestGetGCSLocations(t *testing.T) {
 		"gs://my.test-bucket/test-object2.csv",
 	}
 
-	gcsLocations := GetGCSLocations(inputs, GCSLocationOptionsT{})
+	gcsLocations := GetGCSLocations(inputs, GCSLocationOptions{})
 	require.Equal(t, gcsLocations, outputs)
 }
 

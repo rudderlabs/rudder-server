@@ -158,10 +158,6 @@ type HandleT struct {
 	backgroundWait   func() error
 }
 
-type ErrorResponseT struct {
-	Error string
-}
-
 func Init4() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse")
@@ -1154,7 +1150,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	// unmarshall body
-	var pendingEventsReq warehouseutils.PendingEventsRequestT
+	var pendingEventsReq warehouseutils.PendingEventsRequest
 	err = json.Unmarshal(body, &pendingEventsReq)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
@@ -1255,7 +1251,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create and write response
-	res := warehouseutils.PendingEventsResponseT{
+	res := warehouseutils.PendingEventsResponse{
 		PendingEvents:            pendingEvents,
 		PendingStagingFilesCount: pendingStagingFileCount,
 		PendingUploadCount:       pendingUploadCount,
@@ -1319,7 +1315,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	// unmarshall body
-	var triggerUploadReq warehouseutils.TriggerUploadRequestT
+	var triggerUploadReq warehouseutils.TriggerUploadRequest
 	err = json.Unmarshal(body, &triggerUploadReq)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)

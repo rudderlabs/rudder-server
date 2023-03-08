@@ -42,7 +42,7 @@ type HandleT struct {
 	uploader          warehouseutils.Uploader
 }
 
-type StagingLoadTableT struct {
+type StagingLoadTable struct {
 	partitionDate    string
 	stagingTableName string
 }
@@ -305,7 +305,7 @@ func partitionedTable(tableName, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
+func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTable, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
 	var loadFiles []warehouseutils.LoadFile
 	if getLoadFileLocFromTableUploads {
@@ -315,9 +315,9 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 		}
 		loadFiles = append(loadFiles, loadFile)
 	} else {
-		loadFiles = bq.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+		loadFiles = bq.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	}
-	gcsLocations := warehouseutils.GetGCSLocations(loadFiles, warehouseutils.GCSLocationOptionsT{})
+	gcsLocations := warehouseutils.GetGCSLocations(loadFiles, warehouseutils.GCSLocationOptions{})
 	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	gcsRef := bigquery.NewGCSReference(gcsLocations...)
 	gcsRef.SourceFormat = bigquery.JSON
@@ -665,12 +665,12 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	return errorMap
 }
 
-type BQCredentialsT struct {
+type BQCredentials struct {
 	ProjectID   string
 	Credentials string
 }
 
-func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
+func Connect(context context.Context, cred *BQCredentials) (*bigquery.Client, error) {
 	var opts []option.ClientOption
 	if !googleutils.ShouldSkipCredentialsInit(cred.Credentials) {
 		credBytes := []byte(cred.Credentials)
@@ -683,7 +683,7 @@ func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, e
 	return client, err
 }
 
-func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
+func (bq *HandleT) connect(cred BQCredentials) (*bigquery.Client, error) {
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.ProjectID)
 	bq.backgroundContext = context.Background()
 	client, err := Connect(bq.backgroundContext, &cred)
@@ -715,7 +715,7 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
-	bq.db, err = bq.connect(BQCredentialsT{
+	bq.db, err = bq.connect(BQCredentials{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
 	})
@@ -780,7 +780,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.projectID)
-	bq.db, err = bq.connect(BQCredentialsT{
+	bq.db, err = bq.connect(BQCredentials{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
 	})
@@ -818,7 +818,7 @@ func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseu
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
 
 	bq.backgroundContext = context.Background()
-	bq.db, err = bq.connect(BQCredentialsT{
+	bq.db, err = bq.connect(BQCredentials{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
 	})
@@ -827,7 +827,7 @@ func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseu
 
 func (bq *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	bq.warehouse = warehouse
-	bq.db, err = bq.connect(BQCredentialsT{
+	bq.db, err = bq.connect(BQCredentials{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
 	})
@@ -891,7 +891,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
-	dbClient, err := bq.connect(BQCredentialsT{
+	dbClient, err := bq.connect(BQCredentials{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
 	})
@@ -1015,7 +1015,7 @@ func (bq *HandleT) columnExists(columnName, tableName string) (exists bool, err 
 	return false, nil
 }
 
-type identityRulesT struct {
+type identityRules struct {
 	MergeProperty1Type  string `json:"merge_property_1_type"`
 	MergeProperty1Value string `json:"merge_property_1_value"`
 	MergeProperty2Type  string `json:"merge_property_2_type"`
@@ -1096,7 +1096,7 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				if _, ok := values[1].(string); ok {
 					userId = values[1].(string)
 				}
-				identityRule := identityRulesT{
+				identityRule := identityRules{
 					MergeProperty1Type:  "anonymous_id",
 					MergeProperty1Value: anonId,
 					MergeProperty2Type:  "user_id",
@@ -1170,7 +1170,7 @@ func (bq *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, e
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
-	dbClient, err := bq.connect(BQCredentialsT{
+	dbClient, err := bq.connect(BQCredentials{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
 	})
@@ -1182,7 +1182,7 @@ func (bq *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, e
 }
 
 func (bq *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, _ string) (err error) {
-	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
+	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptions{})
 	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0

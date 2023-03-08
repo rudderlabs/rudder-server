@@ -32,6 +32,7 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error reading body: %v", err)
 		http.Error(w, "can't read body", http.StatusBadRequest)
+		return
 	}
 	var startJobPayload StartJobReqPayload
 	err = json.Unmarshal(body, &startJobPayload)
@@ -77,7 +78,7 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		payload := AsyncJobPayloadT{
+		payload := AsyncJobPayload{
 			SourceID:      startJobPayload.SourceID,
 			DestinationID: startJobPayload.DestinationID,
 			TableName:     th,

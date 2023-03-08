@@ -23,7 +23,7 @@ func (*mockUploader) GetLoadFileType() string                                  {
 func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)                { return time.Time{}, time.Time{} }
 func (*mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema { return nil }
 func (*mockUploader) GetSampleLoadFileLocation(string) (string, error)         { return "", nil }
-func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFile {
+func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return nil
 }
 

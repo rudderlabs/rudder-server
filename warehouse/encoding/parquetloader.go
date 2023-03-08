@@ -15,10 +15,10 @@ type ParquetLoader struct {
 	destType   string
 	Schema     []string
 	Values     []interface{}
-	FileWriter warehouseutils.LoadFileWriterI
+	FileWriter warehouseutils.LoadFileWriter
 }
 
-func NewParquetLoader(destType string, w warehouseutils.LoadFileWriterI) *ParquetLoader {
+func NewParquetLoader(destType string, w warehouseutils.LoadFileWriter) *ParquetLoader {
 	loader := &ParquetLoader{
 		destType:   destType,
 		FileWriter: w,

@@ -10,13 +10,13 @@ import (
 type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
-	fileWriter warehouseutils.LoadFileWriterI
+	fileWriter warehouseutils.LoadFileWriter
 }
 
 // NewJSONLoader returns a new JsonLoader
 // JsonLoader is only for BQ now. Treat this is as custom BQ loader.
 // If more warehouses are added in the future, change this accordingly.
-func NewJSONLoader(destType string, writer warehouseutils.LoadFileWriterI) *JsonLoader {
+func NewJSONLoader(destType string, writer warehouseutils.LoadFileWriter) *JsonLoader {
 	loader := &JsonLoader{destType: destType, fileWriter: writer}
 	loader.columnData = make(map[string]interface{})
 	return loader

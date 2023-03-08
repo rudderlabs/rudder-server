@@ -426,7 +426,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		defer whManager.Cleanup()
 
-		schemaHandle := SchemaHandleT{
+		schemaHandle := SchemaHandle{
 			warehouse:    job.warehouse,
 			stagingFiles: job.stagingFiles,
 			dbHandle:     job.dbHandle,

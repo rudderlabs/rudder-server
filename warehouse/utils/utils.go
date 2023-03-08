@@ -271,7 +271,7 @@ type Uploader interface {
 	UpdateLocalSchema(schema Schema) error
 	GetTableSchemaInWarehouse(tableName string) TableSchema
 	GetTableSchemaInUpload(tableName string) TableSchema
-	GetLoadFilesMetadata(options GetLoadFilesOptionsT) []LoadFile
+	GetLoadFilesMetadata(options GetLoadFilesOptions) []LoadFile
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFile(tableName string) (LoadFile, error)
 	ShouldOnDedupUseNewRecord() bool
@@ -281,7 +281,7 @@ type Uploader interface {
 	GetFirstLastEvent() (time.Time, time.Time)
 }
 
-type GetLoadFilesOptionsT struct {
+type GetLoadFilesOptions struct {
 	Table   string
 	StartID int64
 	EndID   int64
@@ -297,7 +297,7 @@ func IDResolutionEnabled() bool {
 	return enableIDResolution
 }
 
-type TableSchemaDiffT struct {
+type TableSchemaDiff struct {
 	Exists           bool
 	TableToBeCreated bool
 	ColumnMap        TableSchema
@@ -310,23 +310,23 @@ type QueryResult struct {
 	Values  [][]string
 }
 
-type PendingEventsRequestT struct {
+type PendingEventsRequest struct {
 	SourceID  string `json:"source_id"`
 	TaskRunID string `json:"task_run_id"`
 }
 
-type PendingEventsResponseT struct {
+type PendingEventsResponse struct {
 	PendingEvents            bool  `json:"pending_events"`
 	PendingStagingFilesCount int64 `json:"pending_staging_files"`
 	PendingUploadCount       int64 `json:"pending_uploads"`
 }
 
-type TriggerUploadRequestT struct {
+type TriggerUploadRequest struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
 }
 
-type LoadFileWriterI interface {
+type LoadFileWriter interface {
 	WriteGZ(s string) error
 	Write(p []byte) (int, error)
 	WriteRow(r []interface{}) error
@@ -372,7 +372,7 @@ func GetObjectFolder(provider, location string) (folder string) {
 	case S3:
 		folder = GetS3LocationFolder(location)
 	case GCS:
-		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
+		folder = GetGCSLocationFolder(location, GCSLocationOptions{TLDFormat: "gcs"})
 	case AZURE_BLOB:
 		folder = GetAzureBlobLocationFolder(location)
 	}
@@ -388,7 +388,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	case S3:
 		folder = GetS3LocationFolder(location)
 	case GCS:
-		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gs"})
+		folder = GetGCSLocationFolder(location, GCSLocationOptions{TLDFormat: "gs"})
 	case AZURE_BLOB:
 		blobUrl, _ := url.Parse(location)
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
@@ -416,7 +416,7 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 	case S3:
 		objectLocation, _ = GetS3Location(location)
 	case GCS:
-		objectLocation = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
+		objectLocation = GetGCSLocation(location, GCSLocationOptions{TLDFormat: "gcs"})
 	case AZURE_BLOB:
 		objectLocation = GetAzureBlobLocation(location)
 	}
@@ -485,14 +485,14 @@ func GetS3LocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-type GCSLocationOptionsT struct {
+type GCSLocationOptions struct {
 	TLDFormat string
 }
 
 // GetGCSLocation parses path-style location http url to return in gcs:// format
 // https://storage.googleapis.com/test-bucket/test-object.csv --> gcs://test-bucket/test-object.csv
 // tldFormat is used to set return format "<tldFormat>://..."
-func GetGCSLocation(location string, options GCSLocationOptionsT) string {
+func GetGCSLocation(location string, options GCSLocationOptions) string {
 	tld := "gs"
 	if options.TLDFormat != "" {
 		tld = options.TLDFormat
@@ -504,13 +504,13 @@ func GetGCSLocation(location string, options GCSLocationOptionsT) string {
 
 // GetGCSLocationFolder returns the folder path for a gcs object
 // https://storage.googleapis.com/test-bucket/myfolder/test-object.csv --> gcs://test-bucket/myfolder
-func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
+func GetGCSLocationFolder(location string, options GCSLocationOptions) string {
 	s3Location := GetGCSLocation(location, options)
 	lastPos := strings.LastIndex(s3Location, "/")
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptionsT) (gcsLocations []string) {
+func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptions) (gcsLocations []string) {
 	for _, loadFile := range loadFiles {
 		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}

@@ -95,8 +95,8 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 	return tableNames, nil
 }
 
-// Takes AsyncJobPayloadT and adds rows to table wh_async_jobs
-func (a *AsyncJobWh) addJobsToDB(ctx context.Context, payload *AsyncJobPayloadT) (jobId int64, err error) {
+// Takes AsyncJobPayload and adds rows to table wh_async_jobs
+func (a *AsyncJobWh) addJobsToDB(ctx context.Context, payload *AsyncJobPayload) (jobId int64, err error) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -270,8 +270,8 @@ func (a *AsyncJobWh) updateStatusJobPayloadsFromPgNotifierResponse(r []pgnotifie
 }
 
 // Queries the jobsDB and gets active async job and returns it in a
-func (a *AsyncJobWh) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayloadT, error) {
-	asyncJobPayloads := make([]AsyncJobPayloadT, 0)
+func (a *AsyncJobWh) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayload, error) {
+	asyncJobPayloads := make([]AsyncJobPayload, 0)
 	if ctx.Err() != nil {
 		return asyncJobPayloads, ctx.Err()
 	}
@@ -295,7 +295,7 @@ func (a *AsyncJobWh) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayload
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var asyncJobPayload AsyncJobPayloadT
+		var asyncJobPayload AsyncJobPayload
 		err = rows.Scan(
 			&asyncJobPayload.Id,
 			&asyncJobPayload.SourceID,

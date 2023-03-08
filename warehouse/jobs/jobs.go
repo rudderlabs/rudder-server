@@ -28,7 +28,7 @@ func (*WhAsyncJob) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
 	return warehouseutils.TableSchema{}
 }
 
-func (*WhAsyncJob) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFile {
+func (*WhAsyncJob) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
 

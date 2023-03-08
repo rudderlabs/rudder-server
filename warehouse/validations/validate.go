@@ -79,7 +79,7 @@ func (*dummyUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema 
 	return warehouseutils.TableSchema{}
 }
 
-func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFile {
+func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
 
@@ -365,7 +365,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		tmpDirPath string
 		filePath   string
 		err        error
-		writer     warehouseutils.LoadFileWriterI
+		writer     warehouseutils.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
 	)
