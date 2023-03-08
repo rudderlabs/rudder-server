@@ -5,12 +5,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"

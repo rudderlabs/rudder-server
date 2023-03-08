@@ -3,8 +3,9 @@ package encoding
 import (
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/xitongsys/parquet-go/types"
 )

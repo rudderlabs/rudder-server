@@ -4,6 +4,10 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"os"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -11,9 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
-	"os"
-	"testing"
-	"time"
 )
 
 func TestReaderLoader(t *testing.T) {
@@ -131,6 +132,8 @@ func TestReaderLoader(t *testing.T) {
 	}
 
 	t.Run("Parquet", func(t *testing.T) {
+		t.Parallel()
+
 		var (
 			outputFilePath      = fmt.Sprintf("/tmp/%s.parquet", uuid.New().String())
 			lines               = 100

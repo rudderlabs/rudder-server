@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -63,10 +64,10 @@ type DestinationValidator interface {
 
 type destinationValidationImpl struct{}
 
-func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return warehouseutils.Schema{} }
-func (*dummyUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
-func (*dummyUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
-func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
+func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.Schema      { return warehouseutils.Schema{} }
+func (*dummyUploader) GetLocalSchema() warehouseutils.Schema            { return warehouseutils.Schema{} }
+func (*dummyUploader) UpdateLocalSchema(_ warehouseutils.Schema) error  { return nil }
+func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
 func (*dummyUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
 func (*dummyUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
