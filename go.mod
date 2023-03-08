@@ -16,7 +16,7 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.46.0
+	cloud.google.com/go/bigquery v1.48.0
 	cloud.google.com/go/pubsub v1.28.0
 	cloud.google.com/go/storage v1.29.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
@@ -255,7 +255,7 @@ require (
 	golang.org/x/tools v0.6.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20230216225411-c8e22ba71e44
+	google.golang.org/genproto v0.0.0-20230222225845-10f96fb3dbec
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/linkedin/goavro.v1 v1.0.5 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
