@@ -765,29 +765,87 @@ func TestUploads_InterruptedDestinations(t *testing.T) {
 
 func TestUploads_PendingTableUploads(t *testing.T) {
 	t.Parallel()
-	db := setupDB(t)
 
 	const (
-		uploadID  = 1
-		namespace = "test_namespace"
-		destID    = "1"
+		uploadID    = 1
+		namespace   = "namespace"
+		destID      = "destination_id"
+		sourceID    = "source_id"
+		destType    = "RS"
+		workspaceID = "workspace_id"
 	)
 
-	_, err := db.Exec(`INSERT INTO wh_uploads (id, destination_id, source_id, in_progress, destination_type, status, namespace, schema, created_at, updated_at)
-		VALUES
-		(1, 1, 1, true, 'RS', 'exporting_data', 'test_namespace', '{}', NOW(), NOW()),
-		(2, 1, 1, true, 'RS', 'aborted', 'test_namespace', '{}', NOW(), NOW())
-	`)
-	require.NoError(t, err)
+	var (
+		ctx             = context.Background()
+		db              = setupDB(t)
+		repoUpload      = repo.NewUploads(db)
+		repoTableUpload = repo.NewTableUploads(db)
+		repoStaging     = repo.NewStagingFiles(db)
+	)
 
-	_, err = db.Exec(`INSERT INTO wh_table_uploads (id, wh_upload_id, table_name, status, error, created_at, updated_at)
-		VALUES
-		(1, 1, 'test_table_1','exporting_data', '{}', NOW(), NOW()),
-		(2, 1, 'test_table_2','exporting_data_failed', 'error loading data', NOW(), NOW())
-	`)
-	require.NoError(t, err)
+	for _, status := range []string{"exporting_data", "aborted"} {
+		file := model.StagingFile{
+			WorkspaceID:   workspaceID,
+			Location:      "s3://bucket/path/to/file",
+			SourceID:      sourceID,
+			DestinationID: destID,
+			Status:        warehouseutils.StagingFileWaitingState,
+			Error:         nil,
+			FirstEventAt:  time.Now(),
+			LastEventAt:   time.Now(),
+		}.WithSchema([]byte(`{"type": "object"}`))
+
+		stagingID, err := repoStaging.Insert(ctx, &file)
+		require.NoError(t, err)
+
+		_, err = repoUpload.CreateWithStagingFiles(
+			ctx,
+			model.Upload{
+				SourceID:        sourceID,
+				DestinationID:   destID,
+				Status:          status,
+				Namespace:       namespace,
+				DestinationType: destType,
+			},
+			[]*model.StagingFile{
+				{
+					ID:            stagingID,
+					SourceID:      sourceID,
+					DestinationID: destID,
+				},
+			},
+		)
+		require.NoError(t, err)
+	}
+
+	for i, tu := range []struct {
+		status string
+		err    string
+	}{
+		{
+			status: "exporting_data",
+			err:    "{}",
+		},
+		{
+			status: "exporting_data_failed",
+			err:    "error loading data",
+		},
+	} {
+		tableName := fmt.Sprintf("test_table_%d", i+1)
+
+		err := repoTableUpload.Insert(ctx, uploadID, []string{tableName})
+		require.NoError(t, err)
+
+		err = repoTableUpload.Set(ctx, uploadID, tableName, repo.TableUploadSetOptions{
+			Status: &tu.status,
+			Error:  &tu.err,
+		})
+		require.NoError(t, err)
+	}
 
 	t.Run("should return pending table uploads", func(t *testing.T) {
+		t.Parallel()
+
 		repoUpload := repo.NewUploads(db)
 		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, uploadID, destID)
 		require.NoError(t, err)
@@ -815,6 +873,8 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 	})
 
 	t.Run("should return empty pending table uploads", func(t *testing.T) {
+		t.Parallel()
+
 		repoUpload := repo.NewUploads(db)
 		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, int64(-1), destID)
 		require.NoError(t, err)
@@ -822,6 +882,8 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 	})
 
 	t.Run("cancelled context", func(t *testing.T) {
+		t.Parallel()
+
 		repoUpload := repo.NewUploads(db)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
