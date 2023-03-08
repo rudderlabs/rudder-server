@@ -60,12 +60,12 @@ require (
 	github.com/rudderlabs/sql-tunnels v0.1.2
 	github.com/samber/lo v1.37.0
 	github.com/segmentio/kafka-go v0.4.38
-	github.com/shirou/gopsutil/v3 v3.23.1
+	github.com/shirou/gopsutil/v3 v3.23.2
 	github.com/snowflakedb/gosnowflake v1.6.17
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/viper v1.15.0
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/thoas/go-funk v0.9.3
 	github.com/throttled/throttled/v2 v2.9.1
 	github.com/tidwall/gjson v1.14.4
