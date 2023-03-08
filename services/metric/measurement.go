@@ -13,22 +13,26 @@ type Measurement interface {
 }
 
 const (
-	JOBSDB_PENDING_EVENTS_COUNT = "jobsdb_%s_pending_events_count"
-	ALL                         = "ALL"
+	JobsdbPendingEventsCount = "jobsdb_%s_pending_events_count"
+	All                      = "ALL"
 )
 
 // IncreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
 func IncreasePendingEvents(tablePrefix, workspace, destType string, value float64) {
 	PendingEvents(tablePrefix, workspace, destType).Add(value)
-	PendingEvents(tablePrefix, ALL, destType).Add(value)
-	PendingEvents(tablePrefix, ALL, ALL).Add(value)
+	PendingEvents(tablePrefix, All, destType).Add(value)
+	PendingEvents(tablePrefix, All, All).Add(value)
+	Instance.GetRegistry(PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Add(value)
+	Instance.GetRegistry(PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Add(value)
 }
 
 // DecreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
 func DecreasePendingEvents(tablePrefix, workspace, destType string, value float64) {
 	PendingEvents(tablePrefix, workspace, destType).Sub(value)
-	PendingEvents(tablePrefix, ALL, destType).Sub(value)
-	PendingEvents(tablePrefix, ALL, ALL).Sub(value)
+	PendingEvents(tablePrefix, All, destType).Sub(value)
+	PendingEvents(tablePrefix, All, All).Sub(value)
+	Instance.GetRegistry(PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Sub(value)
+	Instance.GetRegistry(PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Sub(value)
 }
 
 // PendingEvents gets the measurement for pending events metric
@@ -47,13 +51,27 @@ type pendingEventsMeasurement struct {
 }
 
 func (r pendingEventsMeasurement) GetName() string {
-	return fmt.Sprintf(JOBSDB_PENDING_EVENTS_COUNT, r.tablePrefix)
+	return fmt.Sprintf(JobsdbPendingEventsCount, r.tablePrefix)
 }
 
 func (r pendingEventsMeasurement) GetTags() map[string]string {
-	res := map[string]string{
+	return map[string]string{
 		"workspaceId": r.workspace,
 		"destType":    r.destType,
 	}
-	return res
+}
+
+type pendingEventsMeasurementAll struct {
+	tablePrefix string
+	destType    string
+}
+
+func (r pendingEventsMeasurementAll) GetName() string {
+	return fmt.Sprintf(JobsdbPendingEventsCount, r.tablePrefix) + "_all"
+}
+
+func (r pendingEventsMeasurementAll) GetTags() map[string]string {
+	return map[string]string{
+		"destType": r.destType,
+	}
 }
