@@ -62,10 +62,10 @@ type DestinationValidator interface {
 
 type destinationValidationImpl struct{}
 
-func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return warehouseutils.Schema{} }
-func (*dummyUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
-func (*dummyUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
-func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
+func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.Schema      { return warehouseutils.Schema{} }
+func (*dummyUploader) GetLocalSchema() warehouseutils.Schema            { return warehouseutils.Schema{} }
+func (*dummyUploader) UpdateLocalSchema(_ warehouseutils.Schema) error  { return nil }
+func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
 func (*dummyUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
 func (*dummyUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
@@ -77,7 +77,7 @@ func (*dummyUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema 
 	return warehouseutils.TableSchema{}
 }
 
-func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFile {
+func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
 
@@ -363,7 +363,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		tmpDirPath string
 		filePath   string
 		err        error
-		writer     warehouseutils.LoadFileWriterI
+		writer     warehouseutils.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
 	)

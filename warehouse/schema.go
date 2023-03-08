@@ -14,7 +14,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type SchemaHandleT struct {
+type SchemaHandle struct {
 	dbHandle                      *sql.DB
 	stagingFiles                  []*model.StagingFile
 	warehouse                     warehouseutils.Warehouse
@@ -67,7 +67,7 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 	return newColumnVal, err
 }
 
-func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Schema) {
+func (sh *SchemaHandle) getLocalSchema() (currentSchema warehouseutils.Schema) {
 	sourceID := sh.warehouse.Source.ID
 	destID := sh.warehouse.Destination.ID
 	namespace := sh.warehouse.Namespace
@@ -121,7 +121,7 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Schema) 
 	return currentSchema
 }
 
-func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Schema) error {
+func (sh *SchemaHandle) updateLocalSchema(updatedSchema warehouseutils.Schema) error {
 	namespace := sh.warehouse.Namespace
 	sourceID := sh.warehouse.Source.ID
 	destID := sh.warehouse.Destination.ID
@@ -167,7 +167,7 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Schema) 
 	return err
 }
 
-func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse warehouseutils.Schema, err error) {
+func (sh *SchemaHandle) fetchSchemaFromWarehouse(whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse warehouseutils.Schema, err error) {
 	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
@@ -179,7 +179,7 @@ func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.Manager) (sc
 	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
-func (sh *SchemaHandleT) SkipDeprecatedColumns(schema warehouseutils.Schema) {
+func (sh *SchemaHandle) SkipDeprecatedColumns(schema warehouseutils.Schema) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
 			if warehouseutils.DeprecatedColumnsRegex.MatchString(columnName) {
@@ -269,11 +269,11 @@ func MergeSchema(currentSchema warehouseutils.Schema, schemaList []warehouseutil
 	return currentMergedSchema
 }
 
-func (sh *SchemaHandleT) safeName(columnName string) string {
+func (sh *SchemaHandle) safeName(columnName string) string {
 	return warehouseutils.ToProviderCase(sh.warehouse.Type, columnName)
 }
 
-func (sh *SchemaHandleT) getDiscardsSchema() warehouseutils.TableSchema {
+func (sh *SchemaHandle) getDiscardsSchema() warehouseutils.TableSchema {
 	discards := warehouseutils.TableSchema{}
 	for colName, colType := range warehouseutils.DiscardsSchema {
 		discards[sh.safeName(colName)] = colType
@@ -286,7 +286,7 @@ func (sh *SchemaHandleT) getDiscardsSchema() warehouseutils.TableSchema {
 	return discards
 }
 
-func (sh *SchemaHandleT) getMergeRulesSchema() warehouseutils.TableSchema {
+func (sh *SchemaHandle) getMergeRulesSchema() warehouseutils.TableSchema {
 	return warehouseutils.TableSchema{
 		sh.safeName("merge_property_1_type"):  "string",
 		sh.safeName("merge_property_1_value"): "string",
@@ -295,7 +295,7 @@ func (sh *SchemaHandleT) getMergeRulesSchema() warehouseutils.TableSchema {
 	}
 }
 
-func (sh *SchemaHandleT) getIdentitiesMappingsSchema() warehouseutils.TableSchema {
+func (sh *SchemaHandle) getIdentitiesMappingsSchema() warehouseutils.TableSchema {
 	return warehouseutils.TableSchema{
 		sh.safeName("merge_property_type"):  "string",
 		sh.safeName("merge_property_value"): "string",
@@ -304,11 +304,11 @@ func (sh *SchemaHandleT) getIdentitiesMappingsSchema() warehouseutils.TableSchem
 	}
 }
 
-func (sh *SchemaHandleT) isIDResolutionEnabled() bool {
+func (sh *SchemaHandle) isIDResolutionEnabled() bool {
 	return warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.Schema {
+func (sh *SchemaHandle) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.Schema {
 	schemaInLocalDB := sh.localSchema
 
 	consolidatedSchema := warehouseutils.Schema{}
@@ -410,8 +410,8 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.Schema) bool
 	return false
 }
 
-func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.Schema) (diff warehouseutils.TableSchemaDiffT) {
-	diff = warehouseutils.TableSchemaDiffT{
+func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.Schema) (diff warehouseutils.TableSchemaDiff) {
+	diff = warehouseutils.TableSchemaDiff{
 		ColumnMap:        make(warehouseutils.TableSchema),
 		UpdatedSchema:    make(warehouseutils.TableSchema),
 		AlteredColumnMap: make(warehouseutils.TableSchema),

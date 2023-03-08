@@ -427,7 +427,7 @@ func (dl *Deltalake) dropStagingTables(tableNames []string) {
 }
 
 // sortedColumnNames returns sorted column names
-func (dl *Deltalake) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchema, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiffT) (sortedColumnNames string) {
+func (dl *Deltalake) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchema, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiff) (sortedColumnNames string) {
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sortedColumnNames = strings.Join(sortedColumnKeys, ",")
 	} else {
@@ -486,8 +486,8 @@ func (dl *Deltalake) getLoadFolder(location string) (loadFolder string) {
 	return
 }
 
-func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchema) (diff warehouseutils.TableSchemaDiffT) {
-	diff = warehouseutils.TableSchemaDiffT{
+func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchema) (diff warehouseutils.TableSchemaDiff) {
+	diff = warehouseutils.TableSchemaDiff{
 		ColumnMap: make(warehouseutils.TableSchema),
 	}
 	diff.ColumnMap = make(warehouseutils.TableSchema)

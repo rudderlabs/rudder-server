@@ -154,7 +154,7 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				stats: store,
-				schemaHandle: &SchemaHandleT{
+				schemaHandle: &SchemaHandle{
 					schemaInWarehouse: warehouseutils.Schema{
 						tableName: warehouseutils.TableSchema{
 							"test-column-1": "string",
@@ -457,7 +457,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
+					err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiff{
 						AlteredColumnMap: warehouseutils.TableSchema{
 							testColumn: testColumnType,
 						},
@@ -541,7 +541,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 				alteredColumnsMap[fmt.Sprintf("%s_%d", testColumn, i)] = testColumnType
 			}
 
-			err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
+			err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiff{
 				AlteredColumnMap: alteredColumnsMap,
 			})
 			require.Error(t, err)

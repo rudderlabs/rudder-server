@@ -715,9 +715,9 @@ func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return w
 func (*mockUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
 func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
-func (*mockUploader) UseRudderStorage() bool                           { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
-func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFile {
+func (*mockUploader) UseRudderStorage() bool                          { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
+func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return nil
 }
 

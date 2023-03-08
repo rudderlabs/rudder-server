@@ -11,20 +11,20 @@ import (
 )
 
 var (
-	constraintsMap              map[string][]ConstraintsI
+	constraintsMap              map[string][]Constraints
 	enableConstraintsViolations bool
 )
 
-type ConstraintsI interface {
-	violates(brEvent *BatchRouterEventT, columnName string) (cv *ConstraintsViolationT)
+type Constraints interface {
+	violates(brEvent *BatchRouterEvent, columnName string) (cv *ConstraintsViolation)
 }
 
-type ConstraintsViolationT struct {
+type ConstraintsViolation struct {
 	IsViolated         bool
 	ViolatedIdentifier string
 }
 
-type IndexConstraintT struct {
+type IndexConstraint struct {
 	TableName    string
 	ColumnName   string
 	IndexColumns []string
@@ -33,15 +33,15 @@ type IndexConstraintT struct {
 
 func Init6() {
 	config.RegisterBoolConfigVariable(true, &enableConstraintsViolations, true, "Warehouse.enableConstraintsViolations")
-	constraintsMap = map[string][]ConstraintsI{
+	constraintsMap = map[string][]Constraints{
 		warehouseutils.BQ: {
-			&IndexConstraintT{
+			&IndexConstraint{
 				TableName:    "rudder_identity_merge_rules",
 				ColumnName:   "merge_property_1_value",
 				IndexColumns: []string{"merge_property_1_type", "merge_property_1_value"},
 				Limit:        512,
 			},
-			&IndexConstraintT{
+			&IndexConstraint{
 				TableName:    "rudder_identity_merge_rules",
 				ColumnName:   "merge_property_2_value",
 				IndexColumns: []string{"merge_property_2_type", "merge_property_2_value"},
@@ -49,13 +49,13 @@ func Init6() {
 			},
 		},
 		warehouseutils.SNOWFLAKE: {
-			&IndexConstraintT{
+			&IndexConstraint{
 				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
 				ColumnName:   "MERGE_PROPERTY_1_VALUE",
 				IndexColumns: []string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE"},
 				Limit:        512,
 			},
-			&IndexConstraintT{
+			&IndexConstraint{
 				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
 				ColumnName:   "MERGE_PROPERTY_2_VALUE",
 				IndexColumns: []string{"MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"},
@@ -65,8 +65,8 @@ func Init6() {
 	}
 }
 
-func ViolatedConstraints(destinationType string, brEvent *BatchRouterEventT, columnName string) (cv *ConstraintsViolationT) {
-	cv = &ConstraintsViolationT{}
+func ViolatedConstraints(destinationType string, brEvent *BatchRouterEvent, columnName string) (cv *ConstraintsViolation) {
+	cv = &ConstraintsViolation{}
 	if !enableConstraintsViolations {
 		return
 	}
@@ -83,9 +83,9 @@ func ViolatedConstraints(destinationType string, brEvent *BatchRouterEventT, col
 	return
 }
 
-func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName string) (cv *ConstraintsViolationT) {
+func (ic *IndexConstraint) violates(brEvent *BatchRouterEvent, columnName string) (cv *ConstraintsViolation) {
 	if brEvent.Metadata.Table != ic.TableName || columnName != ic.ColumnName {
-		return &ConstraintsViolationT{}
+		return &ConstraintsViolation{}
 	}
 	concatenatedLength := 0
 	for _, column := range ic.IndexColumns {
@@ -101,7 +101,7 @@ func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName stri
 			concatenatedLength += len(columnVal)
 		}
 	}
-	return &ConstraintsViolationT{
+	return &ConstraintsViolation{
 		IsViolated:         concatenatedLength > ic.Limit,
 		ViolatedIdentifier: fmt.Sprintf(`%s-%s`, strcase.ToKebab(warehouseutils.DiscardsTable), misc.FastUUID().String()),
 	}

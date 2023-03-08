@@ -30,12 +30,12 @@ type Payload struct {
 	StagingUseRudderStorage      bool
 	UniqueLoadGenID              string
 	RudderStoragePrefix          string
-	Output                       []loadFileUploadOutputT
+	Output                       []loadFileUploadOutput
 	LoadFilePrefix               string // prefix for the load file name
 	LoadFileType                 string
 }
 
-type LoadFileJobT struct {
+type LoadFileJob struct {
 	StagingFile                *model.StagingFile
 	Schema                     warehouseutils.Schema
 	Warehouse                  warehouseutils.Warehouse
@@ -45,12 +45,12 @@ type LoadFileJobT struct {
 	TableToBucketFolderMapLock *sync.RWMutex
 }
 
-type BatchRouterEventT struct {
-	Metadata MetadataT `json:"metadata"`
-	Data     DataT     `json:"data"`
+type BatchRouterEvent struct {
+	Metadata Metadata `json:"metadata"`
+	Data     Data     `json:"data"`
 }
 
-type MetadataT struct {
+type Metadata struct {
 	Table        string            `json:"table"`
 	Columns      map[string]string `json:"columns"`
 	IsMergeRule  bool              `json:"isMergeRule"`
@@ -59,7 +59,7 @@ type MetadataT struct {
 	MergePropTwo string            `json:"mergePropTwo"`
 }
 
-type DataT map[string]interface{}
+type Data map[string]interface{}
 
 type FilterClause struct {
 	Clause    string

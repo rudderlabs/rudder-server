@@ -3,8 +3,9 @@ package validations
 import (
 	"encoding/json"
 	"fmt"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"time"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 

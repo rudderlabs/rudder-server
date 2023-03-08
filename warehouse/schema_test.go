@@ -273,10 +273,10 @@ func TestHandleSchemaChange(t *testing.T) {
 }
 
 var _ = Describe("Schema", func() {
-	DescribeTable("Get table schema diff", func(tableName string, currentSchema, uploadSchema warehouseutils.Schema, expected warehouseutils.TableSchemaDiffT) {
+	DescribeTable("Get table schema diff", func(tableName string, currentSchema, uploadSchema warehouseutils.Schema, expected warehouseutils.TableSchemaDiff) {
 		Expect(getTableSchemaDiff(tableName, currentSchema, uploadSchema)).To(BeEquivalentTo(expected))
 	},
-		Entry(nil, "test-table", warehouseutils.Schema{}, warehouseutils.Schema{}, warehouseutils.TableSchemaDiffT{
+		Entry(nil, "test-table", warehouseutils.Schema{}, warehouseutils.Schema{}, warehouseutils.TableSchemaDiff{
 			ColumnMap:        warehouseutils.TableSchema{},
 			UpdatedSchema:    warehouseutils.TableSchema{},
 			AlteredColumnMap: warehouseutils.TableSchema{},
@@ -286,7 +286,7 @@ var _ = Describe("Schema", func() {
 			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value",
 			},
-		}, warehouseutils.TableSchemaDiffT{
+		}, warehouseutils.TableSchemaDiff{
 			Exists:           true,
 			TableToBeCreated: true,
 			ColumnMap: warehouseutils.TableSchema{
@@ -306,7 +306,7 @@ var _ = Describe("Schema", func() {
 			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-2",
 			},
-		}, warehouseutils.TableSchemaDiffT{
+		}, warehouseutils.TableSchemaDiff{
 			Exists:           false,
 			TableToBeCreated: false,
 			ColumnMap:        warehouseutils.TableSchema{},
@@ -325,7 +325,7 @@ var _ = Describe("Schema", func() {
 			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-2",
 			},
-		}, warehouseutils.TableSchemaDiffT{
+		}, warehouseutils.TableSchemaDiff{
 			Exists:           true,
 			TableToBeCreated: false,
 			ColumnMap: warehouseutils.TableSchema{
@@ -348,7 +348,7 @@ var _ = Describe("Schema", func() {
 			"test-table": warehouseutils.TableSchema{
 				"test-column": "text",
 			},
-		}, warehouseutils.TableSchemaDiffT{
+		}, warehouseutils.TableSchemaDiff{
 			Exists:           true,
 			TableToBeCreated: false,
 			ColumnMap:        warehouseutils.TableSchema{},
@@ -438,7 +438,7 @@ var _ = Describe("Schema", func() {
 	})
 
 	DescribeTable("Safe name", func(warehouseType, columnName, expected string) {
-		handle := SchemaHandleT{
+		handle := SchemaHandle{
 			warehouse: warehouseutils.Warehouse{
 				Type: warehouseType,
 			},
@@ -450,7 +450,7 @@ var _ = Describe("Schema", func() {
 	)
 
 	DescribeTable("Merge rules schema", func(warehouseType string, expected warehouseutils.TableSchema) {
-		handle := SchemaHandleT{
+		handle := SchemaHandle{
 			warehouse: warehouseutils.Warehouse{
 				Type: warehouseType,
 			},
@@ -472,7 +472,7 @@ var _ = Describe("Schema", func() {
 	)
 
 	DescribeTable("Identities Mappings schema", func(warehouseType string, expected warehouseutils.TableSchema) {
-		handle := SchemaHandleT{
+		handle := SchemaHandle{
 			warehouse: warehouseutils.Warehouse{
 				Type: warehouseType,
 			},
@@ -494,7 +494,7 @@ var _ = Describe("Schema", func() {
 	)
 
 	DescribeTable("Discards schema", func(warehouseType string, expected warehouseutils.TableSchema) {
-		handle := SchemaHandleT{
+		handle := SchemaHandle{
 			warehouse: warehouseutils.Warehouse{
 				Type: warehouseType,
 			},
@@ -809,7 +809,7 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			sh := &SchemaHandleT{
+			sh := &SchemaHandle{
 				warehouse: warehouseutils.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,

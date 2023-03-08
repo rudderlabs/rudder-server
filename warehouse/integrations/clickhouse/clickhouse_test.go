@@ -308,10 +308,10 @@ func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return w
 func (*mockUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
 func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
-func (*mockUploader) UseRudderStorage() bool                           { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
+func (*mockUploader) UseRudderStorage() bool                          { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                         { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)       { return time.Time{}, time.Time{} }
 func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
 	return warehouseutils.TableSchema{}
 }
@@ -332,7 +332,7 @@ func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema
 	return m.tableSchema
 }
 
-func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFile {
+func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return m.metadata
 }
 

@@ -77,7 +77,7 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		payload := AsyncJobPayloadT{
+		payload := AsyncJobPayload{
 			SourceID:      startJobPayload.SourceID,
 			DestinationID: startJobPayload.DestinationID,
 			TableName:     th,
