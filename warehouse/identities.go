@@ -133,20 +133,6 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 	}
 	found = true
 	upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
-
-	// TODO: remove this once the migration is complete
-	if upload.WorkspaceID == "" {
-		var ok bool
-		wh.workspaceBySourceIDsLock.RLock()
-		upload.WorkspaceID, ok = wh.workspaceBySourceIDs[upload.SourceID]
-		wh.workspaceBySourceIDsLock.RUnlock()
-
-		if !ok {
-			pkgLogger.Warnf("Workspace not found for source id: %q", upload.SourceID)
-		}
-
-	}
-
 	return
 }
 

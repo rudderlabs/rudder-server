@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	time2 "time"
+	"time"
 
-	"github.com/aws/smithy-go/time"
+	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
@@ -265,8 +266,10 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Get uploads timings", func() {
-		exportedData, _ := time.ParseDateTime("2020-04-21T15:26:34.344356")
-		exportingData, _ := time.ParseDateTime("2020-04-21T15:16:19.687716")
+		exportedData, err := time.Parse(time.RFC3339, "2020-04-21T15:26:34.344356Z")
+		Expect(err).To(BeNil())
+		exportingData, err := time.Parse(time.RFC3339, "2020-04-21T15:16:19.687716Z")
+		Expect(err).To(BeNil())
 		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.TODO(), job.upload.ID)).
 			To(BeEquivalentTo(model.Timings{
 				{
@@ -512,37 +515,37 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 func TestUploadJobT_Aborted(t *testing.T) {
 	var (
 		minAttempts    = 3
-		minRetryWindow = 3 * time2.Hour
-		now            = time2.Date(2021, 1, 1, 6, 0, 0, 0, time2.UTC)
+		minRetryWindow = 3 * time.Hour
+		now            = time.Date(2021, 1, 1, 6, 0, 0, 0, time.UTC)
 	)
 
 	testCases := []struct {
 		name      string
 		attempts  int
-		startTime time2.Time
+		startTime time.Time
 		expected  bool
 	}{
 		{
 			name:      "empty start time",
-			startTime: time2.Time{},
+			startTime: time.Time{},
 			expected:  false,
 		},
 		{
 			name:      "crossing max attempts but not retry window",
 			attempts:  5,
-			startTime: time2.Date(2021, 1, 1, 5, 30, 0, 0, time2.UTC),
+			startTime: time.Date(2021, 1, 1, 5, 30, 0, 0, time.UTC),
 			expected:  false,
 		},
 		{
 			name:      "crossing max retry window but not attempts",
 			attempts:  2,
-			startTime: time2.Date(2021, 1, 1, 2, 0, 0, 0, time2.UTC),
+			startTime: time.Date(2021, 1, 1, 2, 0, 0, 0, time.UTC),
 			expected:  false,
 		},
 		{
 			name:      "crossing max retry window but not attempts",
 			attempts:  5,
-			startTime: time2.Date(2021, 1, 1, 2, 0, 0, 0, time2.UTC),
+			startTime: time.Date(2021, 1, 1, 2, 0, 0, 0, time.UTC),
 			expected:  true,
 		},
 	}
@@ -556,7 +559,7 @@ func TestUploadJobT_Aborted(t *testing.T) {
 			job := &UploadJobT{
 				MinRetryAttempts: minAttempts,
 				RetryTimeWindow:  minRetryWindow,
-				Now:              func() time2.Time { return now },
+				Now:              func() time.Time { return now },
 			}
 
 			require.Equal(t, tc.expected, job.Aborted(tc.attempts, tc.startTime))

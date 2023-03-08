@@ -63,7 +63,6 @@ type UploadMetadata struct {
 	Retried          bool      `json:"retried"`
 	Priority         int       `json:"priority"`
 	NextRetryTime    time.Time `json:"nextRetryTime"`
-	UseUploadID      bool      `json:"use_upload_id"`
 }
 
 func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
@@ -92,7 +91,7 @@ func ExtractUploadMetadata(upload model.Upload) UploadMetadata {
 	}
 }
 
-func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Upload, files []model.StagingFile) (int64, error) {
+func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Upload, files []*model.StagingFile) (int64, error) {
 	startJSONID := files[0].ID
 	endJSONID := files[len(files)-1].ID
 
@@ -118,7 +117,6 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		Retried:          upload.Retried,
 		Priority:         upload.Priority,
 		NextRetryTime:    upload.NextRetryTime,
-		UseUploadID:      true,
 	}
 
 	metadata, err := json.Marshal(metadataMap)
@@ -519,7 +517,7 @@ func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destination
 		return nil, fmt.Errorf("query for interrupted destinations: %w", err)
 	}
 
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var destID string
