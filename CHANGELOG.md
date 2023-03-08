@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.7.0-preview.3](https://github.com/rudderlabs/rudder-server/compare/v1.6.0...v1.7.0-preview.3) (2023-03-08)
+
+
+### Features
+
+* **warehouse:** snowflake roles support. ([#3031](https://github.com/rudderlabs/rudder-server/issues/3031)) ([98a413c](https://github.com/rudderlabs/rudder-server/commit/98a413c5df1e3011b2c774d3ea4d9054eab44a72))
+
+
+### Bug Fixes
+
+* enabled data race ([#3041](https://github.com/rudderlabs/rudder-server/issues/3041)) ([7136be4](https://github.com/rudderlabs/rudder-server/commit/7136be40e7cf02886c0f99053ff32c0c6996e14e))
+* inconsistent and leaky retry delay logic in router ([#3002](https://github.com/rudderlabs/rudder-server/issues/3002)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* limiter deadlock while trying to notify a dynamic priority item ([#3056](https://github.com/rudderlabs/rudder-server/issues/3056)) ([ade2e4d](https://github.com/rudderlabs/rudder-server/commit/ade2e4d456ec42262b037ee3839f1823561d2bee))
+* payload limiter gauge reports invalid value type ([#3048](https://github.com/rudderlabs/rudder-server/issues/3048)) ([828f70d](https://github.com/rudderlabs/rudder-server/commit/828f70d271832ff56a463d9618c9a02dd1f408c7))
+* pending events all ([#3075](https://github.com/rudderlabs/rudder-server/issues/3075)) ([1d9f63b](https://github.com/rudderlabs/rudder-server/commit/1d9f63b3df72a038a6b1f4f5d402a04ab00befa5))
+* user/anonymous id read at gateway ([#3051](https://github.com/rudderlabs/rudder-server/issues/3051)) ([828f70d](https://github.com/rudderlabs/rudder-server/commit/828f70d271832ff56a463d9618c9a02dd1f408c7))
+* **warehouse:** grouping uploads for processing pickup ([#3039](https://github.com/rudderlabs/rudder-server/issues/3039)) ([4832630](https://github.com/rudderlabs/rudder-server/commit/4832630e58db4aeaaaf5c65c634247ad5da8e12a))
+
+
+### Miscellaneous
+
+* abort job after 5 attempts at deletion-worker ([#3012](https://github.com/rudderlabs/rudder-server/issues/3012)) ([ed83eaa](https://github.com/rudderlabs/rudder-server/commit/ed83eaac2f56a7825a7ddd0e830bab0f21b13713))
+* add live events stats ([#2930](https://github.com/rudderlabs/rudder-server/issues/2930)) ([7ca1b0b](https://github.com/rudderlabs/rudder-server/commit/7ca1b0bb03bbb8499d87bcc84b7c1919f9ac69f7))
+* add transformations challenge announcement ([#3072](https://github.com/rudderlabs/rudder-server/issues/3072)) ([f128b93](https://github.com/rudderlabs/rudder-server/commit/f128b931047dfb1bef0ec50d32994ab3a3028f3f))
+* debugger's badgerdb cache optimisations ([#3042](https://github.com/rudderlabs/rudder-server/issues/3042)) ([e6e9933](https://github.com/rudderlabs/rudder-server/commit/e6e99337b218f844bb893371246b54a3b7f710b8))
+* **deps:** bump github.com/minio/minio-go/v7 from 7.0.48 to 7.0.49 ([#3018](https://github.com/rudderlabs/rudder-server/issues/3018)) ([f4ea7b3](https://github.com/rudderlabs/rudder-server/commit/f4ea7b31c0d9b8da1b8f0f71e14d10c390ae3ae2))
+* **deps:** bump github.com/onsi/ginkgo/v2 from 2.1.6 to 2.9.0 ([#3068](https://github.com/rudderlabs/rudder-server/issues/3068)) ([6bdbb7a](https://github.com/rudderlabs/rudder-server/commit/6bdbb7aa3d79d06bce27a230d32ee4af2bc05b89))
+* **deps:** bump github.com/prometheus/common from 0.37.0 to 0.41.0 ([#3062](https://github.com/rudderlabs/rudder-server/issues/3062)) ([bb04a8b](https://github.com/rudderlabs/rudder-server/commit/bb04a8b21af714ed7ed03d4769db6fa92b781b67))
+* **deps:** bump github.com/urfave/cli/v2 from 2.20.3 to 2.25.0 ([#3067](https://github.com/rudderlabs/rudder-server/issues/3067)) ([6b429b7](https://github.com/rudderlabs/rudder-server/commit/6b429b7baa9795668960b07b2a73e56cad8fb7f9))
+* **deps:** bump go.uber.org/goleak from 1.2.0 to 1.2.1 ([#3017](https://github.com/rudderlabs/rudder-server/issues/3017)) ([2eb92ca](https://github.com/rudderlabs/rudder-server/commit/2eb92ca6d89738b33830e4d31dbcb82baf31744a))
+* don't include prereleases in docker latest tag ([#3006](https://github.com/rudderlabs/rudder-server/issues/3006)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* improve regulation-worker status capture ([#2837](https://github.com/rudderlabs/rudder-server/issues/2837)) ([6f1d07d](https://github.com/rudderlabs/rudder-server/commit/6f1d07df234a2a2c32cf0ecaac465a08ddfca2bc))
+* increase parallel loads ([#3073](https://github.com/rudderlabs/rudder-server/issues/3073)) ([7dcc756](https://github.com/rudderlabs/rudder-server/commit/7dcc756f7fc39a7b66a69f0df42feb3957ba821c))
+* **jobsdb:** omit workspaceId tag when it doesn't correspond to an actual workspace ([#3057](https://github.com/rudderlabs/rudder-server/issues/3057)) ([f936260](https://github.com/rudderlabs/rudder-server/commit/f936260589a1058025ca67ea5dda6f7425e25157))
+* migrate stats to otel ([#2989](https://github.com/rudderlabs/rudder-server/issues/2989)) ([a4243de](https://github.com/rudderlabs/rudder-server/commit/a4243de1d52dff56e2e1619b00d4ba9a6291f560))
+* perform rss/wss-aware cgroups memory usage calculation ([#3052](https://github.com/rudderlabs/rudder-server/issues/3052)) ([1b6af85](https://github.com/rudderlabs/rudder-server/commit/1b6af85e6410184d1f84fd57c6a76f7e30a5c97f))
+* prefer using lo.BufferWithTimeout ([#2998](https://github.com/rudderlabs/rudder-server/issues/2998)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* reduce parquet file size datalake ([#3035](https://github.com/rudderlabs/rudder-server/issues/3035)) ([4cb5907](https://github.com/rudderlabs/rudder-server/commit/4cb59075ab6430a3b4f898bb349e343d40d85944))
+* remove workerID tag ([#3055](https://github.com/rudderlabs/rudder-server/issues/3055)) ([b732919](https://github.com/rudderlabs/rudder-server/commit/b7329199fc9e1db4097c6d21376deec8effb2310))
+* upgrade all dependencies ([#2996](https://github.com/rudderlabs/rudder-server/issues/2996)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* use official bitnami images for arm64 ([#3047](https://github.com/rudderlabs/rudder-server/issues/3047)) ([3aeb4f6](https://github.com/rudderlabs/rudder-server/commit/3aeb4f60139b99938476ecbdb1b786caf1f7c41c))
+* use token on protoc setup to avoid rate-limit ([#3083](https://github.com/rudderlabs/rudder-server/issues/3083)) ([0f89b26](https://github.com/rudderlabs/rudder-server/commit/0f89b265f524b04f9f0445e3502b02ac25420ccc))
+* use upload_id for staging files ([#3066](https://github.com/rudderlabs/rudder-server/issues/3066)) ([3ec2433](https://github.com/rudderlabs/rudder-server/commit/3ec2433b671428a7f5504af8e9cb85b2f4373c51))
+* **warehouse:** added support for observability for loading tables and made dedup optional for Redshift ([#3037](https://github.com/rudderlabs/rudder-server/issues/3037)) ([63fd288](https://github.com/rudderlabs/rudder-server/commit/63fd28852af9278ebaa7e9c55ee59a1449c139f1))
+* **warehouse:** added warehouse handling for s3 with glue and other improvements ([#2940](https://github.com/rudderlabs/rudder-server/issues/2940)) ([3495797](https://github.com/rudderlabs/rudder-server/commit/34957976512f658f5165d296671ee4adfc24d321))
+* **warehouse:** additional error mappings ([#2994](https://github.com/rudderlabs/rudder-server/issues/2994)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* **warehouse:** default warehouse priority set to 100 ([#3026](https://github.com/rudderlabs/rudder-server/issues/3026)) ([20c8644](https://github.com/rudderlabs/rudder-server/commit/20c8644298e2d4cc3338b8aa5d2f7d9cd717ba62))
+* **warehouse:** use first_event_at while pickup for warehouse processing jobs ([#3036](https://github.com/rudderlabs/rudder-server/issues/3036)) ([7aeed3b](https://github.com/rudderlabs/rudder-server/commit/7aeed3bfcf9f3679eabfb9f6689f49ba04c62ad9))
+* **warehouse:** warehouse integration tests improvements ([#3059](https://github.com/rudderlabs/rudder-server/issues/3059)) ([e57362e](https://github.com/rudderlabs/rudder-server/commit/e57362e514a2731a7f9419467fc626efdc3d316f))
+
 ## [1.6.3](https://github.com/rudderlabs/rudder-server/compare/v1.6.2...v1.6.3) (2023-03-01)
 
 
