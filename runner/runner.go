@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"net/http"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
