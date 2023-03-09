@@ -3,6 +3,7 @@ package redshift_test
 import (
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"strings"
 	"testing"
@@ -154,6 +155,7 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	redshift.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

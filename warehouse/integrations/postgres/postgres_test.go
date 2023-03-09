@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"strings"
 	"testing"
@@ -29,6 +30,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
@@ -234,6 +236,7 @@ func TestConfigurationValidationPostgres(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

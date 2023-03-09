@@ -3,6 +3,7 @@ package validations_test
 import (
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -55,6 +56,7 @@ func setup(t *testing.T, pool *dockertest.Pool) testResource {
 func TestValidator(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	validations.Init()
 	postgres.Init()
 

@@ -1,6 +1,7 @@
 package datalake_test
 
 import (
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"testing"
 
@@ -103,6 +104,7 @@ func TestConfigurationValidationDatalake(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	datalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

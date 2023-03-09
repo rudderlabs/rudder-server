@@ -1,6 +1,7 @@
 package mssql_test
 
 import (
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"testing"
 
@@ -134,6 +135,7 @@ func TestConfigurationValidationMSSQL(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	mssql.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"regexp"
 	"testing"
@@ -181,6 +182,7 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	deltalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
@@ -748,6 +750,7 @@ func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 func TestDeltalake_LoadTable(t *testing.T) {
 	deltalake.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	misc.Init()
 
 	pool, err := dockertest.NewPool("")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"testing"
 
@@ -117,6 +118,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			misc.Init()
 			warehouseutils.Init()
+			encoding.Init()
 
 			g, err := NewGlueSchemaRepository(warehouse)
 			g.Logger = logger.NOP

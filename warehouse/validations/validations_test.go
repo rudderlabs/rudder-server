@@ -2,6 +2,7 @@ package validations_test
 
 import (
 	"errors"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
@@ -19,6 +20,7 @@ func TestValidate(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	validations.Init()
 	postgres.Init()
 

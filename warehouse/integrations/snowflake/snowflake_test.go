@@ -2,6 +2,7 @@ package snowflake_test
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"strings"
 	"testing"
@@ -211,6 +212,7 @@ func TestConfigurationValidationSnowflake(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	snowflake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

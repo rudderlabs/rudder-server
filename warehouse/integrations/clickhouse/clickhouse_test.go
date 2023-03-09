@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"log"
 	"os"
 	"strings"
@@ -202,6 +203,7 @@ func TestConfigurationValidationClickhouse(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	clickhouse.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
@@ -339,6 +341,7 @@ func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) 
 func TestHandle_LoadTableRoundTrip(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	clickhouse.Init()
 
 	pool, err := dockertest.NewPool("")
@@ -625,6 +628,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 func TestHandle_TestConnection(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	clickhouse.Init()
 
 	pool, err := dockertest.NewPool("")
@@ -717,6 +721,7 @@ func TestHandle_TestConnection(t *testing.T) {
 func TestHandle_LoadTestTable(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	clickhouse.Init()
 
 	pool, err := dockertest.NewPool("")
@@ -818,6 +823,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 func TestHandle_FetchSchema(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	clickhouse.Init()
 
 	pool, err := dockertest.NewPool("")

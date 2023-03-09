@@ -3,6 +3,7 @@ package bigquery_test
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"testing"
 
@@ -272,6 +273,7 @@ func TestConfigurationValidationBigQuery(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	bigquery2.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
