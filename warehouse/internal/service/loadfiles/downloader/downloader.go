@@ -3,6 +3,7 @@ package downloader
 import (
 	"context"
 	"fmt"
+	uploader2 "github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"os"
 	"path/filepath"
 	"sync"
@@ -20,13 +21,13 @@ type Downloader interface {
 
 type downloaderImpl struct {
 	warehouse  *warehouseutils.Warehouse
-	uploader   warehouseutils.Uploader
+	uploader   uploader2.Uploader
 	numWorkers int
 }
 
 func NewDownloader(
 	warehouse *warehouseutils.Warehouse,
-	uploader warehouseutils.Uploader,
+	uploader uploader2.Uploader,
 	numWorkers int,
 ) Downloader {
 	return &downloaderImpl{

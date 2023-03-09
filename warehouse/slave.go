@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -525,7 +526,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, convError := HandleSchemaChange(
+				newColumnVal, convError := schema.HandleSchemaChange(
 					model.SchemaType(dataTypeInSchema),
 					model.SchemaType(columnType),
 					columnVal,

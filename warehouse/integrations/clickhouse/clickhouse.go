@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"io"
 	"net/url"
 	"os"
@@ -141,9 +142,9 @@ type Clickhouse struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.Uploader
-	stats                       stats.Stats
+	Warehouse warehouseutils.Warehouse
+	Uploader  uploader.Uploader
+	stats     stats.Stats
 	ConnectTimeout              time.Duration
 	Logger                      logger.Logger
 	QueryDebugLogs              string
@@ -947,7 +948,7 @@ func (ch *Clickhouse) TestConnection(warehouse warehouseutils.Warehouse) (err er
 	return nil
 }
 
-func (ch *Clickhouse) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (ch *Clickhouse) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader

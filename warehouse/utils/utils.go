@@ -265,22 +265,6 @@ type KeyValue struct {
 	Value interface{}
 }
 
-type Uploader interface {
-	GetSchemaInWarehouse() Schema
-	GetLocalSchema() (Schema, error)
-	UpdateLocalSchema(schema Schema) error
-	GetTableSchemaInWarehouse(tableName string) TableSchema
-	GetTableSchemaInUpload(tableName string) TableSchema
-	GetLoadFilesMetadata(options GetLoadFilesOptions) []LoadFile
-	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetSingleLoadFile(tableName string) (LoadFile, error)
-	ShouldOnDedupUseNewRecord() bool
-	UseRudderStorage() bool
-	GetLoadFileGenStartTIme() time.Time
-	GetLoadFileType() string
-	GetFirstLastEvent() (time.Time, time.Time)
-}
-
 type GetLoadFilesOptions struct {
 	Table   string
 	StartID int64

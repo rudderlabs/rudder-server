@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,9 +36,9 @@ type WarehouseManager interface {
 
 type HandleT struct {
 	Warehouse          warehouseutils.Warehouse
-	DB                 *sql.DB
-	Uploader           warehouseutils.Uploader
-	UploadID           int64
+	DB       *sql.DB
+	Uploader uploader.Uploader
+	UploadID int64
 	WarehouseManager   WarehouseManager
 	LoadFileDownloader downloader.Downloader
 }

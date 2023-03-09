@@ -231,6 +231,43 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("GetSchemasByIDs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("get all", func(t *testing.T) {
+			t.Parallel()
+
+			stagingIDs := repo.StagingFileIDs(stagingFiles)
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs)
+			require.NoError(t, err)
+			require.Len(t, expectedSchemas, len(stagingFiles))
+
+			for _, es := range expectedSchemas {
+				require.EqualValues(t, []byte(`{"type": "object"}`), es)
+			}
+		})
+
+		t.Run("missing id", func(t *testing.T) {
+			t.Parallel()
+
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1, 2, 3, 101, 102, 103})
+			require.EqualError(t, err, "not all schemas were found")
+			require.Nil(t, expectedSchemas)
+		})
+
+		t.Run("context canceled", func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			stagingIDs := repo.StagingFileIDs(stagingFiles)
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs)
+			require.EqualError(t, err, "querying schemas: context canceled")
+			require.Nil(t, expectedSchemas)
+		})
+	})
 }
 
 func TestStagingFileRepo_Pending(t *testing.T) {

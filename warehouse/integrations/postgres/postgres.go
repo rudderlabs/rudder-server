@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"net/url"
 	"regexp"
 	"strings"
@@ -114,9 +115,9 @@ type Postgres struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.Uploader
-	ConnectTimeout              time.Duration
+	Warehouse      warehouseutils.Warehouse
+	Uploader       uploader.Uploader
+	ConnectTimeout time.Duration
 	Logger                      logger.Logger
 	EnableDeleteByJobs          bool
 	NumWorkersDownloadLoadFiles int
@@ -383,7 +384,7 @@ func (pg *Postgres) TestConnection(warehouse warehouseutils.Warehouse) (err erro
 
 func (pg *Postgres) Setup(
 	warehouse warehouseutils.Warehouse,
-	uploader warehouseutils.Uploader,
+	uploader uploader.Uploader,
 ) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace

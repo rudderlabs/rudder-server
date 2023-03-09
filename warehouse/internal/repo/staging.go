@@ -269,6 +269,45 @@ func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (jsonstd.
 	return schema, err
 }
 
+// GetSchemasByIDs returns staging file schemas for the given IDs.
+func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]jsonstd.RawMessage, error) {
+	var (
+		schemas []jsonstd.RawMessage
+		err     error
+		rows    *sql.Rows
+	)
+
+	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
+	rows, err = repo.db.QueryContext(ctx, query, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("querying schemas: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			schema jsonstd.RawMessage
+			err    error
+		)
+
+		if err = rows.Scan(&schema); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+
+		schemas = append(schemas, schema)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+	if len(schemas) != len(ids) {
+		return nil, fmt.Errorf("not all schemas were found")
+	}
+
+	return schemas, err
+}
+
 // GetForUploadID returns all the staging files for that uploadID
 func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinationID string, uploadId int64) ([]*model.StagingFile, error) {
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST

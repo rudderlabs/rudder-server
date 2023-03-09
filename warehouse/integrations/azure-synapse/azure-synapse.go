@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"io"
 	"net"
 	"net/url"
@@ -86,7 +87,7 @@ type AzureSynapse struct {
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.Uploader
+	Uploader                    uploader.Uploader
 	NumWorkersDownloadLoadFiles int
 	Logger                      logger.Logger
 	LoadFileDownLoader          downloader.Downloader
@@ -667,7 +668,7 @@ func (as *AzureSynapse) TestConnection(warehouse warehouseutils.Warehouse) (err 
 	return nil
 }
 
-func (as *AzureSynapse) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (as *AzureSynapse) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader

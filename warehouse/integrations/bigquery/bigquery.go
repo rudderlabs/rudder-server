@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	uploader2 "github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"regexp"
 	"strings"
 	"time"
@@ -38,8 +39,8 @@ type HandleT struct {
 	db                *bigquery.Client
 	namespace         string
 	warehouse         warehouseutils.Warehouse
-	projectID         string
-	uploader          warehouseutils.Uploader
+	projectID string
+	uploader  uploader2.Uploader
 }
 
 type StagingLoadTable struct {
@@ -811,7 +812,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 	return
 }
 
-func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader uploader2.Uploader) (err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.uploader = uploader

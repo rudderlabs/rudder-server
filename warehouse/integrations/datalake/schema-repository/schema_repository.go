@@ -2,6 +2,7 @@ package schemarepository
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -53,7 +54,7 @@ func UseGlue(w *warehouseutils.Warehouse) bool {
 	return glueConfig == "true" && hasAWSRegion
 }
 
-func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.Uploader) (SchemaRepository, error) {
+func NewSchemaRepository(wh warehouseutils.Warehouse, uploader uploader.Uploader) (SchemaRepository, error) {
 	if UseGlue(&wh) {
 		return NewGlueSchemaRepository(wh)
 	}

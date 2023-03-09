@@ -4,9 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"sync"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
@@ -428,23 +427,22 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		defer whManager.Cleanup()
 
-		schemaHandle := SchemaHandle{
-			warehouse:    job.warehouse,
-			stagingFiles: job.stagingFiles,
-			dbHandle:     job.dbHandle,
-			whSchemaRepo: repo.NewWHSchemas(job.dbHandle),
-		}
-		job.schemaHandle = &schemaHandle
+		job.schemaHandler = schema.NewHandler(
+			job.dbHandle,
+			job.warehouse,
+			job.stagingFiles,
+			config.Default,
+		)
 
-		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		job.schemaHandler.SchemaInWarehouse, job.schemaHandler.UnrecognizedSchemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)
 			return
 		}
 
-		schemaHandle.SkipDeprecatedColumns(job.schemaHandle.schemaInWarehouse)
-		schemaHandle.SkipDeprecatedColumns(job.schemaHandle.unrecognizedSchemaInWarehouse)
+		job.schemaHandler.SkipDeprecatedColumns(job.schemaHandler.SchemaInWarehouse)
+		job.schemaHandler.SkipDeprecatedColumns(job.schemaHandler.UnrecognizedSchemaInWarehouse)
 
 		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(model.ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -143,7 +144,7 @@ type Redshift struct {
 	DB             *sql.DB
 	Namespace      string
 	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.Uploader
+	Uploader       uploader.Uploader
 	ConnectTimeout time.Duration
 	Logger         logger.Logger
 	stats          stats.Stats
@@ -1339,7 +1340,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	return
 }
 
-func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader

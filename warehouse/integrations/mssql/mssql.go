@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"io"
 	"net"
 	"net/url"
@@ -85,9 +86,9 @@ type MSSQL struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.Uploader
-	ConnectTimeout              time.Duration
+	Warehouse      warehouseutils.Warehouse
+	Uploader       uploader.Uploader
+	ConnectTimeout time.Duration
 	EnableDeleteByJobs          bool
 	Logger                      logger.Logger
 	NumWorkersDownloadLoadFiles int
@@ -715,7 +716,7 @@ func (ms *MSSQL) TestConnection(warehouse warehouseutils.Warehouse) (err error) 
 	return nil
 }
 
-func (ms *MSSQL) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (ms *MSSQL) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"os"
 	"testing"
 
@@ -154,7 +155,7 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				stats: store,
-				schemaHandle: &SchemaHandle{
+				schemaHandler: &schema.Handler{
 					schemaInWarehouse: warehouseutils.Schema{
 						tableName: warehouseutils.TableSchema{
 							"test-column-1": "string",
@@ -181,7 +182,7 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := store.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				require.EqualValues(t, m1.LastValue(), len(j.schemaHandle.schemaInWarehouse[tableName]))
+				require.EqualValues(t, m1.LastValue(), len(j.schemaHandler.schemaInWarehouse[tableName]))
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
 			} else {
 				require.Nil(t, m1)

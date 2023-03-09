@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"regexp"
 	"sort"
 	"strings"
@@ -183,7 +184,7 @@ type Snowflake struct {
 	CloudProvider  string
 	ObjectStorage  string
 	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.Uploader
+	Uploader       uploader.Uploader
 	ConnectTimeout time.Duration
 	Logger         logger.Logger
 
@@ -904,7 +905,7 @@ func (sf *Snowflake) getConnectionCredentials(opts optionalCreds) Credentials {
 	}
 }
 
-func (sf *Snowflake) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (sf *Snowflake) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)

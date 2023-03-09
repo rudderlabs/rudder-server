@@ -2,6 +2,7 @@ package schemarepository
 
 import (
 	"fmt"
+	uploader2 "github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -10,10 +11,10 @@ import (
 
 type LocalSchemaRepository struct {
 	warehouse warehouseutils.Warehouse
-	uploader  warehouseutils.Uploader
+	uploader  uploader2.Uploader
 }
 
-func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.Uploader) (*LocalSchemaRepository, error) {
+func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader uploader2.Uploader) (*LocalSchemaRepository, error) {
 	ls := LocalSchemaRepository{
 		warehouse: wh,
 		uploader:  uploader,

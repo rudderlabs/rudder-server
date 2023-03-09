@@ -3,6 +3,7 @@ package deltalake
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"regexp"
 	"strings"
 	"time"
@@ -114,9 +115,9 @@ type Deltalake struct {
 	Client                 *client.Client
 	Namespace              string
 	ObjectStorage          string
-	Warehouse              warehouseutils.Warehouse
-	Uploader               warehouseutils.Uploader
-	ConnectTimeout         time.Duration
+	Warehouse      warehouseutils.Warehouse
+	Uploader       uploader.Uploader
+	ConnectTimeout time.Duration
 	Logger                 logger.Logger
 	Stats                  stats.Stats
 	Schema                 string
@@ -948,7 +949,7 @@ func (dl *Deltalake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 }
 
 // Setup populate the Deltalake
-func (dl *Deltalake) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (dl *Deltalake) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.Uploader = uploader

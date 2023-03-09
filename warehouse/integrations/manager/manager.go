@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"time"
 
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
@@ -26,7 +27,7 @@ import (
 )
 
 type Manager interface {
-	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) error
+	Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) error
 	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
 	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error)
 	CreateSchema() (err error)
