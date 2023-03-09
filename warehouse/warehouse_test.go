@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
@@ -61,6 +63,7 @@ func initWarehouse() {
 	validations.Init()
 	misc.Init()
 	postgres.Init()
+	postgreslegacy.Init()
 }
 
 func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMeasurement) {
