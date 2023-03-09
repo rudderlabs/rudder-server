@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/samber/lo"
 
@@ -716,17 +718,10 @@ func (job *UploadJobT) TablesToSkip() (map[string]model.PendingTableUpload, map[
 	var (
 		previouslyFailedTableMap   = make(map[string]model.PendingTableUpload)
 		currentlySucceededTableMap = make(map[string]model.PendingTableUpload)
-
-		// Previous upload and table upload failed
-		exportingfailedStatus = func(status string) bool {
-			return status == model.TableUploadExportingFailed ||
-				status == model.UserTableUploadExportingFailed ||
-				status == model.IdentityTableUploadExportingFailed
-		}
 	)
 
 	for _, pendingTableUpload := range job.pendingTableUploads {
-		if pendingTableUpload.UploadID < job.upload.ID && exportingfailedStatus(pendingTableUpload.Status) {
+		if pendingTableUpload.UploadID < job.upload.ID && pendingTableUpload.Status == model.TableUploadExportingFailed {
 			previouslyFailedTableMap[pendingTableUpload.TableName] = pendingTableUpload
 		}
 		if pendingTableUpload.UploadID == job.upload.ID && pendingTableUpload.Status == model.TableUploadExported { // Current upload and table upload succeeded
@@ -738,11 +733,12 @@ func (job *UploadJobT) TablesToSkip() (map[string]model.PendingTableUpload, map[
 
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
 	idr := identity.HandleT{
-		Warehouse:        job.warehouse,
-		DbHandle:         job.dbHandle,
-		UploadID:         job.upload.ID,
-		Uploader:         job,
-		WarehouseManager: job.whManager,
+		Warehouse:          job.warehouse,
+		DB:                 job.dbHandle,
+		UploadID:           job.upload.ID,
+		Uploader:           job,
+		WarehouseManager:   job.whManager,
+		LoadFileDownloader: downloader.NewDownloader(&job.warehouse, job, 8),
 	}
 	if populateHistoricIdentities {
 		return idr.ResolveHistoricIdentities()

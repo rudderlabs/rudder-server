@@ -26,7 +26,4 @@ const (
 	TableUploadExporting            = "exporting_data"
 	TableUploadExportingFailed      = "exporting_data_failed"
 	TableUploadExported             = "exported_data"
-
-	UserTableUploadExportingFailed     = "exporting_user_tables_failed"
-	IdentityTableUploadExportingFailed = "exporting_identities_failed"
 )

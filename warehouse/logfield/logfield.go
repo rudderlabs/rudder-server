@@ -17,7 +17,6 @@ const (
 	TableName                  = "tableName"
 	ColumnName                 = "columnName"
 	ColumnType                 = "columnType"
-	Query                      = "query"
 	Priority                   = "priority"
 	Retried                    = "retried"
 	Attempt                    = "attempt"
@@ -25,4 +24,8 @@ const (
 	ErrorMapping               = "errorMapping"
 	DestinationCredsValid      = "destinationCredsValid"
 	Provider                   = "provider"
+	Query                      = "query"
+	StagingTableName           = "stagingTableName"
+	QueryPlanner               = "queryPlan"
+	LoadFile                   = "loadFile"
 )
