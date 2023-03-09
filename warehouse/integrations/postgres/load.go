@@ -58,7 +58,7 @@ type LoadUsersTable struct {
 	LoadFileDownloader downloader.Downloader
 }
 
-func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (string, error) {
+func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload warehouseutils.TableSchema) (string, error) {
 	var (
 		err                     error
 		query                   string
@@ -365,7 +365,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	return stagingTableName, nil
 }
 
-func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse warehouseutils.TableSchemaT) map[string]error {
+func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse warehouseutils.TableSchema) map[string]error {
 	var (
 		err                        error
 		query                      string

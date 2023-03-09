@@ -187,7 +187,7 @@ func (*AzureSynapse) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error)
 	return
 }
 
-func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	as.Logger.Infof("AZ: Starting load for table:%s", tableName)
 
 	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(as.Uploader.GetTableSchemaInWarehouse(tableName))

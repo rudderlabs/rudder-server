@@ -20,13 +20,13 @@ type Downloader interface {
 
 type downloaderImpl struct {
 	warehouse  *warehouseutils.Warehouse
-	uploader   warehouseutils.UploaderI
+	uploader   warehouseutils.Uploader
 	numWorkers int
 }
 
 func NewDownloader(
 	warehouse *warehouseutils.Warehouse,
-	uploader warehouseutils.UploaderI,
+	uploader warehouseutils.Uploader,
 	numWorkers int,
 ) Downloader {
 	return &downloaderImpl{
@@ -44,7 +44,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		fileNamesLock sync.RWMutex
 	)
 
-	objects := l.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+	objects := l.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(
 		l.warehouse.Destination.DestinationDefinition.Name,
 		l.warehouse.Destination.Config,
@@ -88,7 +88,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 	return fileNames, nil
 }
 
-func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager filemanager.FileManager, object warehouseutils.LoadFileT) (string, error) {
+func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager filemanager.FileManager, object warehouseutils.LoadFile) (string, error) {
 	var (
 		objectName string
 		tmpDirPath string

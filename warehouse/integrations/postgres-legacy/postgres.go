@@ -135,7 +135,7 @@ type Handle struct {
 	Namespace                                   string
 	ObjectStorage                               string
 	Warehouse                                   warehouseutils.Warehouse
-	Uploader                                    warehouseutils.UploaderI
+	Uploader                                    warehouseutils.Uploader
 	ConnectTimeout                              time.Duration
 	logger                                      logger.Logger
 	SkipComputingUserLatestTraits               bool
@@ -265,7 +265,7 @@ func (*Handle) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 }
 
 func (pg *Handle) DownloadLoadFiles(tableName string) ([]string, error) {
-	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
@@ -341,7 +341,7 @@ func (pg *Handle) runRollbackWithTimeout(f func() error, onTimeout func(tags sta
 	}
 }
 
-func (pg *Handle) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (pg *Handle) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)
 	if err != nil {
@@ -728,14 +728,14 @@ func (pg *Handle) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (pg *Handle) createTable(name string, columns map[string]string) (err error) {
+func (pg *Handle) createTable(name string, columns warehouseutils.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pg.logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.DB.Exec(sqlStatement)
 	return
 }
 
-func (pg *Handle) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (pg *Handle) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)
@@ -821,7 +821,7 @@ func (pg *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error)
 
 func (pg *Handle) Setup(
 	warehouse warehouseutils.Warehouse,
-	uploader warehouseutils.UploaderI,
+	uploader warehouseutils.Uploader,
 ) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
@@ -887,7 +887,7 @@ func (pg *Handle) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (pg *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(pg.getConnectionCredentials())
@@ -896,8 +896,8 @@ func (pg *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrec
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(warehouseutils.Schema)
+	unrecognizedSchema = make(warehouseutils.Schema)
 
 	sqlStatement := `
 		SELECT
