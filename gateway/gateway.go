@@ -35,10 +35,10 @@ import (
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/middleware"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -160,7 +160,7 @@ type HandleT struct {
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
-	rateLimiter                  ratelimiter.RateLimiter
+	rateLimiter                  *throttler.Factory
 
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.Measurement
@@ -537,9 +537,13 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	if enableRateLimit {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-		if gateway.rateLimiter.LimitReached(workspaceId) {
+		gwThrottler := gateway.rateLimiter.Get(workspaceId)
+		ok, err := gwThrottler.CheckLimitReached(workspaceId)
+		if !ok {
 			err = errRequestDropped
-			return
+		}
+		if err != nil {
+			gateway.logger.Errorf("Rate limiter error: %v Allowing the request", err)
 		}
 	}
 
@@ -1327,8 +1331,8 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			newEnabledWriteKeyWorkspaceMap = map[string]string{}
 			newSourceIDToNameMap           = map[string]string{}
 		)
-		config := data.Data.(map[string]backendconfig.ConfigT)
-		for workspaceID, wsConfig := range config {
+		configData := data.Data.(map[string]backendconfig.ConfigT)
+		for workspaceID, wsConfig := range configData {
 			for _, source := range wsConfig.Sources {
 				newSourceIDToNameMap[source.ID] = source.Name
 				newWriteKeysSourceMap[source.WriteKey] = source
@@ -1413,7 +1417,7 @@ This function will block until backend config is initially received.
 func (gateway *HandleT) Setup(
 	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
-	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
+	rateLimiter *throttler.Factory, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
 	gateway.logger = pkgLogger
