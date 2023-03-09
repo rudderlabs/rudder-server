@@ -830,42 +830,6 @@ func RunWithTimeout(f, onTimeout func(), d time.Duration) {
 }
 
 /*
-RWCConfig config for RunWithConcurrency
-factor: number of concurrent job
-jobs:  range of jobs you need to provide
-runJob: caller function for the concurrent job
-*/
-type RWCJob interface{}
-
-type RWCConfig struct {
-	Factor int
-	Jobs   *[]RWCJob
-	Run    func(RWCJob interface{})
-}
-
-/*
-RunWithConcurrency runs provided function f with concurrency provided by the factor factor.
-*/
-func RunWithConcurrency(config *RWCConfig) {
-	var wg sync.WaitGroup
-
-	concurrencyChan := make(chan struct{}, config.Factor)
-	for _, job := range *config.Jobs {
-		wg.Add(1)
-		concurrencyChan <- struct{}{}
-		runJob := job
-		go func() {
-			defer func() {
-				<-concurrencyChan
-				wg.Done()
-			}()
-			config.Run(runJob)
-		}()
-	}
-	wg.Wait()
-}
-
-/*
 IsValidUUID will check if provided string is a valid UUID
 */
 func IsValidUUID(uuid string) bool {

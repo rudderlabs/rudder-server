@@ -43,14 +43,14 @@ func TestRecovery(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name:          "interrupted postgres warehouse",
-			whType:        warehouseutils.POSTGRES,
+			name:          "interrupted mssql warehouse",
+			whType:        warehouseutils.MSSQL,
 			destinationID: "1",
 			recovery:      true,
 		},
 		{
-			name:          "non-interrupted postgres warehouse",
-			whType:        warehouseutils.POSTGRES,
+			name:          "non-interrupted mssql warehouse",
+			whType:        warehouseutils.MSSQL,
 			destinationID: "3",
 			recovery:      false,
 		},
@@ -63,14 +63,14 @@ func TestRecovery(t *testing.T) {
 
 		{
 			name:          "repo error",
-			whType:        warehouseutils.POSTGRES,
+			whType:        warehouseutils.MSSQL,
 			destinationID: "1",
 			repoErr:       fmt.Errorf("repo error"),
 			wantErr:       fmt.Errorf("repo interrupted destinations: repo error"),
 		},
 		{
 			name:          "destination error",
-			whType:        warehouseutils.POSTGRES,
+			whType:        warehouseutils.MSSQL,
 			destinationID: "1",
 			recovery:      true,
 			destErr:       fmt.Errorf("dest error"),
@@ -82,7 +82,7 @@ func TestRecovery(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &mockRepo{
 				m: map[string][]string{
-					warehouseutils.POSTGRES:  {"1", "2"},
+					warehouseutils.MSSQL:     {"1", "2"},
 					warehouseutils.SNOWFLAKE: {"6", "8"},
 				},
 				err: tc.repoErr,
