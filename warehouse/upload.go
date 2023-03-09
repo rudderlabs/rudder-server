@@ -53,13 +53,11 @@ const (
 
 // Table Upload status
 const (
-	TableUploadExecuting               = "executing"
-	TableUploadUpdatingSchemaFailed    = "updating_schema_failed"
-	TableUploadUpdatedSchema           = "updated_schema"
-	TableUploadExportingFailed         = "exporting_data_failed"
-	UserTableUploadExportingFailed     = "exporting_user_tables_failed"
-	IdentityTableUploadExportingFailed = "exporting_identities_failed"
-	TableUploadExported                = "exported_data"
+	TableUploadExecuting            = "executing"
+	TableUploadUpdatingSchemaFailed = "updating_schema_failed"
+	TableUploadUpdatedSchema        = "updated_schema"
+	TableUploadExportingFailed      = "exporting_data_failed"
+	TableUploadExported             = "exported_data"
 )
 
 const (
@@ -719,15 +717,10 @@ func (job *UploadJobT) TablesToSkip() (map[string]model.PendingTableUpload, map[
 	var (
 		previouslyFailedTableMap   = make(map[string]model.PendingTableUpload)
 		currentlySucceededTableMap = make(map[string]model.PendingTableUpload)
-
-		// Previous upload and table upload failed
-		exportingfailedStatus = func(status string) bool {
-			return status == TableUploadExportingFailed || status == UserTableUploadExportingFailed || status == IdentityTableUploadExportingFailed
-		}
 	)
 
 	for _, pendingTableUpload := range job.pendingTableUploads {
-		if pendingTableUpload.UploadID < job.upload.ID && exportingfailedStatus(pendingTableUpload.Status) {
+		if pendingTableUpload.UploadID < job.upload.ID && pendingTableUpload.Status == TableUploadExportingFailed {
 			previouslyFailedTableMap[pendingTableUpload.TableName] = pendingTableUpload
 		}
 		if pendingTableUpload.UploadID == job.upload.ID && pendingTableUpload.Status == TableUploadExported { // Current upload and table upload succeeded
