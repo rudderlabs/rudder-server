@@ -248,7 +248,7 @@ func (repo *TableUploads) PopulateTotalEventsFromStagingFileIDs(ctx context.Cont
 	return nil
 }
 
-func (repo *TableUploads) GetSumOfTotalExportedEventsForUploadID(ctx context.Context, uploadId int64, skipTables []string) (int64, error) {
+func (repo *TableUploads) TotalExportedEvents(ctx context.Context, uploadId int64, skipTables []string) (int64, error) {
 	var (
 		count sql.NullInt64
 		err   error

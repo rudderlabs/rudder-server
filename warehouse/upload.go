@@ -1644,7 +1644,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	}
 
 	inputCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), upload)
-	outputCount, _ := job.tableUploadsRepo.GetSumOfTotalExportedEventsForUploadID(context.TODO(), job.upload.ID, []string{
+	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(context.TODO(), job.upload.ID, []string{
 		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
 	})
 	failCount := inputCount - outputCount

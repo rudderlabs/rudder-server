@@ -282,7 +282,7 @@ func TestTableUploadRepo(t *testing.T) {
 			})
 		})
 
-		t.Run("GetSumOfTotalExportedEventsForUploadID", func(t *testing.T) {
+		t.Run("TotalExportedEvents", func(t *testing.T) {
 			t.Run("all exported tables", func(t *testing.T) {
 				status := model.TableUploadExported
 
@@ -293,7 +293,7 @@ func TestTableUploadRepo(t *testing.T) {
 					require.NoError(t, err)
 				}
 
-				totalEvents, err := r.GetSumOfTotalExportedEventsForUploadID(ctx, uploadID, []string{})
+				totalEvents, err := r.TotalExportedEvents(ctx, uploadID, []string{})
 				require.NoError(t, err)
 
 				expectedTotalEvents := int64(0)
@@ -305,13 +305,13 @@ func TestTableUploadRepo(t *testing.T) {
 			})
 
 			t.Run("skip tables", func(t *testing.T) {
-				totalEvents, err := r.GetSumOfTotalExportedEventsForUploadID(ctx, uploadID, tables)
+				totalEvents, err := r.TotalExportedEvents(ctx, uploadID, tables)
 				require.NoError(t, err)
 				require.Equal(t, int64(0), totalEvents)
 			})
 
 			t.Run("cancelled context", func(t *testing.T) {
-				totalEvents, err := r.GetSumOfTotalExportedEventsForUploadID(cancelledCtx, uploadID, []string{})
+				totalEvents, err := r.TotalExportedEvents(cancelledCtx, uploadID, []string{})
 				require.EqualError(t, err, fmt.Errorf("counting total exported events: context canceled").Error())
 				require.Equal(t, int64(0), totalEvents)
 			})
@@ -330,7 +330,7 @@ func TestTableUploadRepo(t *testing.T) {
 					expectedTotalEvents += int64(i + 1)
 				}
 
-				totalEvents, err := r.GetSumOfTotalExportedEventsForUploadID(ctx, uploadID, skipTables)
+				totalEvents, err := r.TotalExportedEvents(ctx, uploadID, skipTables)
 				require.NoError(t, err)
 
 				require.Equal(t, expectedTotalEvents, totalEvents)

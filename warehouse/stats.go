@@ -117,7 +117,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 		numStagedEvents   int64
 		err               error
 	)
-	numUploadedEvents, err = job.tableUploadsRepo.GetSumOfTotalExportedEventsForUploadID(
+	numUploadedEvents, err = job.tableUploadsRepo.TotalExportedEvents(
 		context.TODO(),
 		job.upload.ID,
 		[]string{},
@@ -166,7 +166,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 		numStagedEvents   int64
 		err               error
 	)
-	numUploadedEvents, err = job.tableUploadsRepo.GetSumOfTotalExportedEventsForUploadID(
+	numUploadedEvents, err = job.tableUploadsRepo.TotalExportedEvents(
 		context.TODO(),
 		job.upload.ID,
 		[]string{},
