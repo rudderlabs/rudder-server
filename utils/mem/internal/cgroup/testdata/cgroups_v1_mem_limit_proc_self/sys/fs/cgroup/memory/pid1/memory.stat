@@ -18,7 +18,7 @@ unevictable 0
 hierarchical_memory_limit 26843545600
 hierarchical_memsw_limit 26843545600
 total_cache 1853911040
-total_rss 7873486848
+total_rss 100
 total_rss_huge 2638217216
 total_shmem 0
 total_mapped_file 0
@@ -31,6 +31,6 @@ total_pgfault 903519144
 total_pgmajfault 0
 total_inactive_anon 0
 total_active_anon 7873806336
-total_inactive_file 1599037440
+total_inactive_file 100
 total_active_file 253980672
 total_unevictable 0

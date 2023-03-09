@@ -13,9 +13,9 @@ func TestStageFileBatching(t *testing.T) {
 	t.Run("batch based on size", func(t *testing.T) {
 		batchSize := 10
 
-		var stageFiles []model.StagingFile
+		var stageFiles []*model.StagingFile
 		for i := 1; i <= 81; i += 1 {
-			stageFiles = append(stageFiles, model.StagingFile{
+			stageFiles = append(stageFiles, &model.StagingFile{
 				ID: int64(i),
 			})
 		}
@@ -23,7 +23,7 @@ func TestStageFileBatching(t *testing.T) {
 		batches := service.StageFileBatching(stageFiles, batchSize)
 		require.Equal(t, 1+(len(stageFiles)/batchSize), len(batches))
 
-		var reconstruct []model.StagingFile
+		var reconstruct []*model.StagingFile
 		for i := range batches {
 			require.LessOrEqual(t, len(batches[i]), batchSize)
 			reconstruct = append(reconstruct, batches[i]...)
@@ -34,9 +34,9 @@ func TestStageFileBatching(t *testing.T) {
 	t.Run("batch based on useRudderStorage", func(t *testing.T) {
 		batchSize := 10
 
-		var stageFiles []model.StagingFile
+		var stageFiles []*model.StagingFile
 		for i := 1; i <= 81; i += 1 {
-			stageFiles = append(stageFiles, model.StagingFile{
+			stageFiles = append(stageFiles, &model.StagingFile{
 				ID:               int64(i),
 				UseRudderStorage: i%3 == 0 || i%4 == 0, // 0 0 1 1 0 0 1 1
 			})
@@ -44,7 +44,7 @@ func TestStageFileBatching(t *testing.T) {
 
 		batches := service.StageFileBatching(stageFiles, batchSize)
 
-		var reconstruct []model.StagingFile
+		var reconstruct []*model.StagingFile
 		for i := range batches {
 			require.LessOrEqual(t, len(batches[i]), batchSize)
 
@@ -63,9 +63,9 @@ func BenchmarkStageFileBatching(b *testing.B) {
 	files := 50001
 
 	b.StopTimer()
-	var stageFiles []model.StagingFile
+	var stageFiles []*model.StagingFile
 	for i := 1; i <= files; i += 1 {
-		stageFiles = append(stageFiles, model.StagingFile{
+		stageFiles = append(stageFiles, &model.StagingFile{
 			ID:               int64(i),
 			UseRudderStorage: i%3 == 0 || i%4 == 0, // 0 0 1 1 0 0 1 1
 			WorkspaceID:      uuid.New().String(),
@@ -74,7 +74,7 @@ func BenchmarkStageFileBatching(b *testing.B) {
 		})
 	}
 
-	var fileBatches [][]model.StagingFile
+	var fileBatches [][]*model.StagingFile
 
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
@@ -104,9 +104,9 @@ func FuzzStageFileBatching(f *testing.F) {
 			t.Skip()
 		}
 
-		var stageFiles []model.StagingFile
+		var stageFiles []*model.StagingFile
 		for i := 1; i <= files; i += 1 {
-			stageFiles = append(stageFiles, model.StagingFile{
+			stageFiles = append(stageFiles, &model.StagingFile{
 				ID:               int64(i),
 				UseRudderStorage: i >= change,
 				WorkspaceID:      uuid.New().String(),
@@ -117,7 +117,7 @@ func FuzzStageFileBatching(f *testing.F) {
 
 		batches := service.StageFileBatching(stageFiles, batchSize)
 
-		var reconstruct []model.StagingFile
+		var reconstruct []*model.StagingFile
 		for i := range batches {
 			require.LessOrEqual(t, len(batches[i]), batchSize)
 

@@ -21,8 +21,8 @@ func (jd *HandleT) Status() interface{} {
 	statusObj["empty-results-cache"] = emptyResults
 
 	pendingEventMetrics := metric.Instance.
-		GetRegistry(metric.PUBLISHED_METRICS).
-		GetMetricsByName(fmt.Sprintf(metric.JOBSDB_PENDING_EVENTS_COUNT, jd.tablePrefix))
+		GetRegistry(metric.PublishedMetrics).
+		GetMetricsByName(fmt.Sprintf(metric.JobsdbPendingEventsCount, jd.tablePrefix))
 
 	if len(pendingEventMetrics) == 0 {
 		return statusObj

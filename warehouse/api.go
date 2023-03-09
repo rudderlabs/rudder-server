@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -29,10 +29,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/tidwall/gjson"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type UploadsReqT struct {
@@ -267,7 +267,7 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	return
 }
 
-func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
+func (uploadReq *UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
 	if err != nil {
 		return &proto.WHUploadResponse{}, status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), err.Error())
@@ -364,7 +364,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	return &upload, nil
 }
 
-func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
+func (uploadReq *UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadReq.validateReq()
 	defer func() {
 		if err != nil {
@@ -491,7 +491,7 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 	return nil
 }
 
-func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
+func (uploadReq *UploadReqT) generateQuery(selectedFields string) string {
 	return fmt.Sprintf(`
 		SELECT
 		  %s
@@ -506,7 +506,7 @@ func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 	)
 }
 
-func (uploadReq UploadReqT) validateReq() error {
+func (uploadReq *UploadReqT) validateReq() error {
 	if !uploadReq.API.enabled || uploadReq.API.log == nil || uploadReq.API.dbHandle == nil {
 		return errors.New("warehouse api are not initialized")
 	}
@@ -516,7 +516,7 @@ func (uploadReq UploadReqT) validateReq() error {
 	return nil
 }
 
-func (uploadReq UploadReqT) authorizeSource(sourceID string) bool {
+func (uploadReq *UploadReqT) authorizeSource(sourceID string) bool {
 	var authorizedSourceIDs []string
 	var ok bool
 	sourceIDsByWorkspaceLock.RLock()
@@ -529,7 +529,7 @@ func (uploadReq UploadReqT) authorizeSource(sourceID string) bool {
 	return misc.Contains(authorizedSourceIDs, sourceID)
 }
 
-func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
+func (uploadsReq *UploadsReqT) authorizedSources() (sourceIDs []string) {
 	sourceIDsByWorkspaceLock.RLock()
 	defer sourceIDsByWorkspaceLock.RUnlock()
 	var ok bool
@@ -813,7 +813,7 @@ func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
 	}
 
 	if valStr, ok := value.(string); ok {
-		return len(valStr) != 0
+		return valStr != ""
 	}
 	return false
 }
@@ -827,10 +827,8 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}
 
-	req := validations.DestinationValidationRequest{
-		Destination: backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: request.Type},
-		},
+	req := backendconfig.DestinationT{
+		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: request.Type},
 	}
 
 	filePath, err := validations.CreateTempLoadFile(&req)
