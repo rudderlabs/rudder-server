@@ -51,7 +51,8 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 		wantError   error
 	}{
 		{
-			name: "success",
+			name:        "success",
+			localSchema: warehouseutils.Schema{},
 		},
 		{
 			name: "table already exists",
@@ -63,9 +64,10 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 			wantError: fmt.Errorf("failed to create table: table %s already exists", "test_table"),
 		},
 		{
-			name:      "error updating local schema",
-			mockError: fmt.Errorf("error updating local schema"),
-			wantError: fmt.Errorf("error updating local schema"),
+			name:        "error updating local schema",
+			mockError:   fmt.Errorf("error updating local schema"),
+			wantError:   fmt.Errorf("error updating local schema"),
+			localSchema: warehouseutils.Schema{},
 		},
 	}
 
