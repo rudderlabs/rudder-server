@@ -54,13 +54,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -352,6 +353,7 @@ func runAllInit() {
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
+	postgreslegacy.Init()
 	redshift.Init()
 	snowflake.Init()
 	deltalake.Init()

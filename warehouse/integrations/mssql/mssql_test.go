@@ -28,7 +28,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 
 	mssql.Init()
 
-	db, err := mssql.Connect(mssql.CredentialsT{
+	db, err := mssql.Connect(mssql.Credentials{
 		DBName:   "master",
 		Password: "reallyStrongPwd123",
 		User:     "SA",

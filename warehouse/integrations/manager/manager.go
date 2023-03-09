@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
@@ -57,6 +59,7 @@ type WarehouseOperations interface {
 }
 
 // New is a Factory function that returns a Manager of a given destination-type
+// TODO: Remove flag for useLegacy once the postgres new implementation is stable
 func New(destType string) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
@@ -71,7 +74,13 @@ func New(destType string) (Manager, error) {
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
-		pg := postgres.NewHandle()
+		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
+			pg := postgreslegacy.NewHandle()
+			postgreslegacy.WithConfig(pg, config.Default)
+			return pg, nil
+		}
+
+		pg := postgres.NewPostgres()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
@@ -79,11 +88,13 @@ func New(destType string) (Manager, error) {
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		var ms mssql.HandleT
-		return &ms, nil
+		ms := mssql.NewMSSQL()
+		mssql.WithConfig(ms, config.Default)
+		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		var as azuresynapse.HandleT
-		return &as, nil
+		az := azuresynapse.NewAzureSynapse()
+		azuresynapse.WithConfig(az, config.Default)
+		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
 		var dl datalake.HandleT
 		return &dl, nil
@@ -96,6 +107,7 @@ func New(destType string) (Manager, error) {
 }
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
+// TODO: Remove flag for useLegacy once the postgres new implementation is stable
 func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
@@ -110,7 +122,13 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
-		pg := postgres.NewHandle()
+		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
+			pg := postgreslegacy.NewHandle()
+			postgreslegacy.WithConfig(pg, config.Default)
+			return pg, nil
+		}
+
+		pg := postgres.NewPostgres()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
@@ -118,11 +136,13 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		var ms mssql.HandleT
-		return &ms, nil
+		ms := mssql.NewMSSQL()
+		mssql.WithConfig(ms, config.Default)
+		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		var as azuresynapse.HandleT
-		return &as, nil
+		az := azuresynapse.NewAzureSynapse()
+		azuresynapse.WithConfig(az, config.Default)
+		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
 		var dl datalake.HandleT
 		return &dl, nil
