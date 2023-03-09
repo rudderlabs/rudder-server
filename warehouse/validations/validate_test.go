@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -60,6 +62,7 @@ func TestValidator(t *testing.T) {
 	encoding.Init()
 	validations.Init()
 	postgres.Init()
+	postgreslegacy.Init()
 
 	var (
 		provider  = "MINIO"
