@@ -1247,6 +1247,8 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
+	internalMux := srvMux.PathPrefix("/internal").Subrouter() // mux for internal endpoints
+
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/track", gateway.webTrackHandler).Methods("POST")
@@ -1259,7 +1261,6 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
-	srvMux.HandleFunc("/internal/v1/extract", gateway.webExtractHandler).Methods("POST")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
@@ -1267,6 +1268,9 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.PathPrefix("/v1/warehouse").Handler(http.HandlerFunc(warehouseHandler)).Methods("GET", "POST")
 	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
+
+	// internal endpoints
+	internalMux.HandleFunc("/v1/extract", gateway.webExtractHandler).Methods("POST")
 
 	if enableEventSchemasFeature {
 		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
