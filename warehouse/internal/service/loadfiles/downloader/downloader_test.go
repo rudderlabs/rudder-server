@@ -21,31 +21,31 @@ import (
 )
 
 type mockUploader struct {
-	loadFiles []warehouseutils.LoadFileT
+	loadFiles []warehouseutils.LoadFile
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT       { return warehouseutils.SchemaT{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.SchemaT             { return warehouseutils.SchemaT{} }
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.SchemaT) error   { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                    { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time                 { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                            { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)          { return time.Time{}, time.Time{} }
-func (*mockUploader) GetSampleLoadFileLocation(_ string) (string, error) { return "", nil }
-func (*mockUploader) UseRudderStorage() bool                             { return false }
-func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema      { return warehouseutils.Schema{} }
+func (*mockUploader) GetLocalSchema() warehouseutils.Schema            { return warehouseutils.Schema{} }
+func (*mockUploader) UpdateLocalSchema(warehouseutils.Schema) error    { return nil }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
+func (*mockUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
+func (*mockUploader) UseRudderStorage() bool                           { return false }
+func (*mockUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{}
 }
 
-func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
+func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) {
+	return warehouseutils.LoadFile{}, nil
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{}
 }
 
-func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return m.loadFiles
 }
 
@@ -73,7 +73,7 @@ func TestDownloader(t *testing.T) {
 		conf         map[string]interface{}
 		numLoadFiles int
 		wantError    error
-		loadFiles    []warehouseutils.LoadFileT
+		loadFiles    []warehouseutils.LoadFile
 		ctx          context.Context
 	}{
 		{
@@ -91,7 +91,7 @@ func TestDownloader(t *testing.T) {
 		{
 			name:         "invalid load file",
 			numLoadFiles: 1,
-			loadFiles: []warehouseutils.LoadFileT{
+			loadFiles: []warehouseutils.LoadFile{
 				{
 					Location: "http://localhost:56524/devintegrationtest/cc0e3daa-1356-4781-8ce1-549ff95a8313/random.csv.gz",
 				},
@@ -146,7 +146,7 @@ func TestDownloader(t *testing.T) {
 			defer func() { _ = f.Close() }()
 
 			var (
-				loadFiles []warehouseutils.LoadFileT
+				loadFiles []warehouseutils.LoadFile
 				ctx       context.Context
 			)
 
@@ -160,7 +160,7 @@ func TestDownloader(t *testing.T) {
 				uploadOutput, err := fm.Upload(context.Background(), f, fmt.Sprintf("%d", i), uuid.New().String())
 				require.NoError(t, err)
 
-				loadFiles = append(loadFiles, warehouseutils.LoadFileT{
+				loadFiles = append(loadFiles, warehouseutils.LoadFile{
 					Location: uploadOutput.Location,
 				})
 			}

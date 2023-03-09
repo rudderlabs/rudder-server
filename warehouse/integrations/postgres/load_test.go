@@ -212,7 +212,7 @@ func TestLoadTable_Load(t *testing.T) {
 						},
 					},
 				}
-				_, err = lt.Load(ctx, tableName, warehouseutils.TableSchemaT{
+				_, err = lt.Load(ctx, tableName, warehouseutils.TableSchema{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",
@@ -365,7 +365,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 		skipSchemaCreation         bool
 		skipTableCreation          bool
 		skipUserTraitsWorkspaceIDs []string
-		usersSchemaInUpload        warehouseutils.TableSchemaT
+		usersSchemaInUpload        warehouseutils.TableSchema
 	}{
 		{
 			name:                "success",
@@ -390,7 +390,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 			name:                "empty users schema",
 			mockUsersFiles:      []string{"users.csv.gz"},
 			mockIdentifiesFiles: []string{"identifies.csv.gz"},
-			usersSchemaInUpload: warehouseutils.TableSchemaT{},
+			usersSchemaInUpload: warehouseutils.TableSchema{},
 			wantErrorsMap: map[string]error{
 				warehouseutils.IdentifiesTable: nil,
 			},
@@ -495,7 +495,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 				},
 			}
 			var (
-				identifiesSchemaInUpload = warehouseutils.TableSchemaT{
+				identifiesSchemaInUpload = warehouseutils.TableSchema{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",
@@ -505,7 +505,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 					"received_at":   "datetime",
 					"user_id":       "string",
 				}
-				usersSchamaInUpload = warehouseutils.TableSchemaT{
+				usersSchamaInUpload = warehouseutils.TableSchema{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",
@@ -515,7 +515,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 					"received_at":   "datetime",
 					"user_id":       "string",
 				}
-				usersSchamaInWarehouse = warehouseutils.TableSchemaT{
+				usersSchamaInWarehouse = warehouseutils.TableSchema{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",
