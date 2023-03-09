@@ -2,10 +2,11 @@ package snowflake_test
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 

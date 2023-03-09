@@ -3,8 +3,9 @@ package validations_test
 import (
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 

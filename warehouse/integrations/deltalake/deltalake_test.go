@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"

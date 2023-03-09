@@ -1,9 +1,10 @@
 package mssql_test
 
 import (
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 

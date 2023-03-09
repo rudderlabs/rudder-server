@@ -2,8 +2,9 @@ package validations_test
 
 import (
 	"errors"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
