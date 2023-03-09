@@ -64,8 +64,10 @@ type DestinationValidator interface {
 
 type destinationValidationImpl struct{}
 
-func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.Schema      { return warehouseutils.Schema{} }
-func (*dummyUploader) GetLocalSchema() warehouseutils.Schema            { return warehouseutils.Schema{} }
+func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.Schema { return warehouseutils.Schema{} }
+func (*dummyUploader) GetLocalSchema() (warehouseutils.Schema, error) {
+	return warehouseutils.Schema{}, nil
+}
 func (*dummyUploader) UpdateLocalSchema(_ warehouseutils.Schema) error  { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }

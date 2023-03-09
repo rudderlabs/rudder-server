@@ -1,13 +1,15 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"reflect"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -22,6 +24,7 @@ type SchemaHandle struct {
 	schemaInWarehouse             warehouseutils.Schema
 	unrecognizedSchemaInWarehouse warehouseutils.Schema
 	uploadSchema                  warehouseutils.Schema
+	whSchemaRepo                  *repo.WHSchema
 }
 
 func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
@@ -67,103 +70,28 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 	return newColumnVal, err
 }
 
-func (sh *SchemaHandle) getLocalSchema() (currentSchema warehouseutils.Schema) {
-	sourceID := sh.warehouse.Source.ID
-	destID := sh.warehouse.Destination.ID
-	namespace := sh.warehouse.Namespace
-
-	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  schema
-		FROM
-		  %[1]s ST
-		WHERE
-		  (
-			ST.destination_id = '%[2]s'
-			AND ST.namespace = '%[3]s'
-			AND ST.source_id = '%[4]s'
-		  )
-		ORDER BY
-		  ST.id DESC;
-`,
-		warehouseutils.WarehouseSchemasTable,
-		destID,
-		namespace,
-		sourceID,
+func (sh *SchemaHandle) getLocalSchema() (warehouseutils.Schema, error) {
+	whSchema, err := sh.whSchemaRepo.GetForNamespace(
+		context.TODO(),
+		sh.warehouse.Source.ID,
+		sh.warehouse.Destination.ID,
+		sh.warehouse.Namespace,
 	)
-	pkgLogger.Infof("[WH]: Fetching current schema from wh postgresql: %s", sqlStatement)
-
-	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			pkgLogger.Infof("[WH]: No current schema found for %s with namespace: %s", destID, namespace)
-			return
-		}
-		if err != nil {
-			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-		}
+		return warehouseutils.Schema{}, fmt.Errorf("get schema for namespace: %w", err)
 	}
-	var schemaMapInterface map[string]interface{}
-	err = json.Unmarshal(rawSchema, &schemaMapInterface)
-	if err != nil {
-		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", rawSchema, err))
-	}
-	currentSchema = warehouseutils.Schema{}
-	for tableName, columnMapInterface := range schemaMapInterface {
-		columnMap := make(warehouseutils.TableSchema)
-		columns := columnMapInterface.(map[string]interface{})
-		for cName, cTypeInterface := range columns {
-			columnMap[cName] = cTypeInterface.(string)
-		}
-		currentSchema[tableName] = columnMap
-	}
-	return currentSchema
+	return whSchema.Schema, nil
 }
 
-func (sh *SchemaHandle) updateLocalSchema(updatedSchema warehouseutils.Schema) error {
-	namespace := sh.warehouse.Namespace
-	sourceID := sh.warehouse.Source.ID
-	destID := sh.warehouse.Destination.ID
-	destType := sh.warehouse.Type
-	marshalledSchema, err := json.Marshal(updatedSchema)
-	defer func() {
-		if err != nil {
-			pkgLogger.Infof("Failed to update local schema for with error: %s", err.Error())
-		}
-	}()
-	if err != nil {
-		return err
-	}
-
-	sqlStatement := fmt.Sprintf(`
-		INSERT INTO %s (
-		  source_id, namespace, destination_id,
-		  destination_type, schema, created_at,
-		  updated_at
-		)
-		VALUES
-		  ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (
-			source_id, destination_id, namespace
-		  ) DO
-		UPDATE
-		SET
-		  schema = $5,
-		  updated_at = $7 RETURNING id;
-`,
-		warehouseutils.WarehouseSchemasTable,
-	)
-	updatedAt := timeutil.Now()
-	_, err = dbHandle.Exec(
-		sqlStatement,
-		sourceID,
-		namespace,
-		destID,
-		destType,
-		marshalledSchema,
-		timeutil.Now(),
-		updatedAt,
-	)
+func (sh *SchemaHandle) updateLocalSchema(uploadId int64, updatedSchema warehouseutils.Schema) error {
+	_, err := sh.whSchemaRepo.Insert(context.TODO(), &model.WHSchema{
+		UploadID:        uploadId,
+		SourceID:        sh.warehouse.Source.ID,
+		Namespace:       sh.warehouse.Namespace,
+		DestinationID:   sh.warehouse.Destination.ID,
+		DestinationType: sh.warehouse.Type,
+		Schema:          updatedSchema,
+	})
 	return err
 }
 

@@ -35,8 +35,8 @@ func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) 
 	return warehouseutils.LoadFile{}, nil
 }
 
-func (m *mockUploader) GetLocalSchema() warehouseutils.Schema {
-	return m.localSchema
+func (m *mockUploader) GetLocalSchema() (warehouseutils.Schema, error) {
+	return m.localSchema, nil
 }
 
 func (m *mockUploader) UpdateLocalSchema(warehouseutils.Schema) error {

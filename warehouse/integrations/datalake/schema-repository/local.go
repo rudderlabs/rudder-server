@@ -23,7 +23,7 @@ func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseuti
 }
 
 func (ls *LocalSchemaRepository) localFetchSchema() warehouseutils.Schema {
-	if schema := ls.uploader.GetLocalSchema(); schema != nil {
+	if schema, _ := ls.uploader.GetLocalSchema(); schema != nil {
 		return schema
 	}
 	return warehouseutils.Schema{}

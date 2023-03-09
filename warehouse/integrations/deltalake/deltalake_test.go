@@ -714,8 +714,10 @@ type mockUploader struct {
 	lastEventAt     time.Time
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return warehouseutils.Schema{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
+func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema { return warehouseutils.Schema{} }
+func (*mockUploader) GetLocalSchema() (warehouseutils.Schema, error) {
+	return warehouseutils.Schema{}, nil
+}
 func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
 func (*mockUploader) UseRudderStorage() bool                          { return false }
