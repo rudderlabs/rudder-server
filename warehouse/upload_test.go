@@ -11,9 +11,10 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/stretchr/testify/require"
 
 	"github.com/golang/mock/gomock"
@@ -48,7 +49,7 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 		},
 		{
 			InitialErrorState: []byte(`{"internal_processing_failed": {"errors": ["account locked", "account locked again"], "attempt": 2}}`),
-			CurrentErrorState: TableUploadExportingFailed,
+			CurrentErrorState: model.TableUploadExportingFailed,
 			CurrentError:      errors.New("failed to load data because failed in earlier job"),
 			ErrorCount:        1,
 		},
@@ -625,7 +626,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      1,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadExportingFailed,
+				Status:        model.TableUploadExportingFailed,
 				TableName:     "previously_failed_table_1",
 				Error:         "some error",
 			},
@@ -633,7 +634,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      1,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadUpdatingSchemaFailed,
+				Status:        model.TableUploadUpdatingSchemaFailed,
 				TableName:     "previously_failed_table_2",
 				Error:         "",
 			},
@@ -641,7 +642,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      1,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadExported,
+				Status:        model.TableUploadExported,
 				TableName:     "previously_succeeded_table_1",
 				Error:         "",
 			},
@@ -649,7 +650,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      5,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadExportingFailed,
+				Status:        model.TableUploadExportingFailed,
 				TableName:     "current_failed_table_1",
 				Error:         "some error",
 			},
@@ -657,7 +658,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				UploadID:      5,
 				DestinationID: destID,
 				Namespace:     namespace,
-				Status:        TableUploadExported,
+				Status:        model.TableUploadExported,
 				TableName:     "current_succeeded_table_1",
 				Error:         "",
 			},
