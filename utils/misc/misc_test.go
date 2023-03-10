@@ -674,3 +674,36 @@ func TestMapLookup(t *testing.T) {
 	}
 	require.Nil(t, MapLookup(m, "foo"))
 }
+
+func TestGetDiskUsage(t *testing.T) {
+	initMisc()
+	// Create a temp file
+	tmpDirPath := t.TempDir()
+	tempFilePath := filepath.Join(tmpDirPath, "tempFileForDiskUsage")
+	f, err := os.OpenFile(tempFilePath, os.O_CREATE|os.O_RDWR, 0o755)
+	require.NoError(t, err)
+
+	defer f.Close()
+	defer os.Remove(tempFilePath)
+
+	err = f.Truncate(1024 * 1024)
+	require.NoError(t, err)
+
+	fileSize, err := os.Stat(tempFilePath)
+	require.NoError(t, err)
+	fileDiskUsage, err := GetDiskUsageOfFile(tempFilePath)
+	require.NoError(t, err)
+	require.Equal(t, int64(1024*1024), fileSize.Size())
+	require.Equal(t, int64(0), fileDiskUsage)
+
+	// write some bytes into the file
+	_, err = f.Write([]byte("test"))
+	require.NoError(t, err)
+	fileSize, err = os.Stat(tempFilePath)
+	require.NoError(t, err)
+	fileDiskUsage, err = GetDiskUsageOfFile(tempFilePath)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(1024*1024), fileSize.Size())
+	require.Greater(t, fileDiskUsage, int64(0))
+}
