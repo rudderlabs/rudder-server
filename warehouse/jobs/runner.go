@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -219,8 +221,8 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 				Jobs:    notifierClaims,
 				JobType: AsyncJobType,
 			}
-			var schema warehouseutils.Schema
-			ch, err := a.pgnotifier.Publish(messagePayload, &schema, 100)
+			var schema model.Schema
+			ch, err := a.pgnotifier.Publish(messagePayload, (*warehouseutils.Schema)(&schema), 100)
 			if err != nil {
 				a.logger.Errorf("[WH-Jobs]: unable to get publish async jobs to pgnotifier. Task failed with error %s", err.Error())
 				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)

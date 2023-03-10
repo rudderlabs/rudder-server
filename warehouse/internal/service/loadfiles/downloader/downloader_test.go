@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/google/uuid"
@@ -24,25 +26,25 @@ type mockUploader struct {
 	loadFiles []warehouseutils.LoadFile
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema      { return warehouseutils.Schema{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.Schema            { return warehouseutils.Schema{} }
-func (*mockUploader) UpdateLocalSchema(warehouseutils.Schema) error    { return nil }
+func (*mockUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
+func (*mockUploader) GetLocalSchema() model.Schema                     { return model.Schema{} }
+func (*mockUploader) UpdateLocalSchema(model.Schema) error             { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
 func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
 func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
 func (*mockUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
 func (*mockUploader) UseRudderStorage() bool                           { return false }
-func (*mockUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
+func (*mockUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
 func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) {
 	return warehouseutils.LoadFile{}, nil
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
+func (m *mockUploader) GetTableSchemaInUpload(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
 func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
@@ -167,7 +169,7 @@ func TestDownloader(t *testing.T) {
 			loadFiles = append(loadFiles, tc.loadFiles...)
 
 			lfd := downloader.NewDownloader(
-				&warehouseutils.Warehouse{
+				&model.Warehouse{
 					Destination: backendconfig.DestinationT{
 						ID:     destinationID,
 						Config: conf,

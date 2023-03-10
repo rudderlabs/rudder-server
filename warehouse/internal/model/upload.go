@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type UploadStatus = string
@@ -79,8 +77,6 @@ type Upload struct {
 
 type Timings []map[string]time.Time
 
-type Schema = warehouseutils.Schema
-
 type UploadJobsStats struct {
 	PendingJobs    int64
 	PickupLag      time.Duration
@@ -88,7 +84,7 @@ type UploadJobsStats struct {
 }
 
 type UploadJob struct {
-	Warehouse            warehouseutils.Warehouse
+	Warehouse            Warehouse
 	Upload               Upload
 	StagingFiles         []*StagingFile
 	LoadFileGenStartTime time.Time

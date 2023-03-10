@@ -20,7 +20,7 @@ import (
 
 func (wh *HandleT) CronTracker(ctx context.Context) error {
 	for {
-		var warehouses []warehouseutils.Warehouse
+		var warehouses []model.Warehouse
 
 		wh.configSubscriberLock.RLock()
 		warehouses = append(warehouses, wh.warehouses...)
@@ -49,7 +49,7 @@ func (wh *HandleT) CronTracker(ctx context.Context) error {
 // Track tracks the status of the warehouse uploads for the corresponding cases:
 // 1. Staging files is not picked.
 // 2. Upload job is struck
-func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehouse, config *config.Config) error {
+func (wh *HandleT) Track(ctx context.Context, warehouse *model.Warehouse, config *config.Config) error {
 	var (
 		query             string
 		queryArgs         []interface{}

@@ -89,7 +89,7 @@ type UploadJob struct {
 	LoadFileGenStartTime time.Time
 
 	upload         model.Upload
-	warehouse      warehouseutils.Warehouse
+	warehouse      model.Warehouse
 	stagingFiles   []*model.StagingFile
 	stagingFileIDs []int64
 	schemaLock     sync.Mutex
@@ -770,7 +770,7 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseu
 	return nil
 }
 
-func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap warehouseutils.TableSchema) error {
+func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap model.TableSchema) error {
 	var responseToAlerta []model.AlterTableResponse
 	var errs []error
 
@@ -832,7 +832,7 @@ func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap warehouse
 	return nil
 }
 
-func (job *UploadJob) addColumnsToWarehouse(tName string, columnsMap warehouseutils.TableSchema) (err error) {
+func (job *UploadJob) addColumnsToWarehouse(tName string, columnsMap model.TableSchema) (err error) {
 	pkgLogger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	destType := job.upload.DestinationType
@@ -1292,7 +1292,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 	return job.processLoadTableResponse(errorMap)
 }
 
-func (job *UploadJob) setUpdatedTableSchema(tableName string, updatedSchema warehouseutils.TableSchema) {
+func (job *UploadJob) setUpdatedTableSchema(tableName string, updatedSchema model.TableSchema) {
 	job.schemaLock.Lock()
 	job.schemaHandle.schemaInWarehouse[tableName] = updatedSchema
 	job.schemaLock.Unlock()
@@ -1411,7 +1411,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 }
 
 // SetUploadSchema
-func (job *UploadJob) setUploadSchema(consolidatedSchema warehouseutils.Schema) error {
+func (job *UploadJob) setUploadSchema(consolidatedSchema model.Schema) error {
 	marshalledSchema, err := json.Marshal(consolidatedSchema)
 	if err != nil {
 		panic(err)
@@ -1420,7 +1420,7 @@ func (job *UploadJob) setUploadSchema(consolidatedSchema warehouseutils.Schema) 
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadSchemaField, Value: marshalledSchema}}})
 }
 
-func (job *UploadJob) setMergedSchema(mergedSchema warehouseutils.Schema) error {
+func (job *UploadJob) setMergedSchema(mergedSchema model.Schema) error {
 	marshalledSchema, err := json.Marshal(mergedSchema)
 	if err != nil {
 		panic(err)
@@ -1887,18 +1887,18 @@ func (job *UploadJob) GetSampleLoadFileLocation(tableName string) (location stri
 	return locations[0].Location, nil
 }
 
-func (job *UploadJob) GetSchemaInWarehouse() (schema warehouseutils.Schema) {
+func (job *UploadJob) GetSchemaInWarehouse() (schema model.Schema) {
 	if job.schemaHandle == nil {
 		return
 	}
 	return job.schemaHandle.schemaInWarehouse
 }
 
-func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchema {
+func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
 	return job.schemaHandle.schemaInWarehouse[tableName]
 }
 
-func (job *UploadJob) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchema {
+func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {
 	return job.schemaHandle.uploadSchema[tableName]
 }
 
@@ -2036,11 +2036,11 @@ func initializeStateMachine() {
 	abortState.nextState = nil
 }
 
-func (job *UploadJob) GetLocalSchema() warehouseutils.Schema {
+func (job *UploadJob) GetLocalSchema() model.Schema {
 	return job.schemaHandle.getLocalSchema()
 }
 
-func (job *UploadJob) UpdateLocalSchema(schema warehouseutils.Schema) error {
+func (job *UploadJob) UpdateLocalSchema(schema model.Schema) error {
 	return job.schemaHandle.updateLocalSchema(schema)
 }
 

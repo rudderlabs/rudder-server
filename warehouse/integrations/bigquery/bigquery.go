@@ -37,7 +37,7 @@ type HandleT struct {
 	backgroundContext context.Context
 	db                *bigquery.Client
 	namespace         string
-	warehouse         warehouseutils.Warehouse
+	warehouse         model.Warehouse
 	projectID         string
 	uploader          warehouseutils.Uploader
 }
@@ -116,7 +116,7 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-func getTableSchema(columns warehouseutils.TableSchema) []*bigquery.FieldSchema {
+func getTableSchema(columns model.TableSchema) []*bigquery.FieldSchema {
 	var schema []*bigquery.FieldSchema
 	for columnName, columnType := range columns {
 		schema = append(schema, &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]})
@@ -130,7 +130,7 @@ func (bq *HandleT) DeleteTable(tableName string) (err error) {
 	return
 }
 
-func (bq *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) error {
+func (bq *HandleT) CreateTable(tableName string, columnMap model.TableSchema) error {
 	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	sampleSchema := getTableSchema(columnMap)
 	metaData := &bigquery.TableMetadata{
@@ -162,7 +162,7 @@ func (bq *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (bq *HandleT) createTableView(tableName string, columnMap warehouseutils.TableSchema) (err error) {
+func (bq *HandleT) createTableView(tableName string, columnMap model.TableSchema) (err error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -708,7 +708,7 @@ func dedupEnabled() bool {
 	return isDedupEnabled || isUsersTableDedupEnabled
 }
 
-func (bq *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
+func (bq *HandleT) CrashRecover(warehouse model.Warehouse) (err error) {
 	if !dedupEnabled() {
 		return
 	}
@@ -774,7 +774,7 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 	return delSuccess
 }
 
-func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err error) {
+func (bq *HandleT) IsEmpty(warehouse model.Warehouse) (empty bool, err error) {
 	empty = true
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
@@ -811,7 +811,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 	return
 }
 
-func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (bq *HandleT) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.uploader = uploader
@@ -825,7 +825,7 @@ func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseu
 	return err
 }
 
-func (bq *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (bq *HandleT) TestConnection(warehouse model.Warehouse) (err error) {
 	bq.warehouse = warehouse
 	bq.db, err = bq.connect(BQCredentials{
 		ProjectID:   bq.projectID,
@@ -887,7 +887,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace
-func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
+func (bq *HandleT) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
@@ -900,8 +900,8 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 	}
 	defer func() { _ = dbClient.Close() }()
 
-	schema = make(warehouseutils.Schema)
-	unrecognizedSchema = make(warehouseutils.Schema)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 		SELECT
@@ -950,7 +950,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 		var tName, cName, cType string
 		tName, _ = values[0].(string)
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(warehouseutils.TableSchema)
+			schema[tName] = make(model.TableSchema)
 		}
 		cName, _ = values[1].(string)
 		cType, _ = values[2].(string)
@@ -959,7 +959,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 			schema[tName][strings.ToLower(cName)] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(warehouseutils.TableSchema)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][strings.ToLower(cName)] = warehouseutils.MISSING_DATATYPE
 
@@ -1166,7 +1166,7 @@ func (bq *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (
 	return total, nil
 }
 
-func (bq *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (bq *HandleT) Connect(warehouse model.Warehouse) (client.Client, error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
