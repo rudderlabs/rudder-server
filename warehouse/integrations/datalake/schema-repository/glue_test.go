@@ -9,6 +9,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/aws/aws-sdk-go/service/glue"
@@ -33,7 +35,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 		err            error
 		credentialsEnv = "TEST_S3_DATALAKE_CREDENTIALS"
 		testFile       = "testdata/load.parquet"
-		testColumns    = warehouseutils.TableSchema{
+		testColumns    = model.TableSchema{
 			"id":                  "string",
 			"received_at":         "datetime",
 			"test_array_bool":     "array(boolean)",
@@ -112,7 +114,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			destination := backendconfig.DestinationT{
 				Config: tc.config,
 			}
-			warehouse := warehouseutils.Warehouse{
+			warehouse := model.Warehouse{
 				Destination: destination,
 				Namespace:   testNamespace,
 			}

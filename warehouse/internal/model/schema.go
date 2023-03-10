@@ -2,7 +2,11 @@ package model
 
 import "time"
 
-type SchemaType string
+type (
+	SchemaType  string
+	TableSchema map[string]string
+	Schema      map[string]TableSchema
+)
 
 const (
 	StringDataType  SchemaType = "string"

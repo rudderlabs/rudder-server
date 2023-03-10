@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"
@@ -46,7 +48,7 @@ func TestDiagnostic_Exec(t *testing.T) {
 		workspaceID     = "test_workspace_id"
 	)
 
-	warehouse := warehouseutils.Warehouse{
+	warehouse := model.Warehouse{
 		Source: backendconfig.SourceT{
 			ID: sourceID,
 			SourceDefinition: backendconfig.SourceDefinitionT{
@@ -164,7 +166,7 @@ func TestDiagnostic_Execute(t *testing.T) {
 		workspaceID     = "test_workspace_id"
 	)
 
-	warehouse := warehouseutils.Warehouse{
+	warehouse := model.Warehouse{
 		Source: backendconfig.SourceT{
 			ID: sourceID,
 			SourceDefinition: backendconfig.SourceDefinitionT{

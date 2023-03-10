@@ -71,7 +71,7 @@ func TestCreateLoadFiles(t *testing.T) {
 	stagingFiles := getStagingFiles()
 
 	job := model.UploadJob{
-		Warehouse: warehouseutils.Warehouse{
+		Warehouse: model.Warehouse{
 			WorkspaceID: "",
 			Source:      backendconfig.SourceT{},
 			Destination: backendconfig.DestinationT{
@@ -154,7 +154,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 
 	tables := []string{"track", "indentify"}
 
-	warehouse := warehouseutils.Warehouse{
+	warehouse := model.Warehouse{
 		WorkspaceID: "",
 		Source:      backendconfig.SourceT{},
 		Destination: backendconfig.DestinationT{
@@ -301,7 +301,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 	}
 
 	job := model.UploadJob{
-		Warehouse: warehouseutils.Warehouse{
+		Warehouse: model.Warehouse{
 			WorkspaceID: "",
 			Source:      backendconfig.SourceT{},
 			Destination: backendconfig.DestinationT{
@@ -364,12 +364,12 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 func TestGetLoadFilePrefix(t *testing.T) {
 	testCases := []struct {
 		name      string
-		warehouse warehouseutils.Warehouse
+		warehouse model.Warehouse
 		expected  string
 	}{
 		{
 			name: "s3 datalake",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -379,7 +379,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "s3 datalake with glue",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"region":  "test-region",
@@ -392,7 +392,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "s3 datalake with glue and layout",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"region":           "test-region",
@@ -406,7 +406,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "azure datalake",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -418,7 +418,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "gcs datalake",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -428,7 +428,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "gcs datalake with suffix",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -440,7 +440,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "gcs datalake with layout",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"timeWindowLayout": "year=2006/month=01/day=02/hour=15",
@@ -452,7 +452,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "gcs datalake with suffix and layout",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix":      "key=val",

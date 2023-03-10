@@ -182,7 +182,7 @@ type Snowflake struct {
 	Namespace      string
 	CloudProvider  string
 	ObjectStorage  string
-	Warehouse      warehouseutils.Warehouse
+	Warehouse      model.Warehouse
 	Uploader       warehouseutils.Uploader
 	ConnectTimeout time.Duration
 	Logger         logger.Logger
@@ -204,7 +204,7 @@ func WithConfig(h *Snowflake, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 }
 
-func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
@@ -219,7 +219,7 @@ func (sf *Snowflake) schemaIdentifier() string {
 	)
 }
 
-func (sf *Snowflake) createTable(tableName string, columns warehouseutils.TableSchema) (err error) {
+func (sf *Snowflake) createTable(tableName string, columns model.TableSchema) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%q ( %v )`, schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""))
 	sf.Logger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
@@ -325,7 +325,7 @@ func (sf *Snowflake) DeleteBy(tableNames []string, params warehouseutils.DeleteB
 	return nil
 }
 
-func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadResp, err error) {
+func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.TableSchema, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadResp, err error) {
 	sf.Logger.Infof("SF: Starting load for table:%s\n", tableName)
 
 	if dbHandle == nil {
@@ -701,7 +701,7 @@ func (sf *Snowflake) CreateSchema() (err error) {
 	return sf.createSchema()
 }
 
-func (sf *Snowflake) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
+func (sf *Snowflake) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	return sf.createTable(tableName, columnMap)
 }
 
@@ -851,11 +851,11 @@ func (sf *Snowflake) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error
 	return nil
 }
 
-func (*Snowflake) CrashRecover(_ warehouseutils.Warehouse) (err error) {
+func (*Snowflake) CrashRecover(_ model.Warehouse) (err error) {
 	return
 }
 
-func (sf *Snowflake) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err error) {
+func (sf *Snowflake) IsEmpty(warehouse model.Warehouse) (empty bool, err error) {
 	empty = true
 
 	sf.Warehouse = warehouse
@@ -904,7 +904,7 @@ func (sf *Snowflake) getConnectionCredentials(opts optionalCreds) Credentials {
 	}
 }
 
-func (sf *Snowflake) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (sf *Snowflake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
@@ -915,7 +915,7 @@ func (sf *Snowflake) Setup(warehouse warehouseutils.Warehouse, uploader warehous
 	return err
 }
 
-func (sf *Snowflake) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (sf *Snowflake) TestConnection(warehouse model.Warehouse) (err error) {
 	sf.Warehouse = warehouse
 	sf.DB, err = Connect(sf.getConnectionCredentials(optionalCreds{}))
 	if err != nil {
@@ -938,7 +938,7 @@ func (sf *Snowflake) TestConnection(warehouse warehouseutils.Warehouse) (err err
 }
 
 // FetchSchema queries snowflake and returns the schema associated with provided namespace
-func (sf *Snowflake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
+func (sf *Snowflake) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(sf.getConnectionCredentials(optionalCreds{}))
@@ -947,8 +947,8 @@ func (sf *Snowflake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.Schema)
-	unrecognizedSchema = make(warehouseutils.Schema)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 		SELECT
@@ -1028,7 +1028,7 @@ func (sf *Snowflake) GetTotalCountInTable(ctx context.Context, tableName string)
 	return total, err
 }
 
-func (sf *Snowflake) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (sf *Snowflake) Connect(warehouse model.Warehouse) (client.Client, error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)

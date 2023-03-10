@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var _ = Describe("Stats", Ordered, func() {
@@ -69,7 +68,7 @@ var _ = Describe("Stats", Ordered, func() {
 					SourceID:           "test-sourceID",
 					DestinationID:      "test-destinationID",
 				},
-				warehouse: warehouseutils.Warehouse{
+				warehouse: model.Warehouse{
 					Type: "POSTGRES",
 				},
 				stats:            mockStats,
@@ -98,7 +97,7 @@ var _ = Describe("Stats", Ordered, func() {
 					SourceID:           "test-sourceID",
 					DestinationID:      "test-destinationID",
 				},
-				warehouse: warehouseutils.Warehouse{
+				warehouse: model.Warehouse{
 					Type: "POSTGRES",
 				},
 				stats:            mockStats,
@@ -124,7 +123,7 @@ var _ = Describe("Stats", Ordered, func() {
 				StagingFileStartID: 1,
 				StagingFileEndID:   4,
 			},
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Type: "POSTGRES",
 			},
 			stats: mockStats,
@@ -143,7 +142,7 @@ var _ = Describe("Stats", Ordered, func() {
 				StagingFileStartID: 1,
 				StagingFileEndID:   4,
 			},
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Type: "POSTGRES",
 			},
 			dbHandle: pgResource.DB,
