@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
-	"github.com/aws/smithy-go/time"
+	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,6 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -49,7 +49,7 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 		},
 		{
 			InitialErrorState: []byte(`{"internal_processing_failed": {"errors": ["account locked", "account locked again"], "attempt": 2}}`),
-			CurrentErrorState: TableUploadExportingFailed,
+			CurrentErrorState: model.TableUploadExportingFailed,
 			CurrentError:      errors.New("failed to load data because failed in earlier job"),
 			ErrorCount:        1,
 		},
@@ -263,60 +263,11 @@ var _ = Describe("Upload", Ordered, func() {
 		Expect(count).To(BeEquivalentTo(5))
 	})
 
-	It("Fetch pending upload status", func() {
-		job.upload.ID = 5
-
-		tus := job.fetchPendingUploadTableStatus()
-		Expect(tus).NotTo(BeNil())
-		Expect(tus).Should(HaveLen(2))
-	})
-
-	DescribeTable("Are all table skip errors", func(loadErrors []error, expected bool) {
-		Expect(areAllTableSkipErrors(loadErrors)).To(Equal(expected))
-	},
-		Entry(nil, []error{}, true),
-		Entry(nil, []error{&TableSkipError{}}, true),
-		Entry(nil, []error{errors.New("some-error")}, false),
-	)
-
-	DescribeTable("Get table upload status map", func(tableUploadStatuses []*TableUploadStatusT, expected map[int64]map[string]*TableUploadStatusInfoT) {
-		Expect(getTableUploadStatusMap(tableUploadStatuses)).To(Equal(expected))
-	},
-		Entry(nil, []*TableUploadStatusT{}, map[int64]map[string]*TableUploadStatusInfoT{}),
-
-		Entry(nil,
-			[]*TableUploadStatusT{
-				{
-					uploadID:  1,
-					tableName: "test-tableName-1",
-				},
-				{
-					uploadID:  2,
-					tableName: "test-tableName-2",
-				},
-			},
-			map[int64]map[string]*TableUploadStatusInfoT{
-				1: {
-					"test-tableName-1": {},
-				},
-				2: {
-					"test-tableName-2": {},
-				},
-			},
-		),
-	)
-
-	It("Getting tables to skip", func() {
-		job.upload.ID = 5
-
-		previousFailedMap, currentSuceededMap := job.getTablesToSkip()
-		Expect(previousFailedMap).Should(HaveLen(1))
-		Expect(currentSuceededMap).Should(HaveLen(0))
-	})
-
 	It("Get uploads timings", func() {
-		exportedData, _ := time.ParseDateTime("2020-04-21T15:26:34.344356")
-		exportingData, _ := time.ParseDateTime("2020-04-21T15:16:19.687716")
+		exportedData, err := time.Parse(time.RFC3339, "2020-04-21T15:26:34.344356Z")
+		Expect(err).To(BeNil())
+		exportingData, err := time.Parse(time.RFC3339, "2020-04-21T15:16:19.687716Z")
+		Expect(err).To(BeNil())
 		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.TODO(), job.upload.ID)).
 			To(BeEquivalentTo(model.Timings{
 				{
@@ -555,6 +506,180 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					require.NotContains(t, err.Error(), column)
 				}
 			}
+		})
+	})
+}
+
+func TestUploadJobT_Aborted(t *testing.T) {
+	var (
+		minAttempts    = 3
+		minRetryWindow = 3 * time.Hour
+		now            = time.Date(2021, 1, 1, 6, 0, 0, 0, time.UTC)
+	)
+
+	testCases := []struct {
+		name      string
+		attempts  int
+		startTime time.Time
+		expected  bool
+	}{
+		{
+			name:      "empty start time",
+			startTime: time.Time{},
+			expected:  false,
+		},
+		{
+			name:      "crossing max attempts but not retry window",
+			attempts:  5,
+			startTime: time.Date(2021, 1, 1, 5, 30, 0, 0, time.UTC),
+			expected:  false,
+		},
+		{
+			name:      "crossing max retry window but not attempts",
+			attempts:  2,
+			startTime: time.Date(2021, 1, 1, 2, 0, 0, 0, time.UTC),
+			expected:  false,
+		},
+		{
+			name:      "crossing max retry window but not attempts",
+			attempts:  5,
+			startTime: time.Date(2021, 1, 1, 2, 0, 0, 0, time.UTC),
+			expected:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			job := &UploadJobT{
+				MinRetryAttempts: minAttempts,
+				RetryTimeWindow:  minRetryWindow,
+				Now:              func() time.Time { return now },
+			}
+
+			require.Equal(t, tc.expected, job.Aborted(tc.attempts, tc.startTime))
+		})
+	}
+}
+
+type mockPendingTablesRepo struct {
+	pendingTables []model.PendingTableUpload
+	err           error
+	called        int
+}
+
+func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, int64, string) ([]model.PendingTableUpload, error) {
+	m.called++
+	return m.pendingTables, m.err
+}
+
+func TestUploadJobT_TablesToSkip(t *testing.T) {
+	t.Run("repo error", func(t *testing.T) {
+		t.Parallel()
+
+		job := &UploadJobT{
+			upload: model.Upload{
+				ID: 1,
+			},
+			pendingTableUploadsRepo: &mockPendingTablesRepo{
+				err: errors.New("some error"),
+			},
+		}
+
+		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
+		require.EqualError(t, err, "pending table uploads: some error")
+		require.Empty(t, previouslyFailedTables)
+		require.Empty(t, currentJobSucceededTables)
+	})
+
+	t.Run("should populate only once", func(t *testing.T) {
+		t.Parallel()
+
+		ptRepo := &mockPendingTablesRepo{}
+
+		job := &UploadJobT{
+			upload: model.Upload{
+				ID: 1,
+			},
+			pendingTableUploadsRepo: ptRepo,
+		}
+
+		for i := 0; i < 5; i++ {
+			_, _, _ = job.TablesToSkip()
+			require.Equal(t, 1, ptRepo.called)
+		}
+	})
+
+	t.Run("skip tables", func(t *testing.T) {
+		t.Parallel()
+
+		const (
+			namespace = "namespace"
+			destID    = "destID"
+		)
+
+		pendingTables := []model.PendingTableUpload{
+			{
+				UploadID:      1,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        model.TableUploadExportingFailed,
+				TableName:     "previously_failed_table_1",
+				Error:         "some error",
+			},
+			{
+				UploadID:      1,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        model.TableUploadUpdatingSchemaFailed,
+				TableName:     "previously_failed_table_2",
+				Error:         "",
+			},
+			{
+				UploadID:      1,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        model.TableUploadExported,
+				TableName:     "previously_succeeded_table_1",
+				Error:         "",
+			},
+			{
+				UploadID:      5,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        model.TableUploadExportingFailed,
+				TableName:     "current_failed_table_1",
+				Error:         "some error",
+			},
+			{
+				UploadID:      5,
+				DestinationID: destID,
+				Namespace:     namespace,
+				Status:        model.TableUploadExported,
+				TableName:     "current_succeeded_table_1",
+				Error:         "",
+			},
+		}
+
+		job := &UploadJobT{
+			upload: model.Upload{
+				ID: 5,
+			},
+			pendingTableUploadsRepo: &mockPendingTablesRepo{
+				pendingTables: pendingTables,
+			},
+		}
+
+		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
+		require.NoError(t, err)
+		require.Equal(t, previouslyFailedTables, map[string]model.PendingTableUpload{
+			"previously_failed_table_1": pendingTables[0],
+		})
+		require.Equal(t, currentJobSucceededTables, map[string]model.PendingTableUpload{
+			"current_succeeded_table_1": pendingTables[4],
 		})
 	})
 }

@@ -378,8 +378,6 @@ func (uploadReq *UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploads
 		return
 	}
 
-	var uploadJobT UploadJobT
-
 	upload, err := repo.NewUploads(uploadReq.API.dbHandle).Get(context.TODO(), uploadReq.UploadId)
 	if err == model.ErrUploadNotFound {
 		return &proto.TriggerWhUploadsResponse{
@@ -398,8 +396,12 @@ func (uploadReq *UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploads
 		return
 	}
 
-	uploadJobT.upload = upload
-	uploadJobT.dbHandle = uploadReq.API.dbHandle
+	uploadJobT := UploadJobT{
+		upload:   upload,
+		dbHandle: uploadReq.API.dbHandle,
+		Now:      timeutil.Now,
+	}
+
 	err = uploadJobT.triggerUploadNow()
 	if err != nil {
 		return

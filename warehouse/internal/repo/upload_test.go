@@ -762,3 +762,132 @@ func TestUploads_InterruptedDestinations(t *testing.T) {
 
 	require.Equal(t, []string{"1", "2", "3"}, ids)
 }
+
+func TestUploads_PendingTableUploads(t *testing.T) {
+	t.Parallel()
+
+	const (
+		uploadID    = 1
+		namespace   = "namespace"
+		destID      = "destination_id"
+		sourceID    = "source_id"
+		destType    = "RS"
+		workspaceID = "workspace_id"
+	)
+
+	var (
+		ctx             = context.Background()
+		db              = setupDB(t)
+		repoUpload      = repo.NewUploads(db)
+		repoTableUpload = repo.NewTableUploads(db)
+		repoStaging     = repo.NewStagingFiles(db)
+	)
+
+	for _, status := range []string{"exporting_data", "aborted"} {
+		file := model.StagingFile{
+			WorkspaceID:   workspaceID,
+			Location:      "s3://bucket/path/to/file",
+			SourceID:      sourceID,
+			DestinationID: destID,
+			Status:        warehouseutils.StagingFileWaitingState,
+			Error:         nil,
+			FirstEventAt:  time.Now(),
+			LastEventAt:   time.Now(),
+		}.WithSchema([]byte(`{"type": "object"}`))
+
+		stagingID, err := repoStaging.Insert(ctx, &file)
+		require.NoError(t, err)
+
+		_, err = repoUpload.CreateWithStagingFiles(
+			ctx,
+			model.Upload{
+				SourceID:        sourceID,
+				DestinationID:   destID,
+				Status:          status,
+				Namespace:       namespace,
+				DestinationType: destType,
+			},
+			[]*model.StagingFile{
+				{
+					ID:            stagingID,
+					SourceID:      sourceID,
+					DestinationID: destID,
+				},
+			},
+		)
+		require.NoError(t, err)
+	}
+
+	for i, tu := range []struct {
+		status string
+		err    string
+	}{
+		{
+			status: "exporting_data",
+			err:    "{}",
+		},
+		{
+			status: "exporting_data_failed",
+			err:    "error loading data",
+		},
+	} {
+		tableName := fmt.Sprintf("test_table_%d", i+1)
+
+		err := repoTableUpload.Insert(ctx, uploadID, []string{tableName})
+		require.NoError(t, err)
+
+		err = repoTableUpload.Set(ctx, uploadID, tableName, repo.TableUploadSetOptions{
+			Status: &tu.status,
+			Error:  &tu.err,
+		})
+		require.NoError(t, err)
+	}
+
+	t.Run("should return pending table uploads", func(t *testing.T) {
+		t.Parallel()
+
+		repoUpload := repo.NewUploads(db)
+		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, uploadID, destID)
+		require.NoError(t, err)
+		require.NotEmpty(t, pendingTableUploads)
+
+		expectedPendingTableUploads := []model.PendingTableUpload{
+			{
+				UploadID:      uploadID,
+				DestinationID: destID,
+				Namespace:     namespace,
+				TableName:     "test_table_1",
+				Status:        "exporting_data",
+				Error:         "{}",
+			},
+			{
+				UploadID:      uploadID,
+				DestinationID: destID,
+				Namespace:     namespace,
+				TableName:     "test_table_2",
+				Status:        "exporting_data_failed",
+				Error:         "error loading data",
+			},
+		}
+		require.Equal(t, expectedPendingTableUploads, pendingTableUploads)
+	})
+
+	t.Run("should return empty pending table uploads", func(t *testing.T) {
+		t.Parallel()
+
+		repoUpload := repo.NewUploads(db)
+		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, int64(-1), destID)
+		require.NoError(t, err)
+		require.Empty(t, pendingTableUploads)
+	})
+
+	t.Run("cancelled context", func(t *testing.T) {
+		t.Parallel()
+
+		repoUpload := repo.NewUploads(db)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := repoUpload.PendingTableUploads(ctx, namespace, uploadID, destID)
+		require.EqualError(t, err, "pending table uploads: context canceled")
+	})
+}
