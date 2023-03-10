@@ -142,7 +142,7 @@ func TestColumnCountStat(t *testing.T) {
 					DestinationID: destinationID,
 					SourceID:      sourceID,
 				},
-				warehouse: warehouseutils.Warehouse{
+				warehouse: model.Warehouse{
 					Type: tc.destinationType,
 					Destination: backendconfig.DestinationT{
 						ID:   destinationID,
@@ -155,8 +155,8 @@ func TestColumnCountStat(t *testing.T) {
 				},
 				stats: store,
 				schemaHandle: &SchemaHandle{
-					schemaInWarehouse: warehouseutils.Schema{
-						tableName: warehouseutils.TableSchema{
+					schemaInWarehouse: model.Schema{
+						tableName: model.TableSchema{
 							"test-column-1": "string",
 							"test-column-2": "string",
 							"test-column-3": "string",
@@ -228,7 +228,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 	BeforeEach(func() {
 		job = &UploadJob{
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Type: destinationType,
 				Destination: backendconfig.DestinationT{
 					ID:   destinationID,
@@ -409,7 +409,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					}
 
 					err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiff{
-						AlteredColumnMap: warehouseutils.TableSchema{
+						AlteredColumnMap: model.TableSchema{
 							testColumn: testColumnType,
 						},
 					})
@@ -487,7 +487,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			alteredColumnsMap := warehouseutils.TableSchema{}
+			alteredColumnsMap := model.TableSchema{}
 			for i := range [10]int{} {
 				alteredColumnsMap[fmt.Sprintf("%s_%d", testColumn, i)] = testColumnType
 			}

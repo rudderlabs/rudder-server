@@ -77,7 +77,7 @@ var (
 	minRetryAttempts                    int
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
-	connectionsMap                      map[string]map[string]warehouseutils.Warehouse // destID -> sourceID -> warehouse map
+	connectionsMap                      map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
 	connectionsMapLock                  sync.RWMutex
 	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
 	triggerUploadsMapLock               sync.RWMutex
@@ -127,7 +127,7 @@ type (
 
 type HandleT struct {
 	destType                          string
-	warehouses                        []warehouseutils.Warehouse
+	warehouses                        []model.Warehouse
 	dbHandle                          *sql.DB
 	warehouseDBHandle                 *DB
 	stagingRepo                       *repo.StagingFiles
@@ -185,7 +185,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
-	connectionsMap = map[string]map[string]warehouseutils.Warehouse{}
+	connectionsMap = map[string]map[string]model.Warehouse{}
 	triggerUploadsMap = map[string]bool{}
 	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
@@ -207,7 +207,7 @@ func loadConfig() {
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
-func (wh *HandleT) workerIdentifier(warehouse warehouseutils.Warehouse) (identifier string) {
+func (wh *HandleT) workerIdentifier(warehouse model.Warehouse) (identifier string) {
 	identifier = fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
 
 	if wh.allowMultipleSourcesForJobsPickup {
@@ -216,18 +216,18 @@ func (wh *HandleT) workerIdentifier(warehouse warehouseutils.Warehouse) (identif
 	return
 }
 
-func getDestinationFromConnectionMap(DestinationId, SourceId string) (warehouseutils.Warehouse, error) {
+func getDestinationFromConnectionMap(DestinationId, SourceId string) (model.Warehouse, error) {
 	if DestinationId == "" || SourceId == "" {
-		return warehouseutils.Warehouse{}, errors.New("invalid Parameters")
+		return model.Warehouse{}, errors.New("invalid Parameters")
 	}
 	sourceMap, ok := connectionsMap[DestinationId]
 	if !ok {
-		return warehouseutils.Warehouse{}, errors.New("invalid Destination Id")
+		return model.Warehouse{}, errors.New("invalid Destination Id")
 	}
 
 	conn, ok := sourceMap[SourceId]
 	if !ok {
-		return warehouseutils.Warehouse{}, errors.New("invalid Source Id")
+		return model.Warehouse{}, errors.New("invalid Source Id")
 	}
 
 	return conn, nil
@@ -274,7 +274,7 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJob) error {
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 	for configData := range wh.tenantManager.WatchConfig(ctx) {
-		var warehouses []warehouseutils.Warehouse
+		var warehouses []model.Warehouse
 		sourceIDsByWorkspaceTemp := map[string][]string{}
 
 		workspaceBySourceIDs := map[string]string{}
@@ -304,7 +304,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					}
 
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-					warehouse := warehouseutils.Warehouse{
+					warehouse := model.Warehouse{
 						WorkspaceID: workspaceID,
 						Source:      source,
 						Destination: destination,
@@ -327,7 +327,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 					connectionsMapLock.Lock()
 					if connectionsMap[destination.ID] == nil {
-						connectionsMap[destination.ID] = map[string]warehouseutils.Warehouse{}
+						connectionsMap[destination.ID] = map[string]model.Warehouse{}
 					}
 					if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 						if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
@@ -425,14 +425,14 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	return ""
 }
 
-func (wh *HandleT) setDestInProgress(warehouse warehouseutils.Warehouse, jobID int64) {
+func (wh *HandleT) setDestInProgress(warehouse model.Warehouse, jobID int64) {
 	identifier := wh.workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
 	wh.inProgressMap[WorkerIdentifierT(identifier)] = append(wh.inProgressMap[WorkerIdentifierT(identifier)], JobID(jobID))
 }
 
-func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.Warehouse, jobID int64) {
+func (wh *HandleT) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
 	identifier := wh.workerIdentifier(warehouse)
@@ -441,7 +441,7 @@ func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.Warehouse, jobI
 	}
 }
 
-func (wh *HandleT) isUploadJobInProgress(warehouse warehouseutils.Warehouse, jobID int64) (int, bool) {
+func (wh *HandleT) isUploadJobInProgress(warehouse model.Warehouse, jobID int64) (int, bool) {
 	identifier := wh.workerIdentifier(warehouse)
 	wh.inProgressMapLock.RLock()
 	defer wh.inProgressMapLock.RUnlock()
@@ -481,7 +481,7 @@ func getUploadFreqInS(syncFrequency string) int64 {
 	return freqInMin * 60
 }
 
-func uploadFrequencyExceeded(warehouse warehouseutils.Warehouse, syncFrequency string) bool {
+func uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
 	freqInS := getUploadFreqInS(syncFrequency)
 	lastProcessedMarkerMapLock.Lock()
 	defer lastProcessedMarkerMapLock.Unlock()
@@ -491,14 +491,14 @@ func uploadFrequencyExceeded(warehouse warehouseutils.Warehouse, syncFrequency s
 	return false
 }
 
-func setLastProcessedMarker(warehouse warehouseutils.Warehouse, lastProcessedTime time.Time) {
+func setLastProcessedMarker(warehouse model.Warehouse, lastProcessedTime time.Time) {
 	lastProcessedMarkerMapLock.Lock()
 	defer lastProcessedMarkerMapLock.Unlock()
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 	lastProcessedMarkerExp.Set(warehouse.Identifier, lastProcessedTime)
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehouse warehouseutils.Warehouse, stagingFiles []*model.StagingFile, priority int, uploadStartAfter time.Time) error {
+func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehouse model.Warehouse, stagingFiles []*model.StagingFile, priority int, uploadStartAfter time.Time) error {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -552,7 +552,7 @@ func getUploadStartAfterTime() time.Time {
 	return time.Now()
 }
 
-func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (int64, string, int) {
+func (wh *HandleT) getLatestUploadStatus(warehouse *model.Warehouse) (int64, string, int) {
 	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
 		context.TODO(),
 		warehouse.Type,
@@ -565,7 +565,7 @@ func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (i
 	return uploadID, status, priority
 }
 
-func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Warehouse) (err error) {
+func (wh *HandleT) createJobs(ctx context.Context, warehouse model.Warehouse) (err error) {
 	if ok, err := wh.canCreateUpload(warehouse); !ok {
 		wh.stats.NewTaggedStat("wh_scheduler.upload_sync_skipped", stats.CountType, stats.Tags{
 			"workspaceId":   warehouse.WorkspaceID,
@@ -720,9 +720,9 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			}
 		}
 
-		warehouse, ok := funk.Find(wh.warehouses, func(w warehouseutils.Warehouse) bool {
+		warehouse, ok := funk.Find(wh.warehouses, func(w model.Warehouse) bool {
 			return w.Source.ID == upload.SourceID && w.Destination.ID == upload.DestinationID
-		}).(warehouseutils.Warehouse)
+		}).(model.Warehouse)
 		wh.configSubscriberLock.RUnlock()
 
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
@@ -971,9 +971,9 @@ func minimalConfigSubscriber() {
 						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 						connectionsMapLock.Lock()
 						if connectionsMap[destination.ID] == nil {
-							connectionsMap[destination.ID] = map[string]warehouseutils.Warehouse{}
+							connectionsMap[destination.ID] = map[string]model.Warehouse{}
 						}
-						connectionsMap[destination.ID][source.ID] = warehouseutils.Warehouse{
+						connectionsMap[destination.ID][source.ID] = model.Warehouse{
 							WorkspaceID: workspaceID,
 							Destination: destination,
 							Namespace:   namespace,
@@ -1224,7 +1224,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// trigger upload if there are pending events and triggerPendingUpload is true
 	if pendingEvents && triggerPendingUpload {
 		pkgLogger.Infof("[WH]: Triggering upload for all wh destinations connected to source '%s'", sourceID)
-		wh := make([]warehouseutils.Warehouse, 0)
+		wh := make([]model.Warehouse, 0)
 
 		// get all wh destinations for given source id
 		connectionsMapLock.Lock()
@@ -1352,7 +1352,7 @@ func TriggerUploadHandler(sourceID, destID string) error {
 		return err
 	}
 
-	wh := make([]warehouseutils.Warehouse, 0)
+	wh := make([]model.Warehouse, 0)
 
 	if sourceID != "" && destID == "" {
 		// get all wh destinations for given source id
@@ -1397,20 +1397,20 @@ func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion()))
 }
 
-func isUploadTriggered(wh warehouseutils.Warehouse) bool {
+func isUploadTriggered(wh model.Warehouse) bool {
 	triggerUploadsMapLock.RLock()
 	defer triggerUploadsMapLock.RUnlock()
 	return triggerUploadsMap[wh.Identifier]
 }
 
-func triggerUpload(wh warehouseutils.Warehouse) {
+func triggerUpload(wh model.Warehouse) {
 	triggerUploadsMapLock.Lock()
 	defer triggerUploadsMapLock.Unlock()
 	pkgLogger.Infof("[WH]: Upload triggered for warehouse '%s'", wh.Identifier)
 	triggerUploadsMap[wh.Identifier] = true
 }
 
-func clearTriggeredUpload(wh warehouseutils.Warehouse) {
+func clearTriggeredUpload(wh model.Warehouse) {
 	triggerUploadsMapLock.Lock()
 	defer triggerUploadsMapLock.Unlock()
 	delete(triggerUploadsMap, wh.Identifier)

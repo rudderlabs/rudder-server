@@ -3,29 +3,31 @@ package jobs
 import (
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type WhAsyncJob struct{}
 
-func (*WhAsyncJob) GetSchemaInWarehouse() warehouseutils.Schema {
-	return warehouseutils.Schema{}
+func (*WhAsyncJob) GetSchemaInWarehouse() model.Schema {
+	return model.Schema{}
 }
 
-func (*WhAsyncJob) GetLocalSchema() warehouseutils.Schema {
-	return warehouseutils.Schema{}
+func (*WhAsyncJob) GetLocalSchema() model.Schema {
+	return model.Schema{}
 }
 
-func (*WhAsyncJob) UpdateLocalSchema(warehouseutils.Schema) error {
+func (*WhAsyncJob) UpdateLocalSchema(model.Schema) error {
 	return nil
 }
 
-func (*WhAsyncJob) GetTableSchemaInWarehouse(string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
+func (*WhAsyncJob) GetTableSchemaInWarehouse(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
-func (*WhAsyncJob) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
+func (*WhAsyncJob) GetTableSchemaInUpload(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
 func (*WhAsyncJob) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {

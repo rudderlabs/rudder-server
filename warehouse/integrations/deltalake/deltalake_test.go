@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"golang.org/x/sync/errgroup"
@@ -299,7 +301,7 @@ func (m *MockClient) Close(context.Context, *proto.CloseRequest, ...grpc.CallOpt
 func TestDeltalake_CreateTable(t *testing.T) {
 	testCases := []struct {
 		name           string
-		columns        warehouseutils.TableSchema
+		columns        model.TableSchema
 		config         map[string]interface{}
 		mockError      error
 		mockExecuteRes *proto.ExecuteResponse
@@ -315,7 +317,7 @@ func TestDeltalake_CreateTable(t *testing.T) {
 		},
 		{
 			name: "With partition",
-			columns: warehouseutils.TableSchema{
+			columns: model.TableSchema{
 				"received_at": "datetime",
 			},
 		},
@@ -337,7 +339,7 @@ func TestDeltalake_CreateTable(t *testing.T) {
 		namespace   = "test-namespace"
 		workspaceID = "test-workspace-id"
 		testTable   = "test-table"
-		testColumns = warehouseutils.TableSchema{
+		testColumns = model.TableSchema{
 			"id":            "string",
 			"test_bool":     "boolean",
 			"test_datetime": "datetime",
@@ -361,7 +363,7 @@ func TestDeltalake_CreateTable(t *testing.T) {
 			dl := deltalake.NewDeltalake()
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
-			dl.Warehouse = warehouseutils.Warehouse{
+			dl.Warehouse = model.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
@@ -372,7 +374,7 @@ func TestDeltalake_CreateTable(t *testing.T) {
 				Client: mockClient,
 			}
 
-			columns := make(warehouseutils.TableSchema)
+			columns := make(model.TableSchema)
 			for k, v := range tc.columns {
 				columns[k] = v
 			}
@@ -444,7 +446,7 @@ func TestDeltalake_CreateSchema(t *testing.T) {
 			dl := deltalake.NewDeltalake()
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
-			dl.Warehouse = warehouseutils.Warehouse{
+			dl.Warehouse = model.Warehouse{
 				Type:        "test-type",
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
@@ -472,7 +474,7 @@ func TestDeltalake_CreateSchema(t *testing.T) {
 func TestDeltalake_DropTable(t *testing.T) {
 	testCases := []struct {
 		name           string
-		columns        warehouseutils.TableSchema
+		columns        model.TableSchema
 		config         map[string]interface{}
 		mockError      error
 		mockExecuteRes *proto.ExecuteResponse
@@ -523,7 +525,7 @@ func TestDeltalake_DropTable(t *testing.T) {
 
 			dl := deltalake.NewDeltalake()
 			dl.Namespace = namespace
-			dl.Warehouse = warehouseutils.Warehouse{
+			dl.Warehouse = model.Warehouse{
 				Type:        "test-type",
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
@@ -552,7 +554,7 @@ func TestDeltalake_DropTable(t *testing.T) {
 func TestDeltalake_AddColumns(t *testing.T) {
 	testCases := []struct {
 		name           string
-		columns        warehouseutils.TableSchema
+		columns        model.TableSchema
 		config         map[string]interface{}
 		mockError      error
 		mockExecuteRes *proto.ExecuteResponse
@@ -606,7 +608,7 @@ func TestDeltalake_AddColumns(t *testing.T) {
 			dl := deltalake.NewDeltalake()
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
-			dl.Warehouse = warehouseutils.Warehouse{
+			dl.Warehouse = model.Warehouse{
 				Type:        "test-type",
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
@@ -682,7 +684,7 @@ func TestDeltalake_GetTotalCountInTable(t *testing.T) {
 			dl := deltalake.NewDeltalake()
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
-			dl.Warehouse = warehouseutils.Warehouse{
+			dl.Warehouse = model.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 			}
@@ -705,18 +707,18 @@ type mockUploader struct {
 	mockError       error
 	fileType        string
 	fileLocation    string
-	uploadSchema    warehouseutils.TableSchema
-	warehouseSchema warehouseutils.TableSchema
+	uploadSchema    model.TableSchema
+	warehouseSchema model.TableSchema
 	firstEventAt    time.Time
 	lastEventAt     time.Time
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return warehouseutils.Schema{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
-func (*mockUploader) UseRudderStorage() bool                          { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
+func (*mockUploader) GetSchemaInWarehouse() model.Schema     { return model.Schema{} }
+func (*mockUploader) GetLocalSchema() model.Schema           { return model.Schema{} }
+func (*mockUploader) UpdateLocalSchema(_ model.Schema) error { return nil }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool        { return false }
+func (*mockUploader) UseRudderStorage() bool                 { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time     { return time.Time{} }
 func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return nil
 }
@@ -729,11 +731,11 @@ func (m *mockUploader) GetFirstLastEvent() (time.Time, time.Time) {
 	return m.firstEventAt, m.lastEventAt
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
+func (m *mockUploader) GetTableSchemaInUpload(string) model.TableSchema {
 	return m.uploadSchema
 }
 
-func (m *mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
+func (m *mockUploader) GetTableSchemaInWarehouse(_ string) model.TableSchema {
 	return m.warehouseSchema
 }
 
@@ -979,7 +981,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.ObjectStorage = warehouseutils.MINIO
-			dl.Warehouse = warehouseutils.Warehouse{
+			dl.Warehouse = model.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
@@ -993,7 +995,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 				fileType:     tc.loadFileType,
 				mockError:    tc.mockUploaderError,
 				fileLocation: "https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv",
-				uploadSchema: warehouseutils.TableSchema{
+				uploadSchema: model.TableSchema{
 					"id":            "string",
 					"received_at":   "datetime",
 					"test_bool":     "boolean",
@@ -1002,7 +1004,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 					"test_int":      "int",
 					"test_string":   "string",
 				},
-				warehouseSchema: warehouseutils.TableSchema{
+				warehouseSchema: model.TableSchema{
 					"id":                  "string",
 					"received_at":         "datetime",
 					"test_array_bool":     "array(boolean)",
@@ -1064,7 +1066,7 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
-			dl.Warehouse = warehouseutils.Warehouse{
+			dl.Warehouse = model.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 			}
@@ -1074,7 +1076,7 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 			dl.Uploader = &mockUploader{
 				fileType:     tc.loadFileType,
 				fileLocation: "http://test-location",
-				uploadSchema: warehouseutils.TableSchema{
+				uploadSchema: model.TableSchema{
 					"id":            "string",
 					"received_at":   "datetime",
 					"test_bool":     "boolean",
@@ -1083,7 +1085,7 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 					"test_int":      "int",
 					"test_string":   "string",
 				},
-				warehouseSchema: warehouseutils.TableSchema{
+				warehouseSchema: model.TableSchema{
 					"id":                  "string",
 					"received_at":         "datetime",
 					"test_array_bool":     "array(boolean)",
@@ -1147,7 +1149,7 @@ func TestDeltalake_LoadTestTable(t *testing.T) {
 			dl := deltalake.NewDeltalake()
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
-			dl.Warehouse = warehouseutils.Warehouse{
+			dl.Warehouse = model.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 			}

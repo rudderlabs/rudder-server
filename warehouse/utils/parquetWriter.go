@@ -6,6 +6,8 @@ import (
 	"os"
 	"sort"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/xitongsys/parquet-go/writer"
 )
@@ -59,7 +61,7 @@ type ParquetWriter struct {
 	schema     []string
 }
 
-func CreateParquetWriter(schema TableSchema, outputFilePath, destType string) (*ParquetWriter, error) {
+func CreateParquetWriter(schema model.TableSchema, outputFilePath, destType string) (*ParquetWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
 	if err != nil {
 		return nil, err
@@ -105,7 +107,7 @@ func (p *ParquetWriter) GetLoadFile() *os.File {
 	return p.fileWriter.GetFile()
 }
 
-func getSortedTableColumns(schema TableSchema) []string {
+func getSortedTableColumns(schema model.TableSchema) []string {
 	var sortedColumns []string
 	for col := range schema {
 		sortedColumns = append(sortedColumns, col)
@@ -114,7 +116,7 @@ func getSortedTableColumns(schema TableSchema) []string {
 	return sortedColumns
 }
 
-func getParquetSchema(schema TableSchema, destType string) ([]string, error) {
+func getParquetSchema(schema model.TableSchema, destType string) ([]string, error) {
 	whTypeMap, ok := rudderDataTypeToParquetDataType[destType]
 	if !ok {
 		return nil, errors.New("unsupported warehouse for parquet load files")

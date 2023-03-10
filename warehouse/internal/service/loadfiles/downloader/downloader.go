@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -19,13 +21,13 @@ type Downloader interface {
 }
 
 type downloaderImpl struct {
-	warehouse  *warehouseutils.Warehouse
+	warehouse  *model.Warehouse
 	uploader   warehouseutils.Uploader
 	numWorkers int
 }
 
 func NewDownloader(
-	warehouse *warehouseutils.Warehouse,
+	warehouse *model.Warehouse,
 	uploader warehouseutils.Uploader,
 	numWorkers int,
 ) Downloader {

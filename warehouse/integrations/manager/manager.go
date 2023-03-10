@@ -26,11 +26,11 @@ import (
 )
 
 type Manager interface {
-	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.Uploader) error
-	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
-	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error)
+	Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) error
+	CrashRecover(warehouse model.Warehouse) (err error)
+	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
 	CreateSchema() (err error)
-	CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error)
+	CreateTable(tableName string, columnMap model.TableSchema) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
 	LoadTable(tableName string) error
@@ -38,11 +38,11 @@ type Manager interface {
 	LoadIdentityMergeRulesTable() error
 	LoadIdentityMappingsTable() error
 	Cleanup()
-	IsEmpty(warehouse warehouseutils.Warehouse) (bool, error)
-	TestConnection(warehouse warehouseutils.Warehouse) error
+	IsEmpty(warehouse model.Warehouse) (bool, error)
+	TestConnection(warehouse model.Warehouse) error
 	DownloadIdentityRules(*misc.GZipWriter) error
 	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
-	Connect(warehouse warehouseutils.Warehouse) (client.Client, error)
+	Connect(warehouse model.Warehouse) (client.Client, error)
 	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
 	ErrorMappings() []model.JobError
