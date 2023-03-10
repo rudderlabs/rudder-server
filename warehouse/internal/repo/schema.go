@@ -14,14 +14,14 @@ const whSchemaTableName = warehouseutils.WarehouseSchemasTable
 
 const whSchemaTableColumns = `
 	id,
-   wh_upload_id,
-   source_id,
+   	wh_upload_id,
+   	source_id,
 	namespace,
-   destination_id,
+   	destination_id,
 	destination_type,
 	schema,
-   created_at,
-   updated_at
+   	created_at,
+   	updated_at
 `
 
 type WHSchema repo
