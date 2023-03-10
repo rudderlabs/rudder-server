@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -110,21 +112,47 @@ func (jobRun *JobRun) counterStat(name string, extraTags ...Tag) stats.Measureme
 }
 
 func (job *UploadJob) generateUploadSuccessMetrics() {
-	// Total loaded events in the upload
-	numUploadedEvents, err := job.getTotalEventsUploaded(true)
+	var (
+		numUploadedEvents int64
+		numStagedEvents   int64
+		err               error
+	)
+	numUploadedEvents, err = job.tableUploadsRepo.TotalExportedEvents(
+		context.TODO(),
+		job.upload.ID,
+		[]string{},
+	)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
+		pkgLogger.Warnw("sum of total exported events for upload",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Error, err.Error(),
+		)
 		return
 	}
-	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 
-	// Total staged events in the upload
-	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
+	numStagedEvents, err = repo.NewStagingFiles(dbHandle).TotalEventsForUpload(
+		context.TODO(),
+		job.upload,
+	)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
+		pkgLogger.Warnw("total events for upload",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Error, err.Error(),
+		)
 		return
 	}
+
+	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
+
 	attempts := job.getAttemptNumber()
 	job.counterStat("upload_success", Tag{
 		Name:  "attempt_number",
@@ -133,21 +161,45 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 }
 
 func (job *UploadJob) generateUploadAbortedMetrics() {
-	// Total successfully loaded events in the upload
-	numUploadedEvents, err := job.getTotalEventsUploaded(true)
+	var (
+		numUploadedEvents int64
+		numStagedEvents   int64
+		err               error
+	)
+	numUploadedEvents, err = job.tableUploadsRepo.TotalExportedEvents(
+		context.TODO(),
+		job.upload.ID,
+		[]string{},
+	)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
+		pkgLogger.Warnw("sum of total exported events for upload",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Error, err.Error(),
+		)
 		return
 	}
+
+	numStagedEvents, err = repo.NewStagingFiles(dbHandle).TotalEventsForUpload(
+		context.TODO(),
+		job.upload,
+	)
+	if err != nil {
+		pkgLogger.Warnw("total events for upload",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Error, err.Error(),
+		)
+		return
+	}
+
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
-
-	// Total staged events in the upload
-	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
-		return
-	}
-
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 }
 
