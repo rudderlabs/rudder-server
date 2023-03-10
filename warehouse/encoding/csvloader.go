@@ -29,7 +29,7 @@ func NewCSVLoader(destType string, writer warehouseutils.LoadFileWriter) *CsvLoa
 }
 
 func (loader *CsvLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == warehouseutils.ToProviderCase(loader.destType, UuidTsColumn)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn)
 }
 
 func (*CsvLoader) GetLoadTimeFormat(string) string {

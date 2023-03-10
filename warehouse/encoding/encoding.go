@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	UuidTsColumn   = "uuid_ts"
+	UUIDTsColumn   = "uuid_ts"
 	LoadedAtColumn = "loaded_at"
 )
 

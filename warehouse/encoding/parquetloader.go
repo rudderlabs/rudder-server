@@ -27,7 +27,7 @@ func NewParquetLoader(destType string, w warehouseutils.LoadFileWriter) *Parquet
 }
 
 func (loader *ParquetLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == warehouseutils.ToProviderCase(loader.destType, UuidTsColumn)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn)
 }
 
 func (*ParquetLoader) GetLoadTimeFormat(_ string) string {

@@ -83,32 +83,33 @@ func TestWHSchemasRepo(t *testing.T) {
 
 	t.Run("GetForNamespace", func(t *testing.T) {
 		t.Log("existing")
-		output, err := r.GetForNamespace(ctx, sourceID, destinationID, namespace)
+		expectedSchema, err := r.GetForNamespace(ctx, sourceID, destinationID, namespace)
 		require.NoError(t, err)
-		require.Equal(t, output, schema)
+		require.Equal(t, expectedSchema, schema)
 
 		t.Log("cancelled context")
 		_, err = r.GetForNamespace(cancelledCtx, sourceID, destinationID, namespace)
 		require.EqualError(t, err, errors.New("querying schemas: context canceled").Error())
 
 		t.Log("not found")
-		_, err = r.GetForNamespace(ctx, notFound, notFound, notFound)
-		require.EqualError(t, err, errors.New("no schema found for source_id: not_found, destination_id: not_found, namespace: not_found").Error())
+		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound, notFound)
+		require.NoError(t, err)
+		require.Empty(t, expectedSchema)
 	})
 
 	t.Run("GetNamespace", func(t *testing.T) {
 		t.Log("existing")
-		output, err := r.GetNamespace(ctx, sourceID, destinationID)
+		expectedNamespace, err := r.GetNamespace(ctx, sourceID, destinationID)
 		require.NoError(t, err)
-		require.Equal(t, output, namespace)
+		require.Equal(t, expectedNamespace, namespace)
 
 		t.Log("cancelled context")
 		_, err = r.GetNamespace(cancelledCtx, sourceID, destinationID)
 		require.EqualError(t, err, errors.New("querying schema: context canceled").Error())
 
 		t.Log("not found")
-		output, err = r.GetNamespace(ctx, notFound, notFound)
+		expectedNamespace, err = r.GetNamespace(ctx, notFound, notFound)
 		require.NoError(t, err)
-		require.Empty(t, output, output)
+		require.Empty(t, expectedNamespace, expectedNamespace)
 	})
 }

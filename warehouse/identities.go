@@ -1,11 +1,14 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"sync"
+
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
@@ -411,7 +414,18 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			Warehouse: warehouse,
 		}, whManager)
 
-		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)
+		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(context.TODO(), job.upload.ID)
+		if tableUploadsErr != nil {
+			pkgLogger.Warnw("table uploads exists",
+				logfield.UploadJobID, job.upload.ID,
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, tableUploadsErr.Error(),
+			)
+			return
+		}
 		if !tableUploadsCreated {
 			err := job.initTableUploads()
 			if err != nil {

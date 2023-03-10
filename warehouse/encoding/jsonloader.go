@@ -23,12 +23,12 @@ func NewJSONLoader(destType string, writer warehouseutils.LoadFileWriter) *JsonL
 }
 
 func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == warehouseutils.ToProviderCase(loader.destType, UuidTsColumn) || columnName == warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn) || columnName == warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn)
 }
 
 func (loader *JsonLoader) GetLoadTimeFormat(columnName string) string {
 	switch columnName {
-	case warehouseutils.ToProviderCase(loader.destType, UuidTsColumn):
+	case warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn):
 		return warehouseutils.BQUuidTSFormat
 	case warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn):
 		return warehouseutils.BQLoadedAtFormat

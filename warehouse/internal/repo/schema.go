@@ -14,14 +14,14 @@ const whSchemaTableName = warehouseutils.WarehouseSchemasTable
 
 const whSchemaTableColumns = `
 	id,
-   wh_upload_id,
-   source_id,
+   	wh_upload_id,
+   	source_id,
 	namespace,
-   destination_id,
+   	destination_id,
 	destination_type,
 	schema,
-   created_at,
-   updated_at
+   	created_at,
+   	updated_at
 `
 
 type WHSchema repo
@@ -105,11 +105,7 @@ func (repo *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, nam
 		return model.WHSchema{}, fmt.Errorf("parsing rows: %w", err)
 	}
 	if len(entries) == 0 {
-		return model.WHSchema{}, fmt.Errorf("no schema found for source_id: %s, destination_id: %s, namespace: %s",
-			sourceID,
-			destID,
-			namespace,
-		)
+		return model.WHSchema{}, nil
 	}
 
 	return *entries[0], err
