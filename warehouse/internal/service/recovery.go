@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/exp/slices"
 )
@@ -23,7 +25,7 @@ type repo interface {
 }
 
 type destination interface {
-	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
+	CrashRecover(warehouse model.Warehouse) (err error)
 }
 
 type onceErr struct {
@@ -66,7 +68,7 @@ func (r *Recovery) detect(ctx context.Context) error {
 }
 
 // Recover recovers a warehouse, for a non-graceful shutdown.
-func (r *Recovery) Recover(ctx context.Context, whManager destination, wh warehouseutils.Warehouse) error {
+func (r *Recovery) Recover(ctx context.Context, whManager destination, wh model.Warehouse) error {
 	r.detectOnce.Do(func() {
 		r.detectErr = r.detect(ctx)
 	})

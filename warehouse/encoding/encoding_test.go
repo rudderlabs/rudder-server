@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -142,7 +144,7 @@ func TestReaderLoader(t *testing.T) {
 			timeColumnFormatMap = map[string]string{
 				encoding.UUIDTsColumn: time.RFC3339,
 			}
-			schema = warehouseutils.TableSchema{
+			schema = model.TableSchema{
 				"column1":  "bigint",
 				"column2":  "int",
 				"column3":  "string",

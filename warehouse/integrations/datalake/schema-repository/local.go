@@ -2,18 +2,18 @@ package schemarepository
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type LocalSchemaRepository struct {
-	warehouse warehouseutils.Warehouse
+	warehouse model.Warehouse
 	uploader  uploader.Uploader
 }
 
-func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader uploader.Uploader) (*LocalSchemaRepository, error) {
+func NewLocalSchemaRepository(wh model.Warehouse, uploader uploader.Uploader) (*LocalSchemaRepository, error) {
 	ls := LocalSchemaRepository{
 		warehouse: wh,
 		uploader:  uploader,
@@ -22,20 +22,20 @@ func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader uploader.Upl
 	return &ls, nil
 }
 
-func (ls *LocalSchemaRepository) FetchSchema(_ warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error) {
+func (ls *LocalSchemaRepository) FetchSchema(_ model.Warehouse) (model.Schema, model.Schema, error) {
 	schema, err := ls.uploader.GetLocalSchema()
 	if err != nil {
-		return warehouseutils.Schema{}, warehouseutils.Schema{}, fmt.Errorf("fetching local schema: %w", err)
+		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching local schema: %w", err)
 	}
 
-	return schema, warehouseutils.Schema{}, nil
+	return schema, model.Schema{}, nil
 }
 
 func (*LocalSchemaRepository) CreateSchema() (err error) {
 	return nil
 }
 
-func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
+func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// fetch schema from local db
 	schema, err := ls.uploader.GetLocalSchema()
 	if err != nil {

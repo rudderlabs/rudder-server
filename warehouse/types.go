@@ -6,7 +6,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type Payload struct {
@@ -14,7 +13,7 @@ type Payload struct {
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
-	UploadSchema                 warehouseutils.Schema
+	UploadSchema                 model.Schema
 	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string
@@ -37,8 +36,8 @@ type Payload struct {
 
 type LoadFileJob struct {
 	StagingFile                *model.StagingFile
-	Schema                     warehouseutils.Schema
-	Warehouse                  warehouseutils.Warehouse
+	Schema                     model.Schema
+	Warehouse                  model.Warehouse
 	Wg                         *misc.WaitGroup
 	LoadFileIDsChan            chan []int64
 	TableToBucketFolderMap     map[string]string

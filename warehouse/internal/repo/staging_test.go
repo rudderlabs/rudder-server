@@ -244,8 +244,8 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			require.Len(t, expectedSchemas, len(stagingFiles))
 
 			for _, es := range expectedSchemas {
-				require.EqualValues(t, warehouseutils.Schema{
-					"table": warehouseutils.TableSchema{
+				require.EqualValues(t, model.Schema{
+					"table": model.TableSchema{
 						"column": "type",
 					},
 				}, es)

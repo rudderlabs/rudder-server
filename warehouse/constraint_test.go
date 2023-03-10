@@ -6,6 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	. "github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -33,7 +34,7 @@ var _ = Describe("Constraint", func() {
 			&BatchRouterEvent{
 				Metadata: Metadata{
 					Table: "rudder_identity_merge_rules",
-					Columns: warehouseutils.TableSchema{
+					Columns: model.TableSchema{
 						"merge_property_1_type":  "string",
 						"merge_property_1_value": "string",
 					},
@@ -52,7 +53,7 @@ var _ = Describe("Constraint", func() {
 			&BatchRouterEvent{
 				Metadata: Metadata{
 					Table: "rudder_identity_merge_rules",
-					Columns: warehouseutils.TableSchema{
+					Columns: model.TableSchema{
 						"merge_property_1_type":  "string",
 						"merge_property_1_value": "string",
 					},

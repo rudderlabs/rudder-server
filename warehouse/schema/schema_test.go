@@ -278,116 +278,116 @@ func TestGetTableSchemaDiff(t *testing.T) {
 	testCases := []struct {
 		name          string
 		tableName     string
-		currentSchema warehouseutils.Schema
-		uploadSchema  warehouseutils.Schema
+		currentSchema model.Schema
+		uploadSchema  model.Schema
 		expected      warehouseutils.TableSchemaDiff
 	}{
 		{
 			name:          "empty current and upload schema",
 			tableName:     "test-table",
-			currentSchema: warehouseutils.Schema{},
-			uploadSchema:  warehouseutils.Schema{},
+			currentSchema: model.Schema{},
+			uploadSchema:  model.Schema{},
 			expected: warehouseutils.TableSchemaDiff{
-				ColumnMap:        warehouseutils.TableSchema{},
-				UpdatedSchema:    warehouseutils.TableSchema{},
-				AlteredColumnMap: warehouseutils.TableSchema{},
+				ColumnMap:        model.TableSchema{},
+				UpdatedSchema:    model.TableSchema{},
+				AlteredColumnMap: model.TableSchema{},
 			},
 		},
 		{
 			name:          "empty current schema",
 			tableName:     "test-table",
-			currentSchema: warehouseutils.Schema{},
-			uploadSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			currentSchema: model.Schema{},
+			uploadSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value",
 				},
 			},
 			expected: warehouseutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: true,
-				ColumnMap: warehouseutils.TableSchema{
+				ColumnMap: model.TableSchema{
 					"test-column": "test-value",
 				},
-				UpdatedSchema: warehouseutils.TableSchema{
+				UpdatedSchema: model.TableSchema{
 					"test-column": "test-value",
 				},
-				AlteredColumnMap: warehouseutils.TableSchema{},
+				AlteredColumnMap: model.TableSchema{},
 			},
 		},
 		{
 			name:      "override existing column",
 			tableName: "test-table",
-			currentSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			currentSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-1",
 				},
 			},
-			uploadSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			uploadSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-2",
 				},
 			},
 			expected: warehouseutils.TableSchemaDiff{
 				Exists:           false,
 				TableToBeCreated: false,
-				ColumnMap:        warehouseutils.TableSchema{},
-				UpdatedSchema: warehouseutils.TableSchema{
+				ColumnMap:        model.TableSchema{},
+				UpdatedSchema: model.TableSchema{
 					"test-column": "test-value-1",
 				},
-				AlteredColumnMap: warehouseutils.TableSchema{},
+				AlteredColumnMap: model.TableSchema{},
 			},
 		},
 		{
 			name:      "union of current and upload schema",
 			tableName: "test-table",
-			currentSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			currentSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column-1": "test-value-1",
 					"test-column-2": "test-value-2",
 				},
 			},
-			uploadSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			uploadSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-2",
 				},
 			},
 			expected: warehouseutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: false,
-				ColumnMap: warehouseutils.TableSchema{
+				ColumnMap: model.TableSchema{
 					"test-column": "test-value-2",
 				},
-				UpdatedSchema: warehouseutils.TableSchema{
+				UpdatedSchema: model.TableSchema{
 					"test-column-1": "test-value-1",
 					"test-column-2": "test-value-2",
 					"test-column":   "test-value-2",
 				},
-				AlteredColumnMap: warehouseutils.TableSchema{},
+				AlteredColumnMap: model.TableSchema{},
 			},
 		},
 		{
 			name:      "override text column with string column",
 			tableName: "test-table",
-			currentSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			currentSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column":   "string",
 					"test-column-2": "test-value-2",
 				},
 			},
-			uploadSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			uploadSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "text",
 				},
 			},
 			expected: warehouseutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: false,
-				ColumnMap:        warehouseutils.TableSchema{},
-				UpdatedSchema: warehouseutils.TableSchema{
+				ColumnMap:        model.TableSchema{},
+				UpdatedSchema: model.TableSchema{
 					"test-column-2": "test-value-2",
 					"test-column":   "text",
 				},
-				AlteredColumnMap: warehouseutils.TableSchema{
+				AlteredColumnMap: model.TableSchema{
 					"test-column": "text",
 				},
 			},
@@ -408,23 +408,23 @@ func TestGetTableSchemaDiff(t *testing.T) {
 func TestHandler_HasSchemaChanged(t *testing.T) {
 	testCases := []struct {
 		name              string
-		localSchema       warehouseutils.Schema
-		schemaInWarehouse warehouseutils.Schema
+		localSchema       model.Schema
+		schemaInWarehouse model.Schema
 		skipDeepEquals    bool
 		expected          bool
 	}{
 		{
 			name:              "When both schemas are empty and skipDeepEquals is true",
-			localSchema:       warehouseutils.Schema{},
-			schemaInWarehouse: warehouseutils.Schema{},
+			localSchema:       model.Schema{},
+			schemaInWarehouse: model.Schema{},
 			skipDeepEquals:    true,
 			expected:          false,
 		},
 		{
 			name:        "When local schema is empty and skipDeepEquals is true",
-			localSchema: warehouseutils.Schema{},
-			schemaInWarehouse: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			localSchema: model.Schema{},
+			schemaInWarehouse: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value",
 				},
 			},
@@ -433,13 +433,13 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 		},
 		{
 			name: "same table, same column, different datatype and skipDeepEquals is true",
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			localSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-1",
 				},
 			},
-			schemaInWarehouse: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			schemaInWarehouse: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-2",
 				},
 			},
@@ -448,14 +448,14 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 		},
 		{
 			name: "same table, different columns and skipDeepEquals is true",
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			localSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column-1": "test-value-1",
 					"test-column-2": "test-value-2",
 				},
 			},
-			schemaInWarehouse: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			schemaInWarehouse: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-2",
 				},
 			},
@@ -464,13 +464,13 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 		},
 		{
 			name: "different table and skipDeepEquals is true",
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			localSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "string",
 				},
 			},
-			schemaInWarehouse: warehouseutils.Schema{
-				"test-table-1": warehouseutils.TableSchema{
+			schemaInWarehouse: model.Schema{
+				"test-table-1": model.TableSchema{
 					"test-column": "text",
 				},
 			},
@@ -479,16 +479,16 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 		},
 		{
 			name:              "When both schemas are empty and skipDeepEquals is false",
-			localSchema:       warehouseutils.Schema{},
-			schemaInWarehouse: warehouseutils.Schema{},
+			localSchema:       model.Schema{},
+			schemaInWarehouse: model.Schema{},
 			skipDeepEquals:    false,
 			expected:          false,
 		},
 		{
 			name:        "When local schema is empty and skipDeepEquals is false",
-			localSchema: warehouseutils.Schema{},
-			schemaInWarehouse: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			localSchema: model.Schema{},
+			schemaInWarehouse: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value",
 				},
 			},
@@ -497,13 +497,13 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 		},
 		{
 			name: "same table, same column, different datatype and skipDeepEquals is false",
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			localSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-1",
 				},
 			},
-			schemaInWarehouse: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			schemaInWarehouse: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-2",
 				},
 			},
@@ -512,14 +512,14 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 		},
 		{
 			name: "same table, different columns and skipDeepEquals is false",
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			localSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column-1": "test-value-1",
 					"test-column-2": "test-value-2",
 				},
 			},
-			schemaInWarehouse: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			schemaInWarehouse: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "test-value-2",
 				},
 			},
@@ -528,13 +528,13 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 		},
 		{
 			name: "different table and skipDeepEquals is false",
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			localSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test-column": "string",
 				},
 			},
-			schemaInWarehouse: warehouseutils.Schema{
-				"test-table-1": warehouseutils.TableSchema{
+			schemaInWarehouse: model.Schema{
+				"test-table-1": model.TableSchema{
 					"test-column": "text",
 				},
 			},
@@ -550,7 +550,7 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 			t.Parallel()
 
 			handler := &schema.Handler{
-				Warehouse: warehouseutils.Warehouse{
+				Warehouse: model.Warehouse{
 					Type: warehouseutils.SNOWFLAKE,
 				},
 				SkipDeepEqualSchemas: tc.skipDeepEquals,
@@ -566,13 +566,13 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		schema         warehouseutils.Schema
-		expectedSchema warehouseutils.Schema
+		schema         model.Schema
+		expectedSchema model.Schema
 	}{
 		{
 			name: "no deprecated columns",
-			schema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			schema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":       "int",
 					"test_str":       "string",
 					"test_bool":      "boolean",
@@ -582,8 +582,8 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 					"test_datetime":  "datetime",
 				},
 			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":       "int",
 					"test_str":       "string",
 					"test_bool":      "boolean",
@@ -596,8 +596,8 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 		},
 		{
 			name: "invalid deprecated column format",
-			schema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			schema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":                 "int",
 					"test_str":                 "string",
 					"test_bool":                "boolean",
@@ -610,8 +610,8 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 					"test-deprecated-column-2": "boolean",
 				},
 			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":                 "int",
 					"test_str":                 "string",
 					"test_bool":                "boolean",
@@ -627,8 +627,8 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 		},
 		{
 			name: "valid deprecated column format",
-			schema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			schema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":                 "int",
 					"test_str":                 "string",
 					"test_bool":                "boolean",
@@ -644,8 +644,8 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 					"test-deprecated-bc3bbc6d-42c9-4d2c-b0e6-bf5820914b09": "boolean",
 				},
 			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":                 "int",
 					"test_str":                 "string",
 					"test_bool":                "boolean",
@@ -676,7 +676,7 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 			t.Parallel()
 
 			sh := &schema.Handler{
-				Warehouse: warehouseutils.Warehouse{
+				Warehouse: model.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,
 					},
@@ -702,19 +702,19 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 func TestConsolidateSchemas(t *testing.T) {
 	testsCases := []struct {
 		name           string
-		schemas        []warehouseutils.Schema
-		expectedSchema warehouseutils.Schema
+		schemas        []model.Schema
+		expectedSchema model.Schema
 	}{
 		{
 			name:           "empty schemas",
-			schemas:        []warehouseutils.Schema{},
-			expectedSchema: warehouseutils.Schema{},
+			schemas:        []model.Schema{},
+			expectedSchema: model.Schema{},
 		},
 		{
 			name: "single schema",
-			schemas: []warehouseutils.Schema{
+			schemas: []model.Schema{
 				{
-					"test-table": warehouseutils.TableSchema{
+					"test-table": model.TableSchema{
 						"test_int":       "int",
 						"test_str":       "string",
 						"test_bool":      "boolean",
@@ -724,8 +724,8 @@ func TestConsolidateSchemas(t *testing.T) {
 					},
 				},
 			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":       "int",
 					"test_str":       "string",
 					"test_bool":      "boolean",
@@ -737,9 +737,9 @@ func TestConsolidateSchemas(t *testing.T) {
 		},
 		{
 			name: "multiple schemas",
-			schemas: []warehouseutils.Schema{
+			schemas: []model.Schema{
 				{
-					"test-table-1": warehouseutils.TableSchema{
+					"test-table-1": model.TableSchema{
 						"test_int":       "int",
 						"test_str":       "string",
 						"test_bool":      "boolean",
@@ -749,7 +749,7 @@ func TestConsolidateSchemas(t *testing.T) {
 					},
 				},
 				{
-					"test-table-2": warehouseutils.TableSchema{
+					"test-table-2": model.TableSchema{
 						"test_int":       "int",
 						"test_str":       "string",
 						"test_bool":      "boolean",
@@ -759,8 +759,8 @@ func TestConsolidateSchemas(t *testing.T) {
 					},
 				},
 			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table-1": warehouseutils.TableSchema{
+			expectedSchema: model.Schema{
+				"test-table-1": model.TableSchema{
 					"test_int":       "int",
 					"test_str":       "string",
 					"test_bool":      "boolean",
@@ -768,7 +768,7 @@ func TestConsolidateSchemas(t *testing.T) {
 					"test_timestamp": "timestamp",
 					"test_date":      "date",
 				},
-				"test-table-2": warehouseutils.TableSchema{
+				"test-table-2": model.TableSchema{
 					"test_int":       "int",
 					"test_str":       "string",
 					"test_bool":      "boolean",
@@ -780,24 +780,24 @@ func TestConsolidateSchemas(t *testing.T) {
 		},
 		{
 			name: "multiple schemas with same table",
-			schemas: []warehouseutils.Schema{
+			schemas: []model.Schema{
 				{
-					"test-table": warehouseutils.TableSchema{
+					"test-table": model.TableSchema{
 						"test_int":  "int",
 						"test_str":  "string",
 						"test_bool": "boolean",
 					},
 				},
 				{
-					"test-table": warehouseutils.TableSchema{
+					"test-table": model.TableSchema{
 						"test_float":     "float",
 						"test_timestamp": "timestamp",
 						"test_date":      "date",
 					},
 				},
 			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":       "int",
 					"test_str":       "string",
 					"test_bool":      "boolean",
@@ -809,9 +809,9 @@ func TestConsolidateSchemas(t *testing.T) {
 		},
 		{
 			name: "multiple schemas with preference to first schema",
-			schemas: []warehouseutils.Schema{
+			schemas: []model.Schema{
 				{
-					"test-table": warehouseutils.TableSchema{
+					"test-table": model.TableSchema{
 						"test_int":       "int",
 						"test_str":       "string",
 						"test_bool":      "boolean",
@@ -821,7 +821,7 @@ func TestConsolidateSchemas(t *testing.T) {
 					},
 				},
 				{
-					"test-table": warehouseutils.TableSchema{
+					"test-table": model.TableSchema{
 						"test_int":       "new_int",
 						"test_str":       "new_string",
 						"test_bool":      "new_boolean",
@@ -831,8 +831,8 @@ func TestConsolidateSchemas(t *testing.T) {
 					},
 				},
 			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
 					"test_int":       "int",
 					"test_str":       "string",
 					"test_bool":      "boolean",
@@ -849,7 +849,7 @@ func TestConsolidateSchemas(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			// require.Equal(t, schema.ConsolidateStagingSchemas(warehouseutils.Schema{}, tc.schemas), tc.expectedSchema)
+			// require.Equal(t, schema.ConsolidateStagingSchemas(model.Schema{}, tc.schemas), tc.expectedSchema)
 		})
 	}
 }

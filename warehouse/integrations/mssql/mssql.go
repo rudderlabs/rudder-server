@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"io"
 	"net"
 	"net/url"
@@ -16,8 +17,6 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
-
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -87,9 +86,9 @@ type MSSQL struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    uploader.Uploader
-	ConnectTimeout              time.Duration
+	Warehouse      model.Warehouse
+	Uploader       uploader.Uploader
+	ConnectTimeout time.Duration
 	EnableDeleteByJobs          bool
 	Logger                      logger.Logger
 	NumWorkersDownloadLoadFiles int
@@ -193,7 +192,7 @@ func (ms *MSSQL) getConnectionCredentials() Credentials {
 	return creds
 }
 
-func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
@@ -201,7 +200,7 @@ func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) str
 	return strings.Join(arr, ",")
 }
 
-func (*MSSQL) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*MSSQL) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -237,7 +236,7 @@ func (ms *MSSQL) DeleteBy(tableNames []string, params warehouseutils.DeleteByPar
 	return nil
 }
 
-func (ms *MSSQL) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (ms *MSSQL) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	ms.Logger.Infof("MS: Starting load for table:%s", tableName)
 
 	// sort column names
@@ -619,7 +618,7 @@ func (ms *MSSQL) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (ms *MSSQL) createTable(name string, columns warehouseutils.TableSchema) (err error) {
+func (ms *MSSQL) createTable(name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, ColumnsWithDataTypes(columns, ""))
 
@@ -628,7 +627,7 @@ func (ms *MSSQL) createTable(name string, columns warehouseutils.TableSchema) (e
 	return
 }
 
-func (ms *MSSQL) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
+func (ms *MSSQL) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
 	return err
@@ -689,7 +688,7 @@ func (*MSSQL) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (ms *MSSQL) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (ms *MSSQL) TestConnection(warehouse model.Warehouse) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -717,7 +716,7 @@ func (ms *MSSQL) TestConnection(warehouse warehouseutils.Warehouse) (err error) 
 	return nil
 }
 
-func (ms *MSSQL) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
+func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader
@@ -728,7 +727,7 @@ func (ms *MSSQL) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Upl
 	return err
 }
 
-func (ms *MSSQL) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
+func (ms *MSSQL) CrashRecover(warehouse model.Warehouse) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.DB, err = Connect(ms.getConnectionCredentials())
@@ -782,7 +781,7 @@ func (ms *MSSQL) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *MSSQL) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
+func (ms *MSSQL) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ms.getConnectionCredentials())
@@ -791,8 +790,8 @@ func (ms *MSSQL) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unreco
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.Schema)
-	unrecognizedSchema = make(warehouseutils.Schema)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
@@ -826,13 +825,13 @@ func (ms *MSSQL) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unreco
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(warehouseutils.TableSchema)
+			schema[tName] = make(model.TableSchema)
 		}
 		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(warehouseutils.TableSchema)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
@@ -887,7 +886,7 @@ func (ms *MSSQL) GetTotalCountInTable(ctx context.Context, tableName string) (in
 	return total, err
 }
 
-func (ms *MSSQL) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (ms *MSSQL) Connect(warehouse model.Warehouse) (client.Client, error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(

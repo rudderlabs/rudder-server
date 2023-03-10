@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,8 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"golang.org/x/exp/slices"
 
@@ -144,7 +143,7 @@ var partitionKeyMap = map[string]string{
 type Redshift struct {
 	DB             *sql.DB
 	Namespace      string
-	Warehouse      warehouseutils.Warehouse
+	Warehouse      model.Warehouse
 	Uploader       uploader.Uploader
 	ConnectTimeout time.Duration
 	Logger         logger.Logger
@@ -205,7 +204,7 @@ func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
-func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	// TODO: do we need sorted order here?
 	var keys []string
 	for colName := range columns {
@@ -220,7 +219,7 @@ func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) str
 	return strings.Join(arr, ",")
 }
 
-func (rs *Redshift) CreateTable(tableName string, columns warehouseutils.TableSchema) (err error) {
+func (rs *Redshift) CreateTable(tableName string, columns model.TableSchema) (err error) {
 	name := fmt.Sprintf(`%q.%q`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
@@ -410,7 +409,7 @@ func (rs *Redshift) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchema, skipTempTableDelete bool) (string, error) {
+func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
 	var (
 		err              error
 		query            string
@@ -1273,7 +1272,7 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace
-func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
+func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
@@ -1282,8 +1281,8 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	}
 	defer func() { _ = dbHandle.Close() }()
 
-	schema = make(warehouseutils.Schema)
-	unrecognizedSchema = make(warehouseutils.Schema)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := `
 			SELECT
@@ -1322,7 +1321,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(warehouseutils.TableSchema)
+			schema[tName] = make(model.TableSchema)
 		}
 		if datatype, ok := dataTypesMapToRudder[cType]; ok {
 			if datatype == "string" && charLength.Int64 > rudderStringLength {
@@ -1331,7 +1330,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(warehouseutils.TableSchema)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
@@ -1341,7 +1340,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	return
 }
 
-func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
+func (rs *Redshift) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
@@ -1350,7 +1349,7 @@ func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader uploader.
 	return err
 }
 
-func (rs *Redshift) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (rs *Redshift) TestConnection(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.DB, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
@@ -1379,7 +1378,7 @@ func (rs *Redshift) Cleanup() {
 	}
 }
 
-func (rs *Redshift) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
+func (rs *Redshift) CrashRecover(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.DB, err = Connect(rs.getConnectionCredentials())
@@ -1391,7 +1390,7 @@ func (rs *Redshift) CrashRecover(warehouse warehouseutils.Warehouse) (err error)
 	return
 }
 
-func (*Redshift) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*Redshift) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -1432,7 +1431,7 @@ func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) 
 	return total, err
 }
 
-func (rs *Redshift) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (rs *Redshift) Connect(warehouse model.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())

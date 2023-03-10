@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"io"
 	"net"
 	"net/url"
@@ -15,8 +16,6 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
-
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -87,7 +86,7 @@ type AzureSynapse struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
+	Warehouse                   model.Warehouse
 	Uploader                    uploader.Uploader
 	NumWorkersDownloadLoadFiles int
 	Logger                      logger.Logger
@@ -177,7 +176,7 @@ func (as *AzureSynapse) getConnectionCredentials() credentials {
 	}
 }
 
-func columnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
+func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
@@ -185,11 +184,11 @@ func columnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) str
 	return strings.Join(arr, ",")
 }
 
-func (*AzureSynapse) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*AzureSynapse) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	as.Logger.Infof("AZ: Starting load for table:%s", tableName)
 
 	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(as.Uploader.GetTableSchemaInWarehouse(tableName))
@@ -577,7 +576,7 @@ func (as *AzureSynapse) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (as *AzureSynapse) createTable(name string, columns warehouseutils.TableSchema) (err error) {
+func (as *AzureSynapse) createTable(name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, columnsWithDataTypes(columns, ""))
 
@@ -586,7 +585,7 @@ func (as *AzureSynapse) createTable(name string, columns warehouseutils.TableSch
 	return
 }
 
-func (as *AzureSynapse) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
+func (as *AzureSynapse) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = as.createTable(as.Namespace+"."+tableName, columnMap)
 	return err
@@ -647,7 +646,7 @@ func (*AzureSynapse) AlterColumn(_, _, _ string) (model.AlterTableResponse, erro
 	return model.AlterTableResponse{}, nil
 }
 
-func (as *AzureSynapse) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (as *AzureSynapse) TestConnection(warehouse model.Warehouse) (err error) {
 	as.Warehouse = warehouse
 	as.DB, err = connect(as.getConnectionCredentials())
 	if err != nil {
@@ -669,7 +668,7 @@ func (as *AzureSynapse) TestConnection(warehouse warehouseutils.Warehouse) (err 
 	return nil
 }
 
-func (as *AzureSynapse) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
+func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader
@@ -680,7 +679,7 @@ func (as *AzureSynapse) Setup(warehouse warehouseutils.Warehouse, uploader uploa
 	return err
 }
 
-func (as *AzureSynapse) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
+func (as *AzureSynapse) CrashRecover(warehouse model.Warehouse) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.DB, err = connect(as.getConnectionCredentials())
@@ -734,7 +733,7 @@ func (as *AzureSynapse) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
-func (as *AzureSynapse) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
+func (as *AzureSynapse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())
@@ -743,8 +742,8 @@ func (as *AzureSynapse) FetchSchema(warehouse warehouseutils.Warehouse) (schema,
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.Schema)
-	unrecognizedSchema = make(warehouseutils.Schema)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
@@ -779,13 +778,13 @@ func (as *AzureSynapse) FetchSchema(warehouse warehouseutils.Warehouse) (schema,
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(warehouseutils.TableSchema)
+			schema[tName] = make(model.TableSchema)
 		}
 		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(warehouseutils.TableSchema)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
@@ -840,7 +839,7 @@ func (as *AzureSynapse) GetTotalCountInTable(ctx context.Context, tableName stri
 	return total, err
 }
 
-func (as *AzureSynapse) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (as *AzureSynapse) Connect(warehouse model.Warehouse) (client.Client, error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())

@@ -64,21 +64,19 @@ type DestinationValidator interface {
 
 type destinationValidationImpl struct{}
 
-func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.Schema { return warehouseutils.Schema{} }
-func (*dummyUploader) GetLocalSchema() (warehouseutils.Schema, error) {
-	return warehouseutils.Schema{}, nil
-}
-func (*dummyUploader) UpdateLocalSchema(_ warehouseutils.Schema) error  { return nil }
+func (*dummyUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
+func (*dummyUploader) GetLocalSchema() (model.Schema, error)            { return model.Schema{}, nil }
+func (*dummyUploader) UpdateLocalSchema(_ model.Schema) error           { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
 func (*dummyUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
 func (*dummyUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
-func (*dummyUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
+func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
-func (*dummyUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
+func (*dummyUploader) GetTableSchemaInUpload(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
 func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
@@ -537,13 +535,13 @@ func createManager(dest *backendconfig.DestinationT) (manager.WarehouseOperation
 	return operations, nil
 }
 
-func createDummyWarehouse(dest *backendconfig.DestinationT) warehouseutils.Warehouse {
+func createDummyWarehouse(dest *backendconfig.DestinationT) model.Warehouse {
 	var (
 		destType  = dest.DestinationDefinition.Name
 		namespace = configuredNamespaceInDestination(dest)
 	)
 
-	return warehouseutils.Warehouse{
+	return model.Warehouse{
 		WorkspaceID: dest.WorkspaceID,
 		Destination: *dest,
 		Namespace:   namespace,

@@ -3,10 +3,9 @@ package datalake
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"regexp"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -36,11 +35,11 @@ func Init() {
 
 type HandleT struct {
 	SchemaRepository schemarepository.SchemaRepository
-	Warehouse        warehouseutils.Warehouse
-	Uploader         uploader.Uploader
+	Warehouse model.Warehouse
+	Uploader  uploader.Uploader
 }
 
-func (wh *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
+func (wh *HandleT) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	wh.Warehouse = warehouse
 	wh.Uploader = uploader
 
@@ -49,11 +48,11 @@ func (wh *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader uploader.U
 	return err
 }
 
-func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
+func (*HandleT) CrashRecover(_ model.Warehouse) (err error) {
 	return nil
 }
 
-func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error) {
+func (wh *HandleT) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
 	return wh.SchemaRepository.FetchSchema(warehouse)
 }
 
@@ -61,7 +60,7 @@ func (wh *HandleT) CreateSchema() (err error) {
 	return wh.SchemaRepository.CreateSchema()
 }
 
-func (wh *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
+func (wh *HandleT) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	return wh.SchemaRepository.CreateTable(tableName, columnMap)
 }
 
@@ -110,11 +109,11 @@ func (wh *HandleT) LoadIdentityMappingsTable() error {
 func (*HandleT) Cleanup() {
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (bool, error) {
+func (*HandleT) IsEmpty(_ model.Warehouse) (bool, error) {
 	return false, nil
 }
 
-func (*HandleT) TestConnection(_ warehouseutils.Warehouse) error {
+func (*HandleT) TestConnection(_ model.Warehouse) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
@@ -126,7 +125,7 @@ func (*HandleT) GetTotalCountInTable(context.Context, string) (int64, error) {
 	return 0, nil
 }
 
-func (*HandleT) Connect(_ warehouseutils.Warehouse) (client.Client, error) {
+func (*HandleT) Connect(_ model.Warehouse) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 

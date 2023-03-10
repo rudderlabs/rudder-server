@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -25,7 +23,7 @@ var (
 )
 
 var (
-	TableSchemaMap = warehouseutils.TableSchema{
+	TableSchemaMap = model.TableSchema{
 		"id":  "int",
 		"val": "string",
 	}
@@ -33,7 +31,7 @@ var (
 		"id":  1,
 		"val": "RudderStack",
 	}
-	AlterColumnMap = warehouseutils.TableSchema{
+	AlterColumnMap = model.TableSchema{
 		"val_alter": "string",
 	}
 	Namespace = "rudderstack_setup_test"

@@ -4,12 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -116,9 +115,9 @@ type Postgres struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    uploader.Uploader
-	ConnectTimeout              time.Duration
+	Warehouse      model.Warehouse
+	Uploader       uploader.Uploader
+	ConnectTimeout time.Duration
 	Logger                      logger.Logger
 	EnableDeleteByJobs          bool
 	NumWorkersDownloadLoadFiles int
@@ -227,7 +226,7 @@ func (pg *Postgres) getConnectionCredentials() Credentials {
 	return creds
 }
 
-func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
@@ -235,7 +234,7 @@ func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) str
 	return strings.Join(arr, ",")
 }
 
-func (*Postgres) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*Postgres) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -292,14 +291,14 @@ func (pg *Postgres) CreateSchema() (err error) {
 	return
 }
 
-func (pg *Postgres) createTable(name string, columns warehouseutils.TableSchema) (err error) {
+func (pg *Postgres) createTable(name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pg.Logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.DB.Exec(sqlStatement)
 	return
 }
 
-func (pg *Postgres) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
+func (pg *Postgres) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)
@@ -354,7 +353,7 @@ func (*Postgres) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (pg *Postgres) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (pg *Postgres) TestConnection(warehouse model.Warehouse) (err error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
 			pg.Logger.Error(sslKeyError.Error())
@@ -384,7 +383,7 @@ func (pg *Postgres) TestConnection(warehouse warehouseutils.Warehouse) (err erro
 }
 
 func (pg *Postgres) Setup(
-	warehouse warehouseutils.Warehouse,
+	warehouse model.Warehouse,
 	uploader uploader.Uploader,
 ) (err error) {
 	pg.Warehouse = warehouse
@@ -397,12 +396,12 @@ func (pg *Postgres) Setup(
 	return err
 }
 
-func (pg *Postgres) CrashRecover(warehouseutils.Warehouse) error {
+func (pg *Postgres) CrashRecover(model.Warehouse) error {
 	return nil
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Postgres) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
+func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(pg.getConnectionCredentials())
@@ -411,8 +410,8 @@ func (pg *Postgres) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.Schema)
-	unrecognizedSchema = make(warehouseutils.Schema)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := `
 		SELECT
@@ -447,14 +446,14 @@ func (pg *Postgres) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			return
 		}
 		if _, ok := schema[tName.String]; !ok {
-			schema[tName.String] = make(warehouseutils.TableSchema)
+			schema[tName.String] = make(model.TableSchema)
 		}
 		if cName.Valid && cType.Valid {
 			if datatype, ok := postgresDataTypesMapToRudder[cType.String]; ok {
 				schema[tName.String][cName.String] = datatype
 			} else {
 				if _, ok := unrecognizedSchema[tName.String]; !ok {
-					unrecognizedSchema[tName.String] = make(warehouseutils.TableSchema)
+					unrecognizedSchema[tName.String] = make(model.TableSchema)
 				}
 				unrecognizedSchema[tName.String][cType.String] = warehouseutils.MISSING_DATATYPE
 
@@ -564,7 +563,7 @@ func (pg *Postgres) GetTotalCountInTable(ctx context.Context, tableName string) 
 	return total, err
 }
 
-func (pg *Postgres) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (pg *Postgres) Connect(warehouse model.Warehouse) (client.Client, error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 			pg.Logger.Error(err.Error())

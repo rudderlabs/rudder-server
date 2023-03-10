@@ -1,17 +1,18 @@
 package uploader
 
 import (
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type Uploader interface {
-	GetSchemaInWarehouse() warehouseutils.Schema
-	GetLocalSchema() (warehouseutils.Schema, error)
-	UpdateLocalSchema(schema warehouseutils.Schema) error
-	GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchema
-	GetTableSchemaInUpload(tableName string) warehouseutils.TableSchema
+	GetSchemaInWarehouse() model.Schema
+	GetLocalSchema() (model.Schema, error)
+	UpdateLocalSchema(schema model.Schema) error
+	GetTableSchemaInWarehouse(tableName string) model.TableSchema
+	GetTableSchemaInUpload(tableName string) model.TableSchema
 	GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFile(tableName string) (warehouseutils.LoadFile, error)

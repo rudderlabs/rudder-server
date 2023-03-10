@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
@@ -212,15 +214,6 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 }
 
-type Warehouse struct {
-	WorkspaceID string
-	Source      backendconfig.SourceT
-	Destination backendconfig.DestinationT
-	Namespace   string
-	Type        string
-	Identifier  string
-}
-
 type DeleteByMetaData struct {
 	JobRunId  string `json:"job_run_id"`
 	TaskRunId string `json:"task_run_id"`
@@ -240,25 +233,12 @@ type ColumnInfo struct {
 	Type  string
 }
 
-func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
-	destConfig := w.Destination.Config
-	if destConfig[key] != nil {
-		if val, ok := destConfig[key].(bool); ok {
-			return val
-		}
-	}
-	return false
-}
-
 type Destination struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 }
 
-type (
-	Schema      map[string]TableSchema
-	TableSchema map[string]string
-)
+type Schema model.Schema
 
 type KeyValue struct {
 	Key   string
@@ -284,9 +264,9 @@ func IDResolutionEnabled() bool {
 type TableSchemaDiff struct {
 	Exists           bool
 	TableToBeCreated bool
-	ColumnMap        TableSchema
-	UpdatedSchema    TableSchema
-	AlteredColumnMap TableSchema
+	ColumnMap        model.TableSchema
+	UpdatedSchema    model.TableSchema
+	AlteredColumnMap model.TableSchema
 }
 
 type QueryResult struct {
@@ -361,7 +341,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	return
 }
 
-func GetColumnsFromTableSchema(schema TableSchema) []string {
+func GetColumnsFromTableSchema(schema model.TableSchema) []string {
 	keys := reflect.ValueOf(schema).MapKeys()
 	strKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
@@ -500,8 +480,8 @@ func GetS3Locations(loadFiles []LoadFile) []LoadFile {
 	return loadFiles
 }
 
-func JSONSchemaToMap(rawMsg json.RawMessage) Schema {
-	schema := make(Schema)
+func JSONSchemaToMap(rawMsg json.RawMessage) model.Schema {
+	schema := make(model.Schema)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))
@@ -601,7 +581,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	return provider
 }
 
-func GetConfigValue(key string, warehouse Warehouse) (val string) {
+func GetConfigValue(key string, warehouse model.Warehouse) (val string) {
 	destConfig := warehouse.Destination.Config
 	if destConfig[key] != nil {
 		val, _ = destConfig[key].(string)
@@ -609,7 +589,7 @@ func GetConfigValue(key string, warehouse Warehouse) (val string) {
 	return val
 }
 
-func GetConfigValueBoolString(key string, warehouse Warehouse) string {
+func GetConfigValueBoolString(key string, warehouse model.Warehouse) string {
 	destConfig := warehouse.Destination.Config
 	if destConfig[key] != nil {
 		if val, ok := destConfig[key].(bool); ok {
@@ -631,7 +611,7 @@ func GetConfigValueAsMap(key string, config map[string]interface{}) map[string]i
 	return value
 }
 
-func SortColumnKeysFromColumnMap(columnMap TableSchema) []string {
+func SortColumnKeysFromColumnMap(columnMap model.TableSchema) []string {
 	columnKeys := make([]string, 0, len(columnMap))
 	for k := range columnMap {
 		columnKeys = append(columnKeys, k)
@@ -640,7 +620,7 @@ func SortColumnKeysFromColumnMap(columnMap TableSchema) []string {
 	return columnKeys
 }
 
-func IdentityMergeRulesTableName(warehouse Warehouse) string {
+func IdentityMergeRulesTableName(warehouse model.Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -652,11 +632,11 @@ func IdentityMappingsWarehouseTableName(provider string) string {
 	return ToProviderCase(provider, IdentityMappingsTable)
 }
 
-func IdentityMappingsTableName(warehouse Warehouse) string {
+func IdentityMappingsTableName(warehouse model.Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func IdentityMappingsUniqueMappingConstraintName(warehouse Warehouse) string {
+func IdentityMappingsUniqueMappingConstraintName(warehouse model.Warehouse) string {
 	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -770,7 +750,7 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
+func WHCounterStat(name string, warehouse *model.Warehouse, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      WAREHOUSE,
 		"destType":    warehouse.Type,

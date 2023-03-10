@@ -3,11 +3,10 @@ package deltalake
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -116,9 +115,9 @@ type Deltalake struct {
 	Client                 *client.Client
 	Namespace              string
 	ObjectStorage          string
-	Warehouse              warehouseutils.Warehouse
-	Uploader               uploader.Uploader
-	ConnectTimeout         time.Duration
+	Warehouse      model.Warehouse
+	Uploader       uploader.Uploader
+	ConnectTimeout time.Duration
 	Logger                 logger.Logger
 	Stats                  stats.Stats
 	Schema                 string
@@ -168,7 +167,7 @@ func getDeltaLakeDataType(columnType string) string {
 }
 
 // ColumnsWithDataTypes returns columns with specified prefix and data type
-func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
 		if _, ok := excludeColumnsMap[name]; ok {
@@ -429,7 +428,7 @@ func (dl *Deltalake) dropStagingTables(tableNames []string) {
 }
 
 // sortedColumnNames returns sorted column names
-func (dl *Deltalake) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchema, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiff) (sortedColumnNames string) {
+func (dl *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiff) (sortedColumnNames string) {
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sortedColumnNames = strings.Join(sortedColumnKeys, ",")
 	} else {
@@ -488,11 +487,11 @@ func (dl *Deltalake) getLoadFolder(location string) (loadFolder string) {
 	return
 }
 
-func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchema) (diff warehouseutils.TableSchemaDiff) {
+func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema) (diff warehouseutils.TableSchemaDiff) {
 	diff = warehouseutils.TableSchemaDiff{
-		ColumnMap: make(warehouseutils.TableSchema),
+		ColumnMap: make(model.TableSchema),
 	}
-	diff.ColumnMap = make(warehouseutils.TableSchema)
+	diff.ColumnMap = make(model.TableSchema)
 	for columnName, columnType := range tableSchemaAfterUpload {
 		if _, ok := tableSchemaInUpload[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType
@@ -502,7 +501,7 @@ func getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload warehouseuti
 }
 
 // loadTable Loads table with table name
-func (dl *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (dl *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	// Getting sorted column keys from tableSchemaInUpload
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
@@ -773,7 +772,7 @@ func (dl *Deltalake) connectToWarehouse() (Client *client.Client, err error) {
 }
 
 // CreateTable creates tables with table name and columns
-func (dl *Deltalake) CreateTable(tableName string, columns warehouseutils.TableSchema) (err error) {
+func (dl *Deltalake) CreateTable(tableName string, columns model.TableSchema) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
 
 	tableLocationSql := dl.getTableLocationSql(tableName)
@@ -881,7 +880,7 @@ func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) 
 }
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
-func (dl *Deltalake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
+func (dl *Deltalake) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	Client, err := dl.connectToWarehouse()
@@ -891,8 +890,8 @@ func (dl *Deltalake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 	defer Client.Close()
 
 	// Schema Initialization
-	schema = make(warehouseutils.Schema)
-	unrecognizedSchema = make(warehouseutils.Schema)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	// Fetching the tables
 	tableNames, err := dl.fetchTables(Client, dl.Namespace)
@@ -932,13 +931,13 @@ func (dl *Deltalake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 			}
 
 			if _, ok := schema[tableName]; !ok {
-				schema[tableName] = make(warehouseutils.TableSchema)
+				schema[tableName] = make(model.TableSchema)
 			}
 			if datatype, ok := dataTypesMapToRudder[item.GetDataType()]; ok {
 				schema[tableName][item.GetColName()] = datatype
 			} else {
 				if _, ok := unrecognizedSchema[tableName]; !ok {
-					unrecognizedSchema[tableName] = make(warehouseutils.TableSchema)
+					unrecognizedSchema[tableName] = make(model.TableSchema)
 				}
 				unrecognizedSchema[tableName][item.GetColName()] = warehouseutils.MISSING_DATATYPE
 
@@ -950,7 +949,7 @@ func (dl *Deltalake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 }
 
 // Setup populate the Deltalake
-func (dl *Deltalake) Setup(warehouse warehouseutils.Warehouse, uploader uploader.Uploader) (err error) {
+func (dl *Deltalake) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.Uploader = uploader
@@ -961,7 +960,7 @@ func (dl *Deltalake) Setup(warehouse warehouseutils.Warehouse, uploader uploader
 }
 
 // TestConnection test the connection for the warehouse
-func (dl *Deltalake) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (dl *Deltalake) TestConnection(warehouse model.Warehouse) (err error) {
 	dl.Warehouse = warehouse
 	dl.Client, err = dl.connectToWarehouse()
 	return
@@ -976,7 +975,7 @@ func (dl *Deltalake) Cleanup() {
 }
 
 // CrashRecover crash recover scenarios
-func (dl *Deltalake) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
+func (dl *Deltalake) CrashRecover(warehouse model.Warehouse) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.Client, err = dl.connectToWarehouse()
@@ -989,7 +988,7 @@ func (dl *Deltalake) CrashRecover(warehouse warehouseutils.Warehouse) (err error
 }
 
 // IsEmpty checks if the warehouse is empty or not
-func (*Deltalake) IsEmpty(warehouseutils.Warehouse) (empty bool, err error) {
+func (*Deltalake) IsEmpty(model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -1046,7 +1045,7 @@ func (dl *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string)
 }
 
 // Connect returns Client
-func (dl *Deltalake) Connect(warehouse warehouseutils.Warehouse) (warehouseclient.Client, error) {
+func (dl *Deltalake) Connect(warehouse model.Warehouse) (warehouseclient.Client, error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.ObjectStorage = warehouseutils.ObjectStorageType(

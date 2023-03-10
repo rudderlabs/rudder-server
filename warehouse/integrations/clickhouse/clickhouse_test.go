@@ -13,6 +13,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
@@ -291,7 +293,7 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 			ch := clickhouse.NewClickhouse()
 			clickhouse.WithConfig(ch, c)
 
-			ch.Warehouse = warehouseutils.Warehouse{
+			ch.Warehouse = model.Warehouse{
 				WorkspaceID: tc.workspaceID,
 			}
 			ch.ObjectStorage = tc.ObjectStorage
@@ -303,22 +305,20 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 
 type mockUploader struct {
 	minioPort   string
-	tableSchema warehouseutils.TableSchema
+	tableSchema model.TableSchema
 	metadata    []warehouseutils.LoadFile
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema { return warehouseutils.Schema{} }
-func (*mockUploader) GetLocalSchema() (warehouseutils.Schema, error) {
-	return warehouseutils.Schema{}, nil
-}
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
-func (*mockUploader) UseRudderStorage() bool                          { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                         { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)       { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{}
+func (*mockUploader) GetSchemaInWarehouse() model.Schema        { return model.Schema{} }
+func (*mockUploader) GetLocalSchema() (model.Schema, error)     { return model.Schema{}, nil }
+func (*mockUploader) UpdateLocalSchema(_ model.Schema) error    { return nil }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool           { return false }
+func (*mockUploader) UseRudderStorage() bool                    { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time        { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                   { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Time{}, time.Time{} }
+func (*mockUploader) GetTableSchemaInWarehouse(_ string) model.TableSchema {
+	return model.TableSchema{}
 }
 
 func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFile, error) {
@@ -333,7 +333,7 @@ func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	return sampleLocation, nil
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
+func (m *mockUploader) GetTableSchemaInUpload(string) model.TableSchema {
 	return m.tableSchema
 }
 
@@ -437,7 +437,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 
 			clickhouse.WithConfig(ch, conf)
 
-			warehouse := warehouseutils.Warehouse{
+			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("test_namespace_%d", i),
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
@@ -456,7 +456,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 				},
 			}
 			mockUploader := &mockUploader{
-				tableSchema: warehouseutils.TableSchema{
+				tableSchema: model.TableSchema{
 					"alter_test_bool":     "boolean",
 					"alter_test_datetime": "datetime",
 					"alter_test_float":    "float",
@@ -530,7 +530,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Log("Creating table")
-			err = ch.CreateTable(table, warehouseutils.TableSchema{
+			err = ch.CreateTable(table, model.TableSchema{
 				"id":                  "string",
 				"test_int":            "int",
 				"test_float":          "float",
@@ -600,7 +600,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 
 			t.Log("Creating users identifies and table")
 			for _, tableName := range []string{warehouseutils.IdentifiesTable, warehouseutils.UsersTable} {
-				err = ch.CreateTable(tableName, warehouseutils.TableSchema{
+				err = ch.CreateTable(tableName, model.TableSchema{
 					"id":            "string",
 					"user_id":       "string",
 					"test_int":      "int",
@@ -692,7 +692,7 @@ func TestHandle_TestConnection(t *testing.T) {
 				host = tc.host
 			}
 
-			warehouse := warehouseutils.Warehouse{
+			warehouse := model.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
@@ -740,7 +740,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 		provider     = "MINIO"
 		host         = "localhost"
 		tableName    = warehouseutils.CTStagingTablePrefix + "_test_table"
-		testColumns  = warehouseutils.TableSchema{
+		testColumns  = model.TableSchema{
 			"id":  "int",
 			"val": "string",
 		}
@@ -779,7 +779,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 			ch := clickhouse.NewClickhouse()
 			ch.Logger = logger.NOP
 
-			warehouse := warehouseutils.Warehouse{
+			warehouse := model.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
@@ -850,7 +850,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		ch := clickhouse.NewClickhouse()
 		ch.Logger = logger.NOP
 
-		warehouse := warehouseutils.Warehouse{
+		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_success", namespace),
 			WorkspaceID: workspaceID,
 			Destination: backendconfig.DestinationT{
@@ -870,7 +870,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		err = ch.CreateSchema()
 		require.NoError(t, err)
 
-		err = ch.CreateTable(table, warehouseutils.TableSchema{
+		err = ch.CreateTable(table, model.TableSchema{
 			"id":                  "string",
 			"test_int":            "int",
 			"test_float":          "float",
@@ -898,7 +898,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		ch := clickhouse.NewClickhouse()
 		ch.Logger = logger.NOP
 
-		warehouse := warehouseutils.Warehouse{
+		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_invalid_host", namespace),
 			WorkspaceID: workspaceID,
 			Destination: backendconfig.DestinationT{
@@ -927,7 +927,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		ch := clickhouse.NewClickhouse()
 		ch.Logger = logger.NOP
 
-		warehouse := warehouseutils.Warehouse{
+		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_invalid_database", namespace),
 			WorkspaceID: workspaceID,
 			Destination: backendconfig.DestinationT{
@@ -956,7 +956,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		ch := clickhouse.NewClickhouse()
 		ch.Logger = logger.NOP
 
-		warehouse := warehouseutils.Warehouse{
+		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_empty_schema", namespace),
 			WorkspaceID: workspaceID,
 			Destination: backendconfig.DestinationT{
@@ -988,7 +988,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		ch := clickhouse.NewClickhouse()
 		ch.Logger = logger.NOP
 
-		warehouse := warehouseutils.Warehouse{
+		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_unrecognized_schema", namespace),
 			WorkspaceID: workspaceID,
 			Destination: backendconfig.DestinationT{
@@ -1019,7 +1019,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		require.NotEmpty(t, schema)
 		require.NotEmpty(t, unrecognizedSchema)
 
-		require.Equal(t, unrecognizedSchema, warehouseutils.Schema{
+		require.Equal(t, unrecognizedSchema, model.Schema{
 			table: {
 				"x": "<missing_datatype>",
 			},
