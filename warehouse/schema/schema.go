@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/samber/lo"
-	"reflect"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
@@ -205,7 +206,7 @@ func (*Handler) ConsolidateStagingSchemas(consolidatedSchema warehouseutils.Sche
 
 // ConsolidateWarehouseSchema overwrites the consolidatedSchema with the warehouseSchema
 // Prefer the type of the warehouseSchema, If the type is text, prefer text
-func (*Handler) ConsolidateWarehouseSchema(consolidatedSchema warehouseutils.Schema, warehouseSchema warehouseutils.Schema) warehouseutils.Schema {
+func (*Handler) ConsolidateWarehouseSchema(consolidatedSchema, warehouseSchema warehouseutils.Schema) warehouseutils.Schema {
 	for tableName, columnMap := range warehouseSchema {
 		if _, ok := consolidatedSchema[tableName]; !ok {
 			continue

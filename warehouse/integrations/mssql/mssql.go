@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"io"
 	"net"
 	"net/url"
@@ -17,6 +16,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -86,9 +87,9 @@ type MSSQL struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse      warehouseutils.Warehouse
-	Uploader       uploader.Uploader
-	ConnectTimeout time.Duration
+	Warehouse                   warehouseutils.Warehouse
+	Uploader                    uploader.Uploader
+	ConnectTimeout              time.Duration
 	EnableDeleteByJobs          bool
 	Logger                      logger.Logger
 	NumWorkersDownloadLoadFiles int

@@ -6,11 +6,12 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 

@@ -4,11 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -115,9 +116,9 @@ type Postgres struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse      warehouseutils.Warehouse
-	Uploader       uploader.Uploader
-	ConnectTimeout time.Duration
+	Warehouse                   warehouseutils.Warehouse
+	Uploader                    uploader.Uploader
+	ConnectTimeout              time.Duration
 	Logger                      logger.Logger
 	EnableDeleteByJobs          bool
 	NumWorkersDownloadLoadFiles int

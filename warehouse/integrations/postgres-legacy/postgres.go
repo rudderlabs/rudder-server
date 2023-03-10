@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"io"
 	"net/url"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -135,9 +136,9 @@ type Handle struct {
 	DB                                          *sql.DB
 	Namespace                                   string
 	ObjectStorage                               string
-	Warehouse      warehouseutils.Warehouse
-	Uploader       uploader.Uploader
-	ConnectTimeout time.Duration
+	Warehouse                                   warehouseutils.Warehouse
+	Uploader                                    uploader.Uploader
+	ConnectTimeout                              time.Duration
 	logger                                      logger.Logger
 	SkipComputingUserLatestTraits               bool
 	EnableSQLStatementExecutionPlan             bool

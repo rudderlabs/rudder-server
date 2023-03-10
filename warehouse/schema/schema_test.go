@@ -1,10 +1,11 @@
 package schema_test
 
 import (
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
-	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -848,7 +849,7 @@ func TestConsolidateSchemas(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			//require.Equal(t, schema.ConsolidateStagingSchemas(warehouseutils.Schema{}, tc.schemas), tc.expectedSchema)
+			// require.Equal(t, schema.ConsolidateStagingSchemas(warehouseutils.Schema{}, tc.schemas), tc.expectedSchema)
 		})
 	}
 }

@@ -1,8 +1,9 @@
 package uploader
 
 import (
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type Uploader interface {
@@ -20,4 +21,3 @@ type Uploader interface {
 	GetLoadFileType() string
 	GetFirstLastEvent() (time.Time, time.Time)
 }
-

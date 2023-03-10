@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"

@@ -3,7 +3,6 @@ package downloader
 import (
 	"context"
 	"fmt"
-	uploader2 "github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 )
@@ -21,13 +21,13 @@ type Downloader interface {
 
 type downloaderImpl struct {
 	warehouse  *warehouseutils.Warehouse
-	uploader   uploader2.Uploader
+	uploader   uploader.Uploader
 	numWorkers int
 }
 
 func NewDownloader(
 	warehouse *warehouseutils.Warehouse,
-	uploader uploader2.Uploader,
+	uploader uploader.Uploader,
 	numWorkers int,
 ) Downloader {
 	return &downloaderImpl{

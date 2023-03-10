@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	"io"
 	"net/url"
 	"os"
@@ -20,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -142,9 +143,9 @@ type Clickhouse struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse warehouseutils.Warehouse
-	Uploader  uploader.Uploader
-	stats     stats.Stats
+	Warehouse                   warehouseutils.Warehouse
+	Uploader                    uploader.Uploader
+	stats                       stats.Stats
 	ConnectTimeout              time.Duration
 	Logger                      logger.Logger
 	QueryDebugLogs              string

@@ -2,6 +2,7 @@ package schemarepository
 
 import (
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
