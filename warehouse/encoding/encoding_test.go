@@ -36,7 +36,7 @@ func TestReaderLoader(t *testing.T) {
 			provider:     warehouseutils.RS,
 			loadFileType: warehouseutils.LOAD_FILE_TYPE_CSV,
 			timeColumnFormatMap: map[string]string{
-				encoding.UuidTsColumn: misc.RFC3339Milli,
+				encoding.UUIDTsColumn: misc.RFC3339Milli,
 			},
 		},
 		{
@@ -45,7 +45,7 @@ func TestReaderLoader(t *testing.T) {
 			provider:     warehouseutils.BQ,
 			loadFileType: warehouseutils.LOAD_FILE_TYPE_JSON,
 			timeColumnFormatMap: map[string]string{
-				encoding.UuidTsColumn:   warehouseutils.BQUuidTSFormat,
+				encoding.UUIDTsColumn:   warehouseutils.BQUuidTSFormat,
 				encoding.LoadedAtColumn: warehouseutils.BQLoadedAtFormat,
 			},
 		},
@@ -140,7 +140,7 @@ func TestReaderLoader(t *testing.T) {
 			destType            = warehouseutils.S3_DATALAKE
 			loadFileType        = warehouseutils.LOAD_FILE_TYPE_PARQUET
 			timeColumnFormatMap = map[string]string{
-				encoding.UuidTsColumn: time.RFC3339,
+				encoding.UUIDTsColumn: time.RFC3339,
 			}
 			schema = warehouseutils.TableSchema{
 				"column1":  "bigint",
