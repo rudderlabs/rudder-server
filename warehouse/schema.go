@@ -78,7 +78,10 @@ func (sh *SchemaHandle) getLocalSchema() (warehouseutils.Schema, error) {
 		sh.warehouse.Namespace,
 	)
 	if err != nil {
-		return warehouseutils.Schema{}, fmt.Errorf("get schema for namespace: %w", err)
+		return nil, fmt.Errorf("get schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return warehouseutils.Schema{}, nil
 	}
 	return whSchema.Schema, nil
 }
