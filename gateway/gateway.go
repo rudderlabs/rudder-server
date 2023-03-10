@@ -160,7 +160,7 @@ type HandleT struct {
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
-	rateLimiter                  *throttler.Factory
+	rateLimiter                  throttler.GetThrottler
 
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.Measurement
@@ -537,13 +537,12 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	if enableRateLimit {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-		gwThrottler := gateway.rateLimiter.Get(workspaceId)
-		ok, err := gwThrottler.CheckLimitReached(workspaceId)
-		if !ok {
-			err = errRequestDropped
+		ok, errCheck := gateway.rateLimiter.CheckLimitReached(workspaceId)
+		if errCheck != nil {
+			gateway.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
 		}
-		if err != nil {
-			gateway.logger.Errorf("Rate limiter error: %v Allowing the request", err)
+		if ok {
+			return jobData, errRequestDropped
 		}
 	}
 
@@ -1417,7 +1416,7 @@ This function will block until backend config is initially received.
 func (gateway *HandleT) Setup(
 	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
-	rateLimiter *throttler.Factory, versionHandler func(w http.ResponseWriter, r *http.Request),
+	rateLimiter throttler.GetThrottler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
 	gateway.logger = pkgLogger

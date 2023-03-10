@@ -19,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -32,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mockThrottler "github.com/rudderlabs/rudder-server/mocks/gateway"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -106,6 +106,7 @@ type testContext struct {
 	mockCtrl          *gomock.Controller
 	mockJobsDB        *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockRateLimiter   *mockThrottler.MockGetThrottler
 	mockApp           *mocksApp.MockApp
 
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -137,6 +138,7 @@ func (c *testContext) Setup() {
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
+	c.mockRateLimiter = mockThrottler.NewMockGetThrottler(c.mockCtrl)
 
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
@@ -491,7 +493,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			gateway = &HandleT{}
 			SetEnableRateLimit(true)
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, &throttler.Factory{}, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			statsStore = memstats.New()
 			gateway.stats = statsStore
@@ -503,7 +505,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
-			// TODO : Fix this test
+			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any()).Return(false, nil).Times(1)
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
@@ -542,7 +544,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
-			// TODO : Fix this test
+			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any()).Return(true, nil).Times(1)
 			expectHandlerResponse(
 				gateway.webAliasHandler,
 				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")),

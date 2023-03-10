@@ -1,6 +1,6 @@
 package throttler
 
-//go:generate mockgen -destination=../../mocks/gateway/throttler.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/throttler Limiter
+//go:generate mockgen -destination=../../mocks/gateway/throttler.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/throttler GetThrottler
 
 import (
 	"context"
@@ -22,6 +22,10 @@ type Limiter interface {
 	Allow(ctx context.Context, cost, rate, window int64, key string) (bool, func(context.Context) error, error)
 }
 
+type GetThrottler interface {
+	CheckLimitReached(workspaceId string) (bool, error)
+}
+
 type Factory struct {
 	Stats        stats.Stats
 	limiter      Limiter
@@ -41,7 +45,12 @@ func New(stats stats.Stats) (*Factory, error) {
 	return &f, nil
 }
 
-func (f *Factory) Get(workspaceId string) *Throttler {
+func (f *Factory) CheckLimitReached(workspaceId string) (bool, error) {
+	t := f.get(workspaceId)
+	return t.checkLimitReached(workspaceId)
+}
+
+func (f *Factory) get(workspaceId string) *Throttler {
 	f.throttlersMu.Lock()
 	defer f.throttlersMu.Unlock()
 	if t, ok := f.throttlers[workspaceId]; ok {
@@ -89,8 +98,8 @@ type Throttler struct {
 	config  throttlingConfig
 }
 
-// CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
-func (t *Throttler) CheckLimitReached(key string) (limited bool, retErr error) {
+// checkLimitReached returns true if we're not allowed to process the number of event
+func (t *Throttler) checkLimitReached(key string) (limited bool, retErr error) {
 	ctx := context.TODO()
 	allowed, _, err := t.limiter.Allow(ctx, 1, t.config.limit, getWindowInSecs(t.config.window), key)
 	if err != nil {
