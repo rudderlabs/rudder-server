@@ -24,8 +24,10 @@ type mockUploader struct {
 	loadFiles []warehouseutils.LoadFile
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema      { return warehouseutils.Schema{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.Schema            { return warehouseutils.Schema{} }
+func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema { return warehouseutils.Schema{} }
+func (*mockUploader) GetLocalSchema() (warehouseutils.Schema, error) {
+	return warehouseutils.Schema{}, nil
+}
 func (*mockUploader) UpdateLocalSchema(warehouseutils.Schema) error    { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
