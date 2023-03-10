@@ -279,6 +279,7 @@ func (job *UploadJob) syncRemoteSchema() (schemaChanged bool, err error) {
 		job.stagingFiles,
 		config.Default,
 	)
+	job.schemaHandler = schemaHandler
 
 	localSchema, err := schemaHandler.GetLocalSchema()
 	if err != nil {
