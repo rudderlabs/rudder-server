@@ -3,11 +3,11 @@ package schema
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/samber/lo"
 	"reflect"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -126,11 +126,10 @@ func (sh *Handler) UpdateLocalSchema(uploadId int64, updatedSchema warehouseutil
 	return err
 }
 
-func (sh *Handler) FetchSchemaFromWarehouse(whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse warehouseutils.Schema, err error) {
-	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(sh.Warehouse)
+func (sh *Handler) FetchSchemaFromWarehouse(whManager manager.Manager) (warehouseutils.Schema, warehouseutils.Schema, error) {
+	schemaInWarehouse, unrecognizedSchemaInWarehouse, err := whManager.FetchSchema(sh.Warehouse)
 	if err != nil {
-		sh.Logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-		return warehouseutils.Schema{}, warehouseutils.Schema{}, err
+		return warehouseutils.Schema{}, warehouseutils.Schema{}, fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
 	sh.SkipDeprecatedColumns(schemaInWarehouse)
@@ -138,6 +137,7 @@ func (sh *Handler) FetchSchemaFromWarehouse(whManager manager.Manager) (schemaIn
 	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
+// SkipDeprecatedColumns skips deprecated columns from the schema
 func (sh *Handler) SkipDeprecatedColumns(schema warehouseutils.Schema) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
@@ -158,158 +158,150 @@ func (sh *Handler) SkipDeprecatedColumns(schema warehouseutils.Schema) {
 	}
 }
 
-func MergeSchema(currentSchema warehouseutils.Schema, schemaList []warehouseutils.Schema, currentMergedSchema warehouseutils.Schema, warehouseType string) warehouseutils.Schema {
-	if len(currentMergedSchema) == 0 {
-		currentMergedSchema = warehouseutils.Schema{}
-	}
-
-	setColumnTypeFromExistingSchema := func(refSchema warehouseutils.Schema, tableName, refTableName, columnName, refColumnName, columnType string) bool {
-		columnTypeInDB, ok := refSchema[refTableName][refColumnName]
-		if !ok {
-			return false
-		}
-		if columnTypeInDB == "string" && columnType == "text" {
-			currentMergedSchema[tableName][columnName] = columnType
-			return true
-		}
-		// if columnTypeInDB is text, then we should not change it to string
-		if currentMergedSchema[tableName][columnName] == "text" {
-			return true
-		}
-		currentMergedSchema[tableName][columnName] = columnTypeInDB
-		return true
-	}
-
-	usersTableName := warehouseutils.ToProviderCase(warehouseType, "users")
-	identifiesTableName := warehouseutils.ToProviderCase(warehouseType, "identifies")
-
-	for _, schema := range schemaList {
-		for tableName, columnMap := range schema {
-			if currentMergedSchema[tableName] == nil {
-				currentMergedSchema[tableName] = make(warehouseutils.TableSchema)
-			}
-			var toInferFromIdentifies bool
-			var refSchema warehouseutils.Schema
-			if tableName == usersTableName {
-				if _, ok := currentSchema[identifiesTableName]; ok {
-					toInferFromIdentifies = true
-					refSchema = currentSchema
-				} else if _, ok := currentMergedSchema[identifiesTableName]; ok { // also check in identifies of currentMergedSchema if identifies table not present in warehouse
-					toInferFromIdentifies = true
-					refSchema = currentMergedSchema
-				}
-			}
-			for columnName, columnType := range columnMap {
-				// if column already has a type in db, use that
-				// check for data type in identifies for users table before check in users table
-				// to ensure same data type is set for the same column in both users and identifies
-				if tableName == usersTableName && toInferFromIdentifies {
-					refColumnName := columnName
-					if columnName == warehouseutils.ToProviderCase(warehouseType, "id") {
-						refColumnName = warehouseutils.ToProviderCase(warehouseType, "user_id")
-					}
-					if setColumnTypeFromExistingSchema(refSchema, tableName, identifiesTableName, columnName, refColumnName, columnType) {
-						continue
-					}
-				}
-
-				if _, ok := currentSchema[tableName]; ok {
-					if setColumnTypeFromExistingSchema(currentSchema, tableName, tableName, columnName, columnName, columnType) {
-						continue
-					}
-				}
-				// check if we already set the columnType in currentMergedSchema
-				if _, ok := currentMergedSchema[tableName][columnName]; !ok {
-					currentMergedSchema[tableName][columnName] = columnType
-				}
-			}
-		}
-	}
-	return currentMergedSchema
-}
-
-func (sh *Handler) SafeName(columnName string) string {
-	return warehouseutils.ToProviderCase(sh.Warehouse.Type, columnName)
-}
-
-func (sh *Handler) GetDiscardsSchema() warehouseutils.TableSchema {
-	discards := warehouseutils.TableSchema{}
-	for colName, colType := range warehouseutils.DiscardsSchema {
-		discards[sh.SafeName(colName)] = colType
-	}
-
-	// add loaded_at for bq to be segment compatible
-	if sh.Warehouse.Type == warehouseutils.BQ {
-		discards[sh.SafeName("loaded_at")] = "datetime"
-	}
-	return discards
-}
-
-func (sh *Handler) GetMergeRulesSchema() warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{
-		sh.SafeName("merge_property_1_type"):  "string",
-		sh.SafeName("merge_property_1_value"): "string",
-		sh.SafeName("merge_property_2_type"):  "string",
-		sh.SafeName("merge_property_2_value"): "string",
-	}
-}
-
-func (sh *Handler) GetIdentitiesMappingsSchema() warehouseutils.TableSchema {
-	return warehouseutils.TableSchema{
-		sh.SafeName("merge_property_type"):  "string",
-		sh.SafeName("merge_property_value"): "string",
-		sh.SafeName("rudder_id"):            "string",
-		sh.SafeName("updated_at"):           "datetime",
-	}
-}
-
+// ConsolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
 func (sh *Handler) ConsolidateStagingFilesSchemaUsingWarehouseSchema() (warehouseutils.Schema, error) {
 	consolidatedSchema := warehouseutils.Schema{}
-	count := 0
-	for {
-		lastIndex := count + sh.StagingFilesSchemaPaginationSize
-		if lastIndex >= len(sh.StagingFiles) {
-			lastIndex = len(sh.StagingFiles)
-		}
-
-		rawSchemas, err := sh.StagingRepo.GetSchemasByIDs(
+	batches := lo.Chunk(sh.StagingFiles, sh.StagingFilesSchemaPaginationSize)
+	for _, batch := range batches {
+		schemas, err := sh.StagingRepo.GetSchemasByIDs(
 			context.TODO(),
-			repo.StagingFileIDs(sh.StagingFiles[count:lastIndex]),
+			repo.StagingFileIDs(batch),
 		)
 		if err != nil {
 			return warehouseutils.Schema{}, fmt.Errorf("getting staging files schema: %v", err)
 		}
 
-		var schemas []warehouseutils.Schema
-		for _, rawSchema := range rawSchemas {
-			var schema warehouseutils.Schema
-			err = json.Unmarshal(rawSchema, &schema)
-			if err != nil {
-				return warehouseutils.Schema{}, fmt.Errorf("unmarshalling staging files schema: %v", err)
-			}
-			schemas = append(schemas, schema)
-		}
-
-		consolidatedSchema = MergeSchema(sh.LocalSchema, schemas, consolidatedSchema, sh.Warehouse.Type)
-
-		count += sh.StagingFilesSchemaPaginationSize
-		if count >= len(sh.StagingFiles) {
-			break
-		}
+		consolidatedSchema = sh.ConsolidateStagingSchemas(consolidatedSchema, schemas)
 	}
-
-	// add rudder_discards Schema
-	consolidatedSchema[sh.SafeName(warehouseutils.DiscardsTable)] = sh.GetDiscardsSchema()
-
-	// add rudder_identity_mappings Schema
-	if sh.IDResolutionEnabled {
-		if _, ok := consolidatedSchema[sh.SafeName(warehouseutils.IdentityMergeRulesTable)]; ok {
-			consolidatedSchema[sh.SafeName(warehouseutils.IdentityMergeRulesTable)] = sh.GetMergeRulesSchema()
-			consolidatedSchema[sh.SafeName(warehouseutils.IdentityMappingsTable)] = sh.GetIdentitiesMappingsSchema()
-		}
-	}
-
+	consolidatedSchema = sh.ConsolidateWarehouseSchema(consolidatedSchema, sh.LocalSchema)
+	consolidatedSchema = sh.OverrideUsersWithIdentifiesSchema(consolidatedSchema)
+	consolidatedSchema = sh.EnhanceDiscardsSchema(consolidatedSchema)
+	consolidatedSchema = sh.EnhanceSchemaWithIDResolution(consolidatedSchema)
 	return consolidatedSchema, nil
+}
+
+// ConsolidateStagingSchemas merges multiple schemas into one
+// Prefer the type of the first schema, If the type is text, prefer text
+func (*Handler) ConsolidateStagingSchemas(consolidatedSchema warehouseutils.Schema, schemas []warehouseutils.Schema) warehouseutils.Schema {
+	for _, schema := range schemas {
+		for tableName, columnMap := range schema {
+			if _, ok := consolidatedSchema[tableName]; !ok {
+				consolidatedSchema[tableName] = warehouseutils.TableSchema{}
+			}
+			for columnName, columnType := range columnMap {
+				if model.SchemaType(columnType) == model.TextDataType {
+					consolidatedSchema[tableName][columnName] = string(model.TextDataType)
+					continue
+				}
+
+				if _, ok := consolidatedSchema[tableName][columnName]; !ok {
+					consolidatedSchema[tableName][columnName] = columnType
+				}
+			}
+		}
+	}
+	return consolidatedSchema
+}
+
+// ConsolidateWarehouseSchema overwrites the consolidatedSchema with the warehouseSchema
+// Prefer the type of the warehouseSchema, If the type is text, prefer text
+func (*Handler) ConsolidateWarehouseSchema(consolidatedSchema warehouseutils.Schema, warehouseSchema warehouseutils.Schema) warehouseutils.Schema {
+	for tableName, columnMap := range warehouseSchema {
+		if _, ok := consolidatedSchema[tableName]; !ok {
+			continue
+		}
+
+		for columnName, columnType := range columnMap {
+			if _, ok := consolidatedSchema[tableName][columnName]; !ok {
+				continue
+			}
+
+			var (
+				consolidatedSchemaType = model.SchemaType(consolidatedSchema[tableName][columnName])
+				warehouseSchemaType    = model.SchemaType(columnType)
+			)
+
+			if consolidatedSchemaType == model.TextDataType && warehouseSchemaType == model.StringDataType {
+				continue
+			}
+
+			consolidatedSchema[tableName][columnName] = columnType
+		}
+	}
+	return consolidatedSchema
+}
+
+// OverrideUsersWithIdentifiesSchema overrides the users table with the identifies table
+// users(id) <-> identifies(user_id)
+// Removes the user_id column from the users table
+func (sh *Handler) OverrideUsersWithIdentifiesSchema(consolidatedSchema warehouseutils.Schema) warehouseutils.Schema {
+	var (
+		warehouseType   = sh.Warehouse.Type
+		usersTable      = warehouseutils.ToProviderCase(warehouseType, warehouseutils.UsersTable)
+		identifiesTable = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentifiesTable)
+		userIDColumn    = warehouseutils.ToProviderCase(warehouseType, "user_id")
+		IDColumn        = warehouseutils.ToProviderCase(warehouseType, "id")
+	)
+
+	if _, ok := consolidatedSchema[usersTable]; !ok {
+		return consolidatedSchema
+	}
+	if _, ok := consolidatedSchema[identifiesTable]; !ok {
+		return consolidatedSchema
+	}
+
+	consolidatedSchema[usersTable] = consolidatedSchema[identifiesTable]
+	consolidatedSchema[usersTable][IDColumn] = consolidatedSchema[identifiesTable][userIDColumn]
+	delete(consolidatedSchema[usersTable], userIDColumn)
+
+	return consolidatedSchema
+}
+
+// EnhanceDiscardsSchema adds the discards table to the schema
+// For bq, adds the loaded_at column to be segment compatible
+func (sh *Handler) EnhanceDiscardsSchema(consolidatedSchema warehouseutils.Schema) warehouseutils.Schema {
+	var (
+		warehouseType = sh.Warehouse.Type
+		discards      = warehouseutils.TableSchema{}
+	)
+
+	for colName, colType := range warehouseutils.DiscardsSchema {
+		discards[warehouseutils.ToProviderCase(warehouseType, colName)] = colType
+	}
+
+	if warehouseType == warehouseutils.BQ {
+		discards[warehouseutils.ToProviderCase(warehouseType, "loaded_at")] = "datetime"
+	}
+
+	consolidatedSchema[warehouseutils.ToProviderCase(warehouseType, warehouseutils.DiscardsTable)] = discards
+	return consolidatedSchema
+}
+
+// EnhanceSchemaWithIDResolution adds the merge rules and mappings table to the schema if IDResolution is enabled
+func (sh *Handler) EnhanceSchemaWithIDResolution(consolidatedSchema warehouseutils.Schema) warehouseutils.Schema {
+	if !sh.IDResolutionEnabled {
+		return consolidatedSchema
+	}
+	var (
+		warehouseType   = sh.Warehouse.Type
+		mergeRulesTable = warehouseutils.ToProviderCase(warehouseutils.IdentityMergeRulesTable, warehouseType)
+		mappingsTable   = warehouseutils.ToProviderCase(warehouseutils.IdentityMappingsTable, warehouseType)
+	)
+	if _, ok := consolidatedSchema[mergeRulesTable]; ok {
+		consolidatedSchema[mergeRulesTable] = warehouseutils.TableSchema{
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_1_type"):  "string",
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_1_value"): "string",
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_2_type"):  "string",
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_2_value"): "string",
+		}
+		consolidatedSchema[mappingsTable] = warehouseutils.TableSchema{
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_type"):  "string",
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_value"): "string",
+			warehouseutils.ToProviderCase(warehouseType, "rudder_id"):            "string",
+			warehouseutils.ToProviderCase(warehouseType, "updated_at"):           "datetime",
+		}
+	}
+	return consolidatedSchema
 }
 
 // HasSchemaChanged compares the localSchema with the schemaInWarehouse and returns true if they are not equal

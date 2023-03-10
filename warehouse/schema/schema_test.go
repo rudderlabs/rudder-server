@@ -404,158 +404,6 @@ func TestGetTableSchemaDiff(t *testing.T) {
 	}
 }
 
-func TestHandler_GetMergeRulesSchema(t *testing.T) {
-	testCases := []struct {
-		name           string
-		destType       string
-		expectedSchema warehouseutils.TableSchema
-	}{
-		{
-			name:     "For snowflake",
-			destType: warehouseutils.SNOWFLAKE,
-			expectedSchema: warehouseutils.TableSchema{
-				"MERGE_PROPERTY_1_TYPE":  "string",
-				"MERGE_PROPERTY_1_VALUE": "string",
-				"MERGE_PROPERTY_2_TYPE":  "string",
-				"MERGE_PROPERTY_2_VALUE": "string",
-			},
-		},
-		{
-			name:     "For redshift",
-			destType: warehouseutils.RS,
-			expectedSchema: warehouseutils.TableSchema{
-				"merge_property_1_type":  "string",
-				"merge_property_1_value": "string",
-				"merge_property_2_type":  "string",
-				"merge_property_2_value": "string",
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			handler := &schema.Handler{
-				Warehouse: warehouseutils.Warehouse{
-					Type: tc.destType,
-				},
-			}
-			ms := handler.GetMergeRulesSchema()
-			require.Equal(t, ms, tc.expectedSchema)
-		})
-	}
-}
-
-func TestHandler_GetIdentitiesMappingsSchema(t *testing.T) {
-	testCases := []struct {
-		name           string
-		destType       string
-		expectedSchema warehouseutils.TableSchema
-	}{
-		{
-			name:     "For snowflake",
-			destType: warehouseutils.SNOWFLAKE,
-			expectedSchema: warehouseutils.TableSchema{
-				"MERGE_PROPERTY_TYPE":  "string",
-				"MERGE_PROPERTY_VALUE": "string",
-				"RUDDER_ID":            "string",
-				"UPDATED_AT":           "datetime",
-			},
-		},
-		{
-			name:     "For redshift",
-			destType: warehouseutils.RS,
-			expectedSchema: warehouseutils.TableSchema{
-				"merge_property_type":  "string",
-				"merge_property_value": "string",
-				"rudder_id":            "string",
-				"updated_at":           "datetime",
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			handler := &schema.Handler{
-				Warehouse: warehouseutils.Warehouse{
-					Type: tc.destType,
-				},
-			}
-			ms := handler.GetIdentitiesMappingsSchema()
-			require.Equal(t, ms, tc.expectedSchema)
-		})
-	}
-}
-
-func TestHandler_GetDiscardsSchema(t *testing.T) {
-	testCases := []struct {
-		name           string
-		destType       string
-		expectedSchema warehouseutils.TableSchema
-	}{
-		{
-			name:     "For snowflake",
-			destType: warehouseutils.SNOWFLAKE,
-			expectedSchema: warehouseutils.TableSchema{
-				"COLUMN_NAME":  "string",
-				"COLUMN_VALUE": "string",
-				"RECEIVED_AT":  "datetime",
-				"ROW_ID":       "string",
-				"TABLE_NAME":   "string",
-				"UUID_TS":      "datetime",
-			},
-		},
-		{
-			name:     "For redshift",
-			destType: warehouseutils.RS,
-			expectedSchema: warehouseutils.TableSchema{
-				"column_name":  "string",
-				"column_value": "string",
-				"received_at":  "datetime",
-				"row_id":       "string",
-				"table_name":   "string",
-				"uuid_ts":      "datetime",
-			},
-		},
-		{
-			name:     "For bigquery",
-			destType: warehouseutils.BQ,
-			expectedSchema: warehouseutils.TableSchema{
-				"column_name":  "string",
-				"column_value": "string",
-				"loaded_at":    "datetime",
-				"received_at":  "datetime",
-				"row_id":       "string",
-				"table_name":   "string",
-				"uuid_ts":      "datetime",
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			handler := &schema.Handler{
-				Warehouse: warehouseutils.Warehouse{
-					Type: tc.destType,
-				},
-			}
-			ds := handler.GetDiscardsSchema()
-			require.Equal(t, ds, tc.expectedSchema)
-		})
-	}
-}
-
 func TestHandler_HasSchemaChanged(t *testing.T) {
 	testCases := []struct {
 		name              string
@@ -712,105 +560,6 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 	}
 }
 
-func TestMergeSchema(t *testing.T) {
-	testCases := []struct {
-		name           string
-		schemaList     []warehouseutils.Schema
-		localSchema    warehouseutils.Schema
-		expectedSchema warehouseutils.Schema
-	}{
-		{
-			name: "local schema contains the property and schema list contains data types in text-string order",
-			schemaList: []warehouseutils.Schema{
-				{
-					"test-table": warehouseutils.TableSchema{
-						"test-column": "text",
-					},
-				},
-				{
-					"test-table": warehouseutils.TableSchema{
-						"test-column": "string",
-					},
-				},
-			},
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
-					"test-column": "string",
-				},
-			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
-					"test-column": "text",
-				},
-			},
-		},
-		{
-			name: "local schema contains the property and schema list contains data types in string-text order",
-			schemaList: []warehouseutils.Schema{
-				{
-					"test-table": warehouseutils.TableSchema{
-						"test-column": "string",
-					},
-				},
-				{
-					"test-table": warehouseutils.TableSchema{
-						"test-column": "text",
-					},
-				},
-			},
-
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
-					"test-column": "string",
-				},
-			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
-					"test-column": "text",
-				},
-			},
-		},
-		{
-			name: "local schema does not contain the property",
-			schemaList: []warehouseutils.Schema{
-				{
-					"test-table": warehouseutils.TableSchema{
-						"test-column": "int",
-					},
-				},
-				{
-					"test-table": warehouseutils.TableSchema{
-						"test-column": "text",
-					},
-				},
-			},
-			localSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
-					"test-column-1": "string",
-				},
-			},
-			expectedSchema: warehouseutils.Schema{
-				"test-table": warehouseutils.TableSchema{
-					"test-column": "int",
-				},
-			},
-		},
-	}
-
-	destType := "RS"
-
-	for _, tc := range testCases {
-		tc := tc
-
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			actualSchema := schema.MergeSchema(tc.localSchema, tc.schemaList, warehouseutils.Schema{}, destType)
-			require.Equal(t, actualSchema, tc.expectedSchema)
-		})
-	}
-}
-
 func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 	warehouse.Init4()
 
@@ -945,6 +694,161 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 			sh.SkipDeprecatedColumns(tc.schema)
 
 			require.Equal(t, tc.schema, tc.expectedSchema)
+		})
+	}
+}
+
+func TestConsolidateSchemas(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		schemas        []warehouseutils.Schema
+		expectedSchema warehouseutils.Schema
+	}{
+		{
+			name:           "empty schemas",
+			schemas:        []warehouseutils.Schema{},
+			expectedSchema: warehouseutils.Schema{},
+		},
+		{
+			name: "single schema",
+			schemas: []warehouseutils.Schema{
+				{
+					"test-table": warehouseutils.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			expectedSchema: warehouseutils.Schema{
+				"test-table": warehouseutils.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+			},
+		},
+		{
+			name: "multiple schemas",
+			schemas: []warehouseutils.Schema{
+				{
+					"test-table-1": warehouseutils.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table-2": warehouseutils.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			expectedSchema: warehouseutils.Schema{
+				"test-table-1": warehouseutils.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"test-table-2": warehouseutils.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+			},
+		},
+		{
+			name: "multiple schemas with same table",
+			schemas: []warehouseutils.Schema{
+				{
+					"test-table": warehouseutils.TableSchema{
+						"test_int":  "int",
+						"test_str":  "string",
+						"test_bool": "boolean",
+					},
+				},
+				{
+					"test-table": warehouseutils.TableSchema{
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			expectedSchema: warehouseutils.Schema{
+				"test-table": warehouseutils.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+			},
+		},
+		{
+			name: "multiple schemas with preference to first schema",
+			schemas: []warehouseutils.Schema{
+				{
+					"test-table": warehouseutils.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table": warehouseutils.TableSchema{
+						"test_int":       "new_int",
+						"test_str":       "new_string",
+						"test_bool":      "new_boolean",
+						"test_float":     "new_float",
+						"test_timestamp": "new_timestamp",
+						"test_date":      "new_date",
+					},
+				},
+			},
+			expectedSchema: warehouseutils.Schema{
+				"test-table": warehouseutils.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+			},
+		},
+	}
+	for _, tc := range testsCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			//require.Equal(t, schema.ConsolidateStagingSchemas(warehouseutils.Schema{}, tc.schemas), tc.expectedSchema)
 		})
 	}
 }

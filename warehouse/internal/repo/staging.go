@@ -270,9 +270,9 @@ func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (jsonstd.
 }
 
 // GetSchemasByIDs returns staging file schemas for the given IDs.
-func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]jsonstd.RawMessage, error) {
+func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
 	var (
-		schemas []jsonstd.RawMessage
+		schemas []model.Schema
 		err     error
 		rows    *sql.Rows
 	)
@@ -287,12 +287,16 @@ func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]j
 
 	for rows.Next() {
 		var (
-			schema jsonstd.RawMessage
-			err    error
+			rawSchema jsonstd.RawMessage
+			schema    model.Schema
+			err       error
 		)
 
-		if err = rows.Scan(&schema); err != nil {
+		if err = rows.Scan(&rawSchema); err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+		if err = json.Unmarshal(rawSchema, &schema); err != nil {
+			return nil, fmt.Errorf("unmarshal staging schema: %w", err)
 		}
 
 		schemas = append(schemas, schema)

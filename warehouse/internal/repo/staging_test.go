@@ -178,7 +178,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	stagingFiles := manyStagingFiles(10, now)
 	for i := range stagingFiles {
-		file := stagingFiles[i].WithSchema([]byte(`{"type": "object"}`))
+		file := stagingFiles[i].WithSchema([]byte(`{"table": {"column": "type"} }`))
 		id, err := r.Insert(ctx, &file)
 		require.NoError(t, err)
 		stagingFiles[i].ID = id
@@ -244,7 +244,11 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			require.Len(t, expectedSchemas, len(stagingFiles))
 
 			for _, es := range expectedSchemas {
-				require.EqualValues(t, []byte(`{"type": "object"}`), es)
+				require.EqualValues(t, warehouseutils.Schema{
+					"table": warehouseutils.TableSchema{
+						"column": "type",
+					},
+				}, es)
 			}
 		})
 
