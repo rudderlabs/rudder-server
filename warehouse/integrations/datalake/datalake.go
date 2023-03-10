@@ -3,9 +3,10 @@ package datalake
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"regexp"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -35,8 +36,8 @@ func Init() {
 
 type HandleT struct {
 	SchemaRepository schemarepository.SchemaRepository
-	Warehouse model.Warehouse
-	Uploader  uploader.Uploader
+	Warehouse        model.Warehouse
+	Uploader         uploader.Uploader
 }
 
 func (wh *HandleT) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {

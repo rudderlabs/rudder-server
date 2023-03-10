@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 
 	"cloud.google.com/go/bigquery"
 	"golang.org/x/exp/slices"
@@ -39,8 +40,8 @@ type HandleT struct {
 	db                *bigquery.Client
 	namespace         string
 	warehouse         model.Warehouse
-	projectID string
-	uploader  uploader.Uploader
+	projectID         string
+	uploader          uploader.Uploader
 }
 
 type StagingLoadTable struct {

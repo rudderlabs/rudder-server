@@ -1,8 +1,9 @@
 package uploader
 
 import (
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )

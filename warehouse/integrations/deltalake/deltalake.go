@@ -3,10 +3,11 @@ package deltalake
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -115,9 +116,9 @@ type Deltalake struct {
 	Client                 *client.Client
 	Namespace              string
 	ObjectStorage          string
-	Warehouse      model.Warehouse
-	Uploader       uploader.Uploader
-	ConnectTimeout time.Duration
+	Warehouse              model.Warehouse
+	Uploader               uploader.Uploader
+	ConnectTimeout         time.Duration
 	Logger                 logger.Logger
 	Stats                  stats.Stats
 	Schema                 string
