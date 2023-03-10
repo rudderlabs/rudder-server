@@ -2048,7 +2048,7 @@ func (job *UploadJob) GetLocalSchema() (model.Schema, error) {
 }
 
 func (job *UploadJob) UpdateLocalSchema(schema model.Schema) error {
-	return job.schemaHandle.updateLocalSchema(schema)
+	return job.schemaHandle.updateLocalSchema(job.upload.ID, schema)
 }
 
 func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {
