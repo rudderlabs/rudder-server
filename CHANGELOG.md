@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.5](https://github.com/rudderlabs/rudder-server/compare/v1.6.4...v1.6.5) (2023-03-10)
+
+
+### Miscellaneous
+
+* SSH support for Kafka ([2fb1029](https://github.com/rudderlabs/rudder-server/commit/2fb1029db5e9fea45512967a956bf42f34e369ba))
+
 ## [1.6.4](https://github.com/rudderlabs/rudder-server/compare/v1.6.3...v1.6.4) (2023-03-02)
 
 
