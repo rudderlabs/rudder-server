@@ -164,15 +164,12 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		if err != nil {
 			return nil, err
 		}
-
-		ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
-		defer cancel()
-
-		region, err := awsS3Manager.GetBucketRegion(ctx, getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
+		region, err := awsS3Manager.GetBucketRegion(context.TODO(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 		if err != nil {
 			pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 			/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 		}
+		fmt.Println("Region: ", region)
 		manager.Config.Region = aws.String(region)
 		manager.SessionConfig.Region = region
 	}
@@ -215,11 +212,8 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, startAfter, p
 		listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
-	defer cancel()
-
 	// Get the list of items
-	resp, err := svc.ListObjectsV2WithContext(ctx, &listObjectsV2Input)
+	resp, err := svc.ListObjectsV2WithContext(context.TODO(), &listObjectsV2Input)
 	if err != nil {
 		pkgLogger.Errorf("Error while listing S3 objects: %v", err)
 		return
