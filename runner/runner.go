@@ -24,9 +24,10 @@ import (
 
 	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
 
-	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/admin/profiler"
@@ -216,12 +217,12 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			return 1
 		}
 	}
-	if r.canStartWarehouse() {
-		if err := warehouse.Setup(ctx); err != nil {
-			r.logger.Errorf("Unable to prepare warehouse database: %s", err)
-			return 1
-		}
-	}
+	//if r.canStartWarehouse() {
+	//	if err := warehouse.Setup(ctx); err != nil {
+	//		r.logger.Errorf("Unable to prepare warehouse database: %s", err)
+	//		return 1
+	//	}
+	//}
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Start admin server
@@ -268,18 +269,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			return nil
 		}))
 	}
-
-	// Start warehouse
-	// initialize warehouse service after core to handle non-normal recovery modes
-	if r.canStartWarehouse() {
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			if err := warehouse.Start(ctx, r.application); err != nil {
-				return fmt.Errorf("warehouse service routine: %w", err)
-			}
-			return nil
-		}))
-	}
-
 	shutdownDone := make(chan struct{})
 	go func() {
 		err := g.Wait()
@@ -413,10 +402,6 @@ func (r *Runner) printVersion() {
 func (r *Runner) canStartServer() bool {
 	r.logger.Info("warehousemode ", r.warehouseMode)
 	return r.warehouseMode == config.EmbeddedMode || r.warehouseMode == config.OffMode || r.warehouseMode == config.EmbeddedMasterMode
-}
-
-func (r *Runner) canStartWarehouse() bool {
-	return r.appType != app.GATEWAY && r.warehouseMode != config.OffMode
 }
 
 func (r *Runner) canStartBackendConfig() bool {
