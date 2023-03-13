@@ -92,8 +92,6 @@ const (
 )
 
 const (
-	BQLoadedAtFormat         = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat           = "2006-01-02 15:04:05 Z"
 	DatalakeTimeWindowFormat = "2006/01/02/15"
 )
 
@@ -304,14 +302,6 @@ type PendingEventsResponse struct {
 type TriggerUploadRequest struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
-}
-
-type LoadFileWriter interface {
-	WriteGZ(s string) error
-	Write(p []byte) (int, error)
-	WriteRow(r []interface{}) error
-	Close() error
-	GetLoadFile() *os.File
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {

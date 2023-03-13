@@ -47,8 +47,8 @@ func TestReaderLoader(t *testing.T) {
 			provider:     warehouseutils.BQ,
 			loadFileType: warehouseutils.LOAD_FILE_TYPE_JSON,
 			timeColumnFormatMap: map[string]string{
-				encoding.UUIDTsColumn:   warehouseutils.BQUuidTSFormat,
-				encoding.LoadedAtColumn: warehouseutils.BQLoadedAtFormat,
+				encoding.UUIDTsColumn:   encoding.BQUuidTSFormat,
+				encoding.LoadedAtColumn: encoding.BQLoadedAtFormat,
 			},
 		},
 	}

@@ -10,13 +10,13 @@ import (
 type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
-	fileWriter warehouseutils.LoadFileWriter
+	fileWriter LoadFileWriter
 }
 
 // NewJSONLoader returns a new JsonLoader
 // JsonLoader is only for BQ now. Treat this is as custom BQ loader.
 // If more warehouses are added in the future, change this accordingly.
-func NewJSONLoader(destType string, writer warehouseutils.LoadFileWriter) *JsonLoader {
+func NewJSONLoader(destType string, writer LoadFileWriter) *JsonLoader {
 	loader := &JsonLoader{destType: destType, fileWriter: writer}
 	loader.columnData = make(map[string]interface{})
 	return loader
@@ -29,9 +29,9 @@ func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
 func (loader *JsonLoader) GetLoadTimeFormat(columnName string) string {
 	switch columnName {
 	case warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn):
-		return warehouseutils.BQUuidTSFormat
+		return BQUuidTSFormat
 	case warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn):
-		return warehouseutils.BQLoadedAtFormat
+		return BQLoadedAtFormat
 	}
 	return ""
 }
