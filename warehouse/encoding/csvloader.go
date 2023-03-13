@@ -1,9 +1,11 @@
-package warehouseutils
+package encoding
 
 import (
 	"bytes"
 	"encoding/csv"
 	"fmt"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -27,10 +29,10 @@ func NewCSVLoader(destType string, writer LoadFileWriter) *CsvLoader {
 }
 
 func (loader *CsvLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn)
 }
 
-func (*CsvLoader) GetLoadTimeFormat(_ string) string {
+func (*CsvLoader) GetLoadTimeFormat(string) string {
 	return misc.RFC3339Milli
 }
 
@@ -50,9 +52,9 @@ func (loader *CsvLoader) AddEmptyColumn(columnName string) {
 func (loader *CsvLoader) WriteToString() (string, error) {
 	err := loader.csvWriter.Write(loader.csvRow)
 	if err != nil {
-		pkgLogger.Errorf(`[CSVWriter]: Error writing discardRow to buffer: %v`, err)
-		return "", err
+		return "", fmt.Errorf("csvWriter write: %w", err)
 	}
+
 	loader.csvWriter.Flush()
 	return loader.buff.String(), nil
 }
@@ -60,7 +62,7 @@ func (loader *CsvLoader) WriteToString() (string, error) {
 func (loader *CsvLoader) Write() error {
 	eventData, err := loader.WriteToString()
 	if err != nil {
-		return err
+		return fmt.Errorf("writing to string: %w", err)
 	}
 
 	return loader.fileWriter.WriteGZ(eventData)

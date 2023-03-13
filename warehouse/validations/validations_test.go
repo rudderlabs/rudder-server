@@ -6,6 +6,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,6 +23,7 @@ func TestValidate(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	validations.Init()
 	postgres.Init()
 	postgreslegacy.Init()

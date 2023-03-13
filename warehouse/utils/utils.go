@@ -92,8 +92,6 @@ const (
 )
 
 const (
-	BQLoadedAtFormat         = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat           = "2006-01-02 15:04:05 Z"
 	DatalakeTimeWindowFormat = "2006/01/02/15"
 )
 
@@ -194,7 +192,6 @@ var (
 	pkgLogger              logger.Logger
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string
-	parquetParallelWriters int64
 )
 
 var (
@@ -213,8 +210,6 @@ func loadConfig() {
 	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
-	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-	config.RegisterInt64ConfigVariable(8, &parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
 }
 
 type DeleteByMetaData struct {
@@ -307,14 +302,6 @@ type PendingEventsResponse struct {
 type TriggerUploadRequest struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
-}
-
-type LoadFileWriter interface {
-	WriteGZ(s string) error
-	Write(p []byte) (int, error)
-	WriteRow(r []interface{}) error
-	Close() error
-	GetLoadFile() *os.File
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
