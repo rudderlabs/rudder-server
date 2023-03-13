@@ -19,9 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// // ExporterOpt represents a configuration option for the exporter
-// type ExporterOpt func(*Exporter)
-
 func Export(repo suppression.Repository, file model.File) error {
 	// export initially to a temp file
 	tmpDir, err := misc.CreateTMPDIR()
@@ -57,10 +54,6 @@ func Export(repo suppression.Repository, file model.File) error {
 }
 
 func newBadgerDBInstance(baseDir string, pkgLogger logger.Logger) (suppression.Repository, error) {
-	err := os.MkdirAll(baseDir, os.ModePerm)
-	if err != nil {
-		return nil, fmt.Errorf("could not create tmp dir: %w", err)
-	}
 	repository, err := suppression.NewBadgerRepository(
 		baseDir,
 		pkgLogger)
@@ -71,36 +64,13 @@ func newBadgerDBInstance(baseDir string, pkgLogger logger.Logger) (suppression.R
 }
 
 type Exporter struct {
-	Id           identity.Identifier
-	File         model.File
-	Log          logger.Logger
-	PollInterval time.Duration
+	Id   identity.Identifier
+	File model.File
+	Log  logger.Logger
 }
 
-// // WithPollIntervalFn sets the interval at which the syncer will poll the backend
-// func WithPollIntervalFn(pollIntervalFn func() time.Duration) ExporterOpt {
-// 	return func(c *Exporter) {
-// 		c.pollIntervalFn = pollIntervalFn
-// 	}
-// }
-
-// // NewExporter creates a new syncer
-// func NewExporter(id identity.Identifier, file model.File, log logger.Logger, opts ...ExporterOpt) (*Exporter, error) {
-// 	e := &Exporter{
-// 		id:   id,
-// 		file: file,
-// 		log:  log,
-// 		pollIntervalFn: func() time.Duration {
-// 			return time.Hour
-// 		},
-// 	}
-// 	for _, opt := range opts {
-// 		opt(e)
-// 	}
-// 	return e, nil
-// }
-
 func (e *Exporter) FullExporterLoop(ctx context.Context) error {
+	pollInterval := config.GetDuration("SuppressionExporter.fullExportInterval", 24, time.Hour)
 	tmpDir, err := misc.CreateTMPDIR()
 	if err != nil {
 		return err
@@ -140,7 +110,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 				return err
 			}
 			stats.Default.NewStat("suppression_backup_service_full_export_time", stats.TimerType).Since(exportStart)
-			if err = misc.SleepCtx(ctx, e.PollInterval); err != nil {
+			if err = misc.SleepCtx(ctx, pollInterval); err != nil {
 				return err
 			}
 		}
@@ -148,9 +118,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 }
 
 func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
-	var interval time.Duration
-	config.RegisterDurationConfigVariable(600, &interval, true, time.Second, "SuppressionExporter.latestExportInterval")
-
+	pollInterval := config.GetDuration("SuppressionExporter.latestExportInterval", 24, time.Hour)
 	for {
 		select {
 		case <-ctx.Done():
@@ -213,7 +181,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 			if err := latestExport(); err != nil {
 				return err
 			}
-			if err := misc.SleepCtx(ctx, e.PollInterval); err != nil {
+			if err := misc.SleepCtx(ctx, pollInterval); err != nil {
 				return err
 			}
 		}

@@ -66,20 +66,18 @@ func Run(ctx context.Context) error {
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		fullExporter := exporter.Exporter{
-			Id:           id,
-			File:         fullExportFile,
-			Log:          pkgLogger,
-			PollInterval: config.GetDuration("SuppressionExporter.fullExportInterval", 24, time.Hour),
+			Id:   id,
+			File: fullExportFile,
+			Log:  pkgLogger,
 		}
 		return fullExporter.FullExporterLoop(gCtx)
 	})
 
 	g.Go(func() error {
 		latestExporter := exporter.Exporter{
-			Id:           id,
-			File:         latestExportFile,
-			Log:          pkgLogger,
-			PollInterval: config.GetDuration("SuppressionExporter.latestExportInterval", 24, time.Hour),
+			Id:   id,
+			File: latestExportFile,
+			Log:  pkgLogger,
 		}
 		return latestExporter.LatestExporterLoop(gCtx)
 	})

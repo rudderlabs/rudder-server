@@ -99,16 +99,14 @@ func TestExportLoop(t *testing.T) {
 	fullExportFile := model.File{Path: path.Join(exportBaseDir, "full-export"), Mu: &sync.RWMutex{}}
 	latestExportFile := model.File{Path: path.Join(exportBaseDir, "latest-export"), Mu: &sync.RWMutex{}}
 	fullExporter := exporter.Exporter{
-		Id:           identifier,
-		File:         fullExportFile,
-		Log:          logger.NOP,
-		PollInterval: 1 * time.Second,
+		Id:   identifier,
+		File: fullExportFile,
+		Log:  logger.NOP,
 	}
 	latestExporter := exporter.Exporter{
-		Id:           identifier,
-		File:         latestExportFile,
-		Log:          logger.NOP,
-		PollInterval: 1 * time.Second,
+		Id:   identifier,
+		File: latestExportFile,
+		Log:  logger.NOP,
 	}
 
 	ctx := context.Background()

@@ -46,6 +46,7 @@ func TestDataplaneAPIHandler(t *testing.T) {
 		responseCode         int
 		expectedResponseBody string
 		random               string
+		expectedEncoding     string
 	}{
 		{
 			name:                 "get full backup badgerdb file",
@@ -78,7 +79,6 @@ func TestDataplaneAPIHandler(t *testing.T) {
 			baseUrl := fmt.Sprintf("http://localhost:%d", port)
 			req, err := http.NewRequest(tt.method, baseUrl+tt.endpoint, http.NoBody)
 			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()
 			exportBaseDir, err := exportPath()
 			require.NoError(t, err)
@@ -108,12 +108,13 @@ func TestDataplaneAPIHandler(t *testing.T) {
 			api.Handler(context.Background()).ServeHTTP(resp, req)
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			if tt.responseCode < 400 {
-				require.Equal(t, "application/octet-stream", resp.Header().Get("Content-Type"))
-			}
 			require.Equal(t, tt.responseCode, resp.Code, "Response code mismatch")
+			require.Equal(t, http.DetectContentType(body), resp.Header().Get("Content-Type"))
+
 			if tt.responseCode < 300 && tt.responseCode >= 200 {
 				require.Equal(t, tt.expectedResponseBody, string(body))
+				fmt.Println("content encoding: ", resp.Header().Get("Content-Encoding"))
+				require.Equal(t, tt.expectedEncoding, resp.Header().Get("Content-Encoding"))
 			}
 		})
 	}

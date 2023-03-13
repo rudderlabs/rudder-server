@@ -46,11 +46,5 @@ func ServeFile(file model.File) func(w http.ResponseWriter, r *http.Request) {
 		file.Mu.RLock()
 		defer file.Mu.RUnlock()
 		http.ServeFile(w, r, file.Path)
-		setHeader(w, http.StatusOK)
 	}
-}
-
-func setHeader(w http.ResponseWriter, code int) {
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.WriteHeader(code)
 }
