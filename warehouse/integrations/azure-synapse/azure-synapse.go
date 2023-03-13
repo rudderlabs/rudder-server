@@ -16,6 +16,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -86,7 +88,7 @@ type AzureSynapse struct {
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse
-	Uploader                    warehouseutils.Uploader
+	Uploader                    uploader.Uploader
 	NumWorkersDownloadLoadFiles int
 	Logger                      logger.Logger
 	LoadFileDownLoader          downloader.Downloader
@@ -667,7 +669,7 @@ func (as *AzureSynapse) TestConnection(warehouse model.Warehouse) (err error) {
 	return nil
 }
 
-func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader

@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -65,7 +67,6 @@ var (
 	controlPlaneClient                  *controlplane.Client
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
-	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
 	stagingFilesBatchSize               int
 	lastProcessedMarkerMap              map[string]int64
@@ -94,7 +95,6 @@ var (
 	waitForConfig                       time.Duration
 	waitForWorkerSleep                  time.Duration
 	ShouldForceSetLowerVersion          bool
-	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	asyncWh                             *jobs.AsyncJobWh
@@ -132,6 +132,7 @@ type HandleT struct {
 	warehouseDBHandle                 *DB
 	stagingRepo                       *repo.StagingFiles
 	uploadRepo                        *repo.Uploads
+	whSchemaRepo                      *repo.WHSchema
 	notifier                          pgnotifier.PGNotifier
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
@@ -181,7 +182,6 @@ func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
 	enableTunnelling = config.GetBool("ENABLE_TUNNELLING", true)
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
-	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
@@ -198,7 +198,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
@@ -419,7 +418,18 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	if namespacePrefix != "" {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
-	if _, exists := warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
+
+	namespace, err := wh.whSchemaRepo.GetNamespace(context.TODO(), source.ID, destination.ID)
+	if err != nil {
+		pkgLogger.Errorw("getting namespace",
+			logfield.SourceID, source.ID,
+			logfield.DestinationID, destination.ID,
+			logfield.DestinationType, destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, destination.WorkspaceID,
+		)
+		return ""
+	}
+	if namespace == "" {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 	}
 	return ""
@@ -847,6 +857,7 @@ func (wh *HandleT) Setup(whType string) error {
 	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
 	wh.stagingRepo = repo.NewStagingFiles(dbHandle)
 	wh.uploadRepo = repo.NewUploads(dbHandle)
+	wh.whSchemaRepo = repo.NewWHSchemas(dbHandle)
 
 	wh.notifier = notifier
 	wh.destType = whType

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/lib/pq"
@@ -143,7 +145,7 @@ type Redshift struct {
 	DB             *sql.DB
 	Namespace      string
 	Warehouse      model.Warehouse
-	Uploader       warehouseutils.Uploader
+	Uploader       uploader.Uploader
 	ConnectTimeout time.Duration
 	Logger         logger.Logger
 	stats          stats.Stats
@@ -1339,7 +1341,7 @@ func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 	return
 }
 
-func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (rs *Redshift) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader

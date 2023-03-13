@@ -17,6 +17,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -86,7 +88,7 @@ type MSSQL struct {
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse
-	Uploader                    warehouseutils.Uploader
+	Uploader                    uploader.Uploader
 	ConnectTimeout              time.Duration
 	EnableDeleteByJobs          bool
 	Logger                      logger.Logger
@@ -715,7 +717,7 @@ func (ms *MSSQL) TestConnection(warehouse model.Warehouse) (err error) {
 	return nil
 }
 
-func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader

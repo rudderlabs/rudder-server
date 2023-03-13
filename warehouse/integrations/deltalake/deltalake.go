@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -115,7 +117,7 @@ type Deltalake struct {
 	Namespace              string
 	ObjectStorage          string
 	Warehouse              model.Warehouse
-	Uploader               warehouseutils.Uploader
+	Uploader               uploader.Uploader
 	ConnectTimeout         time.Duration
 	Logger                 logger.Logger
 	Stats                  stats.Stats
@@ -948,7 +950,7 @@ func (dl *Deltalake) FetchSchema(warehouse model.Warehouse) (schema, unrecognize
 }
 
 // Setup populate the Deltalake
-func (dl *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (dl *Deltalake) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.Uploader = uploader

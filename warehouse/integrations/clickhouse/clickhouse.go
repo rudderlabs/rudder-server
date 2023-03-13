@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -142,7 +144,7 @@ type Clickhouse struct {
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse
-	Uploader                    warehouseutils.Uploader
+	Uploader                    uploader.Uploader
 	stats                       stats.Stats
 	ConnectTimeout              time.Duration
 	Logger                      logger.Logger
@@ -947,7 +949,7 @@ func (ch *Clickhouse) TestConnection(warehouse model.Warehouse) (err error) {
 	return nil
 }
 
-func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
