@@ -1,7 +1,5 @@
 package model
 
-import "time"
-
 type (
 	SchemaType  string
 	TableSchema map[string]string
@@ -17,15 +15,3 @@ const (
 	JSONDataType    SchemaType = "json"
 	TextDataType    SchemaType = "text"
 )
-
-type WHSchema struct {
-	ID              int64
-	UploadID        int64
-	SourceID        string
-	Namespace       string
-	DestinationID   string
-	DestinationType string
-	Schema          Schema
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-}

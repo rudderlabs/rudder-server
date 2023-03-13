@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"golang.org/x/exp/slices"
@@ -137,7 +135,7 @@ type Handle struct {
 	Namespace                                   string
 	ObjectStorage                               string
 	Warehouse                                   model.Warehouse
-	Uploader                                    uploader.Uploader
+	Uploader                                    warehouseutils.Uploader
 	ConnectTimeout                              time.Duration
 	logger                                      logger.Logger
 	SkipComputingUserLatestTraits               bool
@@ -823,7 +821,7 @@ func (pg *Handle) TestConnection(warehouse model.Warehouse) (err error) {
 
 func (pg *Handle) Setup(
 	warehouse model.Warehouse,
-	uploader uploader.Uploader,
+	uploader warehouseutils.Uploader,
 ) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace

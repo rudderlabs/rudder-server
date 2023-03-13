@@ -717,7 +717,7 @@ type mockUploader struct {
 }
 
 func (*mockUploader) GetSchemaInWarehouse() model.Schema     { return model.Schema{} }
-func (*mockUploader) GetLocalSchema() (model.Schema, error)  { return model.Schema{}, nil }
+func (*mockUploader) GetLocalSchema() model.Schema           { return model.Schema{} }
 func (*mockUploader) UpdateLocalSchema(_ model.Schema) error { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool        { return false }
 func (*mockUploader) UseRudderStorage() bool                 { return false }

@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -117,7 +115,7 @@ type Postgres struct {
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse
-	Uploader                    uploader.Uploader
+	Uploader                    warehouseutils.Uploader
 	ConnectTimeout              time.Duration
 	Logger                      logger.Logger
 	EnableDeleteByJobs          bool
@@ -385,7 +383,7 @@ func (pg *Postgres) TestConnection(warehouse model.Warehouse) (err error) {
 
 func (pg *Postgres) Setup(
 	warehouse model.Warehouse,
-	uploader uploader.Uploader,
+	uploader warehouseutils.Uploader,
 ) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace

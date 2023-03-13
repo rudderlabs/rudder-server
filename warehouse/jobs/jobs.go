@@ -14,8 +14,8 @@ func (*WhAsyncJob) GetSchemaInWarehouse() model.Schema {
 	return model.Schema{}
 }
 
-func (*WhAsyncJob) GetLocalSchema() (model.Schema, error) {
-	return model.Schema{}, nil
+func (*WhAsyncJob) GetLocalSchema() model.Schema {
+	return model.Schema{}
 }
 
 func (*WhAsyncJob) UpdateLocalSchema(model.Schema) error {

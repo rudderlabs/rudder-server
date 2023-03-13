@@ -18,8 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -67,6 +65,7 @@ var (
 	controlPlaneClient                  *controlplane.Client
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
+	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
 	stagingFilesBatchSize               int
 	lastProcessedMarkerMap              map[string]int64
@@ -95,6 +94,7 @@ var (
 	waitForConfig                       time.Duration
 	waitForWorkerSleep                  time.Duration
 	ShouldForceSetLowerVersion          bool
+	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	asyncWh                             *jobs.AsyncJobWh
@@ -132,7 +132,6 @@ type HandleT struct {
 	warehouseDBHandle                 *DB
 	stagingRepo                       *repo.StagingFiles
 	uploadRepo                        *repo.Uploads
-	whSchemaRepo                      *repo.WHSchema
 	notifier                          pgnotifier.PGNotifier
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
@@ -182,6 +181,7 @@ func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
 	enableTunnelling = config.GetBool("ENABLE_TUNNELLING", true)
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
+	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
@@ -198,6 +198,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
+	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
@@ -418,18 +419,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	if namespacePrefix != "" {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
-
-	namespace, err := wh.whSchemaRepo.GetNamespace(context.TODO(), source.ID, destination.ID)
-	if err != nil {
-		pkgLogger.Errorw("getting namespace",
-			logfield.SourceID, source.ID,
-			logfield.DestinationID, destination.ID,
-			logfield.DestinationType, destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, destination.WorkspaceID,
-		)
-		return ""
-	}
-	if namespace == "" {
+	if _, exists := warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 	}
 	return ""
@@ -857,13 +847,10 @@ func (wh *HandleT) Setup(whType string) error {
 	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
 	wh.stagingRepo = repo.NewStagingFiles(dbHandle)
 	wh.uploadRepo = repo.NewUploads(dbHandle)
-	wh.whSchemaRepo = repo.NewWHSchemas(dbHandle)
 
 	wh.notifier = notifier
 	wh.destType = whType
-	if err := wh.resetInProgressJobs(); err != nil {
-		return fmt.Errorf("resetInProgressJobs: %w", err)
-	}
+	wh.resetInProgressJobs()
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobID)
@@ -938,10 +925,25 @@ func (wh *HandleT) Shutdown() error {
 	return wh.backgroundWait()
 }
 
-// TODO: Should we send a stat here.
-func (wh *HandleT) resetInProgressJobs() error {
-	_, err := wh.uploadRepo.ResetInProgress(context.TODO(), wh.destType)
-	return err
+func (wh *HandleT) resetInProgressJobs() {
+	sqlStatement := fmt.Sprintf(`
+		UPDATE
+		  %s
+		SET
+		  in_progress = %t
+		WHERE
+		  destination_type = '%s'
+		  AND in_progress = %t;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		false,
+		wh.destType,
+		true,
+	)
+	_, err := wh.dbHandle.Query(sqlStatement)
+	if err != nil {
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
+	}
 }
 
 func minimalConfigSubscriber() {
@@ -1156,12 +1158,11 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sourceID := pendingEventsReq.SourceID
-
+	sourceID, taskRunID := pendingEventsReq.SourceID, pendingEventsReq.TaskRunID
 	// return error if source id is empty
-	if sourceID == "" {
-		pkgLogger.Errorf("[WH]: pending-events:  Empty source id")
-		http.Error(w, "empty source id", http.StatusBadRequest)
+	if sourceID == "" || taskRunID == "" {
+		pkgLogger.Errorf("empty source_id or task_run_id in the pending events request")
+		http.Error(w, "empty source_id or task_run_id", http.StatusBadRequest)
 		return
 	}
 
@@ -1194,16 +1195,33 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filterBy := []warehouseutils.FilterBy{{Key: "source_id", Value: sourceID}}
-	if pendingEventsReq.TaskRunID != "" {
-		filterBy = append(filterBy, warehouseutils.FilterBy{Key: "metadata->>'source_task_run_id'", Value: pendingEventsReq.TaskRunID})
+	filters := []repo.FilterBy{
+		{Key: "source_id", Value: sourceID},
+		{Key: "metadata->>'source_task_run_id'", Value: taskRunID},
+		{Key: "status", NotEquals: true, Value: model.ExportedData},
+		{Key: "status", NotEquals: true, Value: model.Aborted},
 	}
 
-	pendingUploadCount, err = getPendingUploadCount(filterBy...)
+	pendingUploadCount, err = getFilteredCount(ctx, filters...)
+
 	if err != nil {
-		err := fmt.Errorf("error getting pending uploads : %v", err)
-		pkgLogger.Errorf("[WH]: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		pkgLogger.Errorf("getting pending uploads count", "error", err)
+		http.Error(w, fmt.Sprintf(
+			"getting pending uploads count: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	filters = []repo.FilterBy{
+		{Key: "source_id", Value: sourceID},
+		{Key: "metadata->>'source_task_run_id'", Value: pendingEventsReq.TaskRunID},
+		{Key: "status", Value: "aborted"},
+	}
+
+	abortedUploadCount, err := getFilteredCount(ctx, filters...)
+	if err != nil {
+		pkgLogger.Errorf("getting aborted uploads count", "error", err.Error())
+		http.Error(w, fmt.Sprintf("getting aborted uploads count: %s", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -1253,6 +1271,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		PendingEvents:            pendingEvents,
 		PendingStagingFilesCount: pendingStagingFileCount,
 		PendingUploadCount:       pendingUploadCount,
+		AbortedEvents:            abortedUploadCount > 0,
 	}
 
 	resBody, err := json.Marshal(res)
@@ -1264,6 +1283,11 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = w.Write(resBody)
+}
+
+func getFilteredCount(ctx context.Context, filters ...repo.FilterBy) (int64, error) {
+	pkgLogger.Debugf("fetching filtered count")
+	return repo.NewUploads(dbHandle).Count(ctx, filters...)
 }
 
 func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {

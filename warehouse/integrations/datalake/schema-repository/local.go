@@ -3,18 +3,17 @@ package schemarepository
 import (
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type LocalSchemaRepository struct {
 	warehouse model.Warehouse
-	uploader  uploader.Uploader
+	uploader  warehouseutils.Uploader
 }
 
-func NewLocalSchemaRepository(wh model.Warehouse, uploader uploader.Uploader) (*LocalSchemaRepository, error) {
+func NewLocalSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader) (*LocalSchemaRepository, error) {
 	ls := LocalSchemaRepository{
 		warehouse: wh,
 		uploader:  uploader,
@@ -23,13 +22,15 @@ func NewLocalSchemaRepository(wh model.Warehouse, uploader uploader.Uploader) (*
 	return &ls, nil
 }
 
-func (ls *LocalSchemaRepository) FetchSchema(_ model.Warehouse) (model.Schema, model.Schema, error) {
-	schema, err := ls.uploader.GetLocalSchema()
-	if err != nil {
-		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching local schema: %w", err)
+func (ls *LocalSchemaRepository) localFetchSchema() model.Schema {
+	if schema := ls.uploader.GetLocalSchema(); schema != nil {
+		return schema
 	}
+	return model.Schema{}
+}
 
-	return schema, model.Schema{}, nil
+func (ls *LocalSchemaRepository) FetchSchema(_ model.Warehouse) (model.Schema, model.Schema, error) {
+	return ls.localFetchSchema(), model.Schema{}, nil
 }
 
 func (*LocalSchemaRepository) CreateSchema() (err error) {
@@ -38,10 +39,7 @@ func (*LocalSchemaRepository) CreateSchema() (err error) {
 
 func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// fetch schema from local db
-	schema, err := ls.uploader.GetLocalSchema()
-	if err != nil {
-		return fmt.Errorf("fetching local schema: %w", err)
-	}
+	schema := ls.localFetchSchema()
 
 	if _, ok := schema[tableName]; ok {
 		return fmt.Errorf("failed to create table: table %s already exists", tableName)
@@ -56,10 +54,7 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap model.T
 
 func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	// fetch schema from local db
-	schema, err := ls.uploader.GetLocalSchema()
-	if err != nil {
-		return fmt.Errorf("fetching local schema: %w", err)
-	}
+	schema := ls.localFetchSchema()
 
 	// check if table exists
 	if _, ok := schema[tableName]; !ok {
@@ -76,10 +71,7 @@ func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []ware
 
 func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
 	// fetch schema from local db
-	schema, err := ls.uploader.GetLocalSchema()
-	if err != nil {
-		return model.AlterTableResponse{}, fmt.Errorf("fetching local schema: %w", err)
-	}
+	schema := ls.localFetchSchema()
 
 	// check if table exists
 	if _, ok := schema[tableName]; !ok {

@@ -92,8 +92,6 @@ const (
 )
 
 const (
-	BQLoadedAtFormat         = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat           = "2006-01-02 15:04:05 Z"
 	DatalakeTimeWindowFormat = "2006/01/02/15"
 )
 
@@ -245,6 +243,22 @@ type KeyValue struct {
 	Value interface{}
 }
 
+type Uploader interface {
+	GetSchemaInWarehouse() model.Schema
+	GetLocalSchema() model.Schema
+	UpdateLocalSchema(schema model.Schema) error
+	GetTableSchemaInWarehouse(tableName string) model.TableSchema
+	GetTableSchemaInUpload(tableName string) model.TableSchema
+	GetLoadFilesMetadata(options GetLoadFilesOptions) []LoadFile
+	GetSampleLoadFileLocation(tableName string) (string, error)
+	GetSingleLoadFile(tableName string) (LoadFile, error)
+	ShouldOnDedupUseNewRecord() bool
+	UseRudderStorage() bool
+	GetLoadFileGenStartTIme() time.Time
+	GetLoadFileType() string
+	GetFirstLastEvent() (time.Time, time.Time)
+}
+
 type GetLoadFilesOptions struct {
 	Table   string
 	StartID int64
@@ -283,19 +297,12 @@ type PendingEventsResponse struct {
 	PendingEvents            bool  `json:"pending_events"`
 	PendingStagingFilesCount int64 `json:"pending_staging_files"`
 	PendingUploadCount       int64 `json:"pending_uploads"`
+	AbortedEvents            bool  `json:"aborted_events"`
 }
 
 type TriggerUploadRequest struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
-}
-
-type LoadFileWriter interface {
-	WriteGZ(s string) error
-	Write(p []byte) (int, error)
-	WriteRow(r []interface{}) error
-	Close() error
-	GetLoadFile() *os.File
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
@@ -304,6 +311,29 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 		return s, t.Time()
 	}
 	return // zero values
+}
+
+func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
+	sqlStatement := fmt.Sprintf(`
+		SELECT
+		  namespace
+		FROM
+		  %s
+		WHERE
+		  source_id = '%s'
+		  AND destination_id = '%s'
+		ORDER BY
+		  id DESC;
+`,
+		WarehouseSchemasTable,
+		source.ID,
+		destination.ID,
+	)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
+	if err != nil && err != sql.ErrNoRows {
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
+	}
+	return namespace, len(namespace) > 0
 }
 
 // GetObjectFolder returns the folder path for the storage object based on the storage provider

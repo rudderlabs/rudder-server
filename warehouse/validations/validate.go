@@ -65,7 +65,7 @@ type DestinationValidator interface {
 type destinationValidationImpl struct{}
 
 func (*dummyUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
-func (*dummyUploader) GetLocalSchema() (model.Schema, error)            { return model.Schema{}, nil }
+func (*dummyUploader) GetLocalSchema() model.Schema                     { return model.Schema{} }
 func (*dummyUploader) UpdateLocalSchema(_ model.Schema) error           { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
@@ -365,7 +365,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		tmpDirPath string
 		filePath   string
 		err        error
-		writer     warehouseutils.LoadFileWriter
+		writer     encoding.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
 	)

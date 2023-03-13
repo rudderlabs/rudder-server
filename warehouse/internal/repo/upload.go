@@ -203,6 +203,35 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 	return uploadID, nil
 }
 
+type FilterBy struct {
+	Key       string
+	Value     interface{}
+	NotEquals bool
+}
+
+func (uploads *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error) {
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName)
+
+	args := make([]interface{}, 0)
+	for i, filter := range filters {
+
+		if filter.NotEquals {
+			query += fmt.Sprintf(" AND %s!=$%d", filter.Key, i+1)
+		} else {
+			query += fmt.Sprintf(" AND %s=$%d", filter.Key, i+1)
+		}
+
+		args = append(args, filter.Value)
+	}
+
+	var count int64
+	if err := uploads.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("scanning count into local variable: %w", err)
+	}
+
+	return count, nil
+}
+
 func (uploads *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
 	row := uploads.db.QueryRowContext(ctx, `
 		SELECT

@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -37,10 +35,10 @@ func Init() {
 type HandleT struct {
 	SchemaRepository schemarepository.SchemaRepository
 	Warehouse        model.Warehouse
-	Uploader         uploader.Uploader
+	Uploader         warehouseutils.Uploader
 }
 
-func (wh *HandleT) Setup(warehouse model.Warehouse, uploader uploader.Uploader) (err error) {
+func (wh *HandleT) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	wh.Warehouse = warehouse
 	wh.Uploader = uploader
 
