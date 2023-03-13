@@ -98,11 +98,18 @@ func TestExportLoop(t *testing.T) {
 
 	fullExportFile := model.File{Path: path.Join(exportBaseDir, "full-export"), Mu: &sync.RWMutex{}}
 	latestExportFile := model.File{Path: path.Join(exportBaseDir, "latest-export"), Mu: &sync.RWMutex{}}
-
-	fullExporter, err := exporter.NewExporter(identifier, fullExportFile, logger.NOP, exporter.WithPollIntervalFn(func() time.Duration { return 1 * time.Millisecond }))
-	require.NoError(t, err)
-	latestExporter, err := exporter.NewExporter(identifier, latestExportFile, logger.NOP, exporter.WithPollIntervalFn(func() time.Duration { return 1 * time.Millisecond }))
-	require.NoError(t, err)
+	fullExporter := exporter.Exporter{
+		Id:           identifier,
+		File:         fullExportFile,
+		Log:          logger.NOP,
+		PollInterval: 1 * time.Second,
+	}
+	latestExporter := exporter.Exporter{
+		Id:           identifier,
+		File:         latestExportFile,
+		Log:          logger.NOP,
+		PollInterval: 1 * time.Second,
+	}
 
 	ctx := context.Background()
 	go func() {

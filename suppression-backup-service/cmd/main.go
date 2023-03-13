@@ -65,19 +65,21 @@ func Run(ctx context.Context) error {
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		fullExporter, err := exporter.NewExporter(id, fullExportFile, pkgLogger, exporter.WithPollIntervalFn(func() time.Duration {
-			return config.GetDuration("SuppressionExporter.fullExportInterval", 24*60*60, time.Second)
-		}))
-		if err != nil {
-			return fmt.Errorf("could not create full exporter: %w", err)
+		fullExporter := exporter.Exporter{
+			Id:           id,
+			File:         fullExportFile,
+			Log:          pkgLogger,
+			PollInterval: config.GetDuration("SuppressionExporter.fullExportInterval", 24, time.Hour),
 		}
 		return fullExporter.FullExporterLoop(gCtx)
 	})
 
 	g.Go(func() error {
-		latestExporter, err := exporter.NewExporter(id, latestExportFile, pkgLogger)
-		if err != nil {
-			return fmt.Errorf("could not create latest exporter: %w", err)
+		latestExporter := exporter.Exporter{
+			Id:           id,
+			File:         latestExportFile,
+			Log:          pkgLogger,
+			PollInterval: config.GetDuration("SuppressionExporter.latestExportInterval", 24, time.Hour),
 		}
 		return latestExporter.LatestExporterLoop(gCtx)
 	})

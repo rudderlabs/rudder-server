@@ -19,8 +19,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// ExporterOpt represents a configuration option for the exporter
-type ExporterOpt func(*Exporter)
+// // ExporterOpt represents a configuration option for the exporter
+// type ExporterOpt func(*Exporter)
 
 func Export(repo suppression.Repository, file model.File) error {
 	// export initially to a temp file
@@ -71,41 +71,41 @@ func newBadgerDBInstance(baseDir string, pkgLogger logger.Logger) (suppression.R
 }
 
 type Exporter struct {
-	id             identity.Identifier
-	file           model.File
-	log            logger.Logger
-	pollIntervalFn func() time.Duration
+	Id           identity.Identifier
+	File         model.File
+	Log          logger.Logger
+	PollInterval time.Duration
 }
 
-// WithPollIntervalFn sets the interval at which the syncer will poll the backend
-func WithPollIntervalFn(pollIntervalFn func() time.Duration) ExporterOpt {
-	return func(c *Exporter) {
-		c.pollIntervalFn = pollIntervalFn
-	}
-}
+// // WithPollIntervalFn sets the interval at which the syncer will poll the backend
+// func WithPollIntervalFn(pollIntervalFn func() time.Duration) ExporterOpt {
+// 	return func(c *Exporter) {
+// 		c.pollIntervalFn = pollIntervalFn
+// 	}
+// }
 
-// NewExporter creates a new syncer
-func NewExporter(id identity.Identifier, file model.File, log logger.Logger, opts ...ExporterOpt) (*Exporter, error) {
-	e := &Exporter{
-		id:   id,
-		file: file,
-		log:  log,
-		pollIntervalFn: func() time.Duration {
-			return time.Hour
-		},
-	}
-	for _, opt := range opts {
-		opt(e)
-	}
-	return e, nil
-}
+// // NewExporter creates a new syncer
+// func NewExporter(id identity.Identifier, file model.File, log logger.Logger, opts ...ExporterOpt) (*Exporter, error) {
+// 	e := &Exporter{
+// 		id:   id,
+// 		file: file,
+// 		log:  log,
+// 		pollIntervalFn: func() time.Duration {
+// 			return time.Hour
+// 		},
+// 	}
+// 	for _, opt := range opts {
+// 		opt(e)
+// 	}
+// 	return e, nil
+// }
 
 func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 	tmpDir, err := misc.CreateTMPDIR()
 	if err != nil {
 		return err
 	}
-	repo, err := newBadgerDBInstance(path.Join(tmpDir, "fullsuppression"), e.log)
+	repo, err := newBadgerDBInstance(path.Join(tmpDir, "fullsuppression"), e.Log)
 	if err != nil {
 		return err
 	}
@@ -115,9 +115,9 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 
 	syncer, err := suppression.NewSyncer(
 		config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
-		e.id,
+		e.Id,
 		repo,
-		suppression.WithLogger(e.log),
+		suppression.WithLogger(e.Log),
 		suppression.WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
 		suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
 	)
@@ -136,11 +136,11 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 			}
 			stats.Default.NewStat("suppression_backup_service_full_sync_time", stats.TimerType).Since(syncStart)
 			exportStart := time.Now()
-			if err = Export(repo, e.file); err != nil {
+			if err = Export(repo, e.File); err != nil {
 				return err
 			}
 			stats.Default.NewStat("suppression_backup_service_full_export_time", stats.TimerType).Since(exportStart)
-			if err = misc.SleepCtx(ctx, e.pollIntervalFn()); err != nil {
+			if err = misc.SleepCtx(ctx, e.PollInterval); err != nil {
 				return err
 			}
 		}
@@ -166,7 +166,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 				if err != nil {
 					return fmt.Errorf("could not remove tmp dir: %w", err)
 				}
-				repo, err := newBadgerDBInstance(baseDir, e.log)
+				repo, err := newBadgerDBInstance(baseDir, e.Log)
 				if err != nil {
 					return err
 				}
@@ -177,9 +177,9 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 				path.Join(tmpDir, "latestsuppression")
 				syncer, err := suppression.NewSyncer(
 					config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
-					e.id,
+					e.Id,
 					repo,
-					suppression.WithLogger(e.log),
+					suppression.WithLogger(e.Log),
 					suppression.WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
 					suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
 				)
@@ -200,10 +200,10 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 				}
 				stats.Default.NewStat("suppression_backup_service_latest_sync_time", stats.TimerType).Since(syncStart)
 				exportStart := time.Now()
-				if err := Export(repo, e.file); err != nil {
+				if err := Export(repo, e.File); err != nil {
 					return err
 				}
-				if err = Export(repo, e.file); err != nil {
+				if err = Export(repo, e.File); err != nil {
 					return err
 				}
 				stats.Default.NewStat("suppression_backup_service_latest_export_time", stats.TimerType).Since(exportStart)
@@ -213,7 +213,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 			if err := latestExport(); err != nil {
 				return err
 			}
-			if err := misc.SleepCtx(ctx, e.pollIntervalFn()); err != nil {
+			if err := misc.SleepCtx(ctx, e.PollInterval); err != nil {
 				return err
 			}
 		}
