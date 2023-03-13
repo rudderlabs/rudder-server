@@ -62,27 +62,27 @@ type DestinationValidator interface {
 
 type destinationValidationImpl struct{}
 
-func (*dummyUploader) GetSchemaInWarehouse() warehouseutils.SchemaT     { return warehouseutils.SchemaT{} }
-func (*dummyUploader) GetLocalSchema() warehouseutils.SchemaT           { return warehouseutils.SchemaT{} }
-func (*dummyUploader) UpdateLocalSchema(_ warehouseutils.SchemaT) error { return nil }
+func (*dummyUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
+func (*dummyUploader) GetLocalSchema() model.Schema                     { return model.Schema{} }
+func (*dummyUploader) UpdateLocalSchema(_ model.Schema) error           { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
 func (*dummyUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
 func (*dummyUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
-func (*dummyUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
-func (*dummyUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*dummyUploader) GetTableSchemaInUpload(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
-func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
-	return []warehouseutils.LoadFileT{}
+func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+	return []warehouseutils.LoadFile{}
 }
 
-func (*dummyUploader) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
+func (*dummyUploader) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) {
+	return warehouseutils.LoadFile{}, nil
 }
 
 func (m *dummyUploader) GetLoadFileType() string {
@@ -363,7 +363,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		tmpDirPath string
 		filePath   string
 		err        error
-		writer     warehouseutils.LoadFileWriterI
+		writer     warehouseutils.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
 	)
@@ -533,13 +533,13 @@ func createManager(dest *backendconfig.DestinationT) (manager.WarehouseOperation
 	return operations, nil
 }
 
-func createDummyWarehouse(dest *backendconfig.DestinationT) warehouseutils.Warehouse {
+func createDummyWarehouse(dest *backendconfig.DestinationT) model.Warehouse {
 	var (
 		destType  = dest.DestinationDefinition.Name
 		namespace = configuredNamespaceInDestination(dest)
 	)
 
-	return warehouseutils.Warehouse{
+	return model.Warehouse{
 		WorkspaceID: dest.WorkspaceID,
 		Destination: *dest,
 		Namespace:   namespace,

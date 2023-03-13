@@ -9,11 +9,11 @@ import (
 )
 
 type LocalSchemaRepository struct {
-	warehouse warehouseutils.Warehouse
-	uploader  warehouseutils.UploaderI
+	warehouse model.Warehouse
+	uploader  warehouseutils.Uploader
 }
 
-func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (*LocalSchemaRepository, error) {
+func NewLocalSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader) (*LocalSchemaRepository, error) {
 	ls := LocalSchemaRepository{
 		warehouse: wh,
 		uploader:  uploader,
@@ -22,22 +22,22 @@ func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseuti
 	return &ls, nil
 }
 
-func (ls *LocalSchemaRepository) localFetchSchema() warehouseutils.SchemaT {
+func (ls *LocalSchemaRepository) localFetchSchema() model.Schema {
 	if schema := ls.uploader.GetLocalSchema(); schema != nil {
 		return schema
 	}
-	return warehouseutils.SchemaT{}
+	return model.Schema{}
 }
 
-func (ls *LocalSchemaRepository) FetchSchema(_ warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
-	return ls.localFetchSchema(), warehouseutils.SchemaT{}, nil
+func (ls *LocalSchemaRepository) FetchSchema(_ model.Warehouse) (model.Schema, model.Schema, error) {
+	return ls.localFetchSchema(), model.Schema{}, nil
 }
 
 func (*LocalSchemaRepository) CreateSchema() (err error) {
 	return nil
 }
 
-func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// fetch schema from local db
 	schema := ls.localFetchSchema()
 
@@ -89,6 +89,6 @@ func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType s
 	return model.AlterTableResponse{}, ls.uploader.UpdateLocalSchema(schema)
 }
 
-func (*LocalSchemaRepository) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) error {
+func (*LocalSchemaRepository) RefreshPartitions(_ string, _ []warehouseutils.LoadFile) error {
 	return nil
 }
