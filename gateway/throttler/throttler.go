@@ -80,7 +80,6 @@ func (f *Factory) initThrottlerFactory() error {
 	switch throttlingAlgorithm {
 	case throttlingAlgoTypeGCRA:
 		l, err = throttling.New(append(opts, throttling.WithInMemoryGCRA(0))...)
-
 	default:
 		return fmt.Errorf("invalid throttling algorithm: %s", throttlingAlgorithm)
 	}
@@ -124,9 +123,9 @@ func (c *throttlingConfig) readThrottlingConfig(workspaceID string) {
 	}
 
 	if config.IsSet(fmt.Sprintf("RateLimit.%s.rateLimitWindow", workspaceID)) {
-		c.window = config.GetDuration(fmt.Sprintf("RateLimit.%s.rateLimitWindow", workspaceID), 60, time.Minute)
+		c.window = config.GetDuration(fmt.Sprintf("RateLimit.%s.rateLimitWindow", workspaceID), 60, time.Second)
 	} else {
-		c.window = config.GetDuration("RateLimit.rateLimitWindow", 60, time.Minute)
+		c.window = config.GetDuration("RateLimit.rateLimitWindow", 60, time.Second)
 	}
 }
 
