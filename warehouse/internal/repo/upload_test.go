@@ -81,7 +81,7 @@ func TestUploads_Count(t *testing.T) {
 		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 		require.NoError(t, err)
 
-		id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []model.StagingFile{{
+		id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []*model.StagingFile{{
 			ID:              stagingID,
 			SourceID:        uploads[i].SourceID,
 			DestinationID:   uploads[i].DestinationID,
