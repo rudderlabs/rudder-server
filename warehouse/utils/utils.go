@@ -297,6 +297,7 @@ type PendingEventsResponse struct {
 	PendingEvents            bool  `json:"pending_events"`
 	PendingStagingFilesCount int64 `json:"pending_staging_files"`
 	PendingUploadCount       int64 `json:"pending_uploads"`
+	AbortedEvents            bool  `json:"aborted_events"`
 }
 
 type TriggerUploadRequest struct {
