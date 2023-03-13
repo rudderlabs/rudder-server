@@ -611,8 +611,9 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 }
 
 func GetConfigValue(key string, warehouse model.Warehouse) (val string) {
-	if config.IsSet("Warehouse." + warehouse.Source.ID + "." + warehouse.Destination.ID + "." + key) {
-		return config.GetString("Warehouse."+warehouse.Source.ID+"."+warehouse.Destination.ID+"."+key, "")
+	configKey := fmt.Sprintf("Warehouse.%s.%s.%s", warehouse.Source.ID, warehouse.Destination.ID, key)
+	if config.IsSet(configKey) {
+		return config.GetString(configKey, "")
 	}
 	destConfig := warehouse.Destination.Config
 	if destConfig[key] != nil {
