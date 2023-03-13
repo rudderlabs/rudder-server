@@ -7,18 +7,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/exp/slices"
 )
 
 type Diagnostic struct {
 	Logger    logger.Logger
 	Namespace string
-	Warehouse *warehouseutils.Warehouse
+	Warehouse *model.Warehouse
 	Stats     stats.Stats
 	Config    *config.Config
 }

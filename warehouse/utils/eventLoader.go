@@ -12,7 +12,7 @@ type EventLoader interface {
 	Write() error
 }
 
-func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriterI) EventLoader {
+func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriter) EventLoader {
 	switch loadFileType {
 	case LOAD_FILE_TYPE_JSON:
 		return NewJSONLoader(destinationType, w)

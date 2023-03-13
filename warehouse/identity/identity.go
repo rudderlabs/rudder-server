@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/lib/pq"
@@ -32,9 +34,9 @@ type WarehouseManager interface {
 }
 
 type HandleT struct {
-	Warehouse          warehouseutils.Warehouse
+	Warehouse          model.Warehouse
 	DB                 *sql.DB
-	Uploader           warehouseutils.UploaderI
+	Uploader           warehouseutils.Uploader
 	UploadID           int64
 	WarehouseManager   WarehouseManager
 	LoadFileDownloader downloader.Downloader
