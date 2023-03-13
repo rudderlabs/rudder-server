@@ -709,33 +709,63 @@ var _ = Describe("Gateway", func() {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 					reqType = "batch"
 				}
+				if handlerType != "extract" {
+					expectHandlerResponse(
+						handler,
+						authorizedRequest(
+							WriteKeyEnabled,
+							bytes.NewBufferString(validBody),
+						),
+						400,
+						response.NonIdentifiableRequest+"\n",
+					)
+					Eventually(
+						func() bool {
+							stat := statsStore.Get(
+								"gateway.write_key_failed_requests",
+								map[string]string{
+									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+									"workspaceId": getWorkspaceID(WriteKeyEnabled),
+									"writeKey":    WriteKeyEnabled,
+									"reqType":     reqType,
+									"reason":      response.NonIdentifiableRequest,
+									"sourceType":  sourceType2,
+									"sdkVersion":  "",
+								},
+							)
+							return stat != nil && stat.LastValue() == float64(1)
+						},
+					).Should(BeTrue())
+				}
+			}
+		})
+
+		It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
+			extractHandlers := map[string]http.HandlerFunc{
+				"batch":   gateway.webBatchHandler,
+				"import":  gateway.webImportHandler,
+				"extract": gateway.webExtractHandler,
+			}
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+			c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
+
+			validBody := `{"batch": [{"data": "valid-json", "type": "extract"}]}`
+			for handlerType, handler := range extractHandlers {
+				if handlerType == "extract" {
+					validBody = `{"data": "valid-json", "type": "extract"}`
+				}
 				expectHandlerResponse(
 					handler,
 					authorizedRequest(
 						WriteKeyEnabled,
 						bytes.NewBufferString(validBody),
 					),
-					400,
-					response.NonIdentifiableRequest+"\n",
+					200,
+					"OK",
 				)
-				Eventually(
-					func() bool {
-						stat := statsStore.Get(
-							"gateway.write_key_failed_requests",
-							map[string]string{
-								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-								"workspaceId": getWorkspaceID(WriteKeyEnabled),
-								"writeKey":    WriteKeyEnabled,
-								"reqType":     reqType,
-								"reason":      response.NonIdentifiableRequest,
-								"sourceType":  sourceType2,
-								"sdkVersion":  "",
-							},
-						)
-						return stat != nil && stat.LastValue() == float64(1)
-					},
-				).Should(BeTrue())
 			}
 		})
 
@@ -981,6 +1011,18 @@ var _ = Describe("Gateway", func() {
 			_, err = gateway.getJobDataFromRequest(req)
 			Expect(err).To(BeNil())
 		})
+
+		It("allows extract events even if userID and anonID are not present in the request payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
+			}
+			_, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+		})
 	})
 })
 
@@ -1029,6 +1071,7 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 		"track":        gateway.webTrackHandler,
 		"import":       gateway.webImportHandler,
 		"audiencelist": gateway.webAudienceListHandler,
+		"extract":      gateway.webExtractHandler,
 	}
 }
 

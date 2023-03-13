@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -70,7 +72,8 @@ var _ = Describe("Stats", Ordered, func() {
 				warehouse: warehouseutils.Warehouse{
 					Type: "POSTGRES",
 				},
-				stats: mockStats,
+				stats:            mockStats,
+				tableUploadsRepo: repo.NewTableUploads(pgResource.DB),
 			}
 		})
 
@@ -98,7 +101,8 @@ var _ = Describe("Stats", Ordered, func() {
 				warehouse: warehouseutils.Warehouse{
 					Type: "POSTGRES",
 				},
-				stats: mockStats,
+				stats:            mockStats,
+				tableUploadsRepo: repo.NewTableUploads(pgResource.DB),
 			}
 		})
 
