@@ -3,6 +3,8 @@ package validations_test
 import (
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -14,6 +16,7 @@ import (
 
 func TestValidationSteps(t *testing.T) {
 	warehouseutils.Init()
+	encoding.Init()
 
 	testCases := []struct {
 		name  string

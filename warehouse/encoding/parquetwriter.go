@@ -1,4 +1,4 @@
-package warehouseutils
+package encoding
 
 import (
 	"errors"
@@ -8,50 +8,52 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/xitongsys/parquet-go/writer"
 )
 
 const (
-	PARQUET_INT_64           = "type=INT64, repetitiontype=OPTIONAL"
-	PARQUET_BOOLEAN          = "type=BOOLEAN, repetitiontype=OPTIONAL"
-	PARQUET_DOUBLE           = "type=DOUBLE, repetitiontype=OPTIONAL"
-	PARQUET_STRING           = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
-	PARQUET_TIMESTAMP_MICROS = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
+	ParquetInt64           = "type=INT64, repetitiontype=OPTIONAL"
+	ParquetBoolean         = "type=BOOLEAN, repetitiontype=OPTIONAL"
+	ParquetDouble          = "type=DOUBLE, repetitiontype=OPTIONAL"
+	ParquetString          = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
+	ParquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
-	RS: {
-		"bigint":   PARQUET_INT_64,
-		"int":      PARQUET_INT_64,
-		"boolean":  PARQUET_BOOLEAN,
-		"float":    PARQUET_DOUBLE,
-		"string":   PARQUET_STRING,
-		"text":     PARQUET_STRING,
-		"datetime": PARQUET_TIMESTAMP_MICROS,
+	warehouseutils.RS: {
+		"bigint":   ParquetInt64,
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"text":     ParquetString,
+		"datetime": ParquetTimestampMicros,
 	},
-	S3_DATALAKE: {
-		"bigint":   PARQUET_INT_64,
-		"int":      PARQUET_INT_64,
-		"boolean":  PARQUET_BOOLEAN,
-		"float":    PARQUET_DOUBLE,
-		"string":   PARQUET_STRING,
-		"text":     PARQUET_STRING,
-		"datetime": PARQUET_TIMESTAMP_MICROS,
+	warehouseutils.S3_DATALAKE: {
+		"bigint":   ParquetInt64,
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"text":     ParquetString,
+		"datetime": ParquetTimestampMicros,
 	},
-	GCS_DATALAKE: {
-		"int":      PARQUET_INT_64,
-		"boolean":  PARQUET_BOOLEAN,
-		"float":    PARQUET_DOUBLE,
-		"string":   PARQUET_STRING,
-		"datetime": PARQUET_TIMESTAMP_MICROS,
+	warehouseutils.GCS_DATALAKE: {
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"datetime": ParquetTimestampMicros,
 	},
-	AZURE_DATALAKE: {
-		"int":      PARQUET_INT_64,
-		"boolean":  PARQUET_BOOLEAN,
-		"float":    PARQUET_DOUBLE,
-		"string":   PARQUET_STRING,
-		"datetime": PARQUET_TIMESTAMP_MICROS,
+	warehouseutils.AZURE_DATALAKE: {
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"datetime": ParquetTimestampMicros,
 	},
 }
 
@@ -123,7 +125,7 @@ func getParquetSchema(schema model.TableSchema, destType string) ([]string, erro
 	}
 	var pSchema []string
 	for _, col := range getSortedTableColumns(schema) {
-		pType := fmt.Sprintf("name=%s, %s", ToProviderCase(destType, col), whTypeMap[schema[col]])
+		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), whTypeMap[schema[col]])
 		pSchema = append(pSchema, pType)
 	}
 	return pSchema, nil
