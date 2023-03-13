@@ -11,6 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -30,11 +34,12 @@ type WarehouseManager interface {
 }
 
 type HandleT struct {
-	Warehouse        warehouseutils.Warehouse
-	DbHandle         *sql.DB
-	Uploader         warehouseutils.UploaderI
-	UploadID         int64
-	WarehouseManager WarehouseManager
+	Warehouse          model.Warehouse
+	DB                 *sql.DB
+	Uploader           warehouseutils.Uploader
+	UploadID           int64
+	WarehouseManager   WarehouseManager
+	LoadFileDownloader downloader.Downloader
 }
 
 func (idr *HandleT) mergeRulesTable() string {
@@ -350,61 +355,6 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 	return
 }
 
-func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
-	objects := idr.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
-	var fileNames []string
-	for _, object := range objects {
-		objectName, err := warehouseutils.GetObjectName(object.Location, idr.Warehouse.Destination.Config, warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage()))
-		if err != nil {
-			pkgLogger.Errorf("IDR: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
-			return nil, err
-		}
-		dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			pkgLogger.Errorf("IDR: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		objectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-		err = os.MkdirAll(filepath.Dir(objectPath), os.ModePerm)
-		if err != nil {
-			pkgLogger.Errorf("IDR: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
-			return nil, err
-		}
-		objectFile, err := os.Create(objectPath)
-		if err != nil {
-			pkgLogger.Errorf("IDR: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		storageProvider := warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage())
-		downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-			Provider: storageProvider,
-			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-				Provider:         storageProvider,
-				Config:           idr.Warehouse.Destination.Config,
-				UseRudderStorage: idr.Uploader.UseRudderStorage(),
-				WorkspaceID:      idr.Warehouse.Destination.WorkspaceID,
-			}),
-		})
-		if err != nil {
-			pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)
-			return nil, err
-		}
-		err = downloader.Download(context.TODO(), objectFile, objectName)
-		if err != nil {
-			pkgLogger.Errorf("IDR: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileName := objectFile.Name()
-		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("IDR: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileNames = append(fileNames, fileName)
-	}
-	return fileNames, nil
-}
-
 func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, totalRecords int) (err error) {
 	outputFile, err := os.Open(filePath)
 	if err != nil {
@@ -456,7 +406,7 @@ func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, 
 }
 
 func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
-	txn, err := idr.DbHandle.Begin()
+	txn, err := idr.DB.Begin()
 	if err != nil {
 		panic(err)
 	}
@@ -523,7 +473,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 func (idr *HandleT) Resolve() (err error) {
 	var loadFileNames []string
 	defer misc.RemoveFilePaths(loadFileNames...)
-	loadFileNames, err = idr.downloadLoadFiles(idr.whMergeRulesTable())
+	loadFileNames, err = idr.LoadFileDownloader.Download(context.TODO(), idr.whMergeRulesTable())
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Failed to download load files for %s with error: %v`, idr.mergeRulesTable(), err)
 		return

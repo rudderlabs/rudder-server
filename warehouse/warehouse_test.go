@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
@@ -61,6 +63,7 @@ func initWarehouse() {
 	validations.Init()
 	misc.Init()
 	postgres.Init()
+	postgreslegacy.Init()
 }
 
 func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMeasurement) {
@@ -163,25 +166,21 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			wh.processingStats(availableWorkers, jobStats)
 
 			m1 := store.Get("wh_processing_pending_jobs", stats.Tags{
-				"module":   moduleName,
 				"destType": tc.destType,
 			})
 			require.EqualValues(t, m1.LastValue(), tc.pendingJobs)
 
 			m2 := store.Get("wh_processing_available_workers", stats.Tags{
-				"module":   moduleName,
 				"destType": tc.destType,
 			})
 			require.EqualValues(t, m2.LastValue(), availableWorkers)
 
 			m3 := store.Get("wh_processing_pickup_lag", stats.Tags{
-				"module":   moduleName,
 				"destType": tc.destType,
 			})
 			require.EqualValues(t, m3.LastDuration(), tc.pickupLag)
 
 			m4 := store.Get("wh_processing_pickup_wait_time", stats.Tags{
-				"module":   moduleName,
 				"destType": tc.destType,
 			})
 			require.EqualValues(t, m4.LastDuration(), tc.pickupWaitTime)

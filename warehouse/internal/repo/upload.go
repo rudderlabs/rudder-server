@@ -63,7 +63,6 @@ type UploadMetadata struct {
 	Retried          bool      `json:"retried"`
 	Priority         int       `json:"priority"`
 	NextRetryTime    time.Time `json:"nextRetryTime"`
-	UseUploadID      bool      `json:"use_upload_id"`
 }
 
 func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
@@ -92,7 +91,7 @@ func ExtractUploadMetadata(upload model.Upload) UploadMetadata {
 	}
 }
 
-func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Upload, files []model.StagingFile) (int64, error) {
+func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Upload, files []*model.StagingFile) (int64, error) {
 	startJSONID := files[0].ID
 	endJSONID := files[len(files)-1].ID
 
@@ -118,7 +117,6 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		Retried:          upload.Retried,
 		Priority:         upload.Priority,
 		NextRetryTime:    upload.NextRetryTime,
-		UseUploadID:      true,
 	}
 
 	metadata, err := json.Marshal(metadataMap)
@@ -519,7 +517,7 @@ func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destination
 		return nil, fmt.Errorf("query for interrupted destinations: %w", err)
 	}
 
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var destID string
@@ -535,4 +533,75 @@ func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destination
 	}
 
 	return destinationIDs, nil
+}
+
+// PendingTableUploads returns a list of pending table uploads for a given upload.
+func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
+	pendingTableUploads := make([]model.PendingTableUpload, 0)
+
+	rows, err := uploads.db.QueryContext(ctx, `
+		SELECT
+		  UT.id,
+		  UT.destination_id,
+		  UT.namespace,
+		  TU.table_name,
+		  TU.status,
+		  TU.error
+		FROM
+			`+uploadsTableName+` UT
+		INNER JOIN
+			`+tableUploadTableName+` TU
+		ON
+			UT.id = TU.wh_upload_id
+		WHERE
+		  	UT.id <= $1 AND
+			UT.destination_id = $2 AND
+		   	UT.namespace = $3 AND
+		  	UT.status != $4 AND
+		  	UT.status != $5 AND
+		  	TU.table_name in (
+				SELECT
+				  table_name
+				FROM
+				  `+tableUploadTableName+` TU1
+				WHERE
+				  TU1.wh_upload_id = $1
+		  )
+		ORDER BY
+		  UT.id ASC;
+`,
+		uploadID,
+		destID,
+		namespace,
+		model.ExportedData,
+		model.Aborted,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("pending table uploads: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var pendingTableUpload model.PendingTableUpload
+
+		err := rows.Scan(
+			&pendingTableUpload.UploadID,
+			&pendingTableUpload.DestinationID,
+			&pendingTableUpload.Namespace,
+			&pendingTableUpload.TableName,
+			&pendingTableUpload.Status,
+			&pendingTableUpload.Error,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+
+		pendingTableUploads = append(pendingTableUploads, pendingTableUpload)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+	return pendingTableUploads, nil
 }

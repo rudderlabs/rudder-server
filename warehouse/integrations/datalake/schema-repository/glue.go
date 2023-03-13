@@ -34,12 +34,12 @@ type GlueSchemaRepository struct {
 	GlueClient *glue.Glue
 	s3bucket   string
 	s3prefix   string
-	Warehouse  warehouseutils.Warehouse
+	Warehouse  model.Warehouse
 	Namespace  string
 	Logger     logger.Logger
 }
 
-func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository, error) {
+func NewGlueSchemaRepository(wh model.Warehouse) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
 		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
 		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
@@ -57,9 +57,9 @@ func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository
 	return &gl, nil
 }
 
-func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
-	schema := warehouseutils.SchemaT{}
-	unrecognizedSchema := warehouseutils.SchemaT{}
+func (gl *GlueSchemaRepository) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
+	schema := model.Schema{}
+	unrecognizedSchema := model.Schema{}
 	var err error
 
 	var getTablesOutput *glue.GetTablesOutput
@@ -85,7 +85,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 			if table.Name != nil && table.StorageDescriptor != nil && table.StorageDescriptor.Columns != nil {
 				tableName := *table.Name
 				if _, ok := schema[tableName]; !ok {
-					schema[tableName] = map[string]string{}
+					schema[tableName] = model.TableSchema{}
 				}
 
 				for _, col := range table.StorageDescriptor.Columns {
@@ -93,7 +93,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 						schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
 					} else {
 						if _, ok := unrecognizedSchema[tableName]; !ok {
-							unrecognizedSchema[tableName] = make(map[string]string)
+							unrecognizedSchema[tableName] = make(model.TableSchema)
 						}
 						unrecognizedSchema[tableName][*col.Name] = warehouseutils.MISSING_DATATYPE
 
@@ -125,7 +125,7 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 	return
 }
 
-func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	partitionKeys, err := gl.partitionColumns()
 	if err != nil {
 		return fmt.Errorf("partition keys: %w", err)
@@ -202,7 +202,7 @@ func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType st
 	return model.AlterTableResponse{}, gl.updateTable(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
 }
 
-func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {
+func getGlueClient(wh model.Warehouse) (*glue.Glue, error) {
 	sessionConfig, err := awsutils.NewSimpleSessionConfigForDestination(&wh.Destination, glue.ServiceID)
 	if err != nil {
 		return nil, err
@@ -214,7 +214,7 @@ func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {
 	return glue.New(awsSession), nil
 }
 
-func (gl *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap map[string]string) *glue.StorageDescriptor {
+func (gl *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap model.TableSchema) *glue.StorageDescriptor {
 	storageDescriptor := glue.StorageDescriptor{
 		Columns:  []*glue.Column{},
 		Location: aws.String(gl.getS3LocationForTable(tableName)),
@@ -250,7 +250,7 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 // RefreshPartitions takes a tableName and a list of loadFiles and refreshes all the
 // partitions that are modified by the path in those loadFiles. It returns any error
 // reported by Glue
-func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error {
+func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFile) error {
 	gl.Logger.Infof("Refreshing partitions for table: %s", tableName)
 
 	// Skip if time window layout is not defined
