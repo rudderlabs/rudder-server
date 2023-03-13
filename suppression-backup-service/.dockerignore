@@ -1,0 +1,7 @@
+**/.git
+.env
+.vscode
+.dockerignore
+cmd/benchmark/Dockerfile
+Dockerfile
+regulation-worker
