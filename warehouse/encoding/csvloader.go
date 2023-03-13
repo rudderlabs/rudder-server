@@ -17,10 +17,10 @@ type CsvLoader struct {
 	csvRow     []string
 	buff       bytes.Buffer
 	csvWriter  *csv.Writer
-	fileWriter warehouseutils.LoadFileWriter
+	fileWriter LoadFileWriter
 }
 
-func NewCSVLoader(destType string, writer warehouseutils.LoadFileWriter) *CsvLoader {
+func NewCSVLoader(destType string, writer LoadFileWriter) *CsvLoader {
 	loader := &CsvLoader{destType: destType, fileWriter: writer}
 	loader.csvRow = []string{}
 	loader.buff = bytes.Buffer{}

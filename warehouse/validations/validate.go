@@ -365,7 +365,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		tmpDirPath string
 		filePath   string
 		err        error
-		writer     warehouseutils.LoadFileWriter
+		writer     encoding.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
 	)
