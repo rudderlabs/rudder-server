@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -363,7 +365,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		tmpDirPath string
 		filePath   string
 		err        error
-		writer     warehouseutils.LoadFileWriter
+		writer     encoding.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
 	)
@@ -385,7 +387,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	}
 
 	if warehouseutils.GetLoadFileType(destinationType) == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		writer, err = warehouseutils.CreateParquetWriter(TableSchemaMap, filePath, destinationType)
+		writer, err = encoding.CreateParquetWriter(TableSchemaMap, filePath, destinationType)
 	} else {
 		writer, err = misc.CreateGZ(filePath)
 	}
@@ -393,7 +395,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
 
-	eventLoader := warehouseutils.GetNewEventLoader(destinationType, warehouseutils.GetLoadFileType(destinationType), writer)
+	eventLoader := encoding.GetNewEventLoader(destinationType, warehouseutils.GetLoadFileType(destinationType), writer)
 	for _, column := range []string{"id", "val"} {
 		eventLoader.AddColumn(column, TableSchemaMap[column], PayloadMap[column])
 	}
