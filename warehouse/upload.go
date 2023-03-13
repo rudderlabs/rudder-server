@@ -1356,27 +1356,6 @@ func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings) {
 	return marshalledTimings, timings
 }
 
-func (job *UploadJob) getUploadFirstAttemptTime() (timing time.Time) {
-	var firstTiming sql.NullString
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  timings -> 0 as firstTimingObj
-		FROM
-		  %s
-		WHERE
-		  id = %d;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		job.upload.ID,
-	)
-	err := job.dbHandle.QueryRow(sqlStatement).Scan(&firstTiming)
-	if err != nil {
-		return
-	}
-	_, timing = warehouseutils.TimingFromJSONString(firstTiming)
-	return timing
-}
-
 type UploadStatusOpts struct {
 	Status           string
 	AdditionalFields []UploadColumn
@@ -1621,7 +1600,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	// exceeded.
 	uploadErrorAttempts := uploadErrors[state]["attempt"].(int)
 
-	if job.Aborted(uploadErrorAttempts, job.getUploadFirstAttemptTime()) {
+	if job.Aborted(uploadErrorAttempts, job.upload.FirstAttemptAt) {
 		state = model.Aborted
 	}
 

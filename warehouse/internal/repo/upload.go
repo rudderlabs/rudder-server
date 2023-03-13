@@ -605,3 +605,67 @@ func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace strin
 	}
 	return pendingTableUploads, nil
 }
+
+func (uploads *Uploads) ResetInProgress(ctx context.Context, destType string) (int64, error) {
+	sqlStatement := `
+		UPDATE
+		` + uploadsTableName + `
+		SET
+		  in_progress = FALSE
+		WHERE
+		  destination_type = $1 AND
+		  in_progress = TRUE;
+`
+	result, err := uploads.db.ExecContext(ctx, sqlStatement, destType)
+	if err != nil {
+		return 0, fmt.Errorf("exec: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+func (uploads *Uploads) GetLastCreatedAt(ctx context.Context, sourceID, destID string) (time.Time, error) {
+	row := uploads.db.QueryRowContext(ctx, `
+		SELECT
+			created_at
+		FROM
+		`+uploadsTableName+`
+		WHERE
+			source_id = $1 AND
+			destination_id = $2
+		ORDER BY
+		  id DESC
+		LIMIT
+		  1;
+	`,
+		sourceID,
+		destID,
+	)
+
+	if row.Err() != nil {
+		return time.Time{}, fmt.Errorf("querying for last created at: %w", row.Err())
+	}
+
+	var (
+		createdAt sql.NullTime
+		err       error
+	)
+
+	err = row.Scan(row.Scan, &createdAt)
+	if err == sql.ErrNoRows {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("scanning: %w", err)
+	}
+	if !createdAt.Valid {
+		return time.Time{}, fmt.Errorf("invalid created_at")
+	}
+
+	return createdAt.Time, nil
+}
