@@ -601,7 +601,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 				"library",
 				"version",
 			).(string)
-			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) {
+			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) { // skipcq: CRT-A0007
 				firstSDKVersion = "invalid"
 			}
 			if firstSDKName != "" || firstSDKVersion != "" {
@@ -890,6 +890,7 @@ func warehouseHandler(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(misc.GetWarehouseURL())
 	if err != nil {
 		http.Error(w, err.Error(), 404)
+		return
 	}
 	// gateway.logger.LogRequest(r)
 	director := func(req *http.Request) {
@@ -983,6 +984,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 		if errorMessage != "" {
 			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetErrorStatusCode(errorMessage), errorMessage)
 			http.Error(w, response.GetStatus(errorMessage), response.GetErrorStatusCode(errorMessage))
+			return
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
@@ -1313,8 +1315,9 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srv := &http.Server{
-		Addr:    ":" + strconv.Itoa(adminWebPort),
-		Handler: bugsnag.Handler(srvMux),
+		Addr:              ":" + strconv.Itoa(adminWebPort),
+		Handler:           bugsnag.Handler(srvMux),
+		ReadHeaderTimeout: ReadHeaderTimeout,
 	}
 
 	return rs_httputil.ListenAndServe(ctx, srv)
