@@ -1,7 +1,7 @@
 package warehouse
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"strconv"
 	"sync"
@@ -106,36 +106,6 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 	return timeutil.StartOfDay(now).Add(time.Minute * time.Duration(allStartTimes[pos]))
 }
 
-// getLastUploadCreatedAt returns the start time of the last upload
-func (wh *HandleT) getLastUploadCreatedAt(warehouse model.Warehouse) time.Time {
-	var t sql.NullTime
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  created_at
-		FROM
-		  %s
-		WHERE
-		  source_id = '%s'
-		  AND destination_id = '%s'
-		ORDER BY
-		  id DESC
-		LIMIT
-		  1;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		warehouse.Source.ID,
-		warehouse.Destination.ID,
-	)
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
-	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-	}
-	if err == sql.ErrNoRows || !t.Valid {
-		return time.Time{} // zero value
-	}
-	return t.Time
-}
-
 func GetExcludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
 	var startTime, endTime string
 	if st, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
@@ -202,7 +172,10 @@ func (wh *HandleT) canCreateUpload(warehouse model.Warehouse) (bool, error) {
 		}
 	}
 	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
-	lastUploadCreatedAt := wh.getLastUploadCreatedAt(warehouse)
+	lastUploadCreatedAt, err := wh.uploadRepo.GetLastCreatedAt(context.TODO(), warehouse.Source.ID, warehouse.Destination.ID)
+	if err != nil {
+		return false, fmt.Errorf("getting last created_at: %w", err)
+	}
 	// start upload only if no upload has started in current window
 	// e.g. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
 	if lastUploadCreatedAt.Before(prevScheduledTime) {

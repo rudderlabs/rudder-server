@@ -861,7 +861,9 @@ func (wh *HandleT) Setup(whType string) error {
 
 	wh.notifier = notifier
 	wh.destType = whType
-	wh.resetInProgressJobs()
+	if err := wh.resetInProgressJobs(); err != nil {
+		return fmt.Errorf("resetInProgressJobs: %w", err)
+	}
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobID)
@@ -936,25 +938,9 @@ func (wh *HandleT) Shutdown() error {
 	return wh.backgroundWait()
 }
 
-func (wh *HandleT) resetInProgressJobs() {
-	sqlStatement := fmt.Sprintf(`
-		UPDATE
-		  %s
-		SET
-		  in_progress = %t
-		WHERE
-		  destination_type = '%s'
-		  AND in_progress = %t;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		false,
-		wh.destType,
-		true,
-	)
-	_, err := wh.dbHandle.Query(sqlStatement)
-	if err != nil {
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
-	}
+func (wh *HandleT) resetInProgressJobs() error {
+	_, err := wh.uploadRepo.ResetInProgress(context.TODO(), wh.destType)
+	return err
 }
 
 func minimalConfigSubscriber() {
