@@ -109,40 +109,44 @@ func (s *Syncer) SyncLoop(ctx context.Context) {
 			return
 		case <-time.After(s.pollIntervalFn()):
 		}
-	again:
-		s.log.Info("Fetching Regulations")
-		token, err := s.r.GetToken()
+		err := s.Sync(ctx)
 		if err != nil {
-			if errors.Is(err, model.ErrRestoring) {
-				if err := misc.SleepCtx(ctx, 1*time.Second); err != nil {
-					return
-				}
-				goto again
-			}
-			s.log.Errorf("Failed to get token from repository: %w", err)
-			continue
-		}
-		s.log.Info("Fetching Regulations")
-		suppressions, nextToken, err := s.sync(token)
-		if err != nil {
-			continue
-		}
-		// TODO: this won't be needed once data regulation service gets updated
-		for i := range suppressions {
-			suppression := &suppressions[i]
-			if suppression.WorkspaceID == "" {
-				suppression.WorkspaceID = s.defaultWorkspaceID
-			}
-		}
-		err = s.r.Add(suppressions, nextToken)
-		if err != nil {
-			s.log.Errorf("Failed to add %d suppressions to repository: %w", len(suppressions), err)
-			continue
-		}
-		if len(suppressions) != 0 {
-			goto again
+			s.log.Errorf("Failed to sync suppressions: %w", err)
 		}
 	}
+}
+
+// Sync synchronises suppressions from the data regulation service in batches, until
+// it completes, or an error occurs. Synchronisation completes when the service responds
+// with suppressions whose number is less than the page size.
+func (s *Syncer) Sync(ctx context.Context) error {
+again:
+	s.log.Info("Fetching Regulations")
+	token, err := s.r.GetToken()
+	if err != nil {
+		if errors.Is(err, model.ErrRestoring) {
+			if err := misc.SleepCtx(ctx, 1*time.Second); err != nil {
+				return err
+			}
+			goto again
+		}
+		s.log.Errorf("Failed to get token from repository: %w", err)
+		return err
+	}
+	s.log.Info("Fetching Regulations")
+	suppressions, nextToken, err := s.sync(token)
+	if err != nil {
+		return err
+	}
+	err = s.r.Add(suppressions, nextToken)
+	if err != nil {
+		s.log.Errorf("Failed to add %d suppressions to repository: %w", len(suppressions), err)
+		return err
+	}
+	if len(suppressions) >= s.pageSize {
+		goto again
+	}
+	return nil
 }
 
 // sync fetches suppressions from the backend
