@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -270,9 +271,14 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		}
 	}
 
+	sshConfig, err := getSSHConfig(destination.ID, config.Default)
+	if err != nil {
+		return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
+	}
+
 	clientConf := client.Config{
 		DialTimeout: kafkaDialTimeout,
-		SSHConfig:   getSSHConfig(config.Default),
+		SSHConfig:   sshConfig,
 	}
 	if destConfig.SslEnabled {
 		if destConfig.CACertificate != "" {
@@ -661,14 +667,34 @@ func getStatusCodeFromError(err error) int {
 	return 400
 }
 
-func getSSHConfig(c *config.Config) *client.SSHConfig {
-	if !c.GetBool("ROUTER_KAFKA_SSH_ENABLED", false) {
-		return nil
+func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, error) {
+	enabled := strings.Split(c.GetString("ROUTER_KAFKA_SSH_ENABLED", ""), ",")
+
+	var found bool
+	for _, id := range enabled {
+		if id == destinationID {
+			found = true
+			break
+		}
 	}
+	if !found {
+		return nil, nil
+	}
+
+	privateKey := c.GetString("ROUTER_KAFKA_SSH_PRIVATE_KEY", "")
+	if privateKey == "" {
+		return nil, fmt.Errorf("kafka SSH private key is not set")
+	}
+
+	rawPrivateKey, err := base64.StdEncoding.DecodeString(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode base64 private key: %w", err)
+	}
+
 	return &client.SSHConfig{
 		User:             c.GetString("ROUTER_KAFKA_SSH_USER", ""),
 		Host:             c.GetString("ROUTER_KAFKA_SSH_HOST", ""),
-		PrivateKey:       c.GetString("ROUTER_KAFKA_SSH_PRIVATE_KEY", ""),
+		PrivateKey:       string(rawPrivateKey),
 		AcceptAnyHostKey: c.GetBool("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", false),
-	}
+	}, nil
 }
