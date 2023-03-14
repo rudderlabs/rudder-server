@@ -108,8 +108,8 @@ jobs:
           context: .
           file: ./suppression-backup-service/Dockerfile
           images: |
-            name=rudderlabs/develop-rudder-server-suppression-backup-service
-            name=rudderlabs/rudder-server-suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+            name=rudderlabs/develop-suppression-backup-service
+            name=rudderlabs/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
           tags: |
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}

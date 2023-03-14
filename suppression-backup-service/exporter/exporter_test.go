@@ -84,11 +84,8 @@ func TestExportLoop(t *testing.T) {
 	srv := httptest.NewServer(handler(t))
 	defer t.Cleanup(srv.Close)
 	t.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
-	t.Setenv("WORKSPACE_NAMESPACE", "216Co97d9So9TkqphM0cxBzRxc3")
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
 	t.Setenv("SUPPRESS_USER_BACKEND_URL", srv.URL)
-	t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	t.Setenv("URL_PREFIX", srv.URL)
 
 	identifier := &identity.Workspace{
 		WorkspaceID: "workspace-1",
