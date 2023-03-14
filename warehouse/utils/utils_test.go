@@ -562,7 +562,21 @@ func TestGetConfigValue(t *testing.T) {
 				},
 			},
 		},
+		{
+			key:   "u1",
+			value: "v1",
+			warehouse: model.Warehouse{
+				Source: backendconfig.SourceT{
+					ID: "source_id",
+				},
+				Destination: backendconfig.DestinationT{
+					ID:     "destination_id",
+					Config: map[string]interface{}{},
+				},
+			},
+		},
 	}
+	config.Set("Warehouse.source_id.destination_id.u1", "v1")
 	for _, input := range inputs {
 		value := GetConfigValue(input.key, input.warehouse)
 		require.Equal(t, value, input.value)
