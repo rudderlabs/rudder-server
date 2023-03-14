@@ -610,8 +610,6 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		"namespace":   sf.Namespace,
 		"tableName":   tableName,
 	}).Count(int(updated))
-	sf.Logger.Info("@kash#195C: updated rows: ", updated)
-	sf.Logger.Info("@kash#195C: inserted rows: ", inserted)
 
 	sf.Logger.Infow("completed loading",
 		logfield.SourceID, sf.Warehouse.Source.ID,
