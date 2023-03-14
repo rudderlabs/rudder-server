@@ -505,10 +505,10 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 			) AS staging ON (
 			  original.%[3]q = staging.%[3]q %[7]s
 			)
-			WHEN MATCHED THEN
-			  UPDATE SET %[6]s
 			WHEN NOT MATCHED THEN
-			  INSERT (%[4]s) VALUES (%[5]s);
+			  INSERT (%[4]s) VALUES (%[5]s)
+			WHEN MATCHED THEN
+			  UPDATE SET %[6]s;
 `,
 			tableName,
 			stagingTableName,
@@ -901,10 +901,11 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 		  FROM
 			%[7]s.%[2]q
 		) AS staging ON (original.%[4]s = staging.%[4]s)
-		WHEN MATCHED THEN
-			UPDATE SET %[5]s
 		WHEN NOT MATCHED THEN
-			INSERT (%[3]s) VALUES (%[6]s);
+			INSERT (%[3]s) VALUES (%[6]s)
+		WHEN MATCHED THEN
+			UPDATE SET %[5]s;
+;
 `,
 		usersTable,
 		stagingTableName,
