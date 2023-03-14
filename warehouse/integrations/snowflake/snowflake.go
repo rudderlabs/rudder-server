@@ -49,7 +49,7 @@ var dataTypesMap = map[string]string{
 	"bigint":   "number",
 	"float":    "double precision",
 	"string":   "varchar",
-	"datetime": "timestamp",
+	"datetime": "timestamp_tz",
 	"json":     "variant",
 }
 
