@@ -678,7 +678,7 @@ func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, er
 		}
 	}
 	if !found {
-		return nil, nil
+		return nil, nil // nolint
 	}
 
 	privateKey := c.GetString("ROUTER_KAFKA_SSH_PRIVATE_KEY", "")
