@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -25,7 +27,7 @@ func (r *mockRepo) InterruptedDestinations(_ context.Context, destinationType st
 	return r.m[destinationType], r.err
 }
 
-func (d *mockDestination) CrashRecover(_ warehouseutils.Warehouse) error {
+func (d *mockDestination) CrashRecover(_ model.Warehouse) error {
 	d.recovered += 1
 	return d.err
 }
@@ -95,7 +97,7 @@ func TestRecovery(t *testing.T) {
 			recovery := service.NewRecovery(tc.whType, repo)
 
 			for i := 0; i < 2; i++ {
-				err := recovery.Recover(context.Background(), d, warehouseutils.Warehouse{
+				err := recovery.Recover(context.Background(), d, model.Warehouse{
 					Destination: backendconfig.DestinationT{
 						ID: tc.destinationID,
 					},

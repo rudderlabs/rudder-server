@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"
@@ -123,7 +125,7 @@ func TestHandleT_Track(t *testing.T) {
 				conf.Set("Warehouse.uploadBufferTimeInMin", 0)
 			}
 
-			warehouse := warehouseutils.Warehouse{
+			warehouse := model.Warehouse{
 				WorkspaceID: workspaceID,
 				Source: backendconfig.SourceT{
 					ID:      sourceID,
@@ -233,7 +235,7 @@ func TestHandleT_CronTracker(t *testing.T) {
 		_, err = pgResource.DB.Exec(string(sqlStatement))
 		require.NoError(t, err)
 
-		warehouse := warehouseutils.Warehouse{
+		warehouse := model.Warehouse{
 			WorkspaceID: workspaceID,
 			Source: backendconfig.SourceT{
 				ID:      sourceID,

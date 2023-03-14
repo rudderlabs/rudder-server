@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
@@ -103,6 +105,7 @@ func TestConfigurationValidationDatalake(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	datalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
@@ -12,34 +14,34 @@ import (
 
 type mockUploader struct {
 	mockError   error
-	localSchema warehouseutils.SchemaT
+	localSchema model.Schema
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT              { return warehouseutils.SchemaT{} }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                           { return false }
-func (*mockUploader) UseRudderStorage() bool                                    { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time                        { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                                   { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)                 { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT { return nil }
-func (*mockUploader) GetSampleLoadFileLocation(string) (string, error)          { return "", nil }
-func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (*mockUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
+func (*mockUploader) UseRudderStorage() bool                           { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
+func (*mockUploader) GetTableSchemaInUpload(string) model.TableSchema  { return nil }
+func (*mockUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
+func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return nil
 }
 
-func (*mockUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*mockUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
-func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
+func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) {
+	return warehouseutils.LoadFile{}, nil
 }
 
-func (m *mockUploader) GetLocalSchema() warehouseutils.SchemaT {
+func (m *mockUploader) GetLocalSchema() model.Schema {
 	return m.localSchema
 }
 
-func (m *mockUploader) UpdateLocalSchema(warehouseutils.SchemaT) error {
+func (m *mockUploader) UpdateLocalSchema(model.Schema) error {
 	return m.mockError
 }
 
@@ -47,7 +49,7 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 	testCases := []struct {
 		name        string
 		mockError   error
-		localSchema warehouseutils.SchemaT
+		localSchema model.Schema
 		wantError   error
 	}{
 		{
@@ -55,7 +57,7 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 		},
 		{
 			name: "table already exists",
-			localSchema: warehouseutils.SchemaT{
+			localSchema: model.Schema{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -75,7 +77,7 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			warehouse := warehouseutils.Warehouse{}
+			warehouse := model.Warehouse{}
 			uploader := &mockUploader{
 				mockError:   tc.mockError,
 				localSchema: tc.localSchema,
@@ -84,7 +86,7 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
 
-			err = s.CreateTable("test_table", map[string]string{
+			err = s.CreateTable("test_table", model.TableSchema{
 				"test_column_2": "test_type_2",
 			})
 			if tc.wantError != nil {
@@ -100,12 +102,12 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 	testCases := []struct {
 		name        string
 		mockError   error
-		localSchema warehouseutils.SchemaT
+		localSchema model.Schema
 		wantError   error
 	}{
 		{
 			name: "success",
-			localSchema: warehouseutils.SchemaT{
+			localSchema: model.Schema{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -117,7 +119,7 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 		},
 		{
 			name: "error updating local schema",
-			localSchema: warehouseutils.SchemaT{
+			localSchema: model.Schema{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -133,7 +135,7 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			warehouse := warehouseutils.Warehouse{}
+			warehouse := model.Warehouse{}
 			uploader := &mockUploader{
 				mockError:   tc.mockError,
 				localSchema: tc.localSchema,
@@ -161,12 +163,12 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 	testCases := []struct {
 		name        string
 		mockError   error
-		localSchema warehouseutils.SchemaT
+		localSchema model.Schema
 		wantError   error
 	}{
 		{
 			name: "success",
-			localSchema: warehouseutils.SchemaT{
+			localSchema: model.Schema{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -178,7 +180,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 		},
 		{
 			name: "column does not exists",
-			localSchema: warehouseutils.SchemaT{
+			localSchema: model.Schema{
 				"test_table": {
 					"test_column_2": "test_type_2",
 				},
@@ -187,7 +189,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 		},
 		{
 			name: "error updating local schema",
-			localSchema: warehouseutils.SchemaT{
+			localSchema: model.Schema{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -203,7 +205,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			warehouse := warehouseutils.Warehouse{}
+			warehouse := model.Warehouse{}
 			uploader := &mockUploader{
 				mockError:   tc.mockError,
 				localSchema: tc.localSchema,

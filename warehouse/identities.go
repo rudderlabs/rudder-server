@@ -35,11 +35,11 @@ func Init2() {
 	populatedHistoricIdentitiesMap = map[string]bool{}
 }
 
-func uniqueWarehouseNamespaceString(warehouse warehouseutils.Warehouse) string {
+func uniqueWarehouseNamespaceString(warehouse model.Warehouse) string {
 	return fmt.Sprintf(`namespace:%s:destination:%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func isDestHistoricIdentitiesPopulated(warehouse warehouseutils.Warehouse) bool {
+func isDestHistoricIdentitiesPopulated(warehouse model.Warehouse) bool {
 	populatedHistoricIdentitiesMapLock.RLock()
 	if populatedHistoricIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] {
 		populatedHistoricIdentitiesMapLock.RUnlock()
@@ -49,13 +49,13 @@ func isDestHistoricIdentitiesPopulated(warehouse warehouseutils.Warehouse) bool 
 	return false
 }
 
-func setDestHistoricIdentitiesPopulated(warehouse warehouseutils.Warehouse) {
+func setDestHistoricIdentitiesPopulated(warehouse model.Warehouse) {
 	populatedHistoricIdentitiesMapLock.Lock()
 	populatedHistoricIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] = true
 	populatedHistoricIdentitiesMapLock.Unlock()
 }
 
-func setDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehouse, starting bool) {
+func setDestHistoricIdentitiesPopulateInProgress(warehouse model.Warehouse, starting bool) {
 	populatingHistoricIdentitiesProgressMapLock.Lock()
 	if starting {
 		populatingHistoricIdentitiesProgressMap[uniqueWarehouseNamespaceString(warehouse)] = true
@@ -65,7 +65,7 @@ func setDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Wareho
 	populatingHistoricIdentitiesProgressMapLock.Unlock()
 }
 
-func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehouse) bool {
+func isDestHistoricIdentitiesPopulateInProgress(warehouse model.Warehouse) bool {
 	populatingHistoricIdentitiesProgressMapLock.RLock()
 	if populatingHistoricIdentitiesProgressMap[uniqueWarehouseNamespaceString(warehouse)] {
 		populatingHistoricIdentitiesProgressMapLock.RUnlock()
@@ -75,7 +75,7 @@ func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehou
 	return false
 }
 
-func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.Warehouse) (upload model.Upload, found bool) {
+func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (upload model.Upload, found bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 			id,
@@ -140,7 +140,7 @@ func (wh *HandleT) populateHistoricIdentitiesDestType() string {
 	return wh.destType + "_IDENTITY_PRE_LOAD"
 }
 
-func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.Warehouse) (exists bool) {
+func (wh *HandleT) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  EXISTS (
@@ -160,7 +160,7 @@ func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.Warehouse) (exi
 	return
 }
 
-func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.Warehouse) (bool, error) {
+func (wh *HandleT) hasWarehouseData(warehouse model.Warehouse) (bool, error) {
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
 		panic(err)
@@ -173,7 +173,7 @@ func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.Warehouse) (bool, e
 	return !empty, nil
 }
 
-func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
+func (wh *HandleT) setupIdentityTables(warehouse model.Warehouse) {
 	var name sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&name)
@@ -274,10 +274,10 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 	}
 }
 
-func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.Warehouse) model.Upload {
-	schema := make(warehouseutils.SchemaT)
+func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) model.Upload {
+	schema := make(model.Schema)
 	// TODO: DRY this code
-	identityRules := map[string]string{
+	identityRules := model.TableSchema{
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_type"):  "string",
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_value"): "string",
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_type"):  "string",
@@ -286,7 +286,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMergeRulesTable)] = identityRules
 
 	// add rudder_identity_mappings table
-	identityMappings := map[string]string{
+	identityMappings := model.TableSchema{
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_type"):  "string",
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_value"): "string",
 		warehouseutils.ToProviderCase(wh.destType, "rudder_id"):            "string",
@@ -353,13 +353,13 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	return upload
 }
 
-func (*HandleT) setFailedStat(warehouse warehouseutils.Warehouse, err error) {
+func (*HandleT) setFailedStat(warehouse model.Warehouse, err error) {
 	if err != nil {
 		warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Identifier).Count(1)
 	}
 }
 
-func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse) {
+func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 	if isDestHistoricIdentitiesPopulated(warehouse) || isDestHistoricIdentitiesPopulateInProgress(warehouse) {
 		return
 	}
@@ -440,7 +440,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		defer whManager.Cleanup()
 
-		schemaHandle := SchemaHandleT{
+		schemaHandle := SchemaHandle{
 			warehouse:    job.warehouse,
 			stagingFiles: job.stagingFiles,
 			dbHandle:     job.dbHandle,

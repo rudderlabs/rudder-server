@@ -136,13 +136,13 @@ func TestColumnCountStat(t *testing.T) {
 				"test-destination": tc.columnCountLimit,
 			}
 
-			j := UploadJobT{
+			j := UploadJob{
 				upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
 					SourceID:      sourceID,
 				},
-				warehouse: warehouseutils.Warehouse{
+				warehouse: model.Warehouse{
 					Type: tc.destinationType,
 					Destination: backendconfig.DestinationT{
 						ID:   destinationID,
@@ -154,9 +154,9 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				stats: store,
-				schemaHandle: &SchemaHandleT{
-					schemaInWarehouse: warehouseutils.SchemaT{
-						tableName: map[string]string{
+				schemaHandle: &SchemaHandle{
+					schemaInWarehouse: model.Schema{
+						tableName: model.TableSchema{
 							"test-column-1": "string",
 							"test-column-2": "string",
 							"test-column-3": "string",
@@ -203,7 +203,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 	var (
 		pgResource *destination.PostgresResource
-		job        *UploadJobT
+		job        *UploadJob
 	)
 
 	BeforeAll(func() {
@@ -227,8 +227,8 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	BeforeEach(func() {
-		job = &UploadJobT{
-			warehouse: warehouseutils.Warehouse{
+		job = &UploadJob{
+			warehouse: model.Warehouse{
 				Type: destinationType,
 				Destination: backendconfig.DestinationT{
 					ID:   destinationID,
@@ -370,7 +370,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					rs.DB = pgResource.DB
 					rs.Namespace = testNamespace
 
-					job := &UploadJobT{
+					job := &UploadJob{
 						whManager: rs,
 						upload: model.Upload{
 							DestinationID:   testDestinationID,
@@ -408,8 +408,8 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
-						AlteredColumnMap: map[string]string{
+					err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiff{
+						AlteredColumnMap: model.TableSchema{
 							testColumn: testColumnType,
 						},
 					})
@@ -437,7 +437,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			rs.DB = pgResource.DB
 			rs.Namespace = testNamespace
 
-			job := &UploadJobT{
+			job := &UploadJob{
 				whManager: rs,
 				upload: model.Upload{
 					DestinationID:   testDestinationID,
@@ -487,12 +487,12 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			alteredColumnsMap := map[string]string{}
+			alteredColumnsMap := model.TableSchema{}
 			for i := range [10]int{} {
 				alteredColumnsMap[fmt.Sprintf("%s_%d", testColumn, i)] = testColumnType
 			}
 
-			err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
+			err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiff{
 				AlteredColumnMap: alteredColumnsMap,
 			})
 			require.Error(t, err)
@@ -554,7 +554,7 @@ func TestUploadJobT_Aborted(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			job := &UploadJobT{
+			job := &UploadJob{
 				MinRetryAttempts: minAttempts,
 				RetryTimeWindow:  minRetryWindow,
 				Now:              func() time.Time { return now },
@@ -580,7 +580,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 	t.Run("repo error", func(t *testing.T) {
 		t.Parallel()
 
-		job := &UploadJobT{
+		job := &UploadJob{
 			upload: model.Upload{
 				ID: 1,
 			},
@@ -600,7 +600,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 
 		ptRepo := &mockPendingTablesRepo{}
 
-		job := &UploadJobT{
+		job := &UploadJob{
 			upload: model.Upload{
 				ID: 1,
 			},
@@ -664,7 +664,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 			},
 		}
 
-		job := &UploadJobT{
+		job := &UploadJob{
 			upload: model.Upload{
 				ID: 5,
 			},
