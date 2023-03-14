@@ -521,6 +521,9 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 			schemaIdentifier,
 		)
 	} else {
+		// This is being added in order to get the updates count
+		dummyColumnWithValues := fmt.Sprintf(`original.%[1]q = original.%[1]q`, strKeys[0])
+
 		sqlStatement = fmt.Sprintf(`
 			MERGE INTO %[8]s.%[1]q AS original USING (
 			  SELECT
@@ -545,7 +548,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 			WHEN NOT MATCHED THEN
 			  INSERT (%[4]s) VALUES (%[5]s)
 			WHEN MATCHED THEN
-			  UPDATE SET original.received_at = original.received_at;
+			  UPDATE SET %[9]s;
 `,
 			tableName,
 			stagingTableName,
@@ -555,7 +558,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 			additionalJoinClause,
 			partitionKey,
 			schemaIdentifier,
-			fmt.Sprintf(`original.%[1]q = original.%[1]q`, strKeys[0]),
+			dummyColumnWithValues,
 		)
 	}
 
