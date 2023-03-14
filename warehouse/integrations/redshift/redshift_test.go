@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"
@@ -154,6 +156,7 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	redshift.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
@@ -69,9 +71,9 @@ var _ = Describe("WarehouseGrpc", func() {
 				sourceIDsByWorkspace = map[string][]string{
 					workspaceID: {sourceID},
 				}
-				connectionsMap = map[string]map[string]warehouseutils.Warehouse{
+				connectionsMap = map[string]map[string]model.Warehouse{
 					destinationID: {
-						sourceID: warehouseutils.Warehouse{
+						sourceID: model.Warehouse{
 							Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
 						},
 					},
@@ -567,9 +569,9 @@ var _ = Describe("WarehouseGrpc", func() {
 				sourceIDsByWorkspace = map[string][]string{
 					workspaceID: {sourceID},
 				}
-				connectionsMap = map[string]map[string]warehouseutils.Warehouse{
+				connectionsMap = map[string]map[string]model.Warehouse{
 					destinationID: {
-						sourceID: warehouseutils.Warehouse{
+						sourceID: model.Warehouse{
 							Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
 						},
 					},

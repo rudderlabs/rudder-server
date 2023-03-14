@@ -15,6 +15,117 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUploads_Count(t *testing.T) {
+	db, ctx := setupDB(t), context.Background()
+
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	destType := "RS"
+
+	uploads := []model.Upload{
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_id",
+			DestinationID:   "destination_id",
+			DestinationType: destType,
+			Status:          model.ExportedData,
+			SourceTaskRunID: "task_run_id",
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_id",
+			DestinationID:   "destination_id",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id",
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_id",
+			DestinationID:   "destination_id",
+			DestinationType: destType,
+			Status:          model.ExportingData,
+			SourceTaskRunID: "task_run_id",
+		},
+		{
+			WorkspaceID:     "workspace_id_1",
+			Namespace:       "namespace",
+			SourceID:        "source_id_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_1",
+		},
+		{
+			WorkspaceID:     "workspace_id_1",
+			Namespace:       "namespace",
+			SourceID:        "source_id_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_1",
+		},
+	}
+
+	for i := range uploads {
+
+		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+		require.NoError(t, err)
+
+		id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []*model.StagingFile{{
+			ID:              stagingID,
+			SourceID:        uploads[i].SourceID,
+			DestinationID:   uploads[i].DestinationID,
+			SourceTaskRunID: uploads[i].SourceTaskRunID,
+		}})
+
+		require.NoError(t, err)
+
+		uploads[i].ID = id
+		uploads[i].Error = []byte("{}")
+		uploads[i].UploadSchema = model.Schema{}
+		uploads[i].MergedSchema = model.Schema{}
+		uploads[i].LoadFileType = "csv"
+		uploads[i].StagingFileStartID = int64(i + 1)
+		uploads[i].StagingFileEndID = int64(i + 1)
+	}
+
+	t.Run("query to count with not equal filters works correctly", func(t *testing.T) {
+		t.Parallel()
+
+		count, err := repoUpload.Count(ctx, []repo.FilterBy{
+			{Key: "source_id", Value: "source_id"},
+			{Key: "metadata->>'source_task_run_id'", Value: "task_run_id"},
+			{Key: "status", NotEquals: true, Value: model.ExportedData},
+			{Key: "status", NotEquals: true, Value: model.Aborted},
+		}...)
+
+		require.NoError(t, err)
+		require.Equal(t, int64(1), count)
+	})
+
+	t.Run("query to count with equal filters works correctly", func(t *testing.T) {
+		t.Parallel()
+		count, err := repoUpload.Count(ctx, []repo.FilterBy{
+			{Key: "source_id", Value: "source_id_1"},
+			{Key: "metadata->>'source_task_run_id'", Value: "task_run_id_1"},
+			{Key: "status", Value: model.Aborted},
+		}...)
+
+		require.NoError(t, err)
+		require.Equal(t, int64(2), count)
+	})
+}
+
 func TestUploads_Get(t *testing.T) {
 	ctx := context.Background()
 
@@ -91,7 +202,7 @@ func TestUploads_Get(t *testing.T) {
 	ogUpload.SourceTaskRunID = "source_task_run_id"
 	ogUpload.SourceJobID = "source_job_id"
 	ogUpload.SourceJobRunID = "source_job_run_id"
-	ogUpload.MergedSchema = warehouseutils.SchemaT{}
+	ogUpload.MergedSchema = model.Schema{}
 
 	t.Run("Get", func(t *testing.T) {
 		upload, err := repoUpload.Get(ctx, id)
@@ -573,7 +684,7 @@ func TestUploads_Processing(t *testing.T) {
 		uploads[i].LoadFileType = "csv"
 		uploads[i].StagingFileStartID = int64(i + 1)
 		uploads[i].StagingFileEndID = int64(i + 1)
-		uploads[i].MergedSchema = warehouseutils.SchemaT{}
+		uploads[i].MergedSchema = model.Schema{}
 		require.NoError(t, err)
 	}
 
@@ -761,4 +872,133 @@ func TestUploads_InterruptedDestinations(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"1", "2", "3"}, ids)
+}
+
+func TestUploads_PendingTableUploads(t *testing.T) {
+	t.Parallel()
+
+	const (
+		uploadID    = 1
+		namespace   = "namespace"
+		destID      = "destination_id"
+		sourceID    = "source_id"
+		destType    = "RS"
+		workspaceID = "workspace_id"
+	)
+
+	var (
+		ctx             = context.Background()
+		db              = setupDB(t)
+		repoUpload      = repo.NewUploads(db)
+		repoTableUpload = repo.NewTableUploads(db)
+		repoStaging     = repo.NewStagingFiles(db)
+	)
+
+	for _, status := range []string{"exporting_data", "aborted"} {
+		file := model.StagingFile{
+			WorkspaceID:   workspaceID,
+			Location:      "s3://bucket/path/to/file",
+			SourceID:      sourceID,
+			DestinationID: destID,
+			Status:        warehouseutils.StagingFileWaitingState,
+			Error:         nil,
+			FirstEventAt:  time.Now(),
+			LastEventAt:   time.Now(),
+		}.WithSchema([]byte(`{"type": "object"}`))
+
+		stagingID, err := repoStaging.Insert(ctx, &file)
+		require.NoError(t, err)
+
+		_, err = repoUpload.CreateWithStagingFiles(
+			ctx,
+			model.Upload{
+				SourceID:        sourceID,
+				DestinationID:   destID,
+				Status:          status,
+				Namespace:       namespace,
+				DestinationType: destType,
+			},
+			[]*model.StagingFile{
+				{
+					ID:            stagingID,
+					SourceID:      sourceID,
+					DestinationID: destID,
+				},
+			},
+		)
+		require.NoError(t, err)
+	}
+
+	for i, tu := range []struct {
+		status string
+		err    string
+	}{
+		{
+			status: "exporting_data",
+			err:    "{}",
+		},
+		{
+			status: "exporting_data_failed",
+			err:    "error loading data",
+		},
+	} {
+		tableName := fmt.Sprintf("test_table_%d", i+1)
+
+		err := repoTableUpload.Insert(ctx, uploadID, []string{tableName})
+		require.NoError(t, err)
+
+		err = repoTableUpload.Set(ctx, uploadID, tableName, repo.TableUploadSetOptions{
+			Status: &tu.status,
+			Error:  &tu.err,
+		})
+		require.NoError(t, err)
+	}
+
+	t.Run("should return pending table uploads", func(t *testing.T) {
+		t.Parallel()
+
+		repoUpload := repo.NewUploads(db)
+		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, uploadID, destID)
+		require.NoError(t, err)
+		require.NotEmpty(t, pendingTableUploads)
+
+		expectedPendingTableUploads := []model.PendingTableUpload{
+			{
+				UploadID:      uploadID,
+				DestinationID: destID,
+				Namespace:     namespace,
+				TableName:     "test_table_1",
+				Status:        "exporting_data",
+				Error:         "{}",
+			},
+			{
+				UploadID:      uploadID,
+				DestinationID: destID,
+				Namespace:     namespace,
+				TableName:     "test_table_2",
+				Status:        "exporting_data_failed",
+				Error:         "error loading data",
+			},
+		}
+		require.Equal(t, expectedPendingTableUploads, pendingTableUploads)
+	})
+
+	t.Run("should return empty pending table uploads", func(t *testing.T) {
+		t.Parallel()
+
+		repoUpload := repo.NewUploads(db)
+		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, int64(-1), destID)
+		require.NoError(t, err)
+		require.Empty(t, pendingTableUploads)
+	})
+
+	t.Run("cancelled context", func(t *testing.T) {
+		t.Parallel()
+
+		repoUpload := repo.NewUploads(db)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := repoUpload.PendingTableUploads(ctx, namespace, uploadID, destID)
+		require.EqualError(t, err, "pending table uploads: context canceled")
+	})
 }

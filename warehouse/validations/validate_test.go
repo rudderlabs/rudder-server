@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/ory/dockertest/v3"
@@ -55,8 +59,10 @@ func setup(t *testing.T, pool *dockertest.Pool) testResource {
 func TestValidator(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	validations.Init()
 	postgres.Init()
+	postgreslegacy.Init()
 
 	var (
 		provider  = "MINIO"

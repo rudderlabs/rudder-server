@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
@@ -211,6 +213,7 @@ func TestConfigurationValidationSnowflake(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	snowflake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
