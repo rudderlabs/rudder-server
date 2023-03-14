@@ -476,11 +476,11 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		return fmt.Sprintf(`staging.%q`, name)
 	}, ",")
 	columnsWithValues := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
-		return fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, name)
+		return fmt.Sprintf(`original.%[1]q = staging.%[1]q`, name)
 	}, ",")
 
 	if tableName == discardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND original."%[1]s" = staging."%[1]s" AND original."%[2]s" = staging."%[2]s"`, "TABLE_NAME", "COLUMN_NAME")
+		additionalJoinClause = fmt.Sprintf(`AND original.%[1]q = staging.%[1]q AND original.%[2]q = staging.%[2]q`, "TABLE_NAME", "COLUMN_NAME")
 	}
 
 	if keepLatestRecordOnDedup {
@@ -503,7 +503,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 			  WHERE
 				_rudder_staging_row_number = 1
 			) AS staging ON (
-			  original."%[3]s" = staging.%[3]q %[7]s
+			  original.%[3]q = staging.%[3]q %[7]s
 			)
 			WHEN MATCHED THEN
 			  UPDATE SET %[6]s
@@ -543,7 +543,9 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 			  original.%[3]q = staging.%[3]q %[6]s
 			)
 			WHEN NOT MATCHED THEN
-			  INSERT (%[4]s) VALUES (%[5]s);
+			  INSERT (%[4]s) VALUES (%[5]s)
+			WHEN MATCHED THEN
+			  UPDATE SET original.received_at = original.received_at;
 `,
 			tableName,
 			stagingTableName,
@@ -553,6 +555,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 			additionalJoinClause,
 			partitionKey,
 			schemaIdentifier,
+			fmt.Sprintf(`original.%[1]q = original.%[1]q`, strKeys[0]),
 		)
 	}
 
@@ -583,32 +586,32 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		return tableLoadResp{}, fmt.Errorf("merge into table: %w", row.Err())
 	}
 
-	if keepLatestRecordOnDedup {
-		if err = row.Scan(&inserted, &updated); err != nil {
-			sf.Logger.Warnw("getting rows affected for dedup",
-				logfield.SourceID, sf.Warehouse.Source.ID,
-				logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, sf.Warehouse.Destination.ID,
-				logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-				logfield.Namespace, sf.Namespace,
-				logfield.TableName, tableName,
-				logfield.Query, sqlStatement,
-				logfield.Error, err.Error(),
-			)
-			return tableLoadResp{}, fmt.Errorf("getting rows affected for dedup: %w", err)
-		}
-
-		sf.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-			"sourceID":    sf.Warehouse.Source.ID,
-			"sourceType":  sf.Warehouse.Source.SourceDefinition.Name,
-			"destID":      sf.Warehouse.Destination.ID,
-			"destType":    sf.Warehouse.Destination.DestinationDefinition.Name,
-			"workspaceId": sf.Warehouse.WorkspaceID,
-			"namespace":   sf.Namespace,
-			"tableName":   tableName,
-		}).Count(int(updated))
+	if err = row.Scan(&inserted, &updated); err != nil {
+		sf.Logger.Warnw("getting rows affected for dedup",
+			logfield.SourceID, sf.Warehouse.Source.ID,
+			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, sf.Warehouse.Destination.ID,
+			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
+			logfield.Namespace, sf.Namespace,
+			logfield.TableName, tableName,
+			logfield.Query, sqlStatement,
+			logfield.Error, err.Error(),
+		)
+		return tableLoadResp{}, fmt.Errorf("getting rows affected for dedup: %w", err)
 	}
+
+	sf.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
+		"sourceID":    sf.Warehouse.Source.ID,
+		"sourceType":  sf.Warehouse.Source.SourceDefinition.Name,
+		"destID":      sf.Warehouse.Destination.ID,
+		"destType":    sf.Warehouse.Destination.DestinationDefinition.Name,
+		"workspaceId": sf.Warehouse.WorkspaceID,
+		"namespace":   sf.Namespace,
+		"tableName":   tableName,
+	}).Count(int(updated))
+	sf.Logger.Info("@kash#195C: updated rows: ", updated)
+	sf.Logger.Info("@kash#195C: inserted rows: ", inserted)
 
 	sf.Logger.Infow("completed loading",
 		logfield.SourceID, sf.Warehouse.Source.ID,
@@ -686,7 +689,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable() (err error) {
 
 	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := warehouseutils.StagingTableName(provider, identityMappingsTable, tableNameLimit)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, identityMappingsTable)
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q`, schemaIdentifier, stagingTableName, identityMappingsTable)
 
 	sf.Logger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -714,10 +717,10 @@ func (sf *Snowflake) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[3]s."%[1]s" AS original
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[3]s.%[1]q AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "ID" DESC) AS _rudder_staging_row_number FROM %[3]s."%[2]s"
+											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "ID" DESC) AS _rudder_staging_row_number FROM %[3]s.%[2]q
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original."MERGE_PROPERTY_TYPE" = staging."MERGE_PROPERTY_TYPE" AND original."MERGE_PROPERTY_VALUE" = staging."MERGE_PROPERTY_VALUE")
@@ -1044,7 +1047,7 @@ func (sf *Snowflake) CreateTable(tableName string, columnMap model.TableSchema) 
 
 func (sf *Snowflake) DropTable(tableName string) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, schemaIdentifier, tableName)
+	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]q`, schemaIdentifier, tableName)
 	sf.Logger.Infof("SF: Dropping table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.DB.Exec(sqlStatement)
 	return
@@ -1356,7 +1359,7 @@ func (sf *Snowflake) GetTotalCountInTable(ctx context.Context, tableName string)
 		sqlStatement string
 	)
 	sqlStatement = fmt.Sprintf(`
-		SELECT count(*) FROM %[1]s."%[2]s";
+		SELECT count(*) FROM %[1]s.%[2]q;
 	`,
 		sf.schemaIdentifier(),
 		tableName,
