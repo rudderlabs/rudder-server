@@ -1,7 +1,13 @@
 package schema_test
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse"
@@ -270,6 +276,309 @@ func TestHandleSchemaChange(t *testing.T) {
 			)
 			require.Equal(t, newColumnVal, tc.newColumnVal)
 			require.Equal(t, convError, tc.convError)
+		})
+	}
+}
+
+type mockSchemaRepo struct {
+	err       error
+	schemaMap map[string]model.WHSchema
+}
+
+func (m *mockSchemaRepo) GetForNamespace(_ context.Context, sourceID, destID, namespace string) (model.WHSchema, error) {
+	key := fmt.Sprintf("%s_%s_%s", sourceID, destID, namespace)
+
+	return m.schemaMap[key], m.err
+}
+
+func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) (int64, error) {
+	if schema == nil {
+		return 0, m.err
+	}
+	key := fmt.Sprintf("%s_%s_%s", schema.SourceID, schema.DestinationID, schema.Namespace)
+
+	m.schemaMap[key] = *schema
+	return int64(len(m.schemaMap)), m.err
+}
+
+type mockFetchSchemaFromWarehouse struct {
+	schemaInWarehouse             model.Schema
+	unrecognizedSchemaInWarehouse model.Schema
+	err                           error
+}
+
+func (m *mockFetchSchemaFromWarehouse) FetchSchema(model.Warehouse) (model.Schema, model.Schema, error) {
+	return m.schemaInWarehouse, m.unrecognizedSchemaInWarehouse, m.err
+}
+
+type mockStagingFileRepo struct {
+	schemas []model.Schema
+	err     error
+}
+
+func (m *mockStagingFileRepo) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
+	return m.schemas, m.err
+}
+
+func TestHandler_LocalSchema(t *testing.T) {
+	const (
+		sourceID      = "test_source"
+		destID        = "test_dest"
+		namespace     = "test_namespace"
+		warehouseType = warehouseutils.RS
+		uploadID      = 1
+	)
+
+	testCases := []struct {
+		name          string
+		mockSchema    model.WHSchema
+		mockSchemaErr error
+		wantSchema    model.Schema
+		wantError     error
+	}{
+		{
+			name:          "no schema in db",
+			mockSchema:    model.WHSchema{},
+			mockSchemaErr: nil,
+			wantSchema:    model.Schema{},
+			wantError:     nil,
+		},
+		{
+			name:          "error in fetching schema from db",
+			mockSchema:    model.WHSchema{},
+			mockSchemaErr: errors.New("test error"),
+			wantSchema:    nil,
+			wantError:     errors.New("test error"),
+		},
+		{
+			name: "schema in db",
+			mockSchema: model.WHSchema{
+				Schema: model.Schema{
+					"table1": model.TableSchema{
+						"column1": "string",
+						"column2": "int",
+						"column3": "float",
+						"column4": "datetime",
+						"column5": "json",
+					},
+				},
+			},
+			mockSchemaErr: nil,
+			wantSchema: model.Schema{
+				"table1": model.TableSchema{
+					"column1": "string",
+					"column2": "int",
+					"column3": "float",
+					"column4": "datetime",
+					"column5": "json",
+				},
+			},
+			wantError: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mockSchemaRepo := &mockSchemaRepo{
+				err:       tc.mockSchemaErr,
+				schemaMap: map[string]model.WHSchema{},
+			}
+
+			handler := schema.Handler{
+				Warehouse: model.Warehouse{
+					Source: backendconfig.SourceT{
+						ID: sourceID,
+					},
+					Destination: backendconfig.DestinationT{
+						ID: destID,
+					},
+					Namespace: namespace,
+					Type:      warehouseType,
+				},
+				WhSchemaRepo: mockSchemaRepo,
+			}
+
+			err := handler.UpdateLocalSchema(uploadID, tc.mockSchema.Schema)
+			if tc.wantError == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantError.Error())
+			}
+
+			localSchema, err := handler.GetLocalSchema()
+			require.Equal(t, tc.wantSchema, localSchema)
+			if tc.wantError == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantError.Error())
+			}
+		})
+	}
+}
+
+func TestHandler_FetchSchemaFromWarehouse(t *testing.T) {
+	warehouse.Init4()
+
+	testCases := []struct {
+		name           string
+		mockSchema     model.Schema
+		mockErr        error
+		expectedSchema model.Schema
+		wantError      error
+	}{
+		{
+			name:           "no schema in warehouse",
+			mockSchema:     model.Schema{},
+			expectedSchema: model.Schema{},
+		},
+		{
+			name:           "error in fetching schema from warehouse",
+			mockSchema:     model.Schema{},
+			mockErr:        errors.New("test error"),
+			expectedSchema: model.Schema{},
+			wantError:      errors.New("fetching schema from warehouse: test error"),
+		},
+		{
+			name: "no deprecated columns",
+			mockSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+					"test_datetime":  "datetime",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+					"test_datetime":  "datetime",
+				},
+			},
+		},
+		{
+			name: "invalid deprecated column format",
+			mockSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+		},
+		{
+			name: "valid deprecated column format",
+			mockSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+					"test-deprecated-546a4f59-c303-474e-b2c7-cf37361b5c2f": "int",
+					"test-deprecated-c60bf1e9-7cbd-42d4-8a7d-af01f5ff7d8b": "string",
+					"test-deprecated-bc3bbc6d-42c9-4d2c-b0e6-bf5820914b09": "boolean",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+		},
+	}
+
+	const (
+		sourceID    = "test-source-id"
+		destID      = "test-dest-id"
+		destType    = "RS"
+		workspaceID = "test-workspace-id"
+		namespace   = "test-namespace"
+	)
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fechSchemaRepo := mockFetchSchemaFromWarehouse{
+				schemaInWarehouse:             tc.mockSchema,
+				unrecognizedSchemaInWarehouse: tc.mockSchema,
+				err:                           tc.mockErr,
+			}
+
+			sh := &schema.Handler{
+				Warehouse: model.Warehouse{
+					Source: backendconfig.SourceT{
+						ID: sourceID,
+					},
+					Destination: backendconfig.DestinationT{
+						ID: destID,
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: destType,
+						},
+					},
+					WorkspaceID: workspaceID,
+					Namespace:   namespace,
+				},
+				Logger: logger.NOP,
+			}
+
+			schemaInWarehouse, unrecognizedSchemaInWarehouse, err := sh.FetchSchemaFromWarehouse(&fechSchemaRepo)
+			if tc.wantError != nil {
+				require.EqualError(t, err, tc.wantError.Error())
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.expectedSchema, schemaInWarehouse)
+			require.Equal(t, tc.expectedSchema, unrecognizedSchemaInWarehouse)
 		})
 	}
 }
@@ -561,106 +870,7 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 	}
 }
 
-func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
-	warehouse.Init4()
-
-	testCases := []struct {
-		name           string
-		schema         model.Schema
-		expectedSchema model.Schema
-	}{
-		{
-			name: "no deprecated columns",
-			schema: model.Schema{
-				"test-table": model.TableSchema{
-					"test_int":       "int",
-					"test_str":       "string",
-					"test_bool":      "boolean",
-					"test_float":     "float",
-					"test_timestamp": "timestamp",
-					"test_date":      "date",
-					"test_datetime":  "datetime",
-				},
-			},
-			expectedSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test_int":       "int",
-					"test_str":       "string",
-					"test_bool":      "boolean",
-					"test_float":     "float",
-					"test_timestamp": "timestamp",
-					"test_date":      "date",
-					"test_datetime":  "datetime",
-				},
-			},
-		},
-		{
-			name: "invalid deprecated column format",
-			schema: model.Schema{
-				"test-table": model.TableSchema{
-					"test_int":                 "int",
-					"test_str":                 "string",
-					"test_bool":                "boolean",
-					"test_float":               "float",
-					"test_timestamp":           "timestamp",
-					"test_date":                "date",
-					"test_datetime":            "datetime",
-					"test-deprecated-column":   "int",
-					"test-deprecated-column-1": "string",
-					"test-deprecated-column-2": "boolean",
-				},
-			},
-			expectedSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test_int":                 "int",
-					"test_str":                 "string",
-					"test_bool":                "boolean",
-					"test_float":               "float",
-					"test_timestamp":           "timestamp",
-					"test_date":                "date",
-					"test_datetime":            "datetime",
-					"test-deprecated-column":   "int",
-					"test-deprecated-column-1": "string",
-					"test-deprecated-column-2": "boolean",
-				},
-			},
-		},
-		{
-			name: "valid deprecated column format",
-			schema: model.Schema{
-				"test-table": model.TableSchema{
-					"test_int":                 "int",
-					"test_str":                 "string",
-					"test_bool":                "boolean",
-					"test_float":               "float",
-					"test_timestamp":           "timestamp",
-					"test_date":                "date",
-					"test_datetime":            "datetime",
-					"test-deprecated-column":   "int",
-					"test-deprecated-column-1": "string",
-					"test-deprecated-column-2": "boolean",
-					"test-deprecated-546a4f59-c303-474e-b2c7-cf37361b5c2f": "int",
-					"test-deprecated-c60bf1e9-7cbd-42d4-8a7d-af01f5ff7d8b": "string",
-					"test-deprecated-bc3bbc6d-42c9-4d2c-b0e6-bf5820914b09": "boolean",
-				},
-			},
-			expectedSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test_int":                 "int",
-					"test_str":                 "string",
-					"test_bool":                "boolean",
-					"test_float":               "float",
-					"test_timestamp":           "timestamp",
-					"test_date":                "date",
-					"test_datetime":            "datetime",
-					"test-deprecated-column":   "int",
-					"test-deprecated-column-1": "string",
-					"test-deprecated-column-2": "boolean",
-				},
-			},
-		},
-	}
-
+func TestHandler_ConsolidateStagingFilesSchemaUsingWarehouseSchema(t *testing.T) {
 	const (
 		sourceID    = "test-source-id"
 		destID      = "test-dest-id"
@@ -669,50 +879,258 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 		namespace   = "test-namespace"
 	)
 
-	for _, tc := range testCases {
-		tc := tc
+	stagingFiles := lo.RepeatBy(100, func(index int) *model.StagingFile {
+		return &model.StagingFile{
+			ID: int64(index),
+		}
+	})
 
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			sh := &schema.Handler{
-				Warehouse: model.Warehouse{
-					Source: backendconfig.SourceT{
-						ID: sourceID,
-					},
-					Destination: backendconfig.DestinationT{
-						ID: destID,
-						DestinationDefinition: backendconfig.DestinationDefinitionT{
-							Name: destType,
-						},
-					},
-					WorkspaceID: workspaceID,
-					Namespace:   namespace,
-				},
-				Logger: logger.NOP,
-			}
-
-			sh.SkipDeprecatedColumns(tc.schema)
-
-			require.Equal(t, tc.schema, tc.expectedSchema)
-		})
-	}
-}
-
-func TestConsolidateSchemas(t *testing.T) {
 	testsCases := []struct {
-		name           string
-		schemas        []model.Schema
-		expectedSchema model.Schema
+		name                string
+		warehouseType       string
+		warehouseSchema     model.Schema
+		mockSchemas         []model.Schema
+		mockErr             error
+		expectedSchema      model.Schema
+		wantError           error
+		idResolutionEnabled bool
 	}{
 		{
-			name:           "empty schemas",
-			schemas:        []model.Schema{},
+			name:           "error fetching staging schema",
+			warehouseType:  warehouseutils.RS,
+			mockSchemas:    []model.Schema{},
+			mockErr:        errors.New("test error"),
 			expectedSchema: model.Schema{},
+			wantError:      errors.New("getting staging files schema: test error"),
+		},
+
+		{
+			name:          "discards schema for bigquery",
+			warehouseType: warehouseutils.BQ,
+			mockSchemas:   []model.Schema{},
+			expectedSchema: model.Schema{
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+					"loaded_at":    "datetime",
+				},
+			},
 		},
 		{
-			name: "single schema",
-			schemas: []model.Schema{
+			name:          "discards schema for all destinations",
+			warehouseType: warehouseutils.RS,
+			mockSchemas:   []model.Schema{},
+			expectedSchema: model.Schema{
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "users and identifies should have similar schema except for id and user_id",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"identifies": model.TableSchema{
+						"id":               "string",
+						"user_id":          "int",
+						"anonymous_id":     "string",
+						"received_at":      "datetime",
+						"sent_at":          "datetime",
+						"timestamp":        "datetime",
+						"source_id":        "string",
+						"destination_id":   "string",
+						"source_type":      "string",
+						"destination_type": "string",
+					},
+					"users": model.TableSchema{
+						"id":               "string",
+						"anonymous_id":     "string",
+						"received_at":      "datetime",
+						"sent_at":          "datetime",
+						"timestamp":        "datetime",
+						"source_id":        "string",
+						"destination_id":   "string",
+						"source_type":      "string",
+						"destination_type": "string",
+					},
+				},
+			},
+			expectedSchema: model.Schema{
+				"identifies": model.TableSchema{
+					"id":               "string",
+					"user_id":          "int",
+					"anonymous_id":     "string",
+					"received_at":      "datetime",
+					"sent_at":          "datetime",
+					"timestamp":        "datetime",
+					"source_id":        "string",
+					"destination_id":   "string",
+					"source_type":      "string",
+					"destination_type": "string",
+				},
+				"users": model.TableSchema{
+					"id":               "int",
+					"anonymous_id":     "string",
+					"received_at":      "datetime",
+					"sent_at":          "datetime",
+					"timestamp":        "datetime",
+					"source_id":        "string",
+					"destination_id":   "string",
+					"source_type":      "string",
+					"destination_type": "string",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "users without identifies",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"users": model.TableSchema{
+						"id":               "string",
+						"anonymous_id":     "string",
+						"received_at":      "datetime",
+						"sent_at":          "datetime",
+						"timestamp":        "datetime",
+						"source_id":        "string",
+						"destination_id":   "string",
+						"source_type":      "string",
+						"destination_type": "string",
+					},
+				},
+			},
+			expectedSchema: model.Schema{
+				"users": model.TableSchema{
+					"id":               "string",
+					"anonymous_id":     "string",
+					"received_at":      "datetime",
+					"sent_at":          "datetime",
+					"timestamp":        "datetime",
+					"source_id":        "string",
+					"destination_id":   "string",
+					"source_type":      "string",
+					"destination_type": "string",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "unknown table in warehouse schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"test-table": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			warehouseSchema: model.Schema{
+				"test-table-1": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "unknown properties in warehouse schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"test-table": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			warehouseSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_warehouse_int":       "int",
+					"test_warehouse_str":       "string",
+					"test_warehouse_bool":      "boolean",
+					"test_warehouse_float":     "float",
+					"test_warehouse_timestamp": "timestamp",
+					"test_warehouse_date":      "date",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "single staging schema with empty warehouse schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
 						"test_int":       "int",
@@ -733,11 +1151,153 @@ func TestConsolidateSchemas(t *testing.T) {
 					"test_timestamp": "timestamp",
 					"test_date":      "date",
 				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
 			},
 		},
 		{
-			name: "multiple schemas",
-			schemas: []model.Schema{
+			name:          "single staging schema with warehouse schema and text data type override",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"test-table": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_text":      "text",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			warehouseSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_text":      "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_text":      "text",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:                "id resolution without merge schema",
+			warehouseType:       warehouseutils.BQ,
+			idResolutionEnabled: true,
+			mockSchemas: []model.Schema{
+				{
+					"test-table": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+					"loaded_at":    "datetime",
+				},
+			},
+		},
+		{
+			name:                "id resolution with merge schema",
+			warehouseType:       warehouseutils.BQ,
+			idResolutionEnabled: true,
+			mockSchemas: []model.Schema{
+				{
+					"test-table": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+					"rudder_identity_merge_rules": model.TableSchema{},
+					"rudder_identity_mappings":    model.TableSchema{},
+				},
+			},
+			expectedSchema: model.Schema{
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"loaded_at":    "datetime",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+				"rudder_identity_mappings": model.TableSchema{
+					"merge_property_type":  "string",
+					"merge_property_value": "string",
+					"rudder_id":            "string",
+					"updated_at":           "datetime",
+				},
+				"rudder_identity_merge_rules": model.TableSchema{
+					"merge_property_1_type":  "string",
+					"merge_property_1_value": "string",
+					"merge_property_2_type":  "string",
+					"merge_property_2_value": "string",
+				},
+				"test-table": model.TableSchema{
+					"test_bool":      "boolean",
+					"test_date":      "date",
+					"test_float":     "float",
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_timestamp": "timestamp",
+				},
+			},
+		},
+		{
+			name:          "multiple staging schemas with empty warehouse schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
 				{
 					"test-table-1": model.TableSchema{
 						"test_int":       "int",
@@ -776,11 +1336,184 @@ func TestConsolidateSchemas(t *testing.T) {
 					"test_timestamp": "timestamp",
 					"test_date":      "date",
 				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
 			},
 		},
 		{
-			name: "multiple schemas with same table",
-			schemas: []model.Schema{
+			name:          "multiple staging schemas with empty warehouse schema and text datatype",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"test-table-1": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_text":      "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table-1": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_text":      "text",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table-1": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_text":      "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table-2": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table-1": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_text":      "text",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"test-table-2": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "multiple staging schemas with warehouse schema and text datatype",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"test-table-1": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_text":      "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table-1": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_text":      "text",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table-1": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_text":      "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table-2": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			warehouseSchema: model.Schema{
+				"test-table-1": model.TableSchema{
+					"test_int":  "warehouse_int",
+					"test_str":  "warehouse_string",
+					"test_text": "warehouse_text",
+				},
+				"test-table-2": model.TableSchema{
+					"test_float":     "warehouse_float",
+					"test_timestamp": "warehouse_timestamp",
+					"test_date":      "warehouse_date",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table-1": model.TableSchema{
+					"test_int":       "warehouse_int",
+					"test_str":       "warehouse_string",
+					"test_text":      "warehouse_text",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"test-table-2": model.TableSchema{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "warehouse_float",
+					"test_timestamp": "warehouse_timestamp",
+					"test_date":      "warehouse_date",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "multiple schemas with same table and empty warehouse schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
 						"test_int":  "int",
@@ -805,11 +1538,64 @@ func TestConsolidateSchemas(t *testing.T) {
 					"test_timestamp": "timestamp",
 					"test_date":      "date",
 				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
 			},
 		},
 		{
-			name: "multiple schemas with preference to first schema",
-			schemas: []model.Schema{
+			name:          "multiple schemas with same table and warehouse schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"test-table": model.TableSchema{
+						"test_int":  "int",
+						"test_str":  "string",
+						"test_bool": "boolean",
+					},
+				},
+				{
+					"test-table": model.TableSchema{
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+			},
+			warehouseSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":   "warehouse_int",
+					"test_float": "warehouse_float",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "warehouse_int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "warehouse_float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "multiple schemas with preference to first schema and empty warehouse schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
 						"test_int":       "int",
@@ -840,6 +1626,68 @@ func TestConsolidateSchemas(t *testing.T) {
 					"test_timestamp": "timestamp",
 					"test_date":      "date",
 				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "multiple schemas with preference to warehouse schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"test-table": model.TableSchema{
+						"test_int":       "int",
+						"test_str":       "string",
+						"test_bool":      "boolean",
+						"test_float":     "float",
+						"test_timestamp": "timestamp",
+						"test_date":      "date",
+					},
+				},
+				{
+					"test-table": model.TableSchema{
+						"test_int":       "new_int",
+						"test_str":       "new_string",
+						"test_bool":      "new_boolean",
+						"test_float":     "new_float",
+						"test_timestamp": "new_timestamp",
+						"test_date":      "new_date",
+					},
+				},
+			},
+			warehouseSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "warehouse_int",
+					"test_str":       "warehouse_string",
+					"test_bool":      "warehouse_boolean",
+					"test_float":     "warehouse_float",
+					"test_timestamp": "warehouse_timestamp",
+					"test_date":      "warehouse_date",
+				},
+			},
+			expectedSchema: model.Schema{
+				"test-table": model.TableSchema{
+					"test_int":       "warehouse_int",
+					"test_str":       "warehouse_string",
+					"test_bool":      "warehouse_boolean",
+					"test_float":     "warehouse_float",
+					"test_timestamp": "warehouse_timestamp",
+					"test_date":      "warehouse_date",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
 			},
 		},
 	}
@@ -849,7 +1697,42 @@ func TestConsolidateSchemas(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			// require.Equal(t, schema.ConsolidateStagingSchemas(model.Schema{}, tc.schemas), tc.expectedSchema)
+			sh := &schema.Handler{
+				Warehouse: model.Warehouse{
+					Source: backendconfig.SourceT{
+						ID: sourceID,
+					},
+					Destination: backendconfig.DestinationT{
+						ID: destID,
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: destType,
+						},
+					},
+					WorkspaceID: workspaceID,
+					Namespace:   namespace,
+					Type:        tc.warehouseType,
+				},
+				Logger: logger.NOP,
+				StagingRepo: &mockStagingFileRepo{
+					schemas: tc.mockSchemas,
+					err:     tc.mockErr,
+				},
+				IDResolutionEnabled: tc.idResolutionEnabled,
+				LocalSchema:         tc.warehouseSchema,
+			}
+
+			conf := config.New()
+			conf.Set("Warehouse.stagingFilesSchemaPaginationSize", "2")
+
+			schema.WithConfig(sh, conf)
+
+			consolidatedSchema, err := sh.ConsolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles)
+			if tc.wantError != nil {
+				require.EqualError(t, err, tc.wantError.Error())
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.expectedSchema, consolidatedSchema)
 		})
 	}
 }

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/uploader"
-
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -28,7 +26,7 @@ import (
 )
 
 type Manager interface {
-	Setup(warehouse model.Warehouse, uploader uploader.Uploader) error
+	Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) error
 	CrashRecover(warehouse model.Warehouse) (err error)
 	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
 	CreateSchema() (err error)
