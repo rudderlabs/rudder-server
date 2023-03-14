@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -212,13 +214,13 @@ func TestGetS3LocationFolder(t *testing.T) {
 }
 
 func TestGetS3Locations(t *testing.T) {
-	inputs := []LoadFileT{
+	inputs := []LoadFile{
 		{Location: "https://test-bucket.s3.amazonaws.com/test-object.csv"},
 		{Location: "https://test-bucket.s3.eu-west-1.amazonaws.com/test-object.csv"},
 		{Location: "https://my.test-bucket.s3.amazonaws.com/test-object.csv"},
 		{Location: "https://my.test-bucket.s3.us-west-1.amazonaws.com/test-object.csv"},
 	}
-	outputs := []LoadFileT{
+	outputs := []LoadFile{
 		{Location: "s3://test-bucket/test-object.csv"},
 		{Location: "s3://test-bucket/test-object.csv"},
 		{Location: "s3://my.test-bucket/test-object.csv"},
@@ -255,7 +257,7 @@ func TestGetGCSLocation(t *testing.T) {
 		},
 	}
 	for _, input := range inputs {
-		gcsLocation := GetGCSLocation(input.location, GCSLocationOptionsT{
+		gcsLocation := GetGCSLocation(input.location, GCSLocationOptions{
 			TLDFormat: input.format,
 		})
 		require.Equal(t, gcsLocation, input.gcsLocation)
@@ -277,13 +279,13 @@ func TestGetGCSLocationFolder(t *testing.T) {
 		},
 	}
 	for _, input := range inputs {
-		gcsLocationFolder := GetGCSLocationFolder(input.location, GCSLocationOptionsT{})
+		gcsLocationFolder := GetGCSLocationFolder(input.location, GCSLocationOptions{})
 		require.Equal(t, gcsLocationFolder, input.gcsLocationFolder)
 	}
 }
 
 func TestGetGCSLocations(t *testing.T) {
-	inputs := []LoadFileT{
+	inputs := []LoadFile{
 		{Location: "https://storage.googleapis.com/test-bucket/test-object.csv"},
 		{Location: "https://storage.googleapis.com/my.test-bucket/test-object.csv"},
 		{Location: "https://storage.googleapis.com/my.test-bucket2/test-object.csv"},
@@ -296,7 +298,7 @@ func TestGetGCSLocations(t *testing.T) {
 		"gs://my.test-bucket/test-object2.csv",
 	}
 
-	gcsLocations := GetGCSLocations(inputs, GCSLocationOptionsT{})
+	gcsLocations := GetGCSLocations(inputs, GCSLocationOptions{})
 	require.Equal(t, gcsLocations, outputs)
 }
 
@@ -495,7 +497,7 @@ func TestDoubleQuoteAndJoinByComma(t *testing.T) {
 }
 
 func TestSortColumnKeysFromColumnMap(t *testing.T) {
-	columnMap := map[string]string{"k5": "V5", "k4": "V4", "k3": "V3", "k2": "V2", "k1": "V1"}
+	columnMap := model.TableSchema{"k5": "V5", "k4": "V4", "k3": "V3", "k2": "V2", "k1": "V1"}
 	want := []string{"k1", "k2", "k3", "k4", "k5"}
 	got := SortColumnKeysFromColumnMap(columnMap)
 	require.Equal(t, got, want)
@@ -539,12 +541,12 @@ func TestGetConfigValue(t *testing.T) {
 	inputs := []struct {
 		key       string
 		value     string
-		warehouse Warehouse
+		warehouse model.Warehouse
 	}{
 		{
 			key:   "k1",
 			value: "v1",
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": "v1",
@@ -554,7 +556,7 @@ func TestGetConfigValue(t *testing.T) {
 		},
 		{
 			key: "u1",
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -571,12 +573,12 @@ func TestGetConfigValueBoolString(t *testing.T) {
 	inputs := []struct {
 		key       string
 		value     string
-		warehouse Warehouse
+		warehouse model.Warehouse
 	}{
 		{
 			key:   "k1",
 			value: "true",
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": true,
@@ -587,7 +589,7 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		{
 			key:   "k1",
 			value: "false",
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": false,
@@ -598,7 +600,7 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		{
 			key:   "u1",
 			value: "false",
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -864,17 +866,17 @@ func TestGetTempFileExtension(t *testing.T) {
 
 func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 	inputs := []struct {
-		warehouse Warehouse
+		warehouse model.Warehouse
 		expected  bool
 	}{
 		{
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{},
 			},
 			expected: false,
 		},
 		{
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -882,7 +884,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": "true",
@@ -892,7 +894,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": false,
@@ -902,7 +904,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": true,
@@ -1148,20 +1150,20 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 }
 
 var _ = Describe("Utils", func() {
-	DescribeTable("Get columns from table schema", func(schema TableSchemaT, expected []string) {
+	DescribeTable("Get columns from table schema", func(schema model.TableSchema, expected []string) {
 		columns := GetColumnsFromTableSchema(schema)
 		sort.Strings(columns)
 		sort.Strings(expected)
 		Expect(columns).To(Equal(expected))
 	},
-		Entry(nil, TableSchemaT{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
-		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
+		Entry(nil, model.TableSchema{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
+		Entry(nil, model.TableSchema{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
 	)
 
-	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected SchemaT) {
+	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected model.Schema) {
 		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
-		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), SchemaT{"k1": {"k2": "v2"}}),
+		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), model.Schema{"k1": {"k2": "v2"}}),
 	)
 
 	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
@@ -1212,22 +1214,22 @@ var _ = Describe("Utils", func() {
 		Entry(nil, AZURE_DATALAKE, 127),
 	)
 
-	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse Warehouse, expected string) {
+	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse model.Warehouse, expected string) {
 		Expect(IdentityMappingsUniqueMappingConstraintName(warehouse)).To(Equal(expected))
 	},
-		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
+		Entry(nil, model.Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
 	)
 
-	DescribeTable("Identity mapping table name", func(warehouse Warehouse, expected string) {
+	DescribeTable("Identity mapping table name", func(warehouse model.Warehouse, expected string) {
 		Expect(IdentityMappingsTableName(warehouse)).To(Equal(expected))
 	},
-		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
+		Entry(nil, model.Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
 	)
 
-	DescribeTable("Identity merge rules table name", func(warehouse Warehouse, expected string) {
+	DescribeTable("Identity merge rules table name", func(warehouse model.Warehouse, expected string) {
 		Expect(IdentityMergeRulesTableName(warehouse)).To(Equal(expected))
 	},
-		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
+		Entry(nil, model.Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
 	)
 
 	DescribeTable("Identity merge rules warehouse table name", func(provider string) {

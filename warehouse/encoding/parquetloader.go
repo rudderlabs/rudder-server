@@ -1,9 +1,11 @@
-package warehouseutils
+package encoding
 
 import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/xitongsys/parquet-go/types"
 )
@@ -13,10 +15,10 @@ type ParquetLoader struct {
 	destType   string
 	Schema     []string
 	Values     []interface{}
-	FileWriter LoadFileWriterI
+	FileWriter LoadFileWriter
 }
 
-func NewParquetLoader(destType string, w LoadFileWriterI) *ParquetLoader {
+func NewParquetLoader(destType string, w LoadFileWriter) *ParquetLoader {
 	loader := &ParquetLoader{
 		destType:   destType,
 		FileWriter: w,
@@ -25,7 +27,7 @@ func NewParquetLoader(destType string, w LoadFileWriterI) *ParquetLoader {
 }
 
 func (loader *ParquetLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn)
 }
 
 func (*ParquetLoader) GetLoadTimeFormat(_ string) string {

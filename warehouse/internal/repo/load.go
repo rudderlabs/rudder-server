@@ -61,7 +61,7 @@ func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs 
 // Insert loadFiles into the database.
 func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (err error) {
 	// Using transactions for bulk copying
-	txn, err := repo.db.Begin()
+	txn, err := repo.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return
 	}

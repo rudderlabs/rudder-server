@@ -34,7 +34,7 @@ const (
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
 type Notifier interface {
-	Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.SchemaT, priority int) (ch chan []pgnotifier.ResponseT, err error)
+	Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (ch chan []pgnotifier.Response, err error)
 }
 
 type StageFileRepo interface {
@@ -80,7 +80,7 @@ type WorkerJobRequest struct {
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
-	UploadSchema                 map[string]map[string]string
+	UploadSchema                 model.Schema
 	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string
@@ -226,7 +226,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			JobType: "upload",
 		}
 
-		ch, err := lf.Notifier.Publish(messagePayload, schema, job.Upload.Priority)
+		ch, err := lf.Notifier.Publish(messagePayload, (*warehouseutils.Schema)(schema), job.Upload.Priority)
 		if err != nil {
 			return 0, 0, fmt.Errorf("error publishing to PgNotifier: %w", err)
 		}
@@ -349,7 +349,7 @@ func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *
 	return
 }
 
-func GetLoadFilePrefix(timeWindow time.Time, warehouse warehouseutils.Warehouse) string {
+func GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {
 	switch warehouse.Type {
 	case warehouseutils.GCS_DATALAKE:
 		windowFormat := timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)

@@ -1,6 +1,6 @@
-package warehouseutils
+package encoding
 
-const UUID_TS_COLUMN = "uuid_ts"
+import "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 type EventLoader interface {
 	IsLoadTimeColumn(columnName string) bool
@@ -12,11 +12,11 @@ type EventLoader interface {
 	Write() error
 }
 
-func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriterI) EventLoader {
+func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriter) EventLoader {
 	switch loadFileType {
-	case LOAD_FILE_TYPE_JSON:
+	case warehouseutils.LOAD_FILE_TYPE_JSON:
 		return NewJSONLoader(destinationType, w)
-	case LOAD_FILE_TYPE_PARQUET:
+	case warehouseutils.LOAD_FILE_TYPE_PARQUET:
 		return NewParquetLoader(destinationType, w)
 	default:
 		return NewCSVLoader(destinationType, w)
