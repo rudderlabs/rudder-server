@@ -540,6 +540,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
 		ok, errCheck := gateway.rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
 		if errCheck != nil {
+			gateway.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
 			gateway.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
 		}
 		if ok {
