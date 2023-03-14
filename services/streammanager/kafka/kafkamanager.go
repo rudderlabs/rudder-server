@@ -668,10 +668,13 @@ func getStatusCodeFromError(err error) int {
 }
 
 func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, error) {
-	enabled := strings.Split(c.GetString("ROUTER_KAFKA_SSH_ENABLED", ""), ",")
+	enabled := c.GetString("ROUTER_KAFKA_SSH_ENABLED", "")
+	if enabled == "" {
+		return nil, nil // nolint
+	}
 
 	var found bool
-	for _, id := range enabled {
+	for _, id := range strings.Split(enabled, ",") {
 		if id == destinationID {
 			found = true
 			break

@@ -131,7 +131,7 @@ func TestNewProducer(t *testing.T) {
 		dest := backendconfig.DestinationT{Config: destConfig}
 
 		p, err := NewProducer(&dest, common.Opts{})
-		require.NotNil(t, p)
+		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
