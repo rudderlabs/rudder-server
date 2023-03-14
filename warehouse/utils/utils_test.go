@@ -576,7 +576,7 @@ func TestGetConfigValue(t *testing.T) {
 			},
 		},
 	}
-	config.Set("Warehouse.source_id.destination_id.u1", "v1")
+	config.Set("Warehouse.pipeline.source_id.destination_id.u1", "v1")
 	for _, input := range inputs {
 		value := GetConfigValue(input.key, input.warehouse)
 		require.Equal(t, value, input.value)
