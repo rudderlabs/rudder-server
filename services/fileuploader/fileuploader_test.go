@@ -2,6 +2,7 @@ package fileuploader
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -54,6 +55,10 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	ready.Wait()
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 
+	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "S3") // default rudder storage provider
+	t.Setenv("JOBS_BACKUP_DEFAULT_PREFIX", "defaultPrefixWithStorageTTL")
+	t.Setenv("JOBS_BACKUP_PREFIX", "fullStoragePrefixWithNoTTL")
+
 	// When user has not configured any storage
 	configCh <- pubsub.DataEvent{
 		Data: map[string]backendconfig.ConfigT{
@@ -62,11 +67,14 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 				Settings: backendconfig.Settings{
 					DataRetention: backendconfig.DataRetention{
 						UseSelfStorage: false,
-						StorageBucket:  backendconfig.StorageBucket{},
+						StorageBucket: backendconfig.StorageBucket{
+							Type: "S3",
+						},
 						StoragePreferences: backendconfig.StoragePreferences{
 							ProcErrors:   true,
 							GatewayDumps: false,
 						},
+						RetentionPeriod: "full",
 					},
 				},
 			},
@@ -86,9 +94,38 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 					},
 				},
 			},
+			"testWorkspaceId-3": {
+				WorkspaceID: "testWorkspaceId-3",
+				Settings: backendconfig.Settings{
+					DataRetention: backendconfig.DataRetention{
+						UseSelfStorage: false,
+						StorageBucket: backendconfig.StorageBucket{
+							Type:   "S3",
+							Config: map[string]interface{}{},
+						},
+						StoragePreferences: backendconfig.StoragePreferences{
+							ProcErrors:   false,
+							GatewayDumps: false,
+						},
+						RetentionPeriod: "default",
+					},
+				},
+			},
 		},
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
+
+	fm1, err := fileUploaderProvider.GetFileManager("testWorkspaceId-1")
+	Expect(err).To(BeNil())
+	Expect(fm1.GetConfiguredPrefix()).To(Equal("fullStoragePrefixWithNoTTL"))
+
+	fm3, err := fileUploaderProvider.GetFileManager("testWorkspaceId-3")
+	Expect(err).To(BeNil())
+	Expect(fm3.GetConfiguredPrefix()).To(Equal("defaultPrefixWithStorageTTL"))
+
+	fm0, err := fileUploaderProvider.GetFileManager("testWorkspaceId-0")
+	Expect(err).To(Equal(fmt.Errorf(noStorageForWorkspaceErrorString, "testWorkspaceId-0")))
+	Expect(fm0).To(BeNil())
 
 	storageSettings.Wait()
 	Expect(preferences).To(Equal(
@@ -99,7 +136,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	))
 
 	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
-	Expect(err).To(HaveOccurred())
+	Expect(err).To(Equal(fmt.Errorf(noStorageForWorkspaceErrorString, "testWorkspaceId-0")))
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 
 	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-2")
