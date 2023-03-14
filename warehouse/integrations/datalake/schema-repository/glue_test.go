@@ -7,6 +7,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/aws/aws-sdk-go/service/glue"
@@ -31,7 +35,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 		err            error
 		credentialsEnv = "TEST_S3_DATALAKE_CREDENTIALS"
 		testFile       = "testdata/load.parquet"
-		testColumns    = map[string]string{
+		testColumns    = model.TableSchema{
 			"id":                  "string",
 			"received_at":         "datetime",
 			"test_array_bool":     "array(boolean)",
@@ -110,13 +114,14 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			destination := backendconfig.DestinationT{
 				Config: tc.config,
 			}
-			warehouse := warehouseutils.Warehouse{
+			warehouse := model.Warehouse{
 				Destination: destination,
 				Namespace:   testNamespace,
 			}
 
 			misc.Init()
 			warehouseutils.Init()
+			encoding.Init()
 
 			g, err := NewGlueSchemaRepository(warehouse)
 			g.Logger = logger.NOP
@@ -178,7 +183,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			uploadOutput, err := fm.Upload(context.TODO(), f, fmt.Sprintf("rudder-test-payload/s3-datalake/%s/%s/", warehouseutils.RandHex(), tc.windowLayout))
 			require.NoError(t, err)
 
-			err = g.RefreshPartitions(testTable, []warehouseutils.LoadFileT{
+			err = g.RefreshPartitions(testTable, []warehouseutils.LoadFile{
 				{
 					Location: uploadOutput.Location,
 				},

@@ -1018,7 +1018,7 @@ func RedshiftCredentials() (credentials redshift.RedshiftCredentials, err error)
 	return
 }
 
-func BigqueryCredentials() (credentials bigquery.BQCredentialsT, err error) {
+func BigqueryCredentials() (credentials bigquery.BQCredentials, err error) {
 	cred, exists := os.LookupEnv(BigqueryIntegrationTestCredentials)
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Bigquery test", BigqueryIntegrationTestCredentials)

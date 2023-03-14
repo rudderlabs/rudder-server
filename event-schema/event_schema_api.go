@@ -124,10 +124,6 @@ func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 			pkgLogger.Errorf("Error while getting schema properties: %v for ID: %v", err, eventModel.ID)
 			continue
 		}
-		if len(schemaProperties) == 0 {
-			pkgLogger.Error("Error schema properties doesn't exists for ID: %v", eventModel.ID)
-			continue
-		}
 
 		jsonSchema := generateJsonSchFromSchProp(schemaProperties)
 		jsonSchema["additionalProperties"] = false
@@ -148,20 +144,15 @@ func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 }
 
 // getETSchProp Get Event Type schema from Event Model Schema
+// Empty map schema is allowed for event json schema
 func getETSchProp(eventType string, eventModelSch map[string]interface{}) (map[string]interface{}, error) {
 	switch eventType {
 	case "track", "screen", "page":
-		filtered, ok := eventModelSch["properties"].(map[string]interface{})
-		if ok {
-			return filtered, nil
-		}
-		return nil, fmt.Errorf("invalid properties")
+		filtered, _ := eventModelSch["properties"].(map[string]interface{})
+		return filtered, nil
 	case "identify", "group":
-		filtered, ok := eventModelSch["traits"].(map[string]interface{})
-		if ok {
-			return filtered, nil
-		}
-		return nil, fmt.Errorf("invalid traits")
+		filtered, _ := eventModelSch["traits"].(map[string]interface{})
+		return filtered, nil
 	}
 	return nil, fmt.Errorf("invalid eventType")
 }

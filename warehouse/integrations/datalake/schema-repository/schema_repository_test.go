@@ -3,6 +3,8 @@ package schemarepository_test
 import (
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -12,12 +14,12 @@ import (
 func TestUseGlue(t *testing.T) {
 	testCases := []struct {
 		name      string
-		warehouse warehouseutils.Warehouse
+		warehouse model.Warehouse
 		expected  bool
 	}{
 		{
 			name: "use glue with region",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"useGlue": true,
@@ -29,7 +31,7 @@ func TestUseGlue(t *testing.T) {
 		},
 		{
 			name: "use glue without region",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"useGlue": true,
@@ -39,7 +41,7 @@ func TestUseGlue(t *testing.T) {
 		},
 		{
 			name: "without glue",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -60,9 +62,9 @@ func TestUseGlue(t *testing.T) {
 func TestLoadFileBatching(t *testing.T) {
 	batchSize := 10
 
-	var loadFiles []warehouseutils.LoadFileT
+	var loadFiles []warehouseutils.LoadFile
 	for i := 1; i <= 83; i += 1 {
-		loadFiles = append(loadFiles, warehouseutils.LoadFileT{
+		loadFiles = append(loadFiles, warehouseutils.LoadFile{
 			Location: "s3://test_bucket/test_path",
 		})
 	}
@@ -70,7 +72,7 @@ func TestLoadFileBatching(t *testing.T) {
 	batches := schemarepository.LoadFileBatching(loadFiles, batchSize)
 	require.Equal(t, 1+(len(loadFiles)/batchSize), len(batches))
 
-	var reconstruct []warehouseutils.LoadFileT
+	var reconstruct []warehouseutils.LoadFile
 	for i := range batches {
 		require.LessOrEqual(t, len(batches[i]), batchSize)
 		reconstruct = append(reconstruct, batches[i]...)

@@ -14,13 +14,13 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -33,7 +33,6 @@ import (
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -142,8 +141,8 @@ type Clickhouse struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.UploaderI
+	Warehouse                   model.Warehouse
+	Uploader                    warehouseutils.Uploader
 	stats                       stats.Stats
 	ConnectTimeout              time.Duration
 	Logger                      logger.Logger
@@ -159,6 +158,7 @@ type Clickhouse struct {
 	LoadTableFailureRetries     int
 	NumWorkersDownloadLoadFiles int
 	S3EngineEnabledWorkspaceIDs []string
+	LoadFileDownloader          downloader.Downloader
 }
 
 type Credentials struct {
@@ -319,7 +319,7 @@ func (ch *Clickhouse) getConnectionCredentials() Credentials {
 }
 
 // ColumnsWithDataTypes creates columns and its datatype into sql format for creating table
-func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
+func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns model.TableSchema, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := ch.getClickHouseCodecForColumnType(dataType, tableName)
@@ -365,100 +365,8 @@ func (ch *Clickhouse) getClickHouseColumnTypeForSpecificTable(tableName, columnN
 	return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true)
 }
 
-// DownloadLoadFiles downloads load files for the tableName and gives file names
-func (ch *Clickhouse) DownloadLoadFiles(tableName string) ([]string, error) {
-	ch.Logger.Infof("%s DownloadLoadFiles Started", ch.GetLogIdentifier(tableName))
-	defer ch.Logger.Infof("%s DownloadLoadFiles Completed", ch.GetLogIdentifier(tableName))
-	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
-	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
-	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         storageProvider,
-			Config:           ch.Warehouse.Destination.Config,
-			UseRudderStorage: ch.Uploader.UseRudderStorage(),
-			WorkspaceID:      ch.Warehouse.Destination.WorkspaceID,
-		}),
-	})
-	if err != nil {
-		ch.Logger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, storageProvider), err)
-		return nil, err
-	}
-	var (
-		fileNames     []string
-		dErr          error
-		fileNamesLock sync.RWMutex
-	)
-
-	jobs := make([]misc.RWCJob, 0)
-	for _, object := range objects {
-		jobs = append(jobs, object)
-	}
-
-	misc.RunWithConcurrency(&misc.RWCConfig{
-		Factor: ch.NumWorkersDownloadLoadFiles,
-		Jobs:   &jobs,
-		Run: func(job interface{}) {
-			loadFile := job.(warehouseutils.LoadFileT)
-			fileName, err := ch.downloadLoadFile(&loadFile, tableName, downloader, storageProvider)
-			if err != nil {
-				ch.Logger.Errorf("%s Error occurred while downloading fileName: %s, Error: %v", ch.GetLogIdentifier(tableName), fileName, err)
-				dErr = err
-				return
-			}
-			fileNamesLock.Lock()
-			fileNames = append(fileNames, fileName)
-			fileNamesLock.Unlock()
-		},
-	})
-	return fileNames, dErr
-}
-
 func (*Clickhouse) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
-}
-
-func (ch *Clickhouse) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
-	ch.Logger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, storageProvider))
-	defer ch.Logger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, storageProvider))
-
-	objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
-	if err != nil {
-		ch.Logger.Errorf("%s Error in converting object location to object key for location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
-		return
-	}
-
-	dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		ch.Logger.Errorf("%s Error in getting tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
-		return
-	}
-
-	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-	err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
-	if err != nil {
-		ch.Logger.Errorf("%s Error in making tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
-		return
-	}
-
-	objectFile, err := os.Create(ObjectPath)
-	if err != nil {
-		ch.Logger.Errorf("%s Error in creating file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
-		return
-	}
-
-	err = downloader.Download(context.TODO(), objectFile, objectName)
-	if err != nil {
-		ch.Logger.Errorf("%s Error in downloading file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
-		return
-	}
-	fileName = objectFile.Name()
-	if err = objectFile.Close(); err != nil {
-		ch.Logger.Errorf("%s Error in closing downloaded file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
-		return
-	}
-	return fileName, err
 }
 
 func generateArgumentString(length int) string {
@@ -567,7 +475,7 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
 }
 
 // loadTable loads table to clickhouse from the load files
-func (ch *Clickhouse) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
+func (ch *Clickhouse) loadTable(tableName string, tableSchemaInUpload model.TableSchema) (err error) {
 	if ch.UseS3CopyEngineForLoading() {
 		return ch.loadByCopyCommand(tableName, tableSchemaInUpload)
 	}
@@ -581,7 +489,7 @@ func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
 	return ch.ObjectStorage == warehouseutils.S3 || ch.ObjectStorage == warehouseutils.MINIO
 }
 
-func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
+func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpload model.TableSchema) (err error) {
 	ch.Logger.Infof("%s LoadTable Started", ch.GetLogIdentifier(tableName))
 	defer ch.Logger.Infof("%s LoadTable Completed", ch.GetLogIdentifier(tableName))
 
@@ -589,7 +497,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaIn
 	chStats := ch.newClickHouseStat(tableName)
 
 	downloadStart := time.Now()
-	fileNames, err := ch.DownloadLoadFiles(tableName)
+	fileNames, err := ch.LoadFileDownloader.Download(context.TODO(), tableName)
 	chStats.downloadLoadFilesTime.Since(downloadStart)
 	if err != nil {
 		return
@@ -627,7 +535,7 @@ func (ch *Clickhouse) credentials() (accessKeyID, secretAccessKey string, err er
 	return "", "", errors.New("objectStorage not supported for loading using S3 engine")
 }
 
-func (ch *Clickhouse) loadByCopyCommand(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) error {
+func (ch *Clickhouse) loadByCopyCommand(tableName string, tableSchemaInUpload model.TableSchema) error {
 	ch.Logger.Infof("LoadTable By COPY command Started for table: %s", tableName)
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
@@ -690,7 +598,7 @@ type tableError struct {
 	err         error
 }
 
-func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, fileNames []string, chStats *clickHouseStat) (terr tableError) {
+func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload model.TableSchema, fileNames []string, chStats *clickHouseStat) (terr tableError) {
 	ch.Logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Started", ch.GetLogIdentifier(tableName))
 	defer ch.Logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Completed", ch.GetLogIdentifier(tableName))
 
@@ -883,7 +791,7 @@ createUsersTable creates a user's table with engine AggregatingMergeTree,
 this lets us choose aggregation logic before merging records with same user id.
 current behaviour is to replace user  properties with the latest non-null values
 */
-func (ch *Clickhouse) createUsersTable(name string, columns map[string]string) (err error) {
+func (ch *Clickhouse) createUsersTable(name string, columns model.TableSchema) (err error) {
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
 	clusterClause := ""
@@ -916,7 +824,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 
 // CreateTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will the latest data if duplicate data found. This logic is handled by clickhouse
 // The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
-func (ch *Clickhouse) CreateTable(tableName string, columns map[string]string) (err error) {
+func (ch *Clickhouse) CreateTable(tableName string, columns model.TableSchema) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
@@ -1017,7 +925,7 @@ func (*Clickhouse) AlterColumn(_, _, _ string) (model.AlterTableResponse, error)
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection
-func (ch *Clickhouse) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (ch *Clickhouse) TestConnection(warehouse model.Warehouse) (err error) {
 	ch.Warehouse = warehouse
 	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
 	if err != nil {
@@ -1039,23 +947,24 @@ func (ch *Clickhouse) TestConnection(warehouse warehouseutils.Warehouse) (err er
 	return nil
 }
 
-func (ch *Clickhouse) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
 	ch.stats = stats.Default
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
+	ch.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, ch.NumWorkersDownloadLoadFiles)
 
 	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
 	return err
 }
 
-func (*Clickhouse) CrashRecover(_ warehouseutils.Warehouse) (err error) {
+func (*Clickhouse) CrashRecover(_ model.Warehouse) (err error) {
 	return
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *Clickhouse) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	dbHandle, err := ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
@@ -1064,8 +973,8 @@ func (ch *Clickhouse) FetchSchema(warehouse warehouseutils.Warehouse) (schema, u
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 		SELECT
@@ -1102,13 +1011,13 @@ func (ch *Clickhouse) FetchSchema(warehouse warehouseutils.Warehouse) (schema, u
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(model.TableSchema)
 		}
 		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(map[string]string)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
@@ -1161,7 +1070,7 @@ func (*Clickhouse) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (*Clickhouse) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*Clickhouse) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -1181,7 +1090,7 @@ func (ch *Clickhouse) GetTotalCountInTable(ctx context.Context, tableName string
 	return total, err
 }
 
-func (ch *Clickhouse) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (ch *Clickhouse) Connect(warehouse model.Warehouse) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(

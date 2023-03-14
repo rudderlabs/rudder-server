@@ -1,4 +1,4 @@
-package warehouseutils
+package encoding
 
 import (
 	"encoding/csv"
@@ -9,7 +9,7 @@ type CsvReader struct {
 	reader *csv.Reader
 }
 
-func (csv *CsvReader) Read(_ []string) (record []string, err error) {
+func (csv *CsvReader) Read([]string) (record []string, err error) {
 	record, err = csv.reader.Read()
 	return
 }
