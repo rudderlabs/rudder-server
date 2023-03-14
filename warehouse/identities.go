@@ -445,19 +445,15 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 		job.schemaHandler = schema.NewHandler(
 			job.dbHandle,
 			job.warehouse,
-			job.stagingFiles,
-			config.Default,
 		)
+		schema.WithConfig(job.schemaHandler, config.Default)
 
-		job.schemaHandler.SchemaInWarehouse, job.schemaHandler.UnrecognizedSchemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		job.schemaHandler.SchemaInWarehouse, job.schemaHandler.UnrecognizedSchemaInWarehouse, err = job.schemaHandler.FetchSchemaFromWarehouse(whManager)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)
 			return
 		}
-
-		job.schemaHandler.SkipDeprecatedColumns(job.schemaHandler.SchemaInWarehouse)
-		job.schemaHandler.SkipDeprecatedColumns(job.schemaHandler.UnrecognizedSchemaInWarehouse)
 
 		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(model.ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)

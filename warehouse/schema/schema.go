@@ -14,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -26,14 +25,13 @@ var (
 )
 
 type Handler struct {
-	StagingFiles                  []*model.StagingFile
 	Warehouse                     model.Warehouse
 	LocalSchema                   model.Schema
 	SchemaInWarehouse             model.Schema
 	UnrecognizedSchemaInWarehouse model.Schema
 	UploadSchema                  model.Schema
-	WhSchemaRepo                  *repo.WHSchema
-	StagingRepo                   *repo.StagingFiles
+	WhSchemaRepo                  schemaRepo
+	StagingRepo                   stagingFileRepo
 	Logger                        logger.Logger
 
 	StagingFilesSchemaPaginationSize int
@@ -41,22 +39,35 @@ type Handler struct {
 	IDResolutionEnabled              bool
 }
 
+type schemaRepo interface {
+	GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error)
+	Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error)
+}
+
+type stagingFileRepo interface {
+	GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error)
+}
+
+type fetchSchemaRepo interface {
+	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
+}
+
 func NewHandler(
 	db *sql.DB,
 	warehouse model.Warehouse,
-	stagingFiles []*model.StagingFile,
-	conf *config.Config,
 ) *Handler {
 	return &Handler{
-		Warehouse:                        warehouse,
-		StagingFiles:                     stagingFiles,
-		WhSchemaRepo:                     repo.NewWHSchemas(db),
-		StagingRepo:                      repo.NewStagingFiles(db),
-		Logger:                           logger.NewLogger().Child("warehouse").Child("schema"),
-		StagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
-		SkipDeepEqualSchemas:             conf.GetBool("Warehouse.skipDeepEqualSchemas", false),
-		IDResolutionEnabled:              warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type),
+		Warehouse:           warehouse,
+		WhSchemaRepo:        repo.NewWHSchemas(db),
+		StagingRepo:         repo.NewStagingFiles(db),
+		Logger:              logger.NewLogger().Child("warehouse").Child("schema"),
+		IDResolutionEnabled: warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type),
 	}
+}
+
+func WithConfig(h *Handler, conf *config.Config) {
+	h.StagingFilesSchemaPaginationSize = conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
+	h.SkipDeepEqualSchemas = conf.GetBool("Warehouse.skipDeepEqualSchemas", false)
 }
 
 func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
@@ -110,7 +121,7 @@ func (sh *Handler) GetLocalSchema() (model.Schema, error) {
 		sh.Warehouse.Namespace,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("get schema for namespace: %w", err)
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
 	}
 	if whSchema.Schema == nil {
 		return model.Schema{}, nil
@@ -130,19 +141,20 @@ func (sh *Handler) UpdateLocalSchema(uploadId int64, updatedSchema model.Schema)
 	return err
 }
 
-func (sh *Handler) FetchSchemaFromWarehouse(whManager manager.Manager) (model.Schema, model.Schema, error) {
-	schemaInWarehouse, unrecognizedSchemaInWarehouse, err := whManager.FetchSchema(sh.Warehouse)
+func (sh *Handler) FetchSchemaFromWarehouse(repo fetchSchemaRepo) (model.Schema, model.Schema, error) {
+	schemaInWarehouse, unrecognizedSchemaInWarehouse, err := repo.FetchSchema(sh.Warehouse)
 	if err != nil {
 		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	sh.SkipDeprecatedColumns(schemaInWarehouse)
-	sh.SkipDeprecatedColumns(unrecognizedSchemaInWarehouse)
+	sh.skipDeprecatedColumns(schemaInWarehouse)
+	sh.skipDeprecatedColumns(unrecognizedSchemaInWarehouse)
+
 	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
-// SkipDeprecatedColumns skips deprecated columns from the schema
-func (sh *Handler) SkipDeprecatedColumns(schema model.Schema) {
+// skipDeprecatedColumns skips deprecated columns from the schema
+func (sh *Handler) skipDeprecatedColumns(schema model.Schema) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
 			if warehouseutils.DeprecatedColumnsRegex.MatchString(columnName) {
@@ -163,9 +175,9 @@ func (sh *Handler) SkipDeprecatedColumns(schema model.Schema) {
 }
 
 // ConsolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
-func (sh *Handler) ConsolidateStagingFilesSchemaUsingWarehouseSchema() (model.Schema, error) {
+func (sh *Handler) ConsolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles []*model.StagingFile) (model.Schema, error) {
 	consolidatedSchema := model.Schema{}
-	batches := lo.Chunk(sh.StagingFiles, sh.StagingFilesSchemaPaginationSize)
+	batches := lo.Chunk(stagingFiles, sh.StagingFilesSchemaPaginationSize)
 	for _, batch := range batches {
 		schemas, err := sh.StagingRepo.GetSchemasByIDs(
 			context.TODO(),
@@ -175,18 +187,18 @@ func (sh *Handler) ConsolidateStagingFilesSchemaUsingWarehouseSchema() (model.Sc
 			return model.Schema{}, fmt.Errorf("getting staging files schema: %v", err)
 		}
 
-		consolidatedSchema = sh.ConsolidateStagingSchemas(consolidatedSchema, schemas)
+		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
 	}
-	consolidatedSchema = sh.ConsolidateWarehouseSchema(consolidatedSchema, sh.LocalSchema)
-	consolidatedSchema = sh.OverrideUsersWithIdentifiesSchema(consolidatedSchema)
-	consolidatedSchema = sh.EnhanceDiscardsSchema(consolidatedSchema)
-	consolidatedSchema = sh.EnhanceSchemaWithIDResolution(consolidatedSchema)
+	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.LocalSchema)
+	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.Warehouse.Type)
+	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.Warehouse.Type)
+	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.IDResolutionEnabled, sh.Warehouse.Type)
 	return consolidatedSchema, nil
 }
 
-// ConsolidateStagingSchemas merges multiple schemas into one
+// consolidateStagingSchemas merges multiple schemas into one
 // Prefer the type of the first schema, If the type is text, prefer text
-func (*Handler) ConsolidateStagingSchemas(consolidatedSchema model.Schema, schemas []model.Schema) model.Schema {
+func consolidateStagingSchemas(consolidatedSchema model.Schema, schemas []model.Schema) model.Schema {
 	for _, schema := range schemas {
 		for tableName, columnMap := range schema {
 			if _, ok := consolidatedSchema[tableName]; !ok {
@@ -207,9 +219,9 @@ func (*Handler) ConsolidateStagingSchemas(consolidatedSchema model.Schema, schem
 	return consolidatedSchema
 }
 
-// ConsolidateWarehouseSchema overwrites the consolidatedSchema with the warehouseSchema
+// consolidateWarehouseSchema overwrites the consolidatedSchema with the warehouseSchema
 // Prefer the type of the warehouseSchema, If the type is text, prefer text
-func (*Handler) ConsolidateWarehouseSchema(consolidatedSchema, warehouseSchema model.Schema) model.Schema {
+func consolidateWarehouseSchema(consolidatedSchema, warehouseSchema model.Schema) model.Schema {
 	for tableName, columnMap := range warehouseSchema {
 		if _, ok := consolidatedSchema[tableName]; !ok {
 			continue
@@ -235,12 +247,11 @@ func (*Handler) ConsolidateWarehouseSchema(consolidatedSchema, warehouseSchema m
 	return consolidatedSchema
 }
 
-// OverrideUsersWithIdentifiesSchema overrides the users table with the identifies table
+// overrideUsersWithIdentifiesSchema overrides the users table with the identifies table
 // users(id) <-> identifies(user_id)
 // Removes the user_id column from the users table
-func (sh *Handler) OverrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema) model.Schema {
+func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehouseType string) model.Schema {
 	var (
-		warehouseType   = sh.Warehouse.Type
 		usersTable      = warehouseutils.ToProviderCase(warehouseType, warehouseutils.UsersTable)
 		identifiesTable = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentifiesTable)
 		userIDColumn    = warehouseutils.ToProviderCase(warehouseType, "user_id")
@@ -254,20 +265,20 @@ func (sh *Handler) OverrideUsersWithIdentifiesSchema(consolidatedSchema model.Sc
 		return consolidatedSchema
 	}
 
-	consolidatedSchema[usersTable] = consolidatedSchema[identifiesTable]
+	for k, v := range consolidatedSchema[identifiesTable] {
+		consolidatedSchema[usersTable][k] = v
+	}
+
 	consolidatedSchema[usersTable][IDColumn] = consolidatedSchema[identifiesTable][userIDColumn]
 	delete(consolidatedSchema[usersTable], userIDColumn)
 
 	return consolidatedSchema
 }
 
-// EnhanceDiscardsSchema adds the discards table to the schema
+// enhanceDiscardsSchema adds the discards table to the schema
 // For bq, adds the loaded_at column to be segment compatible
-func (sh *Handler) EnhanceDiscardsSchema(consolidatedSchema model.Schema) model.Schema {
-	var (
-		warehouseType = sh.Warehouse.Type
-		discards      = model.TableSchema{}
-	)
+func enhanceDiscardsSchema(consolidatedSchema model.Schema, warehouseType string) model.Schema {
+	discards := model.TableSchema{}
 
 	for colName, colType := range warehouseutils.DiscardsSchema {
 		discards[warehouseutils.ToProviderCase(warehouseType, colName)] = colType
@@ -281,15 +292,14 @@ func (sh *Handler) EnhanceDiscardsSchema(consolidatedSchema model.Schema) model.
 	return consolidatedSchema
 }
 
-// EnhanceSchemaWithIDResolution adds the merge rules and mappings table to the schema if IDResolution is enabled
-func (sh *Handler) EnhanceSchemaWithIDResolution(consolidatedSchema model.Schema) model.Schema {
-	if !sh.IDResolutionEnabled {
+// enhanceSchemaWithIDResolution adds the merge rules and mappings table to the schema if IDResolution is enabled
+func enhanceSchemaWithIDResolution(consolidatedSchema model.Schema, isIDResolutionEnabled bool, warehouseType string) model.Schema {
+	if !isIDResolutionEnabled {
 		return consolidatedSchema
 	}
 	var (
-		warehouseType   = sh.Warehouse.Type
-		mergeRulesTable = warehouseutils.ToProviderCase(warehouseutils.IdentityMergeRulesTable, warehouseType)
-		mappingsTable   = warehouseutils.ToProviderCase(warehouseutils.IdentityMappingsTable, warehouseType)
+		mergeRulesTable = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentityMergeRulesTable)
+		mappingsTable   = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentityMappingsTable)
 	)
 	if _, ok := consolidatedSchema[mergeRulesTable]; ok {
 		consolidatedSchema[mergeRulesTable] = model.TableSchema{
