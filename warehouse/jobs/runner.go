@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -21,9 +23,9 @@ import (
 func InitWarehouseJobsAPI(
 	ctx context.Context,
 	dbHandle *sql.DB,
-	notifier *pgnotifier.PgNotifierT,
-) *AsyncJobWhT {
-	return &AsyncJobWhT{
+	notifier *pgnotifier.PGNotifier,
+) *AsyncJobWh {
+	return &AsyncJobWh{
 		dbHandle:   dbHandle,
 		enabled:    false,
 		pgnotifier: notifier,
@@ -32,7 +34,7 @@ func InitWarehouseJobsAPI(
 	}
 }
 
-func WithConfig(a *AsyncJobWhT, config *config.Config) {
+func WithConfig(a *AsyncJobWh, config *config.Config) {
 	a.MaxBatchSizeToProcess = config.GetInt("Warehouse.jobs.maxBatchSizeToProcess", 10)
 	a.MaxCleanUpRetries = config.GetInt("Warehouse.jobs.maxCleanUpRetries", 5)
 	a.MaxQueryRetries = config.GetInt("Warehouse.jobs.maxQueryRetries", 3)
@@ -41,21 +43,21 @@ func WithConfig(a *AsyncJobWhT, config *config.Config) {
 	a.AsyncJobTimeOut = config.GetDuration("Warehouse.jobs.asyncJobTimeOut", 300, time.Second)
 }
 
-func (a *AsyncJobWhT) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunID string) ([]string, error) {
+func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunID string) ([]string, error) {
 	a.logger.Infof("[WH-Jobs]: Extracting table names for the job run id %s", jobRunID)
 	var tableNames []string
 	var err error
-	query := `SELECT id 
-		FROM 
+	query := `SELECT id
+		FROM
 		` + warehouseutils.WarehouseUploadsTable + `
-		WHERE metadata->>'source_job_run_id'=$1 
-			AND metadata->>'source_task_run_id'=$2 
+		WHERE metadata->>'source_job_run_id'=$1
+			AND metadata->>'source_task_run_id'=$2
 			AND metadata in (
-				SELECT 
-					metadata 
-				FROM 
-				` + warehouseutils.WarehouseUploadsTable + ` 
-				WHERE source_id=$3 
+				SELECT
+					metadata
+				FROM
+				` + warehouseutils.WarehouseUploadsTable + `
+				WHERE source_id=$3
 				AND destination_id=$4
 			)`
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
@@ -95,19 +97,19 @@ func (a *AsyncJobWhT) getTableNamesBy(sourceID, destinationID, jobRunID, taskRun
 	return tableNames, nil
 }
 
-// Takes AsyncJobPayloadT and adds rows to table wh_async_jobs
-func (a *AsyncJobWhT) addJobsToDB(ctx context.Context, payload *AsyncJobPayloadT) (jobId int64, err error) {
+// Takes AsyncJobPayload and adds rows to table wh_async_jobs
+func (a *AsyncJobWh) addJobsToDB(ctx context.Context, payload *AsyncJobPayload) (jobId int64, err error) {
 	if ctx.Err() != nil {
 		return
 	}
 	a.logger.Infof("[WH-Jobs]: Adding job to the wh_async_jobs %s for tableName: %s", payload.MetaData, payload.TableName)
 
 	sqlStatement := `INSERT INTO ` + warehouseutils.WarehouseAsyncJobTable + ` (
-		source_id, destination_id, tablename, 
-		status, created_at, updated_at, async_job_type, 
+		source_id, destination_id, tablename,
+		status, created_at, updated_at, async_job_type,
 		workspace_id, metadata
 	)
-	VALUES 
+	VALUES
 		($1, $2, $3, $4, $5, $6 ,$7, $8, $9 ) RETURNING id`
 
 	stmt, err := a.dbHandle.Prepare(sqlStatement)
@@ -132,7 +134,7 @@ func (a *AsyncJobWhT) addJobsToDB(ctx context.Context, payload *AsyncJobPayloadT
 // 1. Scan the database for entries into wh_async_jobs
 // 2. Publish data to pg_notifier queue
 // 3. Move any executing jobs to waiting
-func (a *AsyncJobWhT) InitAsyncJobRunner() error {
+func (a *AsyncJobWh) InitAsyncJobRunner() error {
 	// Start the asyncJobRunner
 	a.logger.Info("[WH-Jobs]: Initializing async job runner")
 	ctx, cancel := context.WithCancel(a.context)
@@ -162,7 +164,7 @@ func (a *AsyncJobWhT) InitAsyncJobRunner() error {
 	return errors.New("unable to enable warehouse Async Job")
 }
 
-func (a *AsyncJobWhT) cleanUpAsyncTable(ctx context.Context) error {
+func (a *AsyncJobWh) cleanUpAsyncTable(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -184,7 +186,7 @@ startAsyncJobRunner is the main runner that
 3) Publishes them to the pgnotifier
 4) Spawns a subroutine that periodically checks for responses from pgNotifier/slave worker post trackBatch
 */
-func (a *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
+func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 	a.logger.Info("[WH-Jobs]: Starting async job runner")
 
 	var wg sync.WaitGroup
@@ -219,8 +221,8 @@ func (a *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 				Jobs:    notifierClaims,
 				JobType: AsyncJobType,
 			}
-			var schema warehouseutils.SchemaT
-			ch, err := a.pgnotifier.Publish(messagePayload, &schema, 100)
+			var schema model.Schema
+			ch, err := a.pgnotifier.Publish(messagePayload, (*warehouseutils.Schema)(&schema), 100)
 			if err != nil {
 				a.logger.Errorf("[WH-Jobs]: unable to get publish async jobs to pgnotifier. Task failed with error %s", err.Error())
 				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
@@ -250,7 +252,7 @@ func (a *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 	}
 }
 
-func (a *AsyncJobWhT) updateStatusJobPayloadsFromPgNotifierResponse(r []pgnotifier.ResponseT, m map[string]AsyncJobStatus) {
+func (a *AsyncJobWh) updateStatusJobPayloadsFromPgNotifierResponse(r []pgnotifier.Response, m map[string]AsyncJobStatus) {
 	for _, resp := range r {
 		var pgNotifierOutput PGNotifierOutput
 		err := json.Unmarshal(resp.Output, &pgNotifierOutput)
@@ -270,8 +272,8 @@ func (a *AsyncJobWhT) updateStatusJobPayloadsFromPgNotifierResponse(r []pgnotifi
 }
 
 // Queries the jobsDB and gets active async job and returns it in a
-func (a *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayloadT, error) {
-	asyncJobPayloads := make([]AsyncJobPayloadT, 0)
+func (a *AsyncJobWh) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayload, error) {
+	asyncJobPayloads := make([]AsyncJobPayload, 0)
 	if ctx.Err() != nil {
 		return asyncJobPayloads, ctx.Err()
 	}
@@ -295,7 +297,7 @@ func (a *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayloa
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var asyncJobPayload AsyncJobPayloadT
+		var asyncJobPayload AsyncJobPayload
 		err = rows.Scan(
 			&asyncJobPayload.Id,
 			&asyncJobPayload.SourceID,
@@ -316,7 +318,7 @@ func (a *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayloa
 }
 
 // Updates the warehouse async jobs with the status sent as a parameter
-func (a *AsyncJobWhT) updateAsyncJobs(ctx context.Context, payloads map[string]AsyncJobStatus) error {
+func (a *AsyncJobWh) updateAsyncJobs(ctx context.Context, payloads map[string]AsyncJobStatus) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -333,7 +335,7 @@ func (a *AsyncJobWhT) updateAsyncJobs(ctx context.Context, payloads map[string]A
 	return err
 }
 
-func (a *AsyncJobWhT) updateAsyncJobStatus(ctx context.Context, Id, status, errMessage string) error {
+func (a *AsyncJobWh) updateAsyncJobStatus(ctx context.Context, Id, status, errMessage string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -364,7 +366,7 @@ func (a *AsyncJobWhT) updateAsyncJobStatus(ctx context.Context, Id, status, errM
 	return err
 }
 
-func (a *AsyncJobWhT) updateAsyncJobAttempt(ctx context.Context, Id string) error {
+func (a *AsyncJobWh) updateAsyncJobAttempt(ctx context.Context, Id string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -388,7 +390,7 @@ func (a *AsyncJobWhT) updateAsyncJobAttempt(ctx context.Context, Id string) erro
 // returns status and errMessage
 // Only succeeded, executing & waiting states should have empty errMessage
 // Rest of the states failed, aborted should send an error message conveying a message
-func (a *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *StartJobReqPayload) (statusResponse WhStatusResponse) {
+func (a *AsyncJobWh) getStatusAsyncJob(ctx context.Context, payload *StartJobReqPayload) (statusResponse WhStatusResponse) {
 	if ctx.Err() != nil {
 		return
 	}

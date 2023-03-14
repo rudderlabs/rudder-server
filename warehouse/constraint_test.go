@@ -6,6 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	. "github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -14,26 +15,26 @@ var _ = Describe("Constraint", func() {
 	logger.Reset()
 	Init6()
 
-	DescribeTable("DurationBeforeNextAttempt", func(destinationType string, brEvent *BatchRouterEventT, columnName string, expected *ConstraintsViolationT) {
+	DescribeTable("DurationBeforeNextAttempt", func(destinationType string, brEvent *BatchRouterEvent, columnName string, expected *ConstraintsViolation) {
 		cv := ViolatedConstraints(destinationType, brEvent, columnName)
 		Expect(cv.IsViolated).To(Equal(expected.IsViolated))
 		Expect(cv.ViolatedIdentifier).Should(HavePrefix(expected.ViolatedIdentifier))
 	},
-		Entry(nil, warehouseutils.RS, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.POSTGRES, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.CLICKHOUSE, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.MSSQL, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.AZURE_SYNAPSE, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.DELTALAKE, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.S3_DATALAKE, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.GCS_DATALAKE, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.AZURE_DATALAKE, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
-		Entry(nil, warehouseutils.BQ, &BatchRouterEventT{}, "id", &ConstraintsViolationT{}),
+		Entry(nil, warehouseutils.RS, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.POSTGRES, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.CLICKHOUSE, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.MSSQL, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.AZURE_SYNAPSE, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.DELTALAKE, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.S3_DATALAKE, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.GCS_DATALAKE, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.AZURE_DATALAKE, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
+		Entry(nil, warehouseutils.BQ, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
 		Entry(nil, warehouseutils.BQ,
-			&BatchRouterEventT{
-				Metadata: MetadataT{
+			&BatchRouterEvent{
+				Metadata: Metadata{
 					Table: "rudder_identity_merge_rules",
-					Columns: map[string]string{
+					Columns: model.TableSchema{
 						"merge_property_1_type":  "string",
 						"merge_property_1_value": "string",
 					},
@@ -43,16 +44,16 @@ var _ = Describe("Constraint", func() {
 					"merge_property_1_value": "xdequlyaotmwomivhsngqfiokpvdzvqfbelljpzhqgldgforwnsuuobsilwneviwyeidqyotgddenilpjkfwzecyagyyrgslwppjgdbetcogbtryoozefbwaghpgscdqktwkogsmvuiefmanfckhyuyezxmmwpgxdulvwqowtdoantflxmusglrlvmgdmcyugcijolssywjskrsntrtimyngeppuwlmfnltznzioijmtnyuiiqfbvoyealmaovuqsamfdsndqcotpwvxmdhuwedzsuxxmmnopdebjztinacn",
 				},
 			}, "merge_property_1_value",
-			&ConstraintsViolationT{
+			&ConstraintsViolation{
 				IsViolated:         true,
 				ViolatedIdentifier: "rudder-discards-",
 			},
 		),
 		Entry(nil, warehouseutils.BQ,
-			&BatchRouterEventT{
-				Metadata: MetadataT{
+			&BatchRouterEvent{
+				Metadata: Metadata{
 					Table: "rudder_identity_merge_rules",
-					Columns: map[string]string{
+					Columns: model.TableSchema{
 						"merge_property_1_type":  "string",
 						"merge_property_1_value": "string",
 					},
@@ -62,7 +63,7 @@ var _ = Describe("Constraint", func() {
 					"merge_property_1_value": "wopubjftfnqapctttpsfassyvbesjypimpmtweoxuifhzcxcigbhwpxkrijqqgbeehgepsplbcguztgdtipsobxoxnrqifrrbaiofkjgxilidrvffnymfqzixlubaipofijtmacswuzrgwwkvatscn",
 				},
 			}, "merge_property_1_value",
-			&ConstraintsViolationT{
+			&ConstraintsViolation{
 				IsViolated:         false,
 				ViolatedIdentifier: "",
 			},
