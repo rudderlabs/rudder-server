@@ -850,6 +850,58 @@ func TestUploads_Delete(t *testing.T) {
 	require.Len(t, files, 1)
 }
 
+func TestUploads_ResetInProgress(t *testing.T) {
+	var (
+		destType = "destination_type"
+		ctx      = context.Background()
+		db       = setupDB(t)
+	)
+
+	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	file := model.StagingFile{ID: 1}.WithSchema([]byte(`{"type": "object"}`))
+
+	stagingID, err := repoStaging.Insert(ctx, &file)
+	require.NoError(t, err)
+
+	_, err = repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+		SourceID:        "source_id",
+		DestinationID:   "destination_id",
+		Status:          model.Waiting,
+		DestinationType: destType,
+	}, []*model.StagingFile{
+		{
+			ID:            stagingID,
+			SourceID:      "source_id",
+			DestinationID: "destination_id",
+		},
+	})
+	require.NoError(t, err)
+
+	t.Log("ResetInProgress")
+	inProcess, err := repoUpload.ResetInProgress(ctx, destType)
+	require.NoError(t, err)
+	require.Equal(t, 1, inProcess)
+
+	t.Log("ResetInProgress: no uploads in progress")
+	inProcess, err = repoUpload.ResetInProgress(ctx, destType)
+	require.NoError(t, err)
+	require.Equal(t, 0, inProcess)
+
+	t.Log("ResetInProgress: context canceled")
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+	inProcess, err = repoUpload.ResetInProgress(ctx, destType)
+	require.EqualError(t, err, "exec: context canceled")
+	require.Equal(t, 0, inProcess)
+}
+
 func TestUploads_InterruptedDestinations(t *testing.T) {
 	t.Parallel()
 	db := setupDB(t)
