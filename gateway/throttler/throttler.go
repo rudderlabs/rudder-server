@@ -23,7 +23,7 @@ type Limiter interface {
 }
 
 type GetThrottler interface {
-	CheckLimitReached(workspaceId string) (bool, error)
+	CheckLimitReached(context context.Context, workspaceId string) (bool, error)
 }
 
 type Factory struct {
@@ -45,9 +45,9 @@ func New(stats stats.Stats) (*Factory, error) {
 	return &f, nil
 }
 
-func (f *Factory) CheckLimitReached(workspaceId string) (bool, error) {
+func (f *Factory) CheckLimitReached(context context.Context, workspaceId string) (bool, error) {
 	t := f.get(workspaceId)
-	return t.checkLimitReached(workspaceId)
+	return t.checkLimitReached(context, workspaceId)
 }
 
 func (f *Factory) get(workspaceId string) *Throttler {
@@ -98,8 +98,7 @@ type Throttler struct {
 }
 
 // checkLimitReached returns true if we're not allowed to process the number of event
-func (t *Throttler) checkLimitReached(key string) (limited bool, retErr error) {
-	ctx := context.TODO()
+func (t *Throttler) checkLimitReached(ctx context.Context, key string) (limited bool, retErr error) {
 	allowed, _, err := t.limiter.Allow(ctx, 1, t.config.limit, getWindowInSecs(t.config.window), key)
 	if err != nil {
 		return false, fmt.Errorf("could not limit: %w", err)
@@ -116,14 +115,16 @@ type throttlingConfig struct {
 }
 
 func (c *throttlingConfig) readThrottlingConfig(workspaceID string) {
-	if config.IsSet(fmt.Sprintf("RateLimit.%s.eventLimit", workspaceID)) {
-		c.limit = config.GetInt64(fmt.Sprintf("RateLimit.%s.eventLimit", workspaceID), 1000)
+	rateLimitKey := fmt.Sprintf("RateLimit.%s.eventLimit", workspaceID)
+	if config.IsSet(rateLimitKey) {
+		c.limit = config.GetInt64(rateLimitKey, 1000)
 	} else {
 		c.limit = config.GetInt64("RateLimit.eventLimit", 1000)
 	}
 
-	if config.IsSet(fmt.Sprintf("RateLimit.%s.rateLimitWindow", workspaceID)) {
-		c.window = config.GetDuration(fmt.Sprintf("RateLimit.%s.rateLimitWindow", workspaceID), 60, time.Second)
+	rateLimitWindowKey := fmt.Sprintf("RateLimit.%s.rateLimitWindow", workspaceID)
+	if config.IsSet(rateLimitWindowKey) {
+		c.window = config.GetDuration(rateLimitWindowKey, 60, time.Second)
 	} else {
 		c.window = config.GetDuration("RateLimit.rateLimitWindow", 60, time.Second)
 	}
