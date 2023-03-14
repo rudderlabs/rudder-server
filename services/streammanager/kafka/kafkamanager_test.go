@@ -857,7 +857,7 @@ func TestSSHConfig(t *testing.T) {
 
 	t.Run("no private key", func(t *testing.T) {
 		c := config.New()
-		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest0,dest1,dest5")
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest2,dest1,dest5")
 		conf, err := getSSHConfig("dest1", c)
 		require.ErrorContains(t, err, "kafka SSH private key is not set")
 		require.Nil(t, conf)
@@ -865,7 +865,7 @@ func TestSSHConfig(t *testing.T) {
 
 	t.Run("no base64 private key", func(t *testing.T) {
 		c := config.New()
-		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest0,dest1,dest5")
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest3,dest1,dest7")
 		c.Set("ROUTER_KAFKA_SSH_PRIVATE_KEY", "not base64 encoded")
 		conf, err := getSSHConfig("dest1", c)
 		require.ErrorContains(t, err, "failed to decode base64 private key")
@@ -874,7 +874,7 @@ func TestSSHConfig(t *testing.T) {
 
 	t.Run("ok", func(t *testing.T) {
 		c := config.New()
-		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest0,dest1,dest5")
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest0,dest1,dest6")
 		c.Set("ROUTER_KAFKA_SSH_PRIVATE_KEY", "a2V5IGNvbnRlbnQ=")
 		c.Set("ROUTER_KAFKA_SSH_USER", "some-user")
 		c.Set("ROUTER_KAFKA_SSH_HOST", "1.2.3.4:22")
