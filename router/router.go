@@ -1212,7 +1212,8 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledOrderKeys map[string]st
 	//#JobOrder (see other #JobOrder comment)
 	index := rt.getWorkerPartition(orderKey)
 	worker := rt.workers[index]
-	if time.Until(job.LastJobStatus.RetryTime) > 0 { // backoff
+	if job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0 { // backoff
+		throttledOrderKeys[orderKey] = struct{}{}
 		return
 	}
 	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)

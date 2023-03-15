@@ -3,8 +3,6 @@ package testutil
 import (
 	"context"
 	"fmt"
-	"net"
-	"strconv"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -58,44 +56,9 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 		return err
 	}
 
-	var (
-		errors  = make(chan error, 1)
-		brokers = make(chan kafka.Broker, 1)
-	)
-
-	go func() { // doing it asynchronously because conn.Controller() does not honour the context
-		b, err := conn.Controller()
-		if err != nil {
-			errors <- fmt.Errorf("could not get controller: %w", err)
-			return
-		}
-		if b.Host == "" {
-			errors <- fmt.Errorf("create topic: empty host")
-			return
-		}
-		brokers <- b
-	}()
-
-	var broker kafka.Broker
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err = <-errors:
-		return err
-	case broker = <-brokers:
-	}
-
-	controllerConn, err := kafka.DialContext(ctx, c.network, net.JoinHostPort(broker.Host, strconv.Itoa(broker.Port)))
-	if err != nil {
-		return fmt.Errorf("could not dial via controller: %w", err)
-	}
-	defer func() {
-		// close asynchronously, if we block we might not respect the context
-		go func() { _ = controllerConn.Close() }()
-	}()
-
+	errors := make(chan error, 1)
 	go func() { // doing it asynchronously because controllerConn.CreateTopics() does not honour the context
-		errors <- controllerConn.CreateTopics(kafka.TopicConfig{
+		errors <- conn.CreateTopics(kafka.TopicConfig{
 			Topic:             topic,
 			NumPartitions:     numPartitions,
 			ReplicationFactor: replicationFactor,

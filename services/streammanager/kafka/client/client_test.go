@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/testhelper/destination/sshserver"
 )
 
 const (
@@ -344,8 +346,8 @@ func TestWithSASL(t *testing.T) {
 			{Username: "client1", Password: "password"},
 		},
 		CertificatePassword: "password",
-		KeyStorePath:        filepath.Join(path, "/testdata/keystore/kafka.keystore.jks"),
-		TrustStorePath:      filepath.Join(path, "/testdata/truststore/kafka.truststore.jks"),
+		KeyStorePath:        filepath.Join(path, "testdata", "keystore", "kafka.keystore.jks"),
+		TrustStorePath:      filepath.Join(path, "testdata", "truststore", "kafka.truststore.jks"),
 	}
 
 	hashTypes := []ScramHashGenerator{ScramPlainText, ScramSHA256, ScramSHA512}
@@ -435,8 +437,8 @@ func TestWithSASLBadCredentials(t *testing.T) {
 			{Username: "client1", Password: "password"},
 		},
 		CertificatePassword: "password",
-		KeyStorePath:        filepath.Join(path, "/testdata/keystore/kafka.keystore.jks"),
-		TrustStorePath:      filepath.Join(path, "/testdata/truststore/kafka.truststore.jks"),
+		KeyStorePath:        filepath.Join(path, "testdata", "keystore", "kafka.keystore.jks"),
+		TrustStorePath:      filepath.Join(path, "testdata", "truststore", "kafka.truststore.jks"),
 	}
 
 	pool, err := dockertest.NewPool("")
@@ -722,6 +724,107 @@ func TestAzureEventHubsCloud(t *testing.T) {
 	err = c.Ping(context.Background())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "SASL Authentication failed")
+}
+
+func TestSSH(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	// Start shared Docker network
+	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+			t.Logf("Error while removing Docker network: %v", err)
+		}
+	})
+
+	// Start Kafka cluster with ZooKeeper and one broker
+	_, err = destination.SetupKafka(pool, &testCleanup{t},
+		destination.WithBrokers(3),
+		destination.WithLogger(t),
+		destination.WithNetwork(network),
+		destination.WithoutDockerHostListeners(),
+	)
+	require.NoError(t, err)
+
+	// Let's setup the SSH server
+	publicKeyPath, err := filepath.Abs("./testdata/ssh/test_key.pub")
+	require.NoError(t, err)
+	sshServer, err := sshserver.Setup(pool, &testCleanup{t},
+		sshserver.WithPublicKeyPath(publicKeyPath),
+		sshserver.WithCredentials("linuxserver.io", ""),
+		sshserver.WithDockerNetwork(network),
+		sshserver.WithLogger(t),
+	)
+	require.NoError(t, err)
+	sshServerHost := fmt.Sprintf("localhost:%s", sshServer.Port)
+	t.Logf("SSH server is listening on %s", sshServerHost)
+
+	// Read private key
+	privateKey, err := os.ReadFile("./testdata/ssh/test_key")
+	require.NoError(t, err)
+
+	// Setup client and ping
+	ctx := context.Background()
+	c, err := New("tcp", []string{"kafka1:9092"}, Config{
+		SSHConfig: &SSHConfig{
+			User:             "linuxserver.io",
+			Host:             sshServerHost,
+			PrivateKey:       string(privateKey),
+			AcceptAnyHostKey: true,
+		},
+	})
+	require.NoError(t, err)
+	require.Eventuallyf(t, func() bool { err = c.Ping(ctx); return err == nil }, 30*time.Second, time.Second,
+		"could not ping kafka: %v", err,
+	)
+
+	// Create topic for test
+	tc := testutil.NewWithDialer(c.dialer, c.network, c.addresses...)
+	require.Eventually(t, func() bool {
+		err := tc.CreateTopic(ctx, t.Name(), 1, 1) // partitions = 1, replication factor = 1
+		if err != nil {
+			t.Logf("Could not create topic: %v", err)
+		}
+		return err == nil
+	}, defaultTestTimeout, time.Second)
+
+	// Check that the topic has been created with the right number of partitions
+	topics, err := tc.ListTopics(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []testutil.TopicPartition{{Topic: t.Name(), Partition: 0}}, topics)
+
+	// Check producer
+	producerConf := ProducerConfig{ClientID: "producer-01"}
+	if testing.Verbose() {
+		producerConf.Logger = &testLogger{t}
+		producerConf.ErrorLogger = producerConf.Logger
+	}
+	p, err := c.NewProducer(producerConf)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := p.Close(ctx); err != nil {
+			t.Logf("Error closing producer: %v", err)
+		}
+	})
+
+	pubCtx, pubCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer pubCancel()
+	require.NoError(t, p.Publish(pubCtx,
+		Message{Key: []byte("key-01"), Value: []byte("value-01"), Topic: t.Name()},
+	))
+
+	// Verify that the message has been published and it's readable
+	consumer := c.NewConsumer(t.Name(), ConsumerConfig{})
+	consumerCtx, consumerCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer consumerCancel()
+	msg, err := consumer.Receive(consumerCtx)
+	require.NoError(t, err)
+	require.Equal(t, "key-01", string(msg.Key))
+	require.Equal(t, "value-01", string(msg.Value))
 }
 
 func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessages int) {
