@@ -1,7 +1,7 @@
 package router
 
 import (
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
 func getRouterConfigBool(key, destType string, defaultValue bool) bool {

@@ -11,10 +11,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
@@ -34,7 +35,7 @@ var _ = Describe("WarehouseGrpc", func() {
 	Describe("Warehouse GRPC round trip", Ordered, func() {
 		Describe("Dedicated workspace", Ordered, func() {
 			var (
-				pgResource    *destination.PostgresResource
+				pgResource    *resource.PostgresResource
 				minioResource *destination.MINIOResource
 				err           error
 				cleanup       = &testhelper.Cleanup{}
@@ -536,7 +537,7 @@ var _ = Describe("WarehouseGrpc", func() {
 
 		Describe("Multi-tenant workspace", Ordered, func() {
 			var (
-				pgResource *destination.PostgresResource
+				pgResource *resource.PostgresResource
 				err        error
 				cleanup    = &testhelper.Cleanup{}
 				w          *warehouseGRPC

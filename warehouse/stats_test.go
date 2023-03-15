@@ -11,9 +11,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
@@ -21,7 +21,7 @@ import (
 var _ = Describe("Stats", Ordered, func() {
 	var (
 		g          = GinkgoT()
-		pgResource *destination.PostgresResource
+		pgResource *resource.PostgresResource
 		err        error
 		uploadID   = int64(1)
 		cleanup    = &testhelper.Cleanup{}
