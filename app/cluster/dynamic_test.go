@@ -141,6 +141,32 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, errorDB.callOrder < router.callOrder)
 	})
 
+	t.Run("server should start in NORMAL mode by default when there is no instruction by scheduler", func(t *testing.T) {
+		require.Eventually(t, func() bool {
+			return gatewayDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return routerDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return errorDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return batchRouterDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return processor.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return router.status == "start"
+		}, time.Second, time.Millisecond)
+	})
+
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {
 		chACK := make(chan struct{})
 		provider.sendMode(servermode.NewChangeEvent(servermode.DegradedMode, func(_ context.Context) error {
