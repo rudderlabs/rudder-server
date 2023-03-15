@@ -55,7 +55,7 @@ func (c *Client) ping(ctx context.Context) (*kafka.Conn, error) {
 func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, replicationFactor int) error {
 	conn, err := c.ping(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("create topic: cannot ping: %w", err)
 	}
 
 	var (
@@ -67,11 +67,11 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 		var b kafka.Broker
 		b, err = conn.Controller()
 		if err != nil {
-			errors <- fmt.Errorf("could not get controller: %w", err)
+			errors <- fmt.Errorf("create topic: could not get controller: %w", err)
 			return
 		}
 		if b.Host == "" {
-			errors <- fmt.Errorf("create topic: connection controller empty broker host")
+			errors <- fmt.Errorf("create topic: controller connection has empty broker host")
 			return
 		}
 		controllerHost = net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
@@ -80,7 +80,7 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("create topic: %w", ctx.Err())
 	case err := <-errors:
 		if err != nil {
 			return err
@@ -89,7 +89,7 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 
 	controllerConn, err := c.dialer.DialContext(ctx, c.network, controllerHost)
 	if err != nil {
-		return fmt.Errorf("could not dial via controller: %w", err)
+		return fmt.Errorf("create topic: could not dial controller: %w", err)
 	}
 	defer func() {
 		// close asynchronously, if we block we might not respect the context
@@ -108,7 +108,10 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 	case <-ctx.Done():
 		return ctx.Err()
 	case err = <-errors:
-		return err
+		if err != nil {
+			return fmt.Errorf("create topic: could not create topic: %w", err)
+		}
+		return nil
 	}
 }
 
