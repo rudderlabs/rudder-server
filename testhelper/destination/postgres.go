@@ -25,7 +25,7 @@ type PostgresResource struct {
 	Port     string
 }
 
-func SetupPostgres(pool *dockertest.Pool, d cleaner, opts ...string) (*PostgresResource, error) {
+func SetupPostgres(pool *dockertest.Pool, d Cleaner, opts ...string) (*PostgresResource, error) {
 	cmd := []string{"postgres"}
 	for _, opt := range opts {
 		cmd = append(cmd, "-c", opt)
