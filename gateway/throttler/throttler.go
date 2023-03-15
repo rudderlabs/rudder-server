@@ -1,6 +1,6 @@
 package throttler
 
-//go:generate mockgen -destination=../../mocks/gateway/throttler.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/throttler GetThrottler
+//go:generate mockgen -destination=../../mocks/gateway/throttler.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/throttler Throttler
 
 import (
 	"context"
@@ -22,14 +22,14 @@ type Limiter interface {
 	Allow(ctx context.Context, cost, rate, window int64, key string) (bool, func(context.Context) error, error)
 }
 
-type GetThrottler interface {
+type Throttler interface {
 	CheckLimitReached(context context.Context, workspaceId string) (bool, error)
 }
 
 type Factory struct {
 	Stats        stats.Stats
 	limiter      Limiter
-	throttlers   map[string]*Throttler // map key is the workspaceId
+	throttlers   map[string]*throttler // map key is the workspaceId
 	throttlersMu sync.Mutex
 }
 
@@ -37,7 +37,7 @@ type Factory struct {
 func New(stats stats.Stats) (*Factory, error) {
 	f := Factory{
 		Stats:      stats,
-		throttlers: make(map[string]*Throttler),
+		throttlers: make(map[string]*throttler),
 	}
 	if err := f.initThrottlerFactory(); err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (f *Factory) CheckLimitReached(context context.Context, workspaceId string)
 	return t.checkLimitReached(context, workspaceId)
 }
 
-func (f *Factory) get(workspaceId string) *Throttler {
+func (f *Factory) get(workspaceId string) *throttler {
 	f.throttlersMu.Lock()
 	defer f.throttlersMu.Unlock()
 	if t, ok := f.throttlers[workspaceId]; ok {
@@ -59,7 +59,7 @@ func (f *Factory) get(workspaceId string) *Throttler {
 
 	var conf throttlingConfig
 	conf.readThrottlingConfig(workspaceId)
-	f.throttlers[workspaceId] = &Throttler{
+	f.throttlers[workspaceId] = &throttler{
 		limiter: f.limiter,
 		config:  conf,
 	}
@@ -92,13 +92,13 @@ func (f *Factory) initThrottlerFactory() error {
 	return nil
 }
 
-type Throttler struct {
+type throttler struct {
 	limiter Limiter
 	config  throttlingConfig
 }
 
 // checkLimitReached returns true if we're not allowed to process the number of event
-func (t *Throttler) checkLimitReached(ctx context.Context, key string) (limited bool, retErr error) {
+func (t *throttler) checkLimitReached(ctx context.Context, key string) (limited bool, retErr error) {
 	allowed, _, err := t.limiter.Allow(ctx, 1, t.config.limit, getWindowInSecs(t.config.window), key)
 	if err != nil {
 		return false, fmt.Errorf("could not limit: %w", err)

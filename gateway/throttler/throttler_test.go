@@ -28,20 +28,20 @@ func TestGateway_Throttler(t *testing.T) {
 
 	l, err := throttling.New(throttling.WithInMemoryGCRA(0))
 	require.NoError(t, err)
-	throttler := Throttler{
+	testThrottler := throttler{
 		config:  conf,
 		limiter: l,
 	}
 
 	for i := 0; i < eventLimit; i++ {
-		_, err := throttler.checkLimitReached(context.TODO(), workspaceId)
+		_, err := testThrottler.checkLimitReached(context.TODO(), workspaceId)
 		require.NoError(t, err)
 	}
 
 	startTime := time.Now()
 	var passed int
 	for i := 0; i < 2*eventLimit; i++ {
-		allowed, err := throttler.checkLimitReached(context.TODO(), workspaceId)
+		allowed, err := testThrottler.checkLimitReached(context.TODO(), workspaceId)
 		require.NoError(t, err)
 		if allowed {
 			passed++

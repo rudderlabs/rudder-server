@@ -161,7 +161,7 @@ type HandleT struct {
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
-	rateLimiter                  throttler.GetThrottler
+	rateLimiter                  throttler.Throttler
 
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.Measurement
@@ -1436,7 +1436,7 @@ This function will block until backend config is initially received.
 func (gateway *HandleT) Setup(
 	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
-	rateLimiter throttler.GetThrottler, versionHandler func(w http.ResponseWriter, r *http.Request),
+	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
 	gateway.logger = pkgLogger

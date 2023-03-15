@@ -106,7 +106,7 @@ type testContext struct {
 	mockCtrl          *gomock.Controller
 	mockJobsDB        *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
-	mockRateLimiter   *mockThrottler.MockGetThrottler
+	mockRateLimiter   *mockThrottler.MockThrottler
 	mockApp           *mocksApp.MockApp
 
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -138,7 +138,7 @@ func (c *testContext) Setup() {
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
-	c.mockRateLimiter = mockThrottler.NewMockGetThrottler(c.mockCtrl)
+	c.mockRateLimiter = mockThrottler.NewMockThrottler(c.mockCtrl)
 
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
