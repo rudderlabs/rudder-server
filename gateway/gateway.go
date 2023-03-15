@@ -35,10 +35,10 @@ import (
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/middleware"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -161,7 +161,7 @@ type HandleT struct {
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
-	rateLimiter                  ratelimiter.RateLimiter
+	rateLimiter                  throttler.Throttler
 
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.Measurement
@@ -538,9 +538,13 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	if enableRateLimit {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-		if gateway.rateLimiter.LimitReached(workspaceId) {
-			err = errRequestDropped
-			return
+		ok, errCheck := gateway.rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
+		if errCheck != nil {
+			gateway.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
+			gateway.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
+		}
+		if ok {
+			return jobData, errRequestDropped
 		}
 	}
 
@@ -604,7 +608,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 				"library",
 				"version",
 			).(string)
-			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) {
+			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) { // skipcq: CRT-A0007
 				firstSDKVersion = "invalid"
 			}
 			if firstSDKName != "" || firstSDKVersion != "" {
@@ -898,6 +902,7 @@ func warehouseHandler(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(misc.GetWarehouseURL())
 	if err != nil {
 		http.Error(w, err.Error(), 404)
+		return
 	}
 	// gateway.logger.LogRequest(r)
 	director := func(req *http.Request) {
@@ -991,6 +996,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 		if errorMessage != "" {
 			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetErrorStatusCode(errorMessage), errorMessage)
 			http.Error(w, response.GetStatus(errorMessage), response.GetErrorStatusCode(errorMessage))
+			return
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
@@ -1326,8 +1332,9 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srv := &http.Server{
-		Addr:    ":" + strconv.Itoa(adminWebPort),
-		Handler: bugsnag.Handler(srvMux),
+		Addr:              ":" + strconv.Itoa(adminWebPort),
+		Handler:           bugsnag.Handler(srvMux),
+		ReadHeaderTimeout: ReadHeaderTimeout,
 	}
 
 	return rs_httputil.ListenAndServe(ctx, srv)
@@ -1343,8 +1350,8 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			newEnabledWriteKeyWorkspaceMap = map[string]string{}
 			newSourceIDToNameMap           = map[string]string{}
 		)
-		config := data.Data.(map[string]backendconfig.ConfigT)
-		for workspaceID, wsConfig := range config {
+		configData := data.Data.(map[string]backendconfig.ConfigT)
+		for workspaceID, wsConfig := range configData {
 			for _, source := range wsConfig.Sources {
 				newSourceIDToNameMap[source.ID] = source.Name
 				newWriteKeysSourceMap[source.WriteKey] = source
@@ -1429,7 +1436,7 @@ This function will block until backend config is initially received.
 func (gateway *HandleT) Setup(
 	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
-	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
+	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
 	gateway.logger = pkgLogger
