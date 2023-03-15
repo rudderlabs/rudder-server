@@ -105,8 +105,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          context: .
-          file: ./suppression-backup-service/Dockerfile
+          context: ../../suppression-backup-service
+          file: Dockerfile
           images: |
             name=rudderlabs/develop-suppression-backup-service
             name=rudderlabs/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
