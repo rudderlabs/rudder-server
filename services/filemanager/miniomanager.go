@@ -36,8 +36,8 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 	defer cancel()
 
 	if err = minioClient.MakeBucket(ctx, manager.Config.Bucket, minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
-		exists, errBucketExists := minioClient.BucketExists(ctx, manager.Config.Bucket)
-		if !(errBucketExists == nil && exists) {
+		err = suppressMinorErrors(err)
+		if err != nil {
 			return UploadOutput{}, err
 		}
 	}
