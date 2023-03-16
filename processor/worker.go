@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	"math"
 	"sync"
 	"time"
@@ -129,9 +130,9 @@ func (w *worker) start() {
 			if firstSubJob {
 				mergedJob = &storeMessage{
 					rsourcesStats:         subJob.rsourcesStats,
-					uniqueMessageIds:      make(map[string]struct{}),
+					uniqueMessagePayloads: make(map[string]dedup.Payload),
 					procErrorJobsByDestID: make(map[string][]*jobsdb.JobT),
-					sourceDupStats:        make(map[string]int),
+					sourceDupStats:        make(map[string]DupStat),
 					start:                 subJob.start,
 				}
 				firstSubJob = false

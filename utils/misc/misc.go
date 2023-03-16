@@ -478,15 +478,6 @@ func Contains[K comparable](slice []K, item K) bool {
 	return false
 }
 
-// IncrementMapByKey starts with 1 and increments the counter of a key
-func IncrementMapByKey(m map[string]int, key string, increment int) {
-	_, found := m[key]
-	if found {
-		m[key] = m[key] + increment
-	} else {
-		m[key] = increment
-	}
-}
 
 //  Returns chronological timestamp of the event using the formula
 //  timestamp = receivedAt - (sentAt - originalTimestamp)

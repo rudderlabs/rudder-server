@@ -1,10 +1,10 @@
-//go:generate mockgen -destination=../../mocks/services/dedup/mock_dedup.go -package mock_dedup github.com/rudderlabs/rudder-server/services/dedup DedupI
+//go:generate mockgen -destination=../../mocks/services/dedup/mock_dedup.go -package mock_dedup github.com/rudderlabs/rudder-server/services/dedup Dedup
 
 package dedup
 
 import (
+	"encoding/json"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/dgraph-io/badger/v2"
@@ -17,9 +17,18 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type DedupI interface {
-	FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int)
-	MarkProcessed(messageIDs []string) error
+type Info struct {
+	MessageID string
+	Size      int
+}
+
+type Payload struct {
+	Size int `json:"size"`
+}
+
+type Dedup interface {
+	FindDuplicates(infos []Info, allMessageIDsSet map[string]Payload) map[int]Payload
+	MarkProcessed(infos []Info) error
 	PrintHistogram()
 	Close()
 }
@@ -58,27 +67,27 @@ func DefaultRudderPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-type OptFn func(*DedupHandleT)
+type OptFn func(*manager)
 
 func FromConfig() OptFn {
-	return func(dht *DedupHandleT) {
+	return func(dht *manager) {
 		dht.window = &dedupWindow
 	}
 }
 
 func WithWindow(d time.Duration) OptFn {
-	return func(dht *DedupHandleT) {
+	return func(dht *manager) {
 		dht.window = &d
 	}
 }
 
 func WithClearDB() OptFn {
-	return func(dht *DedupHandleT) {
+	return func(dht *manager) {
 		dht.clearDB = true
 	}
 }
 
-type DedupHandleT struct {
+type manager struct {
 	stats    stats.Stats
 	logger   loggerForBadger
 	badgerDB *badger.DB
@@ -89,8 +98,8 @@ type DedupHandleT struct {
 	clearDB  bool
 }
 
-func New(path string, fns ...OptFn) *DedupHandleT {
-	d := &DedupHandleT{
+func New(path string, fns ...OptFn) *manager {
+	d := &manager{
 		path:   path,
 		logger: loggerForBadger{logger.NewLogger().Child("dedup")},
 		stats:  stats.Default,
@@ -106,7 +115,7 @@ func New(path string, fns ...OptFn) *DedupHandleT {
 	return d
 }
 
-func (d *DedupHandleT) openBadger() {
+func (d *manager) openBadger() {
 	var err error
 
 	opts := badger.
@@ -147,11 +156,11 @@ func (d *DedupHandleT) openBadger() {
 	})
 }
 
-func (d *DedupHandleT) PrintHistogram() {
+func (d *manager) PrintHistogram() {
 	d.badgerDB.PrintHistogram(nil)
 }
 
-func (d *DedupHandleT) gcBadgerDB() {
+func (d *manager) gcBadgerDB() {
 	for {
 		select {
 		case <-d.close:
@@ -170,10 +179,11 @@ func (d *DedupHandleT) gcBadgerDB() {
 	}
 }
 
-func (d *DedupHandleT) writeToBadger(messageIDs []string) error {
+func (d *manager) writeToBadger(infos []Info) error {
 	txn := d.badgerDB.NewTransaction(true)
-	for _, messageID := range messageIDs {
-		e := badger.NewEntry([]byte(messageID), nil).WithTTL(*d.window)
+	for _, info := range infos {
+		payload := fmt.Sprintf(`{"size":"%d"}`, info.Size)
+		e := badger.NewEntry([]byte(info.MessageID), []byte(payload)).WithTTL(*d.window)
 		err := txn.SetEntry(e)
 		if err == badger.ErrTxnTooBig {
 			if err = txn.Commit(); err != nil {
@@ -192,42 +202,52 @@ func (d *DedupHandleT) writeToBadger(messageIDs []string) error {
 
 // MarkProcessed persist messageIDs in Disk, with expiry time of dedupWindow
 // Any message mark here will appear in FindDuplicates() if queried inside the dedupWindow
-func (d *DedupHandleT) MarkProcessed(messageIDs []string) error {
-	return d.writeToBadger(messageIDs)
+func (d *manager) MarkProcessed(infos []Info) error {
+	return d.writeToBadger(infos)
 }
 
-func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int) {
-	toRemoveMessageIndexesSet := make(map[int]struct{})
+func (d *manager) FindDuplicates(infos []Info, allMessageIDsSet map[string]Payload) map[int]Payload {
+	toRemoveMessageIndexesSet := make(map[int]Payload)
 	// Dedup within events batch in a web request
 	messageIDSet := make(map[string]struct{})
 
 	// Eg messageIDs: [m1, m2, m3, m1, m1, m1]
 	// Constructing a set out of messageIDs
-	for _, messageID := range messageIDs {
-		messageIDSet[messageID] = struct{}{}
+	for _, info := range infos {
+		messageIDSet[info.MessageID] = struct{}{}
 	}
 	// Eg messageIDSet: [m1, m2, m3]
 	// In this loop it will remove from set for first occurrence and if not found in set it means it's a duplicate
-	for idx, messageID := range messageIDs {
-		if _, ok := messageIDSet[messageID]; ok {
-			delete(messageIDSet, messageID)
+	for idx, info := range infos {
+		if _, ok := messageIDSet[info.MessageID]; ok {
+			delete(messageIDSet, info.MessageID)
 		} else {
-			toRemoveMessageIndexesSet[idx] = struct{}{}
+			toRemoveMessageIndexesSet[idx] = Payload{}
 		}
 	}
 	// Dedup within batch of batch jobs
-	for idx, messageID := range messageIDs {
-		if _, ok := allMessageIDsSet[messageID]; ok {
-			toRemoveMessageIndexesSet[idx] = struct{}{}
+	for idx, info := range infos {
+		if _, ok := allMessageIDsSet[info.MessageID]; ok {
+			toRemoveMessageIndexesSet[idx] = Payload{}
 		}
 	}
 
 	// Dedup with badgerDB
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
-		for idx, messageID := range messageIDs {
-			_, err := txn.Get([]byte(messageID))
+		for idx, info := range infos {
+			item, err := txn.Get([]byte(info.MessageID))
 			if err != badger.ErrKeyNotFound {
-				toRemoveMessageIndexesSet[idx] = struct{}{}
+				toRemoveMessageIndexesSet[idx] = Payload {}
+				if item != nil {
+					var (
+						tmpValue []byte
+						payload  Payload
+					)
+					tmpValue, err := item.ValueCopy(nil)
+					if err != nil && json.Unmarshal(tmpValue, &payload) == nil {
+						toRemoveMessageIndexesSet[idx] = payload
+					}
+				}
 			}
 		}
 		return nil
@@ -235,16 +255,11 @@ func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[
 	if err != nil {
 		panic(err)
 	}
-	toRemoveMessageIndexes := make([]int, 0, len(toRemoveMessageIndexesSet))
-	for k := range toRemoveMessageIndexesSet {
-		toRemoveMessageIndexes = append(toRemoveMessageIndexes, k)
-	}
 
-	sort.Ints(toRemoveMessageIndexes)
-	return toRemoveMessageIndexes
+	return toRemoveMessageIndexesSet
 }
 
-func (d *DedupHandleT) Close() {
+func (d *manager) Close() {
 	close(d.close)
 	<-d.gcDone
 	_ = d.badgerDB.Close()

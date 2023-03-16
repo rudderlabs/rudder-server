@@ -60,7 +60,7 @@ type testContext struct {
 	mockBatchRouterJobsDB *mocksJobsDB.MockJobsDB
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReportingI
-	MockDedup             *mockDedup.MockDedupI
+	MockDedup             *mockDedup.MockDedup
 	MockMultitenantHandle *mocksMultitenant.MockMultiTenantI
 	MockRsourcesService   *rsources.MockJobService
 }
@@ -84,7 +84,7 @@ func (c *testContext) Setup() {
 	c.dbReadBatchSize = 10000
 	c.processEventSize = 10000
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
-	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
+	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 }
 
@@ -919,7 +919,9 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return([]int{1}).After(callUnprocessed).Times(2)
+			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return(map[int]dedup.Payload{
+				1: dedup.Payload{},
+			}).After(callUnprocessed).Times(2)
 			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
@@ -2351,11 +2353,15 @@ var _ = Describe("TestSubJobMerger", func() {
 		},
 
 		reportMetrics: []*types.PUReportedMetric{{}, {}},
-		sourceDupStats: map[string]int{
-			"stat-1": 1,
-			"stat-2": 2,
+		sourceDupStats: map[string]DupStat{
+			"stat-1": DupStat{
+				Count: 1,
+			},
+			"stat-2": DupStat{
+				Count: 2,
+			},
 		},
-		uniqueMessageIds: map[string]struct{}{
+		uniqueMessagePayloads: map[string]dedup.Payload{
 			"messageId-1": {},
 			"messageId-2": {},
 		},
@@ -2366,9 +2372,9 @@ var _ = Describe("TestSubJobMerger", func() {
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 1", func() {
 			mergedJob := storeMessage{}
-			mergedJob.uniqueMessageIds = make(map[string]struct{})
+			mergedJob.uniqueMessagePayloads = make(map[string]dedup.Payload)
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]int)
+			mergedJob.sourceDupStats = make(map[string]DupStat)
 
 			subJobs := []storeMessage{
 				{
@@ -2401,10 +2407,12 @@ var _ = Describe("TestSubJobMerger", func() {
 					reportMetrics: []*types.PUReportedMetric{
 						{},
 					},
-					sourceDupStats: map[string]int{
-						"stat-1": 1,
+					sourceDupStats: map[string]DupStat{
+						"stat-1": DupStat{
+							Count: 1,
+						},
 					},
-					uniqueMessageIds: map[string]struct{}{
+					uniqueMessagePayloads: map[string]dedup.Payload{
 						"messageId-1": {},
 					},
 
@@ -2440,10 +2448,12 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}},
-					sourceDupStats: map[string]int{
-						"stat-2": 2,
+					sourceDupStats: map[string]DupStat{
+						"stat-2": DupStat{
+							Count: 2,
+						},
 					},
-					uniqueMessageIds: map[string]struct{}{
+					uniqueMessagePayloads: map[string]dedup.Payload{
 						"messageId-2": {},
 					},
 					totalEvents: 1,
@@ -2461,16 +2471,16 @@ var _ = Describe("TestSubJobMerger", func() {
 			Expect(mergedJob.procErrorJobs).To(Equal(expectedMergedJob.procErrorJobs))
 			Expect(mergedJob.reportMetrics).To(Equal(expectedMergedJob.reportMetrics))
 			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
-			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
+			Expect(mergedJob.uniqueMessagePayloads).To(Equal(expectedMergedJob.uniqueMessagePayloads))
 			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
 		})
 	})
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 2", func() {
 			mergedJob := storeMessage{}
-			mergedJob.uniqueMessageIds = make(map[string]struct{})
+			mergedJob.uniqueMessagePayloads = make(map[string]dedup.Payload)
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]int)
+			mergedJob.sourceDupStats = make(map[string]DupStat)
 
 			subJobs := []storeMessage{
 				{
@@ -2513,11 +2523,15 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}, {}},
-					sourceDupStats: map[string]int{
-						"stat-1": 1,
-						"stat-2": 2,
+					sourceDupStats: map[string]DupStat{
+						"stat-1": DupStat{
+							Count: 1,
+						},
+						"stat-2": DupStat{
+							Count: 2,
+						},
 					},
-					uniqueMessageIds: map[string]struct{}{
+					uniqueMessagePayloads: map[string]dedup.Payload{
 						"messageId-1": {},
 						"messageId-2": {},
 					},
@@ -2537,7 +2551,7 @@ var _ = Describe("TestSubJobMerger", func() {
 			Expect(mergedJob.procErrorJobs).To(Equal(expectedMergedJob.procErrorJobs))
 			Expect(mergedJob.reportMetrics).To(Equal(expectedMergedJob.reportMetrics))
 			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
-			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
+			Expect(mergedJob.uniqueMessagePayloads).To(Equal(expectedMergedJob.uniqueMessagePayloads))
 			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
 		})
 	})

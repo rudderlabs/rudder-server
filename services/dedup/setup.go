@@ -5,12 +5,12 @@ import (
 )
 
 var (
-	dedupManager DedupI
+	dedupManager Dedup
 	once         sync.Once
 )
 
-// GetInstance returns an instance of DedupI
-func GetInstance(clearDB *bool) DedupI {
+// GetInstance returns an instance of Dedup
+func GetInstance(clearDB *bool) Dedup {
 	pkgLogger.Info("[[ Dedup ]] Setting up Dedup Manager")
 	once.Do(func() {
 		opts := []OptFn{FromConfig()}
