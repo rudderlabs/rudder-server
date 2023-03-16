@@ -2,10 +2,11 @@ package processor
 
 import (
 	"context"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/dedup"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"

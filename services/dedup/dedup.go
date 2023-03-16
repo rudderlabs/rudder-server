@@ -182,7 +182,7 @@ func (d *manager) gcBadgerDB() {
 func (d *manager) writeToBadger(infos []Info) error {
 	txn := d.badgerDB.NewTransaction(true)
 	for _, info := range infos {
-		payload := fmt.Sprintf(`{"size":"%d"}`, info.Size)
+		payload := fmt.Sprintf(`{"size":%d}`, info.Size)
 		e := badger.NewEntry([]byte(info.MessageID), []byte(payload)).WithTTL(*d.window)
 		err := txn.SetEntry(e)
 		if err == badger.ErrTxnTooBig {
@@ -236,19 +236,21 @@ func (d *manager) FindDuplicates(infos []Info, allMessageIDsSet map[string]Paylo
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
 		for idx, info := range infos {
 			item, err := txn.Get([]byte(info.MessageID))
-			if err != badger.ErrKeyNotFound {
-				toRemoveMessageIndexesSet[idx] = Payload {}
-				if item != nil {
-					var (
-						tmpValue []byte
-						payload  Payload
-					)
-					tmpValue, err := item.ValueCopy(nil)
-					if err != nil && json.Unmarshal(tmpValue, &payload) == nil {
-						toRemoveMessageIndexesSet[idx] = payload
-					}
-				}
+			if err != nil && err != badger.ErrKeyNotFound {
+				return err
 			}
+			if err == badger.ErrKeyNotFound {
+				continue
+			}
+
+			var (
+				value   []byte
+				payload Payload
+			)
+			if value, err = item.ValueCopy(nil); err == nil {
+				_ = json.Unmarshal(value, &payload)
+			}
+			toRemoveMessageIndexesSet[idx] = payload
 		}
 		return nil
 	})

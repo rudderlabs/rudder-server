@@ -920,7 +920,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return(map[int]dedup.Payload{
-				1: dedup.Payload{},
+				1: {},
 			}).After(callUnprocessed).Times(2)
 			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
 
@@ -2354,10 +2354,10 @@ var _ = Describe("TestSubJobMerger", func() {
 
 		reportMetrics: []*types.PUReportedMetric{{}, {}},
 		sourceDupStats: map[string]DupStat{
-			"stat-1": DupStat{
+			"stat-1": {
 				Count: 1,
 			},
-			"stat-2": DupStat{
+			"stat-2": {
 				Count: 2,
 			},
 		},
@@ -2408,7 +2408,7 @@ var _ = Describe("TestSubJobMerger", func() {
 						{},
 					},
 					sourceDupStats: map[string]DupStat{
-						"stat-1": DupStat{
+						"stat-1": {
 							Count: 1,
 						},
 					},
@@ -2449,7 +2449,7 @@ var _ = Describe("TestSubJobMerger", func() {
 
 					reportMetrics: []*types.PUReportedMetric{{}},
 					sourceDupStats: map[string]DupStat{
-						"stat-2": DupStat{
+						"stat-2": {
 							Count: 2,
 						},
 					},
@@ -2524,10 +2524,10 @@ var _ = Describe("TestSubJobMerger", func() {
 
 					reportMetrics: []*types.PUReportedMetric{{}, {}},
 					sourceDupStats: map[string]DupStat{
-						"stat-1": DupStat{
+						"stat-1": {
 							Count: 1,
 						},
-						"stat-2": DupStat{
+						"stat-2": {
 							Count: 2,
 						},
 					},

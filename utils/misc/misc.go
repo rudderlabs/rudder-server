@@ -224,6 +224,11 @@ func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{
 	return rudderVal, true
 }
 
+type ModularEvent struct {
+	Event    types.SingularEventT
+	RawEvent json.RawMessage
+}
+
 // ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
 	var gatewayBatchEvent types.GatewayBatchRequestT
@@ -477,7 +482,6 @@ func Contains[K comparable](slice []K, item K) bool {
 	}
 	return false
 }
-
 
 //  Returns chronological timestamp of the event using the formula
 //  timestamp = receivedAt - (sentAt - originalTimestamp)

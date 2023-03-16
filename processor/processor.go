@@ -1386,6 +1386,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 
 				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
 
+				// TODO: Remove this once we have a better way to handle this
 				uniqueMessagePayloads[messageId] = dedup.Payload{
 					Size: len(singularEvent),
 				}
@@ -2561,8 +2562,8 @@ func (proc *Handle) crashRecover() {
 func (proc *Handle) updateSourceStats(sourceStats map[string]DupStat, bucket string) {
 	for sourceTag, dupStat := range sourceStats {
 		tags := map[string]string{
-			"source": sourceTag,
-			"sizeCmp":   strconv.FormatBool(dupStat.Cmp),
+			"source":  sourceTag,
+			"sizeCmp": strconv.FormatBool(dupStat.Cmp),
 		}
 		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(dupStat.Count)
