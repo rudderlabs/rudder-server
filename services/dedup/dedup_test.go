@@ -316,37 +316,23 @@ func Test_Dedup_Window(t *testing.T) {
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Second))
 	defer d.Close()
 
-	err := d.MarkProcessed(
-		[]dedup.Info{
-			{MessageID: "to be deleted", Size: 1},
-		},
-	)
+	infos := []dedup.Info{
+		{MessageID: "to be deleted", Size: 1},
+	}
+
+	err := d.MarkProcessed(infos)
 	require.NoError(t, err)
 
-	dups := d.FindDuplicates(
-		[]dedup.Info{
-			{MessageID: "to be deleted", Size: 1},
-		},
-		nil,
-	)
+	dups := d.FindDuplicates(infos, nil)
 	require.Equal(t, map[int]dedup.Payload{0: {Size: 1}}, dups)
 
 	require.Eventually(t, func() bool {
 		return len(
-			d.FindDuplicates(
-				[]dedup.Info{
-					{MessageID: "to be deleted", Size: 1},
-				},
-				nil,
-			),
+			d.FindDuplicates(infos, nil),
 		) == 0
 	}, 2*time.Second, 100*time.Millisecond)
 
-	dupsAfter := d.FindDuplicates(
-		[]dedup.Info{
-			{MessageID: "to be deleted", Size: 1},
-		}, nil,
-	)
+	dupsAfter := d.FindDuplicates(infos, nil)
 	require.Equal(t, map[int]dedup.Payload{}, dupsAfter)
 }
 
@@ -358,36 +344,28 @@ func Test_Dedup_ClearDB(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
 
-	{
+	info := []dedup.Info{
+		{MessageID: "a", Size: 1},
+	}
+
+	t.Run("with clearDB and time window options", func(t *testing.T) {
 		d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
-		err := d.MarkProcessed(
-			[]dedup.Info{
-				{MessageID: "a", Size: 1},
-			},
-		)
+		err := d.MarkProcessed(info)
 		require.NoError(t, err)
 		d.Close()
-	}
-	{
-		dNew := dedup.New(dbPath)
-		dupsAgain := dNew.FindDuplicates(
-			[]dedup.Info{
-				{MessageID: "a", Size: 1},
-			}, nil,
-		)
-		require.Equal(t, map[int]dedup.Payload{0: {Size: 1}}, dupsAgain)
-		dNew.Close()
-	}
-	{
-		dWithClear := dedup.New(dbPath, dedup.WithClearDB())
-		dupsAgain := dWithClear.FindDuplicates(
-			[]dedup.Info{
-				{MessageID: "a", Size: 1},
-			}, nil,
-		)
-		require.Equal(t, map[int]dedup.Payload{}, dupsAgain)
-		dWithClear.Close()
-	}
+	})
+	t.Run("no options", func(t *testing.T) {
+		d := dedup.New(dbPath)
+		dups := d.FindDuplicates(info, nil)
+		require.Equal(t, map[int]dedup.Payload{0: {Size: 1}}, dups)
+		d.Close()
+	})
+	t.Run("with clearDB options", func(t *testing.T) {
+		d := dedup.New(dbPath, dedup.WithClearDB())
+		dups := d.FindDuplicates(info, nil)
+		require.Equal(t, map[int]dedup.Payload{}, dups)
+		d.Close()
+	})
 }
 
 func Test_Dedup_ErrTxnTooBig(t *testing.T) {
