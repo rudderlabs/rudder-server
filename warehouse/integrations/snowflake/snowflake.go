@@ -82,6 +82,7 @@ var dataTypesMapToRudder = map[string]string{
 	"NCHAR VARYING": "string",
 	"BINARY":        "string",
 	"VARBINARY":     "string",
+	"TIME":          "string",
 
 	"BOOLEAN": "boolean",
 
