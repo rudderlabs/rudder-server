@@ -224,11 +224,6 @@ func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{
 	return rudderVal, true
 }
 
-type ModularEvent struct {
-	Event    types.SingularEventT
-	RawEvent json.RawMessage
-}
-
 // ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
 	var gatewayBatchEvent types.GatewayBatchRequestT
