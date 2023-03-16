@@ -67,27 +67,27 @@ func DefaultRudderPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-type OptFn func(*manager)
+type OptFn func(*Manager)
 
 func FromConfig() OptFn {
-	return func(dht *manager) {
+	return func(dht *Manager) {
 		dht.window = &dedupWindow
 	}
 }
 
 func WithWindow(d time.Duration) OptFn {
-	return func(dht *manager) {
+	return func(dht *Manager) {
 		dht.window = &d
 	}
 }
 
 func WithClearDB() OptFn {
-	return func(dht *manager) {
+	return func(dht *Manager) {
 		dht.clearDB = true
 	}
 }
 
-type manager struct {
+type Manager struct {
 	stats    stats.Stats
 	logger   loggerForBadger
 	badgerDB *badger.DB
@@ -98,8 +98,8 @@ type manager struct {
 	clearDB  bool
 }
 
-func New(path string, fns ...OptFn) *manager {
-	d := &manager{
+func New(path string, fns ...OptFn) *Manager {
+	d := &Manager{
 		path:   path,
 		logger: loggerForBadger{logger.NewLogger().Child("dedup")},
 		stats:  stats.Default,
@@ -115,7 +115,7 @@ func New(path string, fns ...OptFn) *manager {
 	return d
 }
 
-func (d *manager) openBadger() {
+func (d *Manager) openBadger() {
 	var err error
 
 	opts := badger.
@@ -156,11 +156,11 @@ func (d *manager) openBadger() {
 	})
 }
 
-func (d *manager) PrintHistogram() {
+func (d *Manager) PrintHistogram() {
 	d.badgerDB.PrintHistogram(nil)
 }
 
-func (d *manager) gcBadgerDB() {
+func (d *Manager) gcBadgerDB() {
 	for {
 		select {
 		case <-d.close:
@@ -179,7 +179,7 @@ func (d *manager) gcBadgerDB() {
 	}
 }
 
-func (d *manager) writeToBadger(infos []Info) error {
+func (d *Manager) writeToBadger(infos []Info) error {
 	txn := d.badgerDB.NewTransaction(true)
 	for _, info := range infos {
 		payload := fmt.Sprintf(`{"size":%d}`, info.Size)
@@ -202,11 +202,11 @@ func (d *manager) writeToBadger(infos []Info) error {
 
 // MarkProcessed persist messageIDs in Disk, with expiry time of dedupWindow
 // Any message mark here will appear in FindDuplicates() if queried inside the dedupWindow
-func (d *manager) MarkProcessed(infos []Info) error {
+func (d *Manager) MarkProcessed(infos []Info) error {
 	return d.writeToBadger(infos)
 }
 
-func (d *manager) FindDuplicates(infos []Info, allMessageIDsSet map[string]Payload) map[int]Payload {
+func (d *Manager) FindDuplicates(infos []Info, allMessageIDsSet map[string]Payload) map[int]Payload {
 	toRemoveMessageIndexesSet := make(map[int]Payload)
 	// Dedup within events batch in a web request
 	messageIDSet := make(map[string]struct{})
@@ -261,7 +261,7 @@ func (d *manager) FindDuplicates(infos []Info, allMessageIDsSet map[string]Paylo
 	return toRemoveMessageIndexesSet
 }
 
-func (d *manager) Close() {
+func (d *Manager) Close() {
 	close(d.close)
 	<-d.gcDone
 	_ = d.badgerDB.Close()
