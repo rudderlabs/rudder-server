@@ -1341,9 +1341,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	destFilterStatusDetailMap := make(map[string]*types.StatusDetail)
 
 	for idx, batchEvent := range jobList {
+		var (
+			singularEvents []types.SingularEventT
+			ok             bool
+		)
 
-		var singularEvents []types.SingularEventT
-		var ok bool
 		if parsedEventList == nil {
 			singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
 		} else {
@@ -1386,9 +1388,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 
 				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
 
-				// TODO: Remove this once we have a better way to handle this
+				var singularEventSize int
+				if payload, err := jsonfast.Marshal(singularEvent); err != nil {
+					singularEventSize = len(payload)
+				}
 				uniqueMessagePayloads[messageId] = dedup.Payload{
-					Size: len(singularEvent),
+					Size: singularEventSize,
 				}
 
 				// We count this as one, not destination specific ones
