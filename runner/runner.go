@@ -11,22 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-
-	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
-
-	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/admin/profiler"
@@ -42,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -66,6 +53,18 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
+	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -335,6 +334,7 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	bigquery.Init()
 	clickhouse.Init()
 	archiver.Init()
@@ -374,7 +374,6 @@ func runAllInit() {
 	routertransformer.Init()
 	router.Init()
 	router.InitRouterAdmin()
-	ratelimiter.Init()
 	gateway.Init()
 	integrations.Init()
 	alert.Init()

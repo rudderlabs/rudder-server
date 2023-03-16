@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
@@ -272,6 +274,7 @@ func TestConfigurationValidationBigQuery(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	bigquery2.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

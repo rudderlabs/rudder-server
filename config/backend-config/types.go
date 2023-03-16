@@ -100,6 +100,7 @@ type DataRetention struct {
 	UseSelfStorage      bool               `json:"useSelfStorage"`
 	StorageBucket       StorageBucket      `json:"storageBucket"`
 	StoragePreferences  StoragePreferences `json:"storagePreferences"`
+	RetentionPeriod     string             `json:"retentionPeriod"`
 }
 
 type StorageBucket struct {

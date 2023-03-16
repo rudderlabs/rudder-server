@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -47,7 +49,7 @@ type JobRun struct {
 	job                  Payload
 	stagingFilePath      string
 	uuidTS               time.Time
-	outputFileWritersMap map[string]warehouseutils.LoadFileWriter
+	outputFileWritersMap map[string]encoding.LoadFileWriter
 	tableEventCountMap   map[string]int
 	stagingFileReader    *gzip.Reader
 	whIdentifier         string
@@ -201,7 +203,7 @@ func (job *Payload) getColumnName(columnName string) string {
 
 type loadFileUploadJob struct {
 	tableName  string
-	outputFile warehouseutils.LoadFileWriter
+	outputFile encoding.LoadFileWriter
 }
 
 type loadFileUploadOutput struct {
@@ -293,7 +295,7 @@ func (jobRun *JobRun) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutput, 
 	}
 }
 
-func (jobRun *JobRun) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile warehouseutils.LoadFileWriter, tableName string) (filemanager.UploadOutput, error) {
+func (jobRun *JobRun) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile encoding.LoadFileWriter, tableName string) (filemanager.UploadOutput, error) {
 	job := jobRun.job
 	file, err := os.Open(uploadFile.GetLoadFile().Name()) // opens file in read mode
 	if err != nil {
@@ -325,13 +327,13 @@ func (job *Payload) getSortedColumnMapForAllTables() map[string][]string {
 	return sortedTableColumnMap
 }
 
-func (jobRun *JobRun) GetWriter(tableName string) (warehouseutils.LoadFileWriter, error) {
+func (jobRun *JobRun) GetWriter(tableName string) (encoding.LoadFileWriter, error) {
 	writer, ok := jobRun.outputFileWritersMap[tableName]
 	if !ok {
 		var err error
 		outputFilePath := jobRun.getLoadFilePath(tableName)
 		if jobRun.job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
+			writer, err = encoding.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
 		} else {
 			writer, err = misc.CreateGZ(outputFilePath)
 		}
@@ -424,7 +426,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	scanner.Buffer(buf, maxCapacity)
 
 	// read from staging file and write a separate load file for each table in warehouse
-	jobRun.outputFileWritersMap = make(map[string]warehouseutils.LoadFileWriter)
+	jobRun.outputFileWritersMap = make(map[string]encoding.LoadFileWriter)
 	jobRun.tableEventCountMap = make(map[string]int)
 	jobRun.uuidTS = timeutil.Now()
 
@@ -469,7 +471,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			return nil, err
 		}
 
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
+		eventLoader := encoding.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFormat(columnName)
@@ -740,7 +742,7 @@ func setupSlave(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (jobRun *JobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData Data, violatedConstraints *ConstraintsViolation, discardWriter warehouseutils.LoadFileWriter) error {
+func (jobRun *JobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData Data, violatedConstraints *ConstraintsViolation, discardWriter encoding.LoadFileWriter) error {
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
@@ -755,7 +757,7 @@ func (jobRun *JobRun) handleDiscardTypes(tableName, columnName string, columnVal
 		}
 	}
 	if hasID && hasReceivedAt {
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
+		eventLoader := encoding.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)

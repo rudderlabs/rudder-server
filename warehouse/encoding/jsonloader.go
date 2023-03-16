@@ -1,19 +1,21 @@
-package warehouseutils
+package encoding
 
 import (
 	"encoding/json"
+	"fmt"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const LOADED_AT_COLUMN = "loaded_at"
-
-// JsonLoader is only for BQ now. Treat this is as custom BQ loader.
-// If more warehouses are added in the future, change this accordingly.
 type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
 	fileWriter LoadFileWriter
 }
 
+// NewJSONLoader returns a new JsonLoader
+// JsonLoader is only for BQ now. Treat this is as custom BQ loader.
+// If more warehouses are added in the future, change this accordingly.
 func NewJSONLoader(destType string, writer LoadFileWriter) *JsonLoader {
 	loader := &JsonLoader{destType: destType, fileWriter: writer}
 	loader.columnData = make(map[string]interface{})
@@ -21,27 +23,27 @@ func NewJSONLoader(destType string, writer LoadFileWriter) *JsonLoader {
 }
 
 func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN) || columnName == ToProviderCase(loader.destType, LOADED_AT_COLUMN)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn) || columnName == warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn)
 }
 
 func (loader *JsonLoader) GetLoadTimeFormat(columnName string) string {
 	switch columnName {
-	case ToProviderCase(loader.destType, UUID_TS_COLUMN):
+	case warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn):
 		return BQUuidTSFormat
-	case ToProviderCase(loader.destType, LOADED_AT_COLUMN):
+	case warehouseutils.ToProviderCase(loader.destType, LoadedAtColumn):
 		return BQLoadedAtFormat
 	}
 	return ""
 }
 
 func (loader *JsonLoader) AddColumn(columnName, _ string, val interface{}) {
-	providerColumnName := ToProviderCase(loader.destType, columnName)
+	providerColumnName := warehouseutils.ToProviderCase(loader.destType, columnName)
 	loader.columnData[providerColumnName] = val
 }
 
 func (loader *JsonLoader) AddRow(columnNames, row []string) {
 	for i, columnName := range columnNames {
-		providerColumnName := ToProviderCase(loader.destType, columnName)
+		providerColumnName := warehouseutils.ToProviderCase(loader.destType, columnName)
 		loader.columnData[providerColumnName] = row[i]
 	}
 }
@@ -51,19 +53,25 @@ func (loader *JsonLoader) AddEmptyColumn(columnName string) {
 }
 
 func (loader *JsonLoader) WriteToString() (string, error) {
-	jsonData, err := json.Marshal(loader.columnData)
-	if err != nil {
-		pkgLogger.Errorf(`[JSONWriter]: Error writing discardRow to buffer: %v`, err)
-		return "", err
+	var (
+		jsonData []byte
+		err      error
+	)
+
+	if jsonData, err = json.Marshal(loader.columnData); err != nil {
+		return "", fmt.Errorf("json.Marshal: %w", err)
 	}
 	return string(jsonData) + "\n", nil
 }
 
 func (loader *JsonLoader) Write() error {
-	eventData, err := loader.WriteToString()
-	if err != nil {
-		return err
-	}
+	var (
+		eventData string
+		err       error
+	)
 
+	if eventData, err = loader.WriteToString(); err != nil {
+		return fmt.Errorf("writeToString: %w", err)
+	}
 	return loader.fileWriter.WriteGZ(eventData)
 }

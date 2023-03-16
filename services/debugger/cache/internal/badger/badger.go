@@ -21,7 +21,7 @@ loadCacheConfig sets the properties of the cache after reading it from the confi
 This gives a feature of hot readability as well.
 */
 func (e *Cache[E]) loadCacheConfig() {
-	config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.clearFreq") // default clearFreq is 30 seconds
+	config.RegisterDurationConfigVariable(5, &e.ttl, true, time.Minute, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.ttl")
 	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache."+e.origin+".limiter", "LiveEvent.cache.limiter")
 	config.RegisterDurationConfigVariable(1, &e.ticker, false, time.Minute, "LiveEvent.cache."+e.origin+".GCTime", "LiveEvent.cache.GCTime")
 	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache."+e.origin+".queryTimeout", "LiveEvent.cache.queryTimeout")
@@ -29,9 +29,10 @@ func (e *Cache[E]) loadCacheConfig() {
 	config.RegisterIntConfigVariable(5, &e.numMemtables, false, 1, "LiveEvent.cache."+e.origin+".NumMemtables", "LiveEvent.cache.NumMemtables")
 	config.RegisterIntConfigVariable(5, &e.numLevelZeroTables, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTables", "LiveEvent.cache.NumLevelZeroTables")
 	config.RegisterIntConfigVariable(15, &e.numLevelZeroTablesStall, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTablesStall", "LiveEvent.cache.NumLevelZeroTablesStall")
-	// 512 bytes - prefer using Value Log over LSM tree
-	config.RegisterInt64ConfigVariable(512, &e.valueThreshold, false, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
+	// Using the maximum value threshold: (1 << 20) == 1048576 (1MB)
+	config.RegisterInt64ConfigVariable((1 << 20), &e.valueThreshold, false, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
 	config.RegisterBoolConfigVariable(false, &e.syncWrites, false, "LiveEvent.cache."+e.origin+".SyncWrites", "LiveEvent.cache.SyncWrites")
+	config.RegisterBoolConfigVariable(true, &e.cleanupOnStartup, false, "LiveEvent.cache."+e.origin+".CleanupOnStartup", "LiveEvent.cache.CleanupOnStartup")
 }
 
 /*
@@ -46,13 +47,14 @@ type Cache[E any] struct {
 	closed                  chan struct{}
 	ticker                  time.Duration
 	queryTimeout            time.Duration
-	cleanupFreq             time.Duration // TTL time on badgerDB
+	ttl                     time.Duration
 	gcDiscardRatio          float64
 	numMemtables            int
 	numLevelZeroTables      int
 	numLevelZeroTablesStall int
 	valueThreshold          int64
 	syncWrites              bool
+	cleanupOnStartup        bool
 	db                      *badger.DB
 	logger                  logger.Logger
 }
@@ -76,7 +78,7 @@ func (e *Cache[E]) Update(key string, value E) error {
 		if err != nil {
 			return err
 		}
-		entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
+		entry := badger.NewEntry([]byte(key), data).WithTTL(e.ttl)
 		return txn.SetEntry(entry)
 	})
 }
@@ -127,6 +129,11 @@ func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*C
 		return nil, err
 	}
 	storagePath := path.Join(tmpDirPath, badgerPathName)
+	if e.cleanupOnStartup {
+		if err := os.RemoveAll(storagePath); err != nil {
+			e.logger.Warnf("Unable to cleanup badgerDB storage path %q: %v", storagePath, err)
+		}
+	}
 	e.path = storagePath
 	e.done = make(chan struct{})
 	e.closed = make(chan struct{})

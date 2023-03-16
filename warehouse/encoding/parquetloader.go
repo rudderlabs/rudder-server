@@ -1,9 +1,11 @@
-package warehouseutils
+package encoding
 
 import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/xitongsys/parquet-go/types"
 )
@@ -25,7 +27,7 @@ func NewParquetLoader(destType string, w LoadFileWriter) *ParquetLoader {
 }
 
 func (loader *ParquetLoader) IsLoadTimeColumn(columnName string) bool {
-	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
+	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn)
 }
 
 func (*ParquetLoader) GetLoadTimeFormat(_ string) string {
