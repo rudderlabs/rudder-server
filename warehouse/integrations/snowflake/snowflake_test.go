@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
@@ -28,26 +30,34 @@ func TestIntegrationSnowflake(t *testing.T) {
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
+	if _, exists := os.LookupEnv(testhelper.SnowflakeRBACIntegrationTestCredentials); !exists {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeRBACIntegrationTestCredentials)
+	}
 
-	t.SkipNow()
 	t.Parallel()
 
 	snowflake.Init()
 
-	credentials, err := testhelper.SnowflakeCredentials()
+	credentials, err := testhelper.SnowflakeCredentials(testhelper.SnowflakeIntegrationTestCredentials)
+	require.NoError(t, err)
+
+	rbacCrecentials, err := testhelper.SnowflakeCredentials(testhelper.SnowflakeRBACIntegrationTestCredentials)
 	require.NoError(t, err)
 
 	var (
 		provider            = warehouseutils.SNOWFLAKE
 		jobsDB              = testhelper.SetUpJobsDB(t)
 		schema              = testhelper.Schema(provider, testhelper.SnowflakeIntegrationTestSchema)
+		roleSchema          = fmt.Sprintf("%s_%s", schema, "ROLE")
 		sourcesSchema       = fmt.Sprintf("%s_%s", schema, "SOURCES")
 		caseSensitiveSchema = fmt.Sprintf("%s_%s", schema, "CS")
+		database            = credentials.Database
 	)
 
 	testcase := []struct {
 		name                          string
-		dbName                        string
+		credentials                   snowflake.Credentials
+		database                      string
 		schema                        string
 		writeKey                      string
 		sourceID                      string
@@ -64,7 +74,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 	}{
 		{
 			name:          "Upload Job with Normal Database",
-			dbName:        credentials.DBName,
+			credentials:   credentials,
+			database:      database,
 			schema:        schema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
@@ -78,8 +89,25 @@ func TestIntegrationSnowflake(t *testing.T) {
 			},
 		},
 		{
+			name:          "Upload Job with Role",
+			credentials:   rbacCrecentials,
+			database:      database,
+			schema:        roleSchema,
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:      "2eSafstqwcFYUILzXv2fcNIrWO7",
+			sourceID:      "24p1HhPsafaFBMKuzvx7GshCLKR",
+			destinationID: "24qeADObsdsJhijDnEppO6P1SNc",
+			stagingFilesEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+			},
+			stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+			},
+		},
+		{
 			name:          "Upload Job with Case Sensitive Database",
-			dbName:        strings.ToLower(credentials.DBName),
+			credentials:   credentials,
+			database:      strings.ToLower(database),
 			schema:        caseSensitiveSchema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
@@ -94,7 +122,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 		},
 		{
 			name:          "Async Job with Sources",
-			dbName:        credentials.DBName,
+			credentials:   credentials,
+			database:      database,
 			schema:        sourcesSchema,
 			tables:        []string{"tracks", "google_sheet"},
 			writeKey:      "2eSJyYtqwcFYerwzXv2fcNIrWO7",
@@ -121,8 +150,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			credentialsCopy := credentials
-			credentialsCopy.DBName = tc.dbName
+			credentialsCopy := tc.credentials
+			credentialsCopy.Database = tc.database
 
 			db, err := snowflake.Connect(credentialsCopy)
 			require.NoError(t, err)
@@ -131,7 +160,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 				require.NoError(
 					t,
 					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, tc.schema))
+						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
 						return
 					}),
 					fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema),
@@ -182,12 +211,12 @@ func TestConfigurationValidationSnowflake(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
 
-	t.SkipNow()
 	t.Parallel()
 
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	snowflake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

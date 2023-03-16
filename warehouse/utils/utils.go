@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
@@ -90,13 +92,10 @@ const (
 )
 
 const (
-	BQLoadedAtFormat         = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat           = "2006-01-02 15:04:05 Z"
 	DatalakeTimeWindowFormat = "2006/01/02/15"
 )
 
 const (
-	CTInvalidStep        = "Invalid step"
 	CTStagingTablePrefix = "setup_test_staging"
 )
 
@@ -129,7 +128,6 @@ const (
 	AWSAccessKey         = "accessKey"
 	AWSAccessSecret      = "accessKeyID"
 	AWSBucketNameConfig  = "bucketName"
-	AWSRegion            = "region"
 	AWSS3Prefix          = "prefix"
 	MinioAccessKeyID     = "accessKeyID"
 	MinioSecretAccessKey = "secretAccessKey"
@@ -192,10 +190,8 @@ const (
 
 var (
 	pkgLogger              logger.Logger
-	useParquetLoadFilesRS  bool
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string
-	parquetParallelWriters int64
 )
 
 var (
@@ -214,18 +210,6 @@ func loadConfig() {
 	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
-	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
-	config.RegisterInt64ConfigVariable(8, &parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
-}
-
-type Warehouse struct {
-	WorkspaceID string
-	Source      backendconfig.SourceT
-	Destination backendconfig.DestinationT
-	Namespace   string
-	Type        string
-	Identifier  string
 }
 
 type DeleteByMetaData struct {
@@ -247,40 +231,27 @@ type ColumnInfo struct {
 	Type  string
 }
 
-func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
-	destConfig := w.Destination.Config
-	if destConfig[key] != nil {
-		if val, ok := destConfig[key].(bool); ok {
-			return val
-		}
-	}
-	return false
-}
-
-type DestinationT struct {
+type Destination struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 }
 
-type (
-	SchemaT      map[string]TableSchemaT
-	TableSchemaT map[string]string
-)
+type Schema model.Schema
 
 type KeyValue struct {
 	Key   string
 	Value interface{}
 }
 
-type UploaderI interface {
-	GetSchemaInWarehouse() SchemaT
-	GetLocalSchema() SchemaT
-	UpdateLocalSchema(schema SchemaT) error
-	GetTableSchemaInWarehouse(tableName string) TableSchemaT
-	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFilesMetadata(options GetLoadFilesOptionsT) []LoadFileT
+type Uploader interface {
+	GetSchemaInWarehouse() model.Schema
+	GetLocalSchema() model.Schema
+	UpdateLocalSchema(schema model.Schema) error
+	GetTableSchemaInWarehouse(tableName string) model.TableSchema
+	GetTableSchemaInUpload(tableName string) model.TableSchema
+	GetLoadFilesMetadata(options GetLoadFilesOptions) []LoadFile
 	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetSingleLoadFile(tableName string) (LoadFileT, error)
+	GetSingleLoadFile(tableName string) (LoadFile, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
@@ -288,14 +259,14 @@ type UploaderI interface {
 	GetFirstLastEvent() (time.Time, time.Time)
 }
 
-type GetLoadFilesOptionsT struct {
+type GetLoadFilesOptions struct {
 	Table   string
 	StartID int64
 	EndID   int64
 	Limit   int64
 }
 
-type LoadFileT struct {
+type LoadFile struct {
 	Location string
 	Metadata json.RawMessage
 }
@@ -304,12 +275,12 @@ func IDResolutionEnabled() bool {
 	return enableIDResolution
 }
 
-type TableSchemaDiffT struct {
+type TableSchemaDiff struct {
 	Exists           bool
 	TableToBeCreated bool
-	ColumnMap        map[string]string
-	UpdatedSchema    map[string]string
-	AlteredColumnMap map[string]string
+	ColumnMap        model.TableSchema
+	UpdatedSchema    model.TableSchema
+	AlteredColumnMap model.TableSchema
 }
 
 type QueryResult struct {
@@ -317,28 +288,21 @@ type QueryResult struct {
 	Values  [][]string
 }
 
-type PendingEventsRequestT struct {
+type PendingEventsRequest struct {
 	SourceID  string `json:"source_id"`
 	TaskRunID string `json:"task_run_id"`
 }
 
-type PendingEventsResponseT struct {
+type PendingEventsResponse struct {
 	PendingEvents            bool  `json:"pending_events"`
 	PendingStagingFilesCount int64 `json:"pending_staging_files"`
 	PendingUploadCount       int64 `json:"pending_uploads"`
+	AbortedEvents            bool  `json:"aborted_events"`
 }
 
-type TriggerUploadRequestT struct {
+type TriggerUploadRequest struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
-}
-
-type LoadFileWriterI interface {
-	WriteGZ(s string) error
-	Write(p []byte) (int, error)
-	WriteRow(r []interface{}) error
-	Close() error
-	GetLoadFile() *os.File
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
@@ -379,7 +343,7 @@ func GetObjectFolder(provider, location string) (folder string) {
 	case S3:
 		folder = GetS3LocationFolder(location)
 	case GCS:
-		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
+		folder = GetGCSLocationFolder(location, GCSLocationOptions{TLDFormat: "gcs"})
 	case AZURE_BLOB:
 		folder = GetAzureBlobLocationFolder(location)
 	}
@@ -395,7 +359,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	case S3:
 		folder = GetS3LocationFolder(location)
 	case GCS:
-		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gs"})
+		folder = GetGCSLocationFolder(location, GCSLocationOptions{TLDFormat: "gs"})
 	case AZURE_BLOB:
 		blobUrl, _ := url.Parse(location)
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
@@ -407,7 +371,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	return
 }
 
-func GetColumnsFromTableSchema(schema TableSchemaT) []string {
+func GetColumnsFromTableSchema(schema model.TableSchema) []string {
 	keys := reflect.ValueOf(schema).MapKeys()
 	strKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
@@ -423,7 +387,7 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 	case S3:
 		objectLocation, _ = GetS3Location(location)
 	case GCS:
-		objectLocation = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
+		objectLocation = GetGCSLocation(location, GCSLocationOptions{TLDFormat: "gcs"})
 	case AZURE_BLOB:
 		objectLocation = GetAzureBlobLocation(location)
 	}
@@ -433,14 +397,14 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
 func GetObjectName(location string, providerConfig interface{}, objectProvider string) (objectName string, err error) {
-	var config map[string]interface{}
+	var destConfig map[string]interface{}
 	var ok bool
-	if config, ok = providerConfig.(map[string]interface{}); !ok {
+	if destConfig, ok = providerConfig.(map[string]interface{}); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
 	fm, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: objectProvider,
-		Config:   config,
+		Config:   destConfig,
 	})
 	if err != nil {
 		return "", err
@@ -492,14 +456,14 @@ func GetS3LocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-type GCSLocationOptionsT struct {
+type GCSLocationOptions struct {
 	TLDFormat string
 }
 
 // GetGCSLocation parses path-style location http url to return in gcs:// format
 // https://storage.googleapis.com/test-bucket/test-object.csv --> gcs://test-bucket/test-object.csv
 // tldFormat is used to set return format "<tldFormat>://..."
-func GetGCSLocation(location string, options GCSLocationOptionsT) string {
+func GetGCSLocation(location string, options GCSLocationOptions) string {
 	tld := "gs"
 	if options.TLDFormat != "" {
 		tld = options.TLDFormat
@@ -511,13 +475,13 @@ func GetGCSLocation(location string, options GCSLocationOptionsT) string {
 
 // GetGCSLocationFolder returns the folder path for a gcs object
 // https://storage.googleapis.com/test-bucket/myfolder/test-object.csv --> gcs://test-bucket/myfolder
-func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
+func GetGCSLocationFolder(location string, options GCSLocationOptions) string {
 	s3Location := GetGCSLocation(location, options)
 	lastPos := strings.LastIndex(s3Location, "/")
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocations(loadFiles []LoadFileT, options GCSLocationOptionsT) (gcsLocations []string) {
+func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptions) (gcsLocations []string) {
 	for _, loadFile := range loadFiles {
 		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}
@@ -539,15 +503,15 @@ func GetAzureBlobLocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
+func GetS3Locations(loadFiles []LoadFile) []LoadFile {
 	for idx, loadFile := range loadFiles {
 		loadFiles[idx].Location, _ = GetS3Location(loadFile.Location)
 	}
 	return loadFiles
 }
 
-func JSONSchemaToMap(rawMsg json.RawMessage) SchemaT {
-	schema := make(SchemaT)
+func JSONSchemaToMap(rawMsg json.RawMessage) model.Schema {
+	schema := make(model.Schema)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))
@@ -647,18 +611,22 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	return provider
 }
 
-func GetConfigValue(key string, warehouse Warehouse) (val string) {
-	config := warehouse.Destination.Config
-	if config[key] != nil {
-		val, _ = config[key].(string)
+func GetConfigValue(key string, warehouse model.Warehouse) (val string) {
+	configKey := fmt.Sprintf("Warehouse.pipeline.%s.%s.%s", warehouse.Source.ID, warehouse.Destination.ID, key)
+	if config.IsSet(configKey) {
+		return config.GetString(configKey, "")
+	}
+	destConfig := warehouse.Destination.Config
+	if destConfig[key] != nil {
+		val, _ = destConfig[key].(string)
 	}
 	return val
 }
 
-func GetConfigValueBoolString(key string, warehouse Warehouse) string {
-	config := warehouse.Destination.Config
-	if config[key] != nil {
-		if val, ok := config[key].(bool); ok {
+func GetConfigValueBoolString(key string, warehouse model.Warehouse) string {
+	destConfig := warehouse.Destination.Config
+	if destConfig[key] != nil {
+		if val, ok := destConfig[key].(bool); ok {
 			if val {
 				return "true"
 			}
@@ -677,7 +645,7 @@ func GetConfigValueAsMap(key string, config map[string]interface{}) map[string]i
 	return value
 }
 
-func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
+func SortColumnKeysFromColumnMap(columnMap model.TableSchema) []string {
 	columnKeys := make([]string, 0, len(columnMap))
 	for k := range columnMap {
 		columnKeys = append(columnKeys, k)
@@ -686,7 +654,7 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	return columnKeys
 }
 
-func IdentityMergeRulesTableName(warehouse Warehouse) string {
+func IdentityMergeRulesTableName(warehouse model.Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -698,11 +666,11 @@ func IdentityMappingsWarehouseTableName(provider string) string {
 	return ToProviderCase(provider, IdentityMappingsTable)
 }
 
-func IdentityMappingsTableName(warehouse Warehouse) string {
+func IdentityMappingsTableName(warehouse model.Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func IdentityMappingsUniqueMappingConstraintName(warehouse Warehouse) string {
+func IdentityMappingsUniqueMappingConstraintName(warehouse model.Warehouse) string {
 	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -816,7 +784,7 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
+func WHCounterStat(name string, warehouse *model.Warehouse, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      WAREHOUSE,
 		"destType":    warehouse.Type,
@@ -930,9 +898,6 @@ func GetLoadFileType(wh string) string {
 	case BQ:
 		return LOAD_FILE_TYPE_JSON
 	case RS:
-		if useParquetLoadFilesRS {
-			return LOAD_FILE_TYPE_PARQUET
-		}
 		return LOAD_FILE_TYPE_CSV
 	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
 		return LOAD_FILE_TYPE_PARQUET
@@ -950,39 +915,12 @@ func GetLoadFileFormat(whType string) string {
 	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
 		return "parquet"
 	case RS:
-		if useParquetLoadFilesRS {
-			return "parquet"
-		}
 		return "csv.gz"
 	case DELTALAKE:
 		return "csv.gz"
 	default:
 		return "csv.gz"
 	}
-}
-
-func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(config.GetWorkspaceToken(), "")
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = io.ReadAll(resp.Body)
-		func() { httputil.CloseResponse(resp) }()
-	}
-
-	return respBody, nil
 }
 
 func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, timeout time.Duration) ([]byte, error) {

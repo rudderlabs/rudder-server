@@ -13,18 +13,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/lib/pq"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/tidwall/gjson"
 )
 
 var pkgLogger logger.Logger
@@ -137,14 +140,17 @@ var partitionKeyMap = map[string]string{
 }
 
 type Redshift struct {
-	DB                            *sql.DB
-	Namespace                     string
-	Warehouse                     warehouseutils.Warehouse
-	Uploader                      warehouseutils.UploaderI
-	ConnectTimeout                time.Duration
-	Logger                        logger.Logger
+	DB             *sql.DB
+	Namespace      string
+	Warehouse      model.Warehouse
+	Uploader       warehouseutils.Uploader
+	ConnectTimeout time.Duration
+	Logger         logger.Logger
+	stats          stats.Stats
+
 	DedupWindow                   bool
 	DedupWindowInHours            time.Duration
+	SkipDedupDestinationIDs       []string
 	SkipComputingUserLatestTraits bool
 	EnableDeleteByJobs            bool
 }
@@ -176,6 +182,7 @@ type RedshiftCredentials struct {
 func NewRedshift() *Redshift {
 	return &Redshift{
 		Logger: pkgLogger,
+		stats:  stats.Default,
 	}
 }
 
@@ -184,8 +191,9 @@ func Init() {
 }
 
 func WithConfig(h *Redshift, config *config.Config) {
-	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", true)
+	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", false)
 	h.DedupWindowInHours = config.GetDuration("Warehouse.redshift.dedupWindowInHours", 720, time.Hour)
+	h.SkipDedupDestinationIDs = config.GetStringSlice("Warehouse.redshift.skipDedupDestinationIDs", nil)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
 }
@@ -195,7 +203,7 @@ func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	// TODO: do we need sorted order here?
 	var keys []string
 	for colName := range columns {
@@ -210,7 +218,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (rs *Redshift) CreateTable(tableName string, columns map[string]string) (err error) {
+func (rs *Redshift) CreateTable(tableName string, columns model.TableSchema) (err error) {
 	name := fmt.Sprintf(`%q.%q`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
@@ -244,24 +252,54 @@ func (rs *Redshift) schemaExists(_ string) (exists bool, err error) {
 
 func (rs *Redshift) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
 	for _, columnInfo := range columnsInfo {
+		columnType := getRSDataType(columnInfo.Type)
 		query := fmt.Sprintf(`
-		ALTER TABLE
-		  %q.%q
-		ADD
-		  COLUMN %q %s;
+			ALTER TABLE
+			  %q.%q
+			ADD
+			  COLUMN %q %s;
 	`,
 			rs.Namespace,
 			tableName,
 			columnInfo.Name,
-			getRSDataType(columnInfo.Type),
+			columnType,
 		)
-		rs.Logger.Infof("AZ: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
+		rs.Logger.Infof("RS: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
 
 		if _, err := rs.DB.Exec(query); err != nil {
+			if CheckAndIgnoreColumnAlreadyExistError(err) {
+				rs.Logger.Infow("column already exists",
+					logfield.SourceID, rs.Warehouse.Source.ID,
+					logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+					logfield.DestinationID, rs.Warehouse.Destination.ID,
+					logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+					logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+					logfield.Schema, rs.Namespace,
+					logfield.TableName, tableName,
+					logfield.ColumnName, columnInfo.Name,
+					logfield.ColumnType, columnType,
+					logfield.Error, err.Error(),
+					logfield.Query, query,
+				)
+				continue
+			}
+
 			return err
 		}
 	}
 	return nil
+}
+
+func CheckAndIgnoreColumnAlreadyExistError(err error) bool {
+	if err != nil {
+		if e, ok := err.(*pq.Error); ok {
+			if e.Code == "42701" {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 func (rs *Redshift) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
@@ -304,8 +342,8 @@ func (rs *Redshift) createSchema() (err error) {
 	return
 }
 
-func (rs *Redshift) generateManifest(tableName string, _ map[string]string) (string, error) {
-	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+func (rs *Redshift) generateManifest(tableName string) (string, error) {
+	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3Manifest
 	for idx, loadFile := range loadFiles {
@@ -370,12 +408,41 @@ func (rs *Redshift) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
-	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload)
+func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
+	var (
+		err              error
+		query            string
+		stagingTableName string
+		rowsAffected     int64
+		txn              *sql.Tx
+		result           sql.Result
+	)
+
+	rs.Logger.Infow("started loading",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Namespace, rs.Namespace,
+		logfield.TableName, tableName,
+	)
+
+	manifestLocation, err := rs.generateManifest(tableName)
 	if err != nil {
-		return
+		return "", fmt.Errorf("generating manifest: %w", err)
 	}
-	rs.Logger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
+
+	rs.Logger.Infow("Generated manifest",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Namespace, rs.Namespace,
+		logfield.TableName, tableName,
+		"manifestLocation", manifestLocation,
+	)
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
@@ -384,10 +451,10 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	}, ",")
 
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)
-	if err != nil {
-		return
+	if err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload); err != nil {
+		return "", fmt.Errorf("creating staging table: %w", err)
 	}
+
 	if !skipTempTableDelete {
 		defer rs.dropStagingTables([]string{stagingTableName})
 	}
@@ -397,43 +464,114 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		region = "us-east-1"
 	}
 
-	// BEGIN TRANSACTION
-	tx, err := rs.DB.Begin()
-	if err != nil {
-		return
-	}
 	// create session token and temporary credentials
 	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
-		rs.Logger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
-		tx.Rollback()
-		return
+		rs.Logger.Warnw("getting temporary s3 credentials",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.TableName, tableName,
+			logfield.Error, err.Error(),
+		)
+		return "", fmt.Errorf("getting temporary s3 credentials: %w", err)
 	}
 
-	var sqlStatement string
+	if txn, err = rs.DB.Begin(); err != nil {
+		return "", fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = txn.Rollback()
+		}
+	}()
+
 	if rs.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		// copy statement for parquet load files
-		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' MANIFEST FORMAT PARQUET`, fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName), manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token)
+		query = fmt.Sprintf(`
+			COPY %v
+			FROM '%s'
+			ACCESS_KEY_ID '%s'
+			SECRET_ACCESS_KEY '%s'
+			SESSION_TOKEN '%s'
+			MANIFEST
+			FORMAT PARQUET;
+		`,
+			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName),
+			manifestS3Location,
+			tempAccessKeyId,
+			tempSecretAccessKey,
+			token,
+		)
 	} else {
-		// copy statement for csv load files
-		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
+		query = fmt.Sprintf(`
+			COPY %v(%v)
+			FROM '%v'
+			CSV
+			GZIP
+			ACCESS_KEY_ID '%s'
+			SECRET_ACCESS_KEY '%s'
+			SESSION_TOKEN '%s'
+			REGION '%s'
+			DATEFORMAT 'auto'
+			TIMEFORMAT 'auto'
+			MANIFEST
+			TRUNCATECOLUMNS
+			EMPTYASNULL
+			BLANKSASNULL
+			FILLRECORD
+			ACCEPTANYDATE
+			TRIMBLANKS
+			ACCEPTINVCHARS
+			COMPUPDATE OFF
+			STATUPDATE OFF;
+		`,
+			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName),
+			sortedColumnNames,
+			manifestS3Location,
+			tempAccessKeyId,
+			tempSecretAccessKey,
+			token,
+			region,
+		)
 	}
 
-	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
+	sanitisedQuery, regexErr := misc.ReplaceMultiRegex(query, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
 		"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
 	})
-	if regexErr == nil {
-		rs.Logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+	if regexErr != nil {
+		sanitisedQuery = ""
 	}
 
-	_, err = tx.Exec(sqlStatement)
-	if err != nil {
-		rs.Logger.Errorf("RS: Error running COPY command: %v\n", err)
-		tx.Rollback()
-		return
+	rs.Logger.Infow("copy command",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Namespace, rs.Namespace,
+		logfield.TableName, tableName,
+		logfield.Query, sanitisedQuery,
+	)
+
+	if _, err := txn.Exec(query); err != nil {
+		rs.Logger.Warnw("failure running copy command",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.TableName, tableName,
+			logfield.Query, sanitisedQuery,
+			logfield.Error, err.Error(),
+		)
+
+		return "", fmt.Errorf("running copy command: %w", err)
 	}
 
 	var (
@@ -448,7 +586,9 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		partitionKey = column
 	}
 
-	sqlStatement = fmt.Sprintf(`
+	// Deduplication
+	// Delete rows from the table which are already present in the staging table
+	query = fmt.Sprintf(`
 		DELETE FROM
 			%[1]s.%[2]q
 		USING
@@ -464,8 +604,8 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 
 	if rs.DedupWindow {
 		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
-			sqlStatement += fmt.Sprintf(`
-				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d DAY'
+			query += fmt.Sprintf(`
+				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d HOUR'
 `,
 				rs.Namespace,
 				tableName,
@@ -475,7 +615,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	}
 
 	if tableName == warehouseutils.DiscardsTable {
-		sqlStatement += fmt.Sprintf(`
+		query += fmt.Sprintf(`
 			AND _source.%[3]s = %[1]s.%[2]q.%[3]s
 			AND _source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
@@ -486,62 +626,202 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 	}
 
-	rs.Logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
-	if err != nil {
-		rs.Logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
-		return
+	if !slices.Contains(rs.SkipDedupDestinationIDs, rs.Warehouse.Destination.ID) {
+		rs.Logger.Infow("deduplication",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.TableName, tableName,
+			logfield.Query, query,
+		)
+
+		if result, err = txn.Exec(query); err != nil {
+			rs.Logger.Warnw("deleting from original table for dedup",
+				logfield.SourceID, rs.Warehouse.Source.ID,
+				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, rs.Warehouse.Destination.ID,
+				logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+				logfield.Namespace, rs.Namespace,
+				logfield.TableName, tableName,
+				logfield.Query, query,
+				logfield.Error, err.Error(),
+			)
+			return "", fmt.Errorf("deleting from original table for dedup: %w", err)
+		}
+
+		if rowsAffected, err = result.RowsAffected(); err != nil {
+			rs.Logger.Warnw("getting rows affected for dedup",
+				logfield.SourceID, rs.Warehouse.Source.ID,
+				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, rs.Warehouse.Destination.ID,
+				logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+				logfield.Namespace, rs.Namespace,
+				logfield.TableName, tableName,
+				logfield.Query, query,
+				logfield.Error, err.Error(),
+			)
+
+			return "", fmt.Errorf("getting rows affected for dedup: %w", err)
+		}
+
+		rs.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
+			"sourceID":    rs.Warehouse.Source.ID,
+			"sourceType":  rs.Warehouse.Source.SourceDefinition.Name,
+			"destID":      rs.Warehouse.Destination.ID,
+			"destType":    rs.Warehouse.Destination.DestinationDefinition.Name,
+			"workspaceId": rs.Warehouse.WorkspaceID,
+			"namespace":   rs.Namespace,
+			"tableName":   tableName,
+		}).Count(int(rowsAffected))
 	}
 
+	// Deduplication
+	// Insert rows from staging table to the original table
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strKeys)
+	query = fmt.Sprintf(`
+		INSERT INTO %[1]q.%[2]q (%[3]s)
+		SELECT
+		  %[3]s
+		FROM
+		  (
+			SELECT
+			  *,
+			  row_number() OVER (
+				PARTITION BY %[5]s
+				ORDER BY
+				  received_at ASC
+			  ) AS _rudder_staging_row_number
+			FROM
+			  %[1]q.%[4]q
+		  ) AS _
+		WHERE
+		  _rudder_staging_row_number = 1;
+`,
+		rs.Namespace,
+		tableName,
+		quotedColumnNames,
+		stagingTableName,
+		partitionKey,
+	)
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
-	rs.Logger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
+	rs.Logger.Infow("inserting into original table",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Namespace, rs.Namespace,
+		logfield.TableName, tableName,
+		logfield.Query, query,
+	)
 
-	if err != nil {
-		rs.Logger.Errorf("RS: Error inserting into original table: %v\n", err)
-		tx.Rollback()
-		return
+	if _, err = txn.Exec(query); err != nil {
+		rs.Logger.Warnw("failed inserting into original table",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.TableName, tableName,
+			logfield.Error, err.Error(),
+		)
+
+		return "", fmt.Errorf("inserting into original table: %w", err)
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		rs.Logger.Errorf("RS: Error in transaction commit: %v\n", err)
-		tx.Rollback()
-		return
+	if err = txn.Commit(); err != nil {
+		rs.Logger.Warnw("committing transaction",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.TableName, tableName,
+			logfield.Error, err.Error(),
+		)
+
+		return "", fmt.Errorf("committing transaction: %w", err)
 	}
-	rs.Logger.Infof("RS: Complete load for table:%s\n", tableName)
-	return
+
+	rs.Logger.Infow("completed loading",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Namespace, rs.Namespace,
+		logfield.TableName, tableName,
+	)
+
+	return stagingTableName, nil
 }
 
-func (rs *Redshift) loadUserTables() (errorMap map[string]error) {
-	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
-	rs.Logger.Infof("RS: Starting load for identifies and users tables\n")
+func (rs *Redshift) loadUserTables() map[string]error {
+	var (
+		err                  error
+		query                string
+		identifyStagingTable string
+		txn                  *sql.Tx
+		userColNames         []string
+		firstValProps        []string
+	)
 
-	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable), true)
+	rs.Logger.Infow("started loading for identifies and users tables",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Namespace, rs.Namespace,
+	)
+
+	identifyStagingTable, err = rs.loadTable(
+		warehouseutils.IdentifiesTable,
+		rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable),
+		rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable),
+		true,
+	)
 	if err != nil {
-		errorMap[warehouseutils.IdentifiesTable] = err
-		return
+		return map[string]error{
+			warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err),
+		}
 	}
+
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
 	if len(rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
-		return
+		return map[string]error{
+			warehouseutils.IdentifiesTable: nil,
+		}
 	}
-	errorMap[warehouseutils.UsersTable] = nil
 
 	if rs.SkipComputingUserLatestTraits {
-		_, err := rs.loadTable(warehouseutils.UsersTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable), false)
+		_, err := rs.loadTable(
+			warehouseutils.UsersTable,
+			rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
+			rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable),
+			false,
+		)
 		if err != nil {
-			errorMap[warehouseutils.UsersTable] = err
+			return map[string]error{
+				warehouseutils.IdentifiesTable: nil,
+				warehouseutils.UsersTable:      fmt.Errorf("loading users table: %w", err),
+			}
 		}
-		return
+		return map[string]error{
+			warehouseutils.IdentifiesTable: nil,
+			warehouseutils.UsersTable:      nil,
+		}
 	}
 
 	userColMap := rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
-	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		// do not reference uuid in queries as it can be an autoincrement field set by segment compatible tables
 		if colName == "id" || colName == "user_id" || colName == "uuid" {
@@ -554,77 +834,192 @@ func (rs *Redshift) loadUserTables() (errorMap map[string]error) {
 
 	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
-										(
-											SELECT
-											id, %[3]s
-											FROM (
-												(
-													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT DISTINCT(user_id) FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
-												) UNION
-												(
-													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL
-												)
-											)
-										)
-									)`,
-		rs.Namespace,                     // 1
-		stagingTableName,                 // 2
-		strings.Join(firstValProps, ","), // 3
-		warehouseutils.UsersTable,        // 4
-		identifyStagingTable,             // 5
-		quotedUserColNames,               // 6
+	query = fmt.Sprintf(`
+		CREATE TABLE %[1]q.%[2]q AS (
+		  SELECT
+			DISTINCT *
+		  FROM
+			(
+			  SELECT
+				id,
+				%[3]s
+			  FROM
+				(
+				  (
+					SELECT
+					  id,
+					  %[6]s
+					FROM
+					  %[1]q.%[4]q
+					WHERE
+					  id in (
+						SELECT
+						  DISTINCT(user_id)
+						FROM
+						  %[1]q.%[5]q
+						WHERE
+						  user_id IS NOT NULL
+					  )
+				  )
+				  UNION
+					(
+					  SELECT
+						user_id,
+						%[6]s
+					  FROM
+						%[1]q.%[5]q
+					  WHERE
+						user_id IS NOT NULL
+					)
+				)
+			)
+		);
+`,
+		rs.Namespace,
+		stagingTableName,
+		strings.Join(firstValProps, ","),
+		warehouseutils.UsersTable,
+		identifyStagingTable,
+		quotedUserColNames,
 	)
 
-	// BEGIN TRANSACTION
-	tx, err := rs.DB.Begin()
-	if err != nil {
-		errorMap[warehouseutils.UsersTable] = err
-		return
+	if txn, err = rs.DB.Begin(); err != nil {
+		return map[string]error{
+			warehouseutils.IdentifiesTable: fmt.Errorf("beginning transaction: %w", err),
+		}
 	}
 
-	_, err = tx.Exec(sqlStatement)
-	if err != nil {
-		rs.Logger.Errorf("RS: Creating staging table for users failed: %s\n", sqlStatement)
-		rs.Logger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
-		tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
-		return
+	if _, err = txn.Exec(query); err != nil {
+		_ = txn.Rollback()
+
+		rs.Logger.Warnw("creating staging table for users",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.TableName, warehouseutils.UsersTable,
+			logfield.Error, err.Error(),
+		)
+		return map[string]error{
+			warehouseutils.IdentifiesTable: nil,
+			warehouseutils.UsersTable:      fmt.Errorf("creating staging table for users: %w", err),
+		}
 	}
 	defer rs.dropStagingTables([]string{stagingTableName})
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
+	query = fmt.Sprintf(`
+		DELETE FROM
+		  %[1]s.%[2]q USING %[1]s.%[3]q _source
+		WHERE
+		  (
+			_source.%[4]s = %[1]s.%[2]s.%[4]s
+		  );
+`,
+		rs.Namespace,
+		warehouseutils.UsersTable,
+		stagingTableName,
+		primaryKey,
+	)
 
-	_, err = tx.Exec(sqlStatement)
-	if err != nil {
-		rs.Logger.Errorf("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-		rs.Logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
-		return
+	if _, err = txn.Exec(query); err != nil {
+		_ = txn.Rollback()
+
+		rs.Logger.Warnw("deleting from users table for dedup",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.Query, query,
+			logfield.TableName, warehouseutils.UsersTable,
+			logfield.Error, err.Error(),
+		)
+		return map[string]error{
+			warehouseutils.UsersTable: fmt.Errorf("deleting from original table for dedup: %w", err),
+		}
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)))
-	rs.Logger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable,
-		sqlStatement)
-	_, err = tx.Exec(sqlStatement)
+	query = fmt.Sprintf(`
+		INSERT INTO %[1]q.%[2]q (%[4]s)
+		SELECT
+		  %[4]s
+		FROM
+		  %[1]q.%[3]q;
+`,
+		rs.Namespace,
+		warehouseutils.UsersTable,
+		stagingTableName,
+		warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)),
+	)
 
-	if err != nil {
-		rs.Logger.Errorf("RS: Error inserting into users table from staging table: %v\n", err)
-		tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
-		return
+	rs.Logger.Infow("inserting into users table",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Namespace, rs.Namespace,
+		logfield.TableName, warehouseutils.UsersTable,
+		logfield.Query, query,
+	)
+
+	if _, err = txn.Exec(query); err != nil {
+		_ = txn.Rollback()
+
+		rs.Logger.Warnw("failed inserting into users table",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.TableName, warehouseutils.UsersTable,
+			logfield.Error, err.Error(),
+		)
+
+		return map[string]error{
+			warehouseutils.IdentifiesTable: nil,
+			warehouseutils.UsersTable:      fmt.Errorf("inserting into users table from staging table: %w", err),
+		}
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		rs.Logger.Errorf("RS: Error in transaction commit for users table: %v\n", err)
-		tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
-		return
+	if err = txn.Commit(); err != nil {
+		_ = txn.Rollback()
+
+		rs.Logger.Warnw("committing transaction for user table",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Namespace, rs.Namespace,
+			logfield.TableName, warehouseutils.UsersTable,
+			logfield.Error, err.Error(),
+		)
+
+		return map[string]error{
+			warehouseutils.IdentifiesTable: nil,
+			warehouseutils.UsersTable:      fmt.Errorf("committing transaction: %w", err),
+		}
 	}
-	return
+
+	rs.Logger.Infow("completed loading for users and identifies tables",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Namespace, rs.Namespace,
+	)
+
+	return map[string]error{
+		warehouseutils.IdentifiesTable: nil,
+		warehouseutils.UsersTable:      nil,
+	}
 }
 
 func Connect(cred RedshiftCredentials) (*sql.DB, error) {
@@ -686,7 +1081,7 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 		rs.Logger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
 		return false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -876,17 +1271,17 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace
-func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := `
 			SELECT
@@ -915,7 +1310,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			sqlStatement)
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var tName, cName, cType string
 		var charLength sql.NullInt64
@@ -925,7 +1320,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(model.TableSchema)
 		}
 		if datatype, ok := dataTypesMapToRudder[cType]; ok {
 			if datatype == "string" && charLength.Int64 > rudderStringLength {
@@ -934,7 +1329,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(map[string]string)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
@@ -944,7 +1339,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	return
 }
 
-func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
@@ -953,13 +1348,13 @@ func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader warehouse
 	return err
 }
 
-func (rs *Redshift) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (rs *Redshift) TestConnection(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.DB, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
-	defer rs.DB.Close()
+	defer func() { _ = rs.DB.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
 	defer cancel()
@@ -978,23 +1373,23 @@ func (rs *Redshift) TestConnection(warehouse warehouseutils.Warehouse) (err erro
 func (rs *Redshift) Cleanup() {
 	if rs.DB != nil {
 		rs.dropDanglingStagingTables()
-		rs.DB.Close()
+		_ = rs.DB.Close()
 	}
 }
 
-func (rs *Redshift) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
+func (rs *Redshift) CrashRecover(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.DB, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
-	defer rs.DB.Close()
+	defer func() { _ = rs.DB.Close() }()
 	rs.dropDanglingStagingTables()
 	return
 }
 
-func (*Redshift) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*Redshift) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -1035,7 +1430,7 @@ func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) 
 	return total, err
 }
 
-func (rs *Redshift) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (rs *Redshift) Connect(warehouse model.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())

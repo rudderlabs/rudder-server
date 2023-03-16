@@ -18,13 +18,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -33,10 +35,10 @@ import (
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/middleware"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -98,7 +100,7 @@ var (
 	gwAllowPartialWriteWithErrors                                                     bool
 	pkgLogger                                                                         logger.Logger
 	Diagnostics                                                                       diagnostics.DiagnosticsI
-	semverRegexp                                                                      *regexp.Regexp = regexp.MustCompile(`^v?([0-9]+)(\.[0-9]+)?(\.[0-9]+)?(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?$`)
+	semverRegexp                                                                      = regexp.MustCompile(`^v?([0-9]+)(\.[0-9]+)?(\.[0-9]+)?(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?$`)
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -114,6 +116,7 @@ var BatchEvent = []byte(`
 const (
 	DELIMITER                 = string("<<>>")
 	eventStreamSourceCategory = "eventStream"
+	extractEvent              = "extract"
 )
 
 func Init() {
@@ -145,7 +148,6 @@ type userWebRequestWorkerT struct {
 	webRequestQ                 chan *webRequestT
 	batchRequestQ               chan *batchWebRequestT
 	reponseQ                    chan map[uuid.UUID]string
-	workerID                    int
 	batchTimeStat               stats.Measurement
 	bufferFullStat, timeOutStat stats.Measurement
 }
@@ -159,7 +161,7 @@ type HandleT struct {
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
-	rateLimiter                  ratelimiter.RateLimiter
+	rateLimiter                  throttler.Throttler
 
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.Measurement
@@ -203,17 +205,13 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		gateway.logger.Debug("User Web Request Worker Started", i)
-		tags := map[string]string{
-			"workerId": strconv.Itoa(i),
-		}
 		userWebRequestWorker := &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
-			workerID:       i,
-			batchTimeStat:  gateway.stats.NewTaggedStat("gateway.batch_time", stats.TimerType, tags),
-			bufferFullStat: gateway.stats.NewTaggedStat("gateway.user_request_worker_buffer_full", stats.CountType, tags),
-			timeOutStat:    gateway.stats.NewTaggedStat("gateway.user_request_worker_time_out", stats.CountType, tags),
+			batchTimeStat:  gateway.stats.NewStat("gateway.batch_time", stats.TimerType),
+			bufferFullStat: gateway.stats.NewStat("gateway.user_request_worker_buffer_full", stats.CountType),
+			timeOutStat:    gateway.stats.NewStat("gateway.user_request_worker_time_out", stats.CountType),
 		}
 		gateway.userWebRequestWorkers[i] = userWebRequestWorker
 	}
@@ -368,42 +366,27 @@ func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestW
 //
 // Every webRequestWorker keeps doing this concurrently.
 func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
-	reqBuffer := make([]*webRequestT, 0)
-	timeout := time.After(userWebRequestBatchTimeout)
-	var start time.Time
 	for {
-		select {
-		case req, ok := <-userWebRequestWorker.webRequestQ:
-			if !ok {
-				breq := batchWebRequestT{batchRequest: reqBuffer}
+		reqBuffer, numWebRequests, bufferTime, isWebRequestQOpen := lo.BufferWithTimeout(
+			userWebRequestWorker.webRequestQ,
+			maxUserWebRequestBatchSize,
+			userWebRequestBatchTimeout,
+		)
+		if numWebRequests > 0 {
+			if numWebRequests == maxUserWebRequestBatchSize {
 				userWebRequestWorker.bufferFullStat.Count(1)
-				start = time.Now()
-				userWebRequestWorker.batchRequestQ <- &breq
-				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
-				close(userWebRequestWorker.batchRequestQ)
-				return
 			}
-
-			// Append to request buffer
-			reqBuffer = append(reqBuffer, req)
-			if len(reqBuffer) == maxUserWebRequestBatchSize {
-				breq := batchWebRequestT{batchRequest: reqBuffer}
-				userWebRequestWorker.bufferFullStat.Count(1)
-				start = time.Now()
-				userWebRequestWorker.batchRequestQ <- &breq
-				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
-				reqBuffer = make([]*webRequestT, 0)
-			}
-		case <-timeout:
-			timeout = time.After(userWebRequestBatchTimeout)
-			if len(reqBuffer) > 0 {
-				breq := batchWebRequestT{batchRequest: reqBuffer}
+			if bufferTime >= userWebRequestBatchTimeout {
 				userWebRequestWorker.timeOutStat.Count(1)
-				start = time.Now()
-				userWebRequestWorker.batchRequestQ <- &breq
-				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
-				reqBuffer = make([]*webRequestT, 0)
 			}
+			breq := batchWebRequestT{batchRequest: reqBuffer}
+			start := time.Now()
+			userWebRequestWorker.batchRequestQ <- &breq
+			gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
+		}
+		if !isWebRequestQOpen {
+			close(userWebRequestWorker.batchRequestQ)
+			return
 		}
 	}
 }
@@ -555,9 +538,13 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	if enableRateLimit {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-		if gateway.rateLimiter.LimitReached(workspaceId) {
-			err = errRequestDropped
-			return
+		ok, errCheck := gateway.rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
+		if errCheck != nil {
+			gateway.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
+			gateway.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
+		}
+		if ok {
+			return jobData, errRequestDropped
 		}
 	}
 
@@ -581,9 +568,14 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			return
 		}
 
-		anonIDFromReq, _ := toSet["anonymousId"].(string)
-		userIDFromReq, _ := toSet["userId"].(string)
-		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
+		anonIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["anonymousId"]))
+		userIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["userId"]))
+		eventTypeFromReq, _ := misc.MapLookup(
+			toSet,
+			"type",
+		).(string)
+
+		if isNonIdentifiable(anonIDFromReq, userIDFromReq, eventTypeFromReq) {
 			err = errors.New(response.NonIdentifiableRequest)
 			return
 		}
@@ -616,7 +608,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 				"library",
 				"version",
 			).(string)
-			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) {
+			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) { // skipcq: CRT-A0007
 				firstSDKVersion = "invalid"
 			}
 			if firstSDKName != "" || firstSDKVersion != "" {
@@ -638,10 +630,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		}
 		toSet["rudderId"] = rudderId
 		setRandomMessageIDWhenEmpty(toSet)
-		if eventTypeFromReq, _ := misc.MapLookup(
-			toSet,
-			"type",
-		).(string); eventTypeFromReq == "audiencelist" {
+		if eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
 		}
 
@@ -694,7 +683,11 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	return
 }
 
-func isNonIdentifiable(anonIDFromReq, userIDFromReq string) bool {
+func isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
+	if eventType == extractEvent {
+		// extract event is allowed without user id and anonymous id
+		return false
+	}
 	if anonIDFromReq == "" && userIDFromReq == "" {
 		return !allowReqsWithoutUserIDAndAnonymousID
 	}
@@ -857,6 +850,10 @@ func (gateway *HandleT) webAudienceListHandler(w http.ResponseWriter, r *http.Re
 	gateway.webHandler(w, r, "audiencelist")
 }
 
+func (gateway *HandleT) webExtractHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "extract")
+}
+
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "batch")
 }
@@ -905,6 +902,7 @@ func warehouseHandler(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(misc.GetWarehouseURL())
 	if err != nil {
 		http.Error(w, err.Error(), 404)
+		return
 	}
 	// gateway.logger.LogRequest(r)
 	director := func(req *http.Request) {
@@ -998,6 +996,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 		if errorMessage != "" {
 			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetErrorStatusCode(errorMessage), errorMessage)
 			http.Error(w, response.GetStatus(errorMessage), response.GetErrorStatusCode(errorMessage))
+			return
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
@@ -1254,6 +1253,8 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
+	internalMux := srvMux.PathPrefix("/internal").Subrouter() // mux for internal endpoints
+
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/track", gateway.webTrackHandler).Methods("POST")
@@ -1273,6 +1274,9 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.PathPrefix("/v1/warehouse").Handler(http.HandlerFunc(warehouseHandler)).Methods("GET", "POST")
 	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
+
+	// internal endpoints
+	internalMux.HandleFunc("/v1/extract", gateway.webExtractHandler).Methods("POST")
 
 	if enableEventSchemasFeature {
 		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
@@ -1328,8 +1332,9 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srv := &http.Server{
-		Addr:    ":" + strconv.Itoa(adminWebPort),
-		Handler: bugsnag.Handler(srvMux),
+		Addr:              ":" + strconv.Itoa(adminWebPort),
+		Handler:           bugsnag.Handler(srvMux),
+		ReadHeaderTimeout: ReadHeaderTimeout,
 	}
 
 	return rs_httputil.ListenAndServe(ctx, srv)
@@ -1345,8 +1350,8 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			newEnabledWriteKeyWorkspaceMap = map[string]string{}
 			newSourceIDToNameMap           = map[string]string{}
 		)
-		config := data.Data.(map[string]backendconfig.ConfigT)
-		for workspaceID, wsConfig := range config {
+		configData := data.Data.(map[string]backendconfig.ConfigT)
+		for workspaceID, wsConfig := range configData {
 			for _, source := range wsConfig.Sources {
 				newSourceIDToNameMap[source.ID] = source.Name
 				newWriteKeysSourceMap[source.WriteKey] = source
@@ -1431,7 +1436,7 @@ This function will block until backend config is initially received.
 func (gateway *HandleT) Setup(
 	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
-	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
+	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
 	gateway.logger = pkgLogger

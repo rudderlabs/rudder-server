@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,8 +26,8 @@ func (g *GatewayAdmin) Status() interface{} {
 	}
 
 	return map[string]interface{}{
-		"ack-count":          g.handle.ackCount,
-		"recv-count":         g.handle.recvCount,
+		"ack-count":          atomic.LoadUint64(&g.handle.ackCount),
+		"recv-count":         atomic.LoadUint64(&g.handle.recvCount),
 		"enabled-write-keys": writeKeys,
 		"jobsdb":             g.handle.jobsDB.Status(),
 	}

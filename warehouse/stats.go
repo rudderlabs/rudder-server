@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,15 +27,15 @@ func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
 	return misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6))
 }
 
-func (job *UploadJobT) warehouseID() string {
+func (job *UploadJob) warehouseID() string {
 	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID)
 }
 
-func (jobRun *JobRunT) warehouseID() string {
+func (jobRun *JobRun) warehouseID() string {
 	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
 }
 
-func (job *UploadJobT) timerStat(name string, extraTags ...Tag) stats.Measurement {
+func (job *UploadJob) timerStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -48,7 +50,7 @@ func (job *UploadJobT) timerStat(name string, extraTags ...Tag) stats.Measuremen
 	return job.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (job *UploadJobT) counterStat(name string, extraTags ...Tag) stats.Measurement {
+func (job *UploadJob) counterStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -63,7 +65,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...Tag) stats.Measurem
 	return job.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func (job *UploadJobT) guageStat(name string, extraTags ...Tag) stats.Measurement {
+func (job *UploadJob) guageStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":         moduleName,
 		"destType":       job.warehouse.Type,
@@ -79,7 +81,7 @@ func (job *UploadJobT) guageStat(name string, extraTags ...Tag) stats.Measuremen
 	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jobRun *JobRunT) timerStat(name string, extraTags ...Tag) stats.Measurement {
+func (jobRun *JobRun) timerStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
@@ -94,7 +96,7 @@ func (jobRun *JobRunT) timerStat(name string, extraTags ...Tag) stats.Measuremen
 	return jobRun.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (jobRun *JobRunT) counterStat(name string, extraTags ...Tag) stats.Measurement {
+func (jobRun *JobRun) counterStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
@@ -109,22 +111,48 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...Tag) stats.Measurem
 	return jobRun.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func (job *UploadJobT) generateUploadSuccessMetrics() {
-	// Total loaded events in the upload
-	numUploadedEvents, err := job.getTotalEventsUploaded(true)
+func (job *UploadJob) generateUploadSuccessMetrics() {
+	var (
+		numUploadedEvents int64
+		numStagedEvents   int64
+		err               error
+	)
+	numUploadedEvents, err = job.tableUploadsRepo.TotalExportedEvents(
+		context.TODO(),
+		job.upload.ID,
+		[]string{},
+	)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
+		pkgLogger.Warnw("sum of total exported events for upload",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Error, err.Error(),
+		)
 		return
 	}
-	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 
-	// Total staged events in the upload
-	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
+	numStagedEvents, err = repo.NewStagingFiles(dbHandle).TotalEventsForUpload(
+		context.TODO(),
+		job.upload,
+	)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
+		pkgLogger.Warnw("total events for upload",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Error, err.Error(),
+		)
 		return
 	}
+
+	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
+
 	attempts := job.getAttemptNumber()
 	job.counterStat("upload_success", Tag{
 		Name:  "attempt_number",
@@ -132,26 +160,50 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	}).Count(1)
 }
 
-func (job *UploadJobT) generateUploadAbortedMetrics() {
-	// Total successfully loaded events in the upload
-	numUploadedEvents, err := job.getTotalEventsUploaded(true)
+func (job *UploadJob) generateUploadAbortedMetrics() {
+	var (
+		numUploadedEvents int64
+		numStagedEvents   int64
+		err               error
+	)
+	numUploadedEvents, err = job.tableUploadsRepo.TotalExportedEvents(
+		context.TODO(),
+		job.upload.ID,
+		[]string{},
+	)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
+		pkgLogger.Warnw("sum of total exported events for upload",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Error, err.Error(),
+		)
 		return
 	}
+
+	numStagedEvents, err = repo.NewStagingFiles(dbHandle).TotalEventsForUpload(
+		context.TODO(),
+		job.upload,
+	)
+	if err != nil {
+		pkgLogger.Warnw("total events for upload",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Error, err.Error(),
+		)
+		return
+	}
+
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
-
-	// Total staged events in the upload
-	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
-		return
-	}
-
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 }
 
-func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
+func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
 	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
@@ -194,7 +246,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	}
 }
 
-func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
+func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
 	stmt := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM (f2.created_at - f1.created_at))::integer as delta
 		FROM (SELECT created_at FROM %[1]s WHERE id=%[2]d) f1
 		CROSS JOIN

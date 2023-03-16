@@ -68,7 +68,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (Destinat
 	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
 	h.uploader.Start()
 
-	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.BadgerCacheType)))
+	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.MemoryCacheType)))
 	h.eventsDeliveryCache, err = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
 	if err != nil {
 		return nil, err

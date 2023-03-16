@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -64,7 +66,8 @@ func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 		prependTimes = append(prependTimes, mins)
 		counter++
 	}
-	times = append(misc.ReverseInt(prependTimes), times...)
+
+	times = append(lo.Reverse(prependTimes), times...)
 	scheduledTimesCacheLock.Lock()
 	scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)] = times
 	scheduledTimesCacheLock.Unlock()
@@ -105,7 +108,7 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 }
 
 // getLastUploadCreatedAt returns the start time of the last upload
-func (wh *HandleT) getLastUploadCreatedAt(warehouse warehouseutils.Warehouse) time.Time {
+func (wh *HandleT) getLastUploadCreatedAt(warehouse model.Warehouse) time.Time {
 	var t sql.NullTime
 	sqlStatement := fmt.Sprintf(`
 		SELECT
@@ -168,7 +171,7 @@ func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 }
 
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
-func (wh *HandleT) canCreateUpload(warehouse warehouseutils.Warehouse) (bool, error) {
+func (wh *HandleT) canCreateUpload(warehouse model.Warehouse) (bool, error) {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
 		return true, nil

@@ -2,7 +2,6 @@ package badger
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -14,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	rsync "github.com/rudderlabs/rudder-server/utils/sync"
+	"github.com/samber/lo"
 )
 
 /*
@@ -22,11 +21,18 @@ loadCacheConfig sets the properties of the cache after reading it from the confi
 This gives a feature of hot readability as well.
 */
 func (e *Cache[E]) loadCacheConfig() {
-	config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
-	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache.limiter")
-	config.RegisterDurationConfigVariable(5, &e.ticker, false, time.Minute, "LiveEvent.cache.GCTime")
-	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache.queryTimeout")
-	config.RegisterIntConfigVariable(3, &e.retries, false, 1, "LiveEvent.cache.retries")
+	config.RegisterDurationConfigVariable(5, &e.ttl, true, time.Minute, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.ttl")
+	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache."+e.origin+".limiter", "LiveEvent.cache.limiter")
+	config.RegisterDurationConfigVariable(1, &e.ticker, false, time.Minute, "LiveEvent.cache."+e.origin+".GCTime", "LiveEvent.cache.GCTime")
+	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache."+e.origin+".queryTimeout", "LiveEvent.cache.queryTimeout")
+	config.RegisterFloat64ConfigVariable(0.5, &e.gcDiscardRatio, false, "LiveEvent.cache."+e.origin+".gcDiscardRatio", "LiveEvent.cache.gcDiscardRatio")
+	config.RegisterIntConfigVariable(5, &e.numMemtables, false, 1, "LiveEvent.cache."+e.origin+".NumMemtables", "LiveEvent.cache.NumMemtables")
+	config.RegisterIntConfigVariable(5, &e.numLevelZeroTables, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTables", "LiveEvent.cache.NumLevelZeroTables")
+	config.RegisterIntConfigVariable(15, &e.numLevelZeroTablesStall, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTablesStall", "LiveEvent.cache.NumLevelZeroTablesStall")
+	// Using the maximum value threshold: (1 << 20) == 1048576 (1MB)
+	config.RegisterInt64ConfigVariable((1 << 20), &e.valueThreshold, false, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
+	config.RegisterBoolConfigVariable(false, &e.syncWrites, false, "LiveEvent.cache."+e.origin+".SyncWrites", "LiveEvent.cache.SyncWrites")
+	config.RegisterBoolConfigVariable(true, &e.cleanupOnStartup, false, "LiveEvent.cache."+e.origin+".CleanupOnStartup", "LiveEvent.cache.CleanupOnStartup")
 }
 
 /*
@@ -34,18 +40,23 @@ Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL
 key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
-	plocker      *rsync.PartitionLocker
-	limiter      int
-	retries      int
-	path         string
-	origin       string
-	done         chan struct{}
-	closed       chan struct{}
-	ticker       time.Duration
-	queryTimeout time.Duration
-	cleanupFreq  time.Duration // TTL time on badgerDB
-	db           *badger.DB
-	logger       logger.Logger
+	limiter                 int
+	path                    string
+	origin                  string
+	done                    chan struct{}
+	closed                  chan struct{}
+	ticker                  time.Duration
+	queryTimeout            time.Duration
+	ttl                     time.Duration
+	gcDiscardRatio          float64
+	numMemtables            int
+	numLevelZeroTables      int
+	numLevelZeroTablesStall int
+	valueThreshold          int64
+	syncWrites              bool
+	cleanupOnStartup        bool
+	db                      *badger.DB
+	logger                  logger.Logger
 }
 
 type badgerLogger struct {
@@ -62,67 +73,53 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 
 // Update writes the entries into badger db with a TTL
 func (e *Cache[E]) Update(key string, value E) error {
-	e.plocker.Lock(key)
-	defer e.plocker.Unlock(key)
-	operation := func() error {
-		return e.db.Update(func(txn *badger.Txn) error {
-			res, err := txn.Get([]byte(key))
-			if err != nil && err != badger.ErrKeyNotFound {
-				return err
-			}
-			var values []E
-			if res != nil {
-				if err = res.Value(func(val []byte) error {
-					return json.Unmarshal(val, &values)
-				}); err != nil {
-					return err
-				}
-			}
-			if len(values) >= e.limiter {
-				values = values[len(values)-e.limiter+1:]
-			}
-			values = append(values, value)
-			data, err := json.Marshal(values)
-			if err != nil {
-				return err
-			}
-			entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
-			return txn.SetEntry(entry)
-		})
-	}
-	var err error
-	for i := 0; i < e.retries; i++ {
-		if err = operation(); !errors.Is(err, badger.ErrConflict) {
+	return e.db.Update(func(txn *badger.Txn) error {
+		data, err := json.Marshal(value)
+		if err != nil {
 			return err
 		}
-		e.logger.Warnf("Retrying update func because of ErrConflict %d", i+1)
-	}
-	return err
+		entry := badger.NewEntry([]byte(key), data).WithTTL(e.ttl)
+		return txn.SetEntry(entry)
+	})
 }
 
 // Read fetches all the entries for a given key from badgerDB
 func (e *Cache[E]) Read(key string) ([]E, error) {
 	var values []E
 	err := e.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(key))
-		if err != nil {
-			return err
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchSize = e.limiter
+		itr := txn.NewKeyIterator([]byte(key), opts)
+		defer itr.Close()
+		for itr.Rewind(); itr.Valid(); itr.Next() {
+			if itr.Item().IsDeletedOrExpired() {
+				break
+			}
+			var value E
+			if err := itr.Item().Value(func(val []byte) error {
+				return json.Unmarshal(val, &value)
+			}); err == nil { // ignore unmarshal errors (old version of the data)
+				values = append(values, value)
+			}
+			if len(values) >= e.limiter {
+				break
+			}
 		}
-		return item.Value(func(val []byte) error {
-			return json.Unmarshal(val, &values)
-		})
+		return nil
 	})
-	if errors.Is(err, badger.ErrKeyNotFound) {
-		return nil, nil
+	if err == nil {
+		_ = e.db.Update(func(txn *badger.Txn) error {
+			return txn.Delete([]byte(key))
+		})
 	}
-	return values, err
+
+	return lo.Reverse(values), err
 }
 
 func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*Cache[E], error) {
 	e := Cache[E]{
-		plocker: rsync.NewPartitionLocker(),
-		origin:  origin,
-		logger:  logger,
+		origin: origin,
+		logger: logger,
 	}
 	e.loadCacheConfig()
 	badgerPathName := e.origin + "/cache/badgerdbv3"
@@ -132,6 +129,11 @@ func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*C
 		return nil, err
 	}
 	storagePath := path.Join(tmpDirPath, badgerPathName)
+	if e.cleanupOnStartup {
+		if err := os.RemoveAll(storagePath); err != nil {
+			e.logger.Warnf("Unable to cleanup badgerDB storage path %q: %v", storagePath, err)
+		}
+	}
 	e.path = storagePath
 	e.done = make(chan struct{})
 	e.closed = make(chan struct{})
@@ -145,9 +147,13 @@ func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*C
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
-		WithNumMemtables(0).
-		WithBlockCacheSize(0)
-
+		WithNumMemtables(e.numMemtables).
+		WithValueThreshold(e.valueThreshold).
+		WithBlockCacheSize(0).
+		WithNumVersionsToKeep(e.limiter).
+		WithNumLevelZeroTables(e.numLevelZeroTables).
+		WithNumLevelZeroTablesStall(e.numLevelZeroTablesStall).
+		WithSyncWrites(e.syncWrites)
 	e.db, err = badger.Open(badgerOpts)
 	if err != nil {
 		e.logger.Errorf("Error while opening badgerDB: %v", err)
@@ -172,7 +178,7 @@ func (e *Cache[E]) gcBadgerDB() {
 			return
 		case <-ticker.C:
 		again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
-			err := e.db.RunValueLogGC(0.7)
+			err := e.db.RunValueLogGC(e.gcDiscardRatio)
 			if err == nil {
 				goto again
 			}

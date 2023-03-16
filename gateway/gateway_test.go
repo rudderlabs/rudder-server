@@ -15,8 +15,6 @@ import (
 	"testing"
 	"time"
 
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -33,9 +31,10 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mockThrottler "github.com/rudderlabs/rudder-server/mocks/gateway"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
-	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
@@ -107,8 +106,8 @@ type testContext struct {
 	mockCtrl          *gomock.Controller
 	mockJobsDB        *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockRateLimiter   *mockThrottler.MockThrottler
 	mockApp           *mocksApp.MockApp
-	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
 
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
@@ -139,7 +138,7 @@ func (c *testContext) Setup() {
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
-	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
+	c.mockRateLimiter = mockThrottler.NewMockThrottler(c.mockCtrl)
 
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
@@ -506,15 +505,12 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
-			mockCall := c.mockRateLimiter.EXPECT().LimitReached(WorkspaceID).Return(false).Times(1)
-			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(interface{}) { tFunc() })
-
+			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall = c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
-			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
+			mockCall := c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(context.Context, interface{}, interface{}) { tFunc() })
 
 			expectHandlerResponse(
@@ -548,8 +544,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
-			c.mockRateLimiter.EXPECT().LimitReached(WorkspaceID).Return(true).Times(1)
-
+			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			expectHandlerResponse(
 				gateway.webAliasHandler,
 				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")),
@@ -714,33 +709,63 @@ var _ = Describe("Gateway", func() {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 					reqType = "batch"
 				}
+				if handlerType != "extract" {
+					expectHandlerResponse(
+						handler,
+						authorizedRequest(
+							WriteKeyEnabled,
+							bytes.NewBufferString(validBody),
+						),
+						400,
+						response.NonIdentifiableRequest+"\n",
+					)
+					Eventually(
+						func() bool {
+							stat := statsStore.Get(
+								"gateway.write_key_failed_requests",
+								map[string]string{
+									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+									"workspaceId": getWorkspaceID(WriteKeyEnabled),
+									"writeKey":    WriteKeyEnabled,
+									"reqType":     reqType,
+									"reason":      response.NonIdentifiableRequest,
+									"sourceType":  sourceType2,
+									"sdkVersion":  "",
+								},
+							)
+							return stat != nil && stat.LastValue() == float64(1)
+						},
+					).Should(BeTrue())
+				}
+			}
+		})
+
+		It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
+			extractHandlers := map[string]http.HandlerFunc{
+				"batch":   gateway.webBatchHandler,
+				"import":  gateway.webImportHandler,
+				"extract": gateway.webExtractHandler,
+			}
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+			c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
+
+			validBody := `{"batch": [{"data": "valid-json", "type": "extract"}]}`
+			for handlerType, handler := range extractHandlers {
+				if handlerType == "extract" {
+					validBody = `{"data": "valid-json", "type": "extract"}`
+				}
 				expectHandlerResponse(
 					handler,
 					authorizedRequest(
 						WriteKeyEnabled,
 						bytes.NewBufferString(validBody),
 					),
-					400,
-					response.NonIdentifiableRequest+"\n",
+					200,
+					"OK",
 				)
-				Eventually(
-					func() bool {
-						stat := statsStore.Get(
-							"gateway.write_key_failed_requests",
-							map[string]string{
-								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-								"workspaceId": getWorkspaceID(WriteKeyEnabled),
-								"writeKey":    WriteKeyEnabled,
-								"reqType":     reqType,
-								"reason":      response.NonIdentifiableRequest,
-								"sourceType":  sourceType2,
-								"sdkVersion":  "",
-							},
-						)
-						return stat != nil && stat.LastValue() == float64(1)
-					},
-				).Should(BeTrue())
 			}
 		})
 
@@ -941,6 +966,63 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
 			Expect(jobData.job).To(BeNil())
 		})
+
+		It("accepts events with non-string type anonymousId and/or userId", func() {
+			// map type usreId
+			payloadMap := map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":   "track",
+						"userId": map[string]interface{}{"id": 456},
+					},
+				},
+			}
+			payload, err := json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			_, err = gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+
+			// int type anonymousId
+			payloadMap = map[string]interface{}{
+				"batch": []interface{}{
+					map[string]interface{}{
+						"type":   "track",
+						"userId": 456,
+					},
+				},
+			}
+			payload, err = json.Marshal(payloadMap)
+			Expect(err).To(BeNil())
+			Expect(err).To(BeNil())
+			req = &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: payload,
+			}
+			_, err = gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+		})
+
+		It("allows extract events even if userID and anonID are not present in the request payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
+			}
+			_, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
+		})
 	})
 })
 
@@ -989,6 +1071,7 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 		"track":        gateway.webTrackHandler,
 		"import":       gateway.webImportHandler,
 		"audiencelist": gateway.webAudienceListHandler,
+		"extract":      gateway.webExtractHandler,
 	}
 }
 

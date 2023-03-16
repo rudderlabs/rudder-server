@@ -42,7 +42,7 @@ func TestBatchDelete(t *testing.T) {
 				ID:            1,
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
-				Status:        model.JobStatusPending,
+				Status:        model.JobStatus{Status: model.JobStatusPending},
 				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
@@ -83,7 +83,7 @@ func TestBatchDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			status := bm.Delete(ctx, tt.job, tt.dest)
-			require.Equal(t, model.JobStatusComplete, status)
+			require.Equal(t, model.JobStatus{Status: model.JobStatusComplete}, status)
 
 			searchDir := mockBucketLocation
 			var cleanedFilesList []string

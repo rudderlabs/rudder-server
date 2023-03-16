@@ -9,6 +9,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -17,7 +18,7 @@ type TransformerResource struct {
 	Port         string
 }
 
-func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, error) {
+func SetupTransformer(pool *dockertest.Pool, d Cleaner) (*TransformerResource, error) {
 	// Set Rudder Transformer
 	// pulls an image first to make sure we don't have an old cached version locally,
 	// then it creates a container based on it and runs it

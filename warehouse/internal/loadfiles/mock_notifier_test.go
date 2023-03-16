@@ -17,8 +17,8 @@ type mockNotifier struct {
 	tables   []string
 }
 
-func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.SchemaT, priority int) (chan []pgnotifier.ResponseT, error) {
-	var responses []pgnotifier.ResponseT
+func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (chan []pgnotifier.Response, error) {
+	var responses []pgnotifier.Response
 	for _, p := range payload.Jobs {
 		var req loadfiles.WorkerJobRequest
 		err := json.Unmarshal(p, &req)
@@ -53,7 +53,7 @@ func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *wareho
 			status = "aborted"
 		}
 
-		responses = append(responses, pgnotifier.ResponseT{
+		responses = append(responses, pgnotifier.Response{
 			JobID:  req.StagingFileID,
 			Output: json.RawMessage(out),
 			Error:  errString,
@@ -61,7 +61,7 @@ func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *wareho
 		})
 	}
 
-	ch := make(chan []pgnotifier.ResponseT, 1)
+	ch := make(chan []pgnotifier.Response, 1)
 	ch <- responses
 	return ch, nil
 }

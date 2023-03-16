@@ -65,7 +65,7 @@ func (ss *SourceStat) RequestEventsSucceeded(num int) {
 	ss.requests.succeeded++
 }
 
-// RequestEventsSucceeded increments the requests total & failed counters by one, and the events total & failed counters by num
+// RequestEventsFailed increments the requests total & failed counters by one, and the events total & failed counters by num
 func (ss *SourceStat) RequestEventsFailed(num int, reason string) {
 	ss.requests.total++
 	ss.requests.failed++
@@ -74,7 +74,7 @@ func (ss *SourceStat) RequestEventsFailed(num int, reason string) {
 	ss.reason = reason
 }
 
-// Reports captured stats
+// Report captured stats
 func (ss *SourceStat) Report(s stats.Stats) {
 	tags := map[string]string{
 		"source":      ss.Source,

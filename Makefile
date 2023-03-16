@@ -98,7 +98,7 @@ setup-warehouse-integration: cleanup-warehouse-integration
 		echo "Warehouse integration setup successful"; \
 	else \
 	  	echo "Warehouse integration setup failed" ;\
-      	docker logs wh-backend; \
+      	docker-compose -f warehouse/integrations/docker-compose.test.yml logs; \
         make cleanup-warehouse-integration; \
       	exit 1 ;\
     fi

@@ -71,7 +71,7 @@ func TestCreateLoadFiles(t *testing.T) {
 	stagingFiles := getStagingFiles()
 
 	job := model.UploadJob{
-		Warehouse: warehouseutils.Warehouse{
+		Warehouse: model.Warehouse{
 			WorkspaceID: "",
 			Source:      backendconfig.SourceT{},
 			Destination: backendconfig.DestinationT{
@@ -91,7 +91,7 @@ func TestCreateLoadFiles(t *testing.T) {
 		StagingFiles: stagingFiles,
 	}
 
-	startID, endID, err := lf.CreateLoadFiles(ctx, job)
+	startID, endID, err := lf.CreateLoadFiles(ctx, &job)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(20), endID)
@@ -126,7 +126,7 @@ func TestCreateLoadFiles(t *testing.T) {
 		}
 		stagingFiles[0].Status = warehouseutils.StagingFileFailedState
 
-		startID, endID, err := lf.CreateLoadFiles(ctx, job)
+		startID, endID, err := lf.CreateLoadFiles(ctx, &job)
 		require.NoError(t, err)
 		require.Equal(t, int64(21), startID)
 		require.Equal(t, int64(22), endID)
@@ -139,7 +139,7 @@ func TestCreateLoadFiles(t *testing.T) {
 			stagingFile.Status = warehouseutils.StagingFileSucceededState
 		}
 
-		startID, endID, err := lf.ForceCreateLoadFiles(ctx, job)
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &job)
 		require.NoError(t, err)
 		require.Equal(t, int64(23), startID)
 		require.Equal(t, int64(42), endID)
@@ -154,7 +154,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 
 	tables := []string{"track", "indentify"}
 
-	warehouse := warehouseutils.Warehouse{
+	warehouse := model.Warehouse{
 		WorkspaceID: "",
 		Source:      backendconfig.SourceT{},
 		Destination: backendconfig.DestinationT{
@@ -198,7 +198,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 		t.Log("empty location should cause worker failure")
 		stagingFiles[0].Location = ""
 
-		startID, endID, err := lf.CreateLoadFiles(ctx, model.UploadJob{
+		startID, endID, err := lf.CreateLoadFiles(ctx, &model.UploadJob{
 			Warehouse:    warehouse,
 			Upload:       upload,
 			StagingFiles: stagingFiles,
@@ -242,7 +242,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 			stagingFiles[i].Location = ""
 		}
 
-		startID, endID, err := lf.CreateLoadFiles(ctx, model.UploadJob{
+		startID, endID, err := lf.CreateLoadFiles(ctx, &model.UploadJob{
 			Warehouse:    warehouse,
 			Upload:       upload,
 			StagingFiles: stagingFiles,
@@ -301,7 +301,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 	}
 
 	job := model.UploadJob{
-		Warehouse: warehouseutils.Warehouse{
+		Warehouse: model.Warehouse{
 			WorkspaceID: "",
 			Source:      backendconfig.SourceT{},
 			Destination: backendconfig.DestinationT{
@@ -323,7 +323,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 		},
 	}
 
-	startID, endID, err := lf.CreateLoadFiles(ctx, job)
+	startID, endID, err := lf.CreateLoadFiles(ctx, &job)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(2), endID)
@@ -354,7 +354,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 	t.Run("invalid revision ID", func(t *testing.T) {
 		stagingFile.DestinationRevisionID = "invalid_revision_id"
 
-		startID, endID, err := lf.CreateLoadFiles(ctx, job)
+		startID, endID, err := lf.CreateLoadFiles(ctx, &job)
 		require.EqualError(t, err, "populating destination revision ID: revision \"invalid_revision_id\" not found")
 		require.Zero(t, startID)
 		require.Zero(t, endID)
@@ -364,12 +364,12 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 func TestGetLoadFilePrefix(t *testing.T) {
 	testCases := []struct {
 		name      string
-		warehouse warehouseutils.Warehouse
+		warehouse model.Warehouse
 		expected  string
 	}{
 		{
 			name: "s3 datalake",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -379,7 +379,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "s3 datalake with glue",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"region":  "test-region",
@@ -392,7 +392,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "s3 datalake with glue and layout",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"region":           "test-region",
@@ -406,7 +406,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "azure datalake",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -418,7 +418,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "gcs datalake",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -428,7 +428,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "gcs datalake with suffix",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -440,7 +440,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "gcs datalake with layout",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"timeWindowLayout": "year=2006/month=01/day=02/hour=15",
@@ -452,7 +452,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 		},
 		{
 			name: "gcs datalake with suffix and layout",
-			warehouse: warehouseutils.Warehouse{
+			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix":      "key=val",
