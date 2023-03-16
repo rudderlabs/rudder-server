@@ -237,7 +237,8 @@ func (d *Manager) FindDuplicates(infos []Info, allMessageIDsSet map[string]Paylo
 		for idx, info := range infos {
 			item, err := txn.Get([]byte(info.MessageID))
 			if err != nil && err != badger.ErrKeyNotFound {
-				return err
+				pkgLogger.Warn("[[ Dedup ]] Error while getting item from badgerDB", err)
+				continue
 			}
 			if err == badger.ErrKeyNotFound {
 				continue
@@ -247,7 +248,7 @@ func (d *Manager) FindDuplicates(infos []Info, allMessageIDsSet map[string]Paylo
 				value   []byte
 				payload Payload
 			)
-			if value, err = item.ValueCopy(nil); err == nil {
+			if value, err = item.ValueCopy(nil); err == nil && len(value) > 0 {
 				_ = json.Unmarshal(value, &payload)
 			}
 			toRemoveMessageIndexesSet[idx] = payload
