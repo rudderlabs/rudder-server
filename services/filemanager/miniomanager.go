@@ -35,10 +35,12 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
-	if err := minioClient.MakeBucket(ctx, manager.Config.Bucket, minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
-		if minioError, ok := err.(minio.ErrorResponse); ok && minioError.Code == "BucketAlreadyOwnedByYou" {
-			pkgLogger.Debug("Received 409. Bucket already exists")
-		} else {
+	exists, err := minioClient.BucketExists(ctx, manager.Config.Bucket)
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf("checking bucket: %w", err)
+	}
+	if !exists {
+		if err = minioClient.MakeBucket(ctx, manager.Config.Bucket, minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
 			return UploadOutput{}, fmt.Errorf("creating bucket: %w", err)
 		}
 	}

@@ -14,6 +14,19 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
+func suppressMinorErrors(err error) error {
+	if err != nil {
+		if storageError, ok := err.(azblob.StorageError); ok { // This error is a Service-specific
+			switch storageError.ServiceCode() { // Compare serviceCode to ServiceCodeXxx constants
+			case azblob.ServiceCodeContainerAlreadyExists:
+				pkgLogger.Debug("Received 409. Container already exists")
+				return nil
+			}
+		}
+	}
+	return err
+}
+
 func (manager *AzureBlobStorageManager) getBaseURL() *url.URL {
 	protocol := "https"
 	if manager.Config.DisableSSL != nil && *manager.Config.DisableSSL {
@@ -87,13 +100,10 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 	defer cancel()
 
 	if manager.createContainer() {
-		_, err := containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
+		_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
+		err = suppressMinorErrors(err)
 		if err != nil {
-			if storageError, ok := err.(azblob.StorageError); ok && storageError.ServiceCode() == azblob.ServiceCodeContainerAlreadyExists {
-				pkgLogger.Debug("Received 409. Container already exists")
-			} else {
-				return UploadOutput{}, fmt.Errorf("creating bucket: %w", err)
-			}
+			return UploadOutput{}, err
 		}
 	}
 
