@@ -24,7 +24,7 @@ var _ = Describe("cache", func() {
 
 		BeforeEach(func() {
 			misc.Init()
-			config.Set("LiveEvent.cache.clearFreq", "1s")
+			config.Set("LiveEvent.cache.ttl", "1s")
 			e, err = New[[]byte]("test", logger.NewLogger())
 			Expect(err).To(BeNil())
 		})
@@ -36,7 +36,7 @@ var _ = Describe("cache", func() {
 
 		It("Cache Init", func() {
 			Expect(e.db).NotTo(BeNil())
-			Expect(e.cleanupFreq).NotTo(Equal(0))
+			Expect(e.ttl).NotTo(Equal(0))
 		})
 
 		It("Cache update", func() {
@@ -119,7 +119,7 @@ var _ = Describe("cache", func() {
 
 		It("Cache expiry", func() {
 			Expect(e.Update(testKey, testValue1)).To(BeNil())
-			time.Sleep(e.cleanupFreq)
+			time.Sleep(e.ttl)
 			Expect(e.Update(testKey, testValue2)).To(BeNil())
 			v, err := e.Read(testKey)
 			Expect(err).To(BeNil())

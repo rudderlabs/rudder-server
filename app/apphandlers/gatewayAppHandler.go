@@ -12,11 +12,12 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
+	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -108,9 +109,10 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	})
 
 	var gw gateway.HandleT
-	var rateLimiter ratelimiter.HandleT
-
-	rateLimiter.SetUp()
+	rateLimiter, err := gwThrottler.New(stats.Default)
+	if err != nil {
+		return fmt.Errorf("failed to create rate limiter: %w", err)
+	}
 	gw.SetReadonlyDB(readonlyGatewayDB)
 	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
@@ -119,7 +121,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
-		&rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
+		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to setup gateway: %w", err)

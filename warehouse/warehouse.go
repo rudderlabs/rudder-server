@@ -493,8 +493,8 @@ func getUploadFreqInS(syncFrequency string) int64 {
 
 func uploadFrequencyExceeded(warehouse model.Warehouse, syncFrequency string) bool {
 	freqInS := getUploadFreqInS(syncFrequency)
-	lastProcessedMarkerMapLock.Lock()
-	defer lastProcessedMarkerMapLock.Unlock()
+	lastProcessedMarkerMapLock.RLock()
+	defer lastProcessedMarkerMapLock.RUnlock()
 	if lastExecTime, ok := lastProcessedMarkerMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
 		return true
 	}
