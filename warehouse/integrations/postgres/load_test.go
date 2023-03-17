@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -158,7 +158,7 @@ func TestLoadTable_Load(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				pgResource, err := destination.SetupPostgres(pool, t)
+				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
 				store := memstats.New()
@@ -276,7 +276,7 @@ func TestLoadTable_Load(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				pgResource, err := destination.SetupPostgres(pool, t)
+				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
 				store := memstats.New()
@@ -425,7 +425,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
 			store := memstats.New()

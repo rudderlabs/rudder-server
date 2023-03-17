@@ -20,11 +20,11 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/config/backend-config/internal/cache"
+	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )

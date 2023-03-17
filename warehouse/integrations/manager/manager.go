@@ -9,7 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
@@ -19,7 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"

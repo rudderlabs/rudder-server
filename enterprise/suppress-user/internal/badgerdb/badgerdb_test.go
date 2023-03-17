@@ -13,9 +13,9 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/google/uuid"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/badgerdb"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 

@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 func Test_Namespace_SetUp(t *testing.T) {

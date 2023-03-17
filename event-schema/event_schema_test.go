@@ -13,13 +13,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ type envSetter interface {
 	Setenv(key, value string)
 }
 
-func setupDB(es envSetter, cleanup *testhelper.Cleanup) (*destination.PostgresResource, error) {
+func setupDB(es envSetter, cleanup *testhelper.Cleanup) (*resource.PostgresResource, error) {
 	log.Println("Initialize the database here with the necessary table structures.")
 
 	pool, err := dockertest.NewPool("")
@@ -35,7 +35,7 @@ func setupDB(es envSetter, cleanup *testhelper.Cleanup) (*destination.PostgresRe
 		return nil, fmt.Errorf("Unable to bring up pool for creating containers, err: %w", err)
 	}
 
-	pgResource, err := destination.SetupPostgres(pool, cleanup)
+	pgResource, err := resource.SetupPostgres(pool, cleanup)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to setup the postgres container, err: %w", err)
 	}
@@ -64,7 +64,7 @@ func setupDB(es envSetter, cleanup *testhelper.Cleanup) (*destination.PostgresRe
 	return pgResource, nil
 }
 
-func jobsDBInit(es envSetter, pgResource *destination.PostgresResource) {
+func jobsDBInit(es envSetter, pgResource *resource.PostgresResource) {
 	// Setup env for jobsdb.
 	es.Setenv("JOBS_DB_HOST", pgResource.Host)
 	es.Setenv("JOBS_DB_USER", pgResource.User)
@@ -79,7 +79,7 @@ func jobsDBInit(es envSetter, pgResource *destination.PostgresResource) {
 }
 
 var _ = Describe("Event Schemas", Ordered, func() {
-	var pgResource *destination.PostgresResource
+	var pgResource *resource.PostgresResource
 	var err error
 	cleanup := &testhelper.Cleanup{}
 

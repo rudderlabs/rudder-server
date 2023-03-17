@@ -1,6 +1,6 @@
 package model
 
-import "github.com/rudderlabs/rudder-server/config/backend-config"
+import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 type Warehouse struct {
 	WorkspaceID string
