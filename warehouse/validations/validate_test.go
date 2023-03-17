@@ -476,7 +476,7 @@ func TestValidator(t *testing.T) {
 					"accessKeyID":     "temp-access-key",
 					"secretAccessKey": "test-secret-key",
 				},
-				wantError: errors.New("upload file: uploading file: The Access Key Id you provided does not exist in our records."),
+				wantError: errors.New("upload file: uploading file: checking bucket: The Access Key Id you provided does not exist in our records."),
 			},
 			{
 				name: "no privilege",
