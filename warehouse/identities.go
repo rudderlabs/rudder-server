@@ -9,6 +9,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -444,6 +446,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 			warehouse:    job.warehouse,
 			stagingFiles: job.stagingFiles,
 			dbHandle:     job.dbHandle,
+			whSchemaRepo: repo.NewWHSchemas(job.dbHandle),
 		}
 		job.schemaHandle = &schemaHandle
 

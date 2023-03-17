@@ -245,7 +245,7 @@ type KeyValue struct {
 
 type Uploader interface {
 	GetSchemaInWarehouse() model.Schema
-	GetLocalSchema() model.Schema
+	GetLocalSchema() (model.Schema, error)
 	UpdateLocalSchema(schema model.Schema) error
 	GetTableSchemaInWarehouse(tableName string) model.TableSchema
 	GetTableSchemaInUpload(tableName string) model.TableSchema
@@ -311,29 +311,6 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 		return s, t.Time()
 	}
 	return // zero values
-}
-
-func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  namespace
-		FROM
-		  %s
-		WHERE
-		  source_id = '%s'
-		  AND destination_id = '%s'
-		ORDER BY
-		  id DESC;
-`,
-		WarehouseSchemasTable,
-		source.ID,
-		destination.ID,
-	)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
-	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
-	}
-	return namespace, len(namespace) > 0
 }
 
 // GetObjectFolder returns the folder path for the storage object based on the storage provider
