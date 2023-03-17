@@ -401,6 +401,7 @@ func deepCopy(src, dest interface{}) error {
 //  2. from existing record in wh_schemas with same source + dest combo
 //  3. convert source name
 func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
+
 	configMap := configI.(map[string]interface{})
 	if destType == warehouseutils.CLICKHOUSE {
 		if _, ok := configMap["database"].(string); ok {
@@ -419,10 +420,14 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	if namespacePrefix != "" {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
-	if _, exists := warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
+	var (
+		namespace string
+		exists    bool
+	)
+	if namespace, exists = warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 	}
-	return ""
+	return namespace
 }
 
 func (wh *HandleT) setDestInProgress(warehouse model.Warehouse, jobID int64) {
