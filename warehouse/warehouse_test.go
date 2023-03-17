@@ -7,18 +7,12 @@ import (
 	"testing"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -28,9 +22,12 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"github.com/stretchr/testify/require"
 )
 
 type testingT interface {
