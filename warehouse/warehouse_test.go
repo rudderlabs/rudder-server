@@ -199,70 +199,116 @@ func Test_GetNamespace(t *testing.T) {
 		setConfig   bool
 	}{
 		{
-			config: map[string]interface{}{
-				"database": "test_db",
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"database": "test_db",
+				},
 			},
-			source:      backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{},
-			destType:    warehouseutils.CLICKHOUSE,
-			result:      "test_db",
-			setConfig:   false,
+			destType:  warehouseutils.CLICKHOUSE,
+			result:    "test_db",
+			setConfig: false,
 		},
 		{
-			config:      map[string]interface{}{},
-			source:      backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{},
-			destType:    warehouseutils.CLICKHOUSE,
-			result:      "rudder",
-			setConfig:   false,
-		},
-		{
-			config: map[string]interface{}{
-				"namespace": "test_namespace",
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
 			},
-			source:      backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{},
-			destType:    "test-destinationType-1",
-			result:      "test_namespace",
-			setConfig:   false,
+			destType:  warehouseutils.CLICKHOUSE,
+			result:    "rudder",
+			setConfig: false,
 		},
 		{
-			config: map[string]interface{}{
-				"namespace": "      test_namespace        ",
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "test_namespace",
+				},
 			},
-			source:      backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{},
-			destType:    "test-destinationType-1",
-			result:      "test_namespace",
-			setConfig:   false,
+			destType:  "test-destinationType-1",
+			result:    "test_namespace",
+			setConfig: false,
 		},
 		{
-			config: map[string]interface{}{
-				"namespace": "##",
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "      test_namespace        ",
+				},
 			},
-			source:      backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{},
-			destType:    "test-destinationType-1",
-			result:      "stringempty",
-			setConfig:   false,
+			destType:  "test-destinationType-1",
+			result:    "test_namespace",
+			setConfig: false,
 		},
 		{
-			config: map[string]interface{}{
-				"namespace": "##evrnvrv$vtr&^",
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "##",
+				},
 			},
-			source:      backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{},
-			destType:    "test-destinationType-1",
-			result:      "evrnvrv_vtr",
-			setConfig:   false,
+			destType:  "test-destinationType-1",
+			result:    "stringempty",
+			setConfig: false,
 		},
 		{
-			config:      map[string]interface{}{},
-			source:      backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{},
-			destType:    "test-destinationType-1",
-			result:      "config_result",
-			setConfig:   true,
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "##evrnvrv$vtr&^",
+				},
+			},
+			destType:  "test-destinationType-1",
+			result:    "evrnvrv_vtr",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+			},
+			destType:  "test-destinationType-1",
+			result:    "config_result",
+			setConfig: true,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "test-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "test-destinationID",
+			},
+			destType:  "test-destinationType-1",
+			result:    "test-namespace",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "random-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "random-destinationID",
+			},
+			destType:  "test-destinationType-1",
+			result:    "test_source",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "test-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "test-destinationID",
+			},
+			destType:  "test-destinationType-1",
+			result:    "config_result_test_source",
+			setConfig: true,
 		},
 	}
 
@@ -292,7 +338,14 @@ func Test_GetNamespace(t *testing.T) {
 			if tc.setConfig {
 				config.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destType]), "config_result")
 			}
-			namespace := wh.getNamespace(tc.config, tc.source, tc.destination, tc.destType)
+
+			sqlStatement, err := os.ReadFile("testdata/sql/namespace_test.sql")
+			require.NoError(t, err)
+
+			_, err = pgResource.DB.Exec(string(sqlStatement))
+			require.NoError(t, err)
+
+			namespace := wh.getNamespace(tc.source, tc.destination)
 			require.Equal(t, tc.result, namespace)
 			config.Reset()
 		})

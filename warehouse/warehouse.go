@@ -303,7 +303,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 						destination = wh.attachSSHTunnellingInfo(ctx, destination)
 					}
 
-					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
+					namespace := wh.getNamespace(source, destination)
 					warehouse := model.Warehouse{
 						WorkspaceID: workspaceID,
 						Source:      source,
@@ -400,9 +400,9 @@ func deepCopy(src, dest interface{}) error {
 //  1. user set name from destinationConfig
 //  2. from existing record in wh_schemas with same source + dest combo
 //  3. convert source name
-func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
-	configMap := configI.(map[string]interface{})
-	if destType == warehouseutils.CLICKHOUSE {
+func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT) string {
+	configMap := destination.Config
+	if wh.destType == warehouseutils.CLICKHOUSE {
 		if _, ok := configMap["database"].(string); ok {
 			return configMap["database"].(string)
 		}
@@ -411,20 +411,20 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	if configMap["namespace"] != nil {
 		namespace, _ := configMap["namespace"].(string)
 		if len(strings.TrimSpace(namespace)) > 0 {
-			return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
+			return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, namespace))
 		}
 	}
 	// TODO: Move config to global level based on use case
-	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[destType]), "")
+	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[wh.destType]), "")
 	if namespacePrefix != "" {
-		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
+		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
 	var (
 		namespace string
 		exists    bool
 	)
 	if namespace, exists = warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
-		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
+		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, source.Name))
 	}
 	return namespace
 }
@@ -972,7 +972,7 @@ func minimalConfigSubscriber() {
 							dbHandle: dbHandle,
 							destType: destination.DestinationDefinition.Name,
 						}
-						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
+						namespace := wh.getNamespace(source, destination)
 						connectionsMapLock.Lock()
 						if connectionsMap[destination.ID] == nil {
 							connectionsMap[destination.ID] = map[string]model.Warehouse{}
