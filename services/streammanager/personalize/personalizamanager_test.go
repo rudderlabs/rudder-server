@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/personalizeevents"
 	"github.com/golang/mock/gomock"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/tidwall/gjson"

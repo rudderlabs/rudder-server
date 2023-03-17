@@ -9,7 +9,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 )
 
 /*

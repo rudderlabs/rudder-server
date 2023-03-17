@@ -9,7 +9,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	types "github.com/rudderlabs/rudder-server/utils/types"
 )
 

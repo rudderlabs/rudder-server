@@ -13,11 +13,11 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-server/config"
-	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -339,6 +339,7 @@ func mockProxyHandler(timeout time.Duration, code int, response string) *mux.Rou
 		_, err := w.Write([]byte(response))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+			return
 		}
 	})
 	return srvMux

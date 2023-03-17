@@ -10,9 +10,9 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

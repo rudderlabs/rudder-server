@@ -14,18 +14,18 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -36,7 +36,7 @@ func TestDestinationConfigKeys(t *testing.T) {
 
 			whName := WHDestNameMap[whType]
 			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
-			got := config.ConfigKeyToEnv(configKey)
+			got := config.ConfigKeyToEnv(config.DefaultEnvPrefix, configKey)
 			expected := fmt.Sprintf("RSERVER_WAREHOUSE_%s_FEATURE", strings.ToUpper(whName))
 			require.Equal(t, got, expected)
 		})

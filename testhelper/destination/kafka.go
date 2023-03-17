@@ -8,9 +8,8 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-server/testhelper"
 )
 
 type scramHashGenerator uint8
@@ -151,7 +150,7 @@ func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResou
 		})
 	}
 
-	zookeeperPortInt, err := testhelper.GetFreePort()
+	zookeeperPortInt, err := kitHelper.GetFreePort()
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +260,7 @@ func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResou
 	containers := make([]*dockertest.Resource, c.brokers)
 	for i := uint(0); i < c.brokers; i++ {
 		i := i
-		localhostPortInt, err := testhelper.GetFreePort()
+		localhostPortInt, err := kitHelper.GetFreePort()
 		if err != nil {
 			return nil, err
 		}

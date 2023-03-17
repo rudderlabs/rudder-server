@@ -10,7 +10,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"

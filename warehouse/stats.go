@@ -9,8 +9,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
