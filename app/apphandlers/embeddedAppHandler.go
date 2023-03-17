@@ -5,25 +5,21 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/router/throttler"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/payload"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
+	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
+	rtThrottler "github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -32,8 +28,11 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 // embeddedApp is the type for embedded type implementation
@@ -213,9 +212,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		transformationhandle,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.New(stats.Default)
+	throttlerFactory, err := rtThrottler.New(stats.Default)
 	if err != nil {
-		return fmt.Errorf("failed to create throttler factory: %w", err)
+		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
@@ -253,8 +252,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		MultiTenantStat: multitenantStats,
 	}
 
-	rateLimiter := ratelimiter.HandleT{}
-	rateLimiter.SetUp()
+	rateLimiter, err := gwThrottler.New(stats.Default)
+	if err != nil {
+		return fmt.Errorf("failed to create gw rate limiter: %w", err)
+	}
 	gw := gateway.HandleT{}
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
@@ -274,7 +275,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
-		&rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
+		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)
