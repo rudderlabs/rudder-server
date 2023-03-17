@@ -88,9 +88,13 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 
 	if manager.createContainer() {
 		_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
-		err = suppressMinorErrors(err)
 		if err != nil {
-			return UploadOutput{}, err
+			if storageError, ok := err.(azblob.StorageError); ok && storageError.ServiceCode() == azblob.ServiceCodeContainerAlreadyExists {
+				pkgLogger.Debug("Received 409. Container already exists")
+				err = nil
+			} else {
+				return UploadOutput{}, fmt.Errorf("creating bucket: %w", err)
+			}
 		}
 	}
 
