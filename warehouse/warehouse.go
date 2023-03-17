@@ -401,7 +401,6 @@ func deepCopy(src, dest interface{}) error {
 //  2. from existing record in wh_schemas with same source + dest combo
 //  3. convert source name
 func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
-
 	configMap := configI.(map[string]interface{})
 	if destType == warehouseutils.CLICKHOUSE {
 		if _, ok := configMap["database"].(string); ok {
