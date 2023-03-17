@@ -1,4 +1,4 @@
-package destination
+package kafka
 
 import (
 	_ "encoding/json"
@@ -8,8 +8,10 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"golang.org/x/sync/errgroup"
+
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
 type scramHashGenerator uint8
@@ -44,16 +46,17 @@ type SASLConfig struct {
 }
 
 type config struct {
-	logger                     Logger
+	logger                     destination.Logger
 	brokers                    uint
 	saslConfig                 *SASLConfig
 	network                    *dc.Network
 	dontUseDockerHostListeners bool
+	useSchemaRegistry          bool
 }
 
 func (c *config) defaults() {
 	if c.logger == nil {
-		c.logger = &NOPLogger{}
+		c.logger = &destination.NOPLogger{}
 	}
 	if c.brokers < 1 {
 		c.brokers = 1
@@ -61,7 +64,7 @@ func (c *config) defaults() {
 }
 
 // WithLogger allows to set a logger that prints debugging information
-func WithLogger(l Logger) Option {
+func WithLogger(l destination.Logger) Option {
 	return withOption{setup: func(c *config) {
 		c.logger = l
 	}}
@@ -110,14 +113,22 @@ func WithoutDockerHostListeners() Option {
 	}}
 }
 
-type KafkaResource struct {
-	Port string
+// WithSchemaRegistry allows to use the schema registry
+func WithSchemaRegistry() Option {
+	return withOption{setup: func(c *config) {
+		c.useSchemaRegistry = true
+	}}
+}
+
+type Resource struct {
+	Port,
+	SchemaRegistryURL string
 
 	pool       *dockertest.Pool
 	containers []*dockertest.Resource
 }
 
-func (k *KafkaResource) Destroy() error {
+func (k *Resource) Destroy() error {
 	g := errgroup.Group{}
 	for i := range k.containers {
 		i := i
@@ -128,7 +139,7 @@ func (k *KafkaResource) Destroy() error {
 	return g.Wait()
 }
 
-func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResource, error) {
+func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Resource, error) {
 	// lock so no two tests can run at the same time and try to listen on the same port
 	var c config
 	for _, opt := range opts {
@@ -154,10 +165,9 @@ func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResou
 	if err != nil {
 		return nil, err
 	}
-	zkImage := "bitnami/zookeeper"
-	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
+	zookeeperPort := fmt.Sprintf("%d/tcp", zookeeperPortInt)
 	zookeeperContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: zkImage,
+		Repository: "bitnami/zookeeper",
 		Tag:        "latest",
 		NetworkID:  network.ID,
 		Hostname:   "zookeeper",
@@ -177,18 +187,61 @@ func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResou
 
 	c.logger.Log("Zookeeper localhost port", zookeeperContainer.GetPort("2181/tcp"))
 
+	envVariables := []string{
+		"KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181",
+		"KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL",
+		"ALLOW_PLAINTEXT_LISTENER=yes",
+	}
+
+	var schemaRegistryURL string
+	if c.useSchemaRegistry {
+		bootstrapServers := ""
+		for i := uint(1); i <= c.brokers; i++ {
+			bootstrapServers += fmt.Sprintf("PLAINTEXT://kafka%d:9090,", i)
+		}
+		src, err := pool.RunWithOptions(&dockertest.RunOptions{
+			Repository:   "bitnami/schema-registry",
+			Tag:          "latest",
+			NetworkID:    network.ID,
+			Hostname:     "schemaregistry",
+			ExposedPorts: []string{"8081"},
+			Env: []string{
+				"SCHEMA_REGISTRY_DEBUG=true",
+				"SCHEMA_REGISTRY_KAFKA_BROKERS=" + bootstrapServers[:len(bootstrapServers)-1],
+				"SCHEMA_REGISTRY_ADVERTISED_HOSTNAME=schemaregistry",
+				"SCHEMA_REGISTRY_CLIENT_AUTHENTICATION=NONE",
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		cln.Cleanup(func() {
+			if err := pool.Purge(src); err != nil {
+				cln.Log("Could not purge resource", err)
+			}
+		})
+		var srPort int
+		for p, bindings := range src.Container.NetworkSettings.Ports {
+			if p.Port() == "8081" {
+				srPort, err = strconv.Atoi(bindings[0].HostPort)
+				if err != nil {
+					panic(fmt.Errorf("cannot convert port to int: %w", err))
+				}
+				break
+			}
+		}
+
+		envVariables = append(envVariables, "KAFKA_SCHEMA_REGISTRY_URL=schemaregistry:8081")
+		schemaRegistryURL = fmt.Sprintf("http://localhost:%d", srPort)
+		c.logger.Log("Schema Registry on", schemaRegistryURL)
+	}
+
 	bootstrapServers := ""
 	for i := uint(1); i <= c.brokers; i++ {
 		bootstrapServers += fmt.Sprintf("kafka%d:9090,", i)
 	}
 	bootstrapServers = bootstrapServers[:len(bootstrapServers)-1] // removing trailing comma
-
-	envVariables := []string{
-		"KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181",
-		"KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL",
-		"ALLOW_PLAINTEXT_LISTENER=yes",
-		"BOOTSTRAP_SERVERS=" + bootstrapServers,
-	}
+	envVariables = append(envVariables, "BOOTSTRAP_SERVERS="+bootstrapServers)
 
 	var mounts []string
 	if c.saslConfig != nil {
@@ -264,12 +317,11 @@ func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResou
 		if err != nil {
 			return nil, err
 		}
-		localhostPort := fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
+		localhostPort := fmt.Sprintf("%d/tcp", localhostPortInt)
 		c.logger.Log("Kafka broker localhost port", i+1, localhostPort)
 
 		nodeID := fmt.Sprintf("%d", i+1)
 		hostname := "kafka" + nodeID
-		kImage := "bitnami/kafka"
 		nodeEnvVars := append(envVariables, []string{ // skipcq: CRT-D0001
 			"KAFKA_BROKER_ID=" + nodeID,
 			"KAFKA_CFG_LISTENERS=" + fmt.Sprintf("INTERNAL://%s:9090,CLIENT://:%s", hostname, kafkaClientPort),
@@ -284,7 +336,7 @@ func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResou
 			))
 		}
 		containers[i], err = pool.RunWithOptions(&dockertest.RunOptions{
-			Repository: kImage,
+			Repository: "bitnami/kafka",
 			Tag:        "latest",
 			NetworkID:  network.ID,
 			Hostname:   hostname,
@@ -304,8 +356,9 @@ func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResou
 		})
 	}
 
-	return &KafkaResource{
-		Port: containers[0].GetPort(kafkaClientPort + "/tcp"),
+	return &Resource{
+		Port:              containers[0].GetPort(kafkaClientPort + "/tcp"),
+		SchemaRegistryURL: schemaRegistryURL,
 
 		pool:       pool,
 		containers: containers,

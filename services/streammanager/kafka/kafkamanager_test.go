@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	kafkaConfluent "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
+	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde"
+	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde/avro"
 	"github.com/golang/mock/gomock"
-	"github.com/linkedin/goavro"
+	"github.com/linkedin/goavro/v2"
 	"github.com/ory/dockertest/v3"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
@@ -19,7 +24,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
+	dockerKafka "github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 )
 
 var sinceDuration = time.Second
@@ -118,9 +124,9 @@ func TestNewProducer(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
-			destination.WithLogger(t),
-			destination.WithBrokers(1))
+		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+			dockerKafka.WithLogger(t),
+			dockerKafka.WithBrokers(1))
 		require.NoError(t, err)
 
 		destConfig := map[string]interface{}{
@@ -890,6 +896,115 @@ func TestSSHConfig(t *testing.T) {
 	})
 }
 
+func TestAvroSchemaRegistry(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	t.Log("Creating Kafka cluster")
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+		dockerKafka.WithLogger(t),
+		dockerKafka.WithBrokers(1),
+		dockerKafka.WithSchemaRegistry())
+	require.NoError(t, err)
+
+	t.Log("Creating topic")
+	topicName := "test-topic"
+	ctx := context.Background()
+	broker := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+	tc := testutil.New("tcp", broker)
+	require.Eventuallyf(t, func() bool {
+		err = tc.CreateTopic(ctx, topicName, 1, 1) // partitions = 1, replication factor = 1
+		return err == nil
+	}, 30*time.Second, 100*time.Millisecond, "failed to create topic %s: %v", topicName, err)
+
+	t.Logf("Creating schema registry client with %s", kafkaContainer.SchemaRegistryURL)
+	schemaRegistryClient, err := schemaregistry.NewClient(schemaregistry.NewConfig(kafkaContainer.SchemaRegistryURL))
+	require.NoError(t, err)
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	path := func(file string) string { return filepath.Join(cwd, "client", "testdata", file) }
+	_, schemaID1 := registerSchema(t, "user1", path("user1.avsc"), schemaRegistryClient)
+	schema2, schemaID2 := registerSchema(t, "user2", path("user2.avsc"), schemaRegistryClient)
+	t.Logf("Schema IDs: %d, %d", schemaID1, schemaID2)
+
+	t.Log("Creating Kafka consumer")
+	c, err := kafkaConfluent.NewConsumer(&kafkaConfluent.ConfigMap{
+		"bootstrap.servers":  fmt.Sprintf("localhost:%s", kafkaContainer.Port),
+		"group.id":           "group-1",
+		"session.timeout.ms": 6000,
+		"auto.offset.reset":  "earliest",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+	err = c.SubscribeTopics([]string{"test-topic"}, nil)
+	require.NoError(t, err)
+
+	// Produce message in Avro format with schema 2
+	t.Log("Creating Kafka producer")
+	kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+	destConfig := map[string]interface{}{
+		"topic":         topicName,
+		"hostname":      "localhost",
+		"port":          kafkaContainer.Port,
+		"convertToAvro": true,
+		"avroSchemas": []map[string]interface{}{
+			{"schemaId": fmt.Sprintf("%d", schemaID2), "schema": schema2},
+		},
+	}
+	dest := backendconfig.DestinationT{Config: destConfig}
+
+	p, err := NewProducer(&dest, common.Opts{})
+	require.NoError(t, err)
+	require.NotNil(t, p)
+
+	statusCode, returnMsg, errMsg := p.Produce(json.RawMessage(`{
+		"userId": "123",
+		"schemaId": "2",
+		"topic": "`+topicName+`",
+		"message": {
+			"messageId": "456"
+			"first_name": "John",
+			"last_name": "Doe"
+		}
+	}`), &destConfig)
+	t.Logf("Produce: %d, %s, %s", statusCode, returnMsg, errMsg)
+
+	// Start consuming
+	t.Log("Consuming messages")
+	deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
+	require.NoError(t, err)
+
+	type User struct {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	}
+
+	for {
+		ev := c.Poll(100)
+		if ev == nil {
+			continue
+		}
+
+		switch e := ev.(type) {
+		case *kafkaConfluent.Message:
+			value := User{}
+			err := deser.DeserializeInto(*e.TopicPartition.Topic, e.Value, &value)
+			if err != nil {
+				t.Logf("Failed to deserialize payload: %s", err)
+			} else {
+				t.Logf("%% Message on %s: %+v", e.TopicPartition, value)
+			}
+			if e.Headers != nil {
+				t.Logf("%% Headers: %v", e.Headers)
+			}
+		case kafkaConfluent.Error:
+			t.Logf("%% Error: %v: %v", e.Code(), e)
+		default:
+			t.Logf("Ignored %v", e)
+		}
+	}
+}
+
 func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMeasurement {
 	t.Helper()
 	mockedTimer := mock_stats.NewMockMeasurement(ctrl)
@@ -902,6 +1017,22 @@ func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMea
 	mockedCounter := mock_stats.NewMockMeasurement(ctrl)
 	mockedCounter.EXPECT().Increment().Times(1)
 	return mockedCounter
+}
+
+func registerSchema(t *testing.T, schemaName, schemaPath string, c schemaregistry.Client) (schema string, schemaID int) {
+	t.Helper()
+
+	buf, err := os.ReadFile(schemaPath)
+	require.NoError(t, err)
+	si := schemaregistry.SchemaInfo{Schema: string(buf)}
+
+	require.Eventuallyf(t, func() bool {
+		schemaID, err = c.Register(schemaName, si, true)
+		return err == nil
+	}, 30*time.Second, 100*time.Millisecond, "failed to register schema %s: %v", schemaName, err)
+
+	schema = string(buf)
+	return
 }
 
 // Mocks
