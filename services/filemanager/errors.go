@@ -8,14 +8,12 @@ import (
 func suppressMinorErrors(err error) error {
 	switch err := err.(type) {
 	case azblob.StorageError:
-		switch err.ServiceCode() { // Compare serviceCode to ServiceCodeXxx constants
-		case azblob.ServiceCodeContainerAlreadyExists:
+		if err.ServiceCode() == azblob.ServiceCodeContainerAlreadyExists {
 			pkgLogger.Debug("Received 409. Container already exists")
 			return nil
 		}
 	case minio.ErrorResponse:
-		switch err.Code {
-		case "BucketAlreadyOwnedByYou":
+		if err.Code == "BucketAlreadyOwnedByYou" {
 			pkgLogger.Debug("Received 409. Bucket already exists")
 			return nil
 		}
