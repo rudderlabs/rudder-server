@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v2/options"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -303,6 +305,95 @@ func Test_Dedup(t *testing.T) {
 			})
 		}
 	})
+}
+
+func Test_Dedup_HistoricalData(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+
+	dbPath := os.TempDir() + "/dedup_test_hist"
+	defer func() { _ = os.RemoveAll(dbPath) }()
+	_ = os.RemoveAll(dbPath)
+
+	infos := []dedup.Info{
+		{MessageID: "a", Size: 1},
+		{MessageID: "b", Size: 2},
+		{MessageID: "c", Size: 3},
+		{MessageID: "d", Size: 4},
+		{MessageID: "e", Size: 5},
+	}
+
+	testCases := []struct {
+		markProcessed func()
+		name          string
+		expected      map[int]dedup.Payload
+	}{
+		{
+			name: "with historical data",
+			markProcessed: func() {
+				badgerDB, err := badger.Open(badger.DefaultOptions(dbPath).WithTruncate(true).WithCompression(options.None))
+				require.NoError(t, err)
+
+				txn := badgerDB.NewTransaction(true)
+				messageIDs := []string{"a", "b", "c", "d", "e"}
+				for _, messageID := range messageIDs {
+					e := badger.NewEntry([]byte(messageID), nil)
+					err := txn.SetEntry(e)
+					require.NoError(t, err)
+				}
+
+				err = txn.Commit()
+				require.NoError(t, err)
+
+				err = badgerDB.Close()
+				require.NoError(t, err)
+			},
+			expected: map[int]dedup.Payload{
+				0: {Size: 0},
+				1: {Size: 0},
+				2: {Size: 0},
+				3: {Size: 0},
+				4: {Size: 0},
+			},
+		},
+		{
+			name: "override historical data",
+			markProcessed: func() {
+				d := dedup.New(dbPath, dedup.WithWindow(time.Hour))
+				defer d.Close()
+
+				err := d.MarkProcessed(
+					[]dedup.Info{
+						{MessageID: "a", Size: 1},
+						{MessageID: "b", Size: 2},
+						{MessageID: "c", Size: 3},
+						{MessageID: "d", Size: 4},
+						{MessageID: "e", Size: 5},
+					},
+				)
+				require.NoError(t, err)
+			},
+			expected: map[int]dedup.Payload{
+				0: {Size: 1},
+				1: {Size: 2},
+				2: {Size: 3},
+				3: {Size: 4},
+				4: {Size: 5},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.markProcessed()
+
+			d := dedup.New(dbPath)
+			defer d.Close()
+
+			dups := d.FindDuplicates(infos, nil)
+			require.Equal(t, tc.expected, dups)
+		})
+	}
 }
 
 func Test_Dedup_Window(t *testing.T) {

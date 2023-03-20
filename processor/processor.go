@@ -1389,8 +1389,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
 
 				var singularEventSize int
-				if payload, err := jsonfast.Marshal(singularEvent); err != nil {
-					singularEventSize = len(payload)
+				if proc.config.enableDedup {
+					if payload, err := jsonfast.Marshal(singularEvent); err != nil {
+						singularEventSize = len(payload)
+					}
 				}
 				uniqueMessagePayloads[messageId] = dedup.Payload{
 					Size: singularEventSize,
