@@ -51,6 +51,12 @@ type Config struct {
 	DialTimeout time.Duration
 	TLS         *TLS
 	SASL        *SASL
+	SSHConfig   *SSHConfig
+}
+
+type SSHConfig struct {
+	User, Host, PrivateKey string
+	AcceptAnyHostKey       bool
 }
 
 func (c *Config) defaults() {

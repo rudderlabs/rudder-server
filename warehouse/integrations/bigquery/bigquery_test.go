@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
@@ -15,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/stretchr/testify/require"
 
@@ -272,6 +274,7 @@ func TestConfigurationValidationBigQuery(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	bigquery2.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
@@ -364,7 +367,7 @@ func appendEventsMap() testhelper.EventsCountMap {
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
-	credentials := bigquery2.BQCredentialsT{
+	credentials := bigquery2.BQCredentials{
 		ProjectID:   "projectId",
 		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 	}

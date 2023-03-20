@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // StartJobReqPayload For processing requests payload in handlers.go
@@ -23,10 +23,10 @@ type StartJobReqPayload struct {
 	WorkspaceID   string `json:"workspace_id"`
 }
 
-type AsyncJobWhT struct {
+type AsyncJobWh struct {
 	dbHandle              *sql.DB
 	enabled               bool
-	pgnotifier            *pgnotifier.PgNotifierT
+	pgnotifier            *pgnotifier.PGNotifier
 	context               context.Context
 	logger                logger.Logger
 	MaxBatchSizeToProcess int
@@ -44,8 +44,8 @@ type WhJobsMetaData struct {
 	StartTime string `json:"start_time"`
 }
 
-// AsyncJobPayloadT For creating job payload to wh_async_jobs table
-type AsyncJobPayloadT struct {
+// AsyncJobPayload For creating job payload to wh_async_jobs table
+type AsyncJobPayload struct {
 	Id            string          `json:"id"`
 	SourceID      string          `json:"source_id"`
 	DestinationID string          `json:"destination_id"`
@@ -81,9 +81,9 @@ type WhStatusResponse struct {
 type WhAsyncJobRunner interface {
 	startAsyncJobRunner(context.Context)
 	getTableNamesBy(context.Context, string, string)
-	getPendingAsyncJobs(context.Context) ([]AsyncJobPayloadT, error)
+	getPendingAsyncJobs(context.Context) ([]AsyncJobPayload, error)
 	getStatusAsyncJob(*StartJobReqPayload) (string, error)
-	updateMultipleAsyncJobs(*[]AsyncJobPayloadT, string, string)
+	updateMultipleAsyncJobs(*[]AsyncJobPayload, string, string)
 }
 
 type AsyncJobStatus struct {

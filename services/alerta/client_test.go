@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/stretchr/testify/require"
 )
@@ -38,10 +38,12 @@ func TestSendFeatures(t *testing.T) {
 
 		var op []alerta.OptFn
 		op = append(op, o...)
-		op = append(op, alerta.WithHTTPClient(s.Client()))
-		op = append(op, alerta.WithKubeNamespace(testNamespace))
-		op = append(op, alerta.WithAlertTimeout(testAlertTimeout))
-		op = append(op, alerta.WithConfig(c))
+		op = append(op,
+			alerta.WithHTTPClient(s.Client()),
+			alerta.WithKubeNamespace(testNamespace),
+			alerta.WithAlertTimeout(testAlertTimeout),
+			alerta.WithConfig(c),
+		)
 
 		return alerta.NewClient(
 			s.URL,

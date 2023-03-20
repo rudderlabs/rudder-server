@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -134,10 +134,10 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 
 		req, err := http.NewRequestWithContext(ctx, requestMethod, postInfo.URL, payload)
 		if err != nil {
-			network.logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
+			network.logger.Error(fmt.Sprintf(`400 Unable to construct %q request for URL : %q`, requestMethod, postInfo.URL))
 			return &utils.SendPostResponse{
 				StatusCode:   400,
-				ResponseBody: []byte(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)),
+				ResponseBody: []byte(fmt.Sprintf(`400 Unable to construct %q request for URL : %q`, requestMethod, postInfo.URL)),
 			}
 		}
 
@@ -165,7 +165,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   http.StatusGatewayTimeout,
-				ResponseBody: []byte(fmt.Sprintf(`504 Unable to make "%s" request for URL : "%s". Error: %s`, requestMethod, postInfo.URL, err.Error())),
+				ResponseBody: []byte(fmt.Sprintf(`504 Unable to make %q request for URL : %q. Error: %s`, requestMethod, postInfo.URL, err.Error())),
 			}
 		}
 
@@ -175,7 +175,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   resp.StatusCode,
-				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : "%s". Error: %s`, postInfo.URL, err.Error())),
+				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %s`, postInfo.URL, err.Error())),
 			}
 		}
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)

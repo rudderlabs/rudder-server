@@ -6,7 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 )
 
-func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayloadT, status string, err error) map[string]AsyncJobStatus {
+func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayload, status string, err error) map[string]AsyncJobStatus {
 	asyncJobStatusMap := make(map[string]AsyncJobStatus)
 	for _, payload := range payloads {
 		asyncJobStatusMap[payload.Id] = AsyncJobStatus{
@@ -19,7 +19,7 @@ func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayloadT, s
 }
 
 // convert to pgNotifier Payload and return the array of payloads
-func getMessagePayloadsFromAsyncJobPayloads(asyncJobPayloads []AsyncJobPayloadT) ([]pgnotifier.JobPayload, error) {
+func getMessagePayloadsFromAsyncJobPayloads(asyncJobPayloads []AsyncJobPayload) ([]pgnotifier.JobPayload, error) {
 	var messages []pgnotifier.JobPayload
 	for _, job := range asyncJobPayloads {
 		message, err := json.Marshal(job)
@@ -47,7 +47,7 @@ func contains(sArray []string, s string) bool {
 	return false
 }
 
-func getAsyncStatusMapFromAsyncPayloads(payloads []AsyncJobPayloadT) map[string]AsyncJobStatus {
+func getAsyncStatusMapFromAsyncPayloads(payloads []AsyncJobPayload) map[string]AsyncJobStatus {
 	asyncJobStatusMap := make(map[string]AsyncJobStatus)
 	for _, payload := range payloads {
 		asyncJobStatusMap[payload.Id] = AsyncJobStatus{

@@ -14,8 +14,9 @@ import (
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	mockStats "github.com/rudderlabs/rudder-server/mocks/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -130,7 +131,7 @@ func TestNewProducer(t *testing.T) {
 		dest := backendconfig.DestinationT{Config: destConfig}
 
 		p, err := NewProducer(&dest, common.Opts{})
-		require.NotNil(t, p)
+		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
@@ -295,9 +296,9 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 func TestPrepareBatchOfMessages(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockSkippedDueToUserID := mockStats.NewMockMeasurement(ctrl)
-	mockSkippedDueToMessage := mockStats.NewMockMeasurement(ctrl)
-	mockPrepareBatchTime := mockStats.NewMockMeasurement(ctrl)
+	mockSkippedDueToUserID := mock_stats.NewMockMeasurement(ctrl)
+	mockSkippedDueToMessage := mock_stats.NewMockMeasurement(ctrl)
+	mockPrepareBatchTime := mock_stats.NewMockMeasurement(ctrl)
 	kafkaStats = managerStats{
 		missingUserID:    mockSkippedDueToUserID,
 		missingMessage:   mockSkippedDueToMessage,
@@ -838,16 +839,67 @@ func TestPublish(t *testing.T) {
 	})
 }
 
-func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
+func TestSSHConfig(t *testing.T) {
+	t.Run("not enabled", func(t *testing.T) {
+		c := config.New()
+		conf, err := getSSHConfig("some id", c)
+		require.NoError(t, err)
+		require.Nil(t, conf)
+	})
+
+	t.Run("enabled for another destination", func(t *testing.T) {
+		c := config.New()
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest1,dest3")
+		conf, err := getSSHConfig("dest2", c)
+		require.NoError(t, err)
+		require.Nil(t, conf)
+	})
+
+	t.Run("no private key", func(t *testing.T) {
+		c := config.New()
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest2,dest1,dest5")
+		conf, err := getSSHConfig("dest1", c)
+		require.ErrorContains(t, err, "kafka SSH private key is not set")
+		require.Nil(t, conf)
+	})
+
+	t.Run("no base64 private key", func(t *testing.T) {
+		c := config.New()
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest3,dest1,dest7")
+		c.Set("ROUTER_KAFKA_SSH_PRIVATE_KEY", "not base64 encoded")
+		conf, err := getSSHConfig("dest1", c)
+		require.ErrorContains(t, err, "failed to decode base64 private key")
+		require.Nil(t, conf)
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		c := config.New()
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest0,dest1,dest6")
+		c.Set("ROUTER_KAFKA_SSH_PRIVATE_KEY", "a2V5IGNvbnRlbnQ=")
+		c.Set("ROUTER_KAFKA_SSH_USER", "some-user")
+		c.Set("ROUTER_KAFKA_SSH_HOST", "1.2.3.4:22")
+		c.Set("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", "true")
+		conf, err := getSSHConfig("dest1", c)
+		require.NoError(t, err)
+		require.Equal(t, &client.SSHConfig{
+			User:             "some-user",
+			Host:             "1.2.3.4:22",
+			PrivateKey:       "key content",
+			AcceptAnyHostKey: true,
+		}, conf)
+	})
+}
+
+func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMeasurement {
 	t.Helper()
-	mockedTimer := mockStats.NewMockMeasurement(ctrl)
+	mockedTimer := mock_stats.NewMockMeasurement(ctrl)
 	mockedTimer.EXPECT().SendTiming(sinceDuration).Times(1)
 	return mockedTimer
 }
 
-func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
+func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMeasurement {
 	t.Helper()
-	mockedCounter := mockStats.NewMockMeasurement(ctrl)
+	mockedCounter := mock_stats.NewMockMeasurement(ctrl)
 	mockedCounter.EXPECT().Increment().Times(1)
 	return mockedCounter
 }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
@@ -14,7 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -28,7 +30,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 
 	mssql.Init()
 
-	db, err := mssql.Connect(mssql.CredentialsT{
+	db, err := mssql.Connect(mssql.Credentials{
 		DBName:   "master",
 		Password: "reallyStrongPwd123",
 		User:     "SA",
@@ -134,6 +136,7 @@ func TestConfigurationValidationMSSQL(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	mssql.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

@@ -28,25 +28,26 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/gorillaware"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/middleware"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	rs_httputil "github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -116,6 +117,7 @@ var BatchEvent = []byte(`
 const (
 	DELIMITER                 = string("<<>>")
 	eventStreamSourceCategory = "eventStream"
+	extractEvent              = "extract"
 )
 
 func Init() {
@@ -160,7 +162,7 @@ type HandleT struct {
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
-	rateLimiter                  ratelimiter.RateLimiter
+	rateLimiter                  throttler.Throttler
 
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.Measurement
@@ -537,9 +539,13 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	if enableRateLimit {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-		if gateway.rateLimiter.LimitReached(workspaceId) {
-			err = errRequestDropped
-			return
+		ok, errCheck := gateway.rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
+		if errCheck != nil {
+			gateway.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
+			gateway.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
+		}
+		if ok {
+			return jobData, errRequestDropped
 		}
 	}
 
@@ -565,7 +571,12 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 		anonIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["anonymousId"]))
 		userIDFromReq := strings.TrimSpace(misc.GetStringifiedData(toSet["userId"]))
-		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
+		eventTypeFromReq, _ := misc.MapLookup(
+			toSet,
+			"type",
+		).(string)
+
+		if isNonIdentifiable(anonIDFromReq, userIDFromReq, eventTypeFromReq) {
 			err = errors.New(response.NonIdentifiableRequest)
 			return
 		}
@@ -598,7 +609,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 				"library",
 				"version",
 			).(string)
-			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) {
+			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) { // skipcq: CRT-A0007
 				firstSDKVersion = "invalid"
 			}
 			if firstSDKName != "" || firstSDKVersion != "" {
@@ -620,10 +631,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		}
 		toSet["rudderId"] = rudderId
 		setRandomMessageIDWhenEmpty(toSet)
-		if eventTypeFromReq, _ := misc.MapLookup(
-			toSet,
-			"type",
-		).(string); eventTypeFromReq == "audiencelist" {
+		if eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
 		}
 
@@ -676,7 +684,11 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	return
 }
 
-func isNonIdentifiable(anonIDFromReq, userIDFromReq string) bool {
+func isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
+	if eventType == extractEvent {
+		// extract event is allowed without user id and anonymous id
+		return false
+	}
 	if anonIDFromReq == "" && userIDFromReq == "" {
 		return !allowReqsWithoutUserIDAndAnonymousID
 	}
@@ -839,6 +851,10 @@ func (gateway *HandleT) webAudienceListHandler(w http.ResponseWriter, r *http.Re
 	gateway.webHandler(w, r, "audiencelist")
 }
 
+func (gateway *HandleT) webExtractHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "extract")
+}
+
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "batch")
 }
@@ -887,6 +903,7 @@ func warehouseHandler(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(misc.GetWarehouseURL())
 	if err != nil {
 		http.Error(w, err.Error(), 404)
+		return
 	}
 	// gateway.logger.LogRequest(r)
 	director := func(req *http.Request) {
@@ -980,6 +997,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 		if errorMessage != "" {
 			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetErrorStatusCode(errorMessage), errorMessage)
 			http.Error(w, response.GetStatus(errorMessage), response.GetErrorStatusCode(errorMessage))
+			return
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
@@ -1232,10 +1250,12 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		gorillaware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
+	internalMux := srvMux.PathPrefix("/internal").Subrouter() // mux for internal endpoints
+
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/track", gateway.webTrackHandler).Methods("POST")
@@ -1255,6 +1275,9 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.PathPrefix("/v1/warehouse").Handler(http.HandlerFunc(warehouseHandler)).Methods("GET", "POST")
 	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
+
+	// internal endpoints
+	internalMux.HandleFunc("/v1/extract", gateway.webExtractHandler).Methods("POST")
 
 	if enableEventSchemasFeature {
 		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
@@ -1306,12 +1329,13 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		gorillaware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srv := &http.Server{
-		Addr:    ":" + strconv.Itoa(adminWebPort),
-		Handler: bugsnag.Handler(srvMux),
+		Addr:              ":" + strconv.Itoa(adminWebPort),
+		Handler:           bugsnag.Handler(srvMux),
+		ReadHeaderTimeout: ReadHeaderTimeout,
 	}
 
 	return rs_httputil.ListenAndServe(ctx, srv)
@@ -1327,8 +1351,8 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			newEnabledWriteKeyWorkspaceMap = map[string]string{}
 			newSourceIDToNameMap           = map[string]string{}
 		)
-		config := data.Data.(map[string]backendconfig.ConfigT)
-		for workspaceID, wsConfig := range config {
+		configData := data.Data.(map[string]backendconfig.ConfigT)
+		for workspaceID, wsConfig := range configData {
 			for _, source := range wsConfig.Sources {
 				newSourceIDToNameMap[source.ID] = source.Name
 				newWriteKeysSourceMap[source.WriteKey] = source
@@ -1413,7 +1437,7 @@ This function will block until backend config is initially received.
 func (gateway *HandleT) Setup(
 	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
-	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
+	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
 	gateway.logger = pkgLogger

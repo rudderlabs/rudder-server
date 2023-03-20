@@ -24,15 +24,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -762,7 +762,7 @@ func TestCacheScenarios(t *testing.T) {
 		js := make([]*JobT, numOfJob)
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
+				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1015,7 +1015,7 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 		js := make([]*JobT, numOfJob)
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
+				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1092,7 +1092,7 @@ func TestDeleteExecuting(t *testing.T) {
 		js := make([]*JobT, numOfJob)
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
+				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1146,7 +1146,7 @@ func TestFailExecuting(t *testing.T) {
 		js := make([]*JobT, numOfJob)
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
+				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1343,10 +1343,10 @@ func (t *ginkgoTestingT) Cleanup(f func()) {
 }
 
 // startPostgres starts a postgres container and (re)initializes global vars
-func startPostgres(t testingT) *destination.PostgresResource {
+func startPostgres(t testingT) *resource.PostgresResource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := destination.SetupPostgres(pool, t)
+	postgresContainer, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 	t.Setenv("LOG_LEVEL", "DEBUG")
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)

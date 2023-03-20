@@ -39,10 +39,10 @@ import (
 	"github.com/mkmik/multierror"
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/thoas/go-funk"
 
@@ -830,42 +830,6 @@ func RunWithTimeout(f, onTimeout func(), d time.Duration) {
 }
 
 /*
-RWCConfig config for RunWithConcurrency
-factor: number of concurrent job
-jobs:  range of jobs you need to provide
-runJob: caller function for the concurrent job
-*/
-type RWCJob interface{}
-
-type RWCConfig struct {
-	Factor int
-	Jobs   *[]RWCJob
-	Run    func(RWCJob interface{})
-}
-
-/*
-RunWithConcurrency runs provided function f with concurrency provided by the factor factor.
-*/
-func RunWithConcurrency(config *RWCConfig) {
-	var wg sync.WaitGroup
-
-	concurrencyChan := make(chan struct{}, config.Factor)
-	for _, job := range *config.Jobs {
-		wg.Add(1)
-		concurrencyChan <- struct{}{}
-		runJob := job
-		go func() {
-			defer func() {
-				<-concurrencyChan
-				wg.Done()
-			}()
-			config.Run(runJob)
-		}()
-	}
-	wg.Wait()
-}
-
-/*
 IsValidUUID will check if provided string is a valid UUID
 */
 func IsValidUUID(uuid string) bool {
@@ -1331,14 +1295,6 @@ func Unique(stringSlice []string) []string {
 		}
 	}
 	return list
-}
-
-// ReverseInt reverses an array of int
-func ReverseInt(s []int) []int {
-	for i, j := 0, len(s)-1; i < len(s)/2; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
-	return s
 }
 
 func UseFairPickup() bool {

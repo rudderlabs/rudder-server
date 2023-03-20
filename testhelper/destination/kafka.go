@@ -8,7 +8,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
-	"github.com/rudderlabs/rudder-server/testhelper"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -18,6 +18,8 @@ const (
 	scramPlainText scramHashGenerator = iota
 	scramSHA256
 	scramSHA512
+
+	kafkaClientPort = "9092"
 )
 
 type User struct {
@@ -42,31 +44,24 @@ type SASLConfig struct {
 }
 
 type config struct {
-	logger     logger
-	brokers    uint
-	saslConfig *SASLConfig
+	logger                     Logger
+	brokers                    uint
+	saslConfig                 *SASLConfig
+	network                    *dc.Network
+	dontUseDockerHostListeners bool
 }
 
 func (c *config) defaults() {
 	if c.logger == nil {
-		c.logger = &nopLogger{}
+		c.logger = &NOPLogger{}
 	}
 	if c.brokers < 1 {
 		c.brokers = 1
 	}
 }
 
-type logger interface {
-	Log(...interface{})
-}
-
-type cleaner interface {
-	Cleanup(func())
-	logger
-}
-
 // WithLogger allows to set a logger that prints debugging information
-func WithLogger(l logger) Option {
+func WithLogger(l Logger) Option {
 	return withOption{setup: func(c *config) {
 		c.logger = l
 	}}
@@ -101,6 +96,20 @@ func withSASL(hashType scramHashGenerator, conf *SASLConfig) Option {
 	}}
 }
 
+// WithNetwork allows to set a docker network to use for the cluster
+func WithNetwork(network *dc.Network) Option {
+	return withOption{setup: func(c *config) {
+		c.network = network
+	}}
+}
+
+// WithoutDockerHostListeners allows to not set the advertised listener to the host mapped port
+func WithoutDockerHostListeners() Option {
+	return withOption{setup: func(c *config) {
+		c.dontUseDockerHostListeners = true
+	}}
+}
+
 type KafkaResource struct {
 	Port string
 
@@ -119,7 +128,7 @@ func (k *KafkaResource) Destroy() error {
 	return g.Wait()
 }
 
-func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResource, error) {
+func SetupKafka(pool *dockertest.Pool, cln Cleaner, opts ...Option) (*KafkaResource, error) {
 	// lock so no two tests can run at the same time and try to listen on the same port
 	var c config
 	for _, opt := range opts {
@@ -127,17 +136,21 @@ func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResou
 	}
 	c.defaults()
 
-	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
-	if err != nil {
-		return nil, fmt.Errorf("could not create docker network: %w", err)
-	}
-	cln.Cleanup(func() {
-		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-			cln.Log(fmt.Errorf("could not remove kafka network: %w", err))
+	network := c.network
+	if c.network == nil {
+		var err error
+		network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+		if err != nil {
+			return nil, fmt.Errorf("could not create docker network: %w", err)
 		}
-	})
+		cln.Cleanup(func() {
+			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+				cln.Log(fmt.Errorf("could not remove kafka network: %w", err))
+			}
+		})
+	}
 
-	zookeeperPortInt, err := testhelper.GetFreePort()
+	zookeeperPortInt, err := kitHelper.GetFreePort()
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +260,7 @@ func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResou
 	containers := make([]*dockertest.Resource, c.brokers)
 	for i := uint(0); i < c.brokers; i++ {
 		i := i
-		localhostPortInt, err := testhelper.GetFreePort()
+		localhostPortInt, err := kitHelper.GetFreePort()
 		if err != nil {
 			return nil, err
 		}
@@ -257,22 +270,29 @@ func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResou
 		nodeID := fmt.Sprintf("%d", i+1)
 		hostname := "kafka" + nodeID
 		kImage := "bitnami/kafka"
+		nodeEnvVars := append(envVariables, []string{ // skipcq: CRT-D0001
+			"KAFKA_BROKER_ID=" + nodeID,
+			"KAFKA_CFG_LISTENERS=" + fmt.Sprintf("INTERNAL://%s:9090,CLIENT://:%s", hostname, kafkaClientPort),
+		}...)
+		if c.dontUseDockerHostListeners {
+			nodeEnvVars = append(nodeEnvVars, "KAFKA_CFG_ADVERTISED_LISTENERS="+fmt.Sprintf(
+				"INTERNAL://%s:9090,CLIENT://%s:%s", hostname, hostname, kafkaClientPort,
+			))
+		} else {
+			nodeEnvVars = append(nodeEnvVars, "KAFKA_CFG_ADVERTISED_LISTENERS="+fmt.Sprintf(
+				"INTERNAL://%s:9090,CLIENT://localhost:%d", hostname, localhostPortInt,
+			))
+		}
 		containers[i], err = pool.RunWithOptions(&dockertest.RunOptions{
 			Repository: kImage,
 			Tag:        "latest",
 			NetworkID:  network.ID,
 			Hostname:   hostname,
 			PortBindings: map[dc.Port][]dc.PortBinding{
-				"9092/tcp": {{HostIP: "localhost", HostPort: localhostPort}},
+				kafkaClientPort + "/tcp": {{HostIP: "localhost", HostPort: localhostPort}},
 			},
 			Mounts: mounts,
-			Env: append(envVariables, []string{
-				"KAFKA_BROKER_ID=" + nodeID,
-				"KAFKA_CFG_ADVERTISED_LISTENERS=" + fmt.Sprintf(
-					"INTERNAL://%s:9090,CLIENT://localhost:%d", hostname, localhostPortInt,
-				),
-				"KAFKA_CFG_LISTENERS=" + fmt.Sprintf("INTERNAL://%s:9090,CLIENT://:9092", hostname),
-			}...),
+			Env:    nodeEnvVars,
 		})
 		if err != nil {
 			return nil, err
@@ -285,13 +305,9 @@ func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResou
 	}
 
 	return &KafkaResource{
-		Port: containers[0].GetPort("9092/tcp"),
+		Port: containers[0].GetPort(kafkaClientPort + "/tcp"),
 
 		pool:       pool,
 		containers: containers,
 	}, nil
 }
-
-type nopLogger struct{}
-
-func (*nopLogger) Log(...interface{}) {}

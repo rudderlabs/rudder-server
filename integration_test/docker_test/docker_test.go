@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	redigo "github.com/gomodule/redigo/redis"
@@ -33,15 +32,17 @@ import (
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -58,7 +59,7 @@ var (
 	workspaceID                  string
 	kafkaContainer               *destination.KafkaResource
 	redisContainer               *destination.RedisResource
-	postgresContainer            *destination.PostgresResource
+	postgresContainer            *resource.PostgresResource
 	transformerContainer         *destination.TransformerResource
 	minioContainer               *destination.MINIOResource
 	EventID                      string
@@ -402,7 +403,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return err
 	})
 	containersGroup.Go(func() (err error) {
-		postgresContainer, err = destination.SetupPostgres(pool, t)
+		postgresContainer, err = resource.SetupPostgres(pool, t)
 		db = postgresContainer.DB
 		return err
 	})
@@ -425,12 +426,12 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
-	httpPortInt, err := testhelper.GetFreePort()
+	httpPortInt, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	httpPort = strconv.Itoa(httpPortInt)
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
-	httpAdminPort, err := testhelper.GetFreePort()
+	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
@@ -647,7 +648,7 @@ func blockOnHold(t *testing.T) {
 
 func getEvent(url, method string) (string, error) {
 	httpClient := &http.Client{}
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest(method, url, http.NoBody)
 	if err != nil {
 		return "", err
 	}

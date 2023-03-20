@@ -3,41 +3,43 @@ package jobs
 import (
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type WhAsyncJob struct{}
 
-func (*WhAsyncJob) GetSchemaInWarehouse() warehouseutils.SchemaT {
-	return warehouseutils.SchemaT{}
+func (*WhAsyncJob) GetSchemaInWarehouse() model.Schema {
+	return model.Schema{}
 }
 
-func (*WhAsyncJob) GetLocalSchema() warehouseutils.SchemaT {
-	return warehouseutils.SchemaT{}
+func (*WhAsyncJob) GetLocalSchema() (model.Schema, error) {
+	return model.Schema{}, nil
 }
 
-func (*WhAsyncJob) UpdateLocalSchema(warehouseutils.SchemaT) error {
+func (*WhAsyncJob) UpdateLocalSchema(model.Schema) error {
 	return nil
 }
 
-func (*WhAsyncJob) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*WhAsyncJob) GetTableSchemaInWarehouse(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
-func (*WhAsyncJob) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*WhAsyncJob) GetTableSchemaInUpload(string) model.TableSchema {
+	return model.TableSchema{}
 }
 
-func (*WhAsyncJob) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
-	return []warehouseutils.LoadFileT{}
+func (*WhAsyncJob) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+	return []warehouseutils.LoadFile{}
 }
 
 func (*WhAsyncJob) GetSampleLoadFileLocation(string) (string, error) {
 	return "", nil
 }
 
-func (*WhAsyncJob) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
+func (*WhAsyncJob) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) {
+	return warehouseutils.LoadFile{}, nil
 }
 
 func (*WhAsyncJob) ShouldOnDedupUseNewRecord() bool {

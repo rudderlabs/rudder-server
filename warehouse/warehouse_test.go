@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
@@ -16,14 +19,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -36,8 +39,8 @@ type testingT interface {
 	Log(...any)
 }
 
-func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *destination.PostgresResource {
-	pgResource, err := destination.SetupPostgres(pool, t)
+func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *resource.PostgresResource {
+	pgResource, err := resource.SetupPostgres(pool, t)
 	Expect(err).To(BeNil())
 
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
@@ -61,6 +64,7 @@ func initWarehouse() {
 	validations.Init()
 	misc.Init()
 	postgres.Init()
+	postgreslegacy.Init()
 }
 
 func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMeasurement) {
@@ -121,7 +125,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
 			err = (&migrator.Migrator{
@@ -141,9 +145,10 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			store := memstats.New()
 
 			wh := HandleT{
-				destType: tc.destType,
-				stats:    store,
-				dbHandle: pgResource.DB,
+				destType:     tc.destType,
+				stats:        store,
+				dbHandle:     pgResource.DB,
+				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
 			}
 			tenantManager = &multitenant.Manager{}
 
@@ -181,6 +186,170 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 				"destType": tc.destType,
 			})
 			require.EqualValues(t, m4.LastDuration(), tc.pickupWaitTime)
+		})
+	}
+}
+
+func Test_GetNamespace(t *testing.T) {
+	testcases := []struct {
+		config      map[string]interface{}
+		source      backendconfig.SourceT
+		destination backendconfig.DestinationT
+		destType    string
+		result      string
+		setConfig   bool
+	}{
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"database": "test_db",
+				},
+			},
+			destType:  warehouseutils.CLICKHOUSE,
+			result:    "test_db",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+			},
+			destType:  warehouseutils.CLICKHOUSE,
+			result:    "rudder",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "test_namespace",
+				},
+			},
+			destType:  "test-destinationType-1",
+			result:    "test_namespace",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "      test_namespace        ",
+				},
+			},
+			destType:  "test-destinationType-1",
+			result:    "test_namespace",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "##",
+				},
+			},
+			destType:  "test-destinationType-1",
+			result:    "stringempty",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "##evrnvrv$vtr&^",
+				},
+			},
+			destType:  "test-destinationType-1",
+			result:    "evrnvrv_vtr",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+			},
+			destType:  "test-destinationType-1",
+			result:    "config_result",
+			setConfig: true,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "test-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "test-destinationID",
+			},
+			destType:  "test-destinationType-1",
+			result:    "test-namespace",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "random-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "random-destinationID",
+			},
+			destType:  "test-destinationType-1",
+			result:    "test_source",
+			setConfig: false,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "test-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "test-destinationID",
+			},
+			destType:  "test-destinationType-1",
+			result:    "config_result_test_source",
+			setConfig: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		tc := tc
+		t.Run("should return namespace", func(t *testing.T) {
+			t.Parallel()
+
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			pgResource, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+
+			err = (&migrator.Migrator{
+				Handle:          pgResource.DB,
+				MigrationsTable: "wh_schema_migrations",
+			}).Migrate("warehouse")
+
+			require.NoError(t, err)
+			store := memstats.New()
+			wh := HandleT{
+				destType:     tc.destType,
+				stats:        store,
+				dbHandle:     pgResource.DB,
+				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
+			}
+			if tc.setConfig {
+				config.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destType]), "config_result")
+			}
+
+			sqlStatement, err := os.ReadFile("testdata/sql/namespace_test.sql")
+			require.NoError(t, err)
+
+			_, err = pgResource.DB.Exec(string(sqlStatement))
+			require.NoError(t, err)
+
+			namespace := wh.getNamespace(tc.source, tc.destination)
+			require.Equal(t, tc.result, namespace)
+			config.Reset()
 		})
 	}
 }

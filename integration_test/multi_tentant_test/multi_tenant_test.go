@@ -24,12 +24,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -66,7 +68,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	var (
 		group                errgroup.Group
 		etcdContainer        *thEtcd.Resource
-		postgresContainer    *destination.PostgresResource
+		postgresContainer    *resource.PostgresResource
 		transformerContainer *destination.TransformerResource
 		serverInstanceID     = "1"
 		workspaceNamespace   = "test-workspace-namespace"
@@ -75,7 +77,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	)
 
 	group.Go(func() (err error) {
-		postgresContainer, err = destination.SetupPostgres(pool, t)
+		postgresContainer, err = resource.SetupPostgres(pool, t)
 		return err
 	})
 	group.Go(func() (err error) {
@@ -140,11 +142,11 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
 
-	httpPort, err := th.GetFreePort()
+	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := th.GetFreePort()
+	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
-	debugPort, err := th.GetFreePort()
+	debugPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")

@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 )
 
 func Test_mustRenameDS(t *testing.T) {

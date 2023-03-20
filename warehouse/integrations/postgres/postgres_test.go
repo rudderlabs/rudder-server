@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
@@ -15,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -29,6 +31,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
@@ -234,6 +237,7 @@ func TestConfigurationValidationPostgres(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()

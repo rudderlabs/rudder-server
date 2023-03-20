@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,12 +14,12 @@ import (
 	"github.com/linkedin/goavro"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	rslogger "github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // schema is the AVRO schema required to convert the data to AVRO
@@ -270,8 +271,14 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		}
 	}
 
+	sshConfig, err := getSSHConfig(destination.ID, config.Default)
+	if err != nil {
+		return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
+	}
+
 	clientConf := client.Config{
 		DialTimeout: kafkaDialTimeout,
+		SSHConfig:   sshConfig,
 	}
 	if destConfig.SslEnabled {
 		if destConfig.CACertificate != "" {
@@ -658,4 +665,39 @@ func getStatusCodeFromError(err error) int {
 		return 500
 	}
 	return 400
+}
+
+func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, error) {
+	enabled := c.GetString("ROUTER_KAFKA_SSH_ENABLED", "")
+	if enabled == "" {
+		return nil, nil // nolint
+	}
+
+	var found bool
+	for _, id := range strings.Split(enabled, ",") {
+		if id == destinationID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, nil // nolint
+	}
+
+	privateKey := c.GetString("ROUTER_KAFKA_SSH_PRIVATE_KEY", "")
+	if privateKey == "" {
+		return nil, fmt.Errorf("kafka SSH private key is not set")
+	}
+
+	rawPrivateKey, err := base64.StdEncoding.DecodeString(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode base64 private key: %w", err)
+	}
+
+	return &client.SSHConfig{
+		User:             c.GetString("ROUTER_KAFKA_SSH_USER", ""),
+		Host:             c.GetString("ROUTER_KAFKA_SSH_HOST", ""),
+		PrivateKey:       string(rawPrivateKey),
+		AcceptAnyHostKey: c.GetBool("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", false),
+	}, nil
 }
