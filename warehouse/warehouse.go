@@ -422,11 +422,8 @@ func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backen
 	if namespacePrefix != "" {
 		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
-	var (
-		namespace string
-		exists    bool
-	)
-	namespace, err = wh.whSchemaRepo.GetNamespace(context.TODO(), source.ID, destination.ID)
+
+	namespace, err := wh.whSchemaRepo.GetNamespace(context.TODO(), source.ID, destination.ID)
 	if err != nil {
 		pkgLogger.Errorw("getting namespace",
 			logfield.SourceID, source.ID,
@@ -437,7 +434,7 @@ func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backen
 		return ""
 	}
 	if namespace == "" {
-		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
+		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, source.Name))
 	}
 	return namespace
 }

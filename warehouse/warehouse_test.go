@@ -329,9 +329,10 @@ func Test_GetNamespace(t *testing.T) {
 			require.NoError(t, err)
 			store := memstats.New()
 			wh := HandleT{
-				destType: tc.destType,
-				stats:    store,
-				dbHandle: pgResource.DB,
+				destType:     tc.destType,
+				stats:        store,
+				dbHandle:     pgResource.DB,
+				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
 			}
 			if tc.setConfig {
 				config.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destType]), "config_result")
