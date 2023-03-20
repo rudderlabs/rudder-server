@@ -23,18 +23,17 @@ func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, e
 	// then it creates a container based on it and runs it
 	err := pool.Client.PullImage(docker.PullImageOptions{
 		Repository: "rudderlabs/develop-rudder-transformer",
-		Tag:        "chore.refactor-typescript",
+		Tag:        "chore.upgrade-node-version",
 	}, docker.AuthConfiguration{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to pull image: %w", err)
 	}
 	transformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "rudderlabs/develop-rudder-transformer",
-		Tag:          "chore.refactor-typescript",
+		Tag:          "chore.upgrade-node-version",
 		ExposedPorts: []string{"9090"},
 		Env: []string{
 			"CONFIG_BACKEND_URL=https://api.rudderstack.com",
-			"ENABLE_NEW_ROUTES=true",
 		},
 	})
 	if err != nil {
