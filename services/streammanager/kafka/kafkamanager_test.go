@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -908,10 +909,12 @@ func TestAvroSchemaRegistry(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("Creating topic")
-	topicName := "test-topic"
-	ctx := context.Background()
-	broker := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
-	tc := testutil.New("tcp", broker)
+	var (
+		ctx       = context.Background()
+		topicName = "test-topic"
+		broker    = fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+		tc        = testutil.New("tcp", broker)
+	)
 	require.Eventuallyf(t, func() bool {
 		err = tc.CreateTopic(ctx, topicName, 1, 1) // partitions = 1, replication factor = 1
 		return err == nil
@@ -936,73 +939,138 @@ func TestAvroSchemaRegistry(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
-	err = c.SubscribeTopics([]string{"test-topic"}, nil)
+	err = c.SubscribeTopics([]string{topicName}, nil)
 	require.NoError(t, err)
 
-	// Produce message in Avro format with schema 2
-	t.Log("Creating Kafka producer")
-	kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
-	destConfig := map[string]interface{}{
-		"topic":         topicName,
-		"hostname":      "localhost",
-		"port":          kafkaContainer.Port,
-		"convertToAvro": true,
-		"avroSchemas": []map[string]interface{}{
-			{"schemaId": fmt.Sprintf("%d", schemaID2), "schema": schema2},
-		},
-	}
-	dest := backendconfig.DestinationT{Config: destConfig}
-
-	p, err := NewProducer(&dest, common.Opts{})
-	require.NoError(t, err)
-	require.NotNil(t, p)
-
-	statusCode, returnMsg, errMsg := p.Produce(json.RawMessage(`{
-		"userId": "123",
-		"schemaId": "2",
-		"topic": "`+topicName+`",
-		"message": {
-			"messageId": "456"
-			"first_name": "John",
-			"last_name": "Doe"
+	var (
+		destinationID = "DEST1"
+		destConfig    = map[string]interface{}{
+			"topic":         topicName,
+			"hostname":      "localhost",
+			"port":          kafkaContainer.Port,
+			"convertToAvro": true,
+			"avroSchemas": []map[string]interface{}{
+				{"schemaId": fmt.Sprintf("%d", schemaID2), "schema": schema2},
+			},
 		}
-	}`), &destConfig)
-	t.Logf("Produce: %d, %s, %s", statusCode, returnMsg, errMsg)
-
-	// Start consuming
-	t.Log("Consuming messages")
-	deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
-	require.NoError(t, err)
-
-	type User struct {
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-	}
-
-	for {
-		ev := c.Poll(100)
-		if ev == nil {
-			continue
-		}
-
-		switch e := ev.(type) {
-		case *kafkaConfluent.Message:
-			value := User{}
-			err := deser.DeserializeInto(*e.TopicPartition.Topic, e.Value, &value)
-			if err != nil {
-				t.Logf("Failed to deserialize payload: %s", err)
-			} else {
-				t.Logf("%% Message on %s: %+v", e.TopicPartition, value)
+		dest       = backendconfig.DestinationT{ID: destinationID, Config: destConfig}
+		rawMessage = json.RawMessage(`{
+			"userId": "123",
+			"messageId": "456",
+			"schemaId": "2",
+			"topic": "` + topicName + `",
+			"message": {
+				"first_name": "John",
+				"last_name": "Doe"
 			}
-			if e.Headers != nil {
-				t.Logf("%% Headers: %v", e.Headers)
+		}`)
+	)
+
+	t.Run("plain avro", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+
+		// Setting up mocks
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+
+		// Produce message in Avro format with schema 2
+		t.Log("Creating Kafka producer")
+		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, false)
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NoError(t, err)
+		require.NotNil(t, p)
+
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
+
+		// Start consuming
+		t.Log("Consuming messages")
+		timeout := time.After(5 * time.Second)
+		for {
+			select {
+			case <-timeout:
+				t.Fatal("Timed out waiting for expected message")
+			default:
+				ev := c.Poll(100)
+				if ev == nil {
+					continue
+				}
+
+				switch e := ev.(type) {
+				case *kafkaConfluent.Message:
+					codec, err := goavro.NewCodec(schema2)
+					require.NoError(t, err)
+					native, _, err := codec.NativeFromBinary(e.Value)
+					require.NoError(t, err)
+					require.Equal(t, map[string]interface{}{
+						"first_name": "John",
+						"last_name":  "Doe",
+					}, native)
+					return
+				case kafkaConfluent.Error:
+					t.Logf("Kafka Confluent Error: %v: %v", e.Code(), e)
+				default:
+					t.Logf("Ignoring consumer entry: %+v", e)
+				}
 			}
-		case kafkaConfluent.Error:
-			t.Logf("%% Error: %v: %v", e.Code(), e)
-		default:
-			t.Logf("Ignored %v", e)
 		}
-	}
+	})
+
+	t.Run("avro with schema id embedded", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+
+		// Setting up mocks
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+
+		// Produce message in Avro format with schema 2
+		t.Log("Creating Kafka producer")
+		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, true)
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NoError(t, err)
+		require.NotNil(t, p)
+
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
+
+		// Start consuming
+		t.Log("Consuming messages")
+		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
+		require.NoError(t, err)
+
+		type User struct {
+			FirstName string `json:"first_name"`
+			LastName  string `json:"last_name"`
+		}
+
+		timeout := time.After(5 * time.Second)
+		for {
+			select {
+			case <-timeout:
+				t.Fatal("Timed out waiting for expected message")
+			default:
+				ev := c.Poll(100)
+				if ev == nil {
+					continue
+				}
+
+				switch e := ev.(type) {
+				case *kafkaConfluent.Message:
+					value := User{}
+					err = deser.DeserializeInto(*e.TopicPartition.Topic, e.Value, &value)
+					require.NoErrorf(t, err, "Failed to deserialize payload: %s", err)
+					require.Equal(t, User{FirstName: "John", LastName: "Doe"}, value)
+					return
+				case kafkaConfluent.Error:
+					t.Logf("Kafka Confluent Error: %v: %v", e.Code(), e)
+				default:
+					t.Logf("Ignoring consumer entry: %+v", e)
+				}
+			}
+		}
+	})
 }
 
 func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMeasurement {
@@ -1043,6 +1111,7 @@ type pmMockErr struct {
 func (*pmMockErr) Close() error                                         { return nil }
 func (*pmMockErr) Publish(_ context.Context, _ ...client.Message) error { return nil }
 func (*pmMockErr) getTimeout() time.Duration                            { return 0 }
+func (*pmMockErr) getEmbedAvroSchemaID() bool                           { return false }
 func (pm *pmMockErr) getCodecs() map[string]*goavro.Codec {
 	return pm.codecs
 }
