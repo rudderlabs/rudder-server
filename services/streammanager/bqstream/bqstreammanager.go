@@ -11,10 +11,10 @@ import (
 
 	"cloud.google.com/go/bigquery"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	gbq "google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/option"

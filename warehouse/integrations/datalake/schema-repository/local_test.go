@@ -37,8 +37,8 @@ func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) 
 	return warehouseutils.LoadFile{}, nil
 }
 
-func (m *mockUploader) GetLocalSchema() model.Schema {
-	return m.localSchema
+func (m *mockUploader) GetLocalSchema() (model.Schema, error) {
+	return m.localSchema, nil
 }
 
 func (m *mockUploader) UpdateLocalSchema(model.Schema) error {
@@ -53,7 +53,8 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 		wantError   error
 	}{
 		{
-			name: "success",
+			name:        "success",
+			localSchema: model.Schema{},
 		},
 		{
 			name: "table already exists",
@@ -65,9 +66,10 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 			wantError: fmt.Errorf("failed to create table: table %s already exists", "test_table"),
 		},
 		{
-			name:      "error updating local schema",
-			mockError: fmt.Errorf("error updating local schema"),
-			wantError: fmt.Errorf("error updating local schema"),
+			name:        "error updating local schema",
+			mockError:   fmt.Errorf("error updating local schema"),
+			wantError:   fmt.Errorf("error updating local schema"),
+			localSchema: model.Schema{},
 		},
 	}
 

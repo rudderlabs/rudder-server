@@ -10,13 +10,13 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -186,7 +186,7 @@ func TestDiagnostic_Execute(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := destination.SetupPostgres(pool, t)
+	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 
 	testCases := []struct {

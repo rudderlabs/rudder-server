@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var pkgLogger = logger.NewLogger().Child("client")

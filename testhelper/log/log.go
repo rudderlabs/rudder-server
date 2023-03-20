@@ -2,7 +2,7 @@ package log
 
 import (
 	"github.com/onsi/ginkgo/v2"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 var GinkgoLogger logger.Logger = &ginkgoLogger{logger.NOP}

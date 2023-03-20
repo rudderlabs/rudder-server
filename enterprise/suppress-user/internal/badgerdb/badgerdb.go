@@ -11,8 +11,8 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/samber/lo"
 )
 
@@ -70,8 +70,8 @@ func NewRepository(basePath string, log logger.Logger, opts ...Opt) (*Repository
 	for _, opt := range opts {
 		opt(b)
 	}
-
-	return b, b.start()
+	err := b.start()
+	return b, err
 }
 
 // GetToken returns the current token

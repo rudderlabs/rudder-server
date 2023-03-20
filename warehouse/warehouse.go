@@ -18,15 +18,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/thoas/go-funk"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
@@ -34,10 +38,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -132,6 +134,7 @@ type HandleT struct {
 	warehouseDBHandle                 *DB
 	stagingRepo                       *repo.StagingFiles
 	uploadRepo                        *repo.Uploads
+	whSchemaRepo                      *repo.WHSchema
 	notifier                          pgnotifier.PGNotifier
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
@@ -419,7 +422,18 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	if namespacePrefix != "" {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
-	if _, exists := warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
+
+	namespace, err := wh.whSchemaRepo.GetNamespace(context.TODO(), source.ID, destination.ID)
+	if err != nil {
+		pkgLogger.Errorw("getting namespace",
+			logfield.SourceID, source.ID,
+			logfield.DestinationID, destination.ID,
+			logfield.DestinationType, destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, destination.WorkspaceID,
+		)
+		return ""
+	}
+	if namespace == "" {
 		return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 	}
 	return ""
@@ -852,6 +866,7 @@ func (wh *HandleT) Setup(whType string) error {
 	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
 	wh.stagingRepo = repo.NewStagingFiles(dbHandle)
 	wh.uploadRepo = repo.NewUploads(dbHandle)
+	wh.whSchemaRepo = repo.NewWHSchemas(dbHandle)
 
 	wh.notifier = notifier
 	wh.destType = whType
