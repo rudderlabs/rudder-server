@@ -316,7 +316,7 @@ type mockStagingFileRepo struct {
 	err     error
 }
 
-func (m *mockStagingFileRepo) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
+func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64) ([]model.Schema, error) {
 	return m.schemas, m.err
 }
 

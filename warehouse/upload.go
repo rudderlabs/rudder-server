@@ -302,7 +302,7 @@ func (job *UploadJob) syncRemoteSchema() (bool, error) {
 		job.schemaHandler.SchemaInWarehouse,
 	)
 	if schemaChanged {
-		pkgLogger.Debugw("schema changed",
+		pkgLogger.Infow("schema changed",
 			logfield.SourceID, job.warehouse.Source.ID,
 			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
 			logfield.DestinationID, job.warehouse.Destination.ID,
