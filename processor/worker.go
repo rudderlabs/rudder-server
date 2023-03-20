@@ -2,10 +2,11 @@ package processor
 
 import (
 	"context"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/services/dedup"
 
