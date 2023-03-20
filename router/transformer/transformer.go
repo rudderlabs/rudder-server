@@ -104,8 +104,7 @@ func Init() {
 // Transform transforms router jobs to destination jobs
 func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	var destinationJobs types.DestinationJobs
-	transformMessageCopy := *transformMessage
-	jobs := transformMessageCopy.Dehydrate()
+	transformMessageCopy, jobs := transformMessage.Dehydrate()
 
 	// Call remote transformation
 	rawJSON, err := jsonfast.Marshal(&transformMessageCopy)

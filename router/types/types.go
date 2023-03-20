@@ -84,14 +84,17 @@ type TransformMessageT struct {
 	DestType string       `json:"destType"`
 }
 
-// Dehydrate JobT information from RouterJobT.JobMetadata
-func (tm *TransformMessageT) Dehydrate() map[int64]*jobsdb.JobT {
+// Dehydrate JobT information from RouterJobT.JobMetadata returning the dehydrated message along with the jobs
+func (tm *TransformMessageT) Dehydrate() (*TransformMessageT, map[int64]*jobsdb.JobT) {
 	jobs := make(map[int64]*jobsdb.JobT)
+	tmCopy := *tm
+	tmCopy.Data = nil
 	for i := range tm.Data {
-		jobs[tm.Data[i].JobMetadata.JobID] = tm.Data[i].JobMetadata.JobT
-		tm.Data[i].JobMetadata.JobT = nil
+		tmCopy.Data = append(tmCopy.Data, tm.Data[i])
+		jobs[tmCopy.Data[i].JobMetadata.JobID] = tmCopy.Data[i].JobMetadata.JobT
+		tmCopy.Data[i].JobMetadata.JobT = nil
 	}
-	return jobs
+	return &tmCopy, jobs
 }
 
 // JobIDs returns the set of all job ids of the jobs in the message
