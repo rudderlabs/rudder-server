@@ -6,8 +6,8 @@ import (
 
 	"github.com/gorilla/mux"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 func NewHandler(service rsources.JobService, logger logger.Logger) http.Handler {

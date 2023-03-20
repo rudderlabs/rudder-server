@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
-	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 type sqlDbOrTx interface {

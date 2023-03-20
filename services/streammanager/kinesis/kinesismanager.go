@@ -10,10 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/tidwall/gjson"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var pkgLogger logger.Logger

@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/services/dedup"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 func Test_Dedup(t *testing.T) {

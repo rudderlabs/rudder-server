@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/stretchr/testify/require"
