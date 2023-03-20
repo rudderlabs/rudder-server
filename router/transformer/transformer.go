@@ -106,7 +106,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	var destinationJobs types.DestinationJobs
 	transformMessageCopy := *transformMessage
 	jobs := transformMessageCopy.Dehydrate()
-	defer destinationJobs.Hydrate(jobs)
 
 	// Call remote transformation
 	rawJSON, err := jsonfast.Marshal(&transformMessageCopy)
