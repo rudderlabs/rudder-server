@@ -35,10 +35,13 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
-	if err = minioClient.MakeBucket(ctx, manager.Config.Bucket, minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
-		exists, errBucketExists := minioClient.BucketExists(ctx, manager.Config.Bucket)
-		if !(errBucketExists == nil && exists) {
-			return UploadOutput{}, err
+	exists, err := minioClient.BucketExists(ctx, manager.Config.Bucket)
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf("checking bucket: %w", err)
+	}
+	if !exists {
+		if err = minioClient.MakeBucket(ctx, manager.Config.Bucket, minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
+			return UploadOutput{}, fmt.Errorf("creating bucket: %w", err)
 		}
 	}
 
