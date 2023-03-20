@@ -334,7 +334,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 	}
 
 	// @TODO embedAvroSchemaID should come from control plane (i.e. destination config)
-	embedAvroSchemaID := config.GetBool("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destination.ID, false)
+	embedAvroSchemaID := config.GetBool("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+strings.ToUpper(destination.ID), false)
 	return &ProducerManager{
 		p:                 p,
 		timeout:           o.Timeout,
