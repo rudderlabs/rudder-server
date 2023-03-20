@@ -1,11 +1,16 @@
 package warehouse
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+)
+
+var (
+	ErrCancellingStatement = errors.New("[error] pq: canceling statement due to user request")
 )
 
 type InvalidDestinationCredErr struct {

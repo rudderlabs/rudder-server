@@ -804,7 +804,12 @@ loop:
 		wh.Logger.Debugf(`Current inProgress namespace identifiers for %s: %v`, wh.destType, inProgressNamespaces)
 
 		uploadJobsToProcess, err := wh.getUploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
-		if err != nil {
+
+		switch err {
+		case nil:
+		case context.Canceled, context.DeadlineExceeded, ErrCancellingStatement:
+			break loop
+		default:
 			wh.Logger.Errorf(`Error executing getUploadsToProcess: %v`, err)
 			panic(err)
 		}
