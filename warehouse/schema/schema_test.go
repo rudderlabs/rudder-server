@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
