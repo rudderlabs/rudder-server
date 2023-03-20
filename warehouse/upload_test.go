@@ -9,20 +9,20 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/stretchr/testify/require"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -202,7 +202,7 @@ var _ = Describe("Upload", Ordered, func() {
 	)
 
 	var (
-		pgResource *destination.PostgresResource
+		pgResource *resource.PostgresResource
 		job        *UploadJob
 	)
 
@@ -361,7 +361,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					pool, err := dockertest.NewPool("")
 					require.NoError(t, err)
 
-					pgResource, err := destination.SetupPostgres(pool, t)
+					pgResource, err := resource.SetupPostgres(pool, t)
 					require.NoError(t, err)
 
 					rs := redshift.NewRedshift()
@@ -428,7 +428,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
 			rs := redshift.NewRedshift()

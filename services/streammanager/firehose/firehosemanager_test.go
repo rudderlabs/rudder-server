@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/firehose"
 
 	"github.com/golang/mock/gomock"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
 
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"

@@ -18,7 +18,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/samber/lo"
 
-	appConfig "github.com/rudderlabs/rudder-server/config"
+	appConfig "github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 

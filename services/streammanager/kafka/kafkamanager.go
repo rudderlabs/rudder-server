@@ -14,12 +14,12 @@ import (
 	"github.com/linkedin/goavro"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	rslogger "github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // schema is the AVRO schema required to convert the data to AVRO

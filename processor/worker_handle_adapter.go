@@ -1,8 +1,8 @@
 package processor
 
 import (
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // workerHandleAdapter is a wrapper around processor.Handle that implements the workerHandle interface
