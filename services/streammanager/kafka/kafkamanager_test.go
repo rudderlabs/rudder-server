@@ -133,7 +133,7 @@ func TestNewProducer(t *testing.T) {
 		destConfig := map[string]interface{}{
 			"topic":    "some-topic",
 			"hostname": "localhost",
-			"port":     kafkaContainer.Port,
+			"port":     kafkaContainer.Ports[0],
 		}
 		dest := backendconfig.DestinationT{Config: destConfig}
 
@@ -912,7 +912,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 	var (
 		ctx       = context.Background()
 		topicName = "test-topic"
-		broker    = fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+		broker    = fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0])
 		tc        = testutil.New("tcp", broker)
 	)
 	require.Eventuallyf(t, func() bool {
@@ -932,7 +932,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 
 	t.Log("Creating Kafka consumer")
 	c, err := kafkaConfluent.NewConsumer(&kafkaConfluent.ConfigMap{
-		"bootstrap.servers":  fmt.Sprintf("localhost:%s", kafkaContainer.Port),
+		"bootstrap.servers":  fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0]),
 		"group.id":           "group-1",
 		"session.timeout.ms": 6000,
 		"auto.offset.reset":  "earliest",
@@ -947,7 +947,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		destConfig    = map[string]interface{}{
 			"topic":         topicName,
 			"hostname":      "localhost",
-			"port":          kafkaContainer.Port,
+			"port":          kafkaContainer.Ports[0],
 			"convertToAvro": true,
 			"avroSchemas": []map[string]interface{}{
 				{"schemaId": fmt.Sprintf("%d", schemaID2), "schema": schema2},

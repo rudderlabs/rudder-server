@@ -217,7 +217,7 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	t.Run("kafka", func(t *testing.T) {
-		kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+		kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0])
 
 		// Create new consumer
 		tc := testutil.New("tcp", kafkaHost)
@@ -397,7 +397,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		}
 		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
 		defer kafkaCancel()
-		return waitForKafka(kafkaCtx, t, kafkaContainer.Port)
+		return waitForKafka(kafkaCtx, t, kafkaContainer.Ports[0])
 	})
 	containersGroup.Go(func() (err error) {
 		redisContainer, err = destination.SetupRedis(containersCtx, pool, t)
@@ -458,7 +458,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"minioEndpoint":                minioContainer.Endpoint,
 		"minioBucketName":              minioContainer.BucketName,
 	}
-	mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Port
+	mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Ports[0]
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,

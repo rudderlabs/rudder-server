@@ -121,7 +121,7 @@ func WithSchemaRegistry() Option {
 }
 
 type Resource struct {
-	Port,
+	Ports             []string
 	SchemaRegistryURL string
 
 	pool       *dockertest.Pool
@@ -356,11 +356,15 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 		})
 	}
 
-	return &Resource{
-		Port:              containers[0].GetPort(kafkaClientPort + "/tcp"),
+	res := &Resource{
+		Ports:             make([]string, 0, len(containers)),
 		SchemaRegistryURL: schemaRegistryURL,
+		pool:              pool,
+		containers:        containers,
+	}
+	for i := 0; i < len(containers); i++ {
+		res.Ports = append(res.Ports, containers[i].GetPort(kafkaClientPort+"/tcp"))
+	}
 
-		pool:       pool,
-		containers: containers,
-	}, nil
+	return res, nil
 }
