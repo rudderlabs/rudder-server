@@ -48,10 +48,10 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -237,7 +237,7 @@ func (*Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 
 // GetFormattedEnv return the formatted env
 func (*Admin) GetFormattedEnv(env string, reply *string) (err error) {
-	*reply = config.ConfigKeyToEnv(env)
+	*reply = config.ConfigKeyToEnv(config.DefaultEnvPrefix, env)
 	return nil
 }
 

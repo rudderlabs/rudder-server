@@ -18,7 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -26,9 +27,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/testhelper"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -79,7 +80,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 
 			t.Logf("Starting docker services (postgres & transformer)")
 			var (
-				postgresContainer    *destination.PostgresResource
+				postgresContainer    *resource.PostgresResource
 				transformerContainer *destination.TransformerResource
 				gatewayPort          string
 			)
@@ -87,7 +88,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			require.NoError(t, err)
 			containersGroup, _ := errgroup.WithContext(ctx)
 			containersGroup.Go(func() (err error) {
-				postgresContainer, err = destination.SetupPostgres(pool, t)
+				postgresContainer, err = resource.SetupPostgres(pool, t)
 				return err
 			})
 			containersGroup.Go(func() (err error) {
@@ -147,7 +148,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("Router.maxStatusUpdateWait", "10ms")
 
 			// find free port for gateway http server to listen on
-			httpPortInt, err := testhelper.GetFreePort()
+			httpPortInt, err := kitHelper.GetFreePort()
 			require.NoError(t, err)
 			gatewayPort = strconv.Itoa(httpPortInt)
 

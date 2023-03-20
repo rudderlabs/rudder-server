@@ -1,6 +1,6 @@
 package model
 
-import backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 const (
 	VerifyingObjectStorage       = "Verifying Object Storage"

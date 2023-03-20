@@ -14,9 +14,9 @@ import (
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	mockStats "github.com/rudderlabs/rudder-server/mocks/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -296,9 +296,9 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 func TestPrepareBatchOfMessages(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockSkippedDueToUserID := mockStats.NewMockMeasurement(ctrl)
-	mockSkippedDueToMessage := mockStats.NewMockMeasurement(ctrl)
-	mockPrepareBatchTime := mockStats.NewMockMeasurement(ctrl)
+	mockSkippedDueToUserID := mock_stats.NewMockMeasurement(ctrl)
+	mockSkippedDueToMessage := mock_stats.NewMockMeasurement(ctrl)
+	mockPrepareBatchTime := mock_stats.NewMockMeasurement(ctrl)
 	kafkaStats = managerStats{
 		missingUserID:    mockSkippedDueToUserID,
 		missingMessage:   mockSkippedDueToMessage,
@@ -890,16 +890,16 @@ func TestSSHConfig(t *testing.T) {
 	})
 }
 
-func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
+func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMeasurement {
 	t.Helper()
-	mockedTimer := mockStats.NewMockMeasurement(ctrl)
+	mockedTimer := mock_stats.NewMockMeasurement(ctrl)
 	mockedTimer.EXPECT().SendTiming(sinceDuration).Times(1)
 	return mockedTimer
 }
 
-func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
+func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMeasurement {
 	t.Helper()
-	mockedCounter := mockStats.NewMockMeasurement(ctrl)
+	mockedCounter := mock_stats.NewMockMeasurement(ctrl)
 	mockedCounter.EXPECT().Increment().Times(1)
 	return mockedCounter
 }

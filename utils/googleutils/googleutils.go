@@ -3,7 +3,7 @@ package googleutils
 import (
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"golang.org/x/oauth2/google"
 )
 

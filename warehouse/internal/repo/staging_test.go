@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -22,7 +22,7 @@ func setupDB(t testing.TB) *sql.DB {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	pgResource, err := destination.SetupPostgres(pool, t)
+	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 
 	err = (&migrator.Migrator{
