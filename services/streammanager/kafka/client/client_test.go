@@ -18,27 +18,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	dockerKafka "github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 )
 
 const (
 	defaultTestTimeout = 60 * time.Second
 )
 
-var overrideArm64Check bool
-
-func TestMain(m *testing.M) {
-	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
-		overrideArm64Check = true
-	}
-	os.Exit(m.Run())
-}
-
 func TestClient_Ping(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t}, destination.WithLogger(t))
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, dockerKafka.WithLogger(t))
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
@@ -65,9 +56,9 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
-		destination.WithLogger(t),
-		destination.WithBrokers(3))
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+		dockerKafka.WithLogger(t),
+		dockerKafka.WithBrokers(3))
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
@@ -205,9 +196,9 @@ func TestConsumer_Partition(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
-		destination.WithLogger(t),
-		destination.WithBrokers(1))
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+		dockerKafka.WithLogger(t),
+		dockerKafka.WithBrokers(1))
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
@@ -338,9 +329,9 @@ func TestWithSASL(t *testing.T) {
 	path, err := os.Getwd()
 	require.NoError(t, err)
 
-	saslConfiguration := destination.SASLConfig{
-		BrokerUser: destination.User{Username: "kafka1", Password: "password"},
-		Users: []destination.User{
+	saslConfiguration := dockerKafka.SASLConfig{
+		BrokerUser: dockerKafka.User{Username: "kafka1", Password: "password"},
+		Users: []dockerKafka.User{
 			{Username: "client1", Password: "password"},
 		},
 		CertificatePassword: "password",
@@ -355,19 +346,19 @@ func TestWithSASL(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			containerOptions := []destination.Option{destination.WithBrokers(1)}
+			containerOptions := []dockerKafka.Option{dockerKafka.WithBrokers(1)}
 			if testing.Verbose() {
-				containerOptions = append(containerOptions, destination.WithLogger(t))
+				containerOptions = append(containerOptions, dockerKafka.WithLogger(t))
 			}
 			switch hashType {
 			case ScramPlainText:
-				containerOptions = append(containerOptions, destination.WithSASLPlain(&saslConfiguration))
+				containerOptions = append(containerOptions, dockerKafka.WithSASLPlain(&saslConfiguration))
 			case ScramSHA256:
-				containerOptions = append(containerOptions, destination.WithSASLScramSHA256(&saslConfiguration))
+				containerOptions = append(containerOptions, dockerKafka.WithSASLScramSHA256(&saslConfiguration))
 			case ScramSHA512:
-				containerOptions = append(containerOptions, destination.WithSASLScramSHA512(&saslConfiguration))
+				containerOptions = append(containerOptions, dockerKafka.WithSASLScramSHA512(&saslConfiguration))
 			}
-			kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t}, containerOptions...)
+			kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, containerOptions...)
 			require.NoError(t, err)
 
 			kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
@@ -429,9 +420,9 @@ func TestWithSASLBadCredentials(t *testing.T) {
 	path, err := os.Getwd()
 	require.NoError(t, err)
 
-	saslConfiguration := destination.SASLConfig{
-		BrokerUser: destination.User{Username: "kafka1", Password: "password"},
-		Users: []destination.User{
+	saslConfiguration := dockerKafka.SASLConfig{
+		BrokerUser: dockerKafka.User{Username: "kafka1", Password: "password"},
+		Users: []dockerKafka.User{
 			{Username: "client1", Password: "password"},
 		},
 		CertificatePassword: "password",
@@ -442,14 +433,14 @@ func TestWithSASLBadCredentials(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	containerOptions := []destination.Option{
-		destination.WithBrokers(1),
-		destination.WithSASLPlain(&saslConfiguration),
+	containerOptions := []dockerKafka.Option{
+		dockerKafka.WithBrokers(1),
+		dockerKafka.WithSASLPlain(&saslConfiguration),
 	}
 	if testing.Verbose() {
-		containerOptions = append(containerOptions, destination.WithLogger(t))
+		containerOptions = append(containerOptions, dockerKafka.WithLogger(t))
 	}
-	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t}, containerOptions...)
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, containerOptions...)
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
@@ -481,9 +472,9 @@ func TestProducer_Timeout(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
-		destination.WithLogger(t),
-		destination.WithBrokers(1))
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+		dockerKafka.WithLogger(t),
+		dockerKafka.WithBrokers(1))
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
@@ -551,9 +542,9 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
-		destination.WithLogger(t),
-		destination.WithBrokers(1))
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+		dockerKafka.WithLogger(t),
+		dockerKafka.WithBrokers(1))
 	require.NoError(t, err)
 
 	kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
