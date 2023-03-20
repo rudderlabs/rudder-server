@@ -1,15 +1,12 @@
 package warehouse
 
 import (
-	"errors"
 	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
-
-var ContextError = errors.New("[error] pq: canceling statement due to user request")
 
 type Payload struct {
 	BatchID                      string

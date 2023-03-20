@@ -797,7 +797,7 @@ loop:
 
 		switch err {
 		case nil:
-		case context.Canceled, context.DeadlineExceeded, ContextError:
+		case context.Canceled, context.DeadlineExceeded, ErrCancellingStatement:
 			break loop
 		default:
 			wh.Logger.Errorf(`Error executing getUploadsToProcess: %v`, err)
