@@ -196,7 +196,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService(),
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, nil, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService(),
 		processor.WithFeaturesRetryMaxAttempts(0))
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
