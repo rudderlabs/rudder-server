@@ -1218,7 +1218,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 	}
 
 	// Skip loading user tables if identifies table schema is not present
-	if identifiesSchema := job.GetTableSchemaInUpload(warehouseutils.IdentifiesTable); len(identifiesSchema) == 0 {
+	if identifiesSchema := job.GetTableSchemaInUpload(job.identifiesTableName()); len(identifiesSchema) == 0 {
 		return []error{}, nil
 	}
 
