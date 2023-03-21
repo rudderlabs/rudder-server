@@ -42,11 +42,13 @@ type embeddedApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		enableReplay       bool
 		processorDSLimit   int
 		routerDSLimit      int
 		batchRouterDSLimit int
 		gatewayDSLimit     int
+
+		enableReplay             bool
+		enableEventSchemasJobsDB bool
 	}
 }
 
@@ -56,6 +58,7 @@ func (a *embeddedApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterBoolConfigVariable(false, &a.config.enableEventSchemasJobsDB, false, "EventSchemas.jobsDB.enabled")
 }
 
 func (a *embeddedApp) Setup(options *app.Options) error {
@@ -180,6 +183,16 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		}))
 	}
 
+	var eventSchemasJobsDB *jobsdb.HandleT
+	if a.config.enableEventSchemasJobsDB {
+		eventSchemasJobsDB = jobsdb.NewForWrite(
+			"event_schemas",
+			jobsdb.WithClearDB(options.ClearDB),
+			// jobsdb.WithStatusHandler(),
+			jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		)
+	}
+
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
 		return err
@@ -194,6 +207,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		routerDB,
 		batchRouterDB,
 		errDB,
+		eventSchemasJobsDB,
 		multitenantStats,
 		reportingI,
 		transientSources,
@@ -238,6 +252,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		RouterDB:        routerDB,
 		BatchRouterDB:   batchRouterDB,
 		ErrorDB:         errDB,
+		EventSchemasDB:  eventSchemasJobsDB,
 		Processor:       proc,
 		Router:          rt,
 		MultiTenantStat: multitenantStats,

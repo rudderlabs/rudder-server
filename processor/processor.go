@@ -63,13 +63,16 @@ func NewHandle(transformer transformer.Transformer) *Handle {
 
 // Handle is a handle to the processor module
 type Handle struct {
-	backendConfig             backendconfig.BackendConfig
-	transformer               transformer.Transformer
-	lastJobID                 int64
-	gatewayDB                 jobsdb.JobsDB
-	routerDB                  jobsdb.JobsDB
-	batchRouterDB             jobsdb.JobsDB
-	errorDB                   jobsdb.JobsDB
+	backendConfig backendconfig.BackendConfig
+	transformer   transformer.Transformer
+	lastJobID     int64
+
+	gatewayDB     jobsdb.JobsDB
+	routerDB      jobsdb.JobsDB
+	batchRouterDB jobsdb.JobsDB
+	errorDB       jobsdb.JobsDB
+	eventSchemaDB jobsdb.JobsDB
+
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
 	dedupHandler              dedup.DedupI
@@ -309,8 +312,8 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 
 // Setup initializes the module
 func (proc *Handle) Setup(
-	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
-	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
+	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
+	batchRouterDB, errorDB, eventSchemasDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
@@ -329,6 +332,7 @@ func (proc *Handle) Setup(
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.errorDB = errorDB
+	proc.eventSchemaDB = eventSchemasDB
 
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
@@ -1290,6 +1294,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	inCountMetadataMap := make(map[string]MetricMetadata)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
+	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]*types.StatusDetail)
@@ -1318,6 +1323,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
 			}
 
+			var eligibleForEventSchema bool
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
@@ -1392,6 +1398,19 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 				if proc.isReportingEnabled() {
 					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, func() json.RawMessage { return []byte(`{}`) })
 				}
+
+				if !eligibleForEventSchema {
+					// ignore events from rudder-sources
+					eligibleForEventSchema = source.EventSchemasEnabled &&
+						commonMetadataFromSingularEvent.SourceJobRunID == ""
+				}
+
+			}
+			if eligibleForEventSchema {
+				eventSchemaJobs = append(
+					eventSchemaJobs,
+					batchEvent,
+				)
 			}
 		}
 
@@ -1529,6 +1548,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 		reportMetrics,
 		statusList,
 		procErrorJobs,
+		eventSchemaJobs,
 		sourceDupStats,
 		uniqueMessageIds,
 
@@ -1549,6 +1569,7 @@ type transformationMessage struct {
 	reportMetrics                []*types.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
 	procErrorJobs                []*jobsdb.JobT
+	eventSchemaJobs              []*jobsdb.JobT
 	sourceDupStats               map[string]int
 	uniqueMessageIds             map[string]struct{}
 
@@ -1622,6 +1643,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 
 		procErrorJobsByDestID,
 		in.procErrorJobs,
+		in.eventSchemaJobs,
 
 		in.reportMetrics,
 		in.sourceDupStats,
@@ -1640,6 +1662,7 @@ type storeMessage struct {
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	procErrorJobs         []*jobsdb.JobT
+	eventSchemaJobs       []*jobsdb.JobT
 
 	reportMetrics    []*types.PUReportedMetric
 	sourceDupStats   map[string]int
@@ -1661,6 +1684,7 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	for id, job := range subJob.procErrorJobsByDestID {
 		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], job...)
 	}
+	sm.eventSchemaJobs = append(sm.eventSchemaJobs, subJob.eventSchemaJobs...)
 
 	sm.reportMetrics = append(sm.reportMetrics, subJob.reportMetrics...)
 	for tag, count := range subJob.sourceDupStats {
@@ -1786,6 +1810,22 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			panic(err)
 		}
 		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
+	}
+
+	if proc.config.enableEventSchemasFeature {
+		if len(in.eventSchemaJobs) > 0 {
+			if proc.eventSchemaDB != nil {
+				proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(in.eventSchemaJobs))
+				err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+					return proc.eventSchemaDB.Store(ctx, in.eventSchemaJobs)
+				}, proc.sendRetryStoreStats)
+				if err != nil {
+					proc.logger.Errorf("Store into event schema table failed with error: %v", err)
+					proc.logger.Errorf("eventSchemaJobs: %v", in.eventSchemaJobs)
+					panic(err)
+				}
+			}
+		}
 	}
 	writeJobsTime := time.Since(beforeStoreStatus)
 
@@ -2452,6 +2492,8 @@ func subJobMerger(mergedJob, subJob *storeMessage) *storeMessage {
 	for id, job := range subJob.procErrorJobsByDestID {
 		mergedJob.procErrorJobsByDestID[id] = append(mergedJob.procErrorJobsByDestID[id], job...)
 	}
+
+	mergedJob.eventSchemaJobs = append(mergedJob.eventSchemaJobs, subJob.eventSchemaJobs...)
 
 	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
 	for tag, count := range subJob.sourceDupStats {

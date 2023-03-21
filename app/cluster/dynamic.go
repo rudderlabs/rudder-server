@@ -42,10 +42,11 @@ type Dynamic struct {
 
 	GatewayComponent bool
 
-	GatewayDB     lifecycle
-	RouterDB      lifecycle
-	BatchRouterDB lifecycle
-	ErrorDB       lifecycle
+	GatewayDB      lifecycle
+	RouterDB       lifecycle
+	BatchRouterDB  lifecycle
+	ErrorDB        lifecycle
+	EventSchemasDB lifecycle
 
 	Processor lifecycle
 	Router    lifecycle
@@ -166,6 +167,11 @@ func (d *Dynamic) start() error {
 	}
 	if err := d.BatchRouterDB.Start(); err != nil {
 		return fmt.Errorf("batch router db start: %w", err)
+	}
+	if d.EventSchemasDB != nil {
+		if err := d.EventSchemasDB.Start(); err != nil {
+			return fmt.Errorf("event schemas db start: %w", err)
+		}
 	}
 	if err := d.MultiTenantStat.Start(); err != nil {
 		return fmt.Errorf("multi tenant stat start: %w", err)
