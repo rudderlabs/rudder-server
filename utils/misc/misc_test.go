@@ -680,10 +680,10 @@ func TestGetDiskUsage(t *testing.T) {
 	// Create a temp file
 	tmpDirPath := t.TempDir()
 	tempFilePath := filepath.Join(tmpDirPath, "tempFileForDiskUsage")
-	f, err := os.OpenFile(tempFilePath, os.O_CREATE|os.O_RDWR, 0o755)
+	f, err := os.OpenFile(tempFilePath, os.O_CREATE|os.O_RDWR, 0o755) // skipcq: GSC-G302
 	require.NoError(t, err)
 
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	defer os.Remove(tempFilePath)
 
 	err = f.Truncate(1024 * 1024)
@@ -697,7 +697,7 @@ func TestGetDiskUsage(t *testing.T) {
 	require.Equal(t, int64(0), fileDiskUsage)
 
 	// write some bytes into the file
-	_, err = f.Write([]byte("test"))
+	_, err = f.WriteString("test")
 	require.NoError(t, err)
 	fileSize, err = os.Stat(tempFilePath)
 	require.NoError(t, err)
