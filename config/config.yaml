@@ -1,0 +1,259 @@
+maxProcess: 12
+enableProcessor: true
+enableRouter: true
+enableStats: true
+statsTagsFormat: influxdb
+HttpClient:
+  timeout: 30s
+Http:
+  ReadTimeout: 0s
+  ReadHeaderTimeout: 0s
+  WriteTimeout: 10s
+  IdleTimeout: 720s
+  MaxHeaderBytes: 524288
+RateLimit:
+  eventLimit: 1000
+  rateLimitWindow: 60m
+  noOfBucketsInWindow: 12
+Gateway:
+  webPort: 8080
+  maxUserWebRequestWorkerProcess: 64
+  maxDBWriterProcess: 256
+  CustomVal: GW
+  maxUserRequestBatchSize: 128
+  maxDBBatchSize: 128
+  userWebRequestBatchTimeout: 15ms
+  dbBatchWriteTimeout: 5ms
+  maxReqSizeInKB: 4000
+  enableRateLimit: false
+  enableSuppressUserFeature: true
+  allowPartialWriteWithErrors: true
+  allowReqsWithoutUserIDAndAnonymousID: false
+  webhook:
+    batchTimeout: 20ms
+    maxBatchSize: 32
+    maxTransformerProcess: 64
+    maxRetry: 5
+    maxRetryTime: 10s
+    sourceListForParsingParams:
+      - shopify
+EventSchemas:
+  enableEventSchemasFeature: false
+  syncInterval: 240s
+  noOfWorkers: 128
+Debugger:
+  maxBatchSize: 32
+  maxESQueueSize: 1024
+  maxRetry: 3
+  batchTimeout: 2s
+  retrySleep: 100ms
+LiveEvent:
+  cache:
+    size: 3
+    ttl: 20d
+    clearFreq: 5s
+SourceDebugger:
+  disableEventUploads: false
+DestinationDebugger:
+  disableEventDeliveryStatusUploads: false
+TransformationDebugger:
+  disableTransformationStatusUploads: false
+Archiver:
+  backupRowsBatchSize: 100
+JobsDB:
+  fairPickup: true
+  jobDoneMigrateThres: 0.8
+  jobStatusMigrateThres: 5
+  maxDSSize: 100000
+  maxMigrateOnce: 10
+  maxMigrateDSProbe: 10
+  maxTableSizeInMB: 300
+  migrateDSLoopSleepDuration: 30s
+  addNewDSLoopSleepDuration: 5s
+  refreshDSListLoopSleepDuration: 5s
+  backupCheckSleepDuration: 5s
+  backupRowsBatchSize: 1000
+  archivalTimeInDays: 10
+  archiverTickerTime: 1440m
+  backup:
+    enabled: true
+    gw:
+      enabled: true
+      pathPrefix: ""
+    rt:
+      enabled: true
+      failedOnly: true
+    batch_rt:
+      enabled: false
+      failedOnly: false
+  gw:
+    enableWriterQueue: false
+    maxOpenConnections: 64
+Router:
+  jobQueryBatchSize: 10000
+  updateStatusBatchSize: 1000
+  readSleep: 1000ms
+  fixedLoopSleep: 0ms
+  noOfJobsPerChannel: 1000
+  noOfJobsToBatchInAWorker: 20
+  jobsBatchTimeout: 5s
+  maxSleep: 60s
+  minSleep: 0s
+  maxStatusUpdateWait: 5s
+  useTestSink: false
+  guaranteeUserEventOrder: true
+  kafkaWriteTimeout: 2s
+  kafkaDialTimeout: 10s
+  minRetryBackoff: 10s
+  maxRetryBackoff: 300s
+  noOfWorkers: 64
+  allowAbortedUserJobsCountForProcessing: 1
+  maxFailedCountForJob: 3
+  retryTimeWindow: 180m
+  failedKeysEnabled: true
+  saveDestinationResponseOverride: false
+  transformerProxy: false
+  transformerProxyRetryCount: 15
+  GOOGLESHEETS:
+    noOfWorkers: 1
+  MARKETO:
+    noOfWorkers: 4
+  throttler:
+    algorithm: gcra
+#    redis:
+#      addr: localhost:6379
+#      username: ""
+#      password: ""
+    MARKETO:
+      limit: 45
+      timeWindow: 20s
+# throttling by destinationID example below
+#      xxxyyyzzSOU9pLRavMf0GuVnWV3:
+#        limit: 90
+#        timeWindow: 10s
+  BRAZE:
+    forceHTTP1: true
+    httpTimeout: 120s
+    httpMaxIdleConnsPerHost: 32
+BatchRouter:
+  mainLoopSleep: 2s
+  jobQueryBatchSize: 100000
+  uploadFreq: 30s
+  warehouseServiceMaxRetryTime: 3h
+  noOfWorkers: 8
+  maxFailedCountForJob: 128
+  retryTimeWindow: 180m
+Warehouse:
+  mode: embedded
+  webPort: 8082
+  uploadFreq: 1800s
+  noOfWorkers: 8
+  noOfSlaveWorkerRoutines: 4
+  mainLoopSleep: 5s
+  minRetryAttempts: 3
+  retryTimeWindow: 180m
+  minUploadBackoff: 60s
+  maxUploadBackoff: 1800s
+  warehouseSyncPreFetchCount: 10
+  warehouseSyncFreqIgnore: false
+  stagingFilesBatchSize: 960
+  enableIDResolution: false
+  populateHistoricIdentities: false
+  enableJitterForSyncs: false
+  redshift:
+    maxParallelLoads: 3
+  snowflake:
+    maxParallelLoads: 3
+  bigquery:
+    maxParallelLoads: 20
+  postgres:
+    maxParallelLoads: 3
+    enableSQLStatementExecutionPlan: false
+  mssql:
+    maxParallelLoads: 3
+  azure_synapse:
+    maxParallelLoads: 3
+  clickhouse:
+    maxParallelLoads: 3
+    queryDebugLogs: false
+    blockSize: 1000
+    poolSize: 10
+    disableNullable: false
+    enableArraySupport: false
+  deltalake:
+    loadTableStrategy: MERGE
+Processor:
+  webPort: 8086
+  loopSleep: 10ms
+  maxLoopSleep: 5000ms
+  fixedLoopSleep: 0ms
+  storeTimeout: 5m
+  maxLoopProcessEvents: 10000
+  transformBatchSize: 100
+  userTransformBatchSize: 200
+  maxConcurrency: 200
+  maxHTTPConnections: 100
+  maxHTTPIdleConnections: 50
+  maxRetry: 30
+  retrySleep: 100ms
+  errReadLoopSleep: 30s
+  errDBReadBatchSize: 1000
+  noOfErrStashWorkers: 2
+  maxFailedCountForErrJob: 3
+  enableEventCount: true
+  Stats:
+    captureEventName: false
+Dedup:
+  enableDedup: false
+  dedupWindow: 3600s
+  memOptimized: true
+BackendConfig:
+  configFromFile: false
+  configJSONPath: /etc/rudderstack/workspaceConfig.json
+  pollInterval: 5s
+  regulationsPollInterval: 300s
+  maxRegulationsPerRequest: 1000
+  Regulations:
+    pageSize: 50
+    pollInterval: 300s
+recovery:
+  enabled: true
+  errorStorePath: /tmp/error_store.json
+  storagePath: /tmp/recovery_data.json
+  normal:
+    crashThreshold: 5
+    duration: 300s
+Logger:
+  enableConsole: true
+  enableFile: false
+  consoleJsonFormat: false
+  fileJsonFormat: false
+  logFileLocation: /tmp/rudder_log.log
+  logFileSize: 100
+  enableTimestamp: true
+  enableFileNameInLog: true
+  enableStackTrace: false
+Diagnostics:
+  enableDiagnostics: true
+  gatewayTimePeriod: 60s
+  routerTimePeriod: 60s
+  batchRouterTimePeriod: 6l
+  enableServerStartMetric: true
+  enableConfigIdentifyMetric: true
+  enableServerStartedMetric: true
+  enableConfigProcessedMetric: true
+  enableGatewayMetric: true
+  enableRouterMetric: true
+  enableBatchRouterMetric: true
+  enableDestinationFailuresMetric: true
+RuntimeStats:
+  enabled: true
+  statsCollectionInterval: 10
+  enableCPUStats: true
+  enableMemStats: true
+  enableGCStats: true
+PgNotifier:
+  retriggerInterval: 2s
+  retriggerCount: 500
+  trackBatchInterval: 2s
+  maxAttempt: 3
