@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	suppressModel "github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
 )
@@ -107,7 +107,6 @@ func TestMain(t *testing.T) {
 				verifyBackup(t, exportBaseDir, string(body))
 				return code == tt.expectedResponseCode
 			}, 10*time.Second, 1*time.Second, "should be able to get response from "+tt.endpoint)
-
 		})
 	}
 	defer func() {

@@ -8,10 +8,10 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-server/middleware"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/gorillaware"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type API struct {
@@ -30,7 +30,7 @@ func NewAPI(logger logger.Logger, fullBackup, latestBackup model.File) *API {
 
 func (api *API) Handler(ctx context.Context) http.Handler {
 	srvMux := mux.NewRouter()
-	srvMux.Use(middleware.StatMiddleware(ctx, srvMux, stats.Default, "suppression_backup_service"))
+	srvMux.Use(gorillaware.StatMiddleware(ctx, srvMux, stats.Default, "suppression_backup_service"))
 	srvMux.HandleFunc("/health", http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		fmt.Fprintln(rw, "OK")

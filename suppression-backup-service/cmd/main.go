@@ -11,16 +11,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/api"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/exporter"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/sync/errgroup"
 )
@@ -41,7 +42,7 @@ func main() {
 }
 
 func Run(ctx context.Context) error {
-	err := stats.Default.Start(ctx)
+	err := stats.Default.Start(ctx, rruntime.GoRoutineFactory)
 	if err != nil {
 		return fmt.Errorf("could not start stats: %w", err)
 	}

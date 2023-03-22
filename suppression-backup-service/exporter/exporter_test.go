@@ -16,14 +16,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	suppressModel "github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/exporter"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
 )

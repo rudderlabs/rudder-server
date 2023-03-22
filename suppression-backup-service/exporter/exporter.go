@@ -10,12 +10,12 @@ import (
 	"path"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -169,9 +169,6 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 				stats.Default.NewStat("suppression_backup_service_latest_sync_time", stats.TimerType).Since(syncStart)
 				exportStart := time.Now()
 				if err := Export(repo, e.File); err != nil {
-					return fmt.Errorf("latestExporterLoop: %w", err)
-				}
-				if err = Export(repo, e.File); err != nil {
 					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				stats.Default.NewStat("suppression_backup_service_latest_export_time", stats.TimerType).Since(exportStart)
