@@ -167,6 +167,16 @@ func (d *DedupHandleT) gcBadgerDB() {
 		if err == nil {
 			goto again
 		}
+		lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(d.path)
+		if err != nil {
+			d.logger.Errorf("Error while getting badgerDB usage: %v", err)
+			continue
+		}
+		statName := "dedup"
+		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
+		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
+		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
+
 	}
 }
 
