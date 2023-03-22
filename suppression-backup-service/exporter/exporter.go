@@ -73,11 +73,11 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 	pollInterval := config.GetDuration("SuppressionExporter.fullExportInterval", 24, time.Hour)
 	tmpDir, err := misc.CreateTMPDIR()
 	if err != nil {
-		return err
+		return fmt.Errorf("fullExporterLoop: %w", err)
 	}
 	repo, err := newBadgerDBInstance(path.Join(tmpDir, "fullsuppression"), e.Log)
 	if err != nil {
-		return err
+		return fmt.Errorf("fullExporterLoop: %w", err)
 	}
 	defer func() {
 		_ = repo.Stop()
@@ -92,7 +92,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 		suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("fullExporterLoop: %w", err)
 	}
 
 	for {
@@ -102,16 +102,16 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 		default:
 			syncStart := time.Now()
 			if err := syncer.Sync(ctx); err != nil {
-				return err
+				return fmt.Errorf("fullExporterLoop: %w", err)
 			}
 			stats.Default.NewStat("suppression_backup_service_full_sync_time", stats.TimerType).Since(syncStart)
 			exportStart := time.Now()
 			if err = Export(repo, e.File); err != nil {
-				return err
+				return fmt.Errorf("fullExporterLoop: %w", err)
 			}
 			stats.Default.NewStat("suppression_backup_service_full_export_time", stats.TimerType).Since(exportStart)
 			if err = misc.SleepCtx(ctx, pollInterval); err != nil {
-				return err
+				return fmt.Errorf("fullExporterLoop: %w", err)
 			}
 		}
 	}
@@ -127,7 +127,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 			latestExport := func() error {
 				tmpDir, err := misc.CreateTMPDIR()
 				if err != nil {
-					return err
+					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				baseDir := path.Join(tmpDir, "latestsuppression")
 				err = os.RemoveAll(baseDir)
@@ -136,7 +136,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 				}
 				repo, err := newBadgerDBInstance(baseDir, e.Log)
 				if err != nil {
-					return err
+					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				defer func() {
 					_ = repo.Stop()
@@ -152,27 +152,27 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 					suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
 				)
 				if err != nil {
-					return err
+					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				// manually add token to repo to make sure that we get suppression regulation corresponding to last one month and not older than that.
 				token, err := latestToken()
 				if err != nil {
-					return err
+					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				if err := repo.Add(nil, []byte(token)); err != nil {
-					return err
+					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				syncStart := time.Now()
 				if err := syncer.Sync(ctx); err != nil {
-					return err
+					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				stats.Default.NewStat("suppression_backup_service_latest_sync_time", stats.TimerType).Since(syncStart)
 				exportStart := time.Now()
 				if err := Export(repo, e.File); err != nil {
-					return err
+					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				if err = Export(repo, e.File); err != nil {
-					return err
+					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
 				stats.Default.NewStat("suppression_backup_service_latest_export_time", stats.TimerType).Since(exportStart)
 
@@ -191,7 +191,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 func latestToken() (string, error) {
 	marshalledToken, err := json.Marshal(Token{SyncStartTime: time.Now().Add(-config.GetDuration("SuppressionExporter.latestExportDuration", 30*24, time.Hour)), SyncSeqId: -1})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("latestToken: %w", err)
 	}
 	token := base64.StdEncoding.EncodeToString(marshalledToken)
 	return token, nil

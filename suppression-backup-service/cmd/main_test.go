@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -45,11 +43,9 @@ func makeHTTPRequest(t *testing.T, method, url string, payload io.Reader) (int, 
 }
 
 func verifyBackup(t *testing.T, filePath, data string) {
-	randBytes := make([]byte, 8)
-	_, err := rand.Read(randBytes)
+	subDirName, err := os.MkdirTemp(filePath, "")
+	defer func() { _ = os.RemoveAll(subDirName) }()
 	require.NoError(t, err)
-	subDirName := filepath.Join(filePath, "subdir-"+fmt.Sprintf("%x", randBytes))
-	require.NoError(t, os.Mkdir(subDirName, 0o755))
 	repo, err := suppression.NewBadgerRepository(subDirName, logger.NOP)
 	require.NoError(t, err)
 	err = repo.Restore(strings.NewReader(data))
@@ -111,8 +107,13 @@ func TestMain(t *testing.T) {
 				verifyBackup(t, exportBaseDir, string(body))
 				return code == tt.expectedResponseCode
 			}, 10*time.Second, 1*time.Second, "should be able to get response from "+tt.endpoint)
+
 		})
 	}
+	defer func() {
+		path, _ := exportPath()
+		_ = os.RemoveAll(path)
+	}()
 }
 
 func handler(t *testing.T) http.Handler {
@@ -132,9 +133,7 @@ func handler(t *testing.T) http.Handler {
 	return srvMux
 }
 
-func getSuppressions(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
+func getSuppressions(w http.ResponseWriter, r *http.Request) {
 	defaultSuppression := suppressModel.Suppression{
 		Canceled:    false,
 		WorkspaceID: "workspace-1",
@@ -145,10 +144,23 @@ func getSuppressions(w http.ResponseWriter, _ *http.Request) {
 		Items: []suppressModel.Suppression{defaultSuppression},
 		Token: tokenKey,
 	}
-	body, err := json.Marshal(respStruct)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	w.Header().Set("Content-Type", "application/json")
+	pt := r.URL.Query().Get("pageToken")
+	var body []byte
+	var err error
+	if pt == tokenKey {
+		w.WriteHeader(http.StatusOK)
+		body, err = json.Marshal(suppressionsResponse{Token: tokenKey})
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	} else {
+		body, err = json.Marshal(respStruct)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	_, _ = w.Write(body)
 }

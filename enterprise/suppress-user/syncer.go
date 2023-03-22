@@ -136,7 +136,7 @@ again:
 	s.log.Info("Fetching Regulations")
 	suppressions, nextToken, err := s.sync(token)
 	if err != nil {
-		return err
+		return fmt.Errorf("sync failed: %w", err)
 	}
 	err = s.r.Add(suppressions, nextToken)
 	if err != nil {
@@ -171,29 +171,27 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 		req, err := http.NewRequest("GET", urlStr, http.NoBody)
 		s.log.Debugf("regulation service URL: %s", urlStr)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create request: %w", err)
 		}
 		req.SetBasicAuth(s.id.BasicAuth())
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err = s.client.Do(req)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to make request: %w", err)
 		}
 		defer func() { httputil.CloseResponse(resp) }()
 
 		// If statusCode is not 2xx, then returning empty regulations
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			err = fmt.Errorf("status code %v", resp.StatusCode)
 			s.log.Errorf("Failed to fetch source regulations. statusCode: %v, error: %v",
 				resp.StatusCode, err)
-			return err
+			return fmt.Errorf("failed to fetch source regulations: %w", err)
 		}
-
 		respBody, err = io.ReadAll(resp.Body)
 		if err != nil {
 			s.log.Error(err)
-			return err
+			return fmt.Errorf("failed to read response body: %w", err)
 		}
 		return err
 	}
