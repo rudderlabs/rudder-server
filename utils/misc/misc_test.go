@@ -693,8 +693,8 @@ func TestGetDiskUsage(t *testing.T) {
 	require.NoError(t, err)
 	fileDiskUsage, err := GetDiskUsageOfFile(tempFilePath)
 	require.NoError(t, err)
-	require.Equal(t, int64(1024*1024), fileSize.Size())
-	require.Equal(t, int64(0), fileDiskUsage)
+	require.EqualValues(t, 1024*1024, fileSize.Size())
+	require.EqualValues(t, 0, fileDiskUsage)
 
 	// write some bytes into the file
 	_, err = f.WriteString("test")
@@ -704,6 +704,6 @@ func TestGetDiskUsage(t *testing.T) {
 	fileDiskUsage, err = GetDiskUsageOfFile(tempFilePath)
 	require.NoError(t, err)
 
-	require.Equal(t, int64(1024*1024), fileSize.Size())
+	require.EqualValues(t, 1024*1024, fileSize.Size())
 	require.Greater(t, fileDiskUsage, int64(0))
 }

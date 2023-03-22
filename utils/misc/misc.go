@@ -1339,7 +1339,7 @@ func GetDiskUsageOfFile(path string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("Unable to get file size %w", err)
 	}
-	return stat.Blocks * int64(stat.Blksize) / 8, nil
+	return int64(stat.Blksize) * stat.Blocks / 8, nil //nolint:unconvert // In amd64 architecture stat.Blksize is int64 whereas in arm64 it is int32
 }
 
 // DiskUsage calculates the path's disk usage recursively in bytes. If exts are provided, only files with matching extensions will be included in the result.
