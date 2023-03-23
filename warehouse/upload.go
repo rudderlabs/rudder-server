@@ -993,8 +993,10 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 	alteredSchema, err := job.updateSchema(tName)
 	if err != nil {
 		status := model.TableUploadUpdatingSchemaFailed
+		errorsString := misc.QuoteLiteral(err.Error())
 		_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tName, repo.TableUploadSetOptions{
 			Status: &status,
+			Error:  &errorsString,
 		})
 		return alteredSchema, fmt.Errorf("update schema: %w", err)
 	}
@@ -1043,8 +1045,10 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 	err = job.whManager.LoadTable(tName)
 	if err != nil {
 		status := model.TableUploadExportingFailed
+		errorsString := misc.QuoteLiteral(err.Error())
 		_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tName, repo.TableUploadSetOptions{
 			Status: &status,
+			Error: &errorsString,
 		})
 		return alteredSchema, fmt.Errorf("load table: %w", err)
 	}
