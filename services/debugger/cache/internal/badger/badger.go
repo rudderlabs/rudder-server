@@ -11,6 +11,7 @@ import (
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
@@ -57,6 +58,7 @@ type Cache[E any] struct {
 	cleanupOnStartup        bool
 	db                      *badger.DB
 	logger                  logger.Logger
+	stats                   stats.Stats
 }
 
 type badgerLogger struct {
@@ -116,10 +118,11 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 	return lo.Reverse(values), err
 }
 
-func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*Cache[E], error) {
+func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...func(Cache[E])) (*Cache[E], error) {
 	e := Cache[E]{
 		origin: origin,
-		logger: logger,
+		logger: log,
+		stats:  stats,
 	}
 	e.loadCacheConfig()
 	badgerPathName := e.origin + "/cache/badgerdbv3"
@@ -183,6 +186,16 @@ func (e *Cache[E]) gcBadgerDB() {
 				goto again
 			}
 		}
+		lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(e.db.Opts().Dir)
+		if err != nil {
+			e.logger.Errorf("Error while getting badgerDB usage: %v", err)
+			continue
+		}
+
+		statName := fmt.Sprintf("liveevent-cache-%s", e.origin)
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
 	}
 }
 
