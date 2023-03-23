@@ -29,6 +29,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.0.2
+	github.com/databricks/databricks-sql-go v1.1.0
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dgraph-io/badger/v3 v3.2103.5
@@ -83,6 +84,16 @@ require (
 	google.golang.org/api v0.110.0
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.28.1
+)
+
+require (
+	github.com/apache/arrow/go/v11 v11.0.0-20221220213742-09453f9258f3 // indirect
+	github.com/dnephin/pflag v1.0.7 // indirect
+	github.com/fatih/color v1.13.0 // indirect
+	github.com/mattn/go-colorable v0.1.12 // indirect
+	github.com/mattn/go-isatty v0.0.16 // indirect
+	github.com/rs/zerolog v1.28.0 // indirect
+	gotest.tools/gotestsum v1.8.2 // indirect
 )
 
 require (

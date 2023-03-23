@@ -2,11 +2,14 @@ package deltalake
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/databricks/databricks-sql-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -282,6 +285,24 @@ func (dl *Deltalake) NewClient(cred *client.Credentials, connectTimeout time.Dur
 			return
 		}
 	}
+	port, _ := strconv.Atoi(cred.Port)
+
+	connector, err := dbsql.NewConnector(
+		dbsql.WithServerHostname(cred.Host),
+		dbsql.WithPort(port),
+		dbsql.WithHTTPPath(cred.Path),
+		dbsql.WithAccessToken(cred.Token),
+		dbsql.WithSessionParams(map[string]string{
+			"ansi_mode": "false",
+		}),
+		dbsql.WithUserAgentEntry(dl.UserAgent),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("databricks connector error: %w", err)
+	}
+
+	Client.NativeClient = sql.OpenDB(connector)
+
 	return
 }
 
@@ -561,9 +582,7 @@ func (dl *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchem
 		dl.Logger.Infof("%s Running COPY command with SQL: %s\n", dl.GetLogIdentifier(tableName), sanitisedSQLStmt)
 	}
 
-	// Executing copy sql statement
-	err = dl.ExecuteSQLClient(dl.Client, sqlStatement)
-	if err != nil {
+	if _, err = dl.Client.NativeClient.Exec(sqlStatement); err != nil {
 		dl.Logger.Errorf("%s Error running COPY command with SQL: %s\n error: %v", dl.GetLogIdentifier(tableName), sqlStatement, err)
 		return
 	}

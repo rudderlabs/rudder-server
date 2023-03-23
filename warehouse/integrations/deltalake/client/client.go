@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
@@ -22,6 +23,7 @@ type Client struct {
 	Context        context.Context
 	Conn           *grpc.ClientConn
 	Client         proto.DatabricksClient
+	NativeClient   *sql.DB
 }
 
 // Close closes sql connection as well as closes grpc connection
