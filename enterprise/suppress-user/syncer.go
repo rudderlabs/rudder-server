@@ -184,9 +184,7 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 
 		// If statusCode is not 2xx, then returning empty regulations
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			s.log.Errorf("Failed to fetch source regulations. statusCode: %v, error: %v",
-				resp.StatusCode, err)
-			return fmt.Errorf("failed to fetch source regulations: %w", err)
+			return fmt.Errorf("failed to fetch source regulations: statusCode: %d", resp.StatusCode)
 		}
 		respBody, err = io.ReadAll(resp.Body)
 		if err != nil {

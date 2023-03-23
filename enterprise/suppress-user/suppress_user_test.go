@@ -109,7 +109,7 @@ func generateTests(getRepo func() Repository) {
 				respBody:   []byte(""),
 			}
 			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(nil)
-			Expect(err.Error()).To(Equal("status code 500"))
+			Expect(err.Error()).To(Equal("failed to fetch source regulations: statusCode: 500"))
 		})
 
 		It("returns an error when server responds with invalid (empty) data in the response body", func() {
