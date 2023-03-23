@@ -58,7 +58,7 @@ func (a *embeddedApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterBoolConfigVariable(false, &a.config.enableEventSchemasJobsDB, false, "EventSchemas.jobsDB.enabled")
+	config.RegisterBoolConfigVariable(false, &a.config.enableEventSchemasJobsDB, false, "EventSchemas.enableEventSchemasJobsDB")
 }
 
 func (a *embeddedApp) Setup(options *app.Options) error {
@@ -195,6 +195,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			// jobsdb.WithStatusHandler(),
 			jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		)
+	} else {
+		eventSchemasJobsDB = jobsdb.NewForNoop("event_schemas")
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)

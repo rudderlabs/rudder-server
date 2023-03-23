@@ -125,6 +125,7 @@ type Handle struct {
 		configSubscriberLock      sync.RWMutex
 		enableEventSchemasFeature bool
 		enableEventSchemasAPIOnly bool
+		enableEventSchemasJobsDB  bool
 		enableDedup               bool
 		enableEventCount          bool
 		transformTimesPQLength    int
@@ -571,6 +572,7 @@ func (proc *Handle) loadConfig() {
 	config.RegisterBoolConfigVariable(true, &proc.config.enableEventCount, true, "Processor.enableEventCount")
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
+	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasJobsDB, false, "EventSchemas.enableEventSchemasJobsDB")
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 
@@ -1268,6 +1270,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	groupedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEventT)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobs []*jobsdb.JobT
+	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
 		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
@@ -1294,7 +1297,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	inCountMetadataMap := make(map[string]MetricMetadata)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
-	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]*types.StatusDetail)
@@ -1323,11 +1325,15 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
 			}
 
-			var eligibleForEventSchema bool
+			var (
+				source                          *backendconfig.SourceT
+				sourceError                     error
+				commonMetadataFromSingularEvent *transformer.MetadataT
+			)
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
-				source, sourceError := proc.getSourceByWriteKey(writeKey)
+				source, sourceError = proc.getSourceByWriteKey(writeKey)
 				if sourceError != nil {
 					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
 					continue
@@ -1349,7 +1355,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					ReceivedAt:    receivedAt,
 				}
 
-				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
+				commonMetadataFromSingularEvent = makeCommonMetadataFromSingularEvent(
 					singularEvent,
 					batchEvent,
 					receivedAt,
@@ -1398,19 +1404,16 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 				if proc.isReportingEnabled() {
 					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, func() json.RawMessage { return []byte(`{}`) })
 				}
-
-				if !eligibleForEventSchema {
-					// ignore events from rudder-sources
-					eligibleForEventSchema = source.EventSchemasEnabled &&
-						commonMetadataFromSingularEvent.SourceJobRunID == ""
-				}
-
 			}
-			if eligibleForEventSchema {
-				eventSchemaJobs = append(
-					eventSchemaJobs,
-					batchEvent,
-				)
+			if proc.config.enableEventSchemasJobsDB {
+				if source != nil && source.EventSchemasEnabled &&
+					commonMetadataFromSingularEvent != nil &&
+					commonMetadataFromSingularEvent.SourceJobRunID == "" { // could use source.SourceDefinition.Category instead?
+					eventSchemaJobs = append(
+						eventSchemaJobs,
+						batchEvent,
+					)
+				}
 			}
 		}
 
@@ -1812,18 +1815,25 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
 
-	if proc.config.enableEventSchemasFeature {
+	if proc.config.enableEventSchemasJobsDB {
 		if len(in.eventSchemaJobs) > 0 {
-			if proc.eventSchemaDB != nil {
-				proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(in.eventSchemaJobs))
-				err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-					return proc.eventSchemaDB.Store(ctx, in.eventSchemaJobs)
+			proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(in.eventSchemaJobs))
+			err := misc.RetryWithNotify(
+				context.Background(),
+				proc.jobsDBCommandTimeout,
+				proc.jobdDBMaxRetries,
+				func(ctx context.Context) error {
+					return proc.routerDB.WithStoreSafeTx(
+						ctx,
+						func(tx jobsdb.StoreSafeTx) error {
+							return proc.eventSchemaDB.StoreInTx(ctx, tx, in.eventSchemaJobs)
+						},
+					)
 				}, proc.sendRetryStoreStats)
-				if err != nil {
-					proc.logger.Errorf("Store into event schema table failed with error: %v", err)
-					proc.logger.Errorf("eventSchemaJobs: %v", in.eventSchemaJobs)
-					panic(err)
-				}
+			if err != nil {
+				proc.logger.Errorf("Store into event schema table failed with error: %v", err)
+				proc.logger.Errorf("eventSchemaJobs: %v", in.eventSchemaJobs)
+				panic(err)
 			}
 		}
 	}
