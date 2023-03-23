@@ -42,12 +42,11 @@ type embeddedApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
+		enableReplay       bool
 		processorDSLimit   int
 		routerDSLimit      int
 		batchRouterDSLimit int
 		gatewayDSLimit     int
-
-		enableReplay bool
 	}
 }
 
@@ -184,7 +183,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	eventSchemasJobsDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
-		// jobsdb.WithStatusHandler(),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 	)
 

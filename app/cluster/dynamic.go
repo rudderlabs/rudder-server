@@ -162,6 +162,9 @@ func (d *Dynamic) start() error {
 	if err := d.GatewayDB.Start(); err != nil {
 		return fmt.Errorf("gateway db start: %w", err)
 	}
+	if err := d.EventSchemasDB.Start(); err != nil {
+		return fmt.Errorf("event schemas db start: %w", err)
+	}
 	if err := d.RouterDB.Start(); err != nil {
 		return fmt.Errorf("router db start: %w", err)
 	}

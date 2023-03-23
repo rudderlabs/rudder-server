@@ -134,6 +134,13 @@ func setEnableEventSchemasFeature(proc *Handle, b bool) bool {
 	return prev
 }
 
+// setEnableEventSchemasJobsDB overrides enableEventSchemasJobsDB configuration and returns previous value
+func setEnableEventSchemasJobsDB(proc *Handle, b bool) bool {
+	prev := proc.config.enableEventSchemasJobsDB
+	proc.config.enableEventSchemasJobsDB = b
+	return prev
+}
+
 // SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
 func setDisableDedupFeature(proc *Handle, b bool) bool {
 	prev := proc.config.enableDedup
@@ -557,7 +564,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 							messages["message-4"],
 							messages["message-5"],
 						},
-						createMessagePayload,
+						createMessagePayloadWithoutSources,
 					),
 					EventCount: 3,
 					Parameters: createBatchParameters(SourceIDEnabledNoUT),
