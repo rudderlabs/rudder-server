@@ -21,7 +21,6 @@ import (
 
 const (
 	namespaceID = "spaghetti"
-	tokenKey    = "__token__"
 )
 
 func TestSuppressionSetup(t *testing.T) {

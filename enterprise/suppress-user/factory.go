@@ -45,6 +45,7 @@ func seederSource(endpoint string) (io.Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not perform request: %w", err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -108,7 +109,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 	rruntime.Go(func() {
 		syncer.SyncLoop(subCtx)
 		err = latestRepo.Stop()
-
+		defer LatestSyncCancel()
 	})
 
 	if config.GetBool("BackendConfig.Regulations.useBadgerDB", true) {
