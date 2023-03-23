@@ -168,10 +168,8 @@ func (d *Dynamic) start() error {
 	if err := d.BatchRouterDB.Start(); err != nil {
 		return fmt.Errorf("batch router db start: %w", err)
 	}
-	if d.EventSchemasDB != nil {
-		if err := d.EventSchemasDB.Start(); err != nil {
-			return fmt.Errorf("event schemas db start: %w", err)
-		}
+	if err := d.EventSchemasDB.Start(); err != nil {
+		return fmt.Errorf("event schemas db start: %w", err)
 	}
 	if err := d.MultiTenantStat.Start(); err != nil {
 		return fmt.Errorf("multi tenant stat start: %w", err)

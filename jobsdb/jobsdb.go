@@ -571,6 +571,8 @@ const (
 	Write OwnerType = "WRITE"
 	// ReadWrite : Reader and Writer of this jobsdb instance
 	ReadWrite OwnerType = ""
+	// NoOp : No operation on this jobsdb instance
+	Noop OwnerType = "NOOP"
 )
 
 func init() {
@@ -669,6 +671,10 @@ func WithFileUploaderProvider(fileUploaderProvider fileuploader.Provider) OptsFu
 	}
 }
 
+func NewForNoop(tablePrefix string, opts ...OptsFunc) *HandleT {
+	return newOwnerType(Noop, tablePrefix, opts...)
+}
+
 func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
 	return newOwnerType(Read, tablePrefix, opts...)
 }
@@ -683,12 +689,19 @@ func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
 
 func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {
 	j := &HandleT{
-		ownerType:   ownerType,
-		tablePrefix: tablePrefix,
+		ownerType:       ownerType,
+		tablePrefix:     tablePrefix,
+		logger:          pkgLogger.Child(tablePrefix),
+		dsListLock:      lock.NewLocker(),
+		dsMigrationLock: lock.NewLocker(),
 	}
 
 	for _, fn := range opts {
 		fn(j)
+	}
+
+	if ownerType == Noop {
+		return j
 	}
 
 	j.init()
@@ -711,14 +724,14 @@ func (jd *HandleT) Setup(
 	jd.tablePrefix = tablePrefix
 	jd.preBackupHandlers = preBackupHandlers
 	jd.fileUploaderProvider = fileUploaderProvider
+	jd.logger = pkgLogger.Child(jd.tablePrefix)
+	jd.dsListLock = lock.NewLocker()
+	jd.dsMigrationLock = lock.NewLocker()
 	jd.init()
 	return jd.Start()
 }
 
 func (jd *HandleT) init() {
-	jd.logger = pkgLogger.Child(jd.tablePrefix)
-	jd.dsListLock = lock.NewLocker()
-	jd.dsMigrationLock = lock.NewLocker()
 	if jd.MaxDSSize == nil {
 		// passing `maxDSSize` by reference, so it can be hot reloaded
 		jd.MaxDSSize = &maxDSSize
