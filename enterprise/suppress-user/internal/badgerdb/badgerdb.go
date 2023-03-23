@@ -196,9 +196,10 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 func (b *Repository) start() error {
 	b.closed = make(chan struct{})
 	var seeder io.Reader
-	if _, err := os.Stat(b.path); os.IsNotExist(err) && b.seederSource != nil {
+	_, err := os.Stat(b.path)
+	if os.IsNotExist(err) && b.seederSource != nil {
 		if seeder, err = b.seederSource(); err != nil {
-			return err
+			return fmt.Errorf("could not get seeder source: %w", err)
 		}
 	}
 
@@ -208,10 +209,10 @@ func (b *Repository) start() error {
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(b.maxGoroutines)
-	var err error
+	// var err error
 	b.db, err = badger.Open(opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not open badgerdb: %w", err)
 	}
 
 	if seeder != nil {
@@ -222,8 +223,12 @@ func (b *Repository) start() error {
 			}
 			return nil
 		})
+
 		select {
-		case <-restoreDone:
+		case err = <-restoreDone:
+			if err != nil {
+				return fmt.Errorf("failed to restore badgerdb: %w", err)
+			}
 		case <-time.After(b.maxSeedWait):
 			b.log.Warn("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
 		}
