@@ -38,7 +38,7 @@ const (
 	User               = "user"
 	Role               = "role"
 	Password           = "password"
-	Application        = "Rudderstack"
+	Application        = "Rudderstack_Warehouse"
 )
 
 var pkgLogger logger.Logger
