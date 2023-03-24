@@ -1048,7 +1048,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		errorsString := misc.QuoteLiteral(err.Error())
 		_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tName, repo.TableUploadSetOptions{
 			Status: &status,
-			Error: &errorsString,
+			Error:  &errorsString,
 		})
 		return alteredSchema, fmt.Errorf("load table: %w", err)
 	}
