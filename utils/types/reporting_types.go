@@ -48,6 +48,9 @@ type StatusDetail struct {
 	SampleEvent    json.RawMessage `json:"sampleEvent"`
 	EventName      string          `json:"eventName"`
 	EventType      string          `json:"eventType"`
+	ErrorType      string          `json:"errorType"`
+	ViolationCount int64           `json:"violationCount"`
+	HasViolation   bool            `json:"hasViolation"`
 }
 
 type ReportByStatus struct {
@@ -85,6 +88,8 @@ type ConnectionDetails struct {
 	SourceDefinitionId      string `json:"sourceDefinitionId"`
 	DestinationDefinitionId string `string:"destinationDefinitionId"`
 	SourceCategory          string `json:"sourceCategory"`
+	TrackingPlanId          string `json:"trackingPlanId"`
+	TrackingPlanVersion     int    `json:"trackingPlanVersion"`
 }
 type PUDetails struct {
 	InPU       string `json:"inReportedBy"`
@@ -99,7 +104,7 @@ type PUReportedMetric struct {
 	StatusDetail *StatusDetail
 }
 
-func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc string) *ConnectionDetails {
+func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc, tpid string, tpv int) *ConnectionDetails {
 	return &ConnectionDetails{
 		SourceID:                sid,
 		DestinationID:           did,
@@ -109,18 +114,23 @@ func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc string)
 		SourceDefinitionId:      sdid,
 		DestinationDefinitionId: ddid,
 		SourceCategory:          sc,
+		TrackingPlanId:          tpid,
+		TrackingPlanVersion:     tpv,
 	}
 }
 
-func CreateStatusDetail(status string, count int64, code int, resp string, event json.RawMessage, eventName, eventType string) *StatusDetail {
+func CreateStatusDetail(status string, count, violationCount int64, code int, resp string, event json.RawMessage, eventName, eventType, errorType string, hasViolation bool) *StatusDetail {
 	return &StatusDetail{
 		Status:         status,
 		Count:          count,
+		ViolationCount: violationCount,
 		StatusCode:     code,
 		SampleResponse: resp,
 		SampleEvent:    event,
 		EventName:      eventName,
 		EventType:      eventType,
+		ErrorType:      errorType,
+		HasViolation:   hasViolation,
 	}
 }
 
@@ -133,7 +143,7 @@ func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
 	}
 }
 
-func AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]*StatusDetail) {
+func AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]map[string]*StatusDetail) {
 	if len(m1) != len(m2) {
 		panic("maps length don't match") // TODO improve msg
 	}
