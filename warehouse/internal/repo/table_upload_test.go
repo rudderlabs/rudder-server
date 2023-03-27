@@ -122,7 +122,12 @@ func TestTableUploadRepo(t *testing.T) {
 			location     = "test_location"
 			table        = tables[0]
 			totalEvents  = int64(100)
+			now          = now.Add(time.Second)
 		)
+
+		r := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+			return now
+		}))
 
 		t.Run("no set options", func(t *testing.T) {
 			err := r.Set(ctx, uploadID, table, repo.TableUploadSetOptions{})
