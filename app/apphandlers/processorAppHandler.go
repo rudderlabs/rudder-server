@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	jobs_forwarder "github.com/rudderlabs/rudder-server/jobs-forwarder"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -39,18 +40,19 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// processorApp is the type for Processor type implemention
+// processorApp is the type for Processor type implementation
 type processorApp struct {
 	setupDone      bool
 	app            app.App
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		processorDSLimit   int
-		routerDSLimit      int
-		batchRouterDSLimit int
-		gatewayDSLimit     int
-		http               struct {
+		processorDSLimit    int
+		routerDSLimit       int
+		batchRouterDSLimit  int
+		gatewayDSLimit      int
+		eventSchemasEnabled bool
+		http                struct {
 			ReadTimeout       time.Duration
 			ReadHeaderTimeout time.Duration
 			WriteTimeout      time.Duration
@@ -72,6 +74,7 @@ func (a *processorApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterBoolConfigVariable(false, &a.config.eventSchemasEnabled, false, "EventSchemasEnabled")
 }
 
 func (a *processorApp) Setup(options *app.Options) error {
@@ -192,6 +195,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
+	jobsForwarder, err := jobs_forwarder.New(routerDB, transientSources, logger.NewLogger().Child("jobs_forwarder"))
+	if err != nil {
+		return err
+	}
+	jobsForwarder.Start(ctx)
+	defer jobsForwarder.Stop()
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {

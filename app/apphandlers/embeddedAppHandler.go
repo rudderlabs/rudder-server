@@ -15,6 +15,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
+	jobs_forwarder "github.com/rudderlabs/rudder-server/jobs-forwarder"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -188,6 +189,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
+
+	jobsForwarder, err := jobs_forwarder.New(routerDB, transientSources, logger.NewLogger().Child("jobs_forwarder"))
+	if err != nil {
+		return err
+	}
+	jobsForwarder.Start(ctx)
+	defer jobsForwarder.Stop()
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
