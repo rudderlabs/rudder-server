@@ -870,8 +870,8 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	return sslDirPath
 }
 
-func GetLoadFileType(wh string) string {
-	switch wh {
+func GetLoadFileType(destType string) string {
+	switch destType {
 	case BQ:
 		return LOAD_FILE_TYPE_JSON
 	case RS:
@@ -888,18 +888,13 @@ func GetLoadFileType(wh string) string {
 	}
 }
 
-func GetLoadFileFormat(whType string) string {
-	switch whType {
-	case BQ:
+func GetLoadFileFormat(loadFileType string) string {
+	switch loadFileType {
+	case LOAD_FILE_TYPE_JSON:
 		return "json.gz"
-	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
+	case LOAD_FILE_TYPE_PARQUET:
 		return "parquet"
-	case RS:
-		return "csv.gz"
-	case DELTALAKE:
-		if config.GetBool("Warehouse.deltalake.useParquetLoadFiles", false) {
-			return "parquet"
-		}
+	case LOAD_FILE_TYPE_CSV:
 		return "csv.gz"
 	default:
 		return "csv.gz"

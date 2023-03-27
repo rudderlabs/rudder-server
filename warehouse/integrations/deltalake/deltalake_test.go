@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"testing"
 	"time"
 
@@ -246,7 +247,34 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29eClxJQQlaWzMWyqnQctFDP5T2",
 	}
-	testhelper.VerifyConfigurationTest(t, destination)
+
+	testCases := []struct {
+		name                string
+		useParquetLoadFiles bool
+	}{
+		{
+			name:                "Parquet load files",
+			useParquetLoadFiles: true,
+		},
+		{
+			name:                "CSV load files",
+			useParquetLoadFiles: false,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			testhelper.SetConfig(t, []warehouseutils.KeyValue{
+				{
+					Key:   "Warehouse.deltalake.useParquetLoadFiles",
+					Value: strconv.FormatBool(tc.useParquetLoadFiles),
+				},
+			})
+		})
+
+		testhelper.VerifyConfigurationTest(t, destination)
+	}
 }
 
 func mergeEventsMap() testhelper.EventsCountMap {

@@ -988,7 +988,7 @@ func TestGetLoadFileFormat(t *testing.T) {
 		},
 	}
 	for _, input := range inputs {
-		got := GetLoadFileFormat(input.whType)
+		got := GetLoadFileFormat(GetLoadFileType(input.whType))
 		require.Equal(t, got, input.expected)
 	}
 }

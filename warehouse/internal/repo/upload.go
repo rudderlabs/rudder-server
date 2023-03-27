@@ -113,7 +113,7 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		SourceTaskRunID:  files[0].SourceTaskRunID,
 		SourceJobID:      files[0].SourceJobID,
 		SourceJobRunID:   files[0].SourceJobRunID,
-		LoadFileType:     warehouseutils.GetLoadFileType(upload.DestinationType),
+		LoadFileType:     upload.LoadFileType,
 		Retried:          upload.Retried,
 		Priority:         upload.Priority,
 		NextRetryTime:    upload.NextRetryTime,
