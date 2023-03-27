@@ -879,6 +879,9 @@ func GetLoadFileType(wh string) string {
 	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
 		return LOAD_FILE_TYPE_PARQUET
 	case DELTALAKE:
+		if config.GetBool("Warehouse.deltalake.useParquetLoadFiles", false) {
+			return LOAD_FILE_TYPE_PARQUET
+		}
 		return LOAD_FILE_TYPE_CSV
 	default:
 		return LOAD_FILE_TYPE_CSV
@@ -894,6 +897,9 @@ func GetLoadFileFormat(whType string) string {
 	case RS:
 		return "csv.gz"
 	case DELTALAKE:
+		if config.GetBool("Warehouse.deltalake.useParquetLoadFiles", false) {
+			return "parquet"
+		}
 		return "csv.gz"
 	default:
 		return "csv.gz"

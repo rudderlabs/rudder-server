@@ -103,6 +103,10 @@ func TestIntegrationDeltalake(t *testing.T) {
 						Key:   "Warehouse.deltalake.loadTableStrategy",
 						Value: "MERGE",
 					},
+					{
+						Key:   "Warehouse.deltalake.useParquetLoadFiles",
+						Value: "false",
+					},
 				})
 			},
 		},
@@ -119,6 +123,31 @@ func TestIntegrationDeltalake(t *testing.T) {
 					{
 						Key:   "Warehouse.deltalake.loadTableStrategy",
 						Value: "APPEND",
+					},
+					{
+						Key:   "Warehouse.deltalake.useParquetLoadFiles",
+						Value: "false",
+					},
+				})
+			},
+		},
+		{
+			name:               "Parquet load files",
+			writeKey:           "sToFgoilA0U1WxNeW1gdgUVDsEW",
+			schema:             schema,
+			sourceID:           "25H5EpYzojqQSepRSaGBrrPx3e4",
+			destinationID:      "25IDjdnoEus6DDNrth3SWO1FOpu",
+			warehouseEventsMap: mergeEventsMap(),
+			prerequisite: func(t testing.TB) {
+				t.Helper()
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
+					{
+						Key:   "Warehouse.deltalake.loadTableStrategy",
+						Value: "MERGE",
+					},
+					{
+						Key:   "Warehouse.deltalake.useParquetLoadFiles",
+						Value: "true",
 					},
 				})
 			},
