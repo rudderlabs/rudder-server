@@ -110,8 +110,8 @@ func NewSimpleSessionConfig(config map[string]interface{}, serviceName string) (
 		sessionConfig.RoleBasedAuth = sessionConfig.IAMRoleARN != ""
 	}
 
-	if sessionConfig.RoleBasedAuth && sessionConfig.IAMRoleARN == "" {
-		return nil, errors.New("incompatible role configuration")
+	if  sessionConfig.IAMRoleARN == "" {
+		sessionConfig.RoleBasedAuth = false
 	}
 
 	// Some AWS destinations are using SecretAccessKey instead of accessKey
