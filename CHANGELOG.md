@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/rudderlabs/rudder-server/compare/v1.7.0...v1.7.1) (2023-03-24)
+
+
+### Bug Fixes
+
+* **warehouse:** table uploads were not getting updated ([abb8bfb](https://github.com/rudderlabs/rudder-server/commit/abb8bfb3c1ed77584d75c50e4bbc2f305aa4ea69))
+
 ## [1.7.0](https://github.com/rudderlabs/rudder-server/compare/v1.6.0...v1.7.0) (2023-03-17)
 
 
