@@ -371,6 +371,14 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 	return
 }
 
+func SanitizeJson(input json.RawMessage) json.RawMessage {
+	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
+	if len(v) == 0 {
+		v = []byte(`{}`)
+	}
+	return v
+}
+
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
 func GetObjectName(location string, providerConfig interface{}, objectProvider string) (objectName string, err error) {
