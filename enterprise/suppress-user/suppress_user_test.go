@@ -109,7 +109,7 @@ func generateTests(getRepo func() Repository) {
 				respBody:   []byte(""),
 			}
 			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(nil)
-			Expect(err.Error()).To(Equal("status code 500"))
+			Expect(err.Error()).To(Equal("failed to fetch source regulations: statusCode: 500"))
 		})
 
 		It("returns an error when server responds with invalid (empty) data in the response body", func() {
@@ -166,9 +166,10 @@ func generateTests(getRepo func() Repository) {
 			resp.Items = []model.Suppression{
 				defaultSuppression,
 				{
-					Canceled:  false,
-					UserID:    "user-2",
-					SourceIDs: []string{"src-1", "src-2"},
+					WorkspaceID: "workspace-1",
+					Canceled:    false,
+					UserID:      "user-2",
+					SourceIDs:   []string{"src-1", "src-2"},
 				},
 			}
 			respBody, _ := json.Marshal(resp)
@@ -198,14 +199,16 @@ func generateTests(getRepo func() Repository) {
 			resp := defaultResponse
 			resp.Items = []model.Suppression{
 				{
-					Canceled:  false,
-					UserID:    "user-1",
-					SourceIDs: []string{},
+					WorkspaceID: "workspace-1",
+					Canceled:    false,
+					UserID:      "user-1",
+					SourceIDs:   []string{},
 				},
 				{
-					Canceled:  false,
-					UserID:    "user-2",
-					SourceIDs: []string{"src-2"},
+					WorkspaceID: "workspace-1",
+					Canceled:    false,
+					UserID:      "user-2",
+					SourceIDs:   []string{"src-2"},
 				},
 			}
 			respBody, _ := json.Marshal(resp)
@@ -228,14 +231,16 @@ func generateTests(getRepo func() Repository) {
 			resp := defaultResponse
 			resp.Items = []model.Suppression{
 				{
-					Canceled:  false,
-					UserID:    "user-1",
-					SourceIDs: []string{},
+					WorkspaceID: "workspace-1",
+					Canceled:    false,
+					UserID:      "user-1",
+					SourceIDs:   []string{},
 				},
 				{
-					Canceled:  false,
-					UserID:    "user-2",
-					SourceIDs: []string{"src-2"},
+					WorkspaceID: "workspace-1",
+					Canceled:    false,
+					UserID:      "user-2",
+					SourceIDs:   []string{"src-2"},
 				},
 			}
 			respBody, _ := json.Marshal(resp)
@@ -292,7 +297,7 @@ func generateTests(getRepo func() Repository) {
 			// older version of regulation service doesn't return workspaceID as part of the suppressions
 			resp := defaultResponse
 			sup := &resp.Items[0]
-			sup.WorkspaceID = ""
+			sup.WorkspaceID = "workspace-1"
 			respBody, _ := json.Marshal(resp)
 			serverResponse = syncResponse{
 				statusCode: 200,
