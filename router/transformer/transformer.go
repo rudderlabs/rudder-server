@@ -15,13 +15,13 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
@@ -103,8 +103,11 @@ func Init() {
 
 // Transform transforms router jobs to destination jobs
 func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+	var destinationJobs types.DestinationJobs
+	transformMessageCopy, jobs := transformMessage.Dehydrate()
+
 	// Call remote transformation
-	rawJSON, err := jsonfast.Marshal(transformMessage)
+	rawJSON, err := jsonfast.Marshal(&transformMessageCopy)
 	if err != nil {
 		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
 		panic(err)
@@ -162,7 +165,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 	}
 
-	var destinationJobs []types.DestinationJobT
 	if resp.StatusCode == http.StatusOK {
 		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get(apiVersionHeader))
 		if convErr != nil {
@@ -241,6 +243,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	}
 	func() { httputil.CloseResponse(resp) }()
 
+	destinationJobs.Hydrate(jobs)
 	return destinationJobs
 }
 

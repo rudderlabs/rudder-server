@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -26,7 +26,7 @@ func initFileManager(log logger.Logger) (filemanager.FileManager, string, error)
 		panic("Bucket is not configured.")
 	}
 
-	provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+	provider := config.GetString("JOBS_REPLAY_BACKUP_STORAGE_PROVIDER", "S3")
 	fileManagerFactory := filemanager.DefaultFileManagerFactory
 
 	configFromEnv := filemanager.GetProviderConfigForBackupsFromEnv(context.TODO())

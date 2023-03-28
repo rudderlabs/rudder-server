@@ -55,39 +55,41 @@ func (c *Client) ping(ctx context.Context) (*kafka.Conn, error) {
 func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, replicationFactor int) error {
 	conn, err := c.ping(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("create topic: cannot ping: %w", err)
 	}
 
 	var (
-		errors  = make(chan error, 1)
-		brokers = make(chan kafka.Broker, 1)
+		controllerHost string
+		errors         = make(chan error, 1)
 	)
-
+	defer close(errors)
 	go func() { // doing it asynchronously because conn.Controller() does not honour the context
-		b, err := conn.Controller()
+		var b kafka.Broker
+		b, err = conn.Controller()
 		if err != nil {
-			errors <- fmt.Errorf("could not get controller: %w", err)
+			errors <- fmt.Errorf("create topic: could not get controller: %w", err)
 			return
 		}
 		if b.Host == "" {
-			errors <- fmt.Errorf("create topic: empty host")
+			errors <- fmt.Errorf("create topic: controller connection has empty broker host")
 			return
 		}
-		brokers <- b
+		controllerHost = net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
+		errors <- nil
 	}()
 
-	var broker kafka.Broker
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
-	case err = <-errors:
-		return err
-	case broker = <-brokers:
+		return fmt.Errorf("create topic: %w", ctx.Err())
+	case err := <-errors:
+		if err != nil {
+			return err
+		}
 	}
 
-	controllerConn, err := kafka.DialContext(ctx, c.network, net.JoinHostPort(broker.Host, strconv.Itoa(broker.Port)))
+	controllerConn, err := c.dialer.DialContext(ctx, c.network, controllerHost)
 	if err != nil {
-		return fmt.Errorf("could not dial via controller: %w", err)
+		return fmt.Errorf("create topic: could not dial controller: %w", err)
 	}
 	defer func() {
 		// close asynchronously, if we block we might not respect the context
@@ -95,7 +97,7 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 	}()
 
 	go func() { // doing it asynchronously because controllerConn.CreateTopics() does not honour the context
-		errors <- controllerConn.CreateTopics(kafka.TopicConfig{
+		errors <- conn.CreateTopics(kafka.TopicConfig{
 			Topic:             topic,
 			NumPartitions:     numPartitions,
 			ReplicationFactor: replicationFactor,
@@ -106,7 +108,12 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 	case <-ctx.Done():
 		return ctx.Err()
 	case err = <-errors:
-		return err
+		if err != nil {
+			return fmt.Errorf("create topic: cannot create topic with controller %q and addresses %+v: %w",
+				controllerHost, c.addresses, err,
+			)
+		}
+		return nil
 	}
 }
 

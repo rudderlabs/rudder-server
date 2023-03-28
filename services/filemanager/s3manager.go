@@ -18,7 +18,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/samber/lo"
 
-	appConfig "github.com/rudderlabs/rudder-server/config"
+	appConfig "github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
@@ -151,7 +151,7 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 	return nil
 }
 
-func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, error) {
+func (manager *S3Manager) getSession(_ context.Context) (*session.Session, error) {
 	if manager.session != nil {
 		return manager.session, nil
 	}

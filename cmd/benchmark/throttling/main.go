@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-redis/redis/v8"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/internal/throttling"
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
 )
 
 func main() {

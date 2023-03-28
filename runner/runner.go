@@ -11,7 +11,52 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	_ "go.uber.org/automaxprocs"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/bugsnag/bugsnag-go/v2"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/admin/profiler"
+	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/app/apphandlers"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	eventschema "github.com/rudderlabs/rudder-server/event-schema"
+	"github.com/rudderlabs/rudder-server/gateway"
+	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	"github.com/rudderlabs/rudder-server/info"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/stash"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
+	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/alert"
+	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
+	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/services/dedup"
+	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/warehouse"
+	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
@@ -21,52 +66,6 @@ import (
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-
-	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
-
-	_ "go.uber.org/automaxprocs"
-	"golang.org/x/sync/errgroup"
-
-	"github.com/bugsnag/bugsnag-go/v2"
-
-	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/admin/profiler"
-	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/app/apphandlers"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	eventschema "github.com/rudderlabs/rudder-server/event-schema"
-	"github.com/rudderlabs/rudder-server/gateway"
-	"github.com/rudderlabs/rudder-server/gateway/webhook"
-	"github.com/rudderlabs/rudder-server/info"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/processor/stash"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
-	"github.com/rudderlabs/rudder-server/router"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
-	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
-	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
-	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/services/alert"
-	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/controlplane"
-	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/dedup"
-	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	svcMetric "github.com/rudderlabs/rudder-server/services/metric"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/oauth"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"github.com/rudderlabs/rudder-server/warehouse"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -180,7 +179,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		stats.WithServiceName(r.appType),
 		stats.WithServiceVersion(r.releaseInfo.Version),
 	)
-	if err := stats.Default.Start(ctx); err != nil {
+	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
 		r.logger.Errorf("Failed to start stats: %v", err)
 		return 1
 	}
@@ -324,6 +323,7 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	bigquery.Init()
 	clickhouse.Init()
 	archiver.Init()
@@ -363,7 +363,6 @@ func runAllInit() {
 	routertransformer.Init()
 	router.Init()
 	router.InitRouterAdmin()
-	ratelimiter.Init()
 	gateway.Init()
 	integrations.Init()
 	alert.Init()

@@ -19,12 +19,12 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -35,7 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-type UploadsReqT struct {
+type UploadsReq struct {
 	WorkspaceID     string
 	SourceID        string
 	DestinationID   string
@@ -46,14 +46,14 @@ type UploadsReqT struct {
 	API             UploadAPIT
 }
 
-type UploadReqT struct {
+type UploadReq struct {
 	WorkspaceID string
 	UploadId    int64
 	API         UploadAPIT
 }
 
-type UploadsResT struct {
-	Uploads    []UploadResT     `json:"uploads"`
+type UploadsRes struct {
+	Uploads    []UploadRes      `json:"uploads"`
 	Pagination UploadPagination `json:"pagination"`
 }
 
@@ -62,32 +62,33 @@ type UploadPagination struct {
 	Limit  int32 `json:"limit"`
 	Offset int32 `json:"offset"`
 }
-type UploadResT struct {
-	ID              int64             `json:"id"`
-	Namespace       string            `json:"namespace"`
-	SourceID        string            `json:"source_id"`
-	DestinationID   string            `json:"destination_id"`
-	DestinationType string            `json:"destination_type"`
-	Status          string            `json:"status"`
-	Error           string            `json:"error"`
-	Attempt         int32             `json:"attempt"`
-	Duration        int32             `json:"duration"`
-	NextRetryTime   string            `json:"nextRetryTime"`
-	FirstEventAt    time.Time         `json:"first_event_at"`
-	LastEventAt     time.Time         `json:"last_event_at"`
-	Tables          []TableUploadResT `json:"tables,omitempty"`
+type UploadRes struct {
+	ID              int64            `json:"id"`
+	Namespace       string           `json:"namespace"`
+	SourceID        string           `json:"source_id"`
+	DestinationID   string           `json:"destination_id"`
+	DestinationType string           `json:"destination_type"`
+	Status          string           `json:"status"`
+	Error           string           `json:"error"`
+	Attempt         int32            `json:"attempt"`
+	Duration        int32            `json:"duration"`
+	NextRetryTime   string           `json:"nextRetryTime"`
+	FirstEventAt    time.Time        `json:"first_event_at"`
+	LastEventAt     time.Time        `json:"last_event_at"`
+	Tables          []TableUploadRes `json:"tables,omitempty"`
 }
 
-type TablesResT struct {
-	Tables []TableUploadResT `json:"tables,omitempty"`
+type TablesRes struct {
+	Tables []TableUploadRes `json:"tables,omitempty"`
 }
-type TableUploadReqT struct {
+
+type TableUploadReq struct {
 	UploadID int64
 	Name     string
 	API      UploadAPIT
 }
 
-type TableUploadResT struct {
+type TableUploadRes struct {
 	ID         int64     `json:"id"`
 	UploadID   int64     `json:"upload_id"`
 	Name       string    `json:"name"`
@@ -162,7 +163,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	return nil
 }
 
-func (uploadsReq *UploadsReqT) validateReq() error {
+func (uploadsReq *UploadsReq) validateReq() error {
 	if !uploadsReq.API.enabled || uploadsReq.API.log == nil || uploadsReq.API.dbHandle == nil {
 		return errors.New(`warehouse api are not initialized`)
 	}
@@ -182,7 +183,7 @@ var statusMap = map[string]string{
 	"failed":  "%failed%",
 }
 
-func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReq) GetWhUploads() (uploadsRes *proto.WHUploadsResponse, err error) {
 	uploadsRes = &proto.WHUploadsResponse{
 		Uploads: make([]*proto.WHUploadResponse, 0),
 	}
@@ -212,7 +213,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	return
 }
 
-func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUploadsResponse, err error) {
+func (uploadsReq *UploadsReq) TriggerWhUploads() (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadsReq.validateReq()
 	defer func() {
 		if err != nil {
@@ -267,7 +268,7 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	return
 }
 
-func (uploadReq *UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
+func (uploadReq *UploadReq) GetWHUpload() (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
 	if err != nil {
 		return &proto.WHUploadResponse{}, status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), err.Error())
@@ -351,7 +352,7 @@ func (uploadReq *UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 		upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
 	}
 
-	tableUploadReq := TableUploadReqT{
+	tableUploadReq := TableUploadReq{
 		UploadID: upload.Id,
 		Name:     "",
 		API:      uploadReq.API,
@@ -364,7 +365,7 @@ func (uploadReq *UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	return &upload, nil
 }
 
-func (uploadReq *UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
+func (uploadReq *UploadReq) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadReq.validateReq()
 	defer func() {
 		if err != nil {
@@ -396,7 +397,7 @@ func (uploadReq *UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploads
 		return
 	}
 
-	uploadJobT := UploadJobT{
+	uploadJobT := UploadJob{
 		upload:   upload,
 		dbHandle: uploadReq.API.dbHandle,
 		Now:      timeutil.Now,
@@ -413,7 +414,7 @@ func (uploadReq *UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploads
 	return
 }
 
-func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, error) {
+func (tableUploadReq TableUploadReq) GetWhTableUploads() ([]*proto.WHTable, error) {
 	err := tableUploadReq.validateReq()
 	if err != nil {
 		return []*proto.WHTable{}, err
@@ -464,7 +465,7 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 	return tableUploads, nil
 }
 
-func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
+func (tableUploadReq TableUploadReq) generateQuery(selectFields string) string {
 	query := fmt.Sprintf(`
 	SELECT
 	  %s
@@ -483,7 +484,7 @@ func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string 
 	return query
 }
 
-func (tableUploadReq TableUploadReqT) validateReq() error {
+func (tableUploadReq TableUploadReq) validateReq() error {
 	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
 		return errors.New("warehouse api are not initialized")
 	}
@@ -493,7 +494,7 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 	return nil
 }
 
-func (uploadReq *UploadReqT) generateQuery(selectedFields string) string {
+func (uploadReq *UploadReq) generateQuery(selectedFields string) string {
 	return fmt.Sprintf(`
 		SELECT
 		  %s
@@ -508,7 +509,7 @@ func (uploadReq *UploadReqT) generateQuery(selectedFields string) string {
 	)
 }
 
-func (uploadReq *UploadReqT) validateReq() error {
+func (uploadReq *UploadReq) validateReq() error {
 	if !uploadReq.API.enabled || uploadReq.API.log == nil || uploadReq.API.dbHandle == nil {
 		return errors.New("warehouse api are not initialized")
 	}
@@ -518,7 +519,7 @@ func (uploadReq *UploadReqT) validateReq() error {
 	return nil
 }
 
-func (uploadReq *UploadReqT) authorizeSource(sourceID string) bool {
+func (uploadReq *UploadReq) authorizeSource(sourceID string) bool {
 	var authorizedSourceIDs []string
 	var ok bool
 	sourceIDsByWorkspaceLock.RLock()
@@ -531,7 +532,7 @@ func (uploadReq *UploadReqT) authorizeSource(sourceID string) bool {
 	return misc.Contains(authorizedSourceIDs, sourceID)
 }
 
-func (uploadsReq *UploadsReqT) authorizedSources() (sourceIDs []string) {
+func (uploadsReq *UploadsReq) authorizedSources() (sourceIDs []string) {
 	sourceIDsByWorkspaceLock.RLock()
 	defer sourceIDsByWorkspaceLock.RUnlock()
 	var ok bool
@@ -542,7 +543,7 @@ func (uploadsReq *UploadsReqT) authorizedSources() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
+func (uploadsReq *UploadsReq) getUploadsFromDB(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
 	var totalUploadCount int32
 	var err error
 	uploads := make([]*proto.WHUploadResponse, 0)
@@ -649,7 +650,7 @@ func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query str
 	return uploads, totalUploadCount, err
 }
 
-func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, error) {
+func (uploadsReq *UploadsReq) getTotalUploadCount(whereClause string) (int32, error) {
 	var totalUploadCount int32
 	query := fmt.Sprintf(`
 	select
@@ -668,7 +669,7 @@ func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, e
 }
 
 // for hosted workspaces - we get the uploads and the total upload count using the same query
-func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReq) warehouseUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var (
 		uploads          []*proto.WHUploadResponse
 		totalUploadCount int32
@@ -741,7 +742,7 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 }
 
 // for non hosted workspaces - we get the uploads and the total upload count using separate queries
-func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReq) warehouseUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var (
 		uploads          []*proto.WHUploadResponse
 		totalUploadCount int32

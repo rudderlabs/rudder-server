@@ -11,7 +11,8 @@ import (
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
-	"github.com/rudderlabs/rudder-server/testhelper"
+
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -26,8 +27,8 @@ type MINIOResource struct {
 	Client       *minio.Client
 }
 
-func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
-	minioPortInt, err := testhelper.GetFreePort()
+func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
+	minioPortInt, err := kitHelper.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
 	}

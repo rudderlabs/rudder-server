@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -26,7 +26,7 @@ type warehouseGRPC struct {
 }
 
 func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
-	uploadsReq := UploadsReqT{
+	uploadsReq := UploadsReq{
 		WorkspaceID:     request.WorkspaceId,
 		SourceID:        request.SourceId,
 		DestinationID:   request.DestinationId,
@@ -47,7 +47,7 @@ func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRe
 }
 
 func (*warehouseGRPC) TriggerWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
-	uploadsReq := UploadsReqT{
+	uploadsReq := UploadsReq{
 		WorkspaceID:   request.WorkspaceId,
 		SourceID:      request.SourceId,
 		DestinationID: request.DestinationId,
@@ -64,7 +64,7 @@ func (*warehouseGRPC) TriggerWHUploads(_ context.Context, request *proto.WHUploa
 }
 
 func (*warehouseGRPC) GetWHUpload(_ context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
-	uploadReq := UploadReqT{
+	uploadReq := UploadReq{
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
@@ -83,7 +83,7 @@ func (*warehouseGRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.Bo
 }
 
 func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
-	uploadReq := UploadReqT{
+	uploadReq := UploadReq{
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,

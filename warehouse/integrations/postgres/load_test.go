@@ -8,15 +8,17 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/google/uuid"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -69,7 +71,7 @@ func TestLoadTable_Load(t *testing.T) {
 		workspaceID = "test_workspace_id"
 	)
 
-	warehouse := &warehouseutils.Warehouse{
+	warehouse := &model.Warehouse{
 		Source: backendconfig.SourceT{
 			ID: sourceID,
 			SourceDefinition: backendconfig.SourceDefinitionT{
@@ -156,7 +158,7 @@ func TestLoadTable_Load(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				pgResource, err := destination.SetupPostgres(pool, t)
+				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
 				store := memstats.New()
@@ -212,7 +214,7 @@ func TestLoadTable_Load(t *testing.T) {
 						},
 					},
 				}
-				_, err = lt.Load(ctx, tableName, warehouseutils.TableSchemaT{
+				_, err = lt.Load(ctx, tableName, model.TableSchema{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",
@@ -274,7 +276,7 @@ func TestLoadTable_Load(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				pgResource, err := destination.SetupPostgres(pool, t)
+				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
 				store := memstats.New()
@@ -365,7 +367,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 		skipSchemaCreation         bool
 		skipTableCreation          bool
 		skipUserTraitsWorkspaceIDs []string
-		usersSchemaInUpload        warehouseutils.TableSchemaT
+		usersSchemaInUpload        model.TableSchema
 	}{
 		{
 			name:                "success",
@@ -390,7 +392,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 			name:                "empty users schema",
 			mockUsersFiles:      []string{"users.csv.gz"},
 			mockIdentifiesFiles: []string{"identifies.csv.gz"},
-			usersSchemaInUpload: warehouseutils.TableSchemaT{},
+			usersSchemaInUpload: model.TableSchema{},
 			wantErrorsMap: map[string]error{
 				warehouseutils.IdentifiesTable: nil,
 			},
@@ -423,7 +425,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
 			store := memstats.New()
@@ -466,7 +468,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 				Logger:    logger.NOP,
 				DB:        pgResource.DB,
 				Namespace: namespace,
-				Warehouse: &warehouseutils.Warehouse{
+				Warehouse: &model.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,
 						SourceDefinition: backendconfig.SourceDefinitionT{
@@ -495,7 +497,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 				},
 			}
 			var (
-				identifiesSchemaInUpload = warehouseutils.TableSchemaT{
+				identifiesSchemaInUpload = model.TableSchema{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",
@@ -505,7 +507,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 					"received_at":   "datetime",
 					"user_id":       "string",
 				}
-				usersSchamaInUpload = warehouseutils.TableSchemaT{
+				usersSchamaInUpload = model.TableSchema{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",
@@ -515,7 +517,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 					"received_at":   "datetime",
 					"user_id":       "string",
 				}
-				usersSchamaInWarehouse = warehouseutils.TableSchemaT{
+				usersSchamaInWarehouse = model.TableSchema{
 					"test_bool":     "boolean",
 					"test_datetime": "datetime",
 					"test_float":    "float",

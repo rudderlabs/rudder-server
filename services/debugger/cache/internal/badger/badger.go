@@ -9,9 +9,10 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
 )
@@ -21,7 +22,7 @@ loadCacheConfig sets the properties of the cache after reading it from the confi
 This gives a feature of hot readability as well.
 */
 func (e *Cache[E]) loadCacheConfig() {
-	config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.clearFreq") // default clearFreq is 30 seconds
+	config.RegisterDurationConfigVariable(5, &e.ttl, true, time.Minute, "LiveEvent.cache."+e.origin+".clearFreq", "LiveEvent.cache.ttl")
 	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache."+e.origin+".limiter", "LiveEvent.cache.limiter")
 	config.RegisterDurationConfigVariable(1, &e.ticker, false, time.Minute, "LiveEvent.cache."+e.origin+".GCTime", "LiveEvent.cache.GCTime")
 	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache."+e.origin+".queryTimeout", "LiveEvent.cache.queryTimeout")
@@ -29,9 +30,10 @@ func (e *Cache[E]) loadCacheConfig() {
 	config.RegisterIntConfigVariable(5, &e.numMemtables, false, 1, "LiveEvent.cache."+e.origin+".NumMemtables", "LiveEvent.cache.NumMemtables")
 	config.RegisterIntConfigVariable(5, &e.numLevelZeroTables, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTables", "LiveEvent.cache.NumLevelZeroTables")
 	config.RegisterIntConfigVariable(15, &e.numLevelZeroTablesStall, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTablesStall", "LiveEvent.cache.NumLevelZeroTablesStall")
-	// 512 bytes - prefer using Value Log over LSM tree
-	config.RegisterInt64ConfigVariable(512, &e.valueThreshold, false, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
+	// Using the maximum value threshold: (1 << 20) == 1048576 (1MB)
+	config.RegisterInt64ConfigVariable((1 << 20), &e.valueThreshold, false, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
 	config.RegisterBoolConfigVariable(false, &e.syncWrites, false, "LiveEvent.cache."+e.origin+".SyncWrites", "LiveEvent.cache.SyncWrites")
+	config.RegisterBoolConfigVariable(true, &e.cleanupOnStartup, false, "LiveEvent.cache."+e.origin+".CleanupOnStartup", "LiveEvent.cache.CleanupOnStartup")
 }
 
 /*
@@ -46,15 +48,17 @@ type Cache[E any] struct {
 	closed                  chan struct{}
 	ticker                  time.Duration
 	queryTimeout            time.Duration
-	cleanupFreq             time.Duration // TTL time on badgerDB
+	ttl                     time.Duration
 	gcDiscardRatio          float64
 	numMemtables            int
 	numLevelZeroTables      int
 	numLevelZeroTablesStall int
 	valueThreshold          int64
 	syncWrites              bool
+	cleanupOnStartup        bool
 	db                      *badger.DB
 	logger                  logger.Logger
+	stats                   stats.Stats
 }
 
 type badgerLogger struct {
@@ -76,7 +80,7 @@ func (e *Cache[E]) Update(key string, value E) error {
 		if err != nil {
 			return err
 		}
-		entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
+		entry := badger.NewEntry([]byte(key), data).WithTTL(e.ttl)
 		return txn.SetEntry(entry)
 	})
 }
@@ -114,10 +118,11 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 	return lo.Reverse(values), err
 }
 
-func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*Cache[E], error) {
+func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...func(Cache[E])) (*Cache[E], error) {
 	e := Cache[E]{
 		origin: origin,
-		logger: logger,
+		logger: log,
+		stats:  stats,
 	}
 	e.loadCacheConfig()
 	badgerPathName := e.origin + "/cache/badgerdbv3"
@@ -127,6 +132,11 @@ func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*C
 		return nil, err
 	}
 	storagePath := path.Join(tmpDirPath, badgerPathName)
+	if e.cleanupOnStartup {
+		if err := os.RemoveAll(storagePath); err != nil {
+			e.logger.Warnf("Unable to cleanup badgerDB storage path %q: %v", storagePath, err)
+		}
+	}
 	e.path = storagePath
 	e.done = make(chan struct{})
 	e.closed = make(chan struct{})
@@ -176,6 +186,16 @@ func (e *Cache[E]) gcBadgerDB() {
 				goto again
 			}
 		}
+		lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(e.db.Opts().Dir)
+		if err != nil {
+			e.logger.Errorf("Error while getting badgerDB usage: %v", err)
+			continue
+		}
+
+		statName := fmt.Sprintf("liveevent-cache-%s", e.origin)
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
 	}
 }
 

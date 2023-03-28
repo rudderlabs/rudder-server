@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 type SourceStat struct {
