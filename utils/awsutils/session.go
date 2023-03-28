@@ -106,12 +106,12 @@ func NewSimpleSessionConfig(config map[string]interface{}, serviceName string) (
 		return nil, fmt.Errorf("unable to populate session config using destinationConfig: %w", err)
 	}
 
-	if sessionConfig.RoleBasedAuth && sessionConfig.IAMRoleARN == "" {
-		return nil, errors.New("incompatible role configuration")
-	}
-
 	if !isRoleBasedAuthFieldExist(config) {
 		sessionConfig.RoleBasedAuth = sessionConfig.IAMRoleARN != ""
+	}
+
+	if sessionConfig.RoleBasedAuth && sessionConfig.IAMRoleARN == "" {
+		return nil, errors.New("incompatible role configuration")
 	}
 
 	// Some AWS destinations are using SecretAccessKey instead of accessKey
