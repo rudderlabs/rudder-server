@@ -1562,12 +1562,13 @@ func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, 
 	} else {
 		errorByState["attempt"] = 1
 	}
+	normalizedError := strings.ReplaceAll(statusError.Error(), "\u0000", ``)
 
 	// append errors for errored stage
 	if errList, ok := errorByState["errors"]; ok {
-		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
+		errorByState["errors"] = append(errList.([]interface{}), normalizedError)
 	} else {
-		errorByState["errors"] = []string{statusError.Error()}
+		errorByState["errors"] = []string{normalizedError}
 	}
 
 	return uploadErrors, nil
