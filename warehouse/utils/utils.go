@@ -379,6 +379,10 @@ func SanitizeJson(input json.RawMessage) json.RawMessage {
 	return v
 }
 
+func SanitizeString(input string) string {
+	return strings.ReplaceAll(input, "\u0000", "")
+}
+
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
 func GetObjectName(location string, providerConfig interface{}, objectProvider string) (objectName string, err error) {
