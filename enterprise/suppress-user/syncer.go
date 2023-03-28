@@ -121,7 +121,6 @@ func (s *Syncer) SyncLoop(ctx context.Context) {
 // with suppressions whose number is less than the page size.
 func (s *Syncer) Sync(ctx context.Context) error {
 again:
-	s.log.Info("Fetching Regulations")
 	token, err := s.r.GetToken()
 	if err != nil {
 		if errors.Is(err, model.ErrRestoring) {
@@ -133,7 +132,7 @@ again:
 		s.log.Errorf("Failed to get token from repository: %w", err)
 		return err
 	}
-	s.log.Info("Fetching Regulations")
+
 	suppressions, nextToken, err := s.sync(token)
 	if err != nil {
 		return fmt.Errorf("sync failed: %w", err)
