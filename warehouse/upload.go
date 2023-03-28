@@ -1562,13 +1562,12 @@ func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, 
 	} else {
 		errorByState["attempt"] = 1
 	}
-	normalizedError := strings.ReplaceAll(statusError.Error(), "\u0000", ``)
 
 	// append errors for errored stage
 	if errList, ok := errorByState["errors"]; ok {
-		errorByState["errors"] = append(errList.([]interface{}), normalizedError)
+		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
 	} else {
-		errorByState["errors"] = []string{normalizedError}
+		errorByState["errors"] = []string{statusError.Error()}
 	}
 
 	return uploadErrors, nil
@@ -1643,6 +1642,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	}
 
 	serializedErr, _ := json.Marshal(&uploadErrors)
+	serializedErr = warehouseutils.SanitizeJson(serializedErr)
 
 	uploadColumns := []UploadColumn{
 		{Column: "status", Value: state},
