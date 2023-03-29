@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/analytics-go"
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

@@ -10,9 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
@@ -20,12 +23,10 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	svcMetric "github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/oauth"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -56,7 +57,7 @@ func Run(ctx context.Context) error {
 	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
 		stats.WithServiceName("regulation-worker"),
 	)
-	if err := stats.Default.Start(ctx); err != nil {
+	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
 		return fmt.Errorf("failed to start stats: %w", err)
 	}
 	defer stats.Default.Stop()

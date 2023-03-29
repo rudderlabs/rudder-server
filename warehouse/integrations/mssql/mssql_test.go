@@ -16,7 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )

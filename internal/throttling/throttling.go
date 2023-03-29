@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 /*

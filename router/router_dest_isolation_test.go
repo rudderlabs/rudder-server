@@ -18,11 +18,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -67,11 +68,11 @@ func Test_RouterDestIsolation(t *testing.T) {
 	require.NoError(t, err)
 	var (
 		group                errgroup.Group
-		postgresContainer    *destination.PostgresResource
+		postgresContainer    *resource.PostgresResource
 		transformerContainer *destination.TransformerResource
 	)
 	group.Go(func() (err error) {
-		postgresContainer, err = destination.SetupPostgres(pool, t)
+		postgresContainer, err = resource.SetupPostgres(pool, t)
 		return err
 	})
 	group.Go(func() (err error) {
@@ -95,11 +96,11 @@ func Test_RouterDestIsolation(t *testing.T) {
 	}
 	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/destIdIsolationTestTemplate.json", templateCtx)
 
-	httpPort, err := testhelper.GetFreePort()
+	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := testhelper.GetFreePort()
+	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
-	debugPort, err := testhelper.GetFreePort()
+	debugPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
 	require.NoError(t, err)

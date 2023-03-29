@@ -11,8 +11,8 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/stretchr/testify/require"
 
@@ -256,7 +256,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
 			rs := redshift.NewRedshift()

@@ -12,7 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -65,7 +65,7 @@ type DestinationValidator interface {
 type destinationValidationImpl struct{}
 
 func (*dummyUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
-func (*dummyUploader) GetLocalSchema() model.Schema                     { return model.Schema{} }
+func (*dummyUploader) GetLocalSchema() (model.Schema, error)            { return model.Schema{}, nil }
 func (*dummyUploader) UpdateLocalSchema(_ model.Schema) error           { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }

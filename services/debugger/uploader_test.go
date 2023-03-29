@@ -13,10 +13,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	mocksDebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type uploaderContext struct {

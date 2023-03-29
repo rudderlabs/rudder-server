@@ -1,7 +1,7 @@
 package payload
 
 import (
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 // FreeMemory is a function that returns the free memory in percentage (0-100)

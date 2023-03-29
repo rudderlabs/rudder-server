@@ -27,11 +27,11 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -275,9 +275,16 @@ func (job *UploadJob) syncRemoteSchema() (schemaChanged bool, err error) {
 		warehouse:    job.warehouse,
 		stagingFiles: job.stagingFiles,
 		dbHandle:     job.dbHandle,
+		whSchemaRepo: repo.NewWHSchemas(job.dbHandle),
 	}
 	job.schemaHandle = &schemaHandle
-	schemaHandle.localSchema = schemaHandle.getLocalSchema()
+
+	localSchema, err := schemaHandle.getLocalSchema()
+	if err != nil {
+		return false, fmt.Errorf("getting local schema: %w", err)
+	}
+
+	schemaHandle.localSchema = localSchema
 	schemaHandle.schemaInWarehouse, schemaHandle.unrecognizedSchemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse(job.whManager)
 	if err != nil {
 		return false, err
@@ -286,7 +293,7 @@ func (job *UploadJob) syncRemoteSchema() (schemaChanged bool, err error) {
 	schemaChanged = hasSchemaChanged(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
 	if schemaChanged {
 		pkgLogger.Infof("syncRemoteSchema: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
+		err = schemaHandle.updateLocalSchema(job.upload.ID, schemaHandle.schemaInWarehouse)
 		if err != nil {
 			return false, err
 		}
@@ -945,7 +952,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 
 	if alteredSchemaInAtLeastOneTable {
 		pkgLogger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		_ = job.schemaHandle.updateLocalSchema(job.upload.ID, job.schemaHandle.schemaInWarehouse)
 	}
 
 	return loadErrors
@@ -993,8 +1000,10 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 	alteredSchema, err := job.updateSchema(tName)
 	if err != nil {
 		status := model.TableUploadUpdatingSchemaFailed
+		errorsString := misc.QuoteLiteral(err.Error())
 		_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tName, repo.TableUploadSetOptions{
 			Status: &status,
+			Error:  &errorsString,
 		})
 		return alteredSchema, fmt.Errorf("update schema: %w", err)
 	}
@@ -1043,8 +1052,10 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 	err = job.whManager.LoadTable(tName)
 	if err != nil {
 		status := model.TableUploadExportingFailed
+		errorsString := misc.QuoteLiteral(err.Error())
 		_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tName, repo.TableUploadSetOptions{
 			Status: &status,
+			Error:  &errorsString,
 		})
 		return alteredSchema, fmt.Errorf("load table: %w", err)
 	}
@@ -1192,7 +1203,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 	}
 
 	// Skip loading user tables if identifies table schema is not present
-	if identifiesSchema := job.GetTableSchemaInUpload(warehouseutils.IdentifiesTable); len(identifiesSchema) == 0 {
+	if identifiesSchema := job.GetTableSchemaInUpload(job.identifiesTableName()); len(identifiesSchema) == 0 {
 		return []error{}, nil
 	}
 
@@ -1200,7 +1211,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 
 	if alteredIdentitySchema || alteredUserSchema {
 		pkgLogger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		_ = job.schemaHandle.updateLocalSchema(job.upload.ID, job.schemaHandle.schemaInWarehouse)
 	}
 	return job.processLoadTableResponse(errorMap)
 }
@@ -1292,7 +1303,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 	if alteredSchema {
 		pkgLogger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+		_ = job.schemaHandle.updateLocalSchema(job.upload.ID, job.schemaHandle.schemaInWarehouse)
 	}
 
 	return job.processLoadTableResponse(errorMap)
@@ -2042,12 +2053,12 @@ func initializeStateMachine() {
 	abortState.nextState = nil
 }
 
-func (job *UploadJob) GetLocalSchema() model.Schema {
+func (job *UploadJob) GetLocalSchema() (model.Schema, error) {
 	return job.schemaHandle.getLocalSchema()
 }
 
 func (job *UploadJob) UpdateLocalSchema(schema model.Schema) error {
-	return job.schemaHandle.updateLocalSchema(schema)
+	return job.schemaHandle.updateLocalSchema(job.upload.ID, schema)
 }
 
 func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {

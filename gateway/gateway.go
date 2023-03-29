@@ -28,10 +28,13 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/gorillaware"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -44,9 +47,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	rs_httputil "github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -1249,7 +1250,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		gorillaware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
@@ -1328,7 +1329,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		gorillaware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srv := &http.Server{
