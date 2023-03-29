@@ -27,7 +27,7 @@ type Opt func(*Repository)
 // WithSeederSource sets the source of the seed data
 func WithSeederSource(seederSource func() (io.Reader, error)) Opt {
 	return func(r *Repository) {
-		r.seederSource = seederSource
+		r.repo.seederSource = seederSource
 	}
 }
 
@@ -36,12 +36,17 @@ func WithSeederSource(seederSource func() (io.Reader, error)) Opt {
 // repository methods will return [ErrRestoring] until the seed completes. The default wait time is 10 seconds.
 func WithMaxSeedWait(maxSeedWait time.Duration) Opt {
 	return func(r *Repository) {
-		r.maxSeedWait = maxSeedWait
+		r.repo.maxSeedWait = maxSeedWait
 	}
 }
 
 // Repository is a repository backed by badgerdb
 type Repository struct {
+	repo     *repository
+	tempRepo *repository
+}
+
+type repository struct {
 	// logger to use
 	log logger.Logger
 	// path to the badger db directory
@@ -65,32 +70,34 @@ type Repository struct {
 // NewRepository returns a new repository backed by badgerdb.
 func NewRepository(basePath string, log logger.Logger, stats stats.Stats, opts ...Opt) (*Repository, error) {
 	b := &Repository{
-		log:           log,
-		path:          path.Join(basePath, "badgerdbv3"),
-		maxGoroutines: 1,
-		maxSeedWait:   10 * time.Second,
-		stats:         stats,
+		repo: &repository{
+			log:           log,
+			path:          path.Join(basePath, "badgerdbv3"),
+			maxGoroutines: 1,
+			maxSeedWait:   10 * time.Second,
+			stats:         stats,
+		},
 	}
 	for _, opt := range opts {
 		opt(b)
 	}
-	err := b.start()
+	err := b.repo.start()
 	return b, err
 }
 
 // GetToken returns the current token
 func (b *Repository) GetToken() ([]byte, error) {
-	b.restoringLock.RLock()
-	defer b.restoringLock.RUnlock() // release the read lock at the end of the operation
-	if b.restoring {
+	b.repo.restoringLock.RLock()
+	defer b.repo.restoringLock.RUnlock() // release the read lock at the end of the operation
+	if b.repo.restoring {
 		return nil, model.ErrRestoring
 	}
-	if b.db.IsClosed() {
+	if b.repo.db.IsClosed() {
 		return nil, badger.ErrDBClosed
 	}
 
 	var token []byte
-	err := b.db.View(func(txn *badger.Txn) error {
+	err := b.repo.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(tokenKey))
 		if err != nil {
 			return fmt.Errorf("could not get token: %w", err)
@@ -111,17 +118,17 @@ func (b *Repository) GetToken() ([]byte, error) {
 
 // Suppressed returns true if the given user is suppressed, false otherwise
 func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
-	b.restoringLock.RLock()
-	defer b.restoringLock.RUnlock()
-	if b.restoring {
+	b.repo.restoringLock.RLock()
+	defer b.repo.restoringLock.RUnlock()
+	if b.repo.restoring {
 		return false, model.ErrRestoring
 	}
-	if b.db.IsClosed() {
+	if b.repo.db.IsClosed() {
 		return false, badger.ErrDBClosed
 	}
 
 	keyPrefix := keyPrefix(workspaceID, userID)
-	err := b.db.View(func(txn *badger.Txn) error {
+	err := b.repo.db.View(func(txn *badger.Txn) error {
 		wildcardKey := keyPrefix + model.Wildcard
 		_, err := txn.Get([]byte(wildcardKey))
 		if err == nil {
@@ -147,15 +154,15 @@ func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, err
 
 // Add adds the given suppressions to the repository
 func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
-	b.restoringLock.RLock()
-	defer b.restoringLock.RUnlock()
-	if b.restoring {
+	b.repo.restoringLock.RLock()
+	defer b.repo.restoringLock.RUnlock()
+	if b.repo.restoring {
 		return model.ErrRestoring
 	}
-	if b.db.IsClosed() {
+	if b.repo.db.IsClosed() {
 		return badger.ErrDBClosed
 	}
-	wb := b.db.NewWriteBatch()
+	wb := b.repo.db.NewWriteBatch()
 	defer wb.Cancel()
 
 	for i := range suppressions {
@@ -193,7 +200,7 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 }
 
 // start the repository
-func (b *Repository) start() error {
+func (b *repository) start() error {
 	b.closed = make(chan struct{})
 	var seeder io.Reader
 	if _, err := os.Stat(b.path); os.IsNotExist(err) && b.seederSource != nil {
@@ -216,7 +223,7 @@ func (b *Repository) start() error {
 
 	if seeder != nil {
 		restoreDone := lo.Async(func() error {
-			if err := b.Restore(seeder); err != nil {
+			if err := b.restore(seeder); err != nil {
 				b.log.Error("Failed to restore badgerdb", "error", err)
 				return err
 			}
@@ -260,29 +267,28 @@ func (b *Repository) start() error {
 // Stop stops the repository
 func (b *Repository) Stop() error {
 	var err error
-	b.closeOnce.Do(func() {
-		close(b.closed)
-		err = b.db.Close()
+	b.repo.closeOnce.Do(func() {
+		close(b.repo.closed)
+		err = b.repo.db.Close()
 	})
 	return err
 }
 
 // Backup writes a backup of the repository to the given writer
 func (b *Repository) Backup(w io.Writer) error {
-	b.restoringLock.RLock()
-	defer b.restoringLock.RUnlock()
-	if b.restoring {
+	b.repo.restoringLock.RLock()
+	defer b.repo.restoringLock.RUnlock()
+	if b.repo.restoring {
 		return model.ErrRestoring
 	}
-	if b.db.IsClosed() {
+	if b.repo.db.IsClosed() {
 		return badger.ErrDBClosed
 	}
-	_, err := b.db.Backup(w, 0)
+	_, err := b.repo.db.Backup(w, 0)
 	return err
 }
 
-// Restore restores the repository from the given reader
-func (b *Repository) Restore(r io.Reader) (err error) {
+func (b *repository) restore(r io.Reader) (err error) {
 	if b.isRestoring() {
 		return model.ErrRestoring
 	}
@@ -299,13 +305,18 @@ func (b *Repository) Restore(r io.Reader) (err error) {
 	return b.db.Load(r, b.maxGoroutines)
 }
 
-func (b *Repository) setRestoring(restoring bool) {
+// Restore restores the repository from the given reader
+func (b *Repository) Restore(r io.Reader) (err error) {
+	return b.repo.restore(r)
+}
+
+func (b *repository) setRestoring(restoring bool) {
 	b.restoringLock.Lock()
 	b.restoring = restoring
 	b.restoringLock.Unlock()
 }
 
-func (b *Repository) isRestoring() bool {
+func (b *repository) isRestoring() bool {
 	b.restoringLock.RLock()
 	defer b.restoringLock.RUnlock()
 	return b.restoring
