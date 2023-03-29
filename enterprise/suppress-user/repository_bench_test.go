@@ -51,7 +51,7 @@ func BenchmarkAddAndSuppress(b *testing.B) {
 	}
 
 	b.Run("badger", func(b *testing.B) {
-		repo, err := suppression.NewBadgerRepository(b.TempDir(), logger.NOP)
+		repo, err := suppression.NewBadgerRepository(b.TempDir(), false, logger.NOP)
 		require.NoError(b, err)
 		defer func() { _ = repo.Stop() }()
 		runAddAndSuppressBenchmark(b, repo, totalSuppressions, batchSize, totalReads)

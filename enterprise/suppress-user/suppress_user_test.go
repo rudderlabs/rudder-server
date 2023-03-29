@@ -32,7 +32,7 @@ var _ = Describe("Suppress user", func() {
 	Context("badgerdb", func() {
 		generateTests(func() Repository {
 			p := path.Join(GinkgoT().TempDir(), strings.ReplaceAll(uuid.New().String(), "-", ""))
-			r, err := NewBadgerRepository(p, logger.NOP)
+			r, err := NewBadgerRepository(p, false, logger.NOP)
 			Expect(err).To(BeNil())
 			return r
 		})

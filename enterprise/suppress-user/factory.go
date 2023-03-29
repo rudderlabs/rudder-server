@@ -45,6 +45,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 
 		repository, err = NewBadgerRepository(
 			path,
+			config.GetBool("Regulations.useBackupService", false),
 			m.Log,
 			WithSeederSource(seederSource),
 			WithMaxSeedWait(config.GetDuration("BackendConfig.Regulations.maxSeedWait", 5, time.Second)))

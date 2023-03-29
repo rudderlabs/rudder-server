@@ -42,6 +42,6 @@ var (
 )
 
 // NewBadgerRepository returns a new repository backed by badgerDB.
-func NewBadgerRepository(path string, log logger.Logger, opts ...badgerdb.Opt) (Repository, error) {
-	return badgerdb.NewRepository(path, log, stats.Default, opts...)
+func NewBadgerRepository(path string, useBackupSvc bool, log logger.Logger, opts ...badgerdb.Opt) (Repository, error) {
+	return badgerdb.NewRepository(path, useBackupSvc, log, stats.Default, opts...)
 }

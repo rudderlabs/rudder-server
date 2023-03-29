@@ -68,7 +68,7 @@ type repository struct {
 }
 
 // NewRepository returns a new repository backed by badgerdb.
-func NewRepository(basePath string, log logger.Logger, stats stats.Stats, opts ...Opt) (*Repository, error) {
+func NewRepository(basePath string, useBackupSvc bool, log logger.Logger, stats stats.Stats, opts ...Opt) (*Repository, error) {
 	b := &Repository{
 		repo: &repository{
 			log:           log,
@@ -78,6 +78,7 @@ func NewRepository(basePath string, log logger.Logger, stats stats.Stats, opts .
 			stats:         stats,
 		},
 	}
+
 	for _, opt := range opts {
 		opt(b)
 	}
