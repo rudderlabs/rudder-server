@@ -318,7 +318,10 @@ func (b *repository) start() error {
 			return nil
 		})
 		select {
-		case <-restoreDone:
+		case err = <-restoreDone:
+			if err != nil {
+				return fmt.Errorf("failed to restore badgerdb: %w", err)
+			}
 		case <-time.After(b.maxSeedWait):
 			b.log.Warn("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
 		}

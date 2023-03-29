@@ -3,7 +3,11 @@ package badgerdb_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -11,10 +15,12 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
+	"github.com/gorilla/mux"
 
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/badgerdb"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/stretchr/testify/require"
@@ -108,6 +114,20 @@ func TestBadgerRepository(t *testing.T) {
 		}), badgerdb.WithMaxSeedWait(1*time.Millisecond))
 		require.NoError(t, err)
 	})
+	t.Run("new with use of suppression backup service", func(t *testing.T) {
+		srv := httptest.NewServer(httpHandler(t))
+		defer t.Cleanup(srv.Close)
+		t.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
+		t.Setenv("CONFIG_BACKEND_URL", srv.URL)
+		t.Setenv("SUPPRESS_USER_BACKEND_URL", srv.URL)
+		t.Setenv("SUPPRESS_BACKUP_URL", srv.URL)
+		dir, err := os.MkdirTemp("/tmp", "rudder-server")
+		require.NoError(t, err)
+		t.Setenv("RUDDER_TMPDIR", dir)
+		basePath := path.Join(t.TempDir(), "badger-test-3")
+		_, err = badgerdb.NewRepository(basePath, true, logger.NOP, stats.Default)
+		require.NoError(t, err)
+	})
 
 	t.Run("try to restore invalid data", func(t *testing.T) {
 		r := bytes.NewBuffer([]byte("invalid data"))
@@ -150,4 +170,46 @@ func TestBadgerRepository(t *testing.T) {
 
 		require.Equal(t, repo.Restore(nil), badger.ErrDBClosed)
 	})
+}
+
+func httpHandler(t *testing.T) http.Handler {
+	t.Helper()
+	srvMux := mux.NewRouter()
+	srvMux.HandleFunc("/workspaceConfig", getSingleTenantWorkspaceConfig).Methods(http.MethodGet)
+	srvMux.HandleFunc("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig).Methods(http.MethodGet)
+	srvMux.HandleFunc("/full-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/full-export") }).Methods(http.MethodGet)
+	srvMux.HandleFunc("/latest-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/latest-export") }).Methods(http.MethodGet)
+	srvMux.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	return srvMux
+}
+
+func getSingleTenantWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	config := backendconfig.ConfigT{
+		WorkspaceID: "reg-test-workspaceId",
+	}
+	body, err := json.Marshal(config)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(body)
+}
+
+func getMultiTenantNamespaceConfig(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	config := map[string]backendconfig.ConfigT{"spaghetti": {
+		WorkspaceID: "reg-test-workspaceId",
+	}}
+	body, err := json.Marshal(config)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(body)
 }
