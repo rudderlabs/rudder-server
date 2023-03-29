@@ -1,9 +1,11 @@
 package badgerdb
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"sync"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
@@ -67,38 +70,100 @@ type repository struct {
 	stats         stats.Stats
 }
 
+func latestDataSeed() (io.Reader, error) {
+	return seederSource("latest-export")
+}
+
+func fullDataSeed() (io.Reader, error) {
+	return seederSource("full-export")
+}
+
+func seederSource(endpoint string) (io.Reader, error) {
+	client := http.Client{
+		Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 600, time.Second),
+	}
+	baseURL := config.GetString("SUPPRESS_BACKUP_URL", "https://api.rudderstack.com")
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", baseURL, endpoint), nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not create request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("could not perform request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("could not read response body: %w", err)
+	}
+	return bytes.NewReader(respBody), nil
+}
+
 // NewRepository returns a new repository backed by badgerdb.
 func NewRepository(basePath string, useBackupSvc bool, log logger.Logger, stats stats.Stats, opts ...Opt) (*Repository, error) {
 	b := &Repository{
 		repo: &repository{
 			log:           log,
 			path:          path.Join(basePath, "badgerdbv3"),
-			maxGoroutines: 1,
+			maxGoroutines: config.GetInt("SuppressUser.maxGoroutines", 1),
 			maxSeedWait:   10 * time.Second,
 			stats:         stats,
 		},
 	}
-
 	for _, opt := range opts {
 		opt(b)
 	}
-	err := b.repo.start()
-	return b, err
+	var originalRestore <-chan error
+	var err error
+	originalRestore = lo.Async(func() error {
+		if useBackupSvc {
+			b.repo.seederSource = fullDataSeed
+		}
+		err := b.repo.start()
+		if err != nil {
+			return fmt.Errorf("could not start main repository: %w", err)
+		}
+		return nil
+	})
+	restoreDone := lo.Async(func() error {
+		if useBackupSvc {
+			b.tempRepo = &repository{
+				log:           log,
+				path:          path.Join(basePath, "badgerdbv3-temp"),
+				maxGoroutines: config.GetInt("SuppressUser.maxGoroutines", 1),
+				maxSeedWait:   config.GetDuration("SuppressUser.latestDataSeedWait", 30, time.Second),
+				stats:         stats,
+				seederSource:  latestDataSeed,
+			}
+			err = b.tempRepo.start()
+			if err != nil {
+				return fmt.Errorf("could not start temp repository: %w", err)
+			}
+			return nil
+		} else {
+			return <-originalRestore
+		}
+	})
+
+	return b, <-restoreDone
 }
 
-// GetToken returns the current token
-func (b *Repository) GetToken() ([]byte, error) {
-	b.repo.restoringLock.RLock()
-	defer b.repo.restoringLock.RUnlock() // release the read lock at the end of the operation
-	if b.repo.restoring {
+func (r *repository) getToken() ([]byte, error) {
+	r.restoringLock.RLock()
+	defer r.restoringLock.RUnlock() // release the read lock at the end of the operation
+	if r.restoring {
 		return nil, model.ErrRestoring
 	}
-	if b.repo.db.IsClosed() {
+	if r.db.IsClosed() {
 		return nil, badger.ErrDBClosed
 	}
 
 	var token []byte
-	err := b.repo.db.View(func(txn *badger.Txn) error {
+	err := r.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(tokenKey))
 		if err != nil {
 			return fmt.Errorf("could not get token: %w", err)
@@ -117,19 +182,26 @@ func (b *Repository) GetToken() ([]byte, error) {
 	return token, nil
 }
 
-// Suppressed returns true if the given user is suppressed, false otherwise
-func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
-	b.repo.restoringLock.RLock()
-	defer b.repo.restoringLock.RUnlock()
-	if b.repo.restoring {
+// GetToken returns the current token
+func (b *Repository) GetToken() ([]byte, error) {
+	if b.repo.restoring && b.tempRepo != nil {
+		return b.tempRepo.getToken()
+	}
+	return b.repo.getToken()
+}
+
+func (r *repository) suppressed(workspaceID, userID, sourceID string) (bool, error) {
+	r.restoringLock.RLock()
+	defer r.restoringLock.RUnlock()
+	if r.restoring {
 		return false, model.ErrRestoring
 	}
-	if b.repo.db.IsClosed() {
+	if r.db.IsClosed() {
 		return false, badger.ErrDBClosed
 	}
 
 	keyPrefix := keyPrefix(workspaceID, userID)
-	err := b.repo.db.View(func(txn *badger.Txn) error {
+	err := r.db.View(func(txn *badger.Txn) error {
 		wildcardKey := keyPrefix + model.Wildcard
 		_, err := txn.Get([]byte(wildcardKey))
 		if err == nil {
@@ -153,17 +225,24 @@ func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, err
 	return true, nil
 }
 
-// Add adds the given suppressions to the repository
-func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
-	b.repo.restoringLock.RLock()
-	defer b.repo.restoringLock.RUnlock()
-	if b.repo.restoring {
+// Suppressed returns true if the given user is suppressed, false otherwise
+func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
+	if b.repo.restoring && b.tempRepo != nil {
+		return b.tempRepo.suppressed(workspaceID, userID, sourceID)
+	}
+	return b.repo.suppressed(workspaceID, userID, sourceID)
+}
+
+func (r *repository) add(suppressions []model.Suppression, token []byte) error {
+	r.restoringLock.RLock()
+	defer r.restoringLock.RUnlock()
+	if r.restoring {
 		return model.ErrRestoring
 	}
-	if b.repo.db.IsClosed() {
+	if r.db.IsClosed() {
 		return badger.ErrDBClosed
 	}
-	wb := b.repo.db.NewWriteBatch()
+	wb := r.db.NewWriteBatch()
 	defer wb.Cancel()
 
 	for i := range suppressions {
@@ -198,6 +277,14 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 		return fmt.Errorf("could not flush write batch: %w", err)
 	}
 	return nil
+}
+
+// Add adds the given suppressions to the repository
+func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
+	if b.repo.restoring && b.tempRepo != nil {
+		return b.tempRepo.add(suppressions, token)
+	}
+	return b.repo.add(suppressions, token)
 }
 
 // start the repository
@@ -275,18 +362,25 @@ func (b *Repository) Stop() error {
 	return err
 }
 
-// Backup writes a backup of the repository to the given writer
-func (b *Repository) Backup(w io.Writer) error {
-	b.repo.restoringLock.RLock()
-	defer b.repo.restoringLock.RUnlock()
-	if b.repo.restoring {
+func (r *repository) backup(w io.Writer) error {
+	r.restoringLock.RLock()
+	defer r.restoringLock.RUnlock()
+	if r.restoring {
 		return model.ErrRestoring
 	}
-	if b.repo.db.IsClosed() {
+	if r.db.IsClosed() {
 		return badger.ErrDBClosed
 	}
-	_, err := b.repo.db.Backup(w, 0)
+	_, err := r.db.Backup(w, 0)
 	return err
+}
+
+// Backup writes a backup of the repository to the given writer
+func (b *Repository) Backup(w io.Writer) error {
+	if b.repo.restoring && b.tempRepo != nil {
+		return b.tempRepo.backup(w)
+	}
+	return b.repo.backup(w)
 }
 
 func (b *repository) restore(r io.Reader) (err error) {
