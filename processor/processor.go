@@ -1089,7 +1089,7 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 		// create status details for each validation error
 		// single event can have multiple validation errors of same type
 		veCount := len(event.ValidationErrors)
-		if stage == types.TRACKINGPLAN_VALIDATOR && status == types.SUCCEEDED {
+		if stage == transformer.TrackingPlanValidationStage && status == types.SUCCEEDED {
 			if veCount > 0 {
 				status = types.SUCCEEDED_WITH_VIOLATION
 			} else {
