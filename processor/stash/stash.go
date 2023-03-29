@@ -40,8 +40,8 @@ func Init() {
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
-	config.RegisterDurationConfigVariable(30, &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
-	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
+	config.RegisterDurationConfigVariable(5, &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
+	config.RegisterIntConfigVariable(10000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
 	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
 	config.RegisterIntConfigVariable(3, &maxFailedCountForErrJob, true, 1, "Processor.maxFailedCountForErrJob")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &payloadLimit, true, 1, "Processor.payloadLimit")
