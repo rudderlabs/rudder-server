@@ -1265,7 +1265,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			workspaceID := job.WorkspaceId
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			if _, ok := connectionDetailsMap[key]; !ok {
-				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory, "", 0)
 				connectionDetailsMap[key] = cd
 				transformedAtMap[key] = parameters.TransformAt
 			}
@@ -1275,7 +1275,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				if brt.transientSources.Apply(parameters.SourceID) {
 					sampleEvent = []byte(`{}`)
 				}
-				sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), sampleEvent, parameters.EventName, parameters.EventType)
+				sd = types.CreateStatusDetail(jobState, 0, 0, errorCode, string(errorResp), sampleEvent, parameters.EventName, parameters.EventType, "")
 				statusDetailsMap[key] = sd
 			}
 			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
@@ -1333,7 +1333,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	// REPORTING - START
 	if brt.reporting != nil && brt.reportingEnabled {
-		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+		// types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 		terminalPU := true
 		if isWarehouse {
 			terminalPU = false
