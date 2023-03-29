@@ -21,6 +21,19 @@ type RouterJobT struct {
 	Destination backendconfig.DestinationT `json:"destination"`
 }
 
+type DestinationJobs []DestinationJobT
+
+// Hydrate jobs in the destination jobs' job metadata array
+func (djs DestinationJobs) Hydrate(jobs map[int64]*jobsdb.JobT) {
+	for i := range djs {
+		for j := range djs[i].JobMetadataArray {
+			if djs[i].JobMetadataArray[j].JobT == nil {
+				djs[i].JobMetadataArray[j].JobT = jobs[djs[i].JobMetadataArray[j].JobID]
+			}
+		}
+	}
+}
+
 // DestinationJobT holds the job to be sent to destination
 // and metadata of all the router jobs from which this job is cooked up
 type DestinationJobT struct {
@@ -60,7 +73,7 @@ type JobMetadataT struct {
 	TransformAt        string          `json:"transformAt"`
 	WorkspaceID        string          `json:"workspaceId"`
 	Secret             json.RawMessage `json:"secret"`
-	JobT               *jobsdb.JobT    `json:"jobsT"`
+	JobT               *jobsdb.JobT    `json:"jobsT,omitempty"`
 	WorkerAssignedTime time.Time       `json:"workerAssignedTime"`
 	DestInfo           json.RawMessage `json:"destInfo,omitempty"`
 }
@@ -69,6 +82,19 @@ type JobMetadataT struct {
 type TransformMessageT struct {
 	Data     []RouterJobT `json:"input"`
 	DestType string       `json:"destType"`
+}
+
+// Dehydrate JobT information from RouterJobT.JobMetadata returning the dehydrated message along with the jobs
+func (tm *TransformMessageT) Dehydrate() (*TransformMessageT, map[int64]*jobsdb.JobT) {
+	jobs := make(map[int64]*jobsdb.JobT)
+	tmCopy := *tm
+	tmCopy.Data = nil
+	for i := range tm.Data {
+		tmCopy.Data = append(tmCopy.Data, tm.Data[i])
+		jobs[tmCopy.Data[i].JobMetadata.JobID] = tmCopy.Data[i].JobMetadata.JobT
+		tmCopy.Data[i].JobMetadata.JobT = nil
+	}
+	return &tmCopy, jobs
 }
 
 // JobIDs returns the set of all job ids of the jobs in the message

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	redigo "github.com/gomodule/redigo/redis"
@@ -57,7 +58,7 @@ var (
 	overrideArm64Check           bool
 	writeKey                     string
 	workspaceID                  string
-	kafkaContainer               *destination.KafkaResource
+	kafkaContainer               *kafka.Resource
 	redisContainer               *destination.RedisResource
 	postgresContainer            *resource.PostgresResource
 	transformerContainer         *destination.TransformerResource
@@ -216,7 +217,7 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	t.Run("kafka", func(t *testing.T) {
-		kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
+		kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0])
 
 		// Create new consumer
 		tc := testutil.New("tcp", kafkaHost)
@@ -387,16 +388,16 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
 	containersGroup.Go(func() (err error) {
-		kafkaContainer, err = destination.SetupKafka(pool, t,
-			destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-			destination.WithBrokers(1),
+		kafkaContainer, err = kafka.Setup(pool, t,
+			kafka.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
+			kafka.WithBrokers(1),
 		)
 		if err != nil {
 			return err
 		}
 		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
 		defer kafkaCancel()
-		return waitForKafka(kafkaCtx, t, kafkaContainer.Port)
+		return waitForKafka(kafkaCtx, t, kafkaContainer.Ports[0])
 	})
 	containersGroup.Go(func() (err error) {
 		redisContainer, err = destination.SetupRedis(containersCtx, pool, t)
@@ -457,7 +458,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"minioEndpoint":                minioContainer.Endpoint,
 		"minioBucketName":              minioContainer.BucketName,
 	}
-	mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Port
+	mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Ports[0]
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,
