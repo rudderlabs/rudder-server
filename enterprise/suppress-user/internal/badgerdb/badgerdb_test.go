@@ -127,6 +127,7 @@ func TestBadgerRepository(t *testing.T) {
 		basePath := path.Join(t.TempDir(), "badger-test-3")
 		_, err = badgerdb.NewRepository(basePath, true, logger.NOP, stats.Default)
 		require.NoError(t, err)
+		defer os.RemoveAll(dir)
 	})
 
 	t.Run("try to restore invalid data", func(t *testing.T) {
@@ -176,7 +177,6 @@ func httpHandler(t *testing.T) http.Handler {
 	t.Helper()
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/workspaceConfig", getSingleTenantWorkspaceConfig).Methods(http.MethodGet)
-	srvMux.HandleFunc("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig).Methods(http.MethodGet)
 	srvMux.HandleFunc("/full-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/full-export") }).Methods(http.MethodGet)
 	srvMux.HandleFunc("/latest-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/latest-export") }).Methods(http.MethodGet)
 	srvMux.Use(func(next http.Handler) http.Handler {
@@ -193,19 +193,6 @@ func getSingleTenantWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	config := backendconfig.ConfigT{
 		WorkspaceID: "reg-test-workspaceId",
 	}
-	body, err := json.Marshal(config)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	_, _ = w.Write(body)
-}
-
-func getMultiTenantNamespaceConfig(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	config := map[string]backendconfig.ConfigT{"spaghetti": {
-		WorkspaceID: "reg-test-workspaceId",
-	}}
 	body, err := json.Marshal(config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
