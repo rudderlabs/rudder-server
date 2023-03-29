@@ -110,7 +110,7 @@ func NewSimpleSessionConfig(config map[string]interface{}, serviceName string) (
 		sessionConfig.RoleBasedAuth = sessionConfig.IAMRoleARN != ""
 	}
 
-	if  sessionConfig.IAMRoleARN == "" {
+	if sessionConfig.IAMRoleARN == "" {
 		sessionConfig.RoleBasedAuth = false
 	}
 
