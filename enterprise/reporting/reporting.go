@@ -67,7 +67,7 @@ type HandleT struct {
 
 func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
-	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
+	reportingServiceURL := config.GetString("REPORTING_URL", "http://localhost:5001/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
@@ -293,7 +293,7 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 				SampleEvent:    report.StatusDetail.SampleEvent,
 				EventName:      report.StatusDetail.EventName,
 				EventType:      report.StatusDetail.EventType,
-				ErrorType: report.StatusDetail.ErrorType,
+				ErrorType:      report.StatusDetail.ErrorType,
 			})
 			continue
 		}

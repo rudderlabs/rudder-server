@@ -1050,8 +1050,8 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
 					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
 					sourceCategory:          event.Metadata.SourceCategory,
-					trackingPlanId: 				event.Metadata.TrackingPlanId,
-					trackingPlanVersion: 		event.Metadata.TrackingPlanVersion,
+					trackingPlanId:          event.Metadata.TrackingPlanId,
+					trackingPlanVersion:     event.Metadata.TrackingPlanVersion,
 				}
 			}
 		}
@@ -1083,14 +1083,13 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 			connectionDetailsMap[key] = cd
 		}
 
-		sdm, ok := statusDetailsMap[key]
-		if !ok {
-			sdm = make(map[string]*types.StatusDetail)
+		if _, ok := statusDetailsMap[key]; !ok {
+			statusDetailsMap[key] = make(map[string]*types.StatusDetail)
 		}
 		// create status details for each validation error
 		// single event can have multiple validation errors of same type
 		veCount := len(event.ValidationErrors)
-		if stage == types.TRACKINGPLAN_VALIDATOR &&  status == types.SUCCEEDED {
+		if stage == types.TRACKINGPLAN_VALIDATOR && status == types.SUCCEEDED {
 			if veCount > 0 {
 				status = types.SUCCEEDED_WITH_VIOLATION
 			} else {
@@ -1103,23 +1102,23 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 				status, event.StatusCode, eventName, eventType, ve.Type, true)
 			sdkeySet[sdkey] = struct{}{}
 
-			sd, ok := sdm[sdkey]
+			sd, ok := statusDetailsMap[key][sdkey]
 			if !ok {
 				sd = types.CreateStatusDetail(status, 0, 0, event.StatusCode, event.Error, payload(), eventName, eventType, ve.Type)
-				sdm[sdkey] = sd
+				statusDetailsMap[key][sdkey] = sd
 			}
 			sd.ViolationCount++
 		}
 		for k := range sdkeySet {
-			sdm[k].Count++
+			statusDetailsMap[key][k].Count++
 		}
 
 		// create status details for a whole event
-		sdkey := fmt.Sprintf("%s:%d:%s:%s:%s:%t", status, event.StatusCode, eventName, eventType, "")
-		sd, ok := sdm[sdkey]
+		sdkey := fmt.Sprintf("%s:%d:%s:%s:%s", status, event.StatusCode, eventName, eventType, "")
+		sd, ok := statusDetailsMap[key][sdkey]
 		if !ok {
 			sd = types.CreateStatusDetail(status, 0, 0, event.StatusCode, event.Error, payload(), eventName, eventType, "")
-			sdm[sdkey] = sd
+			statusDetailsMap[key][sdkey] = sd
 		}
 		sd.Count++
 		sd.ViolationCount += int64(veCount)
