@@ -31,23 +31,23 @@ import (
 
 func TestSanitizeJson(t *testing.T) {
 	testCases := []struct {
-		name    string
+		name     string
 		input    json.RawMessage
 		expected json.RawMessage
 	}{
 		{
-			name: "empty json",
-			input: json.RawMessage(`{}`),
+			name:     "empty json",
+			input:    json.RawMessage(`{}`),
 			expected: json.RawMessage(`{}`),
 		},
 		{
-			name: "with unicode characters",
-			input: json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End"]}}`),
+			name:     "with unicode characters",
+			input:    json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End"]}}`),
 			expected: json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
 		},
 		{
-			name: "without unicode characters",
-			input: json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
+			name:     "without unicode characters",
+			input:    json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
 			expected: json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
 		},
 	}
@@ -64,22 +64,22 @@ func TestSanitizeJson(t *testing.T) {
 
 func TestSanitizeString(t *testing.T) {
 	testCases := []struct {
-		name    string
+		name     string
 		input    string
 		expected string
 	}{
 		{
-			name: "empty string",
+			name:  "empty string",
 			input: "",
 		},
 		{
-			name: "with unicode characters",
-			input: "Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End",
+			name:     "with unicode characters",
+			input:    "Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End",
 			expected: "Start:  : End",
 		},
 		{
-			name: "without unicode characters",
-			input: "Start:  : End",
+			name:     "without unicode characters",
+			input:    "Start:  : End",
 			expected: "Start:  : End",
 		},
 	}
