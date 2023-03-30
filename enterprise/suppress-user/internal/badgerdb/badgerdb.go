@@ -25,7 +25,7 @@ const tokenKey = "__token__"
 type Opt func(*Repository)
 
 // WithSeederSource sets the source of the seed data
-func WithSeederSource(seederSource func() (io.Reader, error)) Opt {
+func WithSeederSource(seederSource func() (io.ReadCloser, error)) Opt {
 	return func(r *Repository) {
 		r.seederSource = seederSource
 	}
@@ -50,7 +50,7 @@ type Repository struct {
 	maxGoroutines int
 
 	maxSeedWait  time.Duration
-	seederSource func() (io.Reader, error)
+	seederSource func() (io.ReadCloser, error)
 
 	db *badger.DB
 
@@ -195,10 +195,12 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 // start the repository
 func (b *Repository) start() error {
 	b.closed = make(chan struct{})
-	var seeder io.Reader
+	var seeder io.ReadCloser
 	_, err := os.Stat(b.path)
 	if os.IsNotExist(err) && b.seederSource != nil {
-		if seeder, err = b.seederSource(); err != nil {
+		seeder, err = b.seederSource()
+		seeder.Close()
+		if err != nil {
 			return fmt.Errorf("could not get seeder source: %w", err)
 		}
 	}
@@ -223,13 +225,17 @@ func (b *Repository) start() error {
 			}
 			return nil
 		})
+		var timeout <-chan time.Time
+		if b.maxSeedWait > 0 {
+			timeout = time.After(b.maxSeedWait)
+		}
 
 		select {
 		case err = <-restoreDone:
 			if err != nil {
 				return fmt.Errorf("failed to restore badgerdb: %w", err)
 			}
-		case <-time.After(b.maxSeedWait):
+		case <-timeout:
 			b.log.Warn("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
 		}
 	}

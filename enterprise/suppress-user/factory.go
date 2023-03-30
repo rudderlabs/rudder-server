@@ -31,12 +31,10 @@ func fullDataSeed() (io.Reader, error) {
 	return seederSource("full-export")
 }
 
-func seederSource(endpoint string) (io.Reader, error) {
-	client := http.Client{
-		Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 600, time.Second),
-	}
+func seederSource(endpoint string) (io.ReadCloser, error) {
+	client := http.Client{}
 	baseURL := config.GetString("SUPPRESS_BACKUP_URL", "https://api.rudderstack.com")
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", baseURL, endpoint), nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", baseURL, endpoint), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("could not create request: %w", err)
 	}

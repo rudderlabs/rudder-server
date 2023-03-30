@@ -34,17 +34,15 @@ func TestSuppressionSetup(t *testing.T) {
 	require.NoError(t, err)
 	t.Setenv("RUDDER_TMPDIR", dir)
 
-	{
-		config.Set("Diagnostics.enableDiagnostics", false)
-		admin.Init()
-		misc.Init()
-		diagnostics.Init()
-		backendconfig.Init()
+	config.Set("Diagnostics.enableDiagnostics", false)
+	admin.Init()
+	misc.Init()
+	diagnostics.Init()
+	backendconfig.Init()
 
-		require.NoError(t, backendconfig.Setup(nil))
-		defer backendconfig.DefaultBackendConfig.Stop()
-		backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "")
-	}
+	require.NoError(t, backendconfig.Setup(nil))
+	defer backendconfig.DefaultBackendConfig.Stop()
+	backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "")
 
 	f := Factory{
 		EnterpriseToken: "token",
