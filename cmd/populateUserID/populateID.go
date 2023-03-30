@@ -56,7 +56,6 @@ func main() {
 		}
 		fmt.Println(res.RowsAffected())
 	}
-
 }
 
 func GetConnectionString() string {
