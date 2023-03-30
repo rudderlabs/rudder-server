@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"log"
 	"net/http"
 	"os"
@@ -13,8 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
@@ -1033,7 +1032,7 @@ func BigqueryCredentials() (credentials bigquery.BQCredentials, err error) {
 	return
 }
 
-func DatabricksCredentials() (credentials client.Credentials, err error) {
+func DatabricksCredentials() (credentials deltalake.Credentials, err error) {
 	cred, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials)
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Deltalake test", DeltalakeIntegrationTestCredentials)

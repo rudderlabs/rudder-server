@@ -976,3 +976,7 @@ func ReadAsBool(key string, config map[string]interface{}) bool {
 	}
 	return false
 }
+
+func DurationInSecs(d time.Duration) int64 {
+	return int64(d.Seconds())
+}

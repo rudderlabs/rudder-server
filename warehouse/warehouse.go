@@ -45,7 +45,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
