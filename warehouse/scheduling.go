@@ -20,7 +20,7 @@ var (
 	scheduledTimesCache     map[string][]int
 	minUploadBackoff        time.Duration
 	maxUploadBackoff        time.Duration
-	startUploadAlways       bool = true
+	startUploadAlways       bool
 	scheduledTimesCacheLock sync.RWMutex
 )
 
