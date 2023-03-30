@@ -1,4 +1,4 @@
-package populateUserID
+package main
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -26,7 +28,7 @@ func main() {
 		return
 	}
 
-	sqlQuery := fmt.Sprintf(`SELECT id FROM wh_staging_files WHERE user_id IS NULL`)
+	sqlQuery := fmt.Sprintf(`SELECT id FROM wh_staging_files WHERE upload_id IS NULL`)
 	rows, err := sqlDB.QueryContext(ctx, sqlQuery)
 	if err != nil {
 		fmt.Println("Error querying DB: ", err)
@@ -47,7 +49,7 @@ func main() {
 			fmt.Println("Error scanning uploadID: ", err)
 			continue
 		}
-		res, err := sqlDB.ExecContext(ctx, fmt.Sprintf(`UPDATE wh_staging_files SET upload = %[1]q WHERE id = %[2]q`, uploadID, id))
+		res, err := sqlDB.ExecContext(ctx, fmt.Sprintf(`UPDATE wh_staging_files SET upload_id = %[1]q WHERE id = %[2]q`, uploadID, id))
 		if err != nil {
 			fmt.Println("Error updating staging file: ", err)
 			continue
