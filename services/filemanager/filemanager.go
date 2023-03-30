@@ -106,8 +106,8 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 		}
 
 	case "GCS":
-		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "rudder-saas")
-		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
+		providerConfig["bucketName"] = config.GetString("JOBS_REPLAY_BACKUP_BUCKET", "rudder-saas")
+		providerConfig["prefix"] = config.GetString("JOBS_REPLAY_BACKUP_PREFIX", "")
 		credentials, err := os.ReadFile(config.GetString("GOOGLE_APPLICATION_CREDENTIALS", ""))
 		pkgLogger.Infof("GOOGLE_APPLICATION_CREDENTIALS: %s", config.GetString("GOOGLE_APPLICATION_CREDENTIALS", ""))
 		pkgLogger.Infof("GOOGLE_APPLICATION_CREDENTIALS content: %s", string(credentials))

@@ -108,7 +108,6 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 		options = append(options, option.WithEndpoint(*manager.Config.EndPoint))
 	}
-	pkgLogger.Infof("GCS: Using credentials: %v", manager.Config.Credentials)
 	if !googleutils.ShouldSkipCredentialsInit(manager.Config.Credentials) {
 		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
 			return manager.client, err
