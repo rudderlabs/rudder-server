@@ -98,7 +98,7 @@ require (
 
 require (
 	github.com/apache/arrow/go/v11 v11.0.0-20221220213742-09453f9258f3 // indirect
-	github.com/databricks/databricks-sql-go v1.1.0 // indirect
+	github.com/databricks/databricks-sql-go v1.1.0
 	github.com/dnephin/pflag v1.0.7 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
@@ -122,7 +122,7 @@ require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/arrow/go/v10 v10.0.1 // indirect
-	github.com/apache/thrift v0.16.0 // indirect
+	github.com/apache/thrift v0.17.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.16.16 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.8 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.12.20 // indirect
@@ -143,7 +143,7 @@ require (
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
-	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
+	github.com/coreos/go-systemd/v22 v22.3.3-0.20220203105225-a9a7ef127534 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/danieljoos/wincred v1.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

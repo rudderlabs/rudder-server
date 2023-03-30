@@ -2,9 +2,10 @@ package deltalake_test
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"os"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
