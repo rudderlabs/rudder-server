@@ -18,17 +18,19 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -164,7 +166,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var (
-		postgresContainer    *destination.PostgresResource
+		postgresContainer    *resource.PostgresResource
 		transformerContainer *destination.TransformerResource
 		gatewayPort          string
 	)
@@ -172,7 +174,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	require.NoError(t, err)
 	containersGroup, _ := errgroup.WithContext(ctx)
 	containersGroup.Go(func() (err error) {
-		postgresContainer, err = destination.SetupPostgres(pool, t, "max_connections=1000")
+		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"))
 		return err
 	})
 	containersGroup.Go(func() (err error) {
@@ -217,7 +219,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("JobsDB.enableWriterQueue", false)
 
 	// find free port for gateway http server to listen on
-	httpPortInt, err := testhelper.GetFreePort()
+	httpPortInt, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 	gatewayPort = strconv.Itoa(httpPortInt)
 

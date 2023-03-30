@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
@@ -22,21 +23,22 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerUtils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -162,13 +164,80 @@ func initRouter() {
 
 func TestBackoff(t *testing.T) {
 	loadConfig()
-	assert.Equal(t, 10*time.Second, durationBeforeNextAttempt(0))
-	assert.Equal(t, 10*time.Second, durationBeforeNextAttempt(1))
-	assert.Equal(t, 20*time.Second, durationBeforeNextAttempt(2))
-	assert.Equal(t, 40*time.Second, durationBeforeNextAttempt(3))
-	assert.Equal(t, 80*time.Second, durationBeforeNextAttempt(4))
-	assert.Equal(t, 160*time.Second, durationBeforeNextAttempt(5))
-	assert.Equal(t, 300*time.Second, durationBeforeNextAttempt(6))
+
+	t.Run("durationBeforeNextAttempt", func(t *testing.T) {
+		require.Equal(t, 10*time.Second, durationBeforeNextAttempt(0))
+		require.Equal(t, 10*time.Second, durationBeforeNextAttempt(1))
+		require.Equal(t, 20*time.Second, durationBeforeNextAttempt(2))
+		require.Equal(t, 40*time.Second, durationBeforeNextAttempt(3))
+		require.Equal(t, 80*time.Second, durationBeforeNextAttempt(4))
+		require.Equal(t, 160*time.Second, durationBeforeNextAttempt(5))
+		require.Equal(t, 300*time.Second, durationBeforeNextAttempt(6))
+	})
+
+	t.Run("findWorker", func(t *testing.T) {
+		backoffJob := &jobsdb.JobT{
+			JobID:      1,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Failed.State,
+				AttemptNum: 1,
+				RetryTime:  time.Now().Add(1 * time.Hour),
+			},
+		}
+		noBackoffJob1 := &jobsdb.JobT{
+			JobID:      2,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Waiting.State,
+				AttemptNum: 1,
+				RetryTime:  time.Now().Add(1 * time.Hour),
+			},
+		}
+		noBackoffJob2 := &jobsdb.JobT{
+			JobID:      3,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Failed.State,
+				AttemptNum: 0,
+				RetryTime:  time.Now().Add(1 * time.Hour),
+			},
+		}
+		noBackoffJob3 := &jobsdb.JobT{
+			JobID:      4,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Failed.State,
+				AttemptNum: 0,
+				RetryTime:  time.Now().Add(-1 * time.Hour),
+			},
+		}
+
+		r := &HandleT{
+			logger:        logger.NOP,
+			backgroundCtx: context.Background(),
+			noOfWorkers:   1,
+			workers: []*workerT{{
+				barrier: eventorder.NewBarrier(),
+			}},
+		}
+
+		t.Run("eventorder disabled", func(t *testing.T) {
+			r.guaranteeUserEventOrder = false
+			require.Nil(t, r.findWorker(backoffJob, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob1, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob2, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob3, map[string]struct{}{}))
+		})
+
+		t.Run("eventorder enabled", func(t *testing.T) {
+			r.guaranteeUserEventOrder = true
+			require.Nil(t, r.findWorker(backoffJob, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob1, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob2, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob3, map[string]struct{}{}))
+		})
+	})
 }
 
 var _ = Describe("Router", func() {

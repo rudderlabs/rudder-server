@@ -15,11 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/metric"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 )
 
 const (
@@ -105,8 +106,8 @@ var _ = Describe("tenantStats", func() {
 
 				tenantStats.ReportProcLoopAddStats(input, "rt")
 
-				Expect(metric.PendingEvents("rt", workspaceID1, destType1).IntValue()).To(Equal(addJobWID1))
-				Expect(metric.PendingEvents("rt", workspaceID2, destType1).IntValue()).To(Equal(addJobWID2))
+				Expect(rmetrics.PendingEvents("rt", workspaceID1, destType1).IntValue()).To(Equal(addJobWID1))
+				Expect(rmetrics.PendingEvents("rt", workspaceID2, destType1).IntValue()).To(Equal(addJobWID2))
 			})
 
 			It("Should Correctly Calculate the Router PickUp Jobs", func() {
@@ -304,7 +305,7 @@ func Benchmark_Counts(b *testing.B) {
 	b.ResetTimer()
 	metric.Instance.Reset()
 	const writeRatio = 1000
-	gauge := metric.PendingEvents("rt", workspaceID1, destType1)
+	gauge := rmetrics.PendingEvents("rt", workspaceID1, destType1)
 	errgroup := errgroup.Group{}
 	errgroup.Go(func() error {
 		for i := 0; i < b.N; i++ {

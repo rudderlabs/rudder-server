@@ -16,8 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -41,7 +42,7 @@ func TestBackupTable(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresResource, err := destination.SetupPostgres(pool, cleanup)
+	postgresResource, err := resource.SetupPostgres(pool, cleanup)
 	require.NoError(t, err)
 
 	minioResource, err = destination.SetupMINIO(pool, cleanup)
@@ -58,8 +59,8 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_ENABLED", "true")
 		t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
 		t.Setenv("RUDDER_TMPDIR", tmpDir)
-		t.Setenv(config.ConfigKeyToEnv("JobsDB.maxDSSize"), "10")
-		t.Setenv(config.ConfigKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "3")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.maxDSSize"), "10")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.migrateDSLoopSleepDuration"), "3")
 		t.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
 		t.Setenv("JOBS_BACKUP_PREFIX", prefix)
 
@@ -190,7 +191,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresResource, err := destination.SetupPostgres(pool, cleanup)
+	postgresResource, err := resource.SetupPostgres(pool, cleanup)
 	require.NoError(t, err)
 
 	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
@@ -209,8 +210,8 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_ENABLED", "true")
 		t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
 		t.Setenv("RUDDER_TMPDIR", tmpDir)
-		t.Setenv(config.ConfigKeyToEnv("JobsDB.maxDSSize"), "10")
-		t.Setenv(config.ConfigKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "3")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.maxDSSize"), "10")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.migrateDSLoopSleepDuration"), "3")
 		t.Setenv("MINIO_SSL", "false")
 
 		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)

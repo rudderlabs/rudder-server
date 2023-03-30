@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 	etcd "go.etcd.io/etcd/client/v3"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
@@ -372,13 +372,11 @@ func Test_Workspaces(t *testing.T) {
 		}
 		if appType == app.GATEWAY {
 			t.Log("update should be received at <ack_key>/<instance_id>")
-			{
-				if appType == app.GATEWAY {
-					otherAckKey := fmt.Sprintf("%s/%s", "test-ack/2", testInstanceId)
-					resp, err := etcdClient.Get(ctx, otherAckKey)
-					require.NoError(t, err)
-					require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
-				}
+			if appType == app.GATEWAY {
+				otherAckKey := fmt.Sprintf("%s/%s", "test-ack/2", testInstanceId)
+				resp, err := etcdClient.Get(ctx, otherAckKey)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
 			}
 		}
 
