@@ -1201,8 +1201,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledOrderKeys map[string]st
 	}
 
 	if !rt.guaranteeUserEventOrder {
-		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
-		if rt.shouldThrottle(job, parameters) {
+		if rt.shouldThrottle(job, parameters) || rt.shouldBackoff(job) {
 			return
 		}
 		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
@@ -1212,7 +1211,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledOrderKeys map[string]st
 	//#JobOrder (see other #JobOrder comment)
 	index := rt.getWorkerPartition(orderKey)
 	worker := rt.workers[index]
-	if job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0 { // backoff
+	if rt.shouldBackoff(job) { // backoff
 		throttledOrderKeys[orderKey] = struct{}{}
 		return
 	}
@@ -1271,6 +1270,10 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 	}
 
 	return limited
+}
+
+func (*HandleT) shouldBackoff(job *jobsdb.JobT) bool {
+	return job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
 func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
@@ -1810,7 +1813,7 @@ func (rt *HandleT) Setup(
 	maxDSQuerySizeKeys := []string{"Router." + rt.destName + "." + "maxDSQuery", "Router." + "maxDSQuery"}
 	config.RegisterIntConfigVariable(10, &rt.maxDSQuerySize, true, 1, maxDSQuerySizeKeys...)
 
-	config.RegisterIntConfigVariable(10, &rt.jobIteratorMaxQueries, true, 1, "Router.jobIterator.maxQueries")
+	config.RegisterIntConfigVariable(50, &rt.jobIteratorMaxQueries, true, 1, "Router.jobIterator.maxQueries")
 	config.RegisterIntConfigVariable(10, &rt.jobIteratorDiscardedPercentageTolerance, true, 1, "Router.jobIterator.discardedPercentageTolerance")
 
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
