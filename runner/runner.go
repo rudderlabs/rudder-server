@@ -195,7 +195,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			"builtBy":            r.releaseInfo.BuiltBy,
 			"gitUrl":             r.releaseInfo.GitURL,
 			"TransformerVersion": transformer.GetVersion(),
-			"DatabricksVersion":  misc.GetDatabricksVersion(),
 		}).Gauge(1)
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
@@ -393,7 +392,6 @@ func (r *Runner) versionInfo() map[string]interface{} {
 		"BuiltBy":            r.releaseInfo.BuiltBy,
 		"GitUrl":             r.releaseInfo.GitURL,
 		"TransformerVersion": transformer.GetVersion(),
-		"DatabricksVersion":  misc.GetDatabricksVersion(),
 		"Features":           info.ServerComponent.Features,
 	}
 }
