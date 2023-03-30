@@ -8,7 +8,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
@@ -52,26 +51,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(720, &JobRetention, true, time.Hour, "Router.jobRetention")
 }
 
-func getRetentionTimeForDestination(destID string) time.Duration {
-	if config.IsSet("Router." + destID + ".jobRetention") {
-		return config.GetDuration("Router."+destID+".jobRetention", 720, time.Hour)
-	}
-
-	return JobRetention
-}
-
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
 	// drain if job is older than the destination's retention time
-	jobReceivedAt := gjson.GetBytes(job.Parameters, "received_at")
-	if jobReceivedAt.Exists() {
-		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
-		if err == nil {
-			if time.Since(jobReceivedAtTime) > getRetentionTimeForDestination(destID) {
-				return true, "job expired"
-			}
-		}
-	}
-
 	if d, ok := destinationsMap[destID]; ok && !d.Destination.Enabled {
 		return true, "destination is disabled"
 	}
