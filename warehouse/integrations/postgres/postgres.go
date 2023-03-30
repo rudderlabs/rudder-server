@@ -47,6 +47,10 @@ var errorsMappings = []model.JobError{
 		Format: regexp.MustCompile(`dial tcp: lookup .*: no such host`),
 	},
 	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`dial tcp .*: connect: connection timed out`),
+	},
+	{
 		Type:   model.PermissionError,
 		Format: regexp.MustCompile(`dial tcp .* connect: connection refused`),
 	},
