@@ -93,6 +93,7 @@ func TestBadgerRepository(t *testing.T) {
 
 	backup := []byte{}
 	buffer := bytes.NewBuffer(backup)
+	brc := &BufferReadCloser{Buffer: buffer}
 	t.Run("backup", func(t *testing.T) {
 		require.NoError(t, repo.Backup(buffer), "it should be able to backup the repository without an error")
 	})
@@ -103,8 +104,8 @@ func TestBadgerRepository(t *testing.T) {
 
 	t.Run("new with seeder", func(t *testing.T) {
 		basePath := path.Join(t.TempDir(), "badger-test-2")
-		_, err := badgerdb.NewRepository(basePath, logger.NOP, stats.Default, badgerdb.WithSeederSource(func() (io.Reader, error) {
-			return buffer, nil
+		_, err := badgerdb.NewRepository(basePath, logger.NOP, stats.Default, badgerdb.WithSeederSource(func() (io.ReadCloser, error) {
+			return brc, nil
 		}), badgerdb.WithMaxSeedWait(1*time.Millisecond))
 		require.NoError(t, err)
 	})
@@ -150,4 +151,12 @@ func TestBadgerRepository(t *testing.T) {
 
 		require.Equal(t, repo.Restore(nil), badger.ErrDBClosed)
 	})
+}
+
+type BufferReadCloser struct {
+	*bytes.Buffer
+}
+
+func (brc *BufferReadCloser) Close() error {
+	return nil
 }

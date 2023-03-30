@@ -199,7 +199,7 @@ func (b *Repository) start() error {
 	_, err := os.Stat(b.path)
 	if os.IsNotExist(err) && b.seederSource != nil {
 		seeder, err = b.seederSource()
-		seeder.Close()
+		defer seeder.Close()
 		if err != nil {
 			return fmt.Errorf("could not get seeder source: %w", err)
 		}
