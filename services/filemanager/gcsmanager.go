@@ -9,8 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"google.golang.org/api/iterator"
+
+	"github.com/rudderlabs/rudder-server/utils/googleutils"
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/option"
@@ -59,10 +60,11 @@ func (manager *GCSManager) Upload(ctx context.Context, file *os.File, prefixes .
 
 func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
-
+	pkgLogger.Infof("GCS: ListFilesWithPrefix called with startAfter: %s, prefix: %s, maxItems: %d", startAfter, prefix, maxItems)
 	// Create GCS storage client
 	client, err := manager.getClient(ctx)
 	if err != nil {
+		pkgLogger.Errorf("GCS: Error creating client: %v", err)
 		return
 	}
 
@@ -84,6 +86,7 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, 
 			if err == iterator.Done {
 				err = nil
 			}
+			pkgLogger.Infof("Error in GCS iterator: %v", err)
 			break
 		}
 		fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
@@ -105,6 +108,7 @@ func (manager *GCSManager) getClient(ctx context.Context) (*storage.Client, erro
 	if manager.Config.EndPoint != nil && *manager.Config.EndPoint != "" {
 		options = append(options, option.WithEndpoint(*manager.Config.EndPoint))
 	}
+	pkgLogger.Infof("GCS: Using credentials: %v", manager.Config.Credentials)
 	if !googleutils.ShouldSkipCredentialsInit(manager.Config.Credentials) {
 		if err = googleutils.CompatibleGoogleCredentialsJSON([]byte(manager.Config.Credentials)); err != nil {
 			return manager.client, err
