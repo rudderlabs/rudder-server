@@ -371,7 +371,7 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 	return
 }
 
-func SanitizeJson(input json.RawMessage) json.RawMessage {
+func SanitizeJSON(input json.RawMessage) json.RawMessage {
 	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
 	if len(v) == 0 {
 		v = []byte(`{}`)

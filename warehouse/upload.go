@@ -1642,7 +1642,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	}
 
 	serializedErr, _ := json.Marshal(&uploadErrors)
-	serializedErr = warehouseutils.SanitizeJson(serializedErr)
+	serializedErr = warehouseutils.SanitizeJSON(serializedErr)
 
 	uploadColumns := []UploadColumn{
 		{Column: "status", Value: state},

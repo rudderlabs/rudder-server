@@ -29,7 +29,7 @@ import (
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestSanitizeJson(t *testing.T) {
+func TestSanitizeJSON(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    json.RawMessage
@@ -57,7 +57,7 @@ func TestSanitizeJson(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			require.Equal(t, tc.expected, SanitizeJson(tc.input))
+			require.Equal(t, tc.expected, SanitizeJSON(tc.input))
 		})
 	}
 }
