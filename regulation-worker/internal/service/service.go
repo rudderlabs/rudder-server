@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 //go:generate mockgen -source=service.go -destination=mock_service.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service

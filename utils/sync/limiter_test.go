@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/stretchr/testify/require"
 )

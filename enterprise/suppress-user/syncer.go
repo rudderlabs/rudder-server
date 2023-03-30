@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -109,40 +109,43 @@ func (s *Syncer) SyncLoop(ctx context.Context) {
 			return
 		case <-time.After(s.pollIntervalFn()):
 		}
-	again:
-		s.log.Info("Fetching Regulations")
-		token, err := s.r.GetToken()
+		err := s.Sync(ctx)
 		if err != nil {
-			if errors.Is(err, model.ErrRestoring) {
-				if err := misc.SleepCtx(ctx, 1*time.Second); err != nil {
-					return
-				}
-				goto again
-			}
-			s.log.Errorf("Failed to get token from repository: %w", err)
-			continue
-		}
-		s.log.Info("Fetching Regulations")
-		suppressions, nextToken, err := s.sync(token)
-		if err != nil {
-			continue
-		}
-		// TODO: this won't be needed once data regulation service gets updated
-		for i := range suppressions {
-			suppression := &suppressions[i]
-			if suppression.WorkspaceID == "" {
-				suppression.WorkspaceID = s.defaultWorkspaceID
-			}
-		}
-		err = s.r.Add(suppressions, nextToken)
-		if err != nil {
-			s.log.Errorf("Failed to add %d suppressions to repository: %w", len(suppressions), err)
-			continue
-		}
-		if len(suppressions) != 0 {
-			goto again
+			s.log.Errorf("Failed to sync suppressions: %w", err)
 		}
 	}
+}
+
+// Sync synchronises suppressions from the data regulation service in batches, until
+// it completes, or an error occurs. Synchronisation completes when the service responds
+// with suppressions whose number is less than the page size.
+func (s *Syncer) Sync(ctx context.Context) error {
+again:
+	token, err := s.r.GetToken()
+	if err != nil {
+		if errors.Is(err, model.ErrRestoring) {
+			if err := misc.SleepCtx(ctx, 1*time.Second); err != nil {
+				return err
+			}
+			goto again
+		}
+		s.log.Errorf("Failed to get token from repository: %w", err)
+		return err
+	}
+
+	suppressions, nextToken, err := s.sync(token)
+	if err != nil {
+		return fmt.Errorf("sync failed: %w", err)
+	}
+	err = s.r.Add(suppressions, nextToken)
+	if err != nil {
+		s.log.Errorf("Failed to add %d suppressions to repository: %w", len(suppressions), err)
+		return err
+	}
+	if len(suppressions) >= s.pageSize {
+		goto again
+	}
+	return nil
 }
 
 // sync fetches suppressions from the backend
@@ -167,29 +170,25 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 		req, err := http.NewRequest("GET", urlStr, http.NoBody)
 		s.log.Debugf("regulation service URL: %s", urlStr)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create request: %w", err)
 		}
 		req.SetBasicAuth(s.id.BasicAuth())
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err = s.client.Do(req)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to make request: %w", err)
 		}
 		defer func() { httputil.CloseResponse(resp) }()
 
 		// If statusCode is not 2xx, then returning empty regulations
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			err = fmt.Errorf("status code %v", resp.StatusCode)
-			s.log.Errorf("Failed to fetch source regulations. statusCode: %v, error: %v",
-				resp.StatusCode, err)
-			return err
+			return fmt.Errorf("failed to fetch source regulations: statusCode: %d", resp.StatusCode)
 		}
-
 		respBody, err = io.ReadAll(resp.Body)
 		if err != nil {
 			s.log.Error(err)
-			return err
+			return fmt.Errorf("failed to read response body: %w", err)
 		}
 		return err
 	}

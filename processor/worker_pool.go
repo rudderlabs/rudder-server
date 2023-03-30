@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // withWorkerPoolCleanupPeriod option sets the cleanup period for the worker pool

@@ -11,8 +11,10 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
 )
 
@@ -57,21 +59,23 @@ type Repository struct {
 	restoring     bool
 	closeOnce     sync.Once
 	closed        chan struct{}
+	stats         stats.Stats
 }
 
 // NewRepository returns a new repository backed by badgerdb.
-func NewRepository(basePath string, log logger.Logger, opts ...Opt) (*Repository, error) {
+func NewRepository(basePath string, log logger.Logger, stats stats.Stats, opts ...Opt) (*Repository, error) {
 	b := &Repository{
 		log:           log,
 		path:          path.Join(basePath, "badgerdbv3"),
 		maxGoroutines: 1,
 		maxSeedWait:   10 * time.Second,
+		stats:         stats,
 	}
 	for _, opt := range opts {
 		opt(b)
 	}
-
-	return b, b.start()
+	err := b.start()
+	return b, err
 }
 
 // GetToken returns the current token
@@ -239,6 +243,15 @@ func (b *Repository) start() error {
 			if err == nil {
 				goto again
 			}
+			lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(b.db.Opts().Dir)
+			if err != nil {
+				b.log.Errorf("Error while getting badgerDB usage: %v", err)
+				continue
+			}
+			statName := "suppress-user"
+			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
+			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
+			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
 		}
 	}()
 	return nil

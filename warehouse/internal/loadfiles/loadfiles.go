@@ -12,10 +12,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
