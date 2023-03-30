@@ -23,11 +23,11 @@ type Factory struct {
 	Log             logger.Logger
 }
 
-func latestDataSeed() (io.Reader, error) {
+func latestDataSeed() (io.ReadCloser, error) {
 	return seederSource("latest-export")
 }
 
-func fullDataSeed() (io.Reader, error) {
+func fullDataSeed() (io.ReadCloser, error) {
 	return seederSource("full-export")
 }
 
