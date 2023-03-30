@@ -28,8 +28,7 @@ func main() {
 		return
 	}
 
-	sqlQuery := fmt.Sprintf(`SELECT id FROM wh_staging_files WHERE upload_id IS NULL`)
-	rows, err := sqlDB.QueryContext(ctx, sqlQuery)
+	rows, err := sqlDB.QueryContext(ctx, "SELECT id FROM wh_staging_files WHERE upload_id IS NULL")
 	if err != nil {
 		fmt.Println("Error querying DB: ", err)
 		return
