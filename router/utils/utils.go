@@ -51,14 +51,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(720, &JobRetention, true, time.Hour, "Router.jobRetention")
 }
 
-func getRetentionTimeForDestination(destID string) time.Duration {
-	if config.IsSet("Router." + destID + ".jobRetention") {
-		return config.GetDuration("Router."+destID+".jobRetention", 720, time.Hour)
-	}
-
-	return JobRetention
-}
-
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
 	if d, ok := destinationsMap[destID]; ok && !d.Destination.Enabled {
 		return true, "destination is disabled"

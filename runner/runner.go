@@ -268,6 +268,18 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			return nil
 		}))
 	}
+
+	// Start warehouse
+	// initialize warehouse service after core to handle non-normal recovery modes
+	if r.canStartWarehouse() {
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			if err := warehouse.Start(ctx, r.application); err != nil {
+				return fmt.Errorf("warehouse service routine: %w", err)
+			}
+			return nil
+		}))
+	}
+
 	shutdownDone := make(chan struct{})
 	go func() {
 		err := g.Wait()
@@ -405,4 +417,8 @@ func (r *Runner) canStartServer() bool {
 
 func (r *Runner) canStartBackendConfig() bool {
 	return r.warehouseMode != config.SlaveMode
+}
+
+func (r *Runner) canStartWarehouse() bool {
+	return r.appType != app.GATEWAY && r.warehouseMode != config.OffMode
 }

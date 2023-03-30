@@ -1488,9 +1488,9 @@ func getConnectionString() string {
 	if !CheckForWarehouseEnvVars() {
 		return misc.GetConnectionString()
 	}
-	return fmt.Sprintf("host=%s port=%d user=%s "+
+	return fmt.Sprintf("host=replay-nansen-v0-rudderstack-postgresql port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
-		host, port, user, password, dbname, sslMode, appName)
+		port, user, password, dbname, sslMode, appName)
 }
 
 func startWebHandler(ctx context.Context) error {
