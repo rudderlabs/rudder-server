@@ -3,7 +3,6 @@ package jobs_forwarder
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -71,7 +70,7 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 				jf.log.Errorf("Error while querying jobsDB: %v", err)
 				continue // Should we do a panic here like elsewhere
 			}
-			time.Sleep(time.Duration(float64(jf.loopSleepTime) * (1 - math.Min(1, float64(unprocessedList.EventsCount)/float64(jf.eventCount)))))
+			time.Sleep(jf.GetSleepTime(unprocessedList))
 		}
 	}
 
@@ -123,7 +122,7 @@ func (nf *NOOPForwarder) Start(ctx context.Context) {
 				nf.log.Errorf("Error while updating job status: %v", err)
 				panic(err)
 			}
-			time.Sleep(time.Duration(float64(nf.loopSleepTime) * (1 - math.Min(1, float64(unprocessedList.EventsCount)/float64(nf.eventCount)))))
+			time.Sleep(nf.GetSleepTime(unprocessedList))
 		}
 	}
 }

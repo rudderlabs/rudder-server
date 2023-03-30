@@ -3,6 +3,7 @@ package jobs_forwarder
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -59,4 +60,8 @@ func (fm *ForwarderMetaData) MarkJobStatuses(ctx context.Context, statusList []*
 		})
 	}, fm.sendQueryRetryStats)
 	return err
+}
+
+func (fm *ForwarderMetaData) GetSleepTime(unprocessedList jobsdb.JobsResult) time.Duration {
+	return time.Duration(float64(fm.loopSleepTime) * (1 - math.Min(1, float64(unprocessedList.EventsCount)/float64(fm.eventCount))))
 }

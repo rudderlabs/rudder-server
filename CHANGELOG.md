@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.2](https://github.com/rudderlabs/rudder-server/compare/v1.7.1...v1.7.2) (2023-03-30)
+
+
+### Bug Fixes
+
+* identity tables load files are not generated ([be569c1](https://github.com/rudderlabs/rudder-server/commit/be569c13db4f34286c05295dfffdfcc95c9d3863))
+
+## [1.7.1](https://github.com/rudderlabs/rudder-server/compare/v1.7.0...v1.7.1) (2023-03-24)
+
+
+### Bug Fixes
+
+* **warehouse:** table uploads were not getting updated ([abb8bfb](https://github.com/rudderlabs/rudder-server/commit/abb8bfb3c1ed77584d75c50e4bbc2f305aa4ea69))
+
 ## [1.7.0](https://github.com/rudderlabs/rudder-server/compare/v1.6.0...v1.7.0) (2023-03-17)
 
 
