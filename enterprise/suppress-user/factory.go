@@ -23,33 +23,6 @@ type Factory struct {
 	Log             logger.Logger
 }
 
-func latestDataSeed() (io.ReadCloser, error) {
-	return seederSource("latest-export")
-}
-
-func fullDataSeed() (io.ReadCloser, error) {
-	return seederSource("full-export")
-}
-
-func seederSource(endpoint string) (io.ReadCloser, error) {
-	client := http.Client{}
-	baseURL := config.GetString("SUPPRESS_BACKUP_URL", "https://api.rudderstack.com")
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", baseURL, endpoint), http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("could not create request: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("could not perform request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-	// close body afterwards.
-	return resp.Body, nil
-}
-
 // Setup initializes the user suppression feature
 func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.BackendConfig) (types.UserSuppression, error) {
 	if m.Log == nil {
@@ -102,7 +75,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 		err = latestRepo.Stop()
 		defer latestSyncCancel()
 	})
-	repo := &RepoHolder{
+	repo := &RepoSwitcher{
 		Repository: latestRepo,
 		mu:         sync.RWMutex{},
 	}
@@ -139,7 +112,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				m.Log.Error("Complete Synce failed: could not sync: %w", err)
 			}
 			latestSyncCancel()
-			repo.Switcher(fullRepo)
+			repo.Switch(fullRepo)
 			syncer.SyncLoop(ctx)
 			_ = fullRepo.Stop()
 		})
@@ -150,50 +123,77 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 	return h, nil
 }
 
-type RepoHolder struct {
+type RepoSwitcher struct {
 	Repository
 	mu sync.RWMutex
 }
 
-func (rh *RepoHolder) Stop() error {
-	rh.mu.Lock()
-	defer rh.mu.Unlock()
+func (rh *RepoSwitcher) Stop() error {
+	rh.mu.RLock()
+	defer rh.mu.RUnlock()
 	return rh.Repository.Stop()
 }
 
-func (rh *RepoHolder) GetToken() ([]byte, error) {
+func (rh *RepoSwitcher) GetToken() ([]byte, error) {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
 	return rh.Repository.GetToken()
 }
 
-func (rh *RepoHolder) Add(suppressions []model.Suppression, token []byte) error {
-	rh.mu.Lock()
-	defer rh.mu.Unlock()
+func (rh *RepoSwitcher) Add(suppressions []model.Suppression, token []byte) error {
+	rh.mu.RLock()
+	defer rh.mu.RUnlock()
 	return rh.Repository.Add(suppressions, token)
 }
 
-func (rh *RepoHolder) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
+func (rh *RepoSwitcher) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
 	return rh.Repository.Suppressed(workspaceID, userID, sourceID)
 }
 
-func (rh *RepoHolder) Backup(w io.Writer) error {
+func (rh *RepoSwitcher) Backup(w io.Writer) error {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
 	return rh.Repository.Backup(w)
 }
 
-func (rh *RepoHolder) Restore(r io.Reader) error {
-	rh.mu.Lock()
-	defer rh.mu.Unlock()
+func (rh *RepoSwitcher) Restore(r io.Reader) error {
+	rh.mu.RLock()
+	defer rh.mu.RUnlock()
 	return rh.Repository.Restore(r)
 }
 
-func (rh *RepoHolder) Switcher(newRepo Repository) error {
+func (rh *RepoSwitcher) Switch(newRepo Repository) error {
 	rh.mu.Lock()
 	defer rh.mu.Unlock()
 	rh.Repository = newRepo
 	return nil
+}
+
+func latestDataSeed() (io.ReadCloser, error) {
+	return seederSource("latest-export")
+}
+
+func fullDataSeed() (io.ReadCloser, error) {
+	return seederSource("full-export")
+}
+
+func seederSource(endpoint string) (io.ReadCloser, error) {
+	client := http.Client{}
+	baseURL := config.GetString("SUPPRESS_BACKUP_URL", "https://api.rudderstack.com")
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", baseURL, endpoint), http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("could not create request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("could not perform request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	// close body afterwards.
+	return resp.Body, nil
 }

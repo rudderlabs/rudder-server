@@ -193,13 +193,17 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 }
 
 // start the repository
-func (b *Repository) start() error {
+func (b *Repository) start() (startErr error) {
 	b.closed = make(chan struct{})
 	var seeder io.ReadCloser
 	_, err := os.Stat(b.path)
 	if os.IsNotExist(err) && b.seederSource != nil {
 		seeder, err = b.seederSource()
-		defer seeder.Close()
+		defer func() {
+			if startErr != nil && seeder != nil {
+				_ = seeder.Close()
+			}
+		}()
 		if err != nil {
 			return fmt.Errorf("could not get seeder source: %w", err)
 		}
@@ -211,14 +215,15 @@ func (b *Repository) start() error {
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(b.maxGoroutines)
-	// var err error
-	b.db, err = badger.Open(opts)
-	if err != nil {
+
+	b.db, startErr = badger.Open(opts)
+	if startErr != nil {
 		return fmt.Errorf("could not open badgerdb: %w", err)
 	}
 
 	if seeder != nil {
 		restoreDone := lo.Async(func() error {
+			defer func() { _ = seeder.Close() }()
 			if err := b.Restore(seeder); err != nil {
 				b.log.Error("Failed to restore badgerdb", "error", err)
 				return err
