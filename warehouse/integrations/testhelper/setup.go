@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 

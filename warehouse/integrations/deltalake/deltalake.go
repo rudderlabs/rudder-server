@@ -5,12 +5,13 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	dbsql "github.com/databricks/databricks-sql-go"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	dbsql "github.com/databricks/databricks-sql-go"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
