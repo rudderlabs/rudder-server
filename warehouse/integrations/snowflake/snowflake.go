@@ -159,7 +159,7 @@ var errorsMappings = []model.JobError{
 		Format: regexp.MustCompile(`Table .* does not exist`),
 	},
 	{
-		Type:   model.ResourceNotFoundError,
+		Type:   model.ColumnCountError,
 		Format: regexp.MustCompile(`Operation failed because soft limit on objects of type 'Column' per table was exceeded. Please reduce number of 'Column's or contact Snowflake support about raising the limit.`),
 	},
 }
