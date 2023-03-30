@@ -67,7 +67,7 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, 
 		pkgLogger.Errorf("GCS: Error creating client: %v", err)
 		return
 	}
-
+	pkgLogger.Infof("GCS Config Bucket: %s Prefix %s", manager.Config.Bucket, manager.Config.Prefix)
 	// Create GCS Bucket handle
 	if manager.Config.Iterator == nil {
 		manager.Config.Iterator = client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{

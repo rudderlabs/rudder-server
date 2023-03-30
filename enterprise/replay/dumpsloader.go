@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/gjson"
 )
 
 // DumpsLoaderHandleT - dumps-loader handle
@@ -233,8 +232,6 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	handle.dbHandle = db
 	handle.handleRecovery()
 
-	lastJob := handle.dbHandle.GetLastJob()
-	handle.startAfterKey = gjson.GetBytes(lastJob.EventPayload, "location").String()
 	handle.bucket = bucket
 	handle.uploader = uploader
 	startTimeStr := strings.TrimSpace(config.GetString("START_TIME", "2000-10-02T15:04:05.000Z"))
