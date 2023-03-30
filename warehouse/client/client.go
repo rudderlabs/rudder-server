@@ -5,26 +5,20 @@ import (
 	"database/sql"
 	"fmt"
 
-	deltalakeclient "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
-
-	proto "github.com/rudderlabs/rudder-server/proto/databricks"
-
 	"cloud.google.com/go/bigquery"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/iterator"
 )
 
 const (
-	SQLClient       = "SQLClient"
-	BQClient        = "BigQueryClient"
-	DeltalakeClient = "DeltalakeClient"
+	SQLClient = "SQLClient"
+	BQClient  = "BigQueryClient"
 )
 
 type Client struct {
-	SQL             *sql.DB
-	BQ              *bigquery.Client
-	DeltalakeClient *deltalakeclient.Client
-	Type            string
+	SQL  *sql.DB
+	BQ   *bigquery.Client
+	Type string
 }
 
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
@@ -100,28 +94,10 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 	return result, nil
 }
 
-func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
-	executeResponse, err := cl.DeltalakeClient.Client.ExecuteQuery(cl.DeltalakeClient.Context, &proto.ExecuteQueryRequest{
-		Config:       cl.DeltalakeClient.CredConfig,
-		SqlStatement: statement,
-		Identifier:   cl.DeltalakeClient.CredIdentifier,
-	})
-	if err != nil {
-		return
-	}
-
-	for _, row := range executeResponse.GetRows() {
-		result.Values = append(result.Values, row.GetColumns())
-	}
-	return result, nil
-}
-
 func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, err error) {
 	switch cl.Type {
 	case BQClient:
 		return cl.bqQuery(statement)
-	case DeltalakeClient:
-		return cl.dbQuery(statement)
 	default:
 		return cl.sqlQuery(statement)
 	}
@@ -131,8 +107,6 @@ func (cl *Client) Close() {
 	switch cl.Type {
 	case BQClient:
 		cl.BQ.Close()
-	case DeltalakeClient:
-		cl.DeltalakeClient.Close()
 	default:
 		cl.SQL.Close()
 	}
