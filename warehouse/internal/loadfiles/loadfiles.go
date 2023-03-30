@@ -285,6 +285,10 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
 			}
 
+			if len(loadFiles) == 0 {
+				return nil
+			}
+
 			err = lf.LoadRepo.Insert(ctx, loadFiles)
 			if err != nil {
 				return fmt.Errorf("inserting load files: %w", err)
