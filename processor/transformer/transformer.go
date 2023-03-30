@@ -104,6 +104,7 @@ func NewTransformer() *HandleT {
 
 var (
 	maxConcurrency, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
+	disableKeepAlives                                                    bool
 	retrySleep                                                           time.Duration
 	timeoutDuration                                                      time.Duration
 	pkgLogger                                                            logger.Logger
@@ -117,7 +118,8 @@ func Init() {
 func loadConfig() {
 	config.RegisterIntConfigVariable(200, &maxConcurrency, false, 1, "Processor.maxConcurrency")
 	config.RegisterIntConfigVariable(100, &maxHTTPConnections, false, 1, "Processor.maxHTTPConnections")
-	config.RegisterIntConfigVariable(50, &maxHTTPIdleConnections, false, 1, "Processor.maxHTTPIdleConnections")
+	config.RegisterIntConfigVariable(5, &maxHTTPIdleConnections, false, 1, "Processor.maxHTTPIdleConnections")
+	config.RegisterBoolConfigVariable(true, &disableKeepAlives, false, "Transformer.Client.disableKeepAlives")
 
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
@@ -151,6 +153,7 @@ func (trans *HandleT) Setup() {
 	if trans.Client == nil {
 		trans.Client = &http.Client{
 			Transport: &http.Transport{
+				DisableKeepAlives:   disableKeepAlives,
 				MaxConnsPerHost:     maxHTTPConnections,
 				MaxIdleConnsPerHost: maxHTTPIdleConnections,
 				IdleConnTimeout:     time.Minute,
