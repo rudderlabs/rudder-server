@@ -7,4 +7,3 @@
 {"fetching_remote_schema_failed":{"attempt":10,"errors":["pq: password authentication failed for user ***"]}}
 {"exporting_data_failed":{"attempt":1,"errors":["pq: relation *** does not exist"]}}
 {"exporting_data_failed":{"attempt":1,"errors":["pq: cannot set transaction read-write mode during recovery"]}}
-{"fetching_remote_schema_failed":{"attempt":4,"errors":["dial tcp ***: connect: connection timed out"]}}

@@ -68,10 +68,6 @@ var errorsMappings = []model.JobError{
 	},
 	{
 		Type:   model.PermissionError,
-		Format: regexp.MustCompile(`dial tcp .*: connect: connection timed out`),
-	},
-	{
-		Type:   model.PermissionError,
 		Format: regexp.MustCompile(`dial tcp .* connect: connection refused`),
 	},
 	{
