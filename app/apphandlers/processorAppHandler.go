@@ -180,6 +180,16 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
+	schemasDB := jobsdb.NewForReadWrite(
+		"event_schema",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithStatusHandler(),
+		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
+	)
+	defer schemasDB.Close()
+
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
 	if misc.UseFairPickup() {
@@ -195,7 +205,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
-	jobsForwarder, err := jobs_forwarder.New(routerDB, transientSources, logger.NewLogger().Child("jobs_forwarder"))
+	jobsForwarder, err := jobs_forwarder.New(schemasDB, transientSources, logger.NewLogger().Child("jobs_forwarder"))
 	if err != nil {
 		return err
 	}

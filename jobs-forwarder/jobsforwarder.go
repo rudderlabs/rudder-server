@@ -71,7 +71,6 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 
 func (jf *JobsForwarder) Stop() {
 	jf.pulsarProducer.Close()
-	jf.jobsDB.Close()
 }
 
 func (jf *JobsForwarder) generateQueryParams() jobsdb.GetQueryParamsT {
