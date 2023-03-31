@@ -326,6 +326,7 @@ func (b *Repository) Restore(r io.Reader) (err error) {
 	}
 	return fmt.Errorf("could not restore badgerdb: %w", err)
 }
+
 func (b *Repository) setRestoring(restoring bool) {
 	b.restoringLock.Lock()
 	b.restoring = restoring

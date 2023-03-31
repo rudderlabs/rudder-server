@@ -163,6 +163,7 @@ func (m *Factory) retry(ctx context.Context, f func() error, wait time.Duration)
 		}
 	}
 }
+
 func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (io.ReadCloser, error), maxSeedWaitTime time.Duration, identity identity.Identifier, pollInterval time.Duration) (*Syncer, Repository, error) {
 	repo, err := NewBadgerRepository(
 		repoPath,
