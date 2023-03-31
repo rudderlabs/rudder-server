@@ -1117,6 +1117,37 @@ func GetWarehouseURL() (url string) {
 	return
 }
 
+func GetDatabricksVersion() (version string) {
+	url := fmt.Sprintf(`%s/databricksVersion`, GetWarehouseURL())
+	req, err := http.NewRequest(http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return
+	}
+	client := &http.Client{
+		Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second),
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		pkgLogger.Errorf("Unable to make a warehouse databricks build version call with error : %s", err.Error())
+		return
+	}
+	if resp == nil {
+		version = "No response from warehouse."
+		return
+	}
+	defer func() { httputil.CloseResponse(resp) }()
+	if resp.StatusCode == http.StatusOK {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
+			version = "Unable to read response from warehouse."
+			return
+		}
+		version = string(bodyBytes)
+	}
+	return
+}
+
 func WithBugsnagForWarehouse(fn func() error) func() error {
 	return func() error {
 		ctx := bugsnag.StartSession(context.Background())

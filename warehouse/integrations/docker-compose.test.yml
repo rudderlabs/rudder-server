@@ -46,9 +46,18 @@ services:
       retries: 25
   wh-transformer:
     container_name: wh-transformer
-    image: rudderstack/develop-rudder-transformer:latest
+    image: rudderlabs/develop-rudder-transformer:master
     ports:
       - "9090"
+  wh-databricks-connector:
+    image: rudderstack/rudder-databricks-connector:v1.4.2
+    container_name: wh-databricks-connector
+    ports:
+      - "50051"
+    healthcheck:
+      test: /bin/grpc_health_probe -addr=localhost:50051
+      interval: 1s
+      retries: 25
   wh-minio:
     image: minio/minio:latest
     container_name: wh-minio
@@ -191,6 +200,8 @@ services:
       wh-jobsDb:
         condition: service_healthy
       wh-transformer:
+        condition: service_healthy
+      wh-databricks-connector:
         condition: service_healthy
       wh-minio:
         condition: service_healthy

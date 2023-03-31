@@ -1,0 +1,14 @@
+syntax = "proto3";
+package proto;
+option go_package = ".;proto";
+
+service Version {
+  rpc GetVersion(VersionRequest) returns (VersionResponse) {}
+}
+
+message VersionRequest {
+}
+
+message VersionResponse{
+  string version = 1;
+}

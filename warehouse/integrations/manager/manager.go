@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"fmt"
+	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
 	"time"
 
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
@@ -99,8 +100,14 @@ func New(destType string) (Manager, error) {
 		var dl datalake.HandleT
 		return &dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.NewDeltalake()
-		deltalake.WithConfig(dl, config.Default)
+		if config.Default.GetBool("Warehouse.deltalake.useLegacy", true) {
+			dl := deltalake.NewDeltalake()
+			deltalake.WithConfig(dl, config.Default)
+			return dl, nil
+		}
+
+		dl := deltalake_native.NewDeltalake()
+		deltalake_native.WithConfig(dl, config.Default)
 		return dl, nil
 	}
 	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
@@ -147,8 +154,14 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		var dl datalake.HandleT
 		return &dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.NewDeltalake()
-		deltalake.WithConfig(dl, config.Default)
+		if config.Default.GetBool("Warehouse.deltalake.useLegacy", true) {
+			dl := deltalake.NewDeltalake()
+			deltalake.WithConfig(dl, config.Default)
+			return dl, nil
+		}
+
+		dl := deltalake_native.NewDeltalake()
+		deltalake_native.WithConfig(dl, config.Default)
 		return dl, nil
 	}
 	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)

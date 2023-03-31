@@ -45,6 +45,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
@@ -1433,6 +1434,11 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
+func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion()))
+}
+
 func isUploadTriggered(wh model.Warehouse) bool {
 	triggerUploadsMapLock.RLock()
 	defer triggerUploadsMapLock.RUnlock()
@@ -1510,6 +1516,7 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
 			// triggers uploads for a source
 			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
 			// Warehouse Async Job end-points

@@ -1,0 +1,142 @@
+syntax = "proto3";
+package proto;
+option go_package = ".;proto";
+
+service Databricks {
+  rpc Connect(ConnectRequest) returns (ConnectResponse) {}
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse) {}
+  rpc ExecuteQuery(ExecuteQueryRequest) returns (ExecuteQueryResponse) {}
+  rpc FetchSchemas(FetchSchemasRequest) returns (FetchSchemasResponse) {}
+  rpc FetchTables(FetchTablesRequest) returns (FetchTablesResponse) {}
+  rpc FetchTableAttributes(FetchTableAttributesRequest) returns (FetchTableAttributesResponse) {}
+  rpc FetchTotalCountInTable(FetchTotalCountInTableRequest) returns (FetchTotalCountInTableResponse) {}
+  rpc FetchPartitionColumns(FetchPartitionColumnsRequest) returns (FetchPartitionColumnsResponse) {}
+  rpc Close(CloseRequest) returns (CloseResponse) {}
+}
+
+message ConnectionConfig {
+  string host = 1;
+  string port = 2;
+  string schema = 3;
+  string sparkServerType = 4;
+  string authMech = 5;
+  string uid = 6;
+  string pwd = 7;
+  string thriftTransport = 8;
+  string ssl = 9;
+  string httpPath = 10;
+  string userAgentEntry = 11;
+}
+
+message ConnectRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+}
+
+message ConnectResponse{
+  string errorCode = 1;
+  string errorMessage = 2;
+}
+
+message ExecuteRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string sqlStatement = 3;
+}
+
+message ExecuteResponse {
+  string errorCode = 1;
+  string errorMessage = 2;
+}
+
+message ExecuteQueryRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string sqlStatement = 3;
+}
+
+message ItemQueryColumns {
+  repeated string columns = 1;
+}
+
+message ExecuteQueryResponse {
+  repeated ItemQueryColumns rows = 1;
+  string errorCode = 2;
+  string errorMessage = 3;
+}
+
+message FetchSchemasRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string sqlStatement = 3;
+}
+
+message FetchSchemasResponse {
+  repeated string databases = 1;
+  string errorCode = 2;
+  string errorMessage = 3;
+}
+
+message FetchTablesRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string schema = 3;
+}
+
+message FetchTablesResponse {
+  repeated string tables = 1;
+  string errorCode = 2;
+  string errorMessage = 3;
+}
+
+message FetchTableAttributesRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string schema = 3;
+  string table = 4;
+}
+
+message ItemAttribute {
+  string colName = 1;
+  string dataType = 2;
+}
+
+message FetchTableAttributesResponse {
+  repeated ItemAttribute attributes = 1;
+  string errorCode = 2;
+  string errorMessage = 3;
+}
+
+message FetchTotalCountInTableRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string sqlStatement = 3;
+}
+
+message FetchTotalCountInTableResponse {
+  int64 count = 1;
+  string errorCode = 2;
+  string errorMessage = 3;
+}
+
+message FetchPartitionColumnsRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string sqlStatement = 3;
+}
+
+message FetchPartitionColumnsResponse {
+  repeated string columns = 1;
+  string errorCode = 2;
+  string errorMessage = 3;
+}
+
+message CloseRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
+}
+
+message CloseResponse {
+  string errorCode = 1;
+  string errorMessage = 2;
+}
