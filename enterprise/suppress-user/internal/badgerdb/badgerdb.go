@@ -57,8 +57,6 @@ type Repository struct {
 	// lock to prevent concurrent access to db during restore
 	restoringLock sync.RWMutex
 	restoring     bool
-	closeOnce     sync.Once
-	closed        chan struct{}
 	stats         stats.Stats
 }
 
@@ -194,7 +192,6 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 
 // start the repository
 func (b *Repository) start() (startErr error) {
-	b.closed = make(chan struct{})
 	var seeder io.ReadCloser
 	_, err := os.Stat(b.path)
 	if os.IsNotExist(err) && b.seederSource != nil {
@@ -249,25 +246,25 @@ func (b *Repository) start() (startErr error) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
-			select {
-			case <-b.closed:
+			if b.db.IsClosed() {
 				return
-			case <-ticker.C:
+			} else {
+				time.Sleep(5 * time.Minute)
+			again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
+				err := b.db.RunValueLogGC(0.7)
+				if err == nil {
+					goto again
+				}
+				lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(b.db.Opts().Dir)
+				if err != nil {
+					b.log.Errorf("Error while getting badgerDB usage: %v", err)
+					continue
+				}
+				statName := "suppress-user"
+				b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
+				b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
+				b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
 			}
-		again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
-			err := b.db.RunValueLogGC(0.7)
-			if err == nil {
-				goto again
-			}
-			lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(b.db.Opts().Dir)
-			if err != nil {
-				b.log.Errorf("Error while getting badgerDB usage: %v", err)
-				continue
-			}
-			statName := "suppress-user"
-			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
-			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
-			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
 		}
 	}()
 	return nil
@@ -275,12 +272,7 @@ func (b *Repository) start() (startErr error) {
 
 // Stop stops the repository
 func (b *Repository) Stop() error {
-	var err error
-	b.closeOnce.Do(func() {
-		close(b.closed)
-		err = b.db.Close()
-	})
-	return err
+	return b.db.Close()
 }
 
 // Backup writes a backup of the repository to the given writer
