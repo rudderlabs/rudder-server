@@ -67,6 +67,13 @@ func TestIntegrationDeltalake(t *testing.T) {
 		)
 	})
 
+	testhelper.SetConfig(t, []warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.deltalake.useLegacy",
+			Value: "false",
+		},
+	})
+
 	testCases := []struct {
 		name               string
 		schema             string
@@ -170,6 +177,13 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 	deltalake_native.Init()
+
+	testhelper.SetConfig(t, []warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.deltalake.useLegacy",
+			Value: "false",
+		},
+	})
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

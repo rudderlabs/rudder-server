@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestDeltalake(t *testing.T) {
+func TestDeltalakeNative(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Deltalake Suite")
+	RunSpecs(t, "Deltalake Native Suite")
 }
