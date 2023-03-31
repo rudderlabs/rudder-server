@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -196,14 +197,14 @@ func (b *Repository) start() (startErr error) {
 	_, err := os.Stat(b.path)
 	if os.IsNotExist(err) && b.seederSource != nil {
 		seeder, err = b.seederSource()
+		if err != nil {
+			return fmt.Errorf("could not get seeder source: %w", err)
+		}
 		defer func() {
 			if startErr != nil && seeder != nil {
 				_ = seeder.Close()
 			}
 		}()
-		if err != nil {
-			return fmt.Errorf("could not get seeder source: %w", err)
-		}
 	}
 
 	opts := badger.
@@ -215,7 +216,8 @@ func (b *Repository) start() (startErr error) {
 
 	b.db, startErr = badger.Open(opts)
 	if startErr != nil {
-		return fmt.Errorf("could not open badgerdb: %w", err)
+		startErr = fmt.Errorf("could not open badgerdb: %w", startErr)
+		return
 	}
 
 	if seeder != nil {
@@ -233,9 +235,10 @@ func (b *Repository) start() (startErr error) {
 		}
 
 		select {
-		case err = <-restoreDone:
-			if err != nil {
-				return fmt.Errorf("failed to restore badgerdb: %w", err)
+		case startErr = <-restoreDone:
+			if startErr != nil {
+				startErr = fmt.Errorf("failed to restore badgerdb: %w", err)
+				return
 			}
 		case <-timeout:
 			b.log.Warn("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
@@ -304,9 +307,25 @@ func (b *Repository) Restore(r io.Reader) (err error) {
 			err = fmt.Errorf("panic during restore: %v", r)
 		}
 	}()
-	return b.db.Load(r, b.maxGoroutines)
+	_, err = os.Create(filepath.Join(b.path, model.SyncInProgressMarker))
+	if err != nil {
+		return fmt.Errorf("could not create sync in progress marker: %w", err)
+	}
+	err = b.db.Load(r, b.maxGoroutines)
+	if err == nil {
+		err = os.Remove(filepath.Join(b.path, model.SyncInProgressMarker))
+		if err != nil {
+			b.log.Errorf("could not remove sync in progress marker: %v", err)
+		}
+		_, err = os.Create(filepath.Join(b.path, model.SyncDoneMarker))
+		if err != nil {
+			b.log.Errorf("could not create sync done marker: %v", err)
+			return nil
+		}
+		return err
+	}
+	return fmt.Errorf("could not restore badgerdb: %w", err)
 }
-
 func (b *Repository) setRestoring(restoring bool) {
 	b.restoringLock.Lock()
 	b.restoring = restoring

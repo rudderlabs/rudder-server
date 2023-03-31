@@ -3,8 +3,10 @@ package model
 import "errors"
 
 var (
-	ErrRestoring    = errors.New("repository is restoring")
-	ErrNotSupported = errors.New("operation not supported")
+	ErrRestoring         = errors.New("repository is restoring")
+	ErrNotSupported      = errors.New("operation not supported")
+	SyncInProgressMarker = "sync_in_progress"
+	SyncDoneMarker       = "sync_done"
 )
 var Wildcard = "*"
 

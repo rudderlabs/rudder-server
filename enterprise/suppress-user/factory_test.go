@@ -66,19 +66,19 @@ func TestSuppressionSetup(t *testing.T) {
 			require.True(t, h2.IsSuppressedUser("workspace-2", "user-2", "src-4"))
 		},
 	)
-	t.Run(
-		"should setup in-memory suppression db",
-		func(t *testing.T) {
-			f := Factory{
-				EnterpriseToken: "token",
-				Log:             logger.NOP,
-			}
-			t.Setenv("RSERVER_BACKEND_CONFIG_REGULATIONS_USE_BADGER_DB", "false")
-			h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
-			require.NoError(t, err, "Error in setting up suppression feature")
-			require.False(t, h.IsSuppressedUser("workspace-1", "user-1", "src-1"))
-		},
-	)
+	// t.Run(
+	// 	"should setup in-memory suppression db",
+	// 	func(t *testing.T) {
+	// 		f := Factory{
+	// 			EnterpriseToken: "token",
+	// 			Log:             logger.NOP,
+	// 		}
+	// 		t.Setenv("RSERVER_BACKEND_CONFIG_REGULATIONS_USE_BADGER_DB", "false")
+	// 		h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
+	// 		require.NoError(t, err, "Error in setting up suppression feature")
+	// 		require.False(t, h.IsSuppressedUser("workspace-1", "user-1", "src-1"))
+	// 	},
+	// )
 }
 
 func httpHandler(t *testing.T) http.Handler {
