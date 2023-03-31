@@ -29,10 +29,12 @@ type ProducerConf struct {
 type Producer struct {
 	Client   pulsar.Client
 	Producer pulsar.Producer
+	log      logger.Logger
 }
 
 type ProducerAdapter interface {
 	SendMessage(ctx context.Context, key, orderingKey string, msg []byte) error
+	SendMessageAsync(ctx context.Context, msg []byte)
 	Close()
 }
 
@@ -41,11 +43,12 @@ type Client struct {
 }
 
 func New() (ProducerAdapter, error) {
-	client, err := NewPulsarClient(GetClientConf(), logger.NewLogger().Child("pulsar"))
+	log := logger.NewLogger().Child("pulsar")
+	client, err := NewPulsarClient(GetClientConf(), log)
 	if err != nil {
 		return nil, err
 	}
-	producer, err := NewProducer(client, GetProducerConf())
+	producer, err := NewProducer(client, GetProducerConf(), log)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +71,7 @@ func NewPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
 	return Client{Client: client}, nil
 }
 
-func NewProducer(client Client, conf ProducerConf) (Producer, error) {
+func NewProducer(client Client, conf ProducerConf, log logger.Logger) (Producer, error) {
 	if conf.Topic == "" {
 		return Producer{}, errors.New("pulsar topic is empty")
 	}
@@ -84,6 +87,7 @@ func NewProducer(client Client, conf ProducerConf) (Producer, error) {
 	}
 	return Producer{
 		Producer: producer,
+		log:      log,
 		Client:   client.Client,
 	}, nil
 }
@@ -106,6 +110,20 @@ func (p *Producer) Close() {
 	}
 	p.Producer.Close()
 	p.Client.Close()
+}
+
+func (p *Producer) SendMessageAsync(ctx context.Context, msg []byte) {
+	if p.Producer == nil {
+		return
+	}
+	p.Producer.SendAsync(ctx, &pulsar.ProducerMessage{
+		Payload: msg,
+	}, func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
+		if err != nil {
+			p.log.Errorf("pulsar async send error: %v", err)
+		}
+		p.log.Debugf("pulsar async send success: %v", id)
+	})
 }
 
 func GetProducerConf() ProducerConf {

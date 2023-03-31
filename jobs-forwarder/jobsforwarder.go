@@ -67,7 +67,6 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 			time.Sleep(jf.GetSleepTime(unprocessedList))
 		}
 	}
-
 }
 
 func (jf *JobsForwarder) Stop() {
