@@ -95,6 +95,12 @@ func (d *Dynamic) Run(ctx context.Context) error {
 		d.currentMode = servermode.NormalMode
 	}
 
+	if len(serverModeChan) == 0 {
+		d.logger.Info("No server mode change event received. Starting server in normal mode")
+		if err := d.handleModeChange(servermode.NormalMode); err != nil {
+			return err
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
