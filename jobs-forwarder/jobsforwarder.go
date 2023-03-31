@@ -16,8 +16,7 @@ import (
 
 type JobsForwarder struct {
 	ForwarderMetaData
-	pulsarProducer   pulsar.Producer
-	pulsarClient     pulsar.Client
+	pulsarProducer   pulsar.ProducerAdapter
 	transientSources transientsource.Service
 }
 
@@ -43,16 +42,11 @@ func New(schemaDB *jobsdb.HandleT, transientSources transientsource.Service, log
 		transientSources:  transientSources,
 		ForwarderMetaData: forwarderMetaData,
 	}
-	client, err := pulsar.NewPulsarClient(pulsar.GetClientConf(), log)
+	client, err := pulsar.New()
 	if err != nil {
 		return &JobsForwarder{}, err
 	}
-	jobsForwarder.pulsarClient = client
-	producer, err := pulsar.NewProducer(client, pulsar.GetProducerConf())
-	if err != nil {
-		return &JobsForwarder{}, err
-	}
-	jobsForwarder.pulsarProducer = producer
+	jobsForwarder.pulsarProducer = client
 
 	return &jobsForwarder, nil
 }
@@ -78,7 +72,6 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 
 func (jf *JobsForwarder) Stop() {
 	jf.pulsarProducer.Close()
-	jf.pulsarClient.Close()
 	jf.jobsDB.Close()
 }
 

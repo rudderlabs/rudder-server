@@ -27,23 +27,29 @@ type ProducerConf struct {
 }
 
 type Producer struct {
+	Client   pulsar.Client
 	Producer pulsar.Producer
 }
 
-func (p *Producer) Close() {
-	if p != nil && p.Producer != nil {
-		p.Producer.Close()
-	}
+type ProducerAdapter interface {
+	SendMessage(ctx context.Context, key, orderingKey string, msg []byte) error
+	Close()
 }
 
 type Client struct {
 	Client pulsar.Client
 }
 
-func (c *Client) Close() {
-	if c != nil && c.Client != nil {
-		c.Client.Close()
+func New() (ProducerAdapter, error) {
+	client, err := NewPulsarClient(GetClientConf(), logger.NewLogger().Child("pulsar"))
+	if err != nil {
+		return nil, err
 	}
+	producer, err := NewProducer(client, GetProducerConf())
+	if err != nil {
+		return nil, err
+	}
+	return &producer, nil
 }
 
 func NewPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
@@ -78,6 +84,7 @@ func NewProducer(client Client, conf ProducerConf) (Producer, error) {
 	}
 	return Producer{
 		Producer: producer,
+		Client:   client.Client,
 	}, nil
 }
 
@@ -91,6 +98,14 @@ func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg
 		Payload:     msg,
 	})
 	return err
+}
+
+func (p *Producer) Close() {
+	if p == nil {
+		return
+	}
+	p.Producer.Close()
+	p.Client.Close()
 }
 
 func GetProducerConf() ProducerConf {
