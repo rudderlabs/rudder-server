@@ -55,6 +55,13 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"string":   ParquetString,
 		"datetime": ParquetTimestampMicros,
 	},
+	warehouseutils.DELTALAKE: {
+		"int":      ParquetInt64,
+		"boolean":  ParquetBoolean,
+		"float":    ParquetDouble,
+		"string":   ParquetString,
+		"datetime": ParquetTimestampMicros,
+	},
 }
 
 type ParquetWriter struct {
