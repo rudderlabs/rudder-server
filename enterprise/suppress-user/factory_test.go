@@ -28,12 +28,12 @@ func TestSuppressionSetup(t *testing.T) {
 	defer t.Cleanup(srv.Close)
 	t.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
-	t.Setenv("SUPPRESS_USER_BACKEND_URL", srv.URL)
+	t.Setenv("SUPPRESS_USER_BACKUP_SERVICE_URL", srv.URL)
 	t.Setenv("SUPPRESS_BACKUP_URL", srv.URL)
 	dir, err := os.MkdirTemp("/tmp", "rudder-server")
 	require.NoError(t, err)
 	t.Setenv("RUDDER_TMPDIR", dir)
-
+	defer os.RemoveAll(dir)
 	config.Set("Diagnostics.enableDiagnostics", false)
 	admin.Init()
 	misc.Init()
@@ -44,18 +44,41 @@ func TestSuppressionSetup(t *testing.T) {
 	defer backendconfig.DefaultBackendConfig.Stop()
 	backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "")
 
-	f := Factory{
-		EnterpriseToken: "token",
-		Log:             logger.NOP,
-	}
-
-	h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
-	require.NoError(t, err, "Error in setting up suppression feature")
-	v := h.IsSuppressedUser("workspace-1", "user-1", "src-1")
-	require.True(t, v)
-	require.Eventually(t, func() bool {
-		return h.IsSuppressedUser("workspace-2", "user-2", "src-4")
-	}, time.Second*30, time.Millisecond*100, "User should be suppressed")
+	t.Run(
+		"should setup badgerdb and syncer successfully after getting suppression from backup service",
+		func(t *testing.T) {
+			f := Factory{
+				EnterpriseToken: "token",
+				Log:             logger.NOP,
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			h, err := f.Setup(ctx, backendconfig.DefaultBackendConfig)
+			require.NoError(t, err, "Error in setting up suppression feature")
+			v := h.IsSuppressedUser("workspace-1", "user-1", "src-1")
+			require.True(t, v)
+			require.Eventually(t, func() bool {
+				return h.IsSuppressedUser("workspace-2", "user-2", "src-4")
+			}, time.Second*30, time.Millisecond*100, "User should be suppressed")
+			cancel()
+			time.Sleep(time.Second * 2)
+			h2, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
+			require.NoError(t, err, "Error in setting up suppression feature")
+			require.True(t, h2.IsSuppressedUser("workspace-2", "user-2", "src-4"))
+		},
+	)
+	t.Run(
+		"should setup in-memory suppression db",
+		func(t *testing.T) {
+			f := Factory{
+				EnterpriseToken: "token",
+				Log:             logger.NOP,
+			}
+			t.Setenv("RSERVER_BACKEND_CONFIG_REGULATIONS_USE_BADGER_DB", "false")
+			h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
+			require.NoError(t, err, "Error in setting up suppression feature")
+			require.False(t, h.IsSuppressedUser("workspace-1", "user-1", "src-1"))
+		},
+	)
 }
 
 func httpHandler(t *testing.T) http.Handler {

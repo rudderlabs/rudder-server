@@ -34,7 +34,7 @@ func (m *Factory) NewSyncerWithBadgerRepo(repoPath string, seederSource func() (
 		return nil, nil, fmt.Errorf("could not create badger repository: %w", err)
 	}
 	syncer, err := NewSyncer(
-		config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
+		config.GetString("SUPPRESS_USER_BACKUP_SERVICE_URL", "https://api.rudderstack.com"),
 		identity,
 		repo,
 		WithLogger(m.Log),
@@ -66,49 +66,60 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 	var pollInterval time.Duration
 	config.RegisterDurationConfigVariable(300, &pollInterval, true, time.Second, "BackendConfig.Regulations.pollInterval")
 
-	// set up the repository
-	var repo *RepoSwitcher
 	useBadgerDB := config.GetBool("BackendConfig.Regulations.useBadgerDB", true)
 	if useBadgerDB {
+		identity := backendConfig.Identity()
+
 		fullSuppressionPath, latestSuppressionPath, err := getRepoPath()
 		if err != nil {
 			return nil, fmt.Errorf("could not get repo path: %w", err)
 		}
 
-		identity := backendConfig.Identity()
+		if _, err = os.Stat(fullSuppressionPath); os.IsNotExist(err) && config.IsSet("SUPPRESS_USER_BACKUP_SERVICE_URL") {
+			repo := &RepoSwitcher{
+				mu: sync.RWMutex{},
+			}
 
-		if _, err = os.Stat(fullSuppressionPath); err != nil && os.IsNotExist(err) {
-			syncer, latestRepo, err := m.NewSyncerWithBadgerRepo(latestSuppressionPath, latestDataSeed, identity, pollInterval)
+			latestSyncer, latestRepo, err := m.NewSyncerWithBadgerRepo(latestSuppressionPath, latestDataSeed, identity, pollInterval)
 			if err != nil {
 				return nil, err
 			}
 
 			subCtx, latestSyncCancel := context.WithCancel(ctx)
 			rruntime.Go(func() {
-				syncer.SyncLoop(subCtx)
+				latestSyncer.SyncLoop(subCtx)
 				err = latestRepo.Stop()
-				defer latestSyncCancel()
+				if err != nil {
+					m.Log.Error("Latest Sync failed: could not stop repo: %w", err)
+				}
+				err = os.RemoveAll(latestSuppressionPath)
+				if err != nil {
+					m.Log.Error("Latest Sync failed: could not remove repo: %w", err)
+				}
 			})
-			repo = &RepoSwitcher{
-				Repository: latestRepo,
-				mu:         sync.RWMutex{},
-			}
+			repo.Repository = latestRepo
 			rruntime.Go(func() {
-				syncer, fullRepo, err := m.NewSyncerWithBadgerRepo(fullSuppressionPath, fullDataSeed, identity, pollInterval)
+				fullSyncer, fullRepo, err := m.NewSyncerWithBadgerRepo(fullSuppressionPath, fullDataSeed, identity, pollInterval)
 				if err != nil {
 					m.Log.Error("Complete Synce failed: could not create syncer: %w", err)
 					return
 				}
-				if err = syncer.Sync(ctx); err != nil {
+				if err = fullSyncer.Sync(ctx); err != nil {
 					m.Log.Error("Complete Synce failed: could not sync: %w", err)
 				}
+				err = repo.Switch(fullRepo)
+				if err != nil {
+					m.Log.Error("Complete Synce failed: could not switch repo: %w", err)
+				}
 				latestSyncCancel()
-				repo.Switch(fullRepo)
-				syncer.SyncLoop(ctx)
+				fullSyncer.SyncLoop(ctx)
 				_ = fullRepo.Stop()
 			})
+			h := newHandler(repo, m.Log)
+			return h, nil
 		} else {
-			syncer, fullRepo, err := m.NewSyncerWithBadgerRepo(fullSuppressionPath, nil, identity, pollInterval)
+			var seederSource func() (io.ReadCloser, error)
+			syncer, fullRepo, err := m.NewSyncerWithBadgerRepo(fullSuppressionPath, seederSource, identity, pollInterval)
 			if err != nil {
 				return nil, err
 			}
@@ -116,6 +127,8 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				syncer.SyncLoop(ctx)
 				_ = fullRepo.Stop()
 			})
+			h := newHandler(fullRepo, m.Log)
+			return h, nil
 		}
 	} else {
 		memoryRepo := NewMemoryRepository(m.Log)
@@ -139,8 +152,6 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 
 		return h, nil
 	}
-	h := newHandler(repo, m.Log)
-	return h, nil
 }
 
 func getRepoPath() (fullSuppressionPath, latestSuppressionPath string, err error) {
