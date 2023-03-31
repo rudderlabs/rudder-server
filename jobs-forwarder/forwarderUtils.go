@@ -6,6 +6,8 @@ import (
 	"math"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -14,6 +16,8 @@ import (
 )
 
 type ForwarderMetaData struct {
+	ctx                       context.Context
+	g                         *errgroup.Group
 	jobsDB                    *jobsdb.HandleT
 	eventCount                int
 	log                       logger.Logger

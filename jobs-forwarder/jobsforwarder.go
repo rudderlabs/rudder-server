@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -29,8 +31,11 @@ type Forwarder interface {
 	Stop()
 }
 
-func New(schemaDB *jobsdb.HandleT, transientSources transientsource.Service, log logger.Logger) (Forwarder, error) {
+func New(ctx context.Context, schemaDB *jobsdb.HandleT, transientSources transientsource.Service, log logger.Logger) (Forwarder, error) {
 	forwarderMetaData := ForwarderMetaData{}
+	g, ctx := errgroup.WithContext(ctx)
+	forwarderMetaData.ctx = ctx
+	forwarderMetaData.g = g
 	forwarderMetaData.loadMetaData(schemaDB, log)
 	if !config.GetBool("JobsForwarder.enabled", false) {
 		return &NOOPForwarder{
@@ -52,24 +57,27 @@ func New(schemaDB *jobsdb.HandleT, transientSources transientsource.Service, log
 }
 
 func (jf *JobsForwarder) Start(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			unprocessedList, err := misc.QueryWithRetriesAndNotify(ctx, jf.jobsDBQueryRequestTimeout, jf.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
-				return jf.jobsDB.GetUnprocessed(ctx, jf.generateQueryParams())
-			}, jf.sendQueryRetryStats)
-			if err != nil {
-				jf.log.Errorf("Error while querying jobsDB: %v", err)
-				continue // Should we do a panic here like elsewhere
+	jf.g.Go(misc.WithBugsnag(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				unprocessedList, err := misc.QueryWithRetriesAndNotify(ctx, jf.jobsDBQueryRequestTimeout, jf.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+					return jf.jobsDB.GetUnprocessed(ctx, jf.generateQueryParams())
+				}, jf.sendQueryRetryStats)
+				if err != nil {
+					jf.log.Errorf("Error while querying jobsDB: %v", err)
+					continue // Should we do a panic here like elsewhere
+				}
+				time.Sleep(jf.GetSleepTime(unprocessedList))
 			}
-			time.Sleep(jf.GetSleepTime(unprocessedList))
 		}
-	}
+	}))
 }
 
 func (jf *JobsForwarder) Stop() {
+	_ = jf.g.Wait()
 	jf.pulsarProducer.Close()
 }
 
@@ -85,39 +93,42 @@ func (jf *JobsForwarder) sendQueryRetryStats(attempt int) {
 }
 
 func (nf *NOOPForwarder) Start(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			unprocessedList, err := nf.GetJobs(ctx)
-			if err != nil {
-				panic(err)
+	nf.g.Go(misc.WithBugsnag(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				unprocessedList, err := nf.GetJobs(ctx)
+				if err != nil {
+					panic(err)
+				}
+				var statusList []*jobsdb.JobStatusT
+				for _, job := range unprocessedList.Jobs {
+					statusList = append(statusList, &jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						JobState:      jobsdb.Aborted.State,
+						AttemptNum:    0,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "400",
+						ErrorResponse: []byte(`{"success":false,"message":"JobsForwarder is disabled"}`),
+						Parameters:    []byte(`{}`),
+						WorkspaceId:   job.WorkspaceId,
+					})
+				}
+				err = nf.MarkJobStatuses(ctx, statusList)
+				if err != nil {
+					nf.log.Errorf("Error while updating job status: %v", err)
+					panic(err)
+				}
+				time.Sleep(nf.GetSleepTime(unprocessedList))
 			}
-			var statusList []*jobsdb.JobStatusT
-			for _, job := range unprocessedList.Jobs {
-				statusList = append(statusList, &jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					JobState:      jobsdb.Aborted.State,
-					AttemptNum:    0,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     "400",
-					ErrorResponse: []byte(`{"success":false,"message":"JobsForwarder is disabled"}`),
-					Parameters:    []byte(`{}`),
-					WorkspaceId:   job.WorkspaceId,
-				})
-			}
-			err = nf.MarkJobStatuses(ctx, statusList)
-			if err != nil {
-				nf.log.Errorf("Error while updating job status: %v", err)
-				panic(err)
-			}
-			time.Sleep(nf.GetSleepTime(unprocessedList))
 		}
-	}
+	}))
 }
 
 func (nf *NOOPForwarder) Stop() {
+	_ = nf.g.Wait()
 	nf.jobsDB.Close()
 }

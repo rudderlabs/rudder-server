@@ -200,7 +200,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		}))
 	}
 
-	jobsForwarder, err := jobs_forwarder.New(schemasDB, transientSources, logger.NewLogger().Child("jobs_forwarder"))
+	jobsForwarder, err := jobs_forwarder.New(ctx, schemasDB, transientSources, logger.NewLogger().Child("jobs_forwarder"))
 	if err != nil {
 		return err
 	}
