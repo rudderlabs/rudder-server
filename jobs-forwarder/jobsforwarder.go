@@ -16,14 +16,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type JobsForwarder struct {
-	ForwarderMetaData
+type jobsForwarder struct {
+	BaseForwarder
 	pulsarProducer   pulsar.ProducerAdapter
 	transientSources transientsource.Service
 }
 
-type NOOPForwarder struct {
-	ForwarderMetaData
+type noopForwarder struct {
+	BaseForwarder
 }
 
 type Forwarder interface {
@@ -31,32 +31,32 @@ type Forwarder interface {
 	Stop()
 }
 
-func New(ctx context.Context, schemaDB *jobsdb.HandleT, transientSources transientsource.Service, log logger.Logger) (Forwarder, error) {
-	forwarderMetaData := ForwarderMetaData{}
+func New(ctx context.Context, schemaDB jobsdb.JobsDB, transientSources transientsource.Service, log logger.Logger) (Forwarder, error) {
+	forwarderMetaData := BaseForwarder{}
 	g, ctx := errgroup.WithContext(ctx)
 	forwarderMetaData.ctx = ctx
 	forwarderMetaData.g = g
 	forwarderMetaData.loadMetaData(schemaDB, log)
 	if !config.GetBool("JobsForwarder.enabled", false) {
-		return &NOOPForwarder{
-			ForwarderMetaData: forwarderMetaData,
+		return &noopForwarder{
+			BaseForwarder: forwarderMetaData,
 		}, nil
 	}
 
-	jobsForwarder := JobsForwarder{
-		transientSources:  transientSources,
-		ForwarderMetaData: forwarderMetaData,
+	forwarder := jobsForwarder{
+		transientSources: transientSources,
+		BaseForwarder:    forwarderMetaData,
 	}
 	client, err := pulsar.New()
 	if err != nil {
-		return &JobsForwarder{}, err
+		return nil, err
 	}
-	jobsForwarder.pulsarProducer = client
+	forwarder.pulsarProducer = client
 
-	return &jobsForwarder, nil
+	return &forwarder, nil
 }
 
-func (jf *JobsForwarder) Start(ctx context.Context) {
+func (jf *jobsForwarder) Start(ctx context.Context) {
 	jf.g.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
@@ -70,29 +70,29 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 					jf.log.Errorf("Error while querying jobsDB: %v", err)
 					continue // Should we do a panic here like elsewhere
 				}
-				time.Sleep(jf.GetSleepTime(unprocessedList))
+				time.Sleep(jf.getSleepTime(unprocessedList))
 			}
 		}
 	}))
 }
 
-func (jf *JobsForwarder) Stop() {
+func (jf *jobsForwarder) Stop() {
 	_ = jf.g.Wait()
 	jf.pulsarProducer.Close()
 }
 
-func (jf *JobsForwarder) generateQueryParams() jobsdb.GetQueryParamsT {
+func (jf *jobsForwarder) generateQueryParams() jobsdb.GetQueryParamsT {
 	return jobsdb.GetQueryParamsT{
 		EventsLimit: jf.eventCount,
 	}
 }
 
-func (jf *JobsForwarder) sendQueryRetryStats(attempt int) {
+func (jf *jobsForwarder) sendQueryRetryStats(attempt int) {
 	jf.log.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "jobs_forwarder"}).Count(1)
 }
 
-func (nf *NOOPForwarder) Start(ctx context.Context) {
+func (nf *noopForwarder) Start(ctx context.Context) {
 	nf.g.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
@@ -122,13 +122,13 @@ func (nf *NOOPForwarder) Start(ctx context.Context) {
 					nf.log.Errorf("Error while updating job status: %v", err)
 					panic(err)
 				}
-				time.Sleep(nf.GetSleepTime(unprocessedList))
+				time.Sleep(nf.getSleepTime(unprocessedList))
 			}
 		}
 	}))
 }
 
-func (nf *NOOPForwarder) Stop() {
+func (nf *noopForwarder) Stop() {
 	_ = nf.g.Wait()
 	nf.jobsDB.Close()
 }

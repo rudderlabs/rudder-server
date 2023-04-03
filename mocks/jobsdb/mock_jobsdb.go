@@ -37,6 +37,18 @@ func (m *MockJobsDB) EXPECT() *MockJobsDBMockRecorder {
 	return m.recorder
 }
 
+// Close mocks base method.
+func (m *MockJobsDB) Close() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Close")
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockJobsDBMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockJobsDB)(nil).Close))
+}
+
 // DeleteExecuting mocks base method.
 func (m *MockJobsDB) DeleteExecuting() {
 	m.ctrl.T.Helper()
