@@ -218,10 +218,9 @@ func TestDefaultProvider(t *testing.T) {
 func TestOverride(t *testing.T) {
 	RegisterTestingT(t)
 	config := map[string]interface{}{
-		"a":          "1",
-		"b":          "2",
-		"c":          "3",
-		"externalId": "externalId",
+		"a": "1",
+		"b": "2",
+		"c": "3",
 	}
 	settings := backendconfig.StorageBucket{
 		Type: "S3",
@@ -236,6 +235,6 @@ func TestOverride(t *testing.T) {
 		"b":          "4",
 		"c":          "3",
 		"d":          "5",
-		"externalId": "wrk-1",
+		"externalID": "wrk-1",
 	}))
 }
