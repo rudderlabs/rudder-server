@@ -79,21 +79,17 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				var fullSyncer *Syncer
 				var fullRepo Repository
 				var err error
-				err = m.retry(ctx,
+
+				m.retry(ctx,
 					func() error {
 						fullSyncer, fullRepo, err = m.newSyncerWithBadgerRepo(fullSuppressionPath, fullDataSeed, 0, identity, pollInterval)
 						return err
 					}, 5*time.Second)
-				if err != nil {
-					m.Log.Error("Complete Synce failed: could not create syncer: %w", err)
-					return
-				}
-				err = m.retry(ctx,
+
+				m.retry(ctx,
 					func() error { return fullSyncer.Sync(ctx) },
 					5*time.Second)
-				if err = fullSyncer.Sync(ctx); err != nil {
-					m.Log.Error("Complete Synce failed: could not sync: %w", err)
-				}
+
 				repo.Switch(fullRepo)
 				latestSyncCancel()
 				fullSyncer.SyncLoop(ctx)
@@ -148,17 +144,17 @@ func alreadySeeded(repoPath string) bool {
 	return true
 }
 
-func (m *Factory) retry(ctx context.Context, f func() error, wait time.Duration) error {
+func (m *Factory) retry(ctx context.Context, f func() error, wait time.Duration) {
 	var err error
 	for {
 		err = f()
 		if err == nil {
-			return nil
+			return
 		}
 		m.Log.Errorf("retry failed: %v", err)
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("retry cancelled: %w", err)
+			return
 		case <-time.After(wait):
 		}
 	}
