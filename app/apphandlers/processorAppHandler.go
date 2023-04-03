@@ -205,7 +205,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
-	jobsForwarder, err := jobs_forwarder.New(ctx, schemasDB, transientSources, logger.NewLogger().Child("jobs_forwarder"))
+	jobsForwarder, err := jobs_forwarder.Setup(ctx, g, schemasDB, transientSources, logger.NewLogger().Child("jobs_forwarder"))
 	if err != nil {
 		return err
 	}
