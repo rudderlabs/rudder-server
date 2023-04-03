@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -89,7 +90,10 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				m.retry(ctx,
 					func() error { return fullSyncer.Sync(ctx) },
 					5*time.Second)
-
+				_, err = os.Create(filepath.Join(fullSuppressionPath, model.SyncDoneMarker))
+				if err != nil {
+					m.Log.Error("Could not create sync done marker: %w", err)
+				}
 				repo.Switch(fullRepo)
 				latestSyncCancel()
 				fullSyncer.SyncLoop(ctx)
@@ -193,53 +197,6 @@ func getRepoPath() (fullSuppressionPath, latestSuppressionPath string, err error
 	fullSuppressionPath = path.Join(tmpDir, "fullSuppression")
 	latestSuppressionPath = path.Join(tmpDir, "latestSuppression")
 	return
-}
-
-type RepoSwitcher struct {
-	Repository
-	mu sync.RWMutex
-}
-
-func (rh *RepoSwitcher) Stop() error {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
-	return rh.Repository.Stop()
-}
-
-func (rh *RepoSwitcher) GetToken() ([]byte, error) {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
-	return rh.Repository.GetToken()
-}
-
-func (rh *RepoSwitcher) Add(suppressions []model.Suppression, token []byte) error {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
-	return rh.Repository.Add(suppressions, token)
-}
-
-func (rh *RepoSwitcher) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
-	return rh.Repository.Suppressed(workspaceID, userID, sourceID)
-}
-
-func (rh *RepoSwitcher) Backup(w io.Writer) error {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
-	return rh.Repository.Backup(w)
-}
-
-func (rh *RepoSwitcher) Restore(r io.Reader) error {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
-	return rh.Repository.Restore(r)
-}
-
-func (rh *RepoSwitcher) Switch(newRepo Repository) {
-	rh.mu.Lock()
-	defer rh.mu.Unlock()
-	rh.Repository = newRepo
 }
 
 func latestDataSeed() (io.ReadCloser, error) {

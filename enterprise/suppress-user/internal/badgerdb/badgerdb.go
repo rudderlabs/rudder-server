@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -58,6 +57,8 @@ type Repository struct {
 	// lock to prevent concurrent access to db during restore
 	restoringLock sync.RWMutex
 	restoring     bool
+	closeOnce     sync.Once
+	closed        chan struct{}
 	stats         stats.Stats
 }
 
@@ -193,12 +194,11 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 
 // start the repository
 func (b *Repository) start() (startErr error) {
+	b.closed = make(chan struct{})
 	var seeder io.ReadCloser
-	_, err := os.Stat(b.path)
-	if os.IsNotExist(err) && b.seederSource != nil {
-		seeder, err = b.seederSource()
-		if err != nil {
-			return fmt.Errorf("could not get seeder source: %w", err)
+	if _, err := os.Stat(b.path); os.IsNotExist(err) && b.seederSource != nil {
+		if seeder, err = b.seederSource(); err != nil {
+			return err
 		}
 		defer func() {
 			if startErr != nil && seeder != nil {
@@ -213,11 +213,10 @@ func (b *Repository) start() (startErr error) {
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(b.maxGoroutines)
-
 	b.db, startErr = badger.Open(opts)
 	if startErr != nil {
 		startErr = fmt.Errorf("could not open badgerdb: %w", startErr)
-		return
+		return startErr
 	}
 
 	if seeder != nil {
@@ -229,43 +228,40 @@ func (b *Repository) start() (startErr error) {
 			}
 			return nil
 		})
-		var timeout <-chan time.Time
-		if b.maxSeedWait > 0 {
-			timeout = time.After(b.maxSeedWait)
-		}
-
 		select {
 		case startErr = <-restoreDone:
 			if startErr != nil {
-				startErr = fmt.Errorf("failed to restore badgerdb: %w", err)
-				return
+				startErr = fmt.Errorf("could not restore badgerdb: %w", startErr)
+				return startErr
 			}
-		case <-timeout:
+		case <-time.After(b.maxSeedWait):
 			b.log.Warn("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
 		}
 	}
 
 	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
 		for {
-			if b.db.IsClosed() {
+			select {
+			case <-b.closed:
 				return
-			} else {
-				time.Sleep(5 * time.Minute)
-			again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
-				err := b.db.RunValueLogGC(0.7)
-				if err == nil {
-					goto again
-				}
-				lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(b.db.Opts().Dir)
-				if err != nil {
-					b.log.Errorf("Error while getting badgerDB usage: %v", err)
-					continue
-				}
-				statName := "suppress-user"
-				b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
-				b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
-				b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
+			case <-ticker.C:
 			}
+		again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
+			err := b.db.RunValueLogGC(0.7)
+			if err == nil {
+				goto again
+			}
+			lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(b.db.Opts().Dir)
+			if err != nil {
+				b.log.Errorf("Error while getting badgerDB usage: %v", err)
+				continue
+			}
+			statName := "suppress-user"
+			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
+			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
+			b.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
 		}
 	}()
 	return nil
@@ -273,7 +269,12 @@ func (b *Repository) start() (startErr error) {
 
 // Stop stops the repository
 func (b *Repository) Stop() error {
-	return b.db.Close()
+	var err error
+	b.closeOnce.Do(func() {
+		close(b.closed)
+		err = b.db.Close()
+	})
+	return err
 }
 
 // Backup writes a backup of the repository to the given writer
@@ -305,24 +306,7 @@ func (b *Repository) Restore(r io.Reader) (err error) {
 			err = fmt.Errorf("panic during restore: %v", r)
 		}
 	}()
-	_, err = os.Create(filepath.Join(filepath.Dir(b.path), model.SyncInProgressMarker))
-	if err != nil {
-		return fmt.Errorf("could not create sync in progress marker: %w", err)
-	}
-	err = b.db.Load(r, b.maxGoroutines)
-	if err == nil {
-		err = os.Remove(filepath.Join(filepath.Dir(b.path), model.SyncInProgressMarker))
-		if err != nil {
-			b.log.Errorf("could not remove sync in progress marker: %v", err)
-		}
-		_, err = os.Create(filepath.Join(filepath.Dir(b.path), model.SyncDoneMarker))
-		if err != nil {
-			b.log.Errorf("could not create sync done marker: %v", err)
-			return fmt.Errorf("could not create sync done marker: %w", err)
-		}
-		return nil
-	}
-	return fmt.Errorf("could not restore badgerdb: %w", err)
+	return b.db.Load(r, b.maxGoroutines)
 }
 
 func (b *Repository) setRestoring(restoring bool) {
