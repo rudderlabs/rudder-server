@@ -1642,6 +1642,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	}
 
 	serializedErr, _ := json.Marshal(&uploadErrors)
+	serializedErr = warehouseutils.SanitizeJSON(serializedErr)
 
 	uploadColumns := []UploadColumn{
 		{Column: "status", Value: state},
@@ -1821,12 +1822,20 @@ func (job *UploadJob) areIdentityTablesLoadFilesGenerated() (bool, error) {
 	var (
 		mergeRulesTable = warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable)
 		mappingsTable   = warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
+		tu              model.TableUpload
+		err             error
 	)
 
-	if tu, err := job.tableUploadsRepo.GetByUploadIDAndTableName(context.TODO(), job.upload.ID, mergeRulesTable); err != nil && tu.Location == "" {
+	if tu, err = job.tableUploadsRepo.GetByUploadIDAndTableName(context.TODO(), job.upload.ID, mergeRulesTable); err != nil {
+		return false, fmt.Errorf("table upload not found for merge rules table: %w", err)
+	}
+	if tu.Location == "" {
 		return false, fmt.Errorf("merge rules location not found: %w", err)
 	}
-	if tu, err := job.tableUploadsRepo.GetByUploadIDAndTableName(context.TODO(), job.upload.ID, mappingsTable); err != nil && tu.Location == "" {
+	if tu, err = job.tableUploadsRepo.GetByUploadIDAndTableName(context.TODO(), job.upload.ID, mappingsTable); err != nil {
+		return false, fmt.Errorf("table upload not found for mappings table: %w", err)
+	}
+	if tu.Location == "" {
 		return false, fmt.Errorf("mappings location not found: %w", err)
 	}
 	return true, nil

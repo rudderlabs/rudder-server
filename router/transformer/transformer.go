@@ -86,14 +86,16 @@ func NewTransformer(netClientTimeout, backendProxyTimeout time.Duration) Transfo
 }
 
 var (
-	maxRetry   int
-	retrySleep time.Duration
-	pkgLogger  logger.Logger
+	maxRetry          int
+	disableKeepAlives bool
+	retrySleep        time.Duration
+	pkgLogger         logger.Logger
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
+	config.RegisterBoolConfigVariable(true, &disableKeepAlives, false, "Transformer.Client.disableKeepAlives")
 }
 
 func Init() {
@@ -296,7 +298,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 
 func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
 	trans.logger = pkgLogger
-	trans.tr = &http.Transport{}
+	trans.tr = &http.Transport{DisableKeepAlives: disableKeepAlives}
 	// The timeout between server and transformer
 	// Basically this timeout is more for communication between transformer and server
 	trans.transformTimeout = transformTimeout
