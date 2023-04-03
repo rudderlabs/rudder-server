@@ -63,7 +63,7 @@ func (jf *jobsForwarder) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return nil
 			default:
-				unprocessedList, err := misc.QueryWithRetriesAndNotify(ctx, jf.jobsDBQueryRequestTimeout, jf.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+				unprocessedList, err := misc.QueryWithRetriesAndNotify(ctx, jf.baseConfig.jobsDBQueryRequestTimeout, jf.baseConfig.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 					return jf.jobsDB.GetUnprocessed(ctx, jf.generateQueryParams())
 				}, jf.sendQueryRetryStats)
 				if err != nil {
@@ -83,7 +83,7 @@ func (jf *jobsForwarder) Stop() {
 
 func (jf *jobsForwarder) generateQueryParams() jobsdb.GetQueryParamsT {
 	return jobsdb.GetQueryParamsT{
-		EventsLimit: jf.eventCount,
+		EventsLimit: jf.baseConfig.pickupSize,
 	}
 }
 
