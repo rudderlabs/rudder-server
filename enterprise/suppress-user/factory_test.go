@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,7 @@ func TestSuppressionSetup(t *testing.T) {
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
 	t.Setenv("SUPPRESS_USER_BACKUP_SERVICE_URL", srv.URL)
 	t.Setenv("SUPPRESS_BACKUP_URL", srv.URL)
+	t.Setenv("SUPPRESS_USER_BACKEND_URL", srv.URL)
 	dir, err := os.MkdirTemp("/tmp", "rudder-server")
 	require.NoError(t, err)
 	t.Setenv("RUDDER_TMPDIR", dir)
@@ -58,7 +60,7 @@ func TestSuppressionSetup(t *testing.T) {
 			require.True(t, v)
 			require.Eventually(t, func() bool {
 				return h.IsSuppressedUser("workspace-2", "user-2", "src-4")
-			}, time.Second*30, time.Millisecond*100, "User should be suppressed")
+			}, time.Second*15, time.Millisecond*100, "User should be suppressed")
 			cancel()
 			time.Sleep(time.Second * 2)
 			h2, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
@@ -66,19 +68,19 @@ func TestSuppressionSetup(t *testing.T) {
 			require.True(t, h2.IsSuppressedUser("workspace-2", "user-2", "src-4"))
 		},
 	)
-	// t.Run(
-	// 	"should setup in-memory suppression db",
-	// 	func(t *testing.T) {
-	// 		f := Factory{
-	// 			EnterpriseToken: "token",
-	// 			Log:             logger.NOP,
-	// 		}
-	// 		t.Setenv("RSERVER_BACKEND_CONFIG_REGULATIONS_USE_BADGER_DB", "false")
-	// 		h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
-	// 		require.NoError(t, err, "Error in setting up suppression feature")
-	// 		require.False(t, h.IsSuppressedUser("workspace-1", "user-1", "src-1"))
-	// 	},
-	// )
+	t.Run(
+		"should setup in-memory suppression db",
+		func(t *testing.T) {
+			f := Factory{
+				EnterpriseToken: "token",
+				Log:             logger.NOP,
+			}
+			t.Setenv("RSERVER_BACKEND_CONFIG_REGULATIONS_USE_BADGER_DB", "false")
+			h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
+			require.NoError(t, err, "Error in setting up suppression feature")
+			require.False(t, h.IsSuppressedUser("workspace-1", "user-1", "src-1"))
+		},
+	)
 }
 
 func httpHandler(t *testing.T) http.Handler {
@@ -88,6 +90,7 @@ func httpHandler(t *testing.T) http.Handler {
 	srvMux.HandleFunc("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig).Methods(http.MethodGet)
 	srvMux.HandleFunc("/full-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/full-export") }).Methods(http.MethodGet)
 	srvMux.HandleFunc("/latest-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/latest-export") }).Methods(http.MethodGet)
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/suppressions", getSuppressionFromManager).Methods(http.MethodGet)
 	srvMux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			next.ServeHTTP(w, req)
@@ -116,6 +119,20 @@ func getMultiTenantNamespaceConfig(w http.ResponseWriter, _ *http.Request) {
 		WorkspaceID: "reg-test-workspaceId",
 	}}
 	body, err := json.Marshal(config)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(body)
+}
+
+func getSuppressionFromManager(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	s := suppressionsResponse{
+		Items: []model.Suppression{},
+		Token: "_token_",
+	}
+	body, err := json.Marshal(s)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

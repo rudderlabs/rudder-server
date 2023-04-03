@@ -175,7 +175,7 @@ func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (
 		return nil, nil, fmt.Errorf("could not create badger repository: %w", err)
 	}
 	syncer, err := NewSyncer(
-		config.GetString("SUPPRESS_USER_BACKUP_SERVICE_URL", "https://api.rudderstack.com"),
+		config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
 		identity,
 		repo,
 		WithLogger(m.Log),
@@ -256,7 +256,7 @@ func fullDataSeed() (io.ReadCloser, error) {
 
 func seederSource(endpoint string) (io.ReadCloser, error) {
 	client := http.Client{}
-	baseURL := config.GetString("SUPPRESS_BACKUP_URL", "https://api.rudderstack.com")
+	baseURL := config.GetString("SUPPRESS_USER_BACKUP_SERVICE_URL", "https://api.rudderstack.com")
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", baseURL, endpoint), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("could not create request: %w", err)

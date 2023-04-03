@@ -317,7 +317,7 @@ func (b *Repository) Restore(r io.Reader) (err error) {
 		if err != nil {
 			b.log.Errorf("could not remove sync in progress marker: %v", err)
 		}
-		_, err = os.Create(filepath.Join(b.path, model.SyncDoneMarker))
+		_, err = os.Create(filepath.Join(filepath.Dir(b.path), model.SyncDoneMarker))
 		if err != nil {
 			b.log.Errorf("could not create sync done marker: %v", err)
 			return nil
