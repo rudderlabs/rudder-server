@@ -894,7 +894,7 @@ func overrideWithEnv(settings *filemanager.SettingsT) {
 		ifNotExistThenSet("accessKey", envConfig["accessKey"], settings.Config)
 		ifNotExistThenSet("enableSSE", envConfig["enableSSE"], settings.Config)
 		ifNotExistThenSet("iamRoleARN", envConfig["iamRoleArn"], settings.Config)
-		ifNotExistThenSet("externalID", envConfig["externalId"], settings.Config)
+		ifNotExistThenSet("externalID", envConfig["externalID"], settings.Config)
 		ifNotExistThenSet("regionHint", envConfig["regionHint"], settings.Config)
 	}
 }

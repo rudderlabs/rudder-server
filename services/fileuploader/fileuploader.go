@@ -173,8 +173,8 @@ func overrideWithSettings(defaultConfig map[string]interface{}, settings backend
 	for k, v := range settings.Config {
 		config[k] = v
 	}
-	if _, ok := config["externalId"]; ok && settings.Type == "S3" {
-		config["externalId"] = workspaceID
+	if settings.Type == "S3" && config["iamRoleArn"] != nil {
+		config["externalID"] = workspaceID
 	}
 	return backendconfig.StorageBucket{
 		Type:   settings.Type,
