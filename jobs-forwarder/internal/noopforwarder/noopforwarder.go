@@ -29,12 +29,12 @@ func (nf *NoopForwarder) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return nil
 			default:
-				unprocessedList, err := nf.GetJobs(ctx)
+				jobList, limitReached, err := nf.GetJobs(ctx)
 				if err != nil {
 					panic(err)
 				}
 				var statusList []*jobsdb.JobStatusT
-				for _, job := range unprocessedList.Jobs {
+				for _, job := range jobList {
 					statusList = append(statusList, &jobsdb.JobStatusT{
 						JobID:         job.JobID,
 						JobState:      jobsdb.Aborted.State,
@@ -52,7 +52,7 @@ func (nf *NoopForwarder) Start(ctx context.Context) {
 					nf.Log.Errorf("Error while updating job status: %v", err)
 					panic(err)
 				}
-				time.Sleep(nf.GetSleepTime(unprocessedList))
+				time.Sleep(nf.GetSleepTime(limitReached))
 			}
 		}
 	}))

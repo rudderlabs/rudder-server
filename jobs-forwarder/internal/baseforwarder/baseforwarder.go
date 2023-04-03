@@ -3,7 +3,6 @@ package baseforwarder
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -41,15 +40,35 @@ func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, sc
 	bf.ErrGroup = g
 }
 
-func (bf *BaseForwarder) GetJobs(ctx context.Context) (jobsdb.JobsResult, error) {
-	unprocessedList, err := misc.QueryWithRetriesAndNotify(ctx, bf.BaseConfig.JobsDBQueryRequestTimeout, bf.BaseConfig.JobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
-		return bf.JobsDB.GetUnprocessed(ctx, bf.generateQueryParams())
+func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, error) {
+	var combinedList []*jobsdb.JobT
+	isLimitReached := true
+	queryParams := bf.generateQueryParams()
+	toRetry, err := misc.QueryWithRetriesAndNotify(ctx, bf.BaseConfig.JobsDBQueryRequestTimeout, bf.BaseConfig.JobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+		return bf.JobsDB.GetToRetry(ctx, queryParams)
 	}, bf.sendQueryRetryStats)
 	if err != nil {
-		bf.Log.Errorf("Error while querying jobsDB: %v", err)
-		return jobsdb.JobsResult{}, err
+		bf.Log.Errorf("base forwarder: Error while reading failed from DB: %v", err)
+		return nil, false, err
 	}
-	return unprocessedList, nil
+	combinedList = toRetry.Jobs
+	if !toRetry.LimitsReached {
+		queryParams.JobsLimit -= len(toRetry.Jobs)
+		if queryParams.PayloadSizeLimit > 0 {
+			queryParams.PayloadSizeLimit -= toRetry.PayloadSize
+		}
+		unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, bf.BaseConfig.JobsDBQueryRequestTimeout, bf.BaseConfig.JobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+			return bf.JobsDB.GetUnprocessed(ctx, queryParams)
+		}, bf.sendQueryRetryStats)
+		isLimitReached = unprocessed.LimitsReached
+		if err != nil {
+			bf.Log.Errorf("base forwarder: Error while reading unprocessed from DB: %v", err)
+			return nil, false, err
+		}
+		combinedList = append(combinedList, unprocessed.Jobs...)
+	}
+
+	return combinedList, isLimitReached, nil
 }
 
 func (bf *BaseForwarder) MarkJobStatuses(ctx context.Context, statusList []*jobsdb.JobStatusT) error {
@@ -61,8 +80,11 @@ func (bf *BaseForwarder) MarkJobStatuses(ctx context.Context, statusList []*jobs
 	return err
 }
 
-func (bf *BaseForwarder) GetSleepTime(unprocessedList jobsdb.JobsResult) time.Duration {
-	return time.Duration(float64(bf.BaseConfig.loopSleepTime) * (1 - math.Min(1, float64(unprocessedList.EventsCount)/float64(bf.BaseConfig.PickupSize))))
+func (bf *BaseForwarder) GetSleepTime(limitReached bool) time.Duration {
+	if limitReached {
+		return time.Duration(0)
+	}
+	return bf.BaseConfig.loopSleepTime
 }
 
 func (bf *BaseForwarder) sendQueryRetryStats(attempt int) {
