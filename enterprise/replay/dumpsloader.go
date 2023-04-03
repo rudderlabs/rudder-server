@@ -3,6 +3,8 @@ package replay
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +24,7 @@ import (
 type dumpsLoaderHandleT struct {
 	log           logger.Logger
 	dbHandle      *jobsdb.HandleT
+	instanceID    int
 	prefix        string
 	bucket        string
 	startAfterKey string
@@ -44,6 +47,13 @@ type ProcErrorRequestHandler struct {
 type GWReplayRequestHandler struct {
 	tablePrefix string
 	handle      *dumpsLoaderHandleT
+}
+
+type DumpFile struct {
+	UnixTimestamp int
+	InstanceID    int
+	MinJobID      int
+	MaxJobID      int
 }
 
 func getMinMaxCreatedAt(key string) (int64, int64, error) {
@@ -168,7 +178,6 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	objects := make([]OrderedJobs, 0)
 	procHandle.handle.log.Info("Fetching proc err files list")
-	var err error
 	maxItems := config.GetInt64("MAX_ITEMS", 1000)           // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
 	uploadMaxItems := config.GetInt64("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
@@ -185,13 +194,15 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 				procHandle.handle.log.Debugf("Skipping object: %v ObjectLastModifiedTime: %v", object.Key, object.LastModified)
 				continue
 			}
-			key := object.Key
-			tokens := strings.Split(key, "proc-err")
-			tokens = strings.Split(tokens[1], "/")
-			tokens = strings.Split(tokens[len(tokens)-1], ".")
-			tokens = strings.Split(tokens[2], "-")
-			var idx int
-			if idx, err = strconv.Atoi(tokens[0]); err != nil {
+
+			df, err := ParseFileKey(object.Key)
+			if err != nil {
+				procHandle.handle.log.Warnf("Failed to parse file %q: %v", object.Key, err)
+				continue
+			}
+
+			if df.InstanceID != procHandle.handle.instanceID {
+				procHandle.handle.log.Debugf("Skipping object: %v InstanceID: %v", object.Key, df.InstanceID)
 				continue
 			}
 
@@ -202,7 +213,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 				CustomVal:    "replay",
 				EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
 			}
-			objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
+			objects = append(objects, OrderedJobs{Job: &job, SortIndex: df.MaxJobID})
 		}
 		if len(objects) >= int(uploadMaxItems) {
 			storeJobs(ctx, objects, procHandle.handle.dbHandle, procHandle.handle.log)
@@ -219,6 +230,11 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 
 	procHandle.handle.log.Info("Dumps loader job is done")
 	procHandle.handle.done = true
+
+	// touch file in local file system to indicate that the job is done
+
+	os.Create("/tmp/dumps-loader-done")
+
 }
 
 func (handle *dumpsLoaderHandleT) handleRecovery() {
@@ -242,6 +258,7 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	if err != nil {
 		panic("invalid start time format provided")
 	}
+	handle.instanceID = config.GetInt("INSTANCE_ID", 1)
 	handle.prefix = strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_PREFIX", ""))
 	handle.tablePrefix = tablePrefix
 	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
@@ -263,4 +280,22 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	default:
 		go handle.procError.fetchDumpsList(ctx)
 	}
+}
+
+func ParseFileKey(filePath string) (DumpFile, error) {
+	var df DumpFile
+
+	_, file := filepath.Split(filePath)
+
+	_, err := fmt.Sscanf(
+		file, "%d.%d.%d-%d",
+		&df.UnixTimestamp,
+		&df.InstanceID,
+		&df.MinJobID, &df.MaxJobID,
+	)
+	if err != nil {
+		return df, fmt.Errorf("parsing format `time.instance.minJobID-maxJobID`: %w", err)
+	}
+
+	return df, nil
 }
