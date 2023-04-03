@@ -246,8 +246,6 @@ func (b *Repository) start() (startErr error) {
 	}
 
 	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
 		for {
 			if b.db.IsClosed() {
 				return
