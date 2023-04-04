@@ -20,10 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	namespaceID = "spaghetti"
-)
-
 func TestSuppressionSetup(t *testing.T) {
 	srv := httptest.NewServer(httpHandler(t))
 	defer t.Cleanup(srv.Close)
@@ -87,7 +83,6 @@ func httpHandler(t *testing.T) http.Handler {
 	t.Helper()
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/workspaceConfig", getSingleTenantWorkspaceConfig).Methods(http.MethodGet)
-	srvMux.HandleFunc("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig).Methods(http.MethodGet)
 	srvMux.HandleFunc("/full-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/full-export") }).Methods(http.MethodGet)
 	srvMux.HandleFunc("/latest-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/latest-export") }).Methods(http.MethodGet)
 	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/suppressions", getSuppressionFromManager).Methods(http.MethodGet)
@@ -105,19 +100,6 @@ func getSingleTenantWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	config := backendconfig.ConfigT{
 		WorkspaceID: "reg-test-workspaceId",
 	}
-	body, err := json.Marshal(config)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	_, _ = w.Write(body)
-}
-
-func getMultiTenantNamespaceConfig(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	config := map[string]backendconfig.ConfigT{namespaceID: {
-		WorkspaceID: "reg-test-workspaceId",
-	}}
 	body, err := json.Marshal(config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
