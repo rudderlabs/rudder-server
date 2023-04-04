@@ -2,8 +2,10 @@ package replay
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -20,6 +22,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const DumpsLoaderFinishPath = "dumps-loader-done"
+
 // DumpsLoaderHandleT - dumps-loader handle
 type dumpsLoaderHandleT struct {
 	log           logger.Logger
@@ -35,6 +39,7 @@ type dumpsLoaderHandleT struct {
 	procError     *ProcErrorRequestHandler
 	gwReplay      *GWReplayRequestHandler
 	uploader      filemanager.FileManager
+	tmpDirPath    string
 }
 
 // ProcErrorRequestHandler is an empty struct to capture Proc Error re-stream request handling functionality
@@ -181,6 +186,11 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	maxItems := config.GetInt64("MAX_ITEMS", 1000)           // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
 	uploadMaxItems := config.GetInt64("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
+	if _, err := os.Stat(path.Join(procHandle.handle.tmpDirPath, DumpsLoaderFinishPath)); !errors.Is(err, os.ErrNotExist) {
+		procHandle.handle.log.Info("Dumps loader job is done")
+		return
+	}
+
 	iter := filemanager.IterateFilesWithPrefix(ctx,
 		procHandle.handle.prefix,
 		procHandle.handle.startAfterKey,
@@ -233,8 +243,11 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 
 	// touch file in local file system to indicate that the job is done
 
-	os.Create("/tmp/dumps-loader-done")
-
+	finishFilePath := path.Join(procHandle.handle.tmpDirPath, DumpsLoaderFinishPath)
+	_, err := os.Create(finishFilePath)
+	if err != nil {
+		procHandle.handle.log.Errorf("failed to create finish file with error: %w", err)
+	}
 }
 
 func (handle *dumpsLoaderHandleT) handleRecovery() {
@@ -258,6 +271,12 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	if err != nil {
 		panic("invalid start time format provided")
 	}
+
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(fmt.Errorf("failed to create tmp dir with error: %w", err))
+	}
+	handle.tmpDirPath = tmpDirPath
 	handle.instanceID = config.GetInt("INSTANCE_ID", 1)
 	handle.prefix = strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_PREFIX", ""))
 	handle.tablePrefix = tablePrefix
