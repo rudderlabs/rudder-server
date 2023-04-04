@@ -35,6 +35,16 @@ const (
 )
 
 const (
+	createSchemaQuery = "create_schema"
+	createTableQuery  = "create_table"
+	addColumnQuery    = "add_column"
+	alterColumnQuery  = "alter_column"
+	copyQuery         = "copy"
+	insertQuery       = "insert"
+	mergeQuery        = "merge"
+)
+
+const (
 	provider       = warehouseutils.DELTALAKE
 	tableNameLimit = 127
 )
@@ -204,18 +214,15 @@ func (d *Deltalake) fetchTables() ([]string, error) {
 
 	query = fmt.Sprintf(`SHOW tables from %s;`, d.Namespace)
 
-	defer func() {
-		d.Logger.Infow("fetching tables",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
+	d.Logger.Debugw("fetching tables",
+		logfield.SourceID, d.Warehouse.Source.ID,
+		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, d.Warehouse.Destination.ID,
+		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+		logfield.Namespace, d.Namespace,
+		logfield.Query, query,
+	)
 
 	startedAt = time.Now()
 
@@ -226,6 +233,12 @@ func (d *Deltalake) fetchTables() ([]string, error) {
 		return nil, fmt.Errorf("executing fetching tables: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
+
+	d.Logger.Infow("query execution time",
+		logfield.QueryType, warehouseutils.DurationInSecs(time.Since(startedAt)),
+		logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
+		d.defaultLoggerTags(),
+	)
 
 	for rows.Next() {
 		var (
@@ -241,6 +254,17 @@ func (d *Deltalake) fetchTables() ([]string, error) {
 		tables = append(tables, tableName)
 	}
 	return tables, nil
+}
+
+func (d *Deltalake) defaultLoggerTags() []interface{} {
+	return []interface{}{
+		logfield.SourceID, d.Warehouse.Source.ID,
+		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, d.Warehouse.Destination.ID,
+		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+		logfield.Namespace, d.Namespace,
+	}
 }
 
 func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, error) {

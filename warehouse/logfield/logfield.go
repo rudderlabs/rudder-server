@@ -25,6 +25,7 @@ const (
 	DestinationCredsValid      = "destinationCredsValid"
 	Provider                   = "provider"
 	Query                      = "query"
+	QueryType                  = "queryType"
 	QueryExecutionTimeInSec    = "QueryExecutionTimeInSec"
 	StagingTableName           = "stagingTableName"
 	QueryPlanner               = "queryPlan"
