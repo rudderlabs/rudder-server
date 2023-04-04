@@ -131,7 +131,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				syncer.SyncLoop(ctx)
 				err = fullRepo.Stop()
 				if err != nil {
-					m.Log.Warnf("Full Sync failed: could not stop repo: %w", err)
+					m.Log.Warnf("could not stop full sync repo: %w", err)
 				}
 			})
 			return newHandler(fullRepo, m.Log), nil
