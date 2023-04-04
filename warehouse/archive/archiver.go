@@ -257,41 +257,45 @@ func (a *Archiver) Do(ctx context.Context) error {
 			WHERE
 			  source_id = '%s'
 			  AND destination_id = '%s'
-			  AND id >= %d
-			  and id <= %d;
+			  AND upload_id = %d
 `,
 			warehouseutils.WarehouseStagingFilesTable,
 			u.sourceID,
 			u.destID,
-			u.startStagingFileId,
-			u.endStagingFileId,
+			u.uploadID,
 		)
 
 		stagingFileRows, err := txn.Query(stmt)
 		if err != nil {
 			a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
+			_ = txn.Rollback()
 			continue
 		}
-		defer stagingFileRows.Close()
 
-		var stagingFileIDs []int64
-		var stagingFileLocations []string
+		var (
+			stagingFileIDs       []int64
+			stagingFileLocations []string
+		)
+
 		for stagingFileRows.Next() {
-			var stagingFileID int64
-			var stagingFileLocation string
+			var (
+				stagingFileID       int64
+				stagingFileLocation string
+			)
+
 			err = stagingFileRows.Scan(
 				&stagingFileID,
 				&stagingFileLocation,
 			)
 			if err != nil {
-				txn.Rollback()
+				_ = stagingFileRows.Close()
+				_ = txn.Rollback()
 				return fmt.Errorf("scanning staging file id: %w", err)
 			}
 			stagingFileIDs = append(stagingFileIDs, stagingFileID)
 			stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
 		}
-		stagingFileRows.Close()
+		_ = stagingFileRows.Close()
 
 		var storedStagingFilesLocation string
 		if len(stagingFileIDs) > 0 {
@@ -307,7 +311,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 
 				if err != nil {
 					a.Logger.Errorf(`Error backing up staging files for upload:%d : %v`, u.uploadID, err)
-					txn.Rollback()
+					_ = txn.Rollback()
 					continue
 				}
 			} else {
@@ -318,7 +322,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 				err = a.deleteFilesInStorage(stagingFileLocations)
 				if err != nil {
 					a.Logger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
-					txn.Rollback()
+					_ = txn.Rollback()
 					continue
 				}
 			}
@@ -336,7 +340,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 			_, err = txn.Query(stmt)
 			if err != nil {
 				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				continue
 			}
 
@@ -352,11 +356,9 @@ func (a *Archiver) Do(ctx context.Context) error {
 			loadLocationRows, err := txn.Query(stmt, pq.Array(stagingFileIDs))
 			if err != nil {
 				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				continue
 			}
-
-			defer loadLocationRows.Close()
 
 			if hasUsedRudderStorage {
 				var loadLocations []string
@@ -364,18 +366,19 @@ func (a *Archiver) Do(ctx context.Context) error {
 					var loc string
 					err = loadLocationRows.Scan(&loc)
 					if err != nil {
-						txn.Rollback()
+						_ = loadLocationRows.Close()
+						_ = txn.Rollback()
 						return fmt.Errorf("scanning load file location: %w", err)
 					}
 					loadLocations = append(loadLocations, loc)
 				}
-				loadLocationRows.Close()
+				_ = loadLocationRows.Close()
 				var paths []string
 				for _, loc := range loadLocations {
 					u, err := url.Parse(loc)
 					if err != nil {
 						a.Logger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
-						txn.Rollback()
+						_ = txn.Rollback()
 						continue
 					}
 					paths = append(paths, u.Path[1:])
@@ -383,11 +386,12 @@ func (a *Archiver) Do(ctx context.Context) error {
 				err = a.deleteFilesInStorage(paths)
 				if err != nil {
 					a.Logger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
-					txn.Rollback()
+					_ = txn.Rollback()
 					continue
 				}
+			} else {
+				_ = loadLocationRows.Close()
 			}
-			loadLocationRows.Close()
 		}
 
 		// update upload metadata
@@ -406,13 +410,13 @@ func (a *Archiver) Do(ctx context.Context) error {
 		_, err = txn.Exec(stmt, u.uploadMetdata)
 		if err != nil {
 			a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
+			_ = txn.Rollback()
 			continue
 		}
 
 		err = txn.Commit()
 		if err != nil {
-			txn.Rollback()
+			_ = txn.Rollback()
 			continue
 		}
 		archivedUploads++
