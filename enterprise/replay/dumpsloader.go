@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 )
 
 const DumpsLoaderFinishPath = "dumps-loader-done"
+var reFilename = regexp.MustCompile(`^\d+\.[^.]+(\d+)\.(\d+)-(\d+)`)
 
 // DumpsLoaderHandleT - dumps-loader handle
 type dumpsLoaderHandleT struct {
@@ -289,7 +291,11 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 		panic(fmt.Errorf("failed to create tmp dir with error: %w", err))
 	}
 	handle.tmpDirPath = tmpDirPath
-	handle.instanceID = config.GetInt("INSTANCE_ID", 1)
+	handle.instanceID, err = strconv.Atoi(config.GetInstanceID())
+	if err != nil {
+		panic("invalid instanceID")
+	}
+
 	handle.prefix = strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_PREFIX", ""))
 	handle.tablePrefix = tablePrefix
 	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
@@ -318,15 +324,31 @@ func ParseFileKey(filePath string) (DumpFile, error) {
 
 	_, file := filepath.Split(filePath)
 
-	_, err := fmt.Sscanf(
-		file, "%d.%d.%d-%d",
-		&df.UnixTimestamp,
-		&df.InstanceID,
-		&df.MinJobID, &df.MaxJobID,
-	)
-	if err != nil {
-		return df, fmt.Errorf("parsing format `time.instance.minJobID-maxJobID`: %w", err)
+	// "1680533788.prod-ue1-hinge-v1-rudderstack-8.50113030-50313029.4065231c-26e2-459f-9b56-66cf48dca3d9.json.gz"
+
+	m := reFilename.FindStringSubmatch(file)
+
+	// 3 groups + 1 full match
+	if len(m) != 4 {
+		return df, fmt.Errorf("unable to parse file name: %s", file)
 	}
 
-	return df, nil
+	instanceID, err := strconv.Atoi(m[1])
+	if err != nil {
+		return df, fmt.Errorf("parsing instanceID: %w", err)
+	}
+	min, err := strconv.Atoi(m[2])
+	if err != nil {
+		return df, fmt.Errorf("parsing minJobID: %w", err)
+	}
+	max, err := strconv.Atoi(m[3])
+	if err != nil {
+		return df, fmt.Errorf("parsing maxJobID: %w", err)
+	}
+
+	return DumpFile{
+		InstanceID: instanceID,
+		MinJobID:   min,
+		MaxJobID:   max,
+	}, nil
 }
