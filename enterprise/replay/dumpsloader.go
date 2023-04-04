@@ -94,7 +94,7 @@ type OrderedJobs struct {
 	Job       *jobsdb.JobT
 }
 
-func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.HandleT, log logger.Logger) {
+func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.HandleT, log logger.Logger, tmpDirPath string) {
 	// sorting dumps list on index
 	sort.Slice(objects, func(i, j int) bool {
 		return objects[i].SortIndex < objects[j].SortIndex
@@ -108,7 +108,14 @@ func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Hand
 	log.Info("Total dumps count : ", len(objects))
 	err := dbHandle.Store(ctx, jobs)
 	if err != nil {
-		panic(fmt.Errorf("Failed to write dumps locations to DB with error: %w", err))
+		panic(fmt.Errorf("failed to write dumps locations to DB with error: %w", err))
+	}
+	for _, job := range jobs {
+		path := gjson.GetBytes(job.EventPayload, "location").String()
+		_, err := os.Create(filepath.Join(tmpDirPath, path))
+		if err != nil {
+			fmt.Println("error creating file", path, err)
+		}
 	}
 }
 
@@ -164,15 +171,15 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 			}
 		}
 		if len(objects) >= int(uploadMaxItems) {
-			storeJobs(ctx, objects, gwHandle.handle.dbHandle, gwHandle.handle.log)
+			storeJobs(ctx, objects, gwHandle.handle.dbHandle, gwHandle.handle.log, gwHandle.handle.tmpDirPath)
 			objects = nil
 		}
 	}
 	if iter.Err() != nil {
-		panic(fmt.Errorf("Failed to iterate gw dump files with error: %w", iter.Err()))
+		panic(fmt.Errorf("failed to iterate gw dump files with error: %w", iter.Err()))
 	}
 	if len(objects) != 0 {
-		storeJobs(ctx, objects, gwHandle.handle.dbHandle, gwHandle.handle.log)
+		storeJobs(ctx, objects, gwHandle.handle.dbHandle, gwHandle.handle.log, gwHandle.handle.tmpDirPath)
 		objects = nil
 	}
 
@@ -216,6 +223,11 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 				continue
 			}
 
+			if _, err := os.Stat(path.Join(procHandle.handle.tmpDirPath, object.Key)); !errors.Is(err, os.ErrNotExist) {
+				procHandle.handle.log.Info("File is already written to DB skipping", object.Key)
+				continue
+			}
+
 			job := jobsdb.JobT{
 				UUID:         uuid.New(),
 				UserID:       fmt.Sprintf(`random-%s`, uuid.New()),
@@ -226,16 +238,16 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 			objects = append(objects, OrderedJobs{Job: &job, SortIndex: df.MaxJobID})
 		}
 		if len(objects) >= int(uploadMaxItems) {
-			storeJobs(ctx, objects, procHandle.handle.dbHandle, procHandle.handle.log)
+			storeJobs(ctx, objects, procHandle.handle.dbHandle, procHandle.handle.log, procHandle.handle.tmpDirPath)
 			objects = nil
 		}
 
 	}
 	if iter.Err() != nil {
-		panic(fmt.Errorf("Failed to iterate proc err files with error: %w", iter.Err()))
+		panic(fmt.Errorf("failed to iterate proc err files with error: %w", iter.Err()))
 	}
 	if len(objects) != 0 {
-		storeJobs(ctx, objects, procHandle.handle.dbHandle, procHandle.handle.log)
+		storeJobs(ctx, objects, procHandle.handle.dbHandle, procHandle.handle.log, procHandle.handle.tmpDirPath)
 	}
 
 	procHandle.handle.log.Info("Dumps loader job is done")
