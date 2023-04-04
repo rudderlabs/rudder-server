@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	promClient "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
@@ -97,7 +97,7 @@ func TestKafkaBatching(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	backendConfRouter := mux.NewRouter()
+	backendConfRouter := chi.NewRouter()
 	if testing.Verbose() {
 		backendConfRouter.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -108,23 +108,21 @@ func TestKafkaBatching(t *testing.T) {
 	}
 
 	backendConfRouter.
-		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", requireAuth(t, hostedServiceSecret,
+		Get("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", requireAuth(t, hostedServiceSecret,
 			func(w http.ResponseWriter, r *http.Request) {
 				n, err := w.Write(marshalledWorkspaces.Bytes())
 				require.NoError(t, err)
 				require.Equal(t, marshalledWorkspaces.Len(), n)
 			},
-		)).
-		Methods("GET")
+		))
 	backendConfRouter.
-		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret,
+		Post("/data-plane/v1/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret,
 			func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusNoContent)
 			},
-		)).
-		Methods("POST")
+		))
 
-	backendConfRouter.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backendConfRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		require.FailNowf(t, "backend config", "unexpected request to backend config, not found: %+v", r.URL)
 		w.WriteHeader(http.StatusNotFound)
 	})
