@@ -24,6 +24,7 @@ import (
 )
 
 const DumpsLoaderFinishPath = "dumps-loader-done"
+
 var reFilename = regexp.MustCompile(`^\d+\.[^.]+(\d+)\.(\d+)-(\d+)`)
 
 // DumpsLoaderHandleT - dumps-loader handle
