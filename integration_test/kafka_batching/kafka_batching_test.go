@@ -272,7 +272,9 @@ func TestKafkaBatching(t *testing.T) {
 	require.Len(t, receivedMessages, noOfMessages)
 	for i := 0; i < noOfMessages; i++ {
 		// assertion for order of messages
-		requireJSONHas(t, receivedMessages[i].Value, "messageId", fmt.Sprintf("msg_%d", i))
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(receivedMessages[i].Value, &m))
+		require.Equal(t, fmt.Sprintf("msg_%d", i), m["messageId"])
 	}
 
 	var buf []byte
@@ -287,7 +289,7 @@ func TestKafkaBatching(t *testing.T) {
 		return strings.Contains(string(buf), "router_kafka_batch_size") &&
 			strings.Contains(string(buf), "router_batch_num_input_jobs") &&
 			strings.Contains(string(buf), "router_batch_num_output_jobs")
-	}, time.Minute, 100*time.Millisecond, "Cannot find metric in time: %s", buf)
+	}, time.Minute, 100*time.Millisecond, "Cannot find metrics in time: %s", buf)
 
 	metrics, err := testhelper.ParsePrometheusMetrics(bytes.NewBuffer(buf))
 	require.NoError(t, err)
@@ -343,15 +345,6 @@ func TestKafkaBatching(t *testing.T) {
 		{Name: ptr("job"), Value: ptr(app.EMBEDDED)},
 		{Name: ptr("instance"), Value: &serverInstanceID},
 	}, metrics["router_batch_num_output_jobs"].Metric[0].Label)
-
-	t.Log(metrics["router_batch_num_input_jobs"])
-	t.Log(metrics["router_batch_num_output_jobs"])
-}
-
-func requireJSONHas(t testing.TB, body []byte, key string, value interface{}) {
-	var m map[string]interface{}
-	require.NoError(t, json.Unmarshal(body, &m))
-	require.Equal(t, value, m[key])
 }
 
 func requireHistogramEqual(t *testing.T, mf *promClient.MetricFamily, h histogram) {
@@ -431,33 +424,20 @@ func sendEvent(t testing.TB, httpPort int, payload *strings.Reader, callType, wr
 	t.Logf("Event Sent Successfully: (%s)", body)
 }
 
-func waitForKafka(ctx context.Context, t testing.TB, topic, port string) error {
-	kafkaHost := "localhost:" + port
-	ticker := time.NewTicker(250 * time.Millisecond)
+func waitForKafka(ctx context.Context, t testing.TB, topic, port string) (err error) {
+	tc := testutil.New("tcp", "localhost:"+port)
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("kafka not ready within context: %v", ctx.Err())
-		case <-ticker.C:
-			kc, err := kafkaClient.New("tcp", []string{kafkaHost}, kafkaClient.Config{})
-			if err != nil {
-				t.Log(fmt.Errorf("could not create Kafka client: %v", err))
-				continue
-			}
-			if err := kc.Ping(ctx); err != nil {
-				t.Log(fmt.Errorf("could not ping Kafka: %v", err))
-				continue
-			}
-			tc := testutil.New("tcp", kafkaHost)
-			if err := tc.CreateTopic(ctx, topic, 1, 1); err != nil {
-				t.Log(fmt.Errorf("could not create Kafka topic %q: %v", topic, err))
-				continue
-			}
-			topics, err := tc.ListTopics(ctx)
+			return fmt.Errorf("kafka not ready within context (%v): %v", ctx.Err(), err)
+		case <-time.After(50 * time.Millisecond):
+			var topics []testutil.TopicPartition
+			topics, err = tc.ListTopics(ctx)
 			if err != nil {
 				t.Log(fmt.Errorf("could not list Kafka topics: %v", err))
 				continue
 			}
+
 			var found bool
 			for _, top := range topics {
 				if top.Topic == topic {
@@ -465,12 +445,15 @@ func waitForKafka(ctx context.Context, t testing.TB, topic, port string) error {
 					break
 				}
 			}
-			if !found {
-				t.Log(fmt.Errorf("could not find Kafka topic %q", topic))
+			if found {
+				t.Log("Kafka is ready!")
+				return nil
+			}
+
+			if err = tc.CreateTopic(ctx, topic, 1, 1); err != nil {
+				t.Log(fmt.Errorf("could not create Kafka topic %q: %v", topic, err))
 				continue
 			}
-			t.Log("Kafka is ready!")
-			return nil
 		}
 	}
 }
