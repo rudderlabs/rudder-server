@@ -163,7 +163,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 
 func alreadySynced(repoPath string) bool {
 	_, err := os.Stat(path.Join(repoPath, model.SyncDoneMarker))
-	return !os.IsNotExist(err)
+	return err == nil
 }
 
 func (m *Factory) retryIndefinitely(ctx context.Context, f func() error, wait time.Duration) {
