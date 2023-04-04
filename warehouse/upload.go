@@ -931,6 +931,14 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 			}
 			continue
 		}
+		if tableName == warehouseutils.ToProviderCase(job.warehouse.Type, "tracks") {
+			wg.Done()
+			status := model.TableUploadExported
+			_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tableName, repo.TableUploadSetOptions{
+				Status: &status,
+			})
+			continue
+		}
 		tName := tableName
 		loadChan <- struct{}{}
 		rruntime.GoForWarehouse(func() {
