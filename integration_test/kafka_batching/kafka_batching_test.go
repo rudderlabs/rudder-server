@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -240,7 +239,7 @@ func TestKafkaBatching(t *testing.T) {
 		sendEventsToGateway(t, httpPort, writeKey, fmt.Sprintf("msg_%d", i))
 	}
 
-	c, err := client.New("tcp", []string{"localhost:" + kafkaContainer.Ports[0]}, client.Config{
+	c, err := kafkaClient.New("tcp", []string{"localhost:" + kafkaContainer.Ports[0]}, kafkaClient.Config{
 		ClientID: t.Name(),
 	})
 	require.NoError(t, err)
