@@ -73,6 +73,10 @@ var errorsMappings = []model.JobError{
 		Type:   model.ResourceNotFoundError,
 		Format: regexp.MustCompile(`Bucket .* not found`),
 	},
+	{
+		Type:   model.ColumnCountError,
+		Format: regexp.MustCompile(`pq: tables can have at most 1600 columns`),
+	},
 }
 
 // String constants for redshift destination config
