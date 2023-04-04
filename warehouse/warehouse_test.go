@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
@@ -19,14 +19,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -39,8 +39,8 @@ type testingT interface {
 	Log(...any)
 }
 
-func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *destination.PostgresResource {
-	pgResource, err := destination.SetupPostgres(pool, t)
+func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *resource.PostgresResource {
+	pgResource, err := resource.SetupPostgres(pool, t)
 	Expect(err).To(BeNil())
 
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
@@ -125,7 +125,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
 			err = (&migrator.Migrator{
@@ -145,9 +145,10 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			store := memstats.New()
 
 			wh := HandleT{
-				destType: tc.destType,
-				stats:    store,
-				dbHandle: pgResource.DB,
+				destType:     tc.destType,
+				stats:        store,
+				dbHandle:     pgResource.DB,
+				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
 			}
 			tenantManager = &multitenant.Manager{}
 
@@ -320,7 +321,7 @@ func Test_GetNamespace(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
 			err = (&migrator.Migrator{
@@ -331,9 +332,10 @@ func Test_GetNamespace(t *testing.T) {
 			require.NoError(t, err)
 			store := memstats.New()
 			wh := HandleT{
-				destType: tc.destType,
-				stats:    store,
-				dbHandle: pgResource.DB,
+				destType:     tc.destType,
+				stats:        store,
+				dbHandle:     pgResource.DB,
+				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
 			}
 			if tc.setConfig {
 				config.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destType]), "config_result")

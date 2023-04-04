@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 	etcd "go.etcd.io/etcd/client/v3"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
@@ -126,6 +126,48 @@ func Test_ServerMode(t *testing.T) {
 		resp, err := etcdClient.Get(ctx, "test-ack/1")
 		require.NoError(t, err)
 		require.JSONEq(t, `{"status":"DEGRADED"}`, string(resp.Kvs[0].Value))
+	})
+
+	t.Run("goes back to initial state when interrupted (DEGRADED)", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+
+		_, err := etcdClient.Put(ctx, modeRequestKey, `{"mode": "DEGRADED", "ack_key": "test-ack/1"}`)
+		require.NoError(t, err)
+		// Was in degraded mode previously before interruption/Expected to be in degraded mode when starts
+
+		ch := provider.ServerMode(ctx)
+		m, ok := <-ch
+
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+		require.Equal(t, servermode.DegradedMode, m.Mode()) // should start in degraded mode
+		require.NoError(t, m.Ack(ctx))
+
+		resp, err := etcdClient.Get(ctx, "test-ack/1")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"DEGRADED"}`, string(resp.Kvs[0].Value))
+	})
+
+	t.Run("goes back to initial state when interrupted (NORMAL)", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+
+		_, err := etcdClient.Put(ctx, modeRequestKey, `{"mode": "NORMAL", "ack_key": "test-ack/1"}`)
+		require.NoError(t, err)
+		// Was in normal mode previously before interruption/Expected to be in normal mode when starts
+
+		ch := provider.ServerMode(ctx)
+		m, ok := <-ch
+
+		require.True(t, ok)
+		require.NoError(t, m.Err())
+		require.Equal(t, servermode.NormalMode, m.Mode()) // should start in normal mode
+		require.NoError(t, m.Ack(ctx))
+
+		resp, err := etcdClient.Get(ctx, "test-ack/1")
+		require.NoError(t, err)
+		require.JSONEq(t, `{"status":"NORMAL"}`, string(resp.Kvs[0].Value))
 	})
 
 	t.Run("ack timeout", func(t *testing.T) {
@@ -330,13 +372,11 @@ func Test_Workspaces(t *testing.T) {
 		}
 		if appType == app.GATEWAY {
 			t.Log("update should be received at <ack_key>/<instance_id>")
-			{
-				if appType == app.GATEWAY {
-					otherAckKey := fmt.Sprintf("%s/%s", "test-ack/2", testInstanceId)
-					resp, err := etcdClient.Get(ctx, otherAckKey)
-					require.NoError(t, err)
-					require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
-				}
+			if appType == app.GATEWAY {
+				otherAckKey := fmt.Sprintf("%s/%s", "test-ack/2", testInstanceId)
+				resp, err := etcdClient.Get(ctx, otherAckKey)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"status":"RELOADED","error":""}`, string(resp.Kvs[0].Value))
 			}
 		}
 

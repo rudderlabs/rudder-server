@@ -46,7 +46,7 @@ services:
       retries: 25
   wh-transformer:
     container_name: wh-transformer
-    image: rudderlabs/develop-rudder-transformer:master
+    image: rudderstack/develop-rudder-transformer:latest
     ports:
       - "9090"
   wh-databricks-connector:

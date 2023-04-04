@@ -16,12 +16,15 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/admin/profiler"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
@@ -36,6 +39,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
@@ -43,19 +47,16 @@ import (
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	svcMetric "github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
@@ -68,6 +69,12 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
+
+var defaultHistogramBuckets = []float64{
+	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60,
+	300 /* 5 mins */, 600 /* 10 mins */, 1800 /* 30 mins */, 10800 /* 3 hours */, 36000, /* 10 hours */
+	86400 /* 1 day */, 259200 /* 3 days */, 604800 /* 7 days */, 1209600, /* 2 weeks */
+}
 
 // ReleaseInfo holds the release information
 type ReleaseInfo struct {
@@ -177,8 +184,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
 		stats.WithServiceName(r.appType),
 		stats.WithServiceVersion(r.releaseInfo.Version),
+		stats.WithDefaultHistogramBuckets(defaultHistogramBuckets),
 	)
-	if err := stats.Default.Start(ctx); err != nil {
+	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
 		r.logger.Errorf("Failed to start stats: %v", err)
 		return 1
 	}

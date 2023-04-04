@@ -14,20 +14,85 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestSanitizeJSON(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    json.RawMessage
+		expected json.RawMessage
+	}{
+		{
+			name:     "empty json",
+			input:    json.RawMessage(`{}`),
+			expected: json.RawMessage(`{}`),
+		},
+		{
+			name:     "with unicode characters",
+			input:    json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End"]}}`),
+			expected: json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
+		},
+		{
+			name:     "without unicode characters",
+			input:    json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
+			expected: json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tc.expected, SanitizeJSON(tc.input))
+		})
+	}
+}
+
+func TestSanitizeString(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:  "empty string",
+			input: "",
+		},
+		{
+			name:     "with unicode characters",
+			input:    "Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End",
+			expected: "Start:  : End",
+		},
+		{
+			name:     "without unicode characters",
+			input:    "Start:  : End",
+			expected: "Start:  : End",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tc.expected, SanitizeString(tc.input))
+		})
+	}
+}
 
 func TestDestinationConfigKeys(t *testing.T) {
 	for _, whType := range WarehouseDestinations {
@@ -36,7 +101,7 @@ func TestDestinationConfigKeys(t *testing.T) {
 
 			whName := WHDestNameMap[whType]
 			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
-			got := config.ConfigKeyToEnv(configKey)
+			got := config.ConfigKeyToEnv(config.DefaultEnvPrefix, configKey)
 			expected := fmt.Sprintf("RSERVER_WAREHOUSE_%s_FEATURE", strings.ToUpper(whName))
 			require.Equal(t, got, expected)
 		})
@@ -988,7 +1053,7 @@ func TestGetLoadFileFormat(t *testing.T) {
 		},
 	}
 	for _, input := range inputs {
-		got := GetLoadFileFormat(input.whType)
+		got := GetLoadFileFormat(GetLoadFileType(input.whType))
 		require.Equal(t, got, input.expected)
 	}
 }

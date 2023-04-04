@@ -27,13 +27,13 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
@@ -245,7 +245,7 @@ type KeyValue struct {
 
 type Uploader interface {
 	GetSchemaInWarehouse() model.Schema
-	GetLocalSchema() model.Schema
+	GetLocalSchema() (model.Schema, error)
 	UpdateLocalSchema(schema model.Schema) error
 	GetTableSchemaInWarehouse(tableName string) model.TableSchema
 	GetTableSchemaInUpload(tableName string) model.TableSchema
@@ -313,29 +313,6 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 	return // zero values
 }
 
-func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  namespace
-		FROM
-		  %s
-		WHERE
-		  source_id = '%s'
-		  AND destination_id = '%s'
-		ORDER BY
-		  id DESC;
-`,
-		WarehouseSchemasTable,
-		source.ID,
-		destination.ID,
-	)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
-	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
-	}
-	return namespace, len(namespace) > 0
-}
-
 // GetObjectFolder returns the folder path for the storage object based on the storage provider
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectFolder(provider, location string) (folder string) {
@@ -392,6 +369,18 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 		objectLocation = GetAzureBlobLocation(location)
 	}
 	return
+}
+
+func SanitizeJSON(input json.RawMessage) json.RawMessage {
+	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
+	if len(v) == 0 {
+		v = []byte(`{}`)
+	}
+	return v
+}
+
+func SanitizeString(input string) string {
+	return strings.ReplaceAll(input, "\u0000", "")
 }
 
 // GetObjectName extracts object/key objectName from different buckets locations
@@ -893,8 +882,8 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	return sslDirPath
 }
 
-func GetLoadFileType(wh string) string {
-	switch wh {
+func GetLoadFileType(destType string) string {
+	switch destType {
 	case BQ:
 		return LOAD_FILE_TYPE_JSON
 	case RS:
@@ -902,21 +891,22 @@ func GetLoadFileType(wh string) string {
 	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
 		return LOAD_FILE_TYPE_PARQUET
 	case DELTALAKE:
+		if config.GetBool("Warehouse.deltalake.useParquetLoadFiles", false) {
+			return LOAD_FILE_TYPE_PARQUET
+		}
 		return LOAD_FILE_TYPE_CSV
 	default:
 		return LOAD_FILE_TYPE_CSV
 	}
 }
 
-func GetLoadFileFormat(whType string) string {
-	switch whType {
-	case BQ:
+func GetLoadFileFormat(loadFileType string) string {
+	switch loadFileType {
+	case LOAD_FILE_TYPE_JSON:
 		return "json.gz"
-	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
+	case LOAD_FILE_TYPE_PARQUET:
 		return "parquet"
-	case RS:
-		return "csv.gz"
-	case DELTALAKE:
+	case LOAD_FILE_TYPE_CSV:
 		return "csv.gz"
 	default:
 		return "csv.gz"

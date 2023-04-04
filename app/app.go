@@ -10,15 +10,15 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	configenv "github.com/rudderlabs/rudder-server/enterprise/config-env"
 	"github.com/rudderlabs/rudder-server/enterprise/replay"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 const (

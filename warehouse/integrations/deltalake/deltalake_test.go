@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"testing"
 	"time"
 
@@ -17,8 +18,8 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 	"google.golang.org/grpc"
 
@@ -28,7 +29,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -108,6 +109,10 @@ func TestIntegrationDeltalake(t *testing.T) {
 						Key:   "Warehouse.deltalake.loadTableStrategy",
 						Value: "MERGE",
 					},
+					{
+						Key:   "Warehouse.deltalake.useParquetLoadFiles",
+						Value: "false",
+					},
 				})
 			},
 		},
@@ -124,6 +129,31 @@ func TestIntegrationDeltalake(t *testing.T) {
 					{
 						Key:   "Warehouse.deltalake.loadTableStrategy",
 						Value: "APPEND",
+					},
+					{
+						Key:   "Warehouse.deltalake.useParquetLoadFiles",
+						Value: "false",
+					},
+				})
+			},
+		},
+		{
+			name:               "Parquet load files",
+			writeKey:           "sToFgoilA0U1WxNeW1gdgUVDsEW",
+			schema:             schema,
+			sourceID:           "25H5EpYzojqQSepRSaGBrrPx3e4",
+			destinationID:      "25IDjdnoEus6DDNrth3SWO1FOpu",
+			warehouseEventsMap: mergeEventsMap(),
+			prerequisite: func(t testing.TB) {
+				t.Helper()
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
+					{
+						Key:   "Warehouse.deltalake.loadTableStrategy",
+						Value: "MERGE",
+					},
+					{
+						Key:   "Warehouse.deltalake.useParquetLoadFiles",
+						Value: "true",
 					},
 				})
 			},
@@ -217,7 +247,34 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29eClxJQQlaWzMWyqnQctFDP5T2",
 	}
-	testhelper.VerifyConfigurationTest(t, destination)
+
+	testCases := []struct {
+		name                string
+		useParquetLoadFiles bool
+	}{
+		{
+			name:                "Parquet load files",
+			useParquetLoadFiles: true,
+		},
+		{
+			name:                "CSV load files",
+			useParquetLoadFiles: false,
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			testhelper.SetConfig(t, []warehouseutils.KeyValue{
+				{
+					Key:   "Warehouse.deltalake.useParquetLoadFiles",
+					Value: strconv.FormatBool(tc.useParquetLoadFiles),
+				},
+			})
+		})
+
+		testhelper.VerifyConfigurationTest(t, destination)
+	}
 }
 
 func mergeEventsMap() testhelper.EventsCountMap {
@@ -717,7 +774,7 @@ type mockUploader struct {
 }
 
 func (*mockUploader) GetSchemaInWarehouse() model.Schema     { return model.Schema{} }
-func (*mockUploader) GetLocalSchema() model.Schema           { return model.Schema{} }
+func (*mockUploader) GetLocalSchema() (model.Schema, error)  { return model.Schema{}, nil }
 func (*mockUploader) UpdateLocalSchema(_ model.Schema) error { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool        { return false }
 func (*mockUploader) UseRudderStorage() bool                 { return false }

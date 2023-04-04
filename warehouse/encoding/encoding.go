@@ -3,7 +3,7 @@ package encoding
 import (
 	"os"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
 const (

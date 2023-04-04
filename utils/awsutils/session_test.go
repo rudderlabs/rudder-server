@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -162,8 +162,7 @@ func TestNewSessionConfigWithRoleBasedAuth(t *testing.T) {
 			WorkspaceID: someWorkspaceID,
 		}
 		_, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
-		assert.NotNil(t, err)
-		assert.EqualError(t, err, "incompatible role configuration")
+		assert.Nil(t, err)
 	})
 }
 

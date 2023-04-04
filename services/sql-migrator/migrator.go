@@ -15,8 +15,8 @@ import (
 	"github.com/golang-migrate/migrate/v4/source"
 	bindata "github.com/golang-migrate/migrate/v4/source/go_bindata"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/sql/migrations"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // Migrator is responsible for migrating postgres tables

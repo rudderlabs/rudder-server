@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
@@ -95,6 +95,12 @@ func (d *Dynamic) Run(ctx context.Context) error {
 		d.currentMode = servermode.NormalMode
 	}
 
+	if len(serverModeChan) == 0 {
+		d.logger.Info("No server mode change event received. Starting server in normal mode")
+		if err := d.handleModeChange(servermode.NormalMode); err != nil {
+			return err
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():

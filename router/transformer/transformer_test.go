@@ -13,11 +13,12 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-server/config"
-	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -339,6 +340,7 @@ func mockProxyHandler(timeout time.Duration, code int, response string) *mux.Rou
 		_, err := w.Write([]byte(response))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+			return
 		}
 	})
 	return srvMux
@@ -485,6 +487,53 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	normalizeErrors(transformerResponse, expectedErrorTxt)
 	require.NotNil(t, transformerResponse)
 	require.Equal(t, expectedTransformerResponse, transformerResponse)
+}
+
+func TestDehydrateHydrate(t *testing.T) {
+	initMocks(t)
+	config.Reset()
+
+	transformMessage := types.TransformMessageT{
+		Data: []types.RouterJobT{
+			{JobMetadata: types.JobMetadataT{JobID: 1, JobT: &jobsdb.JobT{JobID: 1}}},
+			{JobMetadata: types.JobMetadataT{JobID: 2, JobT: &jobsdb.JobT{JobID: 2}}},
+			{JobMetadata: types.JobMetadataT{JobID: 3, JobT: &jobsdb.JobT{JobID: 3}}},
+		},
+	}
+
+	serverResponse := []types.DestinationJobT{
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload types.TransformMessageT
+		err := json.NewDecoder(r.Body).Decode(&payload)
+		require.NoError(t, err)
+		for i := range payload.Data {
+			require.Nil(t, payload.Data[i].JobMetadata.JobT, "JobT should be nil")
+		}
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
+		b, err := json.Marshal(serverResponse)
+		require.NoError(t, err)
+		_, err = w.Write(b)
+		require.NoError(t, err)
+	}))
+	config.Set("DEST_TRANSFORM_URL", srv.URL)
+
+	tr := NewTransformer(time.Minute, time.Minute)
+
+	transformerResponse := tr.Transform(BATCH, &transformMessage)
+
+	require.NotNil(t, transformerResponse)
+	require.Equal(t, 3, len(transformerResponse))
+	for i := range transformerResponse {
+		require.Equal(t, 1, len(transformerResponse[i].JobMetadataArray))
+		require.EqualValues(t, i+1, transformerResponse[i].JobMetadataArray[0].JobID)
+		require.NotNil(t, transformerResponse[i].JobMetadataArray[0].JobT, "JobT should not be nil")
+		require.EqualValues(t, i+1, transformerResponse[i].JobMetadataArray[0].JobT.JobID)
+	}
 }
 
 func initMocks(t *testing.T) {

@@ -97,7 +97,7 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 	}()
 
 	go func() { // doing it asynchronously because controllerConn.CreateTopics() does not honour the context
-		errors <- conn.CreateTopics(kafka.TopicConfig{
+		errors <- controllerConn.CreateTopics(kafka.TopicConfig{
 			Topic:             topic,
 			NumPartitions:     numPartitions,
 			ReplicationFactor: replicationFactor,
@@ -109,7 +109,9 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 		return ctx.Err()
 	case err = <-errors:
 		if err != nil {
-			return fmt.Errorf("create topic: could not create topic: %w", err)
+			return fmt.Errorf("create topic: cannot create topic with controller %q and addresses %+v: %w",
+				controllerHost, c.addresses, err,
+			)
 		}
 		return nil
 	}

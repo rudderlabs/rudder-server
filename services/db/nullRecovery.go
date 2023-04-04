@@ -5,7 +5,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/rruntime"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
 // HandleNullRecovery decides the recovery Mode (normal/degraded) in which app should run

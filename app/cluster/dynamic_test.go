@@ -9,11 +9,11 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app/cluster"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -139,6 +139,32 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, routerDB.callOrder < router.callOrder)
 		require.True(t, batchRouterDB.callOrder < router.callOrder)
 		require.True(t, errorDB.callOrder < router.callOrder)
+	})
+
+	t.Run("server should start in NORMAL mode by default when there is no instruction by scheduler", func(t *testing.T) {
+		require.Eventually(t, func() bool {
+			return gatewayDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return routerDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return errorDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return batchRouterDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return processor.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return router.status == "start"
+		}, time.Second, time.Millisecond)
 	})
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {

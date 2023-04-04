@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 )
 
 func TestReport(t *testing.T) {

@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -38,7 +38,7 @@ const (
 	User               = "user"
 	Role               = "role"
 	Password           = "password"
-	Application        = "Rudderstack"
+	Application        = "Rudderstack_Warehouse"
 )
 
 var pkgLogger logger.Logger
@@ -157,6 +157,10 @@ var errorsMappings = []model.JobError{
 	{
 		Type:   model.ResourceNotFoundError,
 		Format: regexp.MustCompile(`Table .* does not exist`),
+	},
+	{
+		Type:   model.ColumnCountError,
+		Format: regexp.MustCompile(`Operation failed because soft limit on objects of type 'Column' per table was exceeded. Please reduce number of 'Column's or contact Snowflake support about raising the limit.`),
 	},
 }
 

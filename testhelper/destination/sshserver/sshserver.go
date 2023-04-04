@@ -10,7 +10,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 
-	"github.com/rudderlabs/rudder-server/testhelper"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
@@ -88,7 +88,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 		})
 	}
 
-	portInt, err := testhelper.GetFreePort()
+	portInt, err := kitHelper.GetFreePort()
 	if err != nil {
 		return nil, err
 	}

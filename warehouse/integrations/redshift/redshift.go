@@ -18,10 +18,10 @@ import (
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -72,6 +72,10 @@ var errorsMappings = []model.JobError{
 	{
 		Type:   model.ResourceNotFoundError,
 		Format: regexp.MustCompile(`Bucket .* not found`),
+	},
+	{
+		Type:   model.ColumnCountError,
+		Format: regexp.MustCompile(`pq: tables can have at most 1600 columns`),
 	},
 }
 

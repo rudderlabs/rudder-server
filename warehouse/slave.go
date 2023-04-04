@@ -18,11 +18,11 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -194,7 +194,7 @@ func (job *Payload) getDiscardsTable() string {
 func (jobRun *JobRun) getLoadFilePath(tableName string) string {
 	job := jobRun.job
 	randomness := misc.FastUUID().String()
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.LoadFileType))
 }
 
 func (job *Payload) getColumnName(columnName string) string {
