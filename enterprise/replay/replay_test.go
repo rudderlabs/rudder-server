@@ -11,7 +11,6 @@ import (
 )
 
 func TestParseFileKey(t *testing.T) {
-
 	workspaceID := "workspaceID"
 	file := fmt.Sprintf("%v.json.gz", fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), "1", fmt.Sprintf("%v-%v", 20, 32), uuid.New().String(), workspaceID))
 
