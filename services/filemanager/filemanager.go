@@ -101,7 +101,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 		providerConfig["iamRoleArn"] = config.GetString("BACKUP_IAM_ROLE_ARN", "")
 		if providerConfig["iamRoleArn"] != "" {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.Identity().ID()
+			providerConfig["externalID"] = backendconfig.DefaultBackendConfig.Identity().ID()
 		}
 
 	case "GCS":
