@@ -11,10 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -133,6 +132,28 @@ func New(releaseInfo ReleaseInfo) *Runner {
 
 // Run runs the application and returns the exit code
 func (r *Runner) Run(ctx context.Context, args []string) int {
+	// Start stats
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		r.logger.Errorf("failed to get deployment type: %v", err)
+		return 1
+	}
+
+	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
+	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
+		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
+		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
+	}
+	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
+		stats.WithServiceName(r.appType),
+		stats.WithServiceVersion(r.releaseInfo.Version),
+		stats.WithDefaultHistogramBuckets(defaultHistogramBuckets),
+	)
+	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
+		r.logger.Errorf("Failed to start stats: %v", err)
+		return 1
+	}
+
 	runAllInit()
 
 	options := app.LoadOptions(args)
@@ -148,7 +169,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// application & backend setup should be done before starting any new goroutines.
 	r.application.Setup()
 
-	var err error
 	r.appHandler, err = apphandlers.GetAppHandler(r.application, r.appType, r.versionHandler)
 	if err != nil {
 		r.logger.Errorf("Failed to get app handler: %v", err)
@@ -169,27 +189,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	ctx = bugsnag.StartSession(ctx)
 	defer misc.BugsnagNotify(ctx, "Core")()
 
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		r.logger.Errorf("failed to get deployment type: %v", err)
-		return 1
-	}
-
-	// Start stats
-	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
-	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
-		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
-		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
-	}
-	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
-		stats.WithServiceName(r.appType),
-		stats.WithServiceVersion(r.releaseInfo.Version),
-		stats.WithDefaultHistogramBuckets(defaultHistogramBuckets),
-	)
-	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
-		r.logger.Errorf("Failed to start stats: %v", err)
-		return 1
-	}
 	stats.Default.NewTaggedStat("rudder_server_config",
 		stats.GaugeType,
 		stats.Tags{
