@@ -154,10 +154,13 @@ func TestIntegration(t *testing.T) {
 	t.Run("batch", func(t *testing.T) {
 		kafkaBatchingEnabled = true
 		t.Cleanup(func() { kafkaBatchingEnabled = false })
-		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), true)
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), true)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, gomock.NewController(t), true)
-		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), true)
+		ctrl := gomock.NewController(t)
+		kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
+		kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
+		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
+		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(gomock.Any()).Times(1)
 
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
