@@ -220,7 +220,7 @@ func TestKafkaBatching(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		defer func() { _ = resp.Body.Close() }()
+		defer func() { httputil.CloseResponse(resp) }()
 
 		var buf []byte
 		buf, err = io.ReadAll(resp.Body)
@@ -280,7 +280,7 @@ func TestKafkaBatching(t *testing.T) {
 	require.Eventuallyf(t, func() bool {
 		resp, err = http.Get(fmt.Sprintf("http://localhost:%d/metrics", prometheusPort))
 		require.NoError(t, err)
-		defer func() { _ = resp.Body.Close() }()
+		defer func() { httputil.CloseResponse(resp) }()
 
 		buf, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
