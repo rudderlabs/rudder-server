@@ -109,15 +109,17 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 					func() error { return fullSyncer.Sync(ctx) },
 					5*time.Second)
 
-				m.retryIndefinitely(ctx, func() error {
-					_, err = os.Create(filepath.Join(fullSuppressionPath, model.SyncDoneMarker))
-					return err
-				}, 1*time.Second)
-
+				_, err = os.Create(filepath.Join(fullSuppressionPath, model.SyncDoneMarker))
+				if err != nil {
+					m.Log.Errorf("Could not create sync done marker: %w", err)
+				}
 				repo.Switch(fullRepo)
 				latestSyncCancel()
 				fullSyncer.SyncLoop(ctx)
-				_ = fullRepo.Stop()
+				err = fullRepo.Stop()
+				if err != nil {
+					m.Log.Warnf("Full Sync failed: could not stop repo: %w", err)
+				}
 			})
 			return newHandler(repo, m.Log), nil
 		} else {
