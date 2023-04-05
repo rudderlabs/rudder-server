@@ -257,14 +257,6 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func isJobTerminated(status int) bool {
-	if status == 429 {
-		return false
-	}
-
-	return status >= 200 && status < 500
-}
-
 func sendRetryStoreStats(attempt int) {
 	pkgLogger.Warnf("Timeout during store jobs in batch router module, attempt %d", attempt)
 	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
