@@ -965,11 +965,6 @@ func (jd *HandleT) writerSetup(ctx context.Context, l lock.LockToken) {
 	if len(jd.getDSList()) == 0 {
 		jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
 	}
-
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		jd.addNewDSLoop(ctx)
-		return nil
-	}))
 }
 
 func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.LockToken) {

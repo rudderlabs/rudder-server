@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
 )
 
@@ -21,31 +19,8 @@ import (
 // First all the unprocessed jobs are copied over. Then all the jobs which haven't
 // completed (state is failed or waiting or waiting_retry or executiong) are copied
 // over. Then the status (only the latest) is set for those jobs
-func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		jd.migrateDSLoop(ctx)
-		return nil
-	}))
-}
+func (jd *HandleT) startMigrateDSLoop(_ context.Context) {
 
-func (jd *HandleT) migrateDSLoop(ctx context.Context) {
-	for {
-		select {
-		case <-jd.TriggerMigrateDS():
-		case <-ctx.Done():
-			return
-		}
-		start := time.Now()
-		jd.logger.Debugw("Start", "operation", "migrateDSLoop")
-		timeoutCtx, cancel := context.WithTimeout(ctx, jd.migrateDSTimeout)
-		err := jd.doMigrateDS(timeoutCtx)
-		cancel()
-		if err != nil {
-			jd.logger.Errorf("Failed to migrate ds: %v", err)
-		}
-		stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
-
-	}
 }
 
 func (jd *HandleT) doMigrateDS(ctx context.Context) error {
@@ -159,11 +134,11 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 	var rows *sql.Rows
 	rows, err := jd.dbHandle.QueryContext(
 		ctx,
-		`SELECT reltuples AS estimate, relname 
-		FROM pg_class 
+		`SELECT reltuples AS estimate, relname
+		FROM pg_class
 		where relname = ANY(
-			SELECT tablename 
-				FROM pg_catalog.pg_tables 
+			SELECT tablename
+				FROM pg_catalog.pg_tables
 				WHERE schemaname NOT IN ('pg_catalog','information_schema')
 				AND tablename like $1
 		)`,
@@ -316,13 +291,13 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
 		(
-			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at) 
+			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at)
 			           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.custom_val, j.parameters, j.event_payload, j.event_count, j.created_at, j.expire_at from %[2]q j left join last_status js on js.job_id = j.job_id
 				where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id) returning job_id
 		),
-		insertedStatuses as 
+		insertedStatuses as
 		(
-			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters) 
+			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters)
 			           (select job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters from last_status where job_state = ANY('{%[5]s}'))
 		)
 		select count(*) from inserted_jobs;`,
