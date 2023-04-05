@@ -1882,7 +1882,6 @@ func (rt *HandleT) Setup(
 	rruntime.Go(func() {
 		rt.backendConfigSubscriber()
 	})
-	adminInstance.registerRouter(destName, rt)
 }
 
 func (rt *HandleT) Start() {

@@ -40,7 +40,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
@@ -279,7 +278,6 @@ type JobsDB interface {
 
 	/* Admin */
 
-	Status() interface{}
 	Ping() error
 	DeleteExecuting()
 	FailExecuting()
@@ -845,9 +843,6 @@ func (jd *HandleT) workersAndAuxSetup() {
 	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
-	if jd.registerStatusHandler {
-		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
-	}
 	jd.BackupSettings = &backupSettings{}
 	jd.registerBackUpSettings()
 

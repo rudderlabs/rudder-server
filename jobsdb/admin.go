@@ -4,45 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 )
-
-func (jd *HandleT) Status() interface{} {
-	statusObj := map[string]interface{}{
-		"dataset-list":    jd.getDSList(),
-		"dataset-ranges":  jd.getDSRangeList(),
-		"backups-enabled": jd.BackupSettings.isBackupEnabled(),
-	}
-	emptyResults := make(map[string]interface{})
-	for ds, entry := range jd.dsEmptyResultCache {
-		emptyResults[ds.JobTable] = entry
-	}
-	statusObj["empty-results-cache"] = emptyResults
-
-	pendingEventMetrics := metric.Instance.
-		GetRegistry(metric.PublishedMetrics).
-		GetMetricsByName(fmt.Sprintf(rmetrics.JobsdbPendingEventsCount, jd.tablePrefix))
-
-	if len(pendingEventMetrics) == 0 {
-		return statusObj
-	}
-
-	var pendingEvents []map[string]interface{}
-	for _, pendingEvent := range pendingEventMetrics {
-		count := pendingEvent.Value.(metric.Gauge).IntValue()
-		if count != 0 {
-			pendingEvents = append(pendingEvents, map[string]interface{}{
-				"tags":  pendingEvent.Tags,
-				"count": count,
-			})
-		}
-	}
-	statusObj["pending-events"] = pendingEvents
-
-	return statusObj
-}
 
 /*
 Ping returns health check for pg database
