@@ -19,7 +19,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var (
+	jsonfast              = jsoniter.ConfigCompatibleWithStandardLibrary
+	updateAfterTimeFormat = "2006-01-02T15:04:05Z"
+)
 
 type namespaceConfig struct {
 	configEnvHandler types.ConfigEnvI
@@ -30,9 +33,12 @@ type namespaceConfig struct {
 
 	hostedServiceSecret string
 
-	namespace        string
-	configBackendURL *url.URL
-	region           string
+	namespace                   string
+	configBackendURL            *url.URL
+	region                      string
+	useIncrementalConfigUpdates bool
+	lastUpdatedAt               time.Time
+	workspacesConfig            map[string]ConfigT
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
@@ -63,7 +69,7 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	if nc.logger == nil {
 		nc.logger = logger.NewLogger().Child("backend-config")
 	}
-
+	nc.workspacesConfig = make(map[string]ConfigT)
 	nc.logger.Infof("Fetching config for namespace %s", nc.namespace)
 
 	return nil
@@ -76,14 +82,20 @@ func (nc *namespaceConfig) Get(ctx context.Context) (map[string]ConfigT, error) 
 
 // getFromApi gets the workspace config from api
 func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, error) {
-	config := make(map[string]ConfigT)
+	configOnError := make(map[string]ConfigT)
 	if nc.namespace == "" {
-		return config, fmt.Errorf("namespace is not configured")
+		return configOnError, fmt.Errorf("namespace is not configured")
 	}
+	useUpdateAfter := nc.useIncrementalConfigUpdates && !nc.lastUpdatedAt.IsZero()
 
 	var respBody []byte
 	u := *nc.configBackendURL
 	u.Path = fmt.Sprintf("/data-plane/v1/namespaces/%s/config", nc.namespace)
+	if useUpdateAfter {
+		values := u.Query()
+		values.Add("updatedAfter", nc.lastUpdatedAt.Format(updateAfterTimeFormat))
+		u.RawQuery = values.Encode()
+	}
 	operation := func() (fetchError error) {
 		nc.logger.Debugf("Fetching config from %s", u.String())
 		respBody, fetchError = nc.makeHTTPRequest(ctx, u.String())
@@ -98,7 +110,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		if ctx.Err() == nil {
 			nc.logger.Errorf("Error sending request to the server: %v", err)
 		}
-		return config, err
+		return configOnError, err
 	}
 	configEnvHandler := nc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
@@ -109,17 +121,33 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	err = jsonfast.Unmarshal(respBody, &workspacesConfig)
 	if err != nil {
 		nc.logger.Errorf("Error while parsing request: %v", err)
-		return config, err
+		return configOnError, err
+	}
+
+	if !nc.useIncrementalConfigUpdates {
+		nc.workspacesConfig = make(map[string]ConfigT)
 	}
 
 	for workspaceID, wc := range workspacesConfig {
+		if len(wc.Sources) == 0 {
+			continue
+		}
 		// always set connection flags to true for hosted and multi-tenant warehouse service
 		wc.ConnectionFlags.URL = nc.cpRouterURL
 		wc.ConnectionFlags.Services = map[string]bool{"warehouse": true}
-		workspacesConfig[workspaceID] = wc
+		nc.workspacesConfig[workspaceID] = wc
+		if wc.UpdatedAt.After(nc.lastUpdatedAt) {
+			nc.lastUpdatedAt = wc.UpdatedAt
+		}
 	}
 
-	return workspacesConfig, nil
+	for workspaceID := range nc.workspacesConfig {
+		if _, ok := workspacesConfig[workspaceID]; !ok {
+			delete(nc.workspacesConfig, workspaceID)
+		}
+	}
+
+	return nc.workspacesConfig, nil
 }
 
 func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {

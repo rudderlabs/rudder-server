@@ -2,11 +2,13 @@ package backendconfig
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -149,10 +151,68 @@ func Test_Namespace_Identity(t *testing.T) {
 	}, ident)
 }
 
-type backendConfigServer struct {
-	responses map[string]string
+func Test_Namespace_IncrementalUpdates(t *testing.T) {
+	config.Reset()
+	logger.Reset()
 
-	token string
+	var (
+		namespace = "free-us-1"
+		secret    = "service-secret"
+	)
+
+	be := &backendConfigServer{
+		token: secret,
+	}
+	be.AddNamespace(t, namespace, "./testdata/sample_namespace.json")
+
+	ts := httptest.NewServer(be)
+	defer ts.Close()
+	httpSrvURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	client := &namespaceConfig{
+		logger: logger.NOP,
+
+		client:           ts.Client(),
+		configBackendURL: httpSrvURL,
+
+		namespace: namespace,
+
+		hostedServiceSecret:         secret,
+		cpRouterURL:                 cpRouterURL,
+		useIncrementalConfigUpdates: true,
+	}
+	require.NoError(t, client.SetUp())
+
+	c, err := client.Get(context.Background())
+	require.NoError(t, err)
+	require.Len(t, c, 2)
+
+	// send the request again, should receive any update for one more workspace
+	c, err = client.Get(context.Background())
+	require.NoError(t, err)
+	require.Len(t, c, 3)
+
+	// send the request again, should not receive any new workspace
+	c, err = client.Get(context.Background())
+	require.NoError(t, err)
+	require.Len(t, c, 3)
+
+	// send the request again, this time, the workspace would be deleted
+	c, err = client.Get(context.Background())
+	require.NoError(t, err)
+	require.Len(t, c, 2)
+
+	firstUpdateTime, _ := time.Parse(updateAfterTimeFormat, "2022-07-20T10:00:00.000Z")
+	require.Equal(t, be.receivedUpdateAt[0], firstUpdateTime, updateAfterTimeFormat)
+	require.Equal(t, be.receivedUpdateAt[1], firstUpdateTime.Add(60*time.Second), updateAfterTimeFormat)
+}
+
+type backendConfigServer struct {
+	responses              map[string]string
+	receivedUpdateAt       []time.Time
+	numIncrementalRequests int
+	token                  string
 }
 
 func (server *backendConfigServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
@@ -162,7 +222,28 @@ func (server *backendConfigServer) ServeHTTP(resp http.ResponseWriter, req *http
 		_, _ = resp.Write([]byte(`{"message":"Unauthorized"}`))
 		return
 	}
-
+	values := req.URL.Query()
+	for k, v := range values {
+		if k == "updatedAfter" {
+			server.numIncrementalRequests = server.numIncrementalRequests + 1
+			updateAtTime, err := time.Parse(updateAfterTimeFormat, v[0])
+			if err != nil {
+				resp.WriteHeader(http.StatusBadRequest)
+				_, _ = resp.Write([]byte(`{"message":"invalid param for updatedAfter"}`))
+			}
+			server.receivedUpdateAt = append(server.receivedUpdateAt, updateAtTime)
+			newUpdateAt := updateAtTime.Add(60 * time.Second)
+			var response string
+			if server.numIncrementalRequests < 3 {
+				response = fmt.Sprintf(`{"dummy":{"updatedAt":%q, "sources":[{}]}, "2CCgbmvBSa8Mv81YaIgtR36M7aW": null, "2CChLejq5aIWi3qsKVm1PjHkyTj" : null}`, newUpdateAt.Format((updateAfterTimeFormat)))
+			} else {
+				response = `{"2CChLejq5aIWi3qsKVm1PjHkyTj" : null, "2CCgbmvBSa8Mv81YaIgtR36M7aW": null}`
+			}
+			resp.WriteHeader(http.StatusOK)
+			_, _ = resp.Write([]byte(response))
+			return
+		}
+	}
 	body, ok := server.responses[req.URL.Path]
 	if !ok {
 		resp.WriteHeader(http.StatusNotFound)

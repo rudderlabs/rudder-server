@@ -42,11 +42,12 @@ var (
 	LastRegulationSync string
 
 	// DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
-	DefaultBackendConfig BackendConfig
-	pkgLogger            = logger.NewLogger().Child("backend-config")
-	IoUtil               = sysUtils.NewIoUtil()
-	Diagnostics          diagnostics.DiagnosticsI
-	cacheOverride        cache.Cache
+	DefaultBackendConfig        BackendConfig
+	pkgLogger                   = logger.NewLogger().Child("backend-config")
+	IoUtil                      = sysUtils.NewIoUtil()
+	Diagnostics                 diagnostics.DiagnosticsI
+	cacheOverride               cache.Cache
+	useIncrementalConfigUpdates bool
 )
 
 func disableCache() {
@@ -98,6 +99,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &configFromFile, false, "BackendConfig.configFromFile")
 	config.RegisterIntConfigVariable(1000, &maxRegulationsPerRequest, true, 1, "BackendConfig.maxRegulationsPerRequest")
 	config.RegisterBoolConfigVariable(true, &configEnvReplacementEnabled, false, "BackendConfig.envReplacementEnabled")
+	config.RegisterBoolConfigVariable(false, &useIncrementalConfigUpdates, false, "BackendConfig.useIncrementalConfigUpdates")
 	config.RegisterBoolConfigVariable(true, &dbCacheEnabled, false, "BackendConfig.dbCacheEnabled")
 }
 
@@ -284,10 +286,11 @@ func newForDeployment(deploymentType deployment.Type, region string, configEnvHa
 		}
 	case deployment.MultiTenantType:
 		backendConfig.workspaceConfig = &namespaceConfig{
-			configBackendURL: parsedConfigBackendURL,
-			configEnvHandler: configEnvHandler,
-			cpRouterURL:      cpRouterURL,
-			region:           region,
+			configBackendURL:            parsedConfigBackendURL,
+			configEnvHandler:            configEnvHandler,
+			cpRouterURL:                 cpRouterURL,
+			region:                      region,
+			useIncrementalConfigUpdates: useIncrementalConfigUpdates,
 		}
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
