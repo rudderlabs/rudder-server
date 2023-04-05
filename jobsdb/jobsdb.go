@@ -1859,66 +1859,8 @@ func (jd *HandleT) doClearCache(ds dataSetT, CVPMap map[string]map[string]map[st
 	}
 }
 
-func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]int, error) {
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
-	}
-	defer jd.dsMigrationLock.RUnlock()
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
-	}
-	defer jd.dsListLock.RUnlock()
-	dsList := jd.getDSList()
-	statMap := make(map[string]map[string]int)
-
-	for _, ds := range dsList {
-		queryString := fmt.Sprintf(`with joined as (
-			select
-			  j.job_id as jobID,
-			  j.custom_val as customVal,
-			  s.id as statusID,
-			  s.job_state as jobState,
-			  j.workspace_id as workspace
-			from
-			  %[1]q j
-			  left join "v_last_%[2]s" s on j.job_id = s.job_id
-			where (
-			  s.job_state not in ('aborted', 'succeeded', 'migrated')
-			  or s.job_id is null
-			)
-		  )
-		  select
-			count(*),
-			customVal,
-			workspace
-		  from
-			joined
-		  group by
-			customVal,
-			workspace;`, ds.JobTable, ds.JobStatusTable)
-		rows, err := jd.dbHandle.QueryContext(ctx, queryString)
-		if err != nil {
-			return nil, err
-		}
-
-		for rows.Next() {
-			var count sql.NullInt64
-			var customVal string
-			var workspace string
-			err := rows.Scan(&count, &customVal, &workspace)
-			if err != nil {
-				return statMap, err
-			}
-			if _, ok := statMap[workspace]; !ok {
-				statMap[workspace] = make(map[string]int)
-			}
-			statMap[workspace][customVal] += int(count.Int64)
-		}
-		if err = rows.Err(); err != nil {
-			return statMap, err
-		}
-	}
-	return statMap, nil
+func (jd *HandleT) GetPileUpCounts(_ context.Context) (map[string]map[string]int, error) {
+	return map[string]map[string]int{}, nil
 }
 
 func (jd *HandleT) GetActiveWorkspaces(ctx context.Context) ([]string, error) {
@@ -2030,10 +1972,6 @@ func (jd *HandleT) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, job
 		if _, err = stmt.ExecContext(ctx); err != nil {
 			return err
 		}
-		if len(jobList) > jd.analyzeThreshold {
-			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
-		}
-
 		return err
 	}
 	const (
@@ -2650,10 +2588,6 @@ func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *Tx, ds dataSetT, sta
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
-	if err != nil {
-		return err
-	}
 
 	tx.AddSuccessListener(func() {
 		var allUpdatedStates []string
