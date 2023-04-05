@@ -26,6 +26,7 @@ type JobsForwarder struct {
 	transientSources transientsource.Service
 	backendConfig    backendconfig.BackendConfig
 	transformer      schematransformer.Transformer
+	retryAttempts    int
 }
 
 func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, transientSources transientsource.Service, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
@@ -34,6 +35,7 @@ func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config 
 	forwarder := JobsForwarder{
 		transientSources: transientSources,
 		BaseForwarder:    baseForwarder,
+		retryAttempts:    config.GetInt("JobsForwarder.retryAttempts", 3),
 	}
 	client, err := pulsar.New()
 	if err != nil {
@@ -57,7 +59,8 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 					return err
 				}
 				var statusList []*jobsdb.JobStatusT
-				for _, job := range jobs {
+				filteredJobs := jf.filterJobs(jobs, statusList)
+				for _, job := range filteredJobs {
 					transformedBytes, err := jf.transformer.Transform(job)
 					if err != nil {
 						statusList = append(statusList, &jobsdb.JobStatusT{
@@ -71,7 +74,7 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 							ErrorResponse: json.RawMessage(err.Error()),
 						})
 					}
-					statusFunc := func(id pulsarType.MessageID, message *pulsarType.ProducerMessage, err error) {
+					statusFunc := func(_ pulsarType.MessageID, _ *pulsarType.ProducerMessage, err error) {
 						if err != nil {
 							statusList = append(statusList, &jobsdb.JobStatusT{
 								JobID:         job.JobID,
@@ -110,4 +113,24 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 
 func (jf *JobsForwarder) Stop() {
 	jf.pulsarProducer.Close()
+}
+
+func (jf *JobsForwarder) filterJobs(jobs []*jobsdb.JobT, list []*jobsdb.JobStatusT) []*jobsdb.JobT {
+	var filteredJobs []*jobsdb.JobT
+	for _, job := range jobs {
+		if job.LastJobStatus.JobState == "failed" && job.LastJobStatus.AttemptNum >= jf.retryAttempts {
+			list = append(list, &jobsdb.JobStatusT{
+				JobID:      job.JobID,
+				AttemptNum: job.LastJobStatus.AttemptNum + 1,
+				JobState:   "aborted",
+				ExecTime:   time.Now(),
+				RetryTime:  time.Now(),
+				ErrorCode:  "500",
+				Parameters: []byte{},
+			})
+		} else {
+			filteredJobs = append(filteredJobs, job)
+		}
+	}
+	return filteredJobs
 }
