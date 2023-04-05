@@ -115,7 +115,9 @@ func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Hand
 	}
 	for _, job := range jobs {
 		path := gjson.GetBytes(job.EventPayload, "location").String()
-		_, err := os.Create(filepath.Join(tmpDirPath, path))
+		_, location := filepath.Split(path)
+		finalPath := filepath.Join(tmpDirPath, location)
+		_, err := os.Create(finalPath)
 		if err != nil {
 			fmt.Println("error creating file", path, err)
 		}
@@ -225,8 +227,8 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 				procHandle.handle.log.Debugf("Skipping object: %v InstanceID: %v", object.Key, df.InstanceID)
 				continue
 			}
-
-			if _, err := os.Stat(path.Join(procHandle.handle.tmpDirPath, object.Key)); !errors.Is(err, os.ErrNotExist) {
+			_, checkPath := filepath.Split(object.Key)
+			if _, err := os.Stat(path.Join(procHandle.handle.tmpDirPath, checkPath)); !errors.Is(err, os.ErrNotExist) {
 				procHandle.handle.log.Info("File is already written to DB skipping", object.Key)
 				continue
 			}
