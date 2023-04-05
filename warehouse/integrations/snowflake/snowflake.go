@@ -997,9 +997,9 @@ func Connect(cred Credentials) (*sql.DB, error) {
 
 	_, err = db.Exec(alterStatement)
 
-	pkgLogger.Infow("executing query",
+	pkgLogger.Debugw("executing query",
 		logfield.QueryType, model.AlterSession,
-		logfield.QueryExecutionTime, time.Since(startedAt),
+		logfield.QueryExecutionTimeInSec, time.Since(startedAt),
 	)
 
 	if err != nil {
@@ -1448,7 +1448,7 @@ func (sf *Snowflake) Connect(warehouse model.Warehouse) (client.Client, error) {
 	return client.Client{Type: client.SQLClient, SQL: db}, nil
 }
 
-func (sf *Snowflake) LoadTestTable(location, tableName string, _ map[string]interface{}, _ string) (err error) {
+func (sf *Snowflake) LoadTestTable(location, tableName string, _ map[string]any, _ string) (err error) {
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
@@ -1471,18 +1471,17 @@ func (sf *Snowflake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
 
-func (sf *Snowflake) slowQueryLog(queryType model.QueryType, executionTime time.Duration, keysAndValues ...interface{}) {
+func (sf *Snowflake) slowQueryLog(queryType model.QueryType, executionTime time.Duration, keysAndValues ...any) {
 	if executionTime > sf.SlowQueryInSec {
-		sf.Logger.Infow("executing query",
-			logfield.QueryType, queryType,
-			logfield.QueryExecutionTime, executionTime,
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Namespace, sf.Namespace,
-			keysAndValues,
-		)
+		keysAndValues = append(keysAndValues, logfield.QueryType, queryType)
+		keysAndValues = append(keysAndValues, logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime))
+		keysAndValues = append(keysAndValues, logfield.SourceID, sf.Warehouse.Source.ID)
+		keysAndValues = append(keysAndValues, logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name)
+		keysAndValues = append(keysAndValues, logfield.DestinationID, sf.Warehouse.Destination.ID)
+		keysAndValues = append(keysAndValues, logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name)
+		keysAndValues = append(keysAndValues, logfield.WorkspaceID, sf.Warehouse.WorkspaceID)
+		keysAndValues = append(keysAndValues, logfield.Namespace, sf.Namespace)
+
+		sf.Logger.Infow("executing query", keysAndValues...)
 	}
 }

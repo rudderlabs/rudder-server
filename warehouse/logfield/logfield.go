@@ -26,7 +26,7 @@ const (
 	Provider                   = "provider"
 	Query                      = "query"
 	QueryType                  = "queryType"
-	QueryExecutionTime         = "queryExecutionTime"
+	QueryExecutionTimeInSec    = "queryExecutionTimeInSec"
 	StagingTableName           = "stagingTableName"
 	QueryPlanner               = "queryPlan"
 	LoadFile                   = "loadFile"
