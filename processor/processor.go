@@ -135,7 +135,6 @@ type Handle struct {
 	adaptiveLimit func(int64) int64
 }
 type processorStats struct {
-	transformEventsByTimeMutex    sync.RWMutex
 	statGatewayDBR                stats.Measurement
 	statGatewayDBW                stats.Measurement
 	statRouterDBW                 stats.Measurement
