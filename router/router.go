@@ -1628,7 +1628,11 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	rt.lastQueryRunTime = time.Now()
 
-	pickupMap := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, jobQueryBatchSize)
+	// pickupMap := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.noOfWorkers, timeOut, jobQueryBatchSize)
+	pickupMap := map[string]int{
+		"1gqBb5DYhabD6Kf8LIQkCRxHt33": 10000,
+	}
+
 	totalPickupCount := 0
 	for _, pickup := range pickupMap {
 		if pickup > 0 {

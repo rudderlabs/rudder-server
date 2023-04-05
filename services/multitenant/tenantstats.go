@@ -3,7 +3,6 @@
 package multitenant
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -60,29 +59,7 @@ func (*Stats) Stop() {
 
 func (t *Stats) Start() error {
 	t.reset()
-	for dbPrefix := range t.RouterDBs {
-		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
-		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
-			t.jobdDBQueryRequestTimeout,
-			t.jobdDBMaxRetries,
-			func(ctx context.Context) (map[string]map[string]int, error) {
-				return t.RouterDBs[dbPrefix].GetPileUpCounts(ctx)
-			}, sendQueryRetryStats)
-		if err != nil {
-			return err
-		}
 
-		for workspace := range pileUpStatMap {
-			for destType, jobCount := range pileUpStatMap[workspace] {
-				rmetrics.IncreasePendingEvents(
-					dbPrefix,
-					workspace,
-					destType,
-					float64(jobCount),
-				)
-			}
-		}
-	}
 	return nil
 }
 
