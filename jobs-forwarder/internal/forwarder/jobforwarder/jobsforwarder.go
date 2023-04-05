@@ -79,7 +79,7 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 							statusList = append(statusList, &jobsdb.JobStatusT{
 								JobID:         job.JobID,
 								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-								JobState:      "failed",
+								JobState:      jobsdb.Failed.State,
 								ExecTime:      time.Now(),
 								RetryTime:     time.Now(),
 								ErrorCode:     "500",
@@ -90,7 +90,7 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 							statusList = append(statusList, &jobsdb.JobStatusT{
 								JobID:      job.JobID,
 								AttemptNum: job.LastJobStatus.AttemptNum + 1,
-								JobState:   "executing",
+								JobState:   jobsdb.Succeeded.State,
 								ExecTime:   time.Now(),
 							})
 						}
@@ -122,7 +122,7 @@ func (jf *JobsForwarder) filterJobs(jobs []*jobsdb.JobT, list []*jobsdb.JobStatu
 			list = append(list, &jobsdb.JobStatusT{
 				JobID:      job.JobID,
 				AttemptNum: job.LastJobStatus.AttemptNum + 1,
-				JobState:   "aborted",
+				JobState:   jobsdb.Aborted.State,
 				ExecTime:   time.Now(),
 				RetryTime:  time.Now(),
 				ErrorCode:  "500",
