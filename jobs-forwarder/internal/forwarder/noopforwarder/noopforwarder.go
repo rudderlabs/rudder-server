@@ -6,6 +6,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/forwarder/baseforwarder"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -16,9 +17,9 @@ type NoopForwarder struct {
 	baseforwarder.BaseForwarder
 }
 
-func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, log logger.Logger) (*NoopForwarder, error) {
+func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*NoopForwarder, error) {
 	baseForwarder := baseforwarder.BaseForwarder{}
-	baseForwarder.LoadMetaData(ctx, g, schemaDB, log)
+	baseForwarder.LoadMetaData(ctx, g, schemaDB, log, config)
 	return &NoopForwarder{baseForwarder}, nil
 }
 

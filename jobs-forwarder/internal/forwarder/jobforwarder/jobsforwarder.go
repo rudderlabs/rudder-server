@@ -6,6 +6,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
@@ -24,9 +25,9 @@ type JobsForwarder struct {
 	transformer      schematransformer.Transformer
 }
 
-func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, transientSources transientsource.Service, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
+func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, transientSources transientsource.Service, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
 	baseForwarder := baseforwarder.BaseForwarder{}
-	baseForwarder.LoadMetaData(ctx, g, schemaDB, log)
+	baseForwarder.LoadMetaData(ctx, g, schemaDB, log, config)
 	forwarder := JobsForwarder{
 		transientSources: transientSources,
 		BaseForwarder:    baseForwarder,
@@ -37,7 +38,7 @@ func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, transie
 	}
 	forwarder.pulsarProducer = client
 	forwarder.backendConfig = backendConfig
-	forwarder.transformer = schematransformer.New(ctx, g, backendConfig)
+	forwarder.transformer = schematransformer.New(ctx, g, backendConfig, config)
 	return &forwarder, nil
 }
 

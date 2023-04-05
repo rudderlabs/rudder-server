@@ -23,7 +23,7 @@ func Setup(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, trans
 	config := config.New()
 	forwarderEnabled := config.GetBool("JobsForwarder.enabled", false)
 	if forwarderEnabled {
-		return jobforwarder.New(ctx, g, schemaDB, transientSources, backendConfig, log)
+		return jobforwarder.New(ctx, g, schemaDB, config, transientSources, backendConfig, log)
 	}
-	return noopforwarder.New(ctx, g, schemaDB, log)
+	return noopforwarder.New(ctx, g, schemaDB, config, log)
 }

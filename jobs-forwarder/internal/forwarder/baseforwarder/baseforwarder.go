@@ -28,8 +28,8 @@ type BaseForwarder struct {
 	}
 }
 
-func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, log logger.Logger) {
-	bf.config = config.New()
+func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, log logger.Logger, config *config.Config) {
+	bf.config = config
 	bf.BaseConfig.PickupSize = bf.config.GetInt("JobsForwarder.eventCount", 10000)
 	bf.BaseConfig.loopSleepTime = config.GetDuration("JobsForwarder.loopSleepTime", 10, time.Second)
 	bf.BaseConfig.JobsDBQueryRequestTimeout = config.GetDuration("JobsForwarder.queryTimeout", 10, time.Second)
