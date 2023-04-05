@@ -160,7 +160,7 @@ func TestIntegration(t *testing.T) {
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
 		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
-		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(gomock.Any()).Times(1)
+		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(3.0).Times(1)
 
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
@@ -667,6 +667,8 @@ func TestSendBatchedMessage(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
+		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(1.0).Times(1)
 
 		p := &pMockErr{error: nil}
 		pm := &ProducerManager{p: p}
@@ -691,6 +693,8 @@ func TestSendBatchedMessage(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
+		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(1.0).Times(1)
 
 		p := &pMockErr{error: nil}
 		pm := &ProducerManager{p: p}
@@ -715,6 +719,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
 		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
+
 		codec, codecErr := goavro.NewCodec(`{
 			"namespace" : "kafkaAvroTest",
 			"name": "myRecord",
