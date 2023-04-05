@@ -7,8 +7,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/jobforwarder"
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/noopforwarder"
+	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/forwarder/jobforwarder"
+	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/forwarder/noopforwarder"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 )

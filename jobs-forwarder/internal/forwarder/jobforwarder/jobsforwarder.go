@@ -8,7 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/baseforwarder"
+	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/forwarder/baseforwarder"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
