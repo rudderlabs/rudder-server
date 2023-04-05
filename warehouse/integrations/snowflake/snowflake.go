@@ -1473,14 +1473,16 @@ func (sf *Snowflake) ErrorMappings() []model.JobError {
 
 func (sf *Snowflake) slowQueryLog(queryType model.QueryType, executionTime time.Duration, keysAndValues ...any) {
 	if executionTime > sf.SlowQueryInSec {
-		keysAndValues = append(keysAndValues, logfield.QueryType, queryType)
-		keysAndValues = append(keysAndValues, logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime))
-		keysAndValues = append(keysAndValues, logfield.SourceID, sf.Warehouse.Source.ID)
-		keysAndValues = append(keysAndValues, logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name)
-		keysAndValues = append(keysAndValues, logfield.DestinationID, sf.Warehouse.Destination.ID)
-		keysAndValues = append(keysAndValues, logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name)
-		keysAndValues = append(keysAndValues, logfield.WorkspaceID, sf.Warehouse.WorkspaceID)
-		keysAndValues = append(keysAndValues, logfield.Namespace, sf.Namespace)
+		keysAndValues = append(keysAndValues,
+			logfield.QueryType, queryType,
+			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime),
+			logfield.SourceID, sf.Warehouse.Source.ID,
+			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, sf.Warehouse.Destination.ID,
+			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
+			logfield.Namespace, sf.Namespace,
+		)
 
 		sf.Logger.Infow("executing query", keysAndValues...)
 	}
