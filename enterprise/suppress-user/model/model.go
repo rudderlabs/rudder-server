@@ -5,6 +5,7 @@ import "errors"
 var (
 	ErrRestoring    = errors.New("repository is restoring")
 	ErrNotSupported = errors.New("operation not supported")
+	SyncDoneMarker  = ".sync_done"
 )
 var Wildcard = "*"
 
