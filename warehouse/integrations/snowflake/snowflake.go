@@ -309,7 +309,7 @@ func (sf *Snowflake) schemaExists() (exists bool, err error) {
 	return
 }
 
-func (sf *Snowflake) createSchema()  error {
+func (sf *Snowflake) createSchema() error {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)
 
@@ -479,8 +479,8 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 	_, err = db.Exec(sqlStatement)
 
 	sf.slowQueryLog(model.Copy, time.Since(startedAt),
-		logfield.Query, sanitisedQuery,
 		logfield.TableName, tableName,
+		logfield.Query, sanitisedQuery,
 	)
 
 	if err != nil {
@@ -599,8 +599,8 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 	row := db.QueryRow(sqlStatement)
 
 	sf.slowQueryLog(model.Merge, time.Since(startedAt),
-		logfield.Query, sqlStatement,
 		logfield.TableName, tableName,
+		logfield.Query, sqlStatement,
 	)
 
 	if row.Err() != nil {
@@ -1053,7 +1053,7 @@ func (sf *Snowflake) AddColumns(tableName string, columnsInfo []warehouseutils.C
 		query            string
 		queryBuilder     strings.Builder
 		schemaIdentifier string
-		err error
+		err              error
 	)
 
 	schemaIdentifier = sf.schemaIdentifier()
@@ -1086,7 +1086,20 @@ func (sf *Snowflake) AddColumns(tableName string, columnsInfo []warehouseutils.C
 	if len(columnsInfo) == 1 {
 		if err != nil {
 			if checkAndIgnoreAlreadyExistError(err) {
-				sf.Logger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnsInfo[0].Name, schemaIdentifier, tableName, err)
+				sf.Logger.Infow("column already exists",
+					logfield.SourceID, sf.Warehouse.Source.ID,
+					logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+					logfield.DestinationID, sf.Warehouse.Destination.ID,
+					logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+					logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
+					logfield.Schema, sf.Namespace,
+					logfield.TableName, tableName,
+					logfield.ColumnName, columnsInfo[0].Name,
+					logfield.ColumnType, columnsInfo[0].Type,
+					logfield.Error, err.Error(),
+					logfield.Query, query,
+				)
+
 				return nil
 			}
 		}
@@ -1259,7 +1272,7 @@ func (sf *Snowflake) Setup(warehouse model.Warehouse, uploader warehouseutils.Up
 	sf.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
 
 	var (
-		db *sql.DB
+		db  *sql.DB
 		err error
 	)
 	if db, err = Connect(sf.getConnectionCredentials(optionalCreds{})); err != nil {
@@ -1298,13 +1311,18 @@ func (sf *Snowflake) TestConnection(warehouse model.Warehouse) error {
 
 // FetchSchema queries snowflake and returns the schema associated with provided namespace
 func (sf *Snowflake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
+	var (
+		db  *sql.DB
+		err error
+	)
+
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(sf.getConnectionCredentials(optionalCreds{}))
-	if err != nil {
+
+	if db, err = Connect(sf.getConnectionCredentials(optionalCreds{})); err != nil {
 		return model.Schema{}, model.Schema{}, fmt.Errorf("connect: %w", err)
 	}
-	defer func() { _ = dbHandle.Close() }()
+	defer func() { _ = db.Close() }()
 
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
@@ -1324,7 +1342,7 @@ func (sf *Snowflake) FetchSchema(warehouse model.Warehouse) (model.Schema, model
 
 	startedAt := time.Now()
 
-	rows, err := dbHandle.Query(sqlStatement)
+	rows, err := db.Query(sqlStatement)
 
 	sf.slowQueryLog(model.FetchSchema, time.Since(startedAt),
 		logfield.Query, sqlStatement,
@@ -1376,7 +1394,11 @@ func (sf *Snowflake) LoadUserTables() map[string]error {
 
 func (sf *Snowflake) LoadTable(tableName string) error {
 	_, err := sf.loadTable(tableName, sf.Uploader.GetTableSchemaInUpload(tableName), false)
-	return err
+	if err != nil {
+		return fmt.Errorf("loading table %s: %w", tableName, err)
+	}
+
+	return nil
 }
 
 func (sf *Snowflake) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
@@ -1413,12 +1435,17 @@ func (sf *Snowflake) Connect(warehouse model.Warehouse) (client.Client, error) {
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(sf.getConnectionCredentials(optionalCreds{}))
-	if err != nil {
-		return client.Client{}, err
+
+	var (
+		db  *sql.DB
+		err error
+	)
+
+	if db, err = Connect(sf.getConnectionCredentials(optionalCreds{})); err != nil {
+		return client.Client{}, fmt.Errorf("connect: %w", err)
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: db}, nil
 }
 
 func (sf *Snowflake) LoadTestTable(location, tableName string, _ map[string]interface{}, _ string) (err error) {
