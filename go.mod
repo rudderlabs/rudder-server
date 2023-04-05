@@ -105,9 +105,6 @@ require (
 	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/rs/zerolog v1.28.0 // indirect
 	gotest.tools/gotestsum v1.8.2 // indirect
-)
-
-require (
 	cloud.google.com/go v0.107.0 // indirect
 	cloud.google.com/go/compute v1.18.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
