@@ -231,14 +231,15 @@ func (sf *Snowflake) schemaIdentifier() string {
 }
 
 func (sf *Snowflake) createTable(tableName string, columns model.TableSchema) error {
+	var err error
+
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%q ( %v )`, schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""))
 
-	startedAt := time.Now()
-
-	_, err := sf.DB.Exec(sqlStatement)
-
-	sf.slowQueryLog(model.CreateTable, time.Since(startedAt),
+	sf.logQuery(func() {
+		_, err = sf.DB.Exec(sqlStatement)
+	},
+		model.CreateTable,
 		logfield.TableName, tableName,
 		logfield.Query, sqlStatement,
 	)
@@ -257,11 +258,10 @@ func (sf *Snowflake) tableExists(tableName string) (exists bool, err error) {
    								 AND    table_name = '%s'
 								   )`, sf.Namespace, tableName)
 
-	startedAt := time.Now()
-
-	err = sf.DB.QueryRow(sqlStatement).Scan(&exists)
-
-	sf.slowQueryLog(model.TableExists, time.Since(startedAt),
+	sf.logQuery(func() {
+		err = sf.DB.QueryRow(sqlStatement).Scan(&exists)
+	},
+		model.TableExists,
 		logfield.TableName, tableName,
 		logfield.Query, sqlStatement,
 		"exists", exists,
@@ -277,11 +277,10 @@ func (sf *Snowflake) columnExists(columnName, tableName string) (exists bool, er
 									AND column_name = '%s'
 								   )`, sf.Namespace, tableName, columnName)
 
-	startedAt := time.Now()
-
-	err = sf.DB.QueryRow(sqlStatement).Scan(&exists)
-
-	sf.slowQueryLog(model.ColumnExists, time.Since(startedAt),
+	sf.logQuery(func() {
+		err = sf.DB.QueryRow(sqlStatement).Scan(&exists)
+	},
+		model.ColumnExists,
 		logfield.TableName, tableName,
 		logfield.ColumnName, columnName,
 		logfield.Query, sqlStatement,
@@ -290,34 +289,41 @@ func (sf *Snowflake) columnExists(columnName, tableName string) (exists bool, er
 	return
 }
 
-func (sf *Snowflake) schemaExists() (exists bool, err error) {
+func (sf *Snowflake) schemaExists() (bool, error) {
+	var (
+		exists bool
+		err    error
+	)
 	sqlStatement := fmt.Sprintf("SELECT EXISTS ( SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s' )", sf.Namespace)
 
-	startedAt := time.Now()
-
-	r := sf.DB.QueryRow(sqlStatement)
-	err = r.Scan(&exists)
-	// ignore err if no results for query
-	if err == sql.ErrNoRows {
-		err = nil
-	}
-
-	sf.slowQueryLog(model.SchemaExists, time.Since(startedAt),
+	sf.logQuery(func() {
+		err = sf.DB.QueryRow(sqlStatement).Scan(&exists)
+	},
+		model.SchemaExists,
 		logfield.Query, sqlStatement,
 		"exists", exists,
 	)
-	return
+
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("schema exists: %w", err)
+	}
+
+	return exists, nil
 }
 
 func (sf *Snowflake) createSchema() error {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)
 
-	startedAt := time.Now()
+	var err error
 
-	_, err := sf.DB.Exec(sqlStatement)
-
-	sf.slowQueryLog(model.CreateSchema, time.Since(startedAt),
+	sf.logQuery(func() {
+		_, err = sf.DB.Exec(sqlStatement)
+	},
+		model.CreateSchema,
 		logfield.Query, sqlStatement,
 	)
 
@@ -428,11 +434,10 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		tableName,
 	)
 
-	startedAt := time.Now()
-
-	_, err = db.Exec(sqlStatement)
-
-	sf.slowQueryLog(model.CreateTable, time.Since(startedAt),
+	sf.logQuery(func() {
+		_, err = db.Exec(sqlStatement)
+	},
+		model.CreateTable,
 		logfield.Query, sqlStatement,
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
@@ -474,11 +479,10 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		sanitisedQuery = ""
 	}
 
-	startedAt = time.Now()
-
-	_, err = db.Exec(sqlStatement)
-
-	sf.slowQueryLog(model.Copy, time.Since(startedAt),
+	sf.logQuery(func() {
+		_, err = db.Exec(sqlStatement)
+	},
+		model.Copy,
 		logfield.TableName, tableName,
 		logfield.Query, sanitisedQuery,
 	)
@@ -495,6 +499,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		additionalJoinClause string
 		inserted             int64
 		updated              int64
+		row                  *sql.Row
 	)
 
 	if column, ok := primaryKeyMap[tableName]; ok {
@@ -594,11 +599,10 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		)
 	}
 
-	startedAt = time.Now()
-
-	row := db.QueryRow(sqlStatement)
-
-	sf.slowQueryLog(model.Merge, time.Since(startedAt),
+	sf.logQuery(func() {
+		row = db.QueryRow(sqlStatement)
+	},
+		model.Merge,
 		logfield.TableName, tableName,
 		logfield.Query, sqlStatement,
 	)
@@ -860,11 +864,10 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 		strings.Join(identifyColNames, ","),
 	)
 
-	startedAt := time.Now()
-
-	_, err = resp.db.Exec(sqlStatement)
-
-	sf.slowQueryLog(model.CreateTable, time.Since(startedAt),
+	sf.logQuery(func() {
+		_, err = resp.db.Exec(sqlStatement)
+	},
+		model.CreateTable,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, stagingTableName,
 		logfield.Query, sqlStatement,
@@ -881,6 +884,7 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 		primaryKey     = `"ID"`
 		columnNames    = append([]string{`"ID"`}, userColNames...)
 		columnNamesStr = strings.Join(columnNames, ",")
+		row            *sql.Row
 	)
 
 	for idx, colName := range columnNames {
@@ -914,11 +918,10 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 		schemaIdentifier,
 	)
 
-	startedAt = time.Now()
-
-	row := resp.db.QueryRow(sqlStatement)
-
-	sf.slowQueryLog(model.Merge, time.Since(startedAt),
+	sf.logQuery(func() {
+		row = resp.db.QueryRow(sqlStatement)
+	},
+		model.Merge,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.Query, sqlStatement,
 	)
@@ -1032,11 +1035,12 @@ func (sf *Snowflake) DropTable(tableName string) error {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]q`, schemaIdentifier, tableName)
 
-	startedAt := time.Now()
+	var err error
 
-	_, err := sf.DB.Exec(sqlStatement)
-
-	sf.slowQueryLog(model.DropTable, time.Since(startedAt),
+	sf.logQuery(func() {
+		_, err = sf.DB.Exec(sqlStatement)
+	},
+		model.DropTable,
 		logfield.TableName, tableName,
 		logfield.Query, sqlStatement,
 	)
@@ -1073,11 +1077,10 @@ func (sf *Snowflake) AddColumns(tableName string, columnsInfo []warehouseutils.C
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
-	startedAt := time.Now()
-
-	_, err = sf.DB.Exec(query)
-
-	sf.slowQueryLog(model.AddColumns, time.Since(startedAt),
+	sf.logQuery(func() {
+		_, err = sf.DB.Exec(query)
+	},
+		model.AddColumns,
 		logfield.TableName, tableName,
 		logfield.Query, query,
 	)
@@ -1312,8 +1315,9 @@ func (sf *Snowflake) TestConnection(warehouse model.Warehouse) error {
 // FetchSchema queries snowflake and returns the schema associated with provided namespace
 func (sf *Snowflake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
 	var (
-		db  *sql.DB
-		err error
+		db   *sql.DB
+		rows *sql.Rows
+		err  error
 	)
 
 	sf.Warehouse = warehouse
@@ -1340,11 +1344,10 @@ func (sf *Snowflake) FetchSchema(warehouse model.Warehouse) (model.Schema, model
 		sf.Namespace,
 	)
 
-	startedAt := time.Now()
-
-	rows, err := db.Query(sqlStatement)
-
-	sf.slowQueryLog(model.FetchSchema, time.Since(startedAt),
+	sf.logQuery(func() {
+		rows, err = db.Query(sqlStatement)
+	},
+		model.FetchSchema,
 		logfield.Query, sqlStatement,
 	)
 
@@ -1414,11 +1417,10 @@ func (sf *Snowflake) GetTotalCountInTable(ctx context.Context, tableName string)
 		tableName,
 	)
 
-	startedAt := time.Now()
-
-	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-
-	sf.slowQueryLog(model.TableCount, time.Since(startedAt),
+	sf.logQuery(func() {
+		err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
+	},
+		model.TableCount,
 		logfield.TableName, tableName,
 		logfield.Query, sqlStatement,
 	)
@@ -1471,8 +1473,10 @@ func (sf *Snowflake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
 
-func (sf *Snowflake) slowQueryLog(queryType model.QueryType, executionTime time.Duration, keysAndValues ...any) {
-	if executionTime > sf.SlowQueryInSec {
+func (sf *Snowflake) logQuery(query func(), queryType model.QueryType, keysAndValues ...any) {
+	startedAt := time.Now()
+	query()
+	if executionTime := time.Since(startedAt); executionTime > sf.SlowQueryInSec {
 		keysAndValues = append(keysAndValues,
 			logfield.QueryType, queryType,
 			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime),
