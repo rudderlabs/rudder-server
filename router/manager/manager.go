@@ -88,7 +88,6 @@ func (r *LifecycleManager) monitorDestRouters(
 	ctx context.Context, routerFactory *router.Factory, batchrouterFactory *batchrouter.Factory,
 ) {
 	ch := r.BackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	cleanup := make([]func(), 0)
 
@@ -128,16 +127,6 @@ loop:
 								brt.Start()
 								cleanup = append(cleanup, brt.Shutdown)
 								dstToBatchRouter[destination.DestinationDefinition.Name] = brt
-							}
-						} else {
-							routerIdentifier := r.RouterIdentifier(destination.ID, destination.DestinationDefinition.Name)
-							_, ok := dstToRouter[routerIdentifier]
-							if !ok {
-								pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
-								rt := routerFactory.New(destination, routerIdentifier)
-								rt.Start()
-								cleanup = append(cleanup, rt.Shutdown)
-								dstToRouter[routerIdentifier] = rt
 							}
 						}
 					}
