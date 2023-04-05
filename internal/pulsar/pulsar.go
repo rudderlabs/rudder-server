@@ -126,12 +126,7 @@ func (p *Producer) SendMessageAsync(ctx context.Context, msg []byte, statusfunc 
 	}
 	p.Producer.SendAsync(ctx, &pulsar.ProducerMessage{
 		Payload: msg,
-	}, func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
-		if err != nil {
-			p.log.Errorf("pulsar async send error: %v", err)
-		}
-		p.log.Debugf("pulsar async send success: %v", id)
-	})
+	}, statusfunc)
 }
 
 func GetProducerConf() ProducerConf {
