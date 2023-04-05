@@ -1501,14 +1501,16 @@ func (d *Deltalake) ErrorMappings() []model.JobError {
 
 func (d *Deltalake) slowQueryLog(queryType model.QueryType, executionTime time.Duration, keysAndValues ...any) {
 	if executionTime > d.SlowQueryInSec {
-		keysAndValues = append(keysAndValues, logfield.QueryType, queryType)
-		keysAndValues = append(keysAndValues, logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime))
-		keysAndValues = append(keysAndValues, logfield.SourceID, d.Warehouse.Source.ID)
-		keysAndValues = append(keysAndValues, logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name)
-		keysAndValues = append(keysAndValues, logfield.DestinationID, d.Warehouse.Destination.ID)
-		keysAndValues = append(keysAndValues, logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name)
-		keysAndValues = append(keysAndValues, logfield.WorkspaceID, d.Warehouse.WorkspaceID)
-		keysAndValues = append(keysAndValues, logfield.Namespace, d.Namespace)
+		keysAndValues = append(keysAndValues,
+			logfield.QueryType, queryType,
+			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime),
+			logfield.SourceID, d.Warehouse.Source.ID,
+			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, d.Warehouse.Destination.ID,
+			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+			logfield.Namespace, d.Namespace,
+		)
 
 		d.Logger.Infow("executing query", keysAndValues...)
 	}
