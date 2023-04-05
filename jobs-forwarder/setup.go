@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/forwarder/jobforwarder"
 	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/forwarder/noopforwarder"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -18,11 +19,11 @@ type Forwarder interface {
 	Stop()
 }
 
-func Setup(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, transientSources transientsource.Service, log logger.Logger) (Forwarder, error) {
+func Setup(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, transientSources transientsource.Service, backendConfig backendConfig.BackendConfig, log logger.Logger) (Forwarder, error) {
 	config := config.New()
 	forwarderEnabled := config.GetBool("JobsForwarder.enabled", false)
 	if forwarderEnabled {
-		return jobforwarder.New(ctx, g, schemaDB, transientSources, log)
+		return jobforwarder.New(ctx, g, schemaDB, transientSources, backendConfig, log)
 	}
 	return noopforwarder.New(ctx, g, schemaDB, log)
 }

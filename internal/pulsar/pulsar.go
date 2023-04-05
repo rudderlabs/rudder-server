@@ -36,6 +36,7 @@ type ProducerAdapter interface {
 	SendMessage(ctx context.Context, key, orderingKey string, msg []byte) error
 	SendMessageAsync(ctx context.Context, msg []byte)
 	Close()
+	Flush() error
 }
 
 type Client struct {
@@ -110,6 +111,13 @@ func (p *Producer) Close() {
 	}
 	p.Producer.Close()
 	p.Client.Close()
+}
+
+func (p *Producer) Flush() error {
+	if p == nil {
+		return nil
+	}
+	return p.Producer.Flush()
 }
 
 func (p *Producer) SendMessageAsync(ctx context.Context, msg []byte) {
