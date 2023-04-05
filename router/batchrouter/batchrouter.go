@@ -77,7 +77,7 @@ var (
 type HandleT struct {
 	destType                    string
 	destinationsMap             map[string]*router_utils.BatchDestinationT // destinationID -> destination
-	connectionWHNamespaceMap    map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
+	connectionWHNamespaceMap    map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namespace)
 	netHandle                   *http.Client
 	processQ                    chan *BatchDestinationDataT
 	jobsDB                      jobsdb.JobsDB
