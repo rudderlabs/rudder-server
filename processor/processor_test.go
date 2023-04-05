@@ -563,7 +563,7 @@ var _ = Describe("Processor with event schemas DB", Ordered, func() {
 							messages["message-4"],
 							messages["message-5"],
 						},
-						createMessagePayloadWithoutSources,
+						createMessagePayload,
 					),
 					EventCount: 3,
 					Parameters: createBatchParameters(SourceIDEnabledNoUT),
@@ -571,54 +571,6 @@ var _ = Describe("Processor with event schemas DB", Ordered, func() {
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
-
-			payloadLimit := 100 * bytesize.MB
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
-				gomock.Any(),
-				jobsdb.GetQueryParamsT{
-					CustomValFilters: gatewayCustomVal,
-					JobsLimit:        c.dbReadBatchSize,
-					EventsLimit:      c.processEventSize,
-					PayloadSizeLimit: payloadLimit,
-				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-
-			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().
-				Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Times(1).After(callUnprocessed)
-
-			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
-				Expect(job.UUID.String()).To(testutils.BeValidUUID())
-				Expect(job.JobID).To(Equal(int64(0)))
-				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
-				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
-			}
-			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(
-				gomock.Any(),
-				gomock.Any(),
-			).Times(1).
-				Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-					_ = f(jobsdb.EmptyStoreSafeTx())
-				}).Return(nil)
-
-			c.mockRouterJobsDB.EXPECT().StoreInTx(
-				gomock.Any(), gomock.Any(), gomock.Any()).
-				Times(1).
-				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
-					for i, job := range jobs {
-						assertStoreJob(job, i, "value-enabled-destination-a")
-					}
-				})
-
-			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(
-				gomock.Any(),
-				gomock.Any(),
-			).Times(1)
 
 			c.mockEventSchemasDB.EXPECT().
 				WithStoreSafeTx(
@@ -632,32 +584,24 @@ var _ = Describe("Processor with event schemas DB", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
-				})
-
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(
-				gomock.Any(),
-				gomock.Any(),
-			).Do(
-				func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
-					_ = f(jobsdb.EmptyUpdateSafeTx())
-				}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().
-				UpdateJobStatusInTx(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).
-				Times(1).
-				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					// jobs should be sorted by jobid, so order of statuses is different from order of jobs
-					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
-					}
+					Expect(jobs).To(HaveLen(1))
 				})
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
-			processorSetupAndAssertJobHandling(processor, c)
+			Setup(processor, c, false, false)
+			processor.multitenantI = c.MockMultitenantHandle
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			GinkgoT().Log("Processor setup and init done")
+			_ = processor.processJobsForDest(
+				"",
+				subJob{
+					subJobs: unprocessedJobsList,
+				},
+				nil,
+			)
 		})
 	})
 })

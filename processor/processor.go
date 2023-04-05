@@ -1432,6 +1432,29 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 		statusList = append(statusList, &newStatus)
 	}
 
+	if proc.config.enableEventSchemasJobsDB {
+		if len(eventSchemaJobs) > 0 {
+			proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(eventSchemaJobs))
+			err := misc.RetryWithNotify(
+				context.Background(),
+				proc.jobsDBCommandTimeout,
+				proc.jobdDBMaxRetries,
+				func(ctx context.Context) error {
+					return proc.eventSchemaDB.WithStoreSafeTx(
+						ctx,
+						func(tx jobsdb.StoreSafeTx) error {
+							return proc.eventSchemaDB.StoreInTx(ctx, tx, eventSchemaJobs)
+						},
+					)
+				}, proc.sendRetryStoreStats)
+			if err != nil {
+				proc.logger.Errorf("Store into event schema table failed with error: %v", err)
+				proc.logger.Errorf("eventSchemaJobs: %v", eventSchemaJobs)
+				panic(err)
+			}
+		}
+	}
+
 	// REPORTING - GATEWAY metrics - START
 	if proc.isReportingEnabled() {
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
@@ -1551,7 +1574,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 		reportMetrics,
 		statusList,
 		procErrorJobs,
-		eventSchemaJobs,
 		sourceDupStats,
 		uniqueMessageIds,
 
@@ -1572,7 +1594,6 @@ type transformationMessage struct {
 	reportMetrics                []*types.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
 	procErrorJobs                []*jobsdb.JobT
-	eventSchemaJobs              []*jobsdb.JobT
 	sourceDupStats               map[string]int
 	uniqueMessageIds             map[string]struct{}
 
@@ -1646,7 +1667,6 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 
 		procErrorJobsByDestID,
 		in.procErrorJobs,
-		in.eventSchemaJobs,
 
 		in.reportMetrics,
 		in.sourceDupStats,
@@ -1665,7 +1685,6 @@ type storeMessage struct {
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	procErrorJobs         []*jobsdb.JobT
-	eventSchemaJobs       []*jobsdb.JobT
 
 	reportMetrics    []*types.PUReportedMetric
 	sourceDupStats   map[string]int
@@ -1687,7 +1706,6 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	for id, job := range subJob.procErrorJobsByDestID {
 		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], job...)
 	}
-	sm.eventSchemaJobs = append(sm.eventSchemaJobs, subJob.eventSchemaJobs...)
 
 	sm.reportMetrics = append(sm.reportMetrics, subJob.reportMetrics...)
 	for tag, count := range subJob.sourceDupStats {
@@ -1815,28 +1833,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
 
-	if proc.config.enableEventSchemasJobsDB {
-		if len(in.eventSchemaJobs) > 0 {
-			proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(in.eventSchemaJobs))
-			err := misc.RetryWithNotify(
-				context.Background(),
-				proc.jobsDBCommandTimeout,
-				proc.jobdDBMaxRetries,
-				func(ctx context.Context) error {
-					return proc.routerDB.WithStoreSafeTx(
-						ctx,
-						func(tx jobsdb.StoreSafeTx) error {
-							return proc.eventSchemaDB.StoreInTx(ctx, tx, in.eventSchemaJobs)
-						},
-					)
-				}, proc.sendRetryStoreStats)
-			if err != nil {
-				proc.logger.Errorf("Store into event schema table failed with error: %v", err)
-				proc.logger.Errorf("eventSchemaJobs: %v", in.eventSchemaJobs)
-				panic(err)
-			}
-		}
-	}
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
@@ -2502,8 +2498,6 @@ func subJobMerger(mergedJob, subJob *storeMessage) *storeMessage {
 	for id, job := range subJob.procErrorJobsByDestID {
 		mergedJob.procErrorJobsByDestID[id] = append(mergedJob.procErrorJobsByDestID[id], job...)
 	}
-
-	mergedJob.eventSchemaJobs = append(mergedJob.eventSchemaJobs, subJob.eventSchemaJobs...)
 
 	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
 	for tag, count := range subJob.sourceDupStats {
