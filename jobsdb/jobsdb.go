@@ -1944,7 +1944,6 @@ func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobLis
 	// amount of rows are being copied in the table in a very short time and
 	// AUTOVACUUM might not have a chance to do its work before we start querying
 	// this table
-	_, err = txHandler.Exec(fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
 	return err
 }
 
@@ -2644,10 +2643,6 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSet
 
 		if _, err = stmt.ExecContext(ctx); err != nil {
 			return err
-		}
-
-		if len(statusList) > jd.analyzeThreshold {
-			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
 		}
 
 		return err
