@@ -2,9 +2,12 @@ package jobforwarder
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	pulsarType "github.com/apache/pulsar-client-go/pulsar"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -53,13 +56,48 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 				if err != nil {
 					return err
 				}
+				var statusList []*jobsdb.JobStatusT
 				for _, job := range jobs {
 					transformedBytes, err := jf.transformer.Transform(job)
 					if err != nil {
+						statusList = append(statusList, &jobsdb.JobStatusT{
+							JobID:         job.JobID,
+							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+							JobState:      "failed",
+							ExecTime:      time.Now(),
+							RetryTime:     time.Now(),
+							ErrorCode:     "500",
+							Parameters:    []byte{},
+							ErrorResponse: json.RawMessage(err.Error()),
+						})
+					}
+					statusFunc := func(id pulsarType.MessageID, message *pulsarType.ProducerMessage, err error) {
+						if err != nil {
+							statusList = append(statusList, &jobsdb.JobStatusT{
+								JobID:         job.JobID,
+								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+								JobState:      "failed",
+								ExecTime:      time.Now(),
+								RetryTime:     time.Now(),
+								ErrorCode:     "500",
+								Parameters:    []byte{},
+								ErrorResponse: json.RawMessage(err.Error()),
+							})
+						} else {
+							statusList = append(statusList, &jobsdb.JobStatusT{
+								JobID:      job.JobID,
+								AttemptNum: job.LastJobStatus.AttemptNum + 1,
+								JobState:   "executing",
+								ExecTime:   time.Now(),
+							})
+						}
+					}
+					jf.pulsarProducer.SendMessageAsync(ctx, transformedBytes, statusFunc)
+					err = jf.pulsarProducer.Flush()
+					if err != nil {
 						return err
 					}
-					jf.pulsarProducer.SendMessageAsync(ctx, transformedBytes)
-					err = jf.pulsarProducer.Flush()
+					err = jf.MarkJobStatuses(ctx, statusList)
 					if err != nil {
 						return err
 					}
