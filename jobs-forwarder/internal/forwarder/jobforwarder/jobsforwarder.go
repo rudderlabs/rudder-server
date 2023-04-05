@@ -38,7 +38,7 @@ func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config 
 	}
 	forwarder.pulsarProducer = client
 	forwarder.backendConfig = backendConfig
-	forwarder.transformer = schematransformer.New(ctx, g, backendConfig, config)
+	forwarder.transformer = schematransformer.New(ctx, g, backendConfig, transientSources, config)
 	return &forwarder, nil
 }
 

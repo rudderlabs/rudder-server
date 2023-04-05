@@ -15,6 +15,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
+	"github.com/rudderlabs/rudder-server/services/transientsource"
 )
 
 // EventPayload : Generic type for gateway event payload
@@ -27,8 +28,11 @@ type SchemaTransformer struct {
 	ctx                        context.Context
 	g                          *errgroup.Group
 	backendConfig              backendconfig.BackendConfig
+	transientSources           transientsource.Service
 	sourceWriteKeyMap          map[string]string
+	newPIIReportingSettings    map[string]bool
 	writeKeyMapLock            sync.RWMutex
+	writeKeySourceIDMap        map[string]string
 	config                     *config.Config
 	shouldCaptureNilAsUnknowns bool
 }
@@ -38,11 +42,12 @@ type Transformer interface {
 	Transform(job *jobsdb.JobT) ([]byte, error)
 }
 
-func New(ctx context.Context, g *errgroup.Group, backendConfig backendconfig.BackendConfig, config *config.Config) Transformer {
+func New(ctx context.Context, g *errgroup.Group, backendConfig backendconfig.BackendConfig, transientSources transientsource.Service, config *config.Config) Transformer {
 	return &SchemaTransformer{
 		ctx:                        ctx,
 		g:                          g,
 		backendConfig:              backendConfig,
+		transientSources:           transientSources,
 		config:                     config,
 		shouldCaptureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
 	}
@@ -87,14 +92,20 @@ func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
 	for data := range ch {
 		configData := data.Data.(map[string]backendconfig.ConfigT)
 		sourceWriteKeyMap := map[string]string{}
+		writeKeySourceIDMap := map[string]string{}
+		newPIIReportingSettings := map[string]bool{}
 		for _, wConfig := range configData {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				sourceWriteKeyMap[source.ID] = source.WriteKey
+				writeKeySourceIDMap[source.WriteKey] = source.ID
+				newPIIReportingSettings[source.WriteKey] = wConfig.Settings.DataRetention.DisableReportingPII
 			}
 		}
 		st.writeKeyMapLock.Lock()
 		st.sourceWriteKeyMap = sourceWriteKeyMap
+		st.newPIIReportingSettings = newPIIReportingSettings
+		st.writeKeySourceIDMap = writeKeySourceIDMap
 		st.writeKeyMapLock.Unlock()
 	}
 }
@@ -125,11 +136,13 @@ func (st *SchemaTransformer) getSchemaMessage(key *proto.EventSchemaKey, event m
 		return nil, err
 	}
 	schema := st.getSchema(flattenedEvent)
+	sampleEvent := st.getSampleEvent(event, key.WriteKey)
 	return &proto.EventSchemaMessage{
 		WorkspaceID: workspaceId,
 		Key:         key,
 		ObservedAt:  timestamppb.New(observedAt),
 		Schema:      schema,
+		Sample:      sampleEvent,
 	}, nil
 }
 
@@ -152,4 +165,21 @@ func (st *SchemaTransformer) flattenEvent(event map[string]interface{}) (map[str
 		return nil, err
 	}
 	return flattenedEvent, nil
+}
+
+func (st *SchemaTransformer) disablePIIReporting(writeKey string) bool {
+	st.writeKeyMapLock.RLock()
+	defer st.writeKeyMapLock.RUnlock()
+	return st.newPIIReportingSettings[writeKey] && st.transientSources.Apply(st.writeKeySourceIDMap[writeKey])
+}
+
+func (st *SchemaTransformer) getSampleEvent(event map[string]interface{}, writeKey string) []byte {
+	if st.disablePIIReporting(writeKey) {
+		return []byte{}
+	}
+	sampleEvent, err := json.Marshal(event)
+	if err != nil {
+		return []byte{}
+	}
+	return sampleEvent
 }
