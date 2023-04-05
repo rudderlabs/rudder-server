@@ -16,10 +16,14 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
+	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/thoas/go-funk"
-	"golang.org/x/sync/errgroup"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
@@ -28,10 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/warehouse"
-
-	"github.com/google/uuid"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
