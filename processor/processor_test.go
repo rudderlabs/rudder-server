@@ -584,7 +584,7 @@ var _ = Describe("Processor with event schemas DB", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(1))
+					Expect(jobs).To(HaveLen(2))
 				})
 
 			processor := prepareHandle(NewHandle(mockTransformer))

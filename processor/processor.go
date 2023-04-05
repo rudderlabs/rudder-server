@@ -1362,17 +1362,36 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					source,
 				)
 
+				eventPayload, err := jsonfast.Marshal(singularEvent)
+				if err != nil || proc.transientSources.Apply(source.ID) {
+					eventPayload = []byte(`{}`)
+				} else {
+					if proc.config.enableEventSchemasJobsDB {
+						if source.EventSchemasEnabled &&
+							commonMetadataFromSingularEvent.SourceJobRunID == "" { // could use source.SourceDefinition.Category instead?
+							eventSchemaJobs = append(eventSchemaJobs,
+								&jobsdb.JobT{
+									UUID:         batchEvent.UUID,
+									UserID:       batchEvent.UserID,
+									Parameters:   batchEvent.Parameters,
+									CustomVal:    batchEvent.CustomVal,
+									EventPayload: eventPayload,
+									CreatedAt:    time.Now(),
+									ExpireAt:     time.Now(),
+									WorkspaceId:  batchEvent.WorkspaceId,
+								},
+							)
+						}
+					}
+				}
+
 				// REPORTING - GATEWAY metrics - START
 				// dummy event for metrics purposes only
 				event := &transformer.TransformerResponseT{}
 				if proc.isReportingEnabled() {
 					event.Metadata = *commonMetadataFromSingularEvent
 					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, func() json.RawMessage {
-						sampleEvent, err := jsonfast.Marshal(singularEvent)
-						if err != nil || proc.transientSources.Apply(source.ID) {
-							sampleEvent = []byte(`{}`)
-						}
-						return sampleEvent
+						return eventPayload
 					})
 				}
 				// REPORTING - GATEWAY metrics - END
@@ -1403,16 +1422,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 
 				if proc.isReportingEnabled() {
 					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, func() json.RawMessage { return []byte(`{}`) })
-				}
-			}
-			if proc.config.enableEventSchemasJobsDB {
-				if source != nil && source.EventSchemasEnabled &&
-					commonMetadataFromSingularEvent != nil &&
-					commonMetadataFromSingularEvent.SourceJobRunID == "" { // could use source.SourceDefinition.Category instead?
-					eventSchemaJobs = append(
-						eventSchemaJobs,
-						batchEvent,
-					)
 				}
 			}
 		}
