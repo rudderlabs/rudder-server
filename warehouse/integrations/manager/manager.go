@@ -3,8 +3,9 @@ package manager
 import (
 	"context"
 	"fmt"
-	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
 	"time"
+
+	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
 
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 

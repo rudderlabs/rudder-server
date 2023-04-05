@@ -35,16 +35,6 @@ const (
 )
 
 const (
-	createSchemaQuery = "create_schema"
-	createTableQuery  = "create_table"
-	addColumnQuery    = "add_column"
-	alterColumnQuery  = "alter_column"
-	copyQuery         = "copy"
-	insertQuery       = "insert"
-	mergeQuery        = "merge"
-)
-
-const (
 	provider       = warehouseutils.DELTALAKE
 	tableNameLimit = 127
 )
@@ -145,6 +135,7 @@ type Deltalake struct {
 	HealthTimeout          time.Duration
 	LoadTableStrategy      string
 	EnablePartitionPruning bool
+	SlowQueryInSec         time.Duration
 }
 
 func Init() {
@@ -163,6 +154,7 @@ func WithConfig(h *Deltalake, config *config.Config) {
 	h.HealthTimeout = config.GetDuration("Warehouse.deltalake.healthTimeout", 15, time.Second)
 	h.LoadTableStrategy = config.GetString("Warehouse.deltalake.loadTableStrategy", mergeMode)
 	h.EnablePartitionPruning = config.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
+	h.SlowQueryInSec = config.GetDuration("Warehouse.deltalake.slowQueryInSec", 300, time.Second)
 }
 
 func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
@@ -214,31 +206,21 @@ func (d *Deltalake) fetchTables() ([]string, error) {
 
 	query = fmt.Sprintf(`SHOW tables from %s;`, d.Namespace)
 
-	d.Logger.Debugw("fetching tables",
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
+	startedAt = time.Now()
+
+	rows, err = d.DB.Query(query)
+
+	d.slowQueryLog(model.FetchTables, time.Since(startedAt),
 		logfield.Query, query,
 	)
 
-	startedAt = time.Now()
-
-	if rows, err = d.DB.Query(query); err != nil {
+	if err != nil {
 		if strings.Contains(err.Error(), schemaNotFound) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("executing fetching tables: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-
-	d.Logger.Infow("query execution time",
-		logfield.QueryType, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		d.defaultLoggerTags(),
-	)
 
 	for rows.Next() {
 		var (
@@ -248,23 +230,12 @@ func (d *Deltalake) fetchTables() ([]string, error) {
 		)
 
 		if err = rows.Scan(&database, &tableName, &isTemporary); err != nil {
-			return nil, fmt.Errorf("scanning tables: %w", err)
+			return nil, fmt.Errorf("processing fetched tables: %w", err)
 		}
 
 		tables = append(tables, tableName)
 	}
 	return tables, nil
-}
-
-func (d *Deltalake) defaultLoggerTags() []interface{} {
-	return []interface{}{
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
-	}
 }
 
 func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, error) {
@@ -279,25 +250,17 @@ func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, e
 
 	query = fmt.Sprintf(`describe QUERY TABLE %s.%s;`, d.Namespace, tableName)
 
-	defer func() {
-		d.Logger.Infow("fetching table attributes",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
-
 	startedAt = time.Now()
 
 	rows, err = d.DB.Query(query)
+
+	d.slowQueryLog(model.FetchTableAttributes, time.Since(startedAt),
+		logfield.TableName, tableName,
+		logfield.Query, query,
+	)
+
 	if err != nil {
-		return nil, fmt.Errorf("executing fetching tables: %w", err)
+		return nil, fmt.Errorf("executing fetching table attributes: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -308,7 +271,7 @@ func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, e
 		)
 
 		if err = rows.Scan(&colName, &datatype, &comment); err != nil {
-			return nil, fmt.Errorf("scanning tables attributes: %w", err)
+			return nil, fmt.Errorf("processing fetched table attributes: %w", err)
 		}
 
 		tableSchema[colName] = datatype
@@ -336,23 +299,16 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 
 	query = fmt.Sprintf(`SHOW PARTITIONS %s.%s;`, d.Namespace, tableName)
 
-	defer func() {
-		d.Logger.Infow("fetching partitions",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
-
 	startedAt = time.Now()
 
-	if rows, err = d.DB.Query(query); err != nil {
+	rows, err = d.DB.Query(query)
+
+	d.slowQueryLog(model.FetchTabTablePartitions, time.Since(startedAt),
+		logfield.TableName, tableName,
+		logfield.Query, query,
+	)
+
+	if err != nil {
 		if strings.Contains(err.Error(), partitionNotFound) {
 			return "", nil
 		}
@@ -392,22 +348,15 @@ func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
 
 	query = fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 
-	defer func() {
-		d.Logger.Infow("schema exists",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
-
 	startedAt = time.Now()
 
-	if _, err = d.DB.Exec(query); err != nil {
+	_, err = d.DB.Exec(query)
+
+	d.slowQueryLog(model.SchemaExists, time.Since(startedAt),
+		logfield.Query, query,
+	)
+
+	if err != nil {
 		return false, fmt.Errorf("executing schema exists: %w", err)
 	}
 	return true, nil
@@ -422,22 +371,15 @@ func (d *Deltalake) createSchema() error {
 
 	query = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, d.Namespace)
 
-	defer func() {
-		d.Logger.Infow("creating schema",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
-
 	startedAt = time.Now()
 
-	if _, err = d.DB.Exec(query); err != nil {
+	_, err = d.DB.Exec(query)
+
+	d.slowQueryLog(model.CreateSchema, time.Since(startedAt),
+		logfield.Query, query,
+	)
+
+	if err != nil {
 		return fmt.Errorf("executing create schema: %w", err)
 	}
 
@@ -453,23 +395,15 @@ func (d *Deltalake) dropTable(table string) error {
 
 	query = fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, d.Namespace, table)
 
-	defer func() {
-		d.Logger.Infow("dropping staging table",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, table,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
-
 	startedAt = time.Now()
 
-	if _, err = d.DB.Exec(query); err != nil {
+	_, err = d.DB.Exec(query)
+
+	d.slowQueryLog(model.DropTable, time.Since(startedAt),
+		logfield.Query, query,
+	)
+
+	if err != nil {
 		return fmt.Errorf("executing drop table: %w", err)
 	}
 	return nil
@@ -584,6 +518,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		err       error
 		auth      string
 		startedAt time.Time
+		queryType model.QueryType
 	)
 
 	d.Logger.Infow("started loading",
@@ -597,18 +532,6 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	)
 
 	if err = d.CreateTable(stagingTableName, tableSchemaAfterUpload); err != nil {
-		d.Logger.Warnw("failure creating temporary table",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.StagingTableName, stagingTableName,
-			logfield.Error, err.Error(),
-		)
-
 		return "", fmt.Errorf("creating staging table: %w", err)
 	}
 
@@ -692,32 +615,16 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 
 	startedAt = time.Now()
 
-	if _, err = d.DB.Exec(query); err != nil {
-		d.Logger.Warnw("failure running COPY command",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, sanitisedQuery,
-			logfield.Error, err.Error(),
-		)
-		return "", fmt.Errorf("running COPY command: %w", err)
-	}
+	_, err = d.DB.Exec(query)
 
-	d.Logger.Infow("copy command",
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
+	d.slowQueryLog(model.Copy, time.Since(startedAt),
 		logfield.TableName, tableName,
 		logfield.Query, sanitisedQuery,
-		logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
 	)
+
+	if err != nil {
+		return "", fmt.Errorf("running COPY command: %w", err)
+	}
 
 	if d.LoadTableStrategy == appendMode {
 		query = appendableLTSQLStatement(
@@ -726,6 +633,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			stagingTableName,
 			warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
 		)
+		queryType = model.Insert
 	} else {
 		if partitionQuery, err = d.partitionQuery(tableName); err != nil {
 			return "", fmt.Errorf("getting partition query: %w", err)
@@ -738,38 +646,22 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			sortedColumnKeys,
 			partitionQuery,
 		)
+
+		queryType = model.Merge
 	}
 
 	startedAt = time.Now()
 
 	row := d.DB.QueryRow(query)
-	if row.Err() != nil {
-		d.Logger.Warnw("failure running deduplication",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, query,
-			logfield.Error, row.Err().Error(),
-		)
 
-		return "", fmt.Errorf("running deduplication: %w", row.Err())
-	}
-
-	d.Logger.Infow("deduplication",
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
+	d.slowQueryLog(queryType, time.Since(startedAt),
 		logfield.TableName, tableName,
 		logfield.Query, query,
-		logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
 	)
+
+	if row.Err() != nil {
+		return "", fmt.Errorf("running deduplication: %w", row.Err())
+	}
 
 	var (
 		affected int64
@@ -778,25 +670,13 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		inserted int64
 	)
 
-	if d.LoadTableStrategy == "APPEND" {
+	if d.LoadTableStrategy == appendMode {
 		err = row.Scan(&affected, &inserted)
 	} else {
 		err = row.Scan(&affected, &updated, &deleted, &inserted)
 	}
 
 	if err != nil {
-		d.Logger.Warnw("getting rows affected for dedup",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, query,
-			logfield.Error, err.Error(),
-		)
-
 		return "", fmt.Errorf("scanning deduplication: %w", err)
 	}
 
@@ -861,6 +741,7 @@ func (d *Deltalake) loadUserTables() map[string]error {
 		userColNames, firstValProps []string
 		startedAt                   time.Time
 		partitionQuery              string
+		queryType                   model.QueryType
 	)
 	for colName := range usersSchemaInWarehouse {
 		// do not reference uuid in queries as it can be an auto incrementing field set by segment compatible tables
@@ -926,42 +807,26 @@ func (d *Deltalake) loadUserTables() map[string]error {
 
 	startedAt = time.Now()
 
-	if _, err = d.DB.Exec(query); err != nil {
-		d.Logger.Warnw("failure creating staging table for users",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, warehouseutils.UsersTable,
-			logfield.Error, err.Error(),
-		)
+	_, err = d.DB.Exec(query)
 
+	d.slowQueryLog(model.CreateTable, time.Since(startedAt),
+		logfield.TableName, warehouseutils.UsersTable,
+		logfield.StagingTableName, stagingTableName,
+		logfield.Query, query,
+	)
+
+	if err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
 			warehouseutils.UsersTable:      fmt.Errorf("creating staging table for users: %w", err),
 		}
 	}
 
-	d.Logger.Infow("creating staging table for users",
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
-		logfield.TableName, warehouseutils.UsersTable,
-		logfield.StagingTableName, stagingTableName,
-		logfield.Query, query,
-		logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-	)
-
 	defer d.dropStagingTables([]string{stagingTableName})
 
 	columnKeys := append([]string{`id`}, userColNames...)
 
-	if d.LoadTableStrategy == "APPEND" {
+	if d.LoadTableStrategy == appendMode {
 		query = fmt.Sprintf(`
 			INSERT INTO %[1]s.%[2]s (%[3]s)
 			SELECT
@@ -979,6 +844,7 @@ func (d *Deltalake) loadUserTables() map[string]error {
 			columnNames(columnKeys),
 			stagingTableName,
 		)
+		queryType = model.Insert
 	} else {
 		if partitionQuery, err = d.partitionQuery(warehouseutils.UsersTable); err != nil {
 			return map[string]error{
@@ -994,41 +860,24 @@ func (d *Deltalake) loadUserTables() map[string]error {
 			columnKeys,
 			partitionQuery,
 		)
+		queryType = model.Merge
 	}
 
 	startedAt = time.Now()
 
 	row := d.DB.QueryRow(query)
-	if row.Err() != nil {
-		d.Logger.Warnw("failure running deduplication",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, warehouseutils.UsersTable,
-			logfield.Query, query,
-			logfield.Error, row.Err().Error(),
-		)
 
+	d.slowQueryLog(queryType, time.Since(startedAt),
+		logfield.TableName, warehouseutils.UsersTable,
+		logfield.Query, query,
+	)
+
+	if row.Err() != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
 			warehouseutils.UsersTable:      fmt.Errorf("running deduplication: %w", row.Err()),
 		}
 	}
-
-	d.Logger.Infow("deduplication",
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
-		logfield.TableName, warehouseutils.UsersTable,
-		logfield.Query, query,
-		logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-	)
 
 	var (
 		affected int64
@@ -1044,18 +893,6 @@ func (d *Deltalake) loadUserTables() map[string]error {
 	}
 
 	if err != nil {
-		d.Logger.Warnw("getting rows affected for dedup",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, warehouseutils.UsersTable,
-			logfield.Query, query,
-			logfield.Error, err.Error(),
-		)
-
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
 			warehouseutils.UsersTable:      fmt.Errorf("getting rows affected for dedup: %w", err),
@@ -1197,23 +1034,17 @@ func (d *Deltalake) CreateTable(tableName string, columns model.TableSchema) err
 		tableLocationSql,
 		partitionedSql,
 	)
+
 	startedAt = time.Now()
 
-	defer func() {
-		d.Logger.Infow("creating table",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
+	_, err = d.DB.Exec(query)
 
-	if _, err = d.DB.Exec(query); err != nil {
+	d.slowQueryLog(model.CreateTable, time.Since(startedAt),
+		logfield.TableName, tableName,
+		logfield.Query, query,
+	)
+
+	if err != nil {
 		return fmt.Errorf("creating table: %w", err)
 	}
 
@@ -1249,23 +1080,14 @@ func (d *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ");"
 
-	defer func() {
-		d.Logger.Infow("adding columns",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
-
 	startedAt = time.Now()
 
 	_, err = d.DB.Exec(query)
+
+	d.slowQueryLog(model.AddColumns, time.Since(startedAt),
+		logfield.TableName, tableName,
+		logfield.Query, query,
+	)
 
 	// Handle error in case of single column
 	if len(columnsInfo) == 1 {
@@ -1286,7 +1108,11 @@ func (d *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 			}
 		}
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("adding columns: %w", err)
+	}
+
+	return nil
 }
 
 // CreateSchema creates a schema in the warehouse if it does not exist
@@ -1300,14 +1126,6 @@ func (d *Deltalake) CreateSchema() error {
 		return fmt.Errorf("checking if schema exists: %w", err)
 	}
 	if exists {
-		d.Logger.Infow("schema already exists",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-		)
 		return nil
 	}
 
@@ -1440,7 +1258,11 @@ func (d *Deltalake) LoadUserTables() map[string]error {
 // LoadTable loads table for table name
 func (d *Deltalake) LoadTable(tableName string) error {
 	_, err := d.loadTable(tableName, d.Uploader.GetTableSchemaInUpload(tableName), d.Uploader.GetTableSchemaInWarehouse(tableName), false)
-	return err
+	if err != nil {
+		return fmt.Errorf("loading table: %w", err)
+	}
+
+	return nil
 }
 
 // LoadIdentityMergeRulesTable loads identifies merge rules tables
@@ -1473,23 +1295,16 @@ func (d *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) 
 		tableName,
 	)
 
-	defer func() {
-		d.Logger.Infow("total count in table",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, query,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(time.Since(startedAt)),
-		)
-	}()
-
 	startedAt = time.Now()
 
-	if err = d.DB.QueryRowContext(ctx, query).Scan(&total); err != nil {
+	err = d.DB.QueryRowContext(ctx, query).Scan(&total)
+
+	d.slowQueryLog(model.TableCount, time.Since(startedAt),
+		logfield.TableName, tableName,
+		logfield.Query, query,
+	)
+
+	if err != nil {
 		return 0, fmt.Errorf("querying total count in table: %w", err)
 	}
 	return total, nil
@@ -1682,4 +1497,19 @@ func appendableLTSQLStatement(namespace, tableName, stagingTableName string, col
 
 func (d *Deltalake) ErrorMappings() []model.JobError {
 	return errorsMappings
+}
+
+func (d *Deltalake) slowQueryLog(queryType model.QueryType, executionTime time.Duration, keysAndValues ...any) {
+	if executionTime > d.SlowQueryInSec {
+		keysAndValues = append(keysAndValues, logfield.QueryType, queryType)
+		keysAndValues = append(keysAndValues, logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime))
+		keysAndValues = append(keysAndValues, logfield.SourceID, d.Warehouse.Source.ID)
+		keysAndValues = append(keysAndValues, logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name)
+		keysAndValues = append(keysAndValues, logfield.DestinationID, d.Warehouse.Destination.ID)
+		keysAndValues = append(keysAndValues, logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name)
+		keysAndValues = append(keysAndValues, logfield.WorkspaceID, d.Warehouse.WorkspaceID)
+		keysAndValues = append(keysAndValues, logfield.Namespace, d.Namespace)
+
+		d.Logger.Infow("executing query", keysAndValues...)
+	}
 }

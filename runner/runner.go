@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
 	"net/http"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"strings"
 	"time"
+
+	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"

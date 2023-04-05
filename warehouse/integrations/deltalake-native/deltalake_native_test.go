@@ -2,9 +2,10 @@ package deltalake_native_test
 
 import (
 	"fmt"
-	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
 	"os"
 	"testing"
+
+	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -37,10 +38,10 @@ func TestIntegrationDeltalake(t *testing.T) {
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
 
-	nativeCredentials  := deltalake_native.Credentials{
-		Host: credentials.Host,
-		Port: credentials.Port,
-		Path: credentials.Path,
+	nativeCredentials := deltalake_native.Credentials{
+		Host:  credentials.Host,
+		Port:  credentials.Port,
+		Path:  credentials.Path,
 		Token: credentials.Token,
 	}
 
