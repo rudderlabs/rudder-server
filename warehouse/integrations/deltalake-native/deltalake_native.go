@@ -197,20 +197,18 @@ func (*Deltalake) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 
 func (d *Deltalake) fetchTables() ([]string, error) {
 	var (
-		query     string
-		startedAt time.Time
-		rows      *sql.Rows
-		err       error
-		tables    []string
+		query  string
+		rows   *sql.Rows
+		err    error
+		tables []string
 	)
 
 	query = fmt.Sprintf(`SHOW tables from %s;`, d.Namespace)
 
-	startedAt = time.Now()
-
-	rows, err = d.DB.Query(query)
-
-	d.slowQueryLog(model.FetchTables, time.Since(startedAt),
+	d.logQuery(func() {
+		rows, err = d.DB.Query(query)
+	},
+		model.FetchTables,
 		logfield.Query, query,
 	)
 
@@ -240,21 +238,19 @@ func (d *Deltalake) fetchTables() ([]string, error) {
 
 func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, error) {
 	var (
-		query     string
-		rows      *sql.Rows
-		err       error
-		startedAt time.Time
+		query string
+		rows  *sql.Rows
+		err   error
 
 		tableSchema = make(model.TableSchema)
 	)
 
 	query = fmt.Sprintf(`describe QUERY TABLE %s.%s;`, d.Namespace, tableName)
 
-	startedAt = time.Now()
-
-	rows, err = d.DB.Query(query)
-
-	d.slowQueryLog(model.FetchTableAttributes, time.Since(startedAt),
+	d.logQuery(func() {
+		rows, err = d.DB.Query(query)
+	},
+		model.FetchTableAttributes,
 		logfield.TableName, tableName,
 		logfield.Query, query,
 	)
@@ -294,16 +290,14 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 		partitionColumns []string
 		rows             *sql.Rows
 		err              error
-		startedAt        time.Time
 	)
 
 	query = fmt.Sprintf(`SHOW PARTITIONS %s.%s;`, d.Namespace, tableName)
 
-	startedAt = time.Now()
-
-	rows, err = d.DB.Query(query)
-
-	d.slowQueryLog(model.FetchTabTablePartitions, time.Since(startedAt),
+	d.logQuery(func() {
+		rows, err = d.DB.Query(query)
+	},
+		model.FetchTabTablePartitions,
 		logfield.TableName, tableName,
 		logfield.Query, query,
 	)
@@ -341,18 +335,16 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 // schemaExists checks it schema exists or not.
 func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
 	var (
-		query     string
-		startedAt time.Time
-		err       error
+		query string
+		err   error
 	)
 
 	query = fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 
-	startedAt = time.Now()
-
-	_, err = d.DB.Exec(query)
-
-	d.slowQueryLog(model.SchemaExists, time.Since(startedAt),
+	d.logQuery(func() {
+		_, err = d.DB.Exec(query)
+	},
+		model.SchemaExists,
 		logfield.Query, query,
 	)
 
@@ -364,18 +356,16 @@ func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
 
 func (d *Deltalake) createSchema() error {
 	var (
-		query     string
-		startedAt time.Time
-		err       error
+		query string
+		err   error
 	)
 
 	query = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, d.Namespace)
 
-	startedAt = time.Now()
-
-	_, err = d.DB.Exec(query)
-
-	d.slowQueryLog(model.CreateSchema, time.Since(startedAt),
+	d.logQuery(func() {
+		_, err = d.DB.Exec(query)
+	},
+		model.CreateSchema,
 		logfield.Query, query,
 	)
 
@@ -388,18 +378,16 @@ func (d *Deltalake) createSchema() error {
 
 func (d *Deltalake) dropTable(table string) error {
 	var (
-		query     string
-		startedAt time.Time
-		err       error
+		query string
+		err   error
 	)
 
 	query = fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, d.Namespace, table)
 
-	startedAt = time.Now()
-
-	_, err = d.DB.Exec(query)
-
-	d.slowQueryLog(model.DropTable, time.Since(startedAt),
+	d.logQuery(func() {
+		_, err = d.DB.Exec(query)
+	},
+		model.DropTable,
 		logfield.Query, query,
 	)
 
@@ -517,8 +505,8 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 
 		err       error
 		auth      string
-		startedAt time.Time
 		queryType model.QueryType
+		row       *sql.Row
 	)
 
 	d.Logger.Infow("started loading",
@@ -613,11 +601,10 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		sanitisedQuery = ""
 	}
 
-	startedAt = time.Now()
-
-	_, err = d.DB.Exec(query)
-
-	d.slowQueryLog(model.Copy, time.Since(startedAt),
+	d.logQuery(func() {
+		_, err = d.DB.Exec(query)
+	},
+		model.Copy,
 		logfield.TableName, tableName,
 		logfield.Query, sanitisedQuery,
 	)
@@ -650,11 +637,10 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		queryType = model.Merge
 	}
 
-	startedAt = time.Now()
-
-	row := d.DB.QueryRow(query)
-
-	d.slowQueryLog(queryType, time.Since(startedAt),
+	d.logQuery(func() {
+		row = d.DB.QueryRow(query)
+	},
+		queryType,
 		logfield.TableName, tableName,
 		logfield.Query, query,
 	)
@@ -739,9 +725,9 @@ func (d *Deltalake) loadUserTables() map[string]error {
 	// Creating userColNames and firstValProps for create table sql statement
 	var (
 		userColNames, firstValProps []string
-		startedAt                   time.Time
 		partitionQuery              string
 		queryType                   model.QueryType
+		row                         *sql.Row
 	)
 	for colName := range usersSchemaInWarehouse {
 		// do not reference uuid in queries as it can be an auto incrementing field set by segment compatible tables
@@ -805,11 +791,10 @@ func (d *Deltalake) loadUserTables() map[string]error {
 		tableLocationSql,
 	)
 
-	startedAt = time.Now()
-
-	_, err = d.DB.Exec(query)
-
-	d.slowQueryLog(model.CreateTable, time.Since(startedAt),
+	d.logQuery(func() {
+		_, err = d.DB.Exec(query)
+	},
+		model.CreateTable,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, stagingTableName,
 		logfield.Query, query,
@@ -863,11 +848,10 @@ func (d *Deltalake) loadUserTables() map[string]error {
 		queryType = model.Merge
 	}
 
-	startedAt = time.Now()
-
-	row := d.DB.QueryRow(query)
-
-	d.slowQueryLog(queryType, time.Since(startedAt),
+	d.logQuery(func() {
+		row = d.DB.QueryRow(query)
+	},
+		queryType,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.Query, query,
 	)
@@ -1011,7 +995,6 @@ func (d *Deltalake) CreateTable(tableName string, columns model.TableSchema) err
 		partitionedSql   string
 		tableLocationSql string
 		err              error
-		startedAt        time.Time
 	)
 
 	tableLocationSql = d.tableLocationQuery(tableName)
@@ -1035,11 +1018,10 @@ func (d *Deltalake) CreateTable(tableName string, columns model.TableSchema) err
 		partitionedSql,
 	)
 
-	startedAt = time.Now()
-
-	_, err = d.DB.Exec(query)
-
-	d.slowQueryLog(model.CreateTable, time.Since(startedAt),
+	d.logQuery(func() {
+		_, err = d.DB.Exec(query)
+	},
+		model.CreateTable,
 		logfield.TableName, tableName,
 		logfield.Query, query,
 	)
@@ -1062,7 +1044,6 @@ func (d *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 		query        string
 		queryBuilder strings.Builder
 		err          error
-		startedAt    time.Time
 	)
 
 	queryBuilder.WriteString(fmt.Sprintf(`
@@ -1080,11 +1061,12 @@ func (d *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ");"
 
-	startedAt = time.Now()
-
 	_, err = d.DB.Exec(query)
 
-	d.slowQueryLog(model.AddColumns, time.Since(startedAt),
+	d.logQuery(func() {
+		_, err = d.DB.Exec(query)
+	},
+		model.AddColumns,
 		logfield.TableName, tableName,
 		logfield.Query, query,
 	)
@@ -1283,10 +1265,9 @@ func (*Deltalake) DownloadIdentityRules(*misc.GZipWriter) error {
 // GetTotalCountInTable returns the total count in the table
 func (d *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
 	var (
-		total     int64
-		err       error
-		startedAt time.Time
-		query     string
+		total int64
+		err   error
+		query string
 	)
 	query = fmt.Sprintf(`
 		SELECT COUNT(*) FROM %[1]s.%[2]s;
@@ -1295,11 +1276,10 @@ func (d *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) 
 		tableName,
 	)
 
-	startedAt = time.Now()
-
-	err = d.DB.QueryRowContext(ctx, query).Scan(&total)
-
-	d.slowQueryLog(model.TableCount, time.Since(startedAt),
+	d.logQuery(func() {
+		err = d.DB.QueryRowContext(ctx, query).Scan(&total)
+	},
+		model.TableCount,
 		logfield.TableName, tableName,
 		logfield.Query, query,
 	)
@@ -1499,8 +1479,10 @@ func (d *Deltalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
 
-func (d *Deltalake) slowQueryLog(queryType model.QueryType, executionTime time.Duration, keysAndValues ...any) {
-	if executionTime > d.SlowQueryInSec {
+func (d *Deltalake) logQuery(query func(), queryType model.QueryType, keysAndValues ...any) {
+	startedAt := time.Now()
+	query()
+	if executionTime := time.Since(startedAt); executionTime > d.SlowQueryInSec {
 		keysAndValues = append(keysAndValues,
 			logfield.QueryType, queryType,
 			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime),
