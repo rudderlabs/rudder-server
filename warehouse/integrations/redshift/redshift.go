@@ -641,6 +641,8 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 
 		if result, err = txn.Exec(query); err != nil {
+			err = warehouseutils.NormalizePQError(err)
+
 			rs.Logger.Warnw("deleting from original table for dedup",
 				logfield.SourceID, rs.Warehouse.Source.ID,
 				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
@@ -723,6 +725,8 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	)
 
 	if _, err = txn.Exec(query); err != nil {
+		err = warehouseutils.NormalizePQError(err)
+
 		rs.Logger.Warnw("failed inserting into original table",
 			logfield.SourceID, rs.Warehouse.Source.ID,
 			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
