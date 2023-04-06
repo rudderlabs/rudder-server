@@ -1333,7 +1333,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	// REPORTING - START
 	if brt.reporting != nil && brt.reportingEnabled {
-		// types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 		terminalPU := true
 		if isWarehouse {
 			terminalPU = false

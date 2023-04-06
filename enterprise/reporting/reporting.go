@@ -67,7 +67,7 @@ type HandleT struct {
 
 func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
-	reportingServiceURL := config.GetString("REPORTING_URL", "http://localhost:5001/")
+	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
@@ -230,7 +230,28 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 	var metricReports []*types.ReportByStatus
 	for rows.Next() {
 		metricReport := types.ReportByStatus{StatusDetail: &types.StatusDetail{}}
-		err = rows.Scan(&metricReport.InstanceDetails.WorkspaceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceDefinitionId, &metricReport.ConnectionDetails.SourceCategory, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationDefinitionId, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.SourceTaskRunID, &metricReport.ConnectionDetails.SourceJobID, &metricReport.ConnectionDetails.SourceJobRunID, &metricReport.ConnectionDetails.TrackingPlanId, &metricReport.ConnectionDetails.TrackingPlanVersion, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedAt, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount, &metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent, &metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType, &metricReport.StatusDetail.ErrorType)
+		err = rows.Scan(
+			&metricReport.InstanceDetails.WorkspaceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID,
+			&metricReport.ConnectionDetails.SourceDefinitionId,
+			&metricReport.ConnectionDetails.SourceCategory,
+			&metricReport.ConnectionDetails.SourceID,
+			&metricReport.ConnectionDetails.DestinationDefinitionId,
+			&metricReport.ConnectionDetails.DestinationID,
+			&metricReport.ConnectionDetails.SourceTaskRunID,
+			&metricReport.ConnectionDetails.SourceJobID,
+			&metricReport.ConnectionDetails.SourceJobRunID,
+			&metricReport.ConnectionDetails.TrackingPlanId,
+			&metricReport.ConnectionDetails.TrackingPlanVersion,
+			&metricReport.PUDetails.InPU, &metricReport.PUDetails.PU,
+			&metricReport.ReportedAt,
+			&metricReport.StatusDetail.Status,
+			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
+			&metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU,
+			&metricReport.StatusDetail.StatusCode,
+			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
+			&metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType,
+			&metricReport.StatusDetail.ErrorType,
+		)
 		if err != nil {
 			panic(err)
 		}
@@ -244,7 +265,20 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 	metricsByGroup := map[string]*types.Metric{}
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
-		groupingIdentifiers := []string{report.InstanceDetails.WorkspaceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID, report.ConnectionDetails.SourceID, report.ConnectionDetails.DestinationID, report.ConnectionDetails.SourceTaskRunID, report.ConnectionDetails.SourceJobID, report.ConnectionDetails.SourceJobRunID, report.ConnectionDetails.TrackingPlanId, fmt.Sprint(report.ConnectionDetails.TrackingPlanVersion), report.PUDetails.InPU, report.PUDetails.PU, report.StatusDetail.Status, fmt.Sprint(report.StatusDetail.StatusCode), report.StatusDetail.EventName, report.StatusDetail.EventType, report.StatusDetail.ErrorType}
+		groupingIdentifiers := []string{
+			report.InstanceDetails.WorkspaceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID,
+			report.ConnectionDetails.SourceID,
+			report.ConnectionDetails.DestinationID,
+			report.ConnectionDetails.SourceTaskRunID,
+			report.ConnectionDetails.SourceJobID,
+			report.ConnectionDetails.SourceJobRunID,
+			report.ConnectionDetails.TrackingPlanId,
+			fmt.Sprint(report.ConnectionDetails.TrackingPlanVersion),
+			report.PUDetails.InPU, report.PUDetails.PU,
+			report.StatusDetail.Status,
+			fmt.Sprint(report.StatusDetail.StatusCode),
+			report.StatusDetail.EventName, report.StatusDetail.EventType,
+		}
 		return strings.Join(groupingIdentifiers, `::`)
 	}
 
@@ -281,7 +315,7 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 			}
 		}
 		statusDetailInterface := funk.Find(metricsByGroup[identifier].StatusDetails, func(i *types.StatusDetail) bool {
-			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode
+			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode && i.ErrorType == report.StatusDetail.ErrorType
 		})
 		if statusDetailInterface == nil {
 			metricsByGroup[identifier].StatusDetails = append(metricsByGroup[identifier].StatusDetails, &types.StatusDetail{
@@ -489,7 +523,28 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(ReportsTable, "workspace_id", "namespace", "instance_id", "source_definition_id", "source_category", "source_id", "destination_definition_id", "destination_id", "source_task_run_id", "source_job_id", "source_job_run_id", "tracking_plan_id", "tracking_plan_version", "in_pu", "pu", "reported_at", "status", "count", "violation_count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event", "event_name", "event_type", "error_type"))
+	stmt, err := txn.Prepare(pq.CopyIn(ReportsTable,
+		"workspace_id", "namespace", "instance_id",
+		"source_definition_id",
+		"source_category",
+		"source_id",
+		"destination_definition_id",
+		"destination_id",
+		"source_task_run_id",
+		"source_job_id",
+		"source_job_run_id",
+		"tracking_plan_id",
+		"tracking_plan_version",
+		"in_pu", "pu",
+		"reported_at",
+		"status",
+		"count", "violation_count",
+		"terminal_state", "initial_state",
+		"status_code",
+		"sample_response", "sample_event",
+		"event_name", "event_type",
+		"error_type",
+	))
 	if err != nil {
 		_ = txn.Rollback()
 		panic(err)
@@ -504,7 +559,27 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		_, err = stmt.Exec(workspaceID, r.namespace, r.instanceID, metric.ConnectionDetails.SourceDefinitionId, metric.ConnectionDetails.SourceCategory, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationDefinitionId, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.ConnectionDetails.TrackingPlanId, metric.ConnectionDetails.TrackingPlanVersion, metric.PUDetails.InPU, metric.PUDetails.PU, reportedAt, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.StatusDetail.ViolationCount, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent), metric.StatusDetail.EventName, metric.StatusDetail.EventType, metric.StatusDetail.ErrorType)
+		_, err = stmt.Exec(
+			workspaceID, r.namespace, r.instanceID,
+			metric.ConnectionDetails.SourceDefinitionId,
+			metric.ConnectionDetails.SourceCategory,
+			metric.ConnectionDetails.SourceID,
+			metric.ConnectionDetails.DestinationDefinitionId,
+			metric.ConnectionDetails.DestinationID,
+			metric.ConnectionDetails.SourceTaskRunID,
+			metric.ConnectionDetails.SourceJobID,
+			metric.ConnectionDetails.SourceJobRunID,
+			metric.ConnectionDetails.TrackingPlanId,
+			metric.ConnectionDetails.TrackingPlanVersion,
+			metric.PUDetails.InPU, metric.PUDetails.PU,
+			reportedAt,
+			metric.StatusDetail.Status,
+			metric.StatusDetail.Count, metric.StatusDetail.ViolationCount,
+			metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU,
+			metric.StatusDetail.StatusCode,
+			metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent),
+			metric.StatusDetail.EventName, metric.StatusDetail.EventType,
+			metric.StatusDetail.ErrorType)
 		if err != nil {
 			panic(err)
 		}

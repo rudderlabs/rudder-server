@@ -37,10 +37,10 @@ var (
 
 var (
 	// Tracking plan validation states
-	SUCCEEDED                   = "succeeded"
-	SUCCEEDED_WITHOUT_VIOLATION = "succeeded_without_violation"
-	SUCCEEDED_WITH_VIOLATION    = "succeeded_with_violation"
-	ABORTED                     = "aborted"
+	SUCCEEDED                    = "succeeded"
+	SUCCEEDED_WITHOUT_VIOLATIONS = "succeeded_without_violations"
+	SUCCEEDED_WITH_VIOLATIONS    = "succeeded_with_violations"
+	ABORTED                      = "aborted"
 )
 
 type Client struct {
