@@ -3,10 +3,11 @@ package redshift_test
 import (
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 

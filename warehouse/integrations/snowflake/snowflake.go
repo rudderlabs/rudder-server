@@ -6,11 +6,12 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"

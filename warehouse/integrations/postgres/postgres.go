@@ -4,11 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 

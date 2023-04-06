@@ -3,12 +3,13 @@ package sqlwrapper
 import (
 	"context"
 	"database/sql"
+	"time"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"time"
 )
 
 type SQLWrapper interface {

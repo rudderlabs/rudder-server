@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"log"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 

@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"io"
 	"net"
 	"net/url"
@@ -17,6 +16,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 

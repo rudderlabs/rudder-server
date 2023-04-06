@@ -1,10 +1,11 @@
 package postgres_test
 
 import (
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
