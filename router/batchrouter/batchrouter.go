@@ -252,6 +252,7 @@ type AsyncStatusResponse struct {
 	FailedJobsURL  string
 	WarningJobsURL string
 }
+
 type ErrorResponseT struct {
 	Error string
 }
