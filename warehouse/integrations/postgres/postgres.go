@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"net/url"
 	"regexp"
 	"strings"
@@ -111,7 +112,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type Postgres struct {
-	DB                          *sql.DB
+	DB                          sqlwrapper.SQLWrapper
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse

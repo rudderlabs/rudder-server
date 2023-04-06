@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"io"
 	"net"
 	"net/url"
@@ -82,7 +83,7 @@ var mssqlDataTypesMapToRudder = map[string]string{
 }
 
 type AzureSynapse struct {
-	DB                          *sql.DB
+	DB                          sqlwrapper.SQLWrapper
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse

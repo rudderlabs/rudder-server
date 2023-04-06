@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"io"
 	"os"
 	"strings"
@@ -42,7 +43,7 @@ const (
 
 type LoadTable struct {
 	Logger             logger.Logger
-	DB                 *sql.DB
+	DB                 sqlwrapper.SQLWrapper
 	Namespace          string
 	Warehouse          *model.Warehouse
 	Stats              stats.Stats
@@ -52,7 +53,7 @@ type LoadTable struct {
 
 type LoadUsersTable struct {
 	Logger             logger.Logger
-	DB                 *sql.DB
+	DB                 sqlwrapper.SQLWrapper
 	Namespace          string
 	Warehouse          *model.Warehouse
 	Stats              stats.Stats

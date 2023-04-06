@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -144,7 +145,7 @@ var partitionKeyMap = map[string]string{
 }
 
 type Redshift struct {
-	DB             *sql.DB
+	DB             sqlwrapper.SQLWrapper
 	Namespace      string
 	Warehouse      model.Warehouse
 	Uploader       warehouseutils.Uploader

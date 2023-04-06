@@ -151,7 +151,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 			credentialsCopy := tc.credentials
 			credentialsCopy.Database = tc.database
 
-			db, err := snowflake.Connect(credentialsCopy)
+			db, err := snowflake.Connect(credentialsCopy, sf.Warehouse)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
