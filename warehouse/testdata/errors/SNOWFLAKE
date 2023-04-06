@@ -11,3 +11,4 @@
 {"exporting_data_failed":{"attempt":2,"errors":["001757 (42601): SQL compilation error:\nTable *** does not exist]}}
 {"exporting_data_failed":{"attempt":1,"errors":["091003 (22000): Failure using stage area. Cause: [The AWS Access Key Id you provided is not valid.]"]}}
 {"exporting_data_failed":{"attempt":4,"errors":["003127 (42601): SQL compilation error:Location *** is not allowed by integration ***. Please use DESC INTEGRATION to check out allowed and blocked locations."]}}
+{"exporting_data_failed":{"attempt":4,"errors":["load table: copy into table: 090084 (22000): Operation failed because soft limit on objects of type 'Column' per table was exceeded. Please reduce number of 'Column's or contact Snowflake support about raising the limit."]}}

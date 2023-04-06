@@ -7,3 +7,4 @@
 {"exporting_data_failed":{"attempt":5,"errors":["pq: must be owner of relation ***"]}}
 {"exporting_data_failed":{"attempt":2,"errors":["pq: Cannot execute write query because system is in resize mode"]}}
 {"exporting_data_failed":{"attempt":1,"errors":["Bucket *** not found."]}}
+{"exporting_data_failed":{"attempt":11,"errors":["update schema: adding columns to warehouse: failed to add columns for table *** in namespace *** of destination *** with error: pq: tables can have at most 1600 columns"]}}
