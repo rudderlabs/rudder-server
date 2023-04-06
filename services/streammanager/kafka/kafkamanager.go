@@ -181,6 +181,7 @@ var (
 	kafkaBatchTimeout                    = defaultBatchTimeout
 	kafkaBatchSize                       = defaultBatchSize
 	kafkaBatchingEnabled                 bool
+	kafkaCompression                     client.Compression
 	allowReqsWithoutUserIDAndAnonymousID bool
 
 	kafkaStats managerStats
@@ -232,6 +233,19 @@ func Init() {
 		pkgLogger.Infof("Kafka batching is enabled with batch size: %d and batch timeout: %s",
 			kafkaBatchSize, kafkaBatchTimeout,
 		)
+	}
+
+	kafkaCompression = client.CompressionZstd
+	if kc := config.GetInt("Router.kafkaCompression", -1); kc != -1 {
+		switch client.Compression(kc) {
+		case client.CompressionNone,
+			client.CompressionGzip,
+			client.CompressionSnappy,
+			client.CompressionLz4:
+			kafkaCompression = client.Compression(kc)
+		default:
+			pkgLogger.Errorf("Invalid Kafka compression codec: %d", kc)
+		}
 	}
 
 	kafkaStats = managerStats{
@@ -722,6 +736,7 @@ func newProducerConfig() client.ProducerConfig {
 	pc := client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
+		Compression:  kafkaCompression,
 		Logger:       &client.KafkaLogger{Logger: pkgLogger},
 		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
 	}
