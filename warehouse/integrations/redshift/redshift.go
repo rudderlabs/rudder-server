@@ -412,6 +412,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	var (
 		err              error
 		query            string
+		copyQuery        string
 		stagingTableName string
 		rowsAffected     int64
 		txn              *sql.Tx
@@ -537,6 +538,8 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			region,
 		)
 	}
+
+	copyQuery = query
 
 	sanitisedQuery, regexErr := misc.ReplaceMultiRegex(query, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
@@ -712,6 +715,24 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		stagingTableName,
 		partitionKey,
 	)
+
+	defer func() {
+		if err != nil {
+			if _, copyError := rs.DB.Exec(copyQuery); copyError != nil {
+				rs.Logger.Warnw("failure running copy command defer",
+					logfield.SourceID, rs.Warehouse.Source.ID,
+					logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+					logfield.DestinationID, rs.Warehouse.Destination.ID,
+					logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+					logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+					logfield.Namespace, rs.Namespace,
+					logfield.TableName, tableName,
+					logfield.Query, sanitisedQuery,
+					logfield.Error, err.Error(),
+				)
+			}
+		}
+	}()
 
 	rs.Logger.Infow("inserting into original table",
 		logfield.SourceID, rs.Warehouse.Source.ID,

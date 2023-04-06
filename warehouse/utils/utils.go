@@ -108,7 +108,7 @@ const (
 )
 
 const (
-	stagingTablePrefix = "rudder_staging_"
+	stagingTablePrefix = "test_rudder_staging_"
 )
 
 // Object storages
