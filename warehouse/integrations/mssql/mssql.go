@@ -136,7 +136,7 @@ func WithConfig(h *MSSQL, config *config.Config) {
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.mssql.numWorkersDownloadLoadFiles", 1)
 }
 
-func Connect(cred Credentials) (*sql.DB, error) {
+func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
 	// Create connection string
 	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -171,7 +171,7 @@ func Connect(cred Credentials) (*sql.DB, error) {
 		return nil, fmt.Errorf("opening connection to mssql server: %w", err)
 	}
 
-	return db, nil
+	return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 }
 
 func Init() {
@@ -696,7 +696,7 @@ func (ms *MSSQL) TestConnection(warehouse model.Warehouse) (err error) {
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
 	)
-	ms.DB, err = Connect(ms.getConnectionCredentials())
+	ms.DB, err = Connect(ms.getConnectionCredentials(), ms.Warehouse)
 	if err != nil {
 		return
 	}
@@ -723,14 +723,14 @@ func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader warehouseutils.Upload
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 	ms.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, ms.NumWorkersDownloadLoadFiles)
 
-	ms.DB, err = Connect(ms.getConnectionCredentials())
+	ms.DB, err = Connect(ms.getConnectionCredentials(), ms.Warehouse)
 	return err
 }
 
 func (ms *MSSQL) CrashRecover(warehouse model.Warehouse) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
-	ms.DB, err = Connect(ms.getConnectionCredentials())
+	ms.DB, err = Connect(ms.getConnectionCredentials(), ms.Warehouse)
 	if err != nil {
 		return err
 	}
@@ -784,7 +784,7 @@ func (ms *MSSQL) dropDanglingStagingTables() bool {
 func (ms *MSSQL) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(ms.getConnectionCredentials())
+	dbHandle, err := Connect(ms.getConnectionCredentials(), ms.Warehouse)
 	if err != nil {
 		return
 	}
@@ -894,7 +894,7 @@ func (ms *MSSQL) Connect(warehouse model.Warehouse) (client.Client, error) {
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(ms.getConnectionCredentials())
+	dbHandle, err := Connect(ms.getConnectionCredentials(), ms.Warehouse)
 	if err != nil {
 		return client.Client{}, err
 	}

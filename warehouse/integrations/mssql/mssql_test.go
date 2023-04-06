@@ -37,7 +37,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 		Host:     "wh-mssql",
 		SSLMode:  "disable",
 		Port:     "1433",
-	})
+	}, ms.Warehouse)
 	require.NoError(t, err)
 
 	err = db.Ping()

@@ -1027,7 +1027,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 	}
 }
 
-func Connect(cred RedshiftCredentials) (*sql.DB, error) {
+func Connect(cred RedshiftCredentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cred.Username, cred.Password),
@@ -1059,12 +1059,13 @@ func Connect(cred RedshiftCredentials) (*sql.DB, error) {
 		}
 	}
 
-	stmt := `SET query_group to 'RudderStack'`
-	_, err = db.Exec(stmt)
+	wrapper := sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse)
+
+	_, err = wrapper.Exec(`SET query_group to 'RudderStack'`)
 	if err != nil {
 		return nil, fmt.Errorf("redshift set query_group error : %v", err)
 	}
-	return db, nil
+	return wrapper, nil
 }
 
 func (rs *Redshift) dropDanglingStagingTables() bool {
@@ -1109,8 +1110,8 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 	return delSuccess
 }
 
-func (rs *Redshift) connectToWarehouse() (*sql.DB, error) {
-	return Connect(rs.getConnectionCredentials())
+func (rs *Redshift) connectToWarehouse() (sqlwrapper.SQLWrapper, error) {
+	return Connect(rs.getConnectionCredentials(), rs.Warehouse)
 }
 
 func (rs *Redshift) CreateSchema() (err error) {
@@ -1279,7 +1280,7 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := Connect(rs.getConnectionCredentials(), rs.Warehouse)
 	if err != nil {
 		return
 	}
@@ -1355,7 +1356,7 @@ func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 
 func (rs *Redshift) TestConnection(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
-	rs.DB, err = Connect(rs.getConnectionCredentials())
+	rs.DB, err = Connect(rs.getConnectionCredentials(), rs.Warehouse)
 	if err != nil {
 		return
 	}
@@ -1385,7 +1386,7 @@ func (rs *Redshift) Cleanup() {
 func (rs *Redshift) CrashRecover(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	rs.DB, err = Connect(rs.getConnectionCredentials())
+	rs.DB, err = Connect(rs.getConnectionCredentials(), rs.Warehouse)
 	if err != nil {
 		return err
 	}
@@ -1438,7 +1439,7 @@ func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) 
 func (rs *Redshift) Connect(warehouse model.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := Connect(rs.getConnectionCredentials(), rs.Warehouse)
 	if err != nil {
 		return client.Client{}, err
 	}

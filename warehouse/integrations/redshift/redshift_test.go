@@ -95,7 +95,7 @@ func TestIntegrationRedshift(t *testing.T) {
 			credentials, err := testhelper.RedshiftCredentials()
 			require.NoError(t, err)
 
-			db, err := redshift.Connect(credentials)
+			db, err := redshift.Connect(credentials, rs.Warehouse)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {

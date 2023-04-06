@@ -50,7 +50,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 				"sshPrivateKey": strings.ReplaceAll(configurations["sshPrivateKey"], "\\n", "\n"),
 			},
 		},
-	})
+	}, pg.Warehouse)
 	require.NoError(t, err)
 
 	err = db.Ping()
@@ -137,7 +137,7 @@ func TestIntegrationPostgres(t *testing.T) {
 		Host:     "wh-postgres",
 		SSLMode:  "disable",
 		Port:     "5432",
-	})
+	}, pg.Warehouse)
 	require.NoError(t, err)
 
 	err = db.Ping()

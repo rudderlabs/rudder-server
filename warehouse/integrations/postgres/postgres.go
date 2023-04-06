@@ -159,7 +159,7 @@ func WithConfig(h *Postgres, config *config.Config) {
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
 }
 
-func Connect(cred Credentials) (*sql.DB, error) {
+func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -188,19 +188,18 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	)
 
 	if cred.TunnelInfo != nil {
-
 		db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.TunnelInfo.Config)
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
-		return db, nil
+		return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 	}
 
 	if db, err = sql.Open("postgres", dsn.String()); err != nil {
 		return nil, fmt.Errorf("opening connection to postgres: %w", err)
 	}
 
-	return db, nil
+	return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 }
 
 func Init() {
@@ -362,7 +361,7 @@ func (pg *Postgres) TestConnection(warehouse model.Warehouse) (err error) {
 		}
 	}
 	pg.Warehouse = warehouse
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	if err != nil {
 		return
 	}
@@ -392,7 +391,7 @@ func (pg *Postgres) Setup(
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	pg.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, pg.NumWorkersDownloadLoadFiles)
 
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	return err
 }
 
@@ -404,7 +403,7 @@ func (pg *Postgres) CrashRecover(model.Warehouse) error {
 func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	if err != nil {
 		return
 	}
@@ -577,7 +576,7 @@ func (pg *Postgres) Connect(warehouse model.Warehouse) (client.Client, error) {
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	if err != nil {
 		return client.Client{}, err
 	}

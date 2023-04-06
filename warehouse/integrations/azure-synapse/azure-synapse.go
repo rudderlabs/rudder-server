@@ -126,7 +126,7 @@ func WithConfig(h *AzureSynapse, config *config.Config) {
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.azure_synapse.numWorkersDownloadLoadFiles", 1)
 }
 
-func connect(cred credentials) (*sql.DB, error) {
+func connect(cred credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
 	// Create connection string
 	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -157,7 +157,8 @@ func connect(cred credentials) (*sql.DB, error) {
 	if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
 		return nil, fmt.Errorf("synapse connection error : (%v)", err)
 	}
-	return db, nil
+
+	return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 }
 
 func Init() {
@@ -648,7 +649,7 @@ func (*AzureSynapse) AlterColumn(_, _, _ string) (model.AlterTableResponse, erro
 
 func (as *AzureSynapse) TestConnection(warehouse model.Warehouse) (err error) {
 	as.Warehouse = warehouse
-	as.DB, err = connect(as.getConnectionCredentials())
+	as.DB, err = connect(as.getConnectionCredentials(), as.Warehouse)
 	if err != nil {
 		return
 	}
@@ -675,14 +676,14 @@ func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader warehouseutils
 	as.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.AZURE_SYNAPSE, warehouse.Destination.Config, as.Uploader.UseRudderStorage())
 	as.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, as.NumWorkersDownloadLoadFiles)
 
-	as.DB, err = connect(as.getConnectionCredentials())
+	as.DB, err = connect(as.getConnectionCredentials(), as.Warehouse)
 	return err
 }
 
 func (as *AzureSynapse) CrashRecover(warehouse model.Warehouse) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
-	as.DB, err = connect(as.getConnectionCredentials())
+	as.DB, err = connect(as.getConnectionCredentials(), as.Warehouse)
 	if err != nil {
 		return err
 	}
@@ -736,7 +737,7 @@ func (as *AzureSynapse) dropDanglingStagingTables() bool {
 func (as *AzureSynapse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
-	dbHandle, err := connect(as.getConnectionCredentials())
+	dbHandle, err := connect(as.getConnectionCredentials(), as.Warehouse)
 	if err != nil {
 		return
 	}
@@ -842,7 +843,7 @@ func (as *AzureSynapse) GetTotalCountInTable(ctx context.Context, tableName stri
 func (as *AzureSynapse) Connect(warehouse model.Warehouse) (client.Client, error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
-	dbHandle, err := connect(as.getConnectionCredentials())
+	dbHandle, err := connect(as.getConnectionCredentials(), as.Warehouse)
 	if err != nil {
 		return client.Client{}, err
 	}

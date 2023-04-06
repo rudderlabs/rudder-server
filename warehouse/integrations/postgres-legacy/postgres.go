@@ -186,7 +186,7 @@ func WithConfig(h *Handle, config *config.Config) {
 	h.EnableSQLStatementExecutionPlanWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
 }
 
-func Connect(cred Credentials) (*sql.DB, error) {
+func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -220,14 +220,14 @@ func Connect(cred Credentials) (*sql.DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
-		return db, nil
+		return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 	}
 
 	if db, err = sql.Open("postgres", dsn.String()); err != nil {
 		return nil, fmt.Errorf("opening connection to postgres: %w", err)
 	}
 
-	return db, nil
+	return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 }
 
 func Init() {
@@ -800,7 +800,7 @@ func (pg *Handle) TestConnection(warehouse model.Warehouse) (err error) {
 		}
 	}
 	pg.Warehouse = warehouse
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	if err != nil {
 		return
 	}
@@ -829,14 +829,14 @@ func (pg *Handle) Setup(
 	pg.Uploader = uploader
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	return err
 }
 
 func (pg *Handle) CrashRecover(warehouse model.Warehouse) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	if err != nil {
 		return err
 	}
@@ -891,7 +891,7 @@ func (pg *Handle) dropDanglingStagingTables() bool {
 func (pg *Handle) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	if err != nil {
 		return
 	}
@@ -1009,7 +1009,7 @@ func (pg *Handle) Connect(warehouse model.Warehouse) (client.Client, error) {
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := Connect(pg.getConnectionCredentials(), pg.Warehouse)
 	if err != nil {
 		return client.Client{}, err
 	}
@@ -1034,7 +1034,7 @@ func (pg *Handle) SetConnectionTimeout(timeout time.Duration) {
 
 type QueryParams struct {
 	txn                 *sql.Tx
-	db                  *sql.DB
+	db                  sqlwrapper.SQLWrapper
 	query               string
 	enableWithQueryPlan bool
 }
