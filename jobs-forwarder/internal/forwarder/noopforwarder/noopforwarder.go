@@ -60,5 +60,4 @@ func (nf *NoopForwarder) Start(ctx context.Context) {
 }
 
 func (nf *NoopForwarder) Stop() {
-	nf.JobsDB.Close()
 }
