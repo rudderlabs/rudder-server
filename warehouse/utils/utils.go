@@ -994,11 +994,24 @@ func ReadAsBool(key string, config map[string]interface{}) bool {
 
 func NormalizePQError(err error) error {
 	if pqErr, ok := err.(*pq.Error); ok {
-		return fmt.Errorf("pq: severity: %s, code: %s, message: %s, detail: %s",
+		return fmt.Errorf("pq: severity: %s, code: %s, message: %s, detail: %s, hint: %s, position: %s, internal position: %s, internal query: %s, where: %s, schema: %s, table: %s, column: %s, datatype: %s, constraint: %s, file: %s, line: %s, routine: %s",
 			pqErr.Severity,
 			pqErr.Code,
 			pqErr.Message,
 			pqErr.Detail,
+			pqErr.Hint,
+			pqErr.Position,
+			pqErr.InternalPosition,
+			pqErr.InternalQuery,
+			pqErr.Where,
+			pqErr.Schema,
+			pqErr.Table,
+			pqErr.Column,
+			pqErr.DataTypeName,
+			pqErr.Constraint,
+			pqErr.File,
+			pqErr.Line,
+			pqErr.Routine,
 		)
 	}
 	return err
