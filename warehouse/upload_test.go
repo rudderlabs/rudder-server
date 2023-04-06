@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 	"os"
 	"testing"
 	"time"
@@ -367,7 +368,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					rs := redshift.NewRedshift()
 					redshift.WithConfig(rs, config.Default)
 
-					rs.DB = pgResource.DB
+					rs.DB = dbwrapper.NewSQLWrapper(pgResource.DB, logger.NOP, model.Warehouse{})
 					rs.Namespace = testNamespace
 
 					job := &UploadJob{
@@ -434,7 +435,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			rs := redshift.NewRedshift()
 			redshift.WithConfig(rs, config.Default)
 
-			rs.DB = pgResource.DB
+			rs.DB = dbwrapper.NewSQLWrapper(pgResource.DB, logger.NOP, model.Warehouse{})
 			rs.Namespace = testNamespace
 
 			job := &UploadJob{

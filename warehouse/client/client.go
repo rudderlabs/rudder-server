@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 
 	deltalakeclient "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 
@@ -23,7 +23,7 @@ const (
 )
 
 type Client struct {
-	SQL             sqlwrapper.SQLWrapper
+	SQL             *dbwrapper.DB
 	BQ              *bigquery.Client
 	DeltalakeClient *deltalakeclient.Client
 	Type            string

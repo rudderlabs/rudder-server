@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -133,7 +133,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type Handle struct {
-	DB                                          sqlwrapper.SQLWrapper
+	DB                                          *dbwrapper.DB
 	Namespace                                   string
 	ObjectStorage                               string
 	Warehouse                                   model.Warehouse
@@ -187,7 +187,7 @@ func WithConfig(h *Handle, config *config.Config) {
 	h.EnableSQLStatementExecutionPlanWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
 }
 
-func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
+func Connect(cred Credentials, warehouse model.Warehouse) (*dbwrapper.DB, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -221,14 +221,14 @@ func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
-		return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
+		return dbwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 	}
 
 	if db, err = sql.Open("postgres", dsn.String()); err != nil {
 		return nil, fmt.Errorf("opening connection to postgres: %w", err)
 	}
 
-	return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
+	return dbwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 }
 
 func Init() {
@@ -1035,7 +1035,7 @@ func (pg *Handle) SetConnectionTimeout(timeout time.Duration) {
 
 type QueryParams struct {
 	txn                 *sql.Tx
-	db                  sqlwrapper.SQLWrapper
+	db                  *dbwrapper.DB
 	query               string
 	enableWithQueryPlan bool
 }

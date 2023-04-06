@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -44,7 +44,7 @@ const (
 
 type LoadTable struct {
 	Logger             logger.Logger
-	DB                 sqlwrapper.SQLWrapper
+	DB                 *dbwrapper.DB
 	Namespace          string
 	Warehouse          *model.Warehouse
 	Stats              stats.Stats
@@ -54,7 +54,7 @@ type LoadTable struct {
 
 type LoadUsersTable struct {
 	Logger             logger.Logger
-	DB                 sqlwrapper.SQLWrapper
+	DB                 *dbwrapper.DB
 	Namespace          string
 	Warehouse          *model.Warehouse
 	Stats              stats.Stats

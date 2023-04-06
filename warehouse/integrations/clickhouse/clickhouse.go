@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -140,7 +140,7 @@ var errorsMappings = []model.JobError{
 }
 
 type Clickhouse struct {
-	DB                          sqlwrapper.SQLWrapper
+	DB                          *dbwrapper.DB
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse
@@ -223,7 +223,7 @@ func Init() {
 }
 
 // ConnectToClickhouse connects to clickhouse with provided credentials
-func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (sqlwrapper.SQLWrapper, error) {
+func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*dbwrapper.DB, error) {
 	dsn := url.URL{
 		Scheme: "tcp",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -260,7 +260,7 @@ func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool
 	if db, err = sql.Open("clickhouse", dsn.String()); err != nil {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
 	}
-	return sqlwrapper.NewSQLWrapper(db, pkgLogger, ch.Warehouse), nil
+	return dbwrapper.NewSQLWrapper(db, pkgLogger, ch.Warehouse), nil
 }
 
 func NewClickhouse() *Clickhouse {

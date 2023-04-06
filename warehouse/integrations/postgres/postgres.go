@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -113,7 +113,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type Postgres struct {
-	DB                          sqlwrapper.SQLWrapper
+	DB                          *dbwrapper.DB
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse
@@ -160,7 +160,7 @@ func WithConfig(h *Postgres, config *config.Config) {
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
 }
 
-func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
+func Connect(cred Credentials, warehouse model.Warehouse) (*dbwrapper.DB, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -193,14 +193,14 @@ func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
-		return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
+		return dbwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 	}
 
 	if db, err = sql.Open("postgres", dsn.String()); err != nil {
 		return nil, fmt.Errorf("opening connection to postgres: %w", err)
 	}
 
-	return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
+	return dbwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 }
 
 func Init() {

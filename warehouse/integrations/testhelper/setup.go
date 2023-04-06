@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
@@ -99,7 +99,7 @@ type WareHouseTest struct {
 	LoadFilesEventsMap           EventsCountMap
 	TableUploadsEventsMap        EventsCountMap
 	WarehouseEventsMap           EventsCountMap
-	JobsDB                       sqlwrapper.SQLWrapper
+	JobsDB                       *dbwrapper.DB
 	AsyncJob                     bool
 	Prerequisite                 func(t testing.TB)
 	StatsToVerify                []string
@@ -189,7 +189,7 @@ func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 	verifyWorkspaceIDInStats(t)
 }
 
-func SetUpJobsDB(t testing.TB) sqlwrapper.SQLWrapper {
+func SetUpJobsDB(t testing.TB) *dbwrapper.DB {
 	t.Helper()
 
 	pgCredentials := &postgres.Credentials{

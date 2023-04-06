@@ -17,7 +17,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
@@ -84,7 +84,7 @@ var mssqlDataTypesMapToRudder = map[string]string{
 }
 
 type MSSQL struct {
-	DB                          sqlwrapper.SQLWrapper
+	DB                          *dbwrapper.DB
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse
@@ -137,7 +137,7 @@ func WithConfig(h *MSSQL, config *config.Config) {
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.mssql.numWorkersDownloadLoadFiles", 1)
 }
 
-func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
+func Connect(cred Credentials, warehouse model.Warehouse) (*dbwrapper.DB, error) {
 	// Create connection string
 	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -172,7 +172,7 @@ func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper
 		return nil, fmt.Errorf("opening connection to mssql server: %w", err)
 	}
 
-	return sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
+	return dbwrapper.NewSQLWrapper(db, pkgLogger, warehouse), nil
 }
 
 func Init() {

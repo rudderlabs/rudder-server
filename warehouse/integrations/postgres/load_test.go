@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 	"os"
 	"path/filepath"
 	"testing"
@@ -200,7 +201,7 @@ func TestLoadTable_Load(t *testing.T) {
 
 				lt := postgres.LoadTable{
 					Logger:    logger.NOP,
-					DB:        pgResource.DB,
+					DB:        dbwrapper.NewSQLWrapper(pgResource.DB, logger.NOP, *warehouse),
 					Namespace: namespace,
 					Warehouse: warehouse,
 					Stats:     store,
@@ -315,7 +316,7 @@ func TestLoadTable_Load(t *testing.T) {
 
 				lt := postgres.LoadTable{
 					Logger:    logger.NOP,
-					DB:        pgResource.DB,
+					DB:        dbwrapper.NewSQLWrapper(pgResource.DB, logger.NOP, *warehouse),
 					Namespace: namespace,
 					Warehouse: warehouse,
 					Stats:     store,
@@ -466,7 +467,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 
 			lt := postgres.LoadUsersTable{
 				Logger:    logger.NOP,
-				DB:        pgResource.DB,
+				DB:        dbwrapper.NewSQLWrapper(pgResource.DB, logger.NOP, model.Warehouse{}),
 				Namespace: namespace,
 				Warehouse: &model.Warehouse{
 					Source: backendconfig.SourceT{

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 
 	"golang.org/x/exp/slices"
 
@@ -146,7 +146,7 @@ var partitionKeyMap = map[string]string{
 }
 
 type Redshift struct {
-	DB             sqlwrapper.SQLWrapper
+	DB             *dbwrapper.DB
 	Namespace      string
 	Warehouse      model.Warehouse
 	Uploader       warehouseutils.Uploader
@@ -1028,7 +1028,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 	}
 }
 
-func Connect(cred RedshiftCredentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
+func Connect(cred RedshiftCredentials, warehouse model.Warehouse) (*dbwrapper.DB, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cred.Username, cred.Password),
@@ -1060,7 +1060,7 @@ func Connect(cred RedshiftCredentials, warehouse model.Warehouse) (sqlwrapper.SQ
 		}
 	}
 
-	wrapper := sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse)
+	wrapper := dbwrapper.NewSQLWrapper(db, pkgLogger, warehouse)
 
 	_, err = wrapper.Exec(`SET query_group to 'RudderStack'`)
 	if err != nil {
@@ -1111,7 +1111,7 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 	return delSuccess
 }
 
-func (rs *Redshift) connectToWarehouse() (sqlwrapper.SQLWrapper, error) {
+func (rs *Redshift) connectToWarehouse() (*dbwrapper.DB, error) {
 	return Connect(rs.getConnectionCredentials(), rs.Warehouse)
 }
 

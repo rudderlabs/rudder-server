@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -178,7 +178,7 @@ type Credentials struct {
 }
 
 type tableLoadResp struct {
-	db           sqlwrapper.SQLWrapper
+	db           *dbwrapper.DB
 	stagingTable string
 }
 
@@ -187,7 +187,7 @@ type optionalCreds struct {
 }
 
 type Snowflake struct {
-	DB             sqlwrapper.SQLWrapper
+	DB             *dbwrapper.DB
 	Namespace      string
 	CloudProvider  string
 	ObjectStorage  string
@@ -339,7 +339,7 @@ func (sf *Snowflake) DeleteBy(tableNames []string, params warehouseutils.DeleteB
 func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipClosingDBSession bool) (tableLoadResp, error) {
 	var (
 		csvObjectLocation string
-		db                sqlwrapper.SQLWrapper
+		db                *dbwrapper.DB
 		err               error
 	)
 
@@ -998,7 +998,7 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 	}
 }
 
-func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper, error) {
+func Connect(cred Credentials, warehouse model.Warehouse) (*dbwrapper.DB, error) {
 	urlConfig := snowflake.Config{
 		Account:     cred.Account,
 		User:        cred.User,
@@ -1016,7 +1016,7 @@ func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper
 
 	var (
 		db      *sql.DB
-		wrapper sqlwrapper.SQLWrapper
+		wrapper *dbwrapper.DB
 		err     error
 	)
 
@@ -1029,7 +1029,7 @@ func Connect(cred Credentials, warehouse model.Warehouse) (sqlwrapper.SQLWrapper
 		return nil, fmt.Errorf("connect to snowflake: %w", err)
 	}
 
-	wrapper = sqlwrapper.NewSQLWrapper(db, pkgLogger, warehouse)
+	wrapper = dbwrapper.NewSQLWrapper(db, pkgLogger, warehouse)
 
 	_, err = wrapper.Exec(`ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`)
 	if err != nil {

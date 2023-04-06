@@ -3,6 +3,8 @@ package redshift_test
 import (
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/dbwrapper"
 	"os"
 	"strings"
 	"testing"
@@ -266,7 +268,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			rs := redshift.NewRedshift()
 			redshift.WithConfig(rs, config.Default)
 
-			rs.DB = pgResource.DB
+			rs.DB = dbwrapper.NewSQLWrapper(pgResource.DB, logger.NOP, model.Warehouse{})
 			rs.Namespace = testNamespace
 
 			_, err = rs.DB.Exec(
