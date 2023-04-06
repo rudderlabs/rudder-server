@@ -2,6 +2,7 @@ package snowflake_test
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"os"
 	"strings"
 	"testing"
@@ -151,7 +152,9 @@ func TestIntegrationSnowflake(t *testing.T) {
 			credentialsCopy := tc.credentials
 			credentialsCopy.Database = tc.database
 
-			db, err := snowflake.Connect(credentialsCopy, sf.Warehouse)
+			warehouse := model.Warehouse{}
+
+			db, err := snowflake.Connect(credentialsCopy, warehouse)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {

@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"os"
 	"strings"
 	"testing"
@@ -35,6 +36,9 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
+
+	warehouse := model.Warehouse{}
+
 	db, err := postgres.Connect(postgres.Credentials{
 		DBName:   configurations["privatePostgresDatabase"],
 		Password: configurations["privatePostgresPassword"],
@@ -50,7 +54,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 				"sshPrivateKey": strings.ReplaceAll(configurations["sshPrivateKey"], "\\n", "\n"),
 			},
 		},
-	}, pg.Warehouse)
+	}, warehouse)
 	require.NoError(t, err)
 
 	err = db.Ping()
@@ -130,6 +134,8 @@ func TestIntegrationPostgres(t *testing.T) {
 
 	postgres.Init()
 
+	warehouse := model.Warehouse{}
+
 	db, err := postgres.Connect(postgres.Credentials{
 		DBName:   "rudderdb",
 		Password: "rudder-password",
@@ -137,7 +143,7 @@ func TestIntegrationPostgres(t *testing.T) {
 		Host:     "wh-postgres",
 		SSLMode:  "disable",
 		Port:     "5432",
-	}, pg.Warehouse)
+	}, warehouse)
 	require.NoError(t, err)
 
 	err = db.Ping()

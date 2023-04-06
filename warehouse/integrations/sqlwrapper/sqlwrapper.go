@@ -24,6 +24,7 @@ type SQLWrapper interface {
 	Begin() (*sql.Tx, error)
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 
+	Ping() error
 	PingContext(ctx context.Context) error
 }
 
@@ -104,6 +105,10 @@ func (s *sqlWrapper) QueryRowContext(ctx context.Context, query string, args ...
 
 func (s *sqlWrapper) Close() error {
 	return s.db.Close()
+}
+
+func (s *sqlWrapper) Ping() error {
+	return s.db.Ping()
 }
 
 func (s *sqlWrapper) PingContext(ctx context.Context) error {

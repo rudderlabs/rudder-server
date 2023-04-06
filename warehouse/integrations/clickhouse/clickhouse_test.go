@@ -2,9 +2,9 @@ package clickhouse_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 	"log"
 	"os"
 	"strings"
@@ -43,7 +43,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 
 	clickhouse.Init()
 
-	var dbs []*sql.DB
+	var dbs []sqlwrapper.SQLWrapper
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
 		ch := clickhouse.NewClickhouse()
 		db, err := ch.ConnectToClickhouse(clickhouse.Credentials{
@@ -78,7 +78,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 		warehouseEvents             testhelper.EventsCountMap
 		warehouseModifiedEvents     testhelper.EventsCountMap
 		clusterSetup                func(t testing.TB)
-		db                          *sql.DB
+		db                          sqlwrapper.SQLWrapper
 		s3EngineEnabledWorkspaceIDs []string
 	}{
 		{
@@ -1072,7 +1072,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	return resource
 }
 
-func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables []string) {
+func initializeClickhouseClusterMode(t testing.TB, clusterDBs []sqlwrapper.SQLWrapper, tables []string) {
 	t.Helper()
 
 	type ColumnInfoT struct {

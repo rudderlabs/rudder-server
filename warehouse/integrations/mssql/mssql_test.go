@@ -1,6 +1,7 @@
 package mssql_test
 
 import (
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"os"
 	"testing"
 
@@ -30,6 +31,8 @@ func TestIntegrationMSSQL(t *testing.T) {
 
 	mssql.Init()
 
+	warehouse := model.Warehouse{}
+
 	db, err := mssql.Connect(mssql.Credentials{
 		DBName:   "master",
 		Password: "reallyStrongPwd123",
@@ -37,7 +40,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 		Host:     "wh-mssql",
 		SSLMode:  "disable",
 		Port:     "1433",
-	}, ms.Warehouse)
+	}, warehouse)
 	require.NoError(t, err)
 
 	err = db.Ping()

@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"log"
 	"net/http"
 	"os"
@@ -96,7 +98,7 @@ type WareHouseTest struct {
 	LoadFilesEventsMap           EventsCountMap
 	TableUploadsEventsMap        EventsCountMap
 	WarehouseEventsMap           EventsCountMap
-	JobsDB                       *sql.DB
+	JobsDB                       sqlwrapper.SQLWrapper
 	AsyncJob                     bool
 	Prerequisite                 func(t testing.TB)
 	StatsToVerify                []string
@@ -186,7 +188,7 @@ func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 	verifyWorkspaceIDInStats(t)
 }
 
-func SetUpJobsDB(t testing.TB) *sql.DB {
+func SetUpJobsDB(t testing.TB) sqlwrapper.SQLWrapper {
 	t.Helper()
 
 	pgCredentials := &postgres.Credentials{
@@ -198,7 +200,9 @@ func SetUpJobsDB(t testing.TB) *sql.DB {
 		Port:     "5432",
 	}
 
-	db, err := postgres.Connect(*pgCredentials)
+	warehouse := model.Warehouse{}
+
+	db, err := postgres.Connect(*pgCredentials, warehouse)
 	require.NoError(t, err)
 
 	err = db.Ping()

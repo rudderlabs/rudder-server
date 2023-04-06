@@ -3,6 +3,7 @@ package redshift_test
 import (
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"os"
 	"strings"
 	"testing"
@@ -95,7 +96,9 @@ func TestIntegrationRedshift(t *testing.T) {
 			credentials, err := testhelper.RedshiftCredentials()
 			require.NoError(t, err)
 
-			db, err := redshift.Connect(credentials, rs.Warehouse)
+			warehouse := model.Warehouse{}
+
+			db, err := redshift.Connect(credentials, warehouse)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
