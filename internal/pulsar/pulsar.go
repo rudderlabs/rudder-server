@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
-//go:generate mockgen -destination=../mocks/mock_pulsar.go -package=mock_pulsar "github.com/rudderlabs/rudder-server/internal/pulsar" ProducerAdapter
+//go:generate mockgen -destination=../../mocks/mock_pulsar.go -package=mock_pulsar "github.com/rudderlabs/rudder-server/internal/pulsar" ProducerAdapter
 
 type ClientConf struct {
 	Url               string

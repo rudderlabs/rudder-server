@@ -283,7 +283,6 @@ type JobsDB interface {
 	Ping() error
 	DeleteExecuting()
 	FailExecuting()
-	Close()
 
 	/* Journal */
 

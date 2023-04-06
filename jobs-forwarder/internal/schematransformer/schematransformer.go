@@ -18,7 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 )
 
-//go:generate mockgen -destination=../mocks/mock_schematransformer.go -package=mock_schematransformer "github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer" Transformer
+//go:generate mockgen -destination=../../../mocks/mock_schematransformer.go -package=mock_schematransformer "github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer" Transformer
 
 // EventPayload : Generic type for gateway event payload
 type EventPayload struct {
