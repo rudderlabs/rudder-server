@@ -456,7 +456,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	}
 
 	if !skipTempTableDelete {
-		//defer rs.dropStagingTables([]string{stagingTableName})
+		// defer rs.dropStagingTables([]string{stagingTableName})
 	}
 
 	manifestS3Location, region := warehouseutils.GetS3Location(manifestLocation)
@@ -800,7 +800,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 		}
 	}
 
-	//defer rs.dropStagingTables([]string{identifyStagingTable})
+	// defer rs.dropStagingTables([]string{identifyStagingTable})
 
 	if len(rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
 		return map[string]error{
@@ -913,7 +913,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 			warehouseutils.UsersTable:      fmt.Errorf("creating staging table for users: %w", err),
 		}
 	}
-	//defer rs.dropStagingTables([]string{stagingTableName})
+	// defer rs.dropStagingTables([]string{stagingTableName})
 
 	primaryKey := "id"
 	query = fmt.Sprintf(`
@@ -1378,7 +1378,7 @@ func (rs *Redshift) TestConnection(warehouse model.Warehouse) (err error) {
 
 func (rs *Redshift) Cleanup() {
 	if rs.DB != nil {
-		//rs.dropDanglingStagingTables()
+		// rs.dropDanglingStagingTables()
 		_ = rs.DB.Close()
 	}
 }
@@ -1391,7 +1391,7 @@ func (rs *Redshift) CrashRecover(warehouse model.Warehouse) (err error) {
 		return err
 	}
 	defer func() { _ = rs.DB.Close() }()
-	//rs.dropDanglingStagingTables()
+	// rs.dropDanglingStagingTables()
 	return
 }
 
