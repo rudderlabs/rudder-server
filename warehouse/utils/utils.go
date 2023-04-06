@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -988,4 +990,16 @@ func ReadAsBool(key string, config map[string]interface{}) bool {
 		}
 	}
 	return false
+}
+
+func NormalizePQError(err error) error {
+	if pqErr, ok := err.(*pq.Error); ok {
+		return fmt.Errorf("pq: severity: %s, code: %s, message: %s, detail: %s",
+			pqErr.Severity,
+			pqErr.Code,
+			pqErr.Message,
+			pqErr.Detail,
+		)
+	}
+	return err
 }

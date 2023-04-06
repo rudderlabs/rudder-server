@@ -559,6 +559,8 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	)
 
 	if _, err := txn.Exec(query); err != nil {
+		err = warehouseutils.NormalizePQError(err)
+
 		rs.Logger.Warnw("failure running copy command",
 			logfield.SourceID, rs.Warehouse.Source.ID,
 			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
