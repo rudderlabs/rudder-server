@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/sqlwrapper"
 
 	deltalakeclient "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
