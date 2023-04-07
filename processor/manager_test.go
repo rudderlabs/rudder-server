@@ -130,7 +130,6 @@ func initJobsDB() {
 	admin.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
-	jobsdb.Init3()
 	archiver.Init()
 }
 
