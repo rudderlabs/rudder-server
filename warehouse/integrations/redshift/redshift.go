@@ -575,7 +575,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			logfield.Error, err.Error(),
 		)
 
-		return "", fmt.Errorf("running copy command: %w", err)
+		return "", fmt.Errorf("running copy command: %w", normalizeError(err))
 	}
 
 	var (
@@ -736,7 +736,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			logfield.Error, err.Error(),
 		)
 
-		return "", fmt.Errorf("inserting into original table: %w", err)
+		return "", fmt.Errorf("inserting into original table: %w", normalizeError(err))
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -987,7 +987,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
-			warehouseutils.UsersTable:      fmt.Errorf("inserting into users table from staging table: %w", err),
+			warehouseutils.UsersTable:      fmt.Errorf("inserting into users table from staging table: %w", normalizeError(err)),
 		}
 	}
 
@@ -1489,7 +1489,8 @@ func (rs *Redshift) LoadTestTable(location, tableName string, _ map[string]inter
 	}
 
 	_, err = rs.DB.Exec(sqlStatement)
-	return
+
+	return normalizeError(err)
 }
 
 func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
@@ -1498,4 +1499,14 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 
 func (rs *Redshift) ErrorMappings() []model.JobError {
 	return errorsMappings
+}
+
+func normalizeError(err error) error {
+	if pqErr, ok := err.(*pq.Error); ok {
+		return fmt.Errorf("pq: message: %s, detail: %s",
+			pqErr.Message,
+			pqErr.Detail,
+		)
+	}
+	return err
 }
