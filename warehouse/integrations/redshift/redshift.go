@@ -654,7 +654,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 				logfield.Query, query,
 				logfield.Error, err.Error(),
 			)
-			return "", fmt.Errorf("deleting from original table for dedup: %w", err)
+			return "", fmt.Errorf("deleting from original table for dedup: %w", normalizeError(err))
 		}
 
 		if rowsAffected, err = result.RowsAffected(); err != nil {
@@ -943,7 +943,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 			logfield.Error, err.Error(),
 		)
 		return map[string]error{
-			warehouseutils.UsersTable: fmt.Errorf("deleting from original table for dedup: %w", err),
+			warehouseutils.UsersTable: fmt.Errorf("deleting from original table for dedup: %w", normalizeError(err)),
 		}
 	}
 
