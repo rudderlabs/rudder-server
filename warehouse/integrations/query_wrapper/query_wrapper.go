@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -21,6 +23,7 @@ type DB struct {
 	logger              logger.Logger
 	keysAndValues       []any
 	queryThresholdInSec time.Duration
+	secretsRegex        map[string]string
 }
 
 func WithLogger(logger logger.Logger) Opt {
@@ -44,6 +47,12 @@ func WithSince(since func(time.Time) time.Duration) Opt {
 func WithQueryThresholdInSec(queryThresholdInSec time.Duration) Opt {
 	return func(s *DB) {
 		s.queryThresholdInSec = queryThresholdInSec
+	}
+}
+
+func WithSecretsRegex(secretsRegex map[string]string) Opt {
+	return func(s *DB) {
+		s.secretsRegex = secretsRegex
 	}
 }
 
@@ -117,8 +126,10 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *s
 
 func (db *DB) logQuery(startedAt time.Time, query string) {
 	if executionTime := db.since(startedAt); executionTime > db.queryThresholdInSec {
+		sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
+
 		keysAndValues := []any{
-			logfield.Query, query,
+			logfield.Query, sanitizedQuery,
 			logfield.QueryExecutionTimeInSec, int64(executionTime.Seconds()),
 		}
 		keysAndValues = append(keysAndValues, db.keysAndValues...)
