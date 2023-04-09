@@ -23,7 +23,7 @@ require (
 	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/allisson/go-pglock/v2 v2.0.1
-	github.com/apache/pulsar-client-go v0.9.0
+	github.com/apache/pulsar-client-go v0.10.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/aws/aws-sdk-go v1.44.204
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
@@ -136,6 +136,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.13.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.27.11 // indirect
 	github.com/aws/smithy-go v1.13.3 // indirect
+	github.com/bits-and-blooms/bitset v1.4.0 // indirect
 	github.com/bugsnag/panicwrap v1.3.4 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
