@@ -1,4 +1,4 @@
-package query_wrapper
+package query_logger
 
 import (
 	"context"

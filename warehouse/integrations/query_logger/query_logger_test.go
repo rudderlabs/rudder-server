@@ -1,4 +1,4 @@
-package query_wrapper_test
+package query_logger_test
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/mocks/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/query_wrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/query_logger"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/stretchr/testify/require"
 )
@@ -58,14 +58,14 @@ func TestQueryWrapper(t *testing.T) {
 
 			mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-			qw := query_wrapper.NewSQLQueryWrapper(
+			qw := query_logger.NewSQLQueryWrapper(
 				pgResource.DB,
-				query_wrapper.WithQueryThresholdInSec(queryThreshold),
-				query_wrapper.WithLogger(mockLogger),
-				query_wrapper.WithSince(func(time.Time) time.Duration {
+				query_logger.WithQueryThresholdInSec(queryThreshold),
+				query_logger.WithLogger(mockLogger),
+				query_logger.WithSince(func(time.Time) time.Duration {
 					return tc.executionTimeInSec
 				}),
-				query_wrapper.WithKeyAndValues(keysAndValues...),
+				query_logger.WithKeyAndValues(keysAndValues...),
 			)
 
 			query := "SELECT 1;"
@@ -77,9 +77,9 @@ func TestQueryWrapper(t *testing.T) {
 			kvs = append(kvs, keysAndValues...)
 
 			if tc.wantLog {
-				mockLogger.EXPECT().Infow(query_wrapper.ExecutingQuery, kvs).Times(6)
+				mockLogger.EXPECT().Infow(query_logger.ExecutingQuery, kvs).Times(6)
 			} else {
-				mockLogger.EXPECT().Infow(query_wrapper.ExecutingQuery, kvs).Times(0)
+				mockLogger.EXPECT().Infow(query_logger.ExecutingQuery, kvs).Times(0)
 			}
 
 			_, err := qw.Exec(query)
@@ -109,15 +109,15 @@ func TestQueryWrapper(t *testing.T) {
 
 			mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-			qw := query_wrapper.NewSQLQueryWrapper(
+			qw := query_logger.NewSQLQueryWrapper(
 				pgResource.DB,
-				query_wrapper.WithQueryThresholdInSec(queryThreshold),
-				query_wrapper.WithLogger(mockLogger),
-				query_wrapper.WithSince(func(time.Time) time.Duration {
+				query_logger.WithQueryThresholdInSec(queryThreshold),
+				query_logger.WithLogger(mockLogger),
+				query_logger.WithSince(func(time.Time) time.Duration {
 					return tc.executionTimeInSec
 				}),
-				query_wrapper.WithKeyAndValues(keysAndValues...),
-				query_wrapper.WithSecretsRegex(map[string]string{
+				query_logger.WithKeyAndValues(keysAndValues...),
+				query_logger.WithSecretsRegex(map[string]string{
 					"PASSWORD '[^']*'": "PASSWORD '***'",
 				}),
 			)
@@ -137,10 +137,10 @@ func TestQueryWrapper(t *testing.T) {
 			alterKvs = append(alterKvs, keysAndValues...)
 
 			if tc.wantLog {
-				mockLogger.EXPECT().Infow(query_wrapper.ExecutingQuery, createKvs).Times(1)
-				mockLogger.EXPECT().Infow(query_wrapper.ExecutingQuery, alterKvs).Times(1)
+				mockLogger.EXPECT().Infow(query_logger.ExecutingQuery, createKvs).Times(1)
+				mockLogger.EXPECT().Infow(query_logger.ExecutingQuery, alterKvs).Times(1)
 			} else {
-				mockLogger.EXPECT().Infow(query_wrapper.ExecutingQuery, []any{}).Times(0)
+				mockLogger.EXPECT().Infow(query_logger.ExecutingQuery, []any{}).Times(0)
 			}
 
 			_, err := qw.Exec(fmt.Sprintf("CREATE USER %s;", user))
