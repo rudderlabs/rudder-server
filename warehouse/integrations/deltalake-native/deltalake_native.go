@@ -131,11 +131,8 @@ type Deltalake struct {
 	ConnectTimeout         time.Duration
 	Logger                 logger.Logger
 	Stats                  stats.Stats
-	GrpcTimeout            time.Duration
-	HealthTimeout          time.Duration
 	LoadTableStrategy      string
 	EnablePartitionPruning bool
-	SlowQueryInSec         time.Duration
 }
 
 func Init() {
@@ -150,11 +147,8 @@ func NewDeltalake() *Deltalake {
 }
 
 func WithConfig(h *Deltalake, config *config.Config) {
-	h.GrpcTimeout = config.GetDuration("Warehouse.deltalake.grpcTimeout", 2, time.Minute)
-	h.HealthTimeout = config.GetDuration("Warehouse.deltalake.healthTimeout", 15, time.Second)
 	h.LoadTableStrategy = config.GetString("Warehouse.deltalake.loadTableStrategy", mergeMode)
 	h.EnablePartitionPruning = config.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
-	h.SlowQueryInSec = config.GetDuration("Warehouse.deltalake.slowQueryInSec", 300, time.Second)
 }
 
 func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
@@ -204,13 +198,7 @@ func (d *Deltalake) fetchTables() ([]string, error) {
 	)
 
 	query = fmt.Sprintf(`SHOW tables from %s;`, d.Namespace)
-
-	d.logQuery(func() {
-		rows, err = d.DB.Query(query)
-	},
-		model.FetchTables,
-		logfield.Query, query,
-	)
+	rows, err = d.DB.Query(query)
 
 	if err != nil {
 		if strings.Contains(err.Error(), schemaNotFound) {
@@ -246,14 +234,7 @@ func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, e
 	)
 
 	query = fmt.Sprintf(`describe QUERY TABLE %s.%s;`, d.Namespace, tableName)
-
-	d.logQuery(func() {
-		rows, err = d.DB.Query(query)
-	},
-		model.FetchTableAttributes,
-		logfield.TableName, tableName,
-		logfield.Query, query,
-	)
+	rows, err = d.DB.Query(query)
 
 	if err != nil {
 		return nil, fmt.Errorf("executing fetching table attributes: %w", err)
@@ -293,14 +274,7 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 	)
 
 	query = fmt.Sprintf(`SHOW PARTITIONS %s.%s;`, d.Namespace, tableName)
-
-	d.logQuery(func() {
-		rows, err = d.DB.Query(query)
-	},
-		model.FetchTabTablePartitions,
-		logfield.TableName, tableName,
-		logfield.Query, query,
-	)
+	rows, err = d.DB.Query(query)
 
 	if err != nil {
 		if strings.Contains(err.Error(), partitionNotFound) {
@@ -341,12 +315,7 @@ func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
 
 	query = fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 
-	d.logQuery(func() {
-		_, err = d.DB.Exec(query)
-	},
-		model.SchemaExists,
-		logfield.Query, query,
-	)
+	_, err = d.DB.Exec(query)
 
 	if err != nil {
 		return false, fmt.Errorf("executing schema exists: %w", err)
@@ -362,12 +331,7 @@ func (d *Deltalake) createSchema() error {
 
 	query = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, d.Namespace)
 
-	d.logQuery(func() {
-		_, err = d.DB.Exec(query)
-	},
-		model.CreateSchema,
-		logfield.Query, query,
-	)
+	_, err = d.DB.Exec(query)
 
 	if err != nil {
 		return fmt.Errorf("executing create schema: %w", err)
@@ -384,12 +348,7 @@ func (d *Deltalake) dropTable(table string) error {
 
 	query = fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, d.Namespace, table)
 
-	d.logQuery(func() {
-		_, err = d.DB.Exec(query)
-	},
-		model.DropTable,
-		logfield.Query, query,
-	)
+	_, err = d.DB.Exec(query)
 
 	if err != nil {
 		return fmt.Errorf("executing drop table: %w", err)
@@ -503,10 +462,9 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		sortedColumnKeys = warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 		stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 
-		err       error
-		auth      string
-		queryType model.QueryType
-		row       *sql.Row
+		err  error
+		auth string
+		row  *sql.Row
 	)
 
 	d.Logger.Infow("started loading",
@@ -592,22 +550,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 	}
 
-	sanitisedQuery, regexErr := misc.ReplaceMultiRegex(query, map[string]string{
-		"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
-		"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
-		"'awsSessionToken' = '[^']*'": "'awsSessionToken' = '***'",
-	})
-	if regexErr != nil {
-		sanitisedQuery = ""
-	}
-
-	d.logQuery(func() {
-		_, err = d.DB.Exec(query)
-	},
-		model.Copy,
-		logfield.TableName, tableName,
-		logfield.Query, sanitisedQuery,
-	)
+	_, err = d.DB.Exec(query)
 
 	if err != nil {
 		return "", fmt.Errorf("running COPY command: %w", err)
@@ -620,7 +563,6 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			stagingTableName,
 			warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
 		)
-		queryType = model.Insert
 	} else {
 		if partitionQuery, err = d.partitionQuery(tableName); err != nil {
 			return "", fmt.Errorf("getting partition query: %w", err)
@@ -633,17 +575,9 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			sortedColumnKeys,
 			partitionQuery,
 		)
-
-		queryType = model.Merge
 	}
 
-	d.logQuery(func() {
-		row = d.DB.QueryRow(query)
-	},
-		queryType,
-		logfield.TableName, tableName,
-		logfield.Query, query,
-	)
+	row = d.DB.QueryRow(query)
 
 	if row.Err() != nil {
 		return "", fmt.Errorf("running deduplication: %w", row.Err())
@@ -726,7 +660,6 @@ func (d *Deltalake) loadUserTables() map[string]error {
 	var (
 		userColNames, firstValProps []string
 		partitionQuery              string
-		queryType                   model.QueryType
 		row                         *sql.Row
 	)
 	for colName := range usersSchemaInWarehouse {
@@ -791,14 +724,7 @@ func (d *Deltalake) loadUserTables() map[string]error {
 		tableLocationSql,
 	)
 
-	d.logQuery(func() {
-		_, err = d.DB.Exec(query)
-	},
-		model.CreateTable,
-		logfield.TableName, warehouseutils.UsersTable,
-		logfield.StagingTableName, stagingTableName,
-		logfield.Query, query,
-	)
+	_, err = d.DB.Exec(query)
 
 	if err != nil {
 		return map[string]error{
@@ -829,7 +755,6 @@ func (d *Deltalake) loadUserTables() map[string]error {
 			columnNames(columnKeys),
 			stagingTableName,
 		)
-		queryType = model.Insert
 	} else {
 		if partitionQuery, err = d.partitionQuery(warehouseutils.UsersTable); err != nil {
 			return map[string]error{
@@ -845,16 +770,9 @@ func (d *Deltalake) loadUserTables() map[string]error {
 			columnKeys,
 			partitionQuery,
 		)
-		queryType = model.Merge
 	}
 
-	d.logQuery(func() {
-		row = d.DB.QueryRow(query)
-	},
-		queryType,
-		logfield.TableName, warehouseutils.UsersTable,
-		logfield.Query, query,
-	)
+	row = d.DB.QueryRow(query)
 
 	if row.Err() != nil {
 		return map[string]error{
@@ -1018,13 +936,7 @@ func (d *Deltalake) CreateTable(tableName string, columns model.TableSchema) err
 		partitionedSql,
 	)
 
-	d.logQuery(func() {
-		_, err = d.DB.Exec(query)
-	},
-		model.CreateTable,
-		logfield.TableName, tableName,
-		logfield.Query, query,
-	)
+	_, err = d.DB.Exec(query)
 
 	if err != nil {
 		return fmt.Errorf("creating table: %w", err)
@@ -1062,14 +974,6 @@ func (d *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 	query += ");"
 
 	_, err = d.DB.Exec(query)
-
-	d.logQuery(func() {
-		_, err = d.DB.Exec(query)
-	},
-		model.AddColumns,
-		logfield.TableName, tableName,
-		logfield.Query, query,
-	)
 
 	// Handle error in case of single column
 	if len(columnsInfo) == 1 {
@@ -1276,13 +1180,7 @@ func (d *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) 
 		tableName,
 	)
 
-	d.logQuery(func() {
-		err = d.DB.QueryRowContext(ctx, query).Scan(&total)
-	},
-		model.TableCount,
-		logfield.TableName, tableName,
-		logfield.Query, query,
-	)
+	err = d.DB.QueryRowContext(ctx, query).Scan(&total)
 
 	if err != nil {
 		return 0, fmt.Errorf("querying total count in table: %w", err)
@@ -1477,23 +1375,4 @@ func appendableLTSQLStatement(namespace, tableName, stagingTableName string, col
 
 func (d *Deltalake) ErrorMappings() []model.JobError {
 	return errorsMappings
-}
-
-func (d *Deltalake) logQuery(query func(), queryType model.QueryType, keysAndValues ...any) {
-	startedAt := time.Now()
-	query()
-	if executionTime := time.Since(startedAt); executionTime > d.SlowQueryInSec {
-		keysAndValues = append(keysAndValues,
-			logfield.QueryType, queryType,
-			logfield.QueryExecutionTimeInSec, warehouseutils.DurationInSecs(executionTime),
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-		)
-
-		d.Logger.Infow("executing query", keysAndValues...)
-	}
 }
