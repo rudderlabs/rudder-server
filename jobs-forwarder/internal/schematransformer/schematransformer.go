@@ -3,9 +3,9 @@ package schematransformer
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -38,6 +38,7 @@ type SchemaTransformer struct {
 	writeKeySourceIDMap        map[string]string
 	config                     *config.Config
 	shouldCaptureNilAsUnknowns bool
+	isInitialisedBool          atomic.Bool
 }
 
 type Transformer interface {
@@ -61,6 +62,9 @@ func (st *SchemaTransformer) Setup() {
 		st.backendConfigSubscriber(st.ctx)
 		return nil
 	})
+	for !st.isInitialisedBool.Load() {
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (st *SchemaTransformer) Transform(job *jobsdb.JobT) ([]byte, error) {
@@ -97,7 +101,6 @@ func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
 		sourceWriteKeyMap := map[string]string{}
 		writeKeySourceIDMap := map[string]string{}
 		newPIIReportingSettings := map[string]bool{}
-		fmt.Println("backendConfigSubscriber", configData)
 		for _, wConfig := range configData {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
@@ -111,6 +114,7 @@ func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
 		st.newPIIReportingSettings = newPIIReportingSettings
 		st.writeKeySourceIDMap = writeKeySourceIDMap
 		st.writeKeyMapLock.Unlock()
+		st.isInitialisedBool.CompareAndSwap(false, true)
 	}
 }
 

@@ -51,6 +51,12 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, flattenedIdentifyEvent, testdata.IdentifyFlattenedEvent)
 
+	schema := schemaTransformer.getSchema(testdata.TrackEvent)
+	require.Equal(t, schema, testdata.TrackSchema)
+
+	compositeSchema := schemaTransformer.getSchema(testdata.CompositeFlattenedEvent)
+	require.Equal(t, compositeSchema, testdata.CompositeSchema)
+
 	require.True(t, schemaTransformer.disablePIIReporting(testdata.WriteKeyEnabled))
 	require.Equal(t, schemaTransformer.getSampleEvent(testdata.IdentifyEvent, testdata.WriteKeyEnabled), []byte{})
 }
