@@ -942,6 +942,7 @@ func Connect(cred Credentials) (*sql.DB, error) {
 		}),
 		dbsql.WithUserAgentEntry(UserAgent),
 		dbsql.WithTimeout(cred.timeout),
+		dbsql.WithInitialNamespace(cred.Catalog, ""),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating connector: %w", err)
@@ -951,13 +952,6 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	}
 
 	db := sql.OpenDB(connector)
-
-	// Setting up catalog at the client level
-	if cred.Catalog != "" {
-		if _, err := db.Exec(fmt.Sprintf("USE CATALOG `%s`;", cred.Catalog)); err != nil {
-			return nil, fmt.Errorf("setting catalog: %w", err)
-		}
-	}
 
 	return db, nil
 }
@@ -1151,6 +1145,7 @@ func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	if err != nil {
 		return fmt.Errorf("connecting: %w", err)
 	}
+
 	d.DB = db
 
 	return nil
@@ -1171,7 +1166,7 @@ func (d *Deltalake) TestConnection(warehouse model.Warehouse) error {
 	ctx, cancel := context.WithTimeout(context.TODO(), d.ConnectTimeout)
 	defer cancel()
 
-	if err = d.DB.PingContext(ctx); errors.Is(err, context.DeadlineExceeded){
+	if err = d.DB.PingContext(ctx); errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
@@ -1249,6 +1244,7 @@ func (d *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) 
 		err   error
 		query string
 	)
+
 	query = fmt.Sprintf(`
 		SELECT COUNT(*) FROM %[1]s.%[2]s;
 	`,
@@ -1276,6 +1272,7 @@ func (d *Deltalake) Connect(warehouse model.Warehouse) (warehouseclient.Client, 
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(d.Warehouse.Destination.Config),
 	)
+
 	db, err := Connect(d.credentials())
 	if err != nil {
 		return warehouseclient.Client{}, fmt.Errorf("connecting: %w", err)
