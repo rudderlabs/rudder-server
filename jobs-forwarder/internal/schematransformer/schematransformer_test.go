@@ -36,11 +36,21 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 			defer close(closeChan)
 			return ch
 		})
-	t.Log("Setup Called")
 	schemaTransformer.Setup()
+	<-closeChan
 	require.Equal(t, schemaTransformer.getEventType(testdata.TrackEvent), "track")
 	require.Equal(t, schemaTransformer.getEventType(testdata.IdentifyEvent), "identify")
 	require.Equal(t, schemaTransformer.getEventIdentifier(testdata.TrackEvent, "track"), "event-name")
 	require.Equal(t, schemaTransformer.getEventIdentifier(testdata.IdentifyEvent, "identify"), "")
-	<-closeChan
+
+	flattenedEvent, err := schemaTransformer.flattenEvent(testdata.CompositeEvent)
+	require.Nil(t, err)
+	require.Equal(t, flattenedEvent, testdata.CompositeFlattenedEvent)
+
+	flattenedIdentifyEvent, err := schemaTransformer.flattenEvent(testdata.IdentifyEvent)
+	require.Nil(t, err)
+	require.Equal(t, flattenedIdentifyEvent, testdata.IdentifyFlattenedEvent)
+
+	require.True(t, schemaTransformer.disablePIIReporting(testdata.WriteKeyEnabled))
+	require.Equal(t, schemaTransformer.getSampleEvent(testdata.IdentifyEvent, testdata.WriteKeyEnabled), []byte{})
 }

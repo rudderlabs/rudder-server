@@ -3,6 +3,7 @@ package schematransformer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -96,6 +97,7 @@ func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
 		sourceWriteKeyMap := map[string]string{}
 		writeKeySourceIDMap := map[string]string{}
 		newPIIReportingSettings := map[string]bool{}
+		fmt.Println("backendConfigSubscriber", configData)
 		for _, wConfig := range configData {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
@@ -172,7 +174,10 @@ func (st *SchemaTransformer) flattenEvent(event map[string]interface{}) (map[str
 func (st *SchemaTransformer) disablePIIReporting(writeKey string) bool {
 	st.writeKeyMapLock.RLock()
 	defer st.writeKeyMapLock.RUnlock()
-	return st.newPIIReportingSettings[writeKey] && st.transientSources.Apply(st.writeKeySourceIDMap[writeKey])
+	if st.newPIIReportingSettings[writeKey] {
+		return true
+	}
+	return st.transientSources.Apply(st.writeKeySourceIDMap[writeKey])
 }
 
 func (st *SchemaTransformer) getSampleEvent(event map[string]interface{}, writeKey string) []byte {
