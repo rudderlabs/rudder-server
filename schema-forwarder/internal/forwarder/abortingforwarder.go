@@ -57,6 +57,7 @@ func (nf *AbortingForwarder) Start() error {
 						ErrorCode:     "400",
 						ErrorResponse: []byte(`{"success":false,"message":"JobsForwarder is disabled"}`),
 						Parameters:    []byte(`{}`),
+						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					})
 				}

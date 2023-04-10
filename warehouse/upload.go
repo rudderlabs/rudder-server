@@ -256,7 +256,7 @@ func (job *UploadJob) initTableUploads() error {
 	for t := range schemaForUpload {
 		tables = append(tables, t)
 		// also track upload to rudder_identity_mappings if the upload has records for rudder_identity_merge_rules
-		if misc.Contains(warehouseutils.IdentityEnabledWarehouses, destType) && t == warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable) {
+		if slices.Contains(warehouseutils.IdentityEnabledWarehouses, destType) && t == warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable) {
 			if _, ok := schemaForUpload[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)]; !ok {
 				tables = append(tables, warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable))
 			}
@@ -444,7 +444,7 @@ func (job *UploadJob) run() (err error) {
 		case model.GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
 			// generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
-			generateAll := hasSchemaChanged || misc.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
+			generateAll := hasSchemaChanged || slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 			var startLoadFileID, endLoadFileID int64
 			if generateAll {
 				startLoadFileID, endLoadFileID, err = job.loadfile.ForceCreateLoadFiles(context.TODO(), job.DTO())
@@ -672,7 +672,7 @@ func (job *UploadJob) exportUserTables(loadFilesTableMap map[tableNameT]bool) (e
 func (job *UploadJob) exportIdentities() (err error) {
 	// Load Identities if enabled
 	uploadSchema := job.upload.UploadSchema
-	if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
+	if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
 			loadTimeStat := job.timerStat("identity_tables_load_time")
 			defer loadTimeStat.RecordDuration()()
@@ -906,7 +906,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	}
 
 	for tableName := range uploadSchema {
-		if misc.Contains(skipLoadForTables, tableName) {
+		if slices.Contains(skipLoadForTables, tableName) {
 			wg.Done()
 			continue
 		}
@@ -923,7 +923,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		hasLoadFiles := loadFilesTableMap[tableNameT(tableName)]
 		if !hasLoadFiles {
 			wg.Done()
-			if misc.Contains(alwaysMarkExported, strings.ToLower(tableName)) {
+			if slices.Contains(alwaysMarkExported, strings.ToLower(tableName)) {
 				status := model.TableUploadExported
 				_ = job.tableUploadsRepo.Set(context.TODO(), job.upload.ID, tableName, repo.TableUploadSetOptions{
 					Status: &status,
