@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"regexp"
 	"strconv"
 	"strings"
@@ -308,16 +309,21 @@ func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
 	var (
 		query string
 		err   error
+		schema string
 	)
 
 	query = fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 
-	_, err = d.DB.Exec(query)
-
-	if err != nil {
-		return false, fmt.Errorf("executing schema exists: %w", err)
+	err = d.DB.QueryRow(query).Scan(&schema)
+	if err == sql.ErrNoRows {
+		return false, nil
 	}
-	return true, nil
+	if err != nil {
+		return false, fmt.Errorf("schema exists: %w", err)
+	}
+
+	exists := schema == schemaName
+	return exists, nil
 }
 
 func (d *Deltalake) createSchema() error {
@@ -909,20 +915,9 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 }
 
 func (d *Deltalake) dropDanglingStagingTables() {
-	var (
-		tableNames          []string
-		filteredTablesNames []string
-	)
+	tableNames, _ := d.fetchTables("^rudder_staging_.*$")
 
-	tableNames, _ = d.fetchTables("^rudder_staging_.*$")
-	for _, tableName := range tableNames {
-		if !strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
-			continue
-		}
-		filteredTablesNames = append(filteredTablesNames, tableName)
-	}
-
-	d.dropStagingTables(filteredTablesNames)
+	d.dropStagingTables(tableNames)
 }
 
 func Connect(cred Credentials) (*sql.DB, error) {
@@ -949,6 +944,9 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating connector: %w", err)
+	}
+	if err = dbsqllog.SetLogLevel("disabled"); err != nil {
+		return nil, fmt.Errorf("setting log level: %w", err)
 	}
 
 	db := sql.OpenDB(connector)
@@ -1102,26 +1100,17 @@ func (d *Deltalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.
 	defer func() { _ = db.Close() }()
 
 	var (
-		schema              = make(model.Schema)
-		unrecognizedSchema  = make(model.Schema)
-		tableNames          []string
-		filteredTablesNames []string
+		schema             = make(model.Schema)
+		unrecognizedSchema = make(model.Schema)
+		tableNames         []string
 	)
 
 	if tableNames, err = d.fetchTables("^(?!rudder_staging_.*$).*"); err != nil {
 		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching tables: %w", err)
 	}
 
-	// Ignoring the staging tables
-	for _, tableName := range tableNames {
-		if strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
-			continue
-		}
-		filteredTablesNames = append(filteredTablesNames, tableName)
-	}
-
 	// For each table we are fetching the attributes
-	for _, tableName := range filteredTablesNames {
+	for _, tableName := range tableNames {
 		tableSchema, err := d.fetchTableAttributes(tableName)
 		if err != nil {
 			return model.Schema{}, model.Schema{}, fmt.Errorf("fetching table attributes: %w", err)
@@ -1151,7 +1140,7 @@ func (d *Deltalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.
 }
 
 // Setup sets up the warehouse
-func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader)  error {
+func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) error {
 	d.Warehouse = warehouse
 	d.Namespace = warehouse.Namespace
 	d.Uploader = uploader
@@ -1257,6 +1246,9 @@ func (d *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) 
 	err = d.DB.QueryRowContext(ctx, query).Scan(&total)
 
 	if err != nil {
+		if strings.Contains(err.Error(), schemaNotFound) {
+			return 0, nil
+		}
 		return 0, fmt.Errorf("querying total count in table: %w", err)
 	}
 	return total, nil
