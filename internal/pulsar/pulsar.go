@@ -32,7 +32,7 @@ type Producer struct {
 
 type ProducerAdapter interface {
 	SendMessage(ctx context.Context, key, orderingKey string, msg []byte) error
-	SendMessageAsync(ctx context.Context, msg []byte, statusFunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error))
+	SendMessageAsync(ctx context.Context, key, orderingKey string, msg []byte, statusFunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error))
 	Close()
 	Flush() error
 }
@@ -96,12 +96,14 @@ func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg
 	return err
 }
 
-func (p *Producer) SendMessageAsync(ctx context.Context, msg []byte, statusfunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error)) {
+func (p *Producer) SendMessageAsync(ctx context.Context, key, orderingKey string, msg []byte, statusfunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error)) {
 	if p.Producer == nil {
 		return
 	}
 	p.Producer.SendAsync(ctx, &pulsar.ProducerMessage{
-		Payload: msg,
+		Payload:     msg,
+		Key:         key,
+		OrderingKey: orderingKey,
 	}, statusfunc)
 }
 

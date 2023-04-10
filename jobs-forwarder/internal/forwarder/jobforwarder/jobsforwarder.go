@@ -27,6 +27,7 @@ type JobsForwarder struct {
 	backendConfig    backendconfig.BackendConfig
 	transformer      schematransformer.Transformer
 	retryAttempts    int
+	key              string
 }
 
 func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, transientSources transientsource.Service, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
@@ -36,6 +37,7 @@ func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config 
 		transientSources: transientSources,
 		BaseForwarder:    baseForwarder,
 		retryAttempts:    config.GetInt("JobsForwarder.retryAttempts", 3),
+		key:              config.GetString("JobsForwarder.key", "event-schema"),
 	}
 	client, err := pulsar.New(config)
 	if err != nil {
@@ -66,7 +68,7 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 						statusList = append(statusList, &jobsdb.JobStatusT{
 							JobID:         job.JobID,
 							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-							JobState:      "failed",
+							JobState:      jobsdb.Failed.State,
 							ExecTime:      time.Now(),
 							RetryTime:     time.Now(),
 							ErrorCode:     "500",
@@ -95,7 +97,7 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 							})
 						}
 					}
-					jf.pulsarProducer.SendMessageAsync(ctx, transformedBytes, statusFunc)
+					jf.pulsarProducer.SendMessageAsync(ctx, jf.key, "", transformedBytes, statusFunc)
 					err = jf.pulsarProducer.Flush()
 					if err != nil {
 						return err
