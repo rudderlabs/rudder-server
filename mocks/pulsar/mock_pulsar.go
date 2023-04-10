@@ -76,13 +76,13 @@ func (mr *MockProducerAdapterMockRecorder) SendMessage(arg0, arg1, arg2, arg3 in
 }
 
 // SendMessageAsync mocks base method.
-func (m *MockProducerAdapter) SendMessageAsync(arg0 context.Context, arg1 []byte, arg2 func(pulsar.MessageID, *pulsar.ProducerMessage, error)) {
+func (m *MockProducerAdapter) SendMessageAsync(arg0 context.Context, arg1, arg2 string, arg3 []byte, arg4 func(pulsar.MessageID, *pulsar.ProducerMessage, error)) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SendMessageAsync", arg0, arg1, arg2)
+	m.ctrl.Call(m, "SendMessageAsync", arg0, arg1, arg2, arg3, arg4)
 }
 
 // SendMessageAsync indicates an expected call of SendMessageAsync.
-func (mr *MockProducerAdapterMockRecorder) SendMessageAsync(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockProducerAdapterMockRecorder) SendMessageAsync(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendMessageAsync", reflect.TypeOf((*MockProducerAdapter)(nil).SendMessageAsync), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendMessageAsync", reflect.TypeOf((*MockProducerAdapter)(nil).SendMessageAsync), arg0, arg1, arg2, arg3, arg4)
 }
