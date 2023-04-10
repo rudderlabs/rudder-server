@@ -162,10 +162,13 @@ type managerStats struct {
 	closeProducerTime          stats.Measurement
 	jsonSerializationMsgErr    stats.Measurement
 	avroSerializationErr       stats.Measurement
+	batchSize                  stats.Measurement
 }
 
 const (
 	defaultPublishTimeout = 10 * time.Second
+	defaultBatchTimeout   = 1 * time.Second
+	defaultBatchSize      = 100
 )
 
 var (
@@ -175,6 +178,8 @@ var (
 	kafkaDialTimeout                     = 10 * time.Second
 	kafkaReadTimeout                     = 2 * time.Second
 	kafkaWriteTimeout                    = 2 * time.Second
+	kafkaBatchTimeout                    = defaultBatchTimeout
+	kafkaBatchSize                       = defaultBatchSize
 	kafkaBatchingEnabled                 bool
 	allowReqsWithoutUserIDAndAnonymousID bool
 
@@ -212,12 +217,23 @@ func Init() {
 		2, &kafkaWriteTimeout, false, time.Second,
 		[]string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...,
 	)
+	config.RegisterDurationConfigVariable(
+		int64(defaultBatchTimeout)/int64(time.Second), &kafkaBatchTimeout, false, time.Second,
+		[]string{"Router.kafkaBatchTimeout", "Router.kafkaBatchTimeoutInSec"}...,
+	)
+	config.RegisterIntConfigVariable(defaultBatchSize, &kafkaBatchSize, false, 1, "Router.kafkaBatchSize")
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
 	config.RegisterBoolConfigVariable(
 		false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID",
 	)
 
 	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
+	if kafkaBatchingEnabled {
+		pkgLogger.Infof("Kafka batching is enabled with batch size: %d and batch timeout: %s",
+			kafkaBatchSize, kafkaBatchTimeout,
+		)
+	}
+
 	kafkaStats = managerStats{
 		creationTime:               stats.Default.NewStat("router.kafka.creation_time", stats.TimerType),
 		creationTimeConfluentCloud: stats.Default.NewStat("router.kafka.creation_time_confluent_cloud", stats.TimerType),
@@ -230,6 +246,7 @@ func Init() {
 		closeProducerTime:          stats.Default.NewStat("router.kafka.close_producer_time", stats.TimerType),
 		jsonSerializationMsgErr:    stats.Default.NewStat("router.kafka.json_serialization_msg_err", stats.CountType),
 		avroSerializationErr:       stats.Default.NewStat("router.kafka.avro_serialization_err", stats.CountType),
+		batchSize:                  stats.Default.NewStat("router.kafka.batch_size", stats.HistogramType),
 	}
 }
 
@@ -323,12 +340,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		return nil, fmt.Errorf("could not ping: %w", err)
 	}
 
-	p, err := c.NewProducer(client.ProducerConfig{
-		ReadTimeout:  kafkaReadTimeout,
-		WriteTimeout: kafkaWriteTimeout,
-		Logger:       &client.KafkaLogger{Logger: pkgLogger},
-		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
-	})
+	p, err := c.NewProducer(newProducerConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -384,12 +396,7 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot connect: %w", err)
 	}
 
-	p, err := c.NewProducer(client.ProducerConfig{
-		ReadTimeout:  kafkaReadTimeout,
-		WriteTimeout: kafkaWriteTimeout,
-		Logger:       &client.KafkaLogger{Logger: pkgLogger},
-		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
-	})
+	p, err := c.NewProducer(newProducerConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -438,12 +445,7 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot connect: %w", err)
 	}
 
-	p, err := c.NewProducer(client.ProducerConfig{
-		ReadTimeout:  kafkaReadTimeout,
-		WriteTimeout: kafkaWriteTimeout,
-		Logger:       &client.KafkaLogger{Logger: pkgLogger},
-		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
-	})
+	p, err := c.NewProducer(newProducerConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -643,6 +645,8 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 		return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
 	}
 
+	kafkaStats.batchSize.Observe(float64(len(batchOfMessages)))
+
 	returnMessage := "Kafka: Message delivered in batch"
 	return 200, returnMessage, returnMessage
 }
@@ -712,6 +716,20 @@ func getStatusCodeFromError(err error) int {
 		return 500
 	}
 	return 400
+}
+
+func newProducerConfig() client.ProducerConfig {
+	pc := client.ProducerConfig{
+		ReadTimeout:  kafkaReadTimeout,
+		WriteTimeout: kafkaWriteTimeout,
+		Logger:       &client.KafkaLogger{Logger: pkgLogger},
+		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
+	}
+	if kafkaBatchingEnabled {
+		pc.BatchTimeout = kafkaBatchTimeout
+		pc.BatchSize = kafkaBatchSize
+	}
+	return pc
 }
 
 // @TODO getSSHConfig should come from control plane (i.e. destination config)
