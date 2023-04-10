@@ -6,11 +6,12 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
