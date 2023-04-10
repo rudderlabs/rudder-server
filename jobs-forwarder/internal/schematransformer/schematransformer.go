@@ -40,7 +40,7 @@ type SchemaTransformer struct {
 }
 
 type Transformer interface {
-	Setup(ctx context.Context)
+	Setup()
 	Transform(job *jobsdb.JobT) ([]byte, error)
 }
 
@@ -55,9 +55,9 @@ func New(ctx context.Context, g *errgroup.Group, backendConfig backendconfig.Bac
 	}
 }
 
-func (st *SchemaTransformer) Setup(ctx context.Context) {
+func (st *SchemaTransformer) Setup() {
 	st.g.Go(func() error {
-		st.backendConfigSubscriber(ctx)
+		st.backendConfigSubscriber(st.ctx)
 		return nil
 	})
 }

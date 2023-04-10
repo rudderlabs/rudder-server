@@ -5,7 +5,6 @@
 package mock_schematransformer
 
 import (
-	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -36,15 +35,15 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // Setup mocks base method.
-func (m *MockTransformer) Setup(arg0 context.Context) {
+func (m *MockTransformer) Setup() {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Setup", arg0)
+	m.ctrl.Call(m, "Setup")
 }
 
 // Setup indicates an expected call of Setup.
-func (mr *MockTransformerMockRecorder) Setup(arg0 interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Setup() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup))
 }
 
 // Transform mocks base method.
