@@ -23,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -55,10 +54,6 @@ const (
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
-
-func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
-	admin.RegisterAdminHandler("ProcErrors", &stash.StashRpcHandler{ReadOnlyJobsDB: readonlyProcErrorDB})
-}
 
 func NewHandle(transformer transformer.Transformer) *Handle {
 	h := &Handle{transformer: transformer}
@@ -140,46 +135,43 @@ type Handle struct {
 	adaptiveLimit func(int64) int64
 }
 type processorStats struct {
-	transformEventsByTimeMutex     sync.RWMutex
-	destTransformEventsByTimeTaken transformRequestPQ
-	userTransformEventsByTimeTaken transformRequestPQ
-	statGatewayDBR                 stats.Measurement
-	statGatewayDBW                 stats.Measurement
-	statRouterDBW                  stats.Measurement
-	statBatchRouterDBW             stats.Measurement
-	statProcErrDBW                 stats.Measurement
-	statDBR                        stats.Measurement
-	statDBW                        stats.Measurement
-	statLoopTime                   stats.Measurement
-	eventSchemasTime               stats.Measurement
-	validateEventsTime             stats.Measurement
-	processJobsTime                stats.Measurement
-	statSessionTransform           stats.Measurement
-	statUserTransform              stats.Measurement
-	statDestTransform              stats.Measurement
-	marshalSingularEvents          stats.Measurement
-	destProcessing                 stats.Measurement
-	pipeProcessing                 stats.Measurement
-	statNumRequests                stats.Measurement
-	statNumEvents                  stats.Measurement
-	statDBReadRequests             stats.Measurement
-	statDBReadEvents               stats.Measurement
-	statDBReadPayloadBytes         stats.Measurement
-	statDBReadOutOfOrder           stats.Measurement
-	statDBReadOutOfSequence        stats.Measurement
-	statMarkExecuting              stats.Measurement
-	statDBWriteStatusTime          stats.Measurement
-	statDBWriteJobsTime            stats.Measurement
-	statDBWriteRouterPayloadBytes  stats.Measurement
-	statDBWriteBatchPayloadBytes   stats.Measurement
-	statDBWriteRouterEvents        stats.Measurement
-	statDBWriteBatchEvents         stats.Measurement
-	statDestNumOutputEvents        stats.Measurement
-	statBatchDestNumOutputEvents   stats.Measurement
-	DBReadThroughput               stats.Measurement
-	processJobThroughput           stats.Measurement
-	transformationsThroughput      stats.Measurement
-	DBWriteThroughput              stats.Measurement
+	statGatewayDBR                stats.Measurement
+	statGatewayDBW                stats.Measurement
+	statRouterDBW                 stats.Measurement
+	statBatchRouterDBW            stats.Measurement
+	statProcErrDBW                stats.Measurement
+	statDBR                       stats.Measurement
+	statDBW                       stats.Measurement
+	statLoopTime                  stats.Measurement
+	eventSchemasTime              stats.Measurement
+	validateEventsTime            stats.Measurement
+	processJobsTime               stats.Measurement
+	statSessionTransform          stats.Measurement
+	statUserTransform             stats.Measurement
+	statDestTransform             stats.Measurement
+	marshalSingularEvents         stats.Measurement
+	destProcessing                stats.Measurement
+	pipeProcessing                stats.Measurement
+	statNumRequests               stats.Measurement
+	statNumEvents                 stats.Measurement
+	statDBReadRequests            stats.Measurement
+	statDBReadEvents              stats.Measurement
+	statDBReadPayloadBytes        stats.Measurement
+	statDBReadOutOfOrder          stats.Measurement
+	statDBReadOutOfSequence       stats.Measurement
+	statMarkExecuting             stats.Measurement
+	statDBWriteStatusTime         stats.Measurement
+	statDBWriteJobsTime           stats.Measurement
+	statDBWriteRouterPayloadBytes stats.Measurement
+	statDBWriteBatchPayloadBytes  stats.Measurement
+	statDBWriteRouterEvents       stats.Measurement
+	statDBWriteBatchEvents        stats.Measurement
+	statDestNumOutputEvents       stats.Measurement
+	statBatchDestNumOutputEvents  stats.Measurement
+	DBReadThroughput              stats.Measurement
+	processJobThroughput          stats.Measurement
+	transformationsThroughput     stats.Measurement
+	DBWriteThroughput             stats.Measurement
 }
 
 var defaultTransformerFeatures = `{
@@ -317,23 +309,6 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 	}
 }
 
-func (proc *Handle) Status() interface{} {
-	proc.stats.transformEventsByTimeMutex.RLock()
-	defer proc.stats.transformEventsByTimeMutex.RUnlock()
-	statusRes := make(map[string][]interface{})
-	for _, pqDestEvent := range proc.stats.destTransformEventsByTimeTaken {
-		statusRes["dest-transformer"] = append(statusRes["dest-transformer"], *pqDestEvent)
-	}
-	for _, pqUserEvent := range proc.stats.userTransformEventsByTimeTaken {
-		statusRes["user-transformer"] = append(statusRes["user-transformer"], *pqUserEvent)
-	}
-	if proc.config.enableDedup {
-		proc.dedupHandler.PrintHistogram()
-	}
-
-	return statusRes
-}
-
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
@@ -367,8 +342,6 @@ func (proc *Handle) Setup(
 
 	// Stats
 	proc.statsFactory = stats.Default
-	proc.stats.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, proc.config.transformTimesPQLength)
-	proc.stats.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, proc.config.transformTimesPQLength)
 	proc.stats.statGatewayDBR = proc.statsFactory.NewStat("processor.gateway_db_read", stats.CountType)
 	proc.stats.statGatewayDBW = proc.statsFactory.NewStat("processor.gateway_db_write", stats.CountType)
 	proc.stats.statRouterDBW = proc.statsFactory.NewStat("processor.router_db_write", stats.CountType)
@@ -423,7 +396,6 @@ func (proc *Handle) Setup(
 	proc.stats.processJobThroughput = proc.statsFactory.NewStat("processor.processJob_thoughput", stats.CountType)
 	proc.stats.transformationsThroughput = proc.statsFactory.NewStat("processor.transformations_throughput", stats.CountType)
 	proc.stats.DBWriteThroughput = proc.statsFactory.NewStat("processor.db_write_throughput", stats.CountType)
-	admin.RegisterStatusHandler("processor", proc)
 	if proc.config.enableEventSchemasFeature {
 		proc.eventSchemaHandler = eventschema.GetInstance()
 	}
@@ -2046,12 +2018,6 @@ func (proc *Handle) transformSrcDest(
 			response = proc.transformer.Transform(ctx, eventList, integrations.GetUserTransformURL(), proc.config.userTransformBatchSize)
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
-			proc.addToTransformEventByTimePQ(&TransformRequestT{
-				Event:          eventList,
-				Stage:          transformer.UserTransformerStage,
-				ProcessingTime: d.Seconds(),
-				Index:          -1,
-			}, &proc.stats.userTransformEventsByTimeTaken)
 
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
@@ -2183,16 +2149,6 @@ func (proc *Handle) transformSrcDest(
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
 			transformAt = "processor"
-
-			timeTaken := time.Since(s).Seconds()
-			proc.addToTransformEventByTimePQ(
-				&TransformRequestT{
-					Event:          eventsToTransform,
-					Stage:          "destination-transformer",
-					ProcessingTime: timeTaken, Index: -1,
-				},
-				&proc.stats.destTransformEventsByTimeTaken,
-			)
 
 			proc.logger.Debugf("Dest Transform output size %d", len(response.Events))
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
@@ -2410,19 +2366,6 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 	}
 
 	return transformer.ResponseT{Events: responses, FailedEvents: failedEvents}
-}
-
-func (proc *Handle) addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
-	proc.stats.transformEventsByTimeMutex.Lock()
-	defer proc.stats.transformEventsByTimeMutex.Unlock()
-	if pq.Len() < proc.config.transformTimesPQLength {
-		pq.Add(event)
-		return
-	}
-	if pq.Top().ProcessingTime < event.ProcessingTime {
-		pq.RemoveTop()
-		pq.Add(event)
-	}
 }
 
 func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {

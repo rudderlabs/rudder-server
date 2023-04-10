@@ -218,10 +218,9 @@ func TestDefaultProvider(t *testing.T) {
 func TestOverride(t *testing.T) {
 	RegisterTestingT(t)
 	config := map[string]interface{}{
-		"a":          "1",
-		"b":          "2",
-		"c":          "3",
-		"externalId": "externalId",
+		"a": "1",
+		"b": "2",
+		"c": "3",
 	}
 	settings := backendconfig.StorageBucket{
 		Type: "S3",
@@ -232,10 +231,32 @@ func TestOverride(t *testing.T) {
 	}
 	bucket := overrideWithSettings(config, settings, "wrk-1")
 	Expect(bucket.Config).To(Equal(map[string]interface{}{
+		"a": "1",
+		"b": "4",
+		"c": "3",
+		"d": "5",
+	}))
+
+	config = map[string]interface{}{
+		"a":          "1",
+		"b":          "2",
+		"c":          "3",
+		"iamRoleArn": "abc",
+	}
+	settings = backendconfig.StorageBucket{
+		Type: "S3",
+		Config: map[string]interface{}{
+			"b": "4",
+			"d": "5",
+		},
+	}
+	bucket = overrideWithSettings(config, settings, "wrk-1")
+	Expect(bucket.Config).To(Equal(map[string]interface{}{
 		"a":          "1",
 		"b":          "4",
 		"c":          "3",
 		"d":          "5",
-		"externalId": "wrk-1",
+		"iamRoleArn": "abc",
+		"externalID": "wrk-1",
 	}))
 }
