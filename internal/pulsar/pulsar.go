@@ -96,6 +96,15 @@ func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg
 	return err
 }
 
+func (p *Producer) SendMessageAsync(ctx context.Context, msg []byte, statusfunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error)) {
+	if p.Producer == nil {
+		return
+	}
+	p.Producer.SendAsync(ctx, &pulsar.ProducerMessage{
+		Payload: msg,
+	}, statusfunc)
+}
+
 func (p *Producer) Close() {
 	if p == nil {
 		return
@@ -109,15 +118,6 @@ func (p *Producer) Flush() error {
 		return nil
 	}
 	return p.Producer.Flush()
-}
-
-func (p *Producer) SendMessageAsync(ctx context.Context, msg []byte, statusfunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error)) {
-	if p.Producer == nil {
-		return
-	}
-	p.Producer.SendAsync(ctx, &pulsar.ProducerMessage{
-		Payload: msg,
-	}, statusfunc)
 }
 
 func getProducerConf(config *config.Config) ProducerConf {
