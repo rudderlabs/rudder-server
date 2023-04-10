@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"regexp"
@@ -307,8 +308,8 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 // schemaExists checks it schema exists or not.
 func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
 	var (
-		query string
-		err   error
+		query  string
+		err    error
 		schema string
 	)
 
@@ -1163,7 +1164,19 @@ func (d *Deltalake) TestConnection(warehouse model.Warehouse) error {
 	if err != nil {
 		return fmt.Errorf("connecting: %w", err)
 	}
+
 	d.DB = db
+	defer func() { _ = d.DB.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.TODO(), d.ConnectTimeout)
+	defer cancel()
+
+	if err = d.DB.PingContext(ctx); errors.Is(err, context.DeadlineExceeded){
+		return fmt.Errorf("connection timeout: %w", err)
+	}
+	if err != nil {
+		return fmt.Errorf("pinging: %w", err)
+	}
 
 	return nil
 }
