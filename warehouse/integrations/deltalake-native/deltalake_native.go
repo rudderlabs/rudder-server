@@ -189,7 +189,7 @@ func (*Deltalake) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
-func (d *Deltalake) fetchTables() ([]string, error) {
+func (d *Deltalake) fetchTables(regex string) ([]string, error) {
 	var (
 		query  string
 		rows   *sql.Rows
@@ -197,10 +197,9 @@ func (d *Deltalake) fetchTables() ([]string, error) {
 		tables []string
 	)
 
-	query = fmt.Sprintf(`SHOW tables from %s;`, d.Namespace)
-	rows, err = d.DB.Query(query)
+	query = fmt.Sprintf(`SHOW tables FROM %s LIKE '%s';`, d.Namespace, regex)
 
-	if err != nil {
+	if rows, err = d.DB.Query(query); err != nil {
 		if strings.Contains(err.Error(), schemaNotFound) {
 			return nil, nil
 		}
@@ -233,10 +232,9 @@ func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, e
 		tableSchema = make(model.TableSchema)
 	)
 
-	query = fmt.Sprintf(`describe QUERY TABLE %s.%s;`, d.Namespace, tableName)
-	rows, err = d.DB.Query(query)
+	query = fmt.Sprintf(`DESCRIBE QUERY TABLE %s.%s;`, d.Namespace, tableName)
 
-	if err != nil {
+	if rows, err = d.DB.Query(query); err != nil {
 		return nil, fmt.Errorf("executing fetching table attributes: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -274,9 +272,8 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 	)
 
 	query = fmt.Sprintf(`SHOW PARTITIONS %s.%s;`, d.Namespace, tableName)
-	rows, err = d.DB.Query(query)
 
-	if err != nil {
+	if rows, err = d.DB.Query(query); err != nil {
 		if strings.Contains(err.Error(), partitionNotFound) {
 			return "", nil
 		}
@@ -301,7 +298,7 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 	dateRangeString := warehouseutils.JoinWithFormatting(dateRange, func(idx int, str string) string {
 		return fmt.Sprintf(`'%s'`, str)
 	}, ",")
-	partitionQuery := fmt.Sprintf(`CAST ( MAIN.event_date AS string) IN (%s)`, dateRangeString)
+	partitionQuery := fmt.Sprintf(`CAST ( MAIN.event_date AS string) IN (%s) AND`, dateRangeString)
 
 	return partitionQuery, nil
 }
@@ -331,12 +328,9 @@ func (d *Deltalake) createSchema() error {
 
 	query = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, d.Namespace)
 
-	_, err = d.DB.Exec(query)
-
-	if err != nil {
+	if _, err = d.DB.Exec(query); err != nil {
 		return fmt.Errorf("executing create schema: %w", err)
 	}
-
 	return nil
 }
 
@@ -348,9 +342,7 @@ func (d *Deltalake) dropTable(table string) error {
 
 	query = fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, d.Namespace, table)
 
-	_, err = d.DB.Exec(query)
-
-	if err != nil {
+	if _, err = d.DB.Exec(query); err != nil {
 		return fmt.Errorf("executing drop table: %w", err)
 	}
 	return nil
@@ -373,31 +365,34 @@ func (d *Deltalake) dropStagingTables(stagingTables []string) {
 	}
 }
 
-func (d *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiff) (sortedColumnNames string) {
+func (d *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiff) string {
 	if d.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		sortedColumnNames = strings.Join(sortedColumnKeys, ",")
-	} else {
-		format := func(index int, value string) string {
-			csvColumnIndex := fmt.Sprintf(`%s%d`, "_c", index)
-			columnName := value
-			columnType := dataTypesMap[tableSchemaInUpload[columnName]]
-			return fmt.Sprintf(`CAST ( %s AS %s ) AS %s`, csvColumnIndex, columnType, columnName)
-		}
-		formatString := warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
-		if len(diff.ColumnMap) > 0 {
-			diffCols := make([]string, 0, len(diff.ColumnMap))
-			for key := range diff.ColumnMap {
-				diffCols = append(diffCols, key)
-			}
-			diffFormat := func(index int, value string) string {
-				return fmt.Sprintf(`NULL AS %s`, value)
-			}
-			diffString := warehouseutils.JoinWithFormatting(diffCols, diffFormat, ",")
-			return fmt.Sprintf("%s, %s", formatString, diffString)
-		}
-		return formatString
+		return strings.Join(sortedColumnKeys, ",")
 	}
-	return
+
+	format := func(index int, value string) string {
+		csvColumnIndex := fmt.Sprintf(`%s%d`, "_c", index)
+		columnName := value
+		columnType := dataTypesMap[tableSchemaInUpload[columnName]]
+		return fmt.Sprintf(`CAST ( %s AS %s ) AS %s`, csvColumnIndex, columnType, columnName)
+	}
+	formatString := warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
+
+	if len(diff.ColumnMap) > 0 {
+		diffCols := make([]string, 0, len(diff.ColumnMap))
+		for key := range diff.ColumnMap {
+			diffCols = append(diffCols, key)
+		}
+
+		diffFormat := func(index int, value string) string {
+			return fmt.Sprintf(`NULL AS %s`, value)
+		}
+		diffString := warehouseutils.JoinWithFormatting(diffCols, diffFormat, ",")
+
+		return fmt.Sprintf("%s, %s", formatString, diffString)
+	}
+
+	return formatString
 }
 
 // authQuery return authentication for AWS STS and SSE-C encryption
@@ -550,29 +545,84 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 	}
 
-	_, err = d.DB.Exec(query)
-
-	if err != nil {
+	if _, err = d.DB.Exec(query); err != nil {
 		return "", fmt.Errorf("running COPY command: %w", err)
 	}
 
 	if d.LoadTableStrategy == appendMode {
-		query = appendableLTSQLStatement(
+		query = fmt.Sprintf(`
+			INSERT INTO %[1]s.%[2]s (%[4]s)
+			SELECT
+			  %[4]s
+			FROM
+			  (
+				SELECT
+				  *
+				FROM
+				  (
+					SELECT
+					  *,
+					  row_number() OVER (
+						PARTITION BY %[5]s
+						ORDER BY
+						  RECEIVED_AT DESC
+					  ) AS _rudder_staging_row_number
+					FROM
+					  %[1]s.%[3]s
+				  ) AS q
+				WHERE
+				  _rudder_staging_row_number = 1
+			  );
+		`,
 			d.Namespace,
 			tableName,
 			stagingTableName,
-			warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
+			columnNames(warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload)),
+			primaryKey(tableName),
 		)
 	} else {
 		if partitionQuery, err = d.partitionQuery(tableName); err != nil {
 			return "", fmt.Errorf("getting partition query: %w", err)
 		}
 
-		query = mergeableLTSQLStatement(
+		pk := primaryKey(tableName)
+
+		query = fmt.Sprintf(`
+			MERGE INTO %[1]s.%[2]s AS MAIN USING (
+			  SELECT
+				*
+			  FROM
+				(
+				  SELECT
+					*,
+					row_number() OVER (
+					  PARTITION BY %[4]s
+					  ORDER BY
+						RECEIVED_AT DESC
+					) AS _rudder_staging_row_number
+				  FROM
+					%[1]s.%[3]s
+				) AS q
+			  WHERE
+				_rudder_staging_row_number = 1
+			)
+			AS STAGING ON %[8]s MAIN.%[4]s = STAGING.%[4]s
+			WHEN MATCHED THEN
+			UPDATE
+			SET
+			  %[5]s
+			WHEN NOT MATCHED THEN
+			INSERT (%[6]s)
+			VALUES
+			  (%[7]s);
+		`,
 			d.Namespace,
 			tableName,
 			stagingTableName,
-			sortedColumnKeys,
+			pk,
+			columnsWithValues(sortedColumnKeys),
+			columnNames(sortedColumnKeys),
+			stagingColumnNames(sortedColumnKeys),
 			partitionQuery,
 		)
 	}
@@ -649,14 +699,12 @@ func (d *Deltalake) loadUserTables() map[string]error {
 
 	defer d.dropStagingTables([]string{identifyStagingTable})
 
-	// Checking if users schema is present in GetTableSchemaInUpload
 	if len(usersSchemaInUpload) == 0 {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
 		}
 	}
 
-	// Creating userColNames and firstValProps for create table sql statement
 	var (
 		userColNames, firstValProps []string
 		partitionQuery              string
@@ -692,7 +740,7 @@ func (d *Deltalake) loadUserTables() map[string]error {
 					FROM
 					  %[1]s.%[4]s
 					WHERE
-					  id in (
+					  id IN (
 						SELECT
 						  DISTINCT(user_id)
 						FROM
@@ -739,21 +787,21 @@ func (d *Deltalake) loadUserTables() map[string]error {
 
 	if d.LoadTableStrategy == appendMode {
 		query = fmt.Sprintf(`
-			INSERT INTO %[1]s.%[2]s (%[3]s)
+			INSERT INTO %[1]s.%[2]s (%[4]s)
 			SELECT
-			  %[3]s
+			  %[4]s
 			FROM
 			  (
 				SELECT
-				  %[3]s
+				  %[4]s
 				FROM
-				  %[1]s.%[4]s
-              );
+				  %[1]s.%[3]s
+			  );
 		`,
 			d.Namespace,
 			warehouseutils.UsersTable,
-			columnNames(columnKeys),
 			stagingTableName,
+			columnNames(columnKeys),
 		)
 	} else {
 		if partitionQuery, err = d.partitionQuery(warehouseutils.UsersTable); err != nil {
@@ -763,11 +811,30 @@ func (d *Deltalake) loadUserTables() map[string]error {
 			}
 		}
 
-		query = mergeableLTSQLStatement(
+		pk := primaryKey(warehouseutils.UsersTable)
+
+		query = fmt.Sprintf(`
+			MERGE INTO %[1]s.%[2]s AS MAIN USING (
+			  SELECT
+				%[6]s
+			  FROM
+				%[1]s.%[3]s
+			) AS STAGING ON %[8]s MAIN.%[4]s = STAGING.%[4]s
+			WHEN MATCHED THEN
+			UPDATE
+			SET
+			  %[5]s WHEN NOT MATCHED
+			THEN INSERT (%[6]s)
+			VALUES
+			  (%[7]s);
+		`,
 			d.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
-			columnKeys,
+			pk,
+			columnsWithValues(columnKeys),
+			columnNames(columnKeys),
+			stagingColumnNames(columnKeys),
 			partitionQuery,
 		)
 	}
@@ -847,7 +914,7 @@ func (d *Deltalake) dropDanglingStagingTables() {
 		filteredTablesNames []string
 	)
 
-	tableNames, _ = d.fetchTables()
+	tableNames, _ = d.fetchTables("^rudder_staging_.*$")
 	for _, tableName := range tableNames {
 		if !strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
 			continue
@@ -1041,7 +1108,7 @@ func (d *Deltalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.
 		filteredTablesNames []string
 	)
 
-	if tableNames, err = d.fetchTables(); err != nil {
+	if tableNames, err = d.fetchTables("^(?!rudder_staging_.*$).*"); err != nil {
 		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching tables: %w", err)
 	}
 
@@ -1084,28 +1151,32 @@ func (d *Deltalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.
 }
 
 // Setup sets up the warehouse
-func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader)  error {
 	d.Warehouse = warehouse
 	d.Namespace = warehouse.Namespace
 	d.Uploader = uploader
 	d.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.DELTALAKE, warehouse.Destination.Config, d.Uploader.UseRudderStorage())
 
-	d.DB, err = Connect(d.credentials())
+	db, err := Connect(d.credentials())
 	if err != nil {
 		return fmt.Errorf("connecting: %w", err)
 	}
-	return
+	d.DB = db
+
+	return nil
 }
 
 // TestConnection tests the connection to the warehouse
-func (d *Deltalake) TestConnection(warehouse model.Warehouse) (err error) {
+func (d *Deltalake) TestConnection(warehouse model.Warehouse) error {
 	d.Warehouse = warehouse
 
-	d.DB, err = Connect(d.credentials())
+	db, err := Connect(d.credentials())
 	if err != nil {
 		return fmt.Errorf("connecting: %w", err)
 	}
-	return
+	d.DB = db
+
+	return nil
 }
 
 // Cleanup cleans up the warehouse
@@ -1117,18 +1188,21 @@ func (d *Deltalake) Cleanup() {
 }
 
 // CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover(warehouse model.Warehouse) (err error) {
+func (d *Deltalake) CrashRecover(warehouse model.Warehouse) error {
 	d.Warehouse = warehouse
 	d.Namespace = warehouse.Namespace
 
-	d.DB, err = Connect(d.credentials())
+	db, err := Connect(d.credentials())
 	if err != nil {
 		return fmt.Errorf("connecting: %w", err)
 	}
+
+	d.DB = db
 	defer func() { _ = d.DB.Close() }()
 
 	d.dropDanglingStagingTables()
-	return
+
+	return nil
 }
 
 // IsEmpty checks if the warehouse is empty or not
@@ -1199,7 +1273,7 @@ func (d *Deltalake) Connect(warehouse model.Warehouse) (warehouseclient.Client, 
 	)
 	db, err := Connect(d.credentials())
 	if err != nil {
-		return warehouseclient.Client{}, err
+		return warehouseclient.Client{}, fmt.Errorf("connecting: %w", err)
 	}
 
 	return warehouseclient.Client{Type: warehouseclient.SQLClient, SQL: db}, err
@@ -1277,102 +1351,14 @@ func (d *Deltalake) SetConnectionTimeout(timeout time.Duration) {
 	d.ConnectTimeout = timeout
 }
 
+func (d *Deltalake) ErrorMappings() []model.JobError {
+	return errorsMappings
+}
+
 func primaryKey(tableName string) string {
 	key := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		key = column
 	}
 	return key
-}
-
-func stagingSqlStatement(namespace, tableName, stagingTableName string, columnKeys []string) (sqlStatement string) {
-	pk := primaryKey(tableName)
-	if tableName == warehouseutils.UsersTable {
-		sqlStatement = fmt.Sprintf(`
-			SELECT
-			  %[3]s
-			FROM
-			  %[1]s.%[2]s
-		`,
-			namespace,
-			stagingTableName,
-			columnNames(columnKeys),
-		)
-	} else {
-		sqlStatement = fmt.Sprintf(`
-			SELECT
-			  *
-			FROM
-			  (
-				SELECT
-				  *,
-				  row_number() OVER (
-					PARTITION BY %[3]s
-					ORDER BY
-					  RECEIVED_AT DESC
-				  ) AS _rudder_staging_row_number
-				FROM
-				  %[1]s.%[2]s
-			  ) AS q
-			WHERE
-			  _rudder_staging_row_number = 1
-		`,
-			namespace,
-			stagingTableName,
-			pk,
-		)
-	}
-	return
-}
-
-func mergeableLTSQLStatement(namespace, tableName, stagingTableName string, columnKeys []string, partitionQuery string) string {
-	pk := primaryKey(tableName)
-	if partitionQuery != "" {
-		partitionQuery += " AND"
-	}
-	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
-	sqlStatement := fmt.Sprintf(`
-		MERGE INTO %[1]s.%[2]s AS MAIN USING (%[3]s) AS STAGING ON %[8]s MAIN.%[4]s = STAGING.%[4]s
-		WHEN MATCHED THEN
-		UPDATE
-		SET
-		  %[5]s
-		  WHEN NOT MATCHED THEN
-		INSERT
-		  (%[6]s)
-		VALUES
-		  (%[7]s);
-		`,
-		namespace,
-		tableName,
-		stagingTableSqlStatement,
-		pk,
-		columnsWithValues(columnKeys),
-		columnNames(columnKeys),
-		stagingColumnNames(columnKeys),
-		partitionQuery,
-	)
-	return sqlStatement
-}
-
-func appendableLTSQLStatement(namespace, tableName, stagingTableName string, columnKeys []string) string {
-	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
-	sqlStatement := fmt.Sprintf(`
-		INSERT INTO %[1]s.%[2]s (%[4]s)
-		SELECT
-		  %[4]s
-		FROM
-		  (%[5]s);
-		`,
-		namespace,
-		tableName,
-		stagingTableName,
-		columnNames(columnKeys),
-		stagingTableSqlStatement,
-	)
-	return sqlStatement
-}
-
-func (d *Deltalake) ErrorMappings() []model.JobError {
-	return errorsMappings
 }
