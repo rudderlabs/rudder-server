@@ -64,9 +64,7 @@ func Test_Pulsar(t *testing.T) {
 }
 
 func Test_PulsarInterface(t *testing.T) {
-	var (
-		topic = "test-topic"
-	)
+	topic := "test-topic"
 	pulsarContainer := PulsarResource(t)
 	conf := config.New()
 	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
