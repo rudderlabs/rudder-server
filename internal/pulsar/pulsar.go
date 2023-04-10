@@ -3,6 +3,7 @@ package pulsar
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
@@ -20,12 +21,7 @@ type ClientConf struct {
 }
 
 type ProducerConf struct {
-	Topic                string
-	SendTimeout          time.Duration
-	DisableBatching      bool
-	MaxReconnectToBroker int
-	BatchingMaxMessages  int
-	BatchingMaxSize      int
+	Topic string
 }
 
 type Producer struct {
@@ -45,20 +41,20 @@ type Client struct {
 	Client pulsar.Client
 }
 
-func New() (ProducerAdapter, error) {
+func New(config *config.Config) (ProducerAdapter, error) {
 	log := logger.NewLogger().Child("pulsar")
-	client, err := NewPulsarClient(GetClientConf(), log)
+	client, err := newPulsarClient(getClientConf(config), log)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating pulsar client : %v", err)
 	}
-	producer, err := NewProducer(client, GetProducerConf(), log)
+	producer, err := newProducer(client, getProducerConf(config), log)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating pulsar producer : %v", err)
 	}
 	return &producer, nil
 }
 
-func NewPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
+func newPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
 	if conf.Url == "" {
 		return Client{}, errors.New("pulsar url is empty")
 	}
@@ -74,16 +70,9 @@ func NewPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
 	return Client{Client: client}, nil
 }
 
-func NewProducer(client Client, conf ProducerConf, log logger.Logger) (Producer, error) {
-	if conf.Topic == "" {
-		return Producer{}, errors.New("pulsar topic is empty")
-	}
+func newProducer(client Client, conf ProducerConf, log logger.Logger) (Producer, error) {
 	producer, err := client.Client.CreateProducer(pulsar.ProducerOptions{
-		Topic:               conf.Topic,
-		SendTimeout:         conf.SendTimeout,
-		DisableBatching:     conf.DisableBatching,
-		BatchingMaxMessages: uint(conf.BatchingMaxMessages),
-		BatchingMaxSize:     uint(conf.BatchingMaxSize),
+		Topic: conf.Topic,
 	})
 	if err != nil {
 		return Producer{}, err
@@ -131,18 +120,13 @@ func (p *Producer) SendMessageAsync(ctx context.Context, msg []byte, statusfunc 
 	}, statusfunc)
 }
 
-func GetProducerConf() ProducerConf {
+func getProducerConf(config *config.Config) ProducerConf {
 	return ProducerConf{
-		Topic:                config.GetString("Pulsar.Producer.topic", ""),
-		SendTimeout:          config.GetDuration("Pulsar.Producer.sendTimeout", 30, time.Second),
-		DisableBatching:      config.GetBool("Pulsar.Producer.disableBatching", false),
-		MaxReconnectToBroker: config.GetInt("Pulsar.Producer.maxReconnectToBroker", 3),
-		BatchingMaxMessages:  config.GetInt("Pulsar.Producer.batchingMaxMessages", 1000),
-		BatchingMaxSize:      config.GetInt("Pulsar.Producer.batchingMaxSize", 128*1024),
+		Topic: config.GetString("Pulsar.Producer.topic", ""),
 	}
 }
 
-func GetClientConf() ClientConf {
+func getClientConf(config *config.Config) ClientConf {
 	return ClientConf{
 		Url:               config.GetString("Pulsar.Client.url", "pulsar://localhost:6650"),
 		OperationTimeout:  config.GetDuration("Pulsar.Client.operationTimeout", 30, time.Second),

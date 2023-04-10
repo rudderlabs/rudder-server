@@ -37,7 +37,7 @@ func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config 
 		BaseForwarder:    baseForwarder,
 		retryAttempts:    config.GetInt("JobsForwarder.retryAttempts", 3),
 	}
-	client, err := pulsar.New()
+	client, err := pulsar.New(config)
 	if err != nil {
 		return nil, err
 	}
