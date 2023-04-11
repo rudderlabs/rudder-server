@@ -2387,7 +2387,6 @@ func (brt *HandleT) Setup(
 	rruntime.Go(func() {
 		brt.backendConfigSubscriber()
 	})
-	adminInstance.registerBatchRouter(destType, brt)
 }
 
 func (brt *HandleT) Start() {

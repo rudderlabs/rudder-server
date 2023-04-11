@@ -17,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
@@ -247,13 +246,6 @@ func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces st
 	}
 }
 
-func getConfig() map[string]ConfigT {
-	bc, _ := DefaultBackendConfig.(*backendConfigImpl)
-	bc.curSourceJSONLock.RLock()
-	defer bc.curSourceJSONLock.RUnlock()
-	return bc.curSourceJSON
-}
-
 /*
 Subscribe subscribes a channel to a specific topic of backend config updates.
 
@@ -319,7 +311,6 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 
 	DefaultBackendConfig = backendConfig
 
-	adminpkg.RegisterAdminHandler("BackendConfig", &admin{})
 	return nil
 }
 

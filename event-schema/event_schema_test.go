@@ -74,7 +74,6 @@ func jobsDBInit(es envSetter, pgResource *resource.PostgresResource) {
 
 	admin.Init()
 	jobsdb.Init()
-	jobsdb.Init3()
 	jobsdb.Init2()
 }
 

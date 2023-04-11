@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 )
 
@@ -141,45 +140,6 @@ func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilte
 		opQuery += fmt.Sprintf(` OR (%q.parameters @> '{%s}' AND %s)`, alias, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
 	}
 	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, alias, strings.Join(allKeyValues, ","), opQuery)
-}
-
-// Admin Handlers
-type JobsdbUtilsHandler struct{}
-
-var jobsdbUtilsHandler *JobsdbUtilsHandler
-
-func Init3() {
-	jobsdbUtilsHandler = &JobsdbUtilsHandler{}
-	admin.RegisterAdminHandler("JobsdbUtilsHandler", jobsdbUtilsHandler)
-}
-
-func (*JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			err = fmt.Errorf("internal Rudder server error: %v", r)
-		}
-	}()
-
-	args := strings.Split(argString, ":")
-	var response string
-	var readOnlyJobsDB ReadonlyHandleT
-	if args[0] == "brt" {
-		args[0] = "batch_rt"
-	}
-
-	if err := readOnlyJobsDB.Setup(args[0]); err != nil {
-		return err
-	}
-
-	switch args[1] {
-	case "Jobs between JobID's of a User":
-		response, err = readOnlyJobsDB.GetJobIDsForUser(args)
-	case "Error Code Count By Destination":
-		response, err = readOnlyJobsDB.GetFailedStatusErrorCodeCountsByDestination(args)
-	}
-	*reply = response
-	return err
 }
 
 // statTags is a struct to hold tags for stats

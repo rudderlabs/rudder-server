@@ -25,7 +25,7 @@ const tokenKey = "__token__"
 type Opt func(*Repository)
 
 // WithSeederSource sets the source of the seed data
-func WithSeederSource(seederSource func() (io.Reader, error)) Opt {
+func WithSeederSource(seederSource func() (io.ReadCloser, error)) Opt {
 	return func(r *Repository) {
 		r.seederSource = seederSource
 	}
@@ -50,7 +50,7 @@ type Repository struct {
 	maxGoroutines int
 
 	maxSeedWait  time.Duration
-	seederSource func() (io.Reader, error)
+	seederSource func() (io.ReadCloser, error)
 
 	db *badger.DB
 
@@ -193,13 +193,18 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 }
 
 // start the repository
-func (b *Repository) start() error {
+func (b *Repository) start() (startErr error) {
 	b.closed = make(chan struct{})
-	var seeder io.Reader
+	var seeder io.ReadCloser
 	if _, err := os.Stat(b.path); os.IsNotExist(err) && b.seederSource != nil {
 		if seeder, err = b.seederSource(); err != nil {
 			return err
 		}
+		defer func() {
+			if startErr != nil && seeder != nil {
+				_ = seeder.Close()
+			}
+		}()
 	}
 
 	opts := badger.
@@ -208,14 +213,15 @@ func (b *Repository) start() error {
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(b.maxGoroutines)
-	var err error
-	b.db, err = badger.Open(opts)
-	if err != nil {
-		return err
+	b.db, startErr = badger.Open(opts)
+	if startErr != nil {
+		startErr = fmt.Errorf("could not open badgerdb: %w", startErr)
+		return startErr
 	}
 
 	if seeder != nil {
 		restoreDone := lo.Async(func() error {
+			defer func() { _ = seeder.Close() }()
 			if err := b.Restore(seeder); err != nil {
 				b.log.Error("Failed to restore badgerdb", "error", err)
 				return err
@@ -223,7 +229,11 @@ func (b *Repository) start() error {
 			return nil
 		})
 		select {
-		case <-restoreDone:
+		case startErr = <-restoreDone:
+			if startErr != nil {
+				startErr = fmt.Errorf("could not restore badgerdb: %w", startErr)
+				return startErr
+			}
 		case <-time.After(b.maxSeedWait):
 			b.log.Warn("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
 		}

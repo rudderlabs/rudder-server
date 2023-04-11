@@ -1366,6 +1366,5 @@ func initJobsDB() {
 	misc.Init()
 	Init()
 	Init2()
-	Init3()
 	archiver.Init()
 }
