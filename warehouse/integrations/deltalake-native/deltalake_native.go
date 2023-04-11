@@ -309,6 +309,7 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 // schemaExists checks it schema exists or not.
 func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
 	var schema string
+
 	if err := d.DB.QueryRow(fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)).Scan(&schema); err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -319,28 +320,14 @@ func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
 }
 
 func (d *Deltalake) createSchema() error {
-	var (
-		query string
-		err   error
-	)
-
-	query = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, d.Namespace)
-
-	if _, err = d.DB.Exec(query); err != nil {
+	if _, err := d.DB.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, d.Namespace)); err != nil {
 		return fmt.Errorf("executing create schema: %w", err)
 	}
 	return nil
 }
 
 func (d *Deltalake) dropTable(table string) error {
-	var (
-		query string
-		err   error
-	)
-
-	query = fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, d.Namespace, table)
-
-	if _, err = d.DB.Exec(query); err != nil {
+	if _, err := d.DB.Exec(fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, d.Namespace, table)); err != nil {
 		return fmt.Errorf("executing drop table: %w", err)
 	}
 	return nil
