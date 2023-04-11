@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -188,6 +189,8 @@ func TestDynamicClusterManager(t *testing.T) {
 	defer brtDB.TearDown()
 	errDB := jobsdb.NewForReadWrite("proc_error")
 	defer errDB.TearDown()
+	schemasDB := jobsdb.NewForReadWrite("event_schemas")
+	defer schemasDB.TearDown()
 
 	clearDb := false
 	ctx := context.Background()
@@ -195,6 +198,8 @@ func TestDynamicClusterManager(t *testing.T) {
 		"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
+
+	jobsForwarder := mock_jobs_forwarder.NewMockForwarder(gomock.NewController(t))
 
 	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService(),
 		processor.WithFeaturesRetryMaxAttempts(0))
@@ -239,13 +244,17 @@ func TestDynamicClusterManager(t *testing.T) {
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	jobsForwarder.EXPECT().Start().Return().AnyTimes()
+	jobsForwarder.EXPECT().Stop().AnyTimes()
 
 	provider := &mockModeProvider{modeCh: make(chan servermode.ChangeEvent)}
 	dCM := &cluster.Dynamic{
-		GatewayDB:     gwDB,
-		RouterDB:      rtDB,
-		BatchRouterDB: brtDB,
-		ErrorDB:       errDB,
+		GatewayDB:      gwDB,
+		RouterDB:       rtDB,
+		BatchRouterDB:  brtDB,
+		ErrorDB:        errDB,
+		EventSchemasDB: schemasDB,
+		JobsForwarder:  jobsForwarder,
 
 		Processor:       processor,
 		Router:          router,
