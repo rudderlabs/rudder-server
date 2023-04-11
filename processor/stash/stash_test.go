@@ -22,6 +22,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+var prefix = "proc_error_jobs_"
+
 func TestStoreErrorsToObjectStorage(t *testing.T) {
 	tmpDir := t.TempDir()
 	uniqueWorkspaces := 4
