@@ -98,9 +98,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	a.log.Info("Processor starting")
 
-	if _, err := setupReadonlyDBs(); err != nil {
-		return err
-	}
 	g, ctx := errgroup.WithContext(ctx)
 
 	deploymentType, err := deployment.GetFromEnv()
