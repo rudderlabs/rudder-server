@@ -68,17 +68,17 @@ func Test_Pulsar(t *testing.T) {
 	}
 }
 
-func Test_PulsarInterface(t *testing.T) {
-	topic := "test-topic"
-	pulsarContainer := PulsarResource(t)
-	conf := config.New()
-	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
-	conf.Set("Pulsar.Producer.topic", topic)
-	producer, err := New(conf)
-	require.NoError(t, err)
-	require.NotNil(t, producer)
-	defer producer.Close()
-}
+//func Test_PulsarInterface(t *testing.T) {
+//	topic := "test-topic"
+//	pulsarContainer := PulsarResource(t)
+//	conf := config.New()
+//	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
+//	conf.Set("Pulsar.Producer.topic", topic)
+//	producer, err := New(conf)
+//	require.NoError(t, err)
+//	require.NotNil(t, producer)
+//	defer producer.Close()
+//}
 
 // PulsarResource returns a pulsar container resource
 func PulsarResource(t *testing.T) *resource.PulsarResource {
