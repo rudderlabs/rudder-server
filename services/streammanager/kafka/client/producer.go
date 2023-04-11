@@ -12,12 +12,23 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+type Compression = kafka.Compression
+
+const (
+	CompressionNone   Compression = 0
+	CompressionGzip   Compression = kafka.Gzip
+	CompressionSnappy Compression = kafka.Snappy
+	CompressionLz4    Compression = kafka.Lz4
+	CompressionZstd   Compression = kafka.Zstd
+)
+
 type ProducerConfig struct {
 	ClientID string
 	WriteTimeout,
 	ReadTimeout,
 	BatchTimeout time.Duration
 	BatchSize   int
+	Compression Compression
 	Logger      Logger
 	ErrorLogger Logger
 }
@@ -85,7 +96,7 @@ func (c *Client) NewProducer(producerConf ProducerConfig) (p *Producer, err erro
 			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true,
 			Async:                  false,
-			Compression:            0,
+			Compression:            producerConf.Compression,
 			Transport:              transport,
 		},
 	}
