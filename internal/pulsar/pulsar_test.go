@@ -24,7 +24,7 @@ func Test_Pulsar(t *testing.T) {
 		counter          uint32
 	)
 	pulsarContainer := PulsarResource(t)
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	conf := config.New()
 	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
