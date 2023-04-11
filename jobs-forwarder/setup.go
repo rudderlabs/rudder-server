@@ -17,7 +17,7 @@ import (
 //go:generate mockgen -destination=../mocks/jobs-forwarder/mock_jobs_forwarder.go -package=mock_jobs_forwarder github.com/rudderlabs/rudder-server/jobs-forwarder Forwarder
 
 type Forwarder interface {
-	Start(ctx context.Context)
+	Start()
 	Stop()
 }
 

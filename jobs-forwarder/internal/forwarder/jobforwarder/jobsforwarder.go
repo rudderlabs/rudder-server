@@ -49,14 +49,14 @@ func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config 
 	return &forwarder, nil
 }
 
-func (jf *JobsForwarder) Start(ctx context.Context) {
+func (jf *JobsForwarder) Start() {
 	jf.ErrGroup.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
-			case <-ctx.Done():
+			case <-jf.Ctx.Done():
 				return nil
 			default:
-				jobs, limitReached, err := jf.GetJobs(ctx)
+				jobs, limitReached, err := jf.GetJobs(jf.Ctx)
 				if err != nil {
 					return err
 				}
@@ -97,12 +97,12 @@ func (jf *JobsForwarder) Start(ctx context.Context) {
 							})
 						}
 					}
-					jf.pulsarProducer.SendMessageAsync(ctx, jf.key, "", transformedBytes, statusFunc)
+					jf.pulsarProducer.SendMessageAsync(jf.Ctx, jf.key, "", transformedBytes, statusFunc)
 					err = jf.pulsarProducer.Flush()
 					if err != nil {
 						return err
 					}
-					err = jf.MarkJobStatuses(ctx, statusList)
+					err = jf.MarkJobStatuses(jf.Ctx, statusList)
 					if err != nil {
 						return err
 					}

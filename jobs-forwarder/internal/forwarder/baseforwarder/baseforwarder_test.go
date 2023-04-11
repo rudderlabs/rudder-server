@@ -68,7 +68,7 @@ func Test_BaseForwarder(t *testing.T) {
 			}
 			return js
 		}
-		err := schemasDB.Store(bf.ctx, generateJobs(10))
+		err := schemasDB.Store(bf.Ctx, generateJobs(10))
 		require.NoError(t, err)
 		getJobs, limitReached, err := bf.GetJobs(ctx)
 		require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 		return js
 	}
 	jobs := generateJobs(10)
-	err = schemasDB.Store(bf.ctx, jobs)
+	err = schemasDB.Store(bf.Ctx, jobs)
 	require.NoError(t, err)
 	jobs, limitReached, err := bf.GetJobs(ctx)
 	require.NoError(t, err)

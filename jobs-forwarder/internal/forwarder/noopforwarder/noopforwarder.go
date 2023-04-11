@@ -23,17 +23,18 @@ func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config 
 	return &NoopForwarder{baseForwarder}, nil
 }
 
-func (nf *NoopForwarder) Start(ctx context.Context) {
+func (nf *NoopForwarder) Start() {
 	nf.ErrGroup.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
-			case <-ctx.Done():
+			case <-nf.Ctx.Done():
 				return nil
 			default:
-				jobList, limitReached, err := nf.GetJobs(ctx)
+				jobList, limitReached, err := nf.GetJobs(nf.Ctx)
 				if err != nil {
 					panic(err)
 				}
+				nf.Log.Infof("NoopForwarder: Got %d jobs", len(jobList))
 				var statusList []*jobsdb.JobStatusT
 				for _, job := range jobList {
 					statusList = append(statusList, &jobsdb.JobStatusT{
@@ -48,7 +49,7 @@ func (nf *NoopForwarder) Start(ctx context.Context) {
 						WorkspaceId:   job.WorkspaceId,
 					})
 				}
-				err = nf.MarkJobStatuses(ctx, statusList)
+				err = nf.MarkJobStatuses(nf.Ctx, statusList)
 				if err != nil {
 					nf.Log.Errorf("Error while updating job status: %v", err)
 					panic(err)

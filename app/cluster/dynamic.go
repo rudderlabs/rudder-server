@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	jobs_forwarder "github.com/rudderlabs/rudder-server/jobs-forwarder"
 
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
@@ -42,10 +43,11 @@ type Dynamic struct {
 
 	GatewayComponent bool
 
-	GatewayDB     lifecycle
-	RouterDB      lifecycle
-	BatchRouterDB lifecycle
-	ErrorDB       lifecycle
+	GatewayDB      lifecycle
+	RouterDB       lifecycle
+	BatchRouterDB  lifecycle
+	ErrorDB        lifecycle
+	EventSchemasDB lifecycle
 
 	Processor lifecycle
 	Router    lifecycle
@@ -54,6 +56,7 @@ type Dynamic struct {
 
 	currentMode         servermode.Mode
 	currentWorkspaceIDs string
+	JobsForwarder       jobs_forwarder.Forwarder
 
 	serverStartTimeStat  stats.Measurement
 	serverStopTimeStat   stats.Measurement
@@ -161,6 +164,9 @@ func (d *Dynamic) start() error {
 	if err := d.GatewayDB.Start(); err != nil {
 		return fmt.Errorf("gateway db start: %w", err)
 	}
+	if err := d.EventSchemasDB.Start(); err != nil {
+		return fmt.Errorf("event schemas db start: %w", err)
+	}
 	if err := d.RouterDB.Start(); err != nil {
 		return fmt.Errorf("router db start: %w", err)
 	}
@@ -173,6 +179,7 @@ func (d *Dynamic) start() error {
 	if err := d.Processor.Start(); err != nil {
 		return fmt.Errorf("processor start: %w", err)
 	}
+	d.JobsForwarder.Start()
 	if err := d.Router.Start(); err != nil {
 		return fmt.Errorf("router start: %w", err)
 	}
@@ -194,6 +201,8 @@ func (d *Dynamic) stop() {
 	d.logger.Debug("Router stopped")
 	d.MultiTenantStat.Stop()
 	d.logger.Debug("MultiTenantStat stopped")
+	d.JobsForwarder.Stop()
+	d.logger.Debug("JobsForwarder stopped")
 
 	d.RouterDB.Stop()
 	d.logger.Debug("RouterDB stopped")
@@ -201,6 +210,8 @@ func (d *Dynamic) stop() {
 	d.logger.Debug("BatchRouterDB stopped")
 	d.ErrorDB.Stop()
 	d.logger.Debug("ErrorDB stopped")
+	d.EventSchemasDB.Stop()
+	d.logger.Debug("EventSchemasDB stopped")
 	d.GatewayDB.Stop()
 	d.logger.Debug("GatewayDB stopped")
 	d.serverStopTimeStat.Since(start)

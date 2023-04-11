@@ -15,7 +15,7 @@ import (
 )
 
 type BaseForwarder struct {
-	ctx        context.Context
+	Ctx        context.Context
 	ErrGroup   *errgroup.Group
 	JobsDB     jobsdb.JobsDB
 	Log        logger.Logger
@@ -36,7 +36,7 @@ func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, sc
 	bf.BaseConfig.JobsDBMaxRetries = config.GetInt("JobsForwarder.maxRetries", 3)
 	bf.Log = log
 	bf.JobsDB = schemaDB
-	bf.ctx = ctx
+	bf.Ctx = ctx
 	bf.ErrGroup = g
 }
 

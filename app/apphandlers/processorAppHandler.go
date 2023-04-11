@@ -206,8 +206,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	if err != nil {
 		return err
 	}
-	jobsForwarder.Start(ctx)
-	defer jobsForwarder.Stop()
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
@@ -268,6 +266,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		RouterDB:         routerDB,
 		BatchRouterDB:    batchRouterDB,
 		ErrorDB:          errDB,
+		EventSchemasDB:   schemasDB,
+		JobsForwarder:    jobsForwarder,
 		Processor:        p,
 		Router:           rt,
 		MultiTenantStat:  multitenantStats,
