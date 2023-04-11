@@ -22,7 +22,7 @@ endif
 ifdef package
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 else
-	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./internal/pulsar/... && touch $(TESTFILE) || true
+	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
 endif
 
 test-teardown:
@@ -116,7 +116,3 @@ run-warehouse-integration: setup-warehouse-integration
       	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi
-
-.PHONY: bench-kafka
-bench-kafka:
-	go test -count 1 -run BenchmarkCompression -bench=. -benchmem ./services/streammanager/kafka/client
