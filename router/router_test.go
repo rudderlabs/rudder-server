@@ -160,7 +160,6 @@ func initRouter() {
 	logger.Reset()
 	misc.Init()
 	Init()
-	InitRouterAdmin()
 }
 
 func TestBackoff(t *testing.T) {

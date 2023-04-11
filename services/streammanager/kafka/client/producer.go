@@ -12,10 +12,23 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+type Compression = kafka.Compression
+
+const (
+	CompressionNone   Compression = 0
+	CompressionGzip   Compression = kafka.Gzip
+	CompressionSnappy Compression = kafka.Snappy
+	CompressionLz4    Compression = kafka.Lz4
+	CompressionZstd   Compression = kafka.Zstd
+)
+
 type ProducerConfig struct {
 	ClientID string
 	WriteTimeout,
-	ReadTimeout time.Duration
+	ReadTimeout,
+	BatchTimeout time.Duration
+	BatchSize   int
+	Compression Compression
 	Logger      Logger
 	ErrorLogger Logger
 }
@@ -26,6 +39,15 @@ func (c *ProducerConfig) defaults() {
 	}
 	if c.ReadTimeout < 1 {
 		c.ReadTimeout = 10 * time.Second
+	}
+	if c.BatchTimeout < 1 {
+		c.BatchTimeout = time.Nanosecond
+	}
+	if c.BatchSize < 1 {
+		// this is like disabling batching.
+		// these settings are overridden only if "Router.KAFKA.enableBatching" is true and in that case
+		// other default values are used (see kafkamanager.go).
+		c.BatchSize = 1
 	}
 }
 
@@ -66,14 +88,15 @@ func (c *Client) NewProducer(producerConf ProducerConfig) (p *Producer, err erro
 		writer: &kafka.Writer{
 			Addr:                   kafka.TCP(c.addresses...),
 			Balancer:               &kafka.ReferenceHash{},
-			BatchTimeout:           time.Nanosecond,
 			WriteTimeout:           producerConf.WriteTimeout,
 			ReadTimeout:            producerConf.ReadTimeout,
+			BatchTimeout:           producerConf.BatchTimeout,
+			BatchSize:              producerConf.BatchSize,
 			MaxAttempts:            3,
 			RequiredAcks:           kafka.RequireAll,
 			AllowAutoTopicCreation: true,
 			Async:                  false,
-			Compression:            0,
+			Compression:            producerConf.Compression,
 			Transport:              transport,
 		},
 	}
