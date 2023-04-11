@@ -3,6 +3,7 @@ package pulsar
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -24,15 +25,18 @@ func Test_Pulsar(t *testing.T) {
 	)
 	pulsarContainer := PulsarResource(t)
 	conf := config.New()
-	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
+	url := strings.Replace(pulsarContainer.URL, "localhost", "127.0.0.1", 1)
+	conf.Set("Pulsar.Client.url", url)
 	conf.Set("Pulsar.Producer.topic", topic)
 	client, err := newPulsarClient(getClientConf(conf), logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, client)
+	// Create a topic with admin client
 	producer, err := newProducer(client, getProducerConf(conf), logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, producer)
 	defer producer.Close()
+
 	consumer, err := client.Client.Subscribe(pulsar.ConsumerOptions{
 		Topic:            topic,
 		SubscriptionName: subscriptionName,
