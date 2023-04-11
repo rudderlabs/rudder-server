@@ -60,7 +60,7 @@ func TestQueryWrapper(t *testing.T) {
 
 			qw := middleware.NewSQLQueryWrapper(
 				pgResource.DB,
-				middleware.WithQueryThresholdInSec(queryThreshold),
+				middleware.WIthSlowQueryThreshold(queryThreshold),
 				middleware.WithLogger(mockLogger),
 				middleware.WithSince(func(time.Time) time.Duration {
 					return tc.executionTimeInSec
@@ -111,7 +111,7 @@ func TestQueryWrapper(t *testing.T) {
 
 			qw := middleware.NewSQLQueryWrapper(
 				pgResource.DB,
-				middleware.WithQueryThresholdInSec(queryThreshold),
+				middleware.WIthSlowQueryThreshold(queryThreshold),
 				middleware.WithLogger(mockLogger),
 				middleware.WithSince(func(time.Time) time.Duration {
 					return tc.executionTimeInSec

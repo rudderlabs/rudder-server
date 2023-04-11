@@ -18,11 +18,11 @@ type Opt func(*DB)
 type DB struct {
 	*sql.DB
 
-	since               func(time.Time) time.Duration
-	logger              logger.Logger
-	keysAndValues       []any
-	queryThresholdInSec time.Duration
-	secretsRegex        map[string]string
+	since              func(time.Time) time.Duration
+	logger             logger.Logger
+	keysAndValues      []any
+	slowQueryThreshold time.Duration
+	secretsRegex       map[string]string
 }
 
 func WithLogger(logger logger.Logger) Opt {
@@ -43,9 +43,9 @@ func WithSince(since func(time.Time) time.Duration) Opt {
 	}
 }
 
-func WithQueryThresholdInSec(queryThresholdInSec time.Duration) Opt {
+func WIthSlowQueryThreshold(slowQueryThreshold time.Duration) Opt {
 	return func(s *DB) {
-		s.queryThresholdInSec = queryThresholdInSec
+		s.slowQueryThreshold = slowQueryThreshold
 	}
 }
 
@@ -57,9 +57,9 @@ func WithSecretsRegex(secretsRegex map[string]string) Opt {
 
 func NewSQLQueryWrapper(db *sql.DB, opts ...Opt) *DB {
 	s := &DB{
-		DB:                  db,
-		since:               time.Since,
-		queryThresholdInSec: 300 * time.Second,
+		DB:                 db,
+		since:              time.Since,
+		slowQueryThreshold: 300 * time.Second,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -110,7 +110,7 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *s
 }
 
 func (db *DB) logQuery(startedAt time.Time, query string) {
-	if executionTime := db.since(startedAt); executionTime > db.queryThresholdInSec {
+	if executionTime := db.since(startedAt); executionTime > db.slowQueryThreshold {
 		sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
 
 		keysAndValues := []any{
