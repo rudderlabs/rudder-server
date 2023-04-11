@@ -2,6 +2,7 @@ package pulsar
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -19,6 +20,7 @@ func Test_Pulsar(t *testing.T) {
 		// counter          uint32
 	)
 	pulsarContainer := PulsarResource(t)
+	time.Sleep(10 * time.Second)
 	conf := config.New()
 	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
 	conf.Set("Pulsar.Producer.topic", topic)
@@ -26,7 +28,7 @@ func Test_Pulsar(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	producer, err := newProducer(client, getProducerConf(conf), logger.NewLogger())
-	require.NoError(t, err)
+	require.NoErrorf(t, err, "got error %+v", err)
 	require.NotNil(t, producer)
 	defer producer.Close()
 
