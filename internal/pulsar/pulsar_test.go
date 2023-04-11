@@ -28,13 +28,11 @@ func Test_Pulsar(t *testing.T) {
 	url := strings.Replace(pulsarContainer.URL, "localhost", "127.0.0.1", 1)
 	conf.Set("Pulsar.Client.url", url)
 	conf.Set("Pulsar.Producer.topic", topic)
-	client, err := newPulsarClient(getClientConf(conf), logger.NOP)
+	client, err := newPulsarClient(getClientConf(conf), logger.NewLogger())
 	require.NoError(t, err)
-	require.NotNil(t, client)
 	// Create a topic with admin client
-	producer, err := newProducer(client, getProducerConf(conf), logger.NOP)
+	producer, err := newProducer(client, getProducerConf(conf), logger.NewLogger())
 	require.NoError(t, err)
-	require.NotNil(t, producer)
 	defer producer.Close()
 
 	consumer, err := client.Client.Subscribe(pulsar.ConsumerOptions{
@@ -42,7 +40,6 @@ func Test_Pulsar(t *testing.T) {
 		SubscriptionName: subscriptionName,
 	})
 	require.NoError(t, err)
-	require.NotNil(t, consumer)
 	defer consumer.Close()
 	err = producer.SendMessage(context.Background(), key, "", payload)
 	require.NoError(t, err)
