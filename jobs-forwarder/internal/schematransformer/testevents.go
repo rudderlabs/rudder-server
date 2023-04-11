@@ -1,4 +1,12 @@
-package testdata
+package schematransformer
+
+import (
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
+)
 
 var TrackEvent = map[string]interface{}{
 	"messageId": "message-id",
@@ -7,9 +15,9 @@ var TrackEvent = map[string]interface{}{
 }
 
 var TrackSchema = map[string]string{
+	"event":     "string",
 	"messageId": "string",
 	"type":      "string",
-	"event":     "string",
 }
 
 var IdentifyEvent = map[string]interface{}{
@@ -43,4 +51,23 @@ var CompositeSchema = map[string]string{
 var IdentifyFlattenedEvent = map[string]interface{}{
 	"messageId": "message-id-identify",
 	"type":      "identify",
+}
+
+var TestEventPayload = EventPayload{
+	WriteKey: WriteKeyEnabled,
+	Event:    TrackEvent,
+}
+
+var TestEventSchemaKey = proto.EventSchemaKey{
+	WriteKey:        WriteKeyEnabled,
+	EventType:       "track",
+	EventIdentifier: "event-name",
+}
+
+var TestEventSchemaMessage = proto.EventSchemaMessage{
+	WorkspaceID: SampleWorkspaceID,
+	Key:         &TestEventSchemaKey,
+	ObservedAt:  timestamppb.New(time.Now()),
+	Schema:      TrackSchema,
+	Sample:      []byte{},
 }

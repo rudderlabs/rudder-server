@@ -1,4 +1,4 @@
-package testdata
+package schematransformer
 
 import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 

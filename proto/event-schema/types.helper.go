@@ -21,3 +21,12 @@ func (esm *EventSchemaMessage) MustMarshal() ([]byte, error) {
 	}
 	return m, nil
 }
+
+// UnmarshalEventSchemaMessage creates a new event schema message from the provided protobuf bytes.
+func UnmarshalEventSchemaMessage(raw []byte) (*EventSchemaMessage, error) {
+	p := &EventSchemaMessage{}
+	if err := proto.Unmarshal(raw, p); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal event schema message: %w", err)
+	}
+	return p, nil
+}
