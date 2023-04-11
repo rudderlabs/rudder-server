@@ -74,7 +74,6 @@ func (a *processorApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterBoolConfigVariable(false, &a.config.enableEventSchemasJobsDB, false, "EventSchemas.enableEventSchemasJobsDB")
 }
 
 func (a *processorApp) Setup(options *app.Options) error {
@@ -193,15 +192,11 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}))
 	}
 
-	var eventSchemasJobsDB *jobsdb.HandleT
-	if a.config.enableEventSchemasJobsDB {
-		eventSchemasJobsDB = jobsdb.NewForWrite(
-			"event_schemas",
-			jobsdb.WithClearDB(options.ClearDB),
-			// jobsdb.WithStatusHandler(),
-			jobsdb.WithDSLimit(&a.config.processorDSLimit),
-		)
-	}
+	eventSchemaDB := jobsdb.NewForReadWrite(
+		"es",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+	)
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
@@ -217,7 +212,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		routerDB,
 		batchRouterDB,
 		errDB,
-		eventSchemasJobsDB,
+		eventSchemaDB,
 		multitenantStats,
 		reportingI,
 		transientSources,
@@ -263,7 +258,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		RouterDB:         routerDB,
 		BatchRouterDB:    batchRouterDB,
 		ErrorDB:          errDB,
-		EventSchemasDB:   eventSchemasJobsDB,
+		EventSchemasDB:   eventSchemaDB,
 		Processor:        p,
 		Router:           rt,
 		MultiTenantStat:  multitenantStats,
