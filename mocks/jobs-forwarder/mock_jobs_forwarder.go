@@ -5,7 +5,6 @@
 package mock_jobs_forwarder
 
 import (
-	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -35,15 +34,15 @@ func (m *MockForwarder) EXPECT() *MockForwarderMockRecorder {
 }
 
 // Start mocks base method.
-func (m *MockForwarder) Start(arg0 context.Context) {
+func (m *MockForwarder) Start() {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Start", arg0)
+	m.ctrl.Call(m, "Start")
 }
 
 // Start indicates an expected call of Start.
-func (mr *MockForwarderMockRecorder) Start(arg0 interface{}) *gomock.Call {
+func (mr *MockForwarderMockRecorder) Start() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockForwarder)(nil).Start), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockForwarder)(nil).Start))
 }
 
 // Stop mocks base method.
