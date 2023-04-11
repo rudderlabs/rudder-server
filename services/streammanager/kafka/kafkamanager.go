@@ -229,19 +229,22 @@ func Init() {
 	)
 
 	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
+
+	kafkaCompression = client.CompressionNone
 	if kafkaBatchingEnabled {
+		kafkaCompression = client.CompressionZstd
+
 		pkgLogger.Infof("Kafka batching is enabled with batch size: %d and batch timeout: %s",
 			kafkaBatchSize, kafkaBatchTimeout,
 		)
 	}
-
-	kafkaCompression = client.CompressionZstd
 	if kc := config.GetInt("Router.kafkaCompression", -1); kc != -1 {
 		switch client.Compression(kc) {
 		case client.CompressionNone,
 			client.CompressionGzip,
 			client.CompressionSnappy,
-			client.CompressionLz4:
+			client.CompressionLz4,
+			client.CompressionZstd:
 			kafkaCompression = client.Compression(kc)
 		default:
 			pkgLogger.Errorf("Invalid Kafka compression codec: %d", kc)
