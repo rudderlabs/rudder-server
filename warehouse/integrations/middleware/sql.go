@@ -7,7 +7,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
@@ -57,12 +56,10 @@ func WithSecretsRegex(secretsRegex map[string]string) Opt {
 }
 
 func NewSQLQueryWrapper(db *sql.DB, opts ...Opt) *DB {
-	queryThreshold := config.GetDuration("Warehouse.queryThresholdInSec", 300, time.Second)
-
 	s := &DB{
 		DB:                  db,
 		since:               time.Since,
-		queryThresholdInSec: queryThreshold,
+		queryThresholdInSec: 300 * time.Second,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -72,56 +69,44 @@ func NewSQLQueryWrapper(db *sql.DB, opts ...Opt) *DB {
 
 func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
 	startedAt := time.Now()
-	defer func() {
-		db.logQuery(startedAt, query)
-	}()
-
-	return db.DB.Exec(query, args...)
+	result, err := db.DB.Exec(query, args...)
+	db.logQuery(startedAt, query)
+	return result, err
 }
 
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	startedAt := time.Now()
-	defer func() {
-		db.logQuery(startedAt, query)
-	}()
-
-	return db.DB.ExecContext(ctx, query, args...)
+	result, err := db.DB.ExecContext(ctx, query, args...)
+	db.logQuery(startedAt, query)
+	return result, err
 }
 
 func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
 	startedAt := time.Now()
-	defer func() {
-		db.logQuery(startedAt, query)
-	}()
-
-	return db.DB.Query(query, args...)
+	rows, err := db.DB.Query(query, args...)
+	db.logQuery(startedAt, query)
+	return rows, err
 }
 
 func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	startedAt := time.Now()
-	defer func() {
-		db.logQuery(startedAt, query)
-	}()
-
-	return db.DB.QueryContext(ctx, query, args...)
+	rows, err := db.DB.QueryContext(ctx, query, args...)
+	db.logQuery(startedAt, query)
+	return rows, err
 }
 
 func (db *DB) QueryRow(query string, args ...interface{}) *sql.Row {
 	startedAt := time.Now()
-	defer func() {
-		db.logQuery(startedAt, query)
-	}()
-
-	return db.DB.QueryRow(query, args...)
+	row := db.DB.QueryRow(query, args...)
+	db.logQuery(startedAt, query)
+	return row
 }
 
 func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	startedAt := time.Now()
-	defer func() {
-		db.logQuery(startedAt, query)
-	}()
-
-	return db.DB.QueryRowContext(ctx, query, args...)
+	row := db.DB.QueryRowContext(ctx, query, args...)
+	db.logQuery(startedAt, query)
+	return row
 }
 
 func (db *DB) logQuery(startedAt time.Time, query string) {
