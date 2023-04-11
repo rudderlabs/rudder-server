@@ -134,13 +134,6 @@ func setEnableEventSchemasFeature(proc *Handle, b bool) bool {
 	return prev
 }
 
-// setEnableEventSchemasJobsDB overrides enableEventSchemasJobsDB configuration and returns previous value
-func setEnableEventSchemasJobsDB(proc *Handle, b bool) bool {
-	prev := proc.config.enableEventSchemasJobsDB
-	proc.config.enableEventSchemasJobsDB = b
-	return prev
-}
-
 // SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
 func setDisableDedupFeature(proc *Handle, b bool) bool {
 	prev := proc.config.enableDedup
@@ -412,7 +405,7 @@ func initProcessor() {
 	integrations.Init()
 }
 
-var _ = Describe("Processor with event schemas DB", Ordered, func() {
+var _ = Describe("Processor with event schemas v2", Ordered, func() {
 	initProcessor()
 
 	var c *testContext
@@ -423,7 +416,8 @@ var _ = Describe("Processor with event schemas DB", Ordered, func() {
 
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.config.transformerURL = transformerServer.URL
-		setEnableEventSchemasJobsDB(proc, true)
+		proc.eventSchemaDB = c.mockEventSchemasDB
+		proc.config.eventSchemaV2Enabled = true
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy

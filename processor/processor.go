@@ -125,7 +125,6 @@ type Handle struct {
 		configSubscriberLock      sync.RWMutex
 		enableEventSchemasFeature bool
 		enableEventSchemasAPIOnly bool
-		enableEventSchemasJobsDB  bool
 		enableDedup               bool
 		enableEventCount          bool
 		transformTimesPQLength    int
@@ -134,6 +133,8 @@ type Handle struct {
 		pollInterval              time.Duration
 		GWCustomVal               string
 		asyncInit                 *misc.AsyncInit
+		eventSchemaV2Enabled      bool
+		eventSchemaV2AllSources   bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -314,7 +315,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, errorDB, eventSchemasDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
+	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
@@ -333,7 +334,7 @@ func (proc *Handle) Setup(
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.errorDB = errorDB
-	proc.eventSchemaDB = eventSchemasDB
+	proc.eventSchemaDB = eventSchemaDB
 
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
@@ -572,10 +573,11 @@ func (proc *Handle) loadConfig() {
 	config.RegisterBoolConfigVariable(true, &proc.config.enableEventCount, true, "Processor.enableEventCount")
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
-	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasJobsDB, false, "EventSchemas.enableEventSchemasJobsDB")
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
-
+	// EventSchemas2 feature.
+	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2Enabled, false, "EventSchemas2.enabled")
+	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2AllSources, false, "EventSchemas2.enableAllSources")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
@@ -1366,22 +1368,21 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 				if err != nil || proc.transientSources.Apply(source.ID) {
 					eventPayload = []byte(`{}`)
 				} else {
-					if proc.config.enableEventSchemasJobsDB {
-						if source.EventSchemasEnabled &&
-							commonMetadataFromSingularEvent.SourceJobRunID == "" { // could use source.SourceDefinition.Category instead?
-							eventSchemaJobs = append(eventSchemaJobs,
-								&jobsdb.JobT{
-									UUID:         batchEvent.UUID,
-									UserID:       batchEvent.UserID,
-									Parameters:   batchEvent.Parameters,
-									CustomVal:    batchEvent.CustomVal,
-									EventPayload: eventPayload,
-									CreatedAt:    time.Now(),
-									ExpireAt:     time.Now(),
-									WorkspaceId:  batchEvent.WorkspaceId,
-								},
-							)
-						}
+					if proc.config.eventSchemaV2Enabled && // schemas enabled
+						(source.EventSchemasEnabled || proc.config.eventSchemaV2AllSources) && // source has schemas enabled or all we assume that all sources have schemas enabled
+						commonMetadataFromSingularEvent.SourceJobRunID == "" { // TODO: could use source.SourceDefinition.Category instead?
+						eventSchemaJobs = append(eventSchemaJobs,
+							&jobsdb.JobT{
+								UUID:         batchEvent.UUID,
+								UserID:       batchEvent.UserID,
+								Parameters:   batchEvent.Parameters,
+								CustomVal:    batchEvent.CustomVal,
+								EventPayload: eventPayload,
+								CreatedAt:    time.Now(),
+								ExpireAt:     time.Now(),
+								WorkspaceId:  batchEvent.WorkspaceId,
+							},
+						)
 					}
 				}
 
@@ -1441,26 +1442,24 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 		statusList = append(statusList, &newStatus)
 	}
 
-	if proc.config.enableEventSchemasJobsDB {
-		if len(eventSchemaJobs) > 0 {
-			proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(eventSchemaJobs))
-			err := misc.RetryWithNotify(
-				context.Background(),
-				proc.jobsDBCommandTimeout,
-				proc.jobdDBMaxRetries,
-				func(ctx context.Context) error {
-					return proc.eventSchemaDB.WithStoreSafeTx(
-						ctx,
-						func(tx jobsdb.StoreSafeTx) error {
-							return proc.eventSchemaDB.StoreInTx(ctx, tx, eventSchemaJobs)
-						},
-					)
-				}, proc.sendRetryStoreStats)
-			if err != nil {
-				proc.logger.Errorf("Store into event schema table failed with error: %v", err)
-				proc.logger.Errorf("eventSchemaJobs: %v", eventSchemaJobs)
-				panic(err)
-			}
+	if len(eventSchemaJobs) > 0 {
+		proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(eventSchemaJobs))
+		err := misc.RetryWithNotify(
+			context.Background(),
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.eventSchemaDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						return proc.eventSchemaDB.StoreInTx(ctx, tx, eventSchemaJobs)
+					},
+				)
+			}, proc.sendRetryStoreStats)
+		if err != nil {
+			proc.logger.Errorf("Store into event schema table failed with error: %v", err)
+			proc.logger.Errorf("eventSchemaJobs: %v", eventSchemaJobs)
+			panic(err)
 		}
 	}
 

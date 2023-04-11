@@ -47,8 +47,7 @@ type embeddedApp struct {
 		batchRouterDSLimit int
 		gatewayDSLimit     int
 
-		enableReplay             bool
-		enableEventSchemasJobsDB bool
+		enableReplay bool
 	}
 }
 
@@ -58,7 +57,6 @@ func (a *embeddedApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterBoolConfigVariable(false, &a.config.enableEventSchemasJobsDB, false, "EventSchemas.enableEventSchemasJobsDB")
 }
 
 func (a *embeddedApp) Setup(options *app.Options) error {
@@ -183,17 +181,12 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		}))
 	}
 
-	var eventSchemasJobsDB *jobsdb.HandleT
-	if a.config.enableEventSchemasJobsDB {
-		eventSchemasJobsDB = jobsdb.NewForWrite(
-			"event_schemas",
-			jobsdb.WithClearDB(options.ClearDB),
-			// jobsdb.WithStatusHandler(),
-			jobsdb.WithDSLimit(&a.config.processorDSLimit),
-		)
-	} else {
-		eventSchemasJobsDB = jobsdb.NewForNoop("event_schemas")
-	}
+	eventSchemasJobsDB := jobsdb.NewForReadWrite(
+		"es",
+		jobsdb.WithClearDB(options.ClearDB),
+		// jobsdb.WithStatusHandler(),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+	)
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
