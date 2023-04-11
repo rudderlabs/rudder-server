@@ -66,7 +66,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/rudder-go-kit v0.11.0
 	github.com/rudderlabs/sql-tunnels v0.1.2
-	github.com/samber/lo v1.37.0
+	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.38
 	github.com/shirou/gopsutil/v3 v3.23.3
 	github.com/snowflakedb/gosnowflake v1.6.17
