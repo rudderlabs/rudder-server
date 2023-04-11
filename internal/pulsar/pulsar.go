@@ -51,12 +51,12 @@ func New(config *config.Config) (ProducerAdapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating pulsar producer : %v", err)
 	}
-	return &producer, nil
+	return producer, nil
 }
 
-func newPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
+func newPulsarClient(conf ClientConf, log logger.Logger) (*Client, error) {
 	if conf.Url == "" {
-		return Client{}, errors.New("pulsar url is empty")
+		return nil, errors.New("pulsar url is empty")
 	}
 	client, err := pulsar.NewClient(pulsar.ClientOptions{
 		URL:               conf.Url,
@@ -65,19 +65,19 @@ func newPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
 		Logger:            &pulsarLogAdapter{Logger: log},
 	})
 	if err != nil {
-		return Client{}, err
+		return nil, err
 	}
-	return Client{Client: client}, nil
+	return &Client{Client: client}, nil
 }
 
-func newProducer(client Client, conf ProducerConf, log logger.Logger) (Producer, error) {
+func newProducer(client *Client, conf ProducerConf, log logger.Logger) (*Producer, error) {
 	producer, err := client.Client.CreateProducer(pulsar.ProducerOptions{
 		Topic: conf.Topic,
 	})
 	if err != nil {
-		return Producer{}, err
+		return nil, err
 	}
-	return Producer{
+	return &Producer{
 		Producer: producer,
 		log:      log,
 		Client:   client.Client,
