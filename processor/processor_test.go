@@ -134,13 +134,6 @@ func setEnableEventSchemasFeature(proc *Handle, b bool) bool {
 	return prev
 }
 
-// setEnableEventSchemasJobsDB overrides enableEventSchemasJobsDB configuration and returns previous value
-func setEnableEventSchemasJobsDB(proc *Handle, b bool) bool {
-	prev := proc.config.enableEventSchemasJobsDB
-	proc.config.enableEventSchemasJobsDB = b
-	return prev
-}
-
 // SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
 func setDisableDedupFeature(proc *Handle, b bool) bool {
 	prev := proc.config.enableDedup

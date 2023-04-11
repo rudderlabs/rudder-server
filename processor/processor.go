@@ -125,7 +125,6 @@ type Handle struct {
 		configSubscriberLock      sync.RWMutex
 		enableEventSchemasFeature bool
 		enableEventSchemasAPIOnly bool
-		enableEventSchemasJobsDB  bool
 		enableDedup               bool
 		enableEventCount          bool
 		transformTimesPQLength    int
@@ -574,7 +573,6 @@ func (proc *Handle) loadConfig() {
 	config.RegisterBoolConfigVariable(true, &proc.config.enableEventCount, true, "Processor.enableEventCount")
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
-	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasJobsDB, false, "EventSchemas.enableEventSchemasJobsDB")
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	// EventSchemas2 feature.
