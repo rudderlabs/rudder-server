@@ -308,24 +308,14 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 
 // schemaExists checks it schema exists or not.
 func (d *Deltalake) schemaExists(schemaName string) (bool, error) {
-	var (
-		query  string
-		err    error
-		schema string
-	)
-
-	query = fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
-
-	err = d.DB.QueryRow(query).Scan(&schema)
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
-	if err != nil {
+	var schema string
+	if err := d.DB.QueryRow(fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)).Scan(&schema); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
 		return false, fmt.Errorf("schema exists: %w", err)
 	}
-
-	exists := schema == schemaName
-	return exists, nil
+	return schema == schemaName, nil
 }
 
 func (d *Deltalake) createSchema() error {
@@ -917,7 +907,19 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 }
 
 func (d *Deltalake) dropDanglingStagingTables() {
-	tableNames, _ := d.fetchTables("^rudder_staging_.*$")
+	tableNames, err := d.fetchTables("^rudder_staging_.*$")
+	if err != nil {
+		d.Logger.Warnw("fetching tables for dropping dangling staging tables",
+			logfield.SourceID, d.Warehouse.Source.ID,
+			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, d.Warehouse.Destination.ID,
+			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+			logfield.Namespace, d.Namespace,
+			logfield.Error, err.Error(),
+		)
+		return
+	}
 
 	d.dropStagingTables(tableNames)
 }
