@@ -297,7 +297,7 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		var (
 			jobList          = make([]*jobsdb.JobT, 0)
-			errorMessagesMap = make(map[uuid.UUID]string)
+			errorMessagesMap map[uuid.UUID]string
 		)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
@@ -330,6 +330,9 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 			errorMessage := err.Error()
 			if ctx.Err() != nil {
 				errorMessage = ctx.Err().Error()
+			}
+			if errorMessagesMap == nil {
+				errorMessagesMap = make(map[uuid.UUID]string, len(jobList))
 			}
 			for _, job := range jobList {
 				errorMessagesMap[job.UUID] = errorMessage
