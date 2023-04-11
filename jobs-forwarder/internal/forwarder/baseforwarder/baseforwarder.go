@@ -42,7 +42,6 @@ func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, sc
 
 func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, error) {
 	var combinedList []*jobsdb.JobT
-	isLimitReached := true
 	queryParams := bf.generateQueryParams()
 	toRetry, err := misc.QueryWithRetriesAndNotify(ctx, bf.BaseConfig.JobsDBQueryRequestTimeout, bf.BaseConfig.JobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return bf.JobsDB.GetToRetry(ctx, queryParams)
@@ -52,23 +51,23 @@ func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, err
 		return nil, false, err
 	}
 	combinedList = toRetry.Jobs
-	if !toRetry.LimitsReached {
-		queryParams.JobsLimit -= len(toRetry.Jobs)
-		if queryParams.PayloadSizeLimit > 0 {
-			queryParams.PayloadSizeLimit -= toRetry.PayloadSize
-		}
-		unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, bf.BaseConfig.JobsDBQueryRequestTimeout, bf.BaseConfig.JobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
-			return bf.JobsDB.GetUnprocessed(ctx, queryParams)
-		}, bf.sendQueryRetryStats)
-		isLimitReached = unprocessed.LimitsReached
-		if err != nil {
-			bf.Log.Errorf("base forwarder: Error while reading unprocessed from DB: %v", err)
-			return nil, false, err
-		}
-		combinedList = append(combinedList, unprocessed.Jobs...)
+	if toRetry.LimitsReached {
+		bf.Log.Infof("base forwarder: Reached limit while reading failed from DB")
+		return combinedList, true, nil
 	}
-
-	return combinedList, isLimitReached, nil
+	queryParams.JobsLimit -= len(toRetry.Jobs)
+	if queryParams.PayloadSizeLimit > 0 {
+		queryParams.PayloadSizeLimit -= toRetry.PayloadSize
+	}
+	unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, bf.BaseConfig.JobsDBQueryRequestTimeout, bf.BaseConfig.JobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+		return bf.JobsDB.GetUnprocessed(ctx, queryParams)
+	}, bf.sendQueryRetryStats)
+	if err != nil {
+		bf.Log.Errorf("base forwarder: Error while reading unprocessed from DB: %v", err)
+		return nil, false, err
+	}
+	combinedList = append(combinedList, unprocessed.Jobs...)
+	return combinedList, unprocessed.LimitsReached, nil
 }
 
 func (bf *BaseForwarder) MarkJobStatuses(ctx context.Context, statusList []*jobsdb.JobStatusT) error {
@@ -95,5 +94,6 @@ func (bf *BaseForwarder) sendQueryRetryStats(attempt int) {
 func (bf *BaseForwarder) generateQueryParams() jobsdb.GetQueryParamsT {
 	return jobsdb.GetQueryParamsT{
 		EventsLimit: bf.BaseConfig.PickupSize,
+		JobsLimit:   bf.BaseConfig.PickupSize,
 	}
 }
