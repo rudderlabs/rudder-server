@@ -75,49 +75,71 @@ func Test_BaseForwarder(t *testing.T) {
 		require.Equal(t, 10, len(getJobs))
 		require.Equal(t, false, limitReached)
 	})
+}
 
-	t.Run("Test MarkJobStatuses", func(t *testing.T) {
-		generateJobs := func(numOfJob int) []*jobsdb.JobT {
-			customVal := "MOCKDS"
-			js := make([]*jobsdb.JobT, numOfJob)
-			for i := 0; i < numOfJob; i++ {
-				js[i] = &jobsdb.JobT{
-					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
-					EventPayload: []byte(`{"testKey":"testValue"}`),
-					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-					UUID:         uuid.New(),
-					CustomVal:    customVal,
-					EventCount:   1,
-					WorkspaceId:  "test_workspace",
-				}
+func TestBaseForwarder_MarkJobStautses(t *testing.T) {
+	bf := BaseForwarder{}
+	g, ctx := errgroup.WithContext(context.Background())
+	conf := config.New()
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	jobsdb.Init()
+	jobsdb.Init2()
+	postgres, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+	t.Setenv("JOBS_DB_PORT", postgres.Port)
+	t.Setenv("JOBS_DB_USER", postgres.User)
+	t.Setenv("JOBS_DB_DB_NAME", postgres.Database)
+	t.Setenv("JOBS_DB_PASSWORD", postgres.Password)
+	schemasDB := jobsdb.NewForReadWrite(
+		"test_event_schema",
+	)
+	err = schemasDB.Start()
+	require.NoError(t, err)
+	defer schemasDB.TearDown()
+	bf.LoadMetaData(ctx, g, schemasDB, logger.NOP, conf)
+
+	generateJobs := func(numOfJob int) []*jobsdb.JobT {
+		customVal := "MOCKDS"
+		js := make([]*jobsdb.JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &jobsdb.JobT{
+				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				EventCount:   1,
+				WorkspaceId:  "test_workspace",
 			}
-			return js
 		}
-		jobs := generateJobs(10)
-		err := schemasDB.Store(bf.ctx, jobs)
-		require.NoError(t, err)
-		jobs, limitReached, err := bf.GetJobs(ctx)
-		require.NoError(t, err)
-		require.Equal(t, 10, len(jobs))
-		require.Equal(t, false, limitReached)
-		var statuses []*jobsdb.JobStatusT
-		for _, job := range jobs {
-			statuses = append(statuses, &jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				JobState:      jobsdb.Succeeded.State,
-				AttemptNum:    1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     "200",
-				ErrorResponse: []byte(`{"success":true}`),
-				Parameters:    []byte(`{}`),
-			})
-		}
-		err = bf.MarkJobStatuses(ctx, statuses)
-		require.NoError(t, err)
-		jobs, limitReached, err = bf.GetJobs(ctx)
-		require.NoError(t, err)
-		require.Equal(t, 0, len(jobs))
-		require.Equal(t, false, limitReached)
-	})
+		return js
+	}
+	jobs := generateJobs(10)
+	err = schemasDB.Store(bf.ctx, jobs)
+	require.NoError(t, err)
+	jobs, limitReached, err := bf.GetJobs(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 10, len(jobs))
+	require.Equal(t, false, limitReached)
+	var statuses []*jobsdb.JobStatusT
+	for _, job := range jobs {
+		statuses = append(statuses, &jobsdb.JobStatusT{
+			JobID:         job.JobID,
+			JobState:      jobsdb.Succeeded.State,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "200",
+			ErrorResponse: []byte(`{"success":true}`),
+			Parameters:    []byte(`{}`),
+		})
+	}
+	err = bf.MarkJobStatuses(ctx, statuses)
+	require.NoError(t, err)
+	jobs, limitReached, err = bf.GetJobs(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(jobs))
+	require.Equal(t, false, limitReached)
 }
