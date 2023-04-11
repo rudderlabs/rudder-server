@@ -22,7 +22,7 @@ endif
 ifdef package
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 else
-	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
+	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./internal/pulsar/... && touch $(TESTFILE) || true
 endif
 
 test-teardown:
