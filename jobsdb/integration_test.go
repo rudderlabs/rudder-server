@@ -68,7 +68,7 @@ func TestJobsDB(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -229,7 +229,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -315,7 +315,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -354,7 +354,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -387,7 +387,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -419,7 +419,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -459,7 +459,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -490,7 +490,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -577,7 +577,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 		prefix := strings.ToLower(rand.String(5))
-		err := jobDB.Setup(ReadWrite, true, prefix, true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -694,7 +694,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
-		err := jobDB.Setup(ReadWrite, true, tablePrefix, true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -804,7 +804,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MTL"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -887,7 +887,7 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MT"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -987,7 +987,7 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 		MaxDSSize: &maxDSSize,
 	}
 	customVal := "MOCKDS"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	sampleTestJob := JobT{
@@ -1073,7 +1073,7 @@ func TestCreateDS(t *testing.T) {
 					return triggerAddNewDS
 				},
 			}
-			err = jobDB.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+			err = jobDB.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 			require.NoError(t, err)
 			defer jobDB.TearDown()
 
@@ -1133,7 +1133,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	customVal := "MOCKDS"
@@ -1185,7 +1185,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		jobsDb1 := HandleT{}
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
-		err := jobsDb1.Setup(ReadWrite, true, "batch_rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err := jobsDb1.Setup(ReadWrite, true, "batch_rt", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) with reader writer queues", totalJobs, concurrency), func(b *testing.B) {
@@ -1197,7 +1197,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_GW_MAX_OPEN_CONNECTIONS", "64")
-		err = jobsDb2.Setup(ReadWrite, true, "batch_rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		err = jobsDb2.Setup(ReadWrite, true, "batch_rt", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) without reader writer queues", totalJobs, concurrency), func(b *testing.B) {

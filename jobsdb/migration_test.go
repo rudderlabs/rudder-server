@@ -34,7 +34,6 @@ func TestMigration(t *testing.T) {
 		ReadWrite,
 		true,
 		tablePrefix,
-		true,
 		[]prebackup.Handler{},
 		fileuploader.NewDefaultProvider(),
 	)
