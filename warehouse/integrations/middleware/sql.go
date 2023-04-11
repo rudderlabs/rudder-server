@@ -1,4 +1,4 @@
-package query_logger
+package middleware
 
 import (
 	"context"
