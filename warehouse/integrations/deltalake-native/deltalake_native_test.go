@@ -3,7 +3,10 @@ package deltalake_native_test
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 
 	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
 
@@ -33,6 +36,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 
 	t.Parallel()
 
+	deltalake.Init()
 	deltalake_native.Init()
 
 	credentials, err := testhelper.DatabricksCredentials()
@@ -52,114 +56,179 @@ func TestIntegrationDeltalake(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		jobsDB   = testhelper.SetUpJobsDB(t)
-		provider = warehouseutils.DELTALAKE
-		schema   = testhelper.Schema(provider, testhelper.DeltalakeIntegrationTestSchema)
+		jobsDB       = testhelper.SetUpJobsDB(t)
+		provider     = warehouseutils.DELTALAKE
+		schema       = testhelper.Schema(provider, testhelper.DeltalakeIntegrationTestSchema)
+		nativeSchema = fmt.Sprintf("%s_%s", schema, "native")
 	)
 
-	t.Cleanup(func() {
-		require.NoError(
-			t,
-			testhelper.WithConstantBackoff(func() (err error) {
-				_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, schema))
-				return
-			}),
-			fmt.Sprintf("Failed dropping schema %s for Deltalake", schema),
-		)
-	})
-
-	testhelper.SetConfig(t, []warehouseutils.KeyValue{
-		{
-			Key:   "Warehouse.deltalake.useLegacy",
-			Value: "false",
-		},
-	})
-
 	testCases := []struct {
-		name               string
-		schema             string
-		writeKey           string
-		sourceID           string
-		destinationID      string
-		messageID          string
-		warehouseEventsMap testhelper.EventsCountMap
-		prerequisite       func(t testing.TB)
+		name          string
+		writeKey      string
+		sourceID      string
+		destinationID string
+		schema        string
+		useLegacy     bool
 	}{
 		{
-			name:               "Merge Mode",
-			writeKey:           "sToFgoilA0U1WxNeW1gdgUVDsEW",
-			schema:             schema,
-			sourceID:           "25H5EpYzojqQSepRSaGBrrPx3e4",
-			destinationID:      "25IDjdnoEus6DDNrth3SWO1FOpu",
-			warehouseEventsMap: mergeEventsMap(),
-			prerequisite: func(t testing.TB) {
-				t.Helper()
-				testhelper.SetConfig(t, []warehouseutils.KeyValue{
-					{
-						Key:   "Warehouse.deltalake.loadTableStrategy",
-						Value: "MERGE",
-					},
-				})
-			},
+			name:          "Native",
+			writeKey:      "dasFgoilA0U1WxNeW1gdgUVDfas",
+			sourceID:      "36H5EpYzojqQSepRSaGBrrPx3e4",
+			destinationID: "36IDjdnoEus6DDNrth3SWO1FOpu",
+			schema:        nativeSchema,
+			useLegacy:     false,
 		},
 		{
-			name:               "Append Mode",
-			writeKey:           "sToFgoilA0U1WxNeW1gdgUVDsEW",
-			schema:             schema,
-			sourceID:           "25H5EpYzojqQSepRSaGBrrPx3e4",
-			destinationID:      "25IDjdnoEus6DDNrth3SWO1FOpu",
-			warehouseEventsMap: appendEventsMap(),
-			prerequisite: func(t testing.TB) {
-				t.Helper()
-				testhelper.SetConfig(t, []warehouseutils.KeyValue{
-					{
-						Key:   "Warehouse.deltalake.loadTableStrategy",
-						Value: "APPEND",
-					},
-				})
-			},
+			name:          "Legacy",
+			writeKey:      "sToFgoilA0U1WxNeW1gdgUVDsEW",
+			sourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
+			destinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
+			schema:        schema,
+			useLegacy:     true,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 
-		t.Run(tc.name, func(t *testing.T) {
-			ts := testhelper.WareHouseTest{
-				Schema:        tc.schema,
-				WriteKey:      tc.writeKey,
-				SourceID:      tc.sourceID,
-				DestinationID: tc.destinationID,
-				Prerequisite:  tc.prerequisite,
-				JobsDB:        jobsDB,
-				Provider:      provider,
-				UserID:        testhelper.GetUserId(provider),
-				MessageID:     misc.FastUUID().String(),
-				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				WarehouseEventsMap: testhelper.EventsCountMap{
-					"identifies":    1,
-					"users":         1,
-					"tracks":        1,
-					"product_track": 1,
-					"pages":         1,
-					"screens":       1,
-					"aliases":       1,
-					"groups":        1,
-				},
-				Client: &warehouseclient.Client{
-					SQL:  db,
-					Type: warehouseclient.SQLClient,
-				},
-				StatsToVerify: []string{
-					"warehouse_deltalake_grpcExecTime",
-					"warehouse_deltalake_healthTimeouts",
-				},
-			}
-			ts.VerifyEvents(t)
-
-			ts.WarehouseEventsMap = tc.warehouseEventsMap
-			ts.VerifyModifiedEvents(t)
+		t.Cleanup(func() {
+			require.NoError(
+				t,
+				testhelper.WithConstantBackoff(func() (err error) {
+					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, tc.schema))
+					return
+				}),
+				fmt.Sprintf("Failed dropping schema %s for Deltalake", tc.schema),
+			)
 		})
+
+		subTestCases := []struct {
+			name               string
+			schema             string
+			writeKey           string
+			sourceID           string
+			destinationID      string
+			messageID          string
+			warehouseEventsMap testhelper.EventsCountMap
+			prerequisite       func(t testing.TB)
+		}{
+			{
+				name:               "Merge Mode",
+				writeKey:           tc.writeKey,
+				schema:             tc.schema,
+				sourceID:           tc.sourceID,
+				destinationID:      tc.destinationID,
+				warehouseEventsMap: mergeEventsMap(),
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.loadTableStrategy",
+							Value: "MERGE",
+						},
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: "false",
+						},
+						{
+							Key:   "Warehouse.deltalake.useLegacy",
+							Value: strconv.FormatBool(tc.useLegacy),
+						},
+					})
+				},
+			},
+			{
+				name:               "Append Mode",
+				writeKey:           tc.writeKey,
+				schema:             tc.schema,
+				sourceID:           tc.sourceID,
+				destinationID:      tc.destinationID,
+				warehouseEventsMap: appendEventsMap(),
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.loadTableStrategy",
+							Value: "APPEND",
+						},
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: "false",
+						},
+						{
+							Key:   "Warehouse.deltalake.useLegacy",
+							Value: strconv.FormatBool(tc.useLegacy),
+						},
+					})
+				},
+			},
+			{
+				name:               "Parquet load files",
+				writeKey:           tc.writeKey,
+				schema:             tc.schema,
+				sourceID:           tc.sourceID,
+				destinationID:      tc.destinationID,
+				warehouseEventsMap: mergeEventsMap(),
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.loadTableStrategy",
+							Value: "MERGE",
+						},
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: "true",
+						},
+						{
+							Key:   "Warehouse.deltalake.useLegacy",
+							Value: strconv.FormatBool(tc.useLegacy),
+						},
+					})
+				},
+			},
+		}
+
+		for _, stc := range subTestCases {
+			stc := stc
+
+			t.Run(tc.name+" "+stc.name, func(t *testing.T) {
+				ts := testhelper.WareHouseTest{
+					Schema:        stc.schema,
+					WriteKey:      stc.writeKey,
+					SourceID:      stc.sourceID,
+					DestinationID: stc.destinationID,
+					Prerequisite:  stc.prerequisite,
+					JobsDB:        jobsDB,
+					Provider:      provider,
+					UserID:        testhelper.GetUserId(provider),
+					MessageID:     misc.FastUUID().String(),
+					Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+					WarehouseEventsMap: testhelper.EventsCountMap{
+						"identifies":    1,
+						"users":         1,
+						"tracks":        1,
+						"product_track": 1,
+						"pages":         1,
+						"screens":       1,
+						"aliases":       1,
+						"groups":        1,
+					},
+					Client: &warehouseclient.Client{
+						SQL:  db,
+						Type: warehouseclient.SQLClient,
+					},
+					StatsToVerify: []string{
+						"warehouse_deltalake_grpcExecTime",
+						"warehouse_deltalake_healthTimeouts",
+					},
+				}
+				ts.VerifyEvents(t)
+
+				ts.WarehouseEventsMap = stc.warehouseEventsMap
+				ts.VerifyModifiedEvents(t)
+			})
+		}
 	}
 }
 
@@ -177,45 +246,119 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
+	deltalake.Init()
 	deltalake_native.Init()
 
-	testhelper.SetConfig(t, []warehouseutils.KeyValue{
-		{
-			Key:   "Warehouse.deltalake.useLegacy",
-			Value: "false",
-		},
-	})
-
 	configurations := testhelper.PopulateTemplateConfigurations()
-	destination := backendconfig.DestinationT{
-		ID: "25IDjdnoEus6DDNrth3SWO1FOpu",
-		Config: map[string]interface{}{
-			"host":            configurations["deltalakeHost"],
-			"port":            configurations["deltalakePort"],
-			"path":            configurations["deltalakePath"],
-			"token":           configurations["deltalakeToken"],
-			"namespace":       configurations["deltalakeNamespace"],
-			"bucketProvider":  "AZURE_BLOB",
-			"containerName":   configurations["deltalakeContainerName"],
-			"prefix":          "",
-			"useSTSTokens":    false,
-			"enableSSE":       false,
-			"accountName":     configurations["deltalakeAccountName"],
-			"accountKey":      configurations["deltalakeAccountKey"],
-			"syncFrequency":   "30",
-			"eventDelivery":   false,
-			"eventDeliveryTS": 1648195480174,
+
+	testCases := []struct {
+		name        string
+		useLegacy   bool
+		destination backendconfig.DestinationT
+	}{
+		{
+			name: "Native",
+			destination: backendconfig.DestinationT{
+				ID: "36H5EpYzojqQSepRSaGBrrPx3e4",
+				Config: map[string]interface{}{
+					"host":            configurations["deltalakeNativeHost"],
+					"port":            configurations["deltalakeNativePort"],
+					"path":            configurations["deltalakeNativePath"],
+					"token":           configurations["deltalakeNativeToken"],
+					"namespace":       configurations["deltalakeNativeNamespace"],
+					"bucketProvider":  "AZURE_BLOB",
+					"containerName":   configurations["deltalakeNativeContainerName"],
+					"prefix":          "",
+					"useSTSTokens":    false,
+					"enableSSE":       false,
+					"accountName":     configurations["deltalakeNativeAccountName"],
+					"accountKey":      configurations["deltalakeNativeAccountKey"],
+					"syncFrequency":   "30",
+					"eventDelivery":   false,
+					"eventDeliveryTS": 1648195480174,
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "23HLpnDJnIg7DsBvDWGU6DQzFEo",
+					Name:        "DELTALAKE",
+					DisplayName: "Databricks (Delta Lake)",
+				},
+				Name:       "deltalake-native-demo",
+				Enabled:    true,
+				RevisionID: "39eClxJQQlaWzMWyqnQctFDP5T2",
+			},
+			useLegacy: false,
 		},
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			ID:          "23HLpnDJnIg7DsBvDWGU6DQzFEo",
-			Name:        "DELTALAKE",
-			DisplayName: "Databricks (Delta Lake)",
+		{
+			name: "Legacy",
+			destination: backendconfig.DestinationT{
+				ID: "25IDjdnoEus6DDNrth3SWO1FOpu",
+				Config: map[string]interface{}{
+					"host":            configurations["deltalakeHost"],
+					"port":            configurations["deltalakePort"],
+					"path":            configurations["deltalakePath"],
+					"token":           configurations["deltalakeToken"],
+					"namespace":       configurations["deltalakeNamespace"],
+					"bucketProvider":  "AZURE_BLOB",
+					"containerName":   configurations["deltalakeContainerName"],
+					"prefix":          "",
+					"useSTSTokens":    false,
+					"enableSSE":       false,
+					"accountName":     configurations["deltalakeAccountName"],
+					"accountKey":      configurations["deltalakeAccountKey"],
+					"syncFrequency":   "30",
+					"eventDelivery":   false,
+					"eventDeliveryTS": 1648195480174,
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "23HLpnDJnIg7DsBvDWGU6DQzFEo",
+					Name:        "DELTALAKE",
+					DisplayName: "Databricks (Delta Lake)",
+				},
+				Name:       "deltalake-demo",
+				Enabled:    true,
+				RevisionID: "29eClxJQQlaWzMWyqnQctFDP5T2",
+			},
+			useLegacy: true,
 		},
-		Name:       "deltalake-demo",
-		Enabled:    true,
-		RevisionID: "29eClxJQQlaWzMWyqnQctFDP5T2",
 	}
-	testhelper.VerifyConfigurationTest(t, destination)
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			subTestCases := []struct {
+				name                string
+				useParquetLoadFiles bool
+			}{
+				{
+					name:                "Parquet load files",
+					useParquetLoadFiles: true,
+				},
+				{
+					name:                "CSV load files",
+					useParquetLoadFiles: false,
+				},
+			}
+			for _, stc := range subTestCases {
+				stc := stc
+
+				t.Run(tc.name+" "+stc.name, func(t *testing.T) {
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: strconv.FormatBool(stc.useParquetLoadFiles),
+						},
+						{
+							Key:   "Warehouse.deltalake.useLegacy",
+							Value: strconv.FormatBool(tc.useLegacy),
+						},
+					})
+
+					testhelper.VerifyConfigurationTest(t, tc.destination)
+				})
+			}
+		})
+	}
 }
 
 func mergeEventsMap() testhelper.EventsCountMap {

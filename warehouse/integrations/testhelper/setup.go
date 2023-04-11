@@ -860,6 +860,7 @@ func PopulateTemplateConfigurations() map[string]string {
 		"snowflakeRBACWriteKey":          "2eSafstqwcFYUILzXv2fcNIrWO7",
 		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
+		"deltalakeNativeWriteKey":        "dasFgoilA0U1WxNeW1gdgUVDfas",
 
 		"postgresSourcesWriteKey":  "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
 		"mssqlSourcesWriteKey":     "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
@@ -933,9 +934,11 @@ func enhanceWithDeltalakeConfigurations(values map[string]string) {
 
 	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("deltalake%s", k)] = v
+		values[fmt.Sprintf("deltalakeNative%s", k)] = v
 	}
 
 	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
+	values["deltalakeNativeNamespace"] = fmt.Sprintf("%s_%s", values["deltalakeNamespace"], "native")
 }
 
 func enhanceWithBQConfigurations(values map[string]string) {

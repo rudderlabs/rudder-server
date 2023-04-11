@@ -139,7 +139,7 @@ type Deltalake struct {
 }
 
 func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake-native")
 }
 
 func NewDeltalake() *Deltalake {
