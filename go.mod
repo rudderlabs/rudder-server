@@ -33,7 +33,7 @@ require (
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dgraph-io/badger/v3 v3.2103.5
-	github.com/docker/docker v20.10.21+incompatible
+	github.com/docker/docker v20.10.24+incompatible
 	github.com/go-chi/chi/v5 v5.0.8
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -65,7 +65,7 @@ require (
 	github.com/prometheus/common v0.42.0
 	github.com/rs/cors v1.8.3
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
-	github.com/rudderlabs/rudder-go-kit v0.11.0
+	github.com/rudderlabs/rudder-go-kit v0.11.1
 	github.com/rudderlabs/sql-tunnels v0.1.2
 	github.com/samber/lo v1.37.0
 	github.com/segmentio/kafka-go v0.4.38

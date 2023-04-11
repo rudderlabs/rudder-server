@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/ory/dockertest/v3"
@@ -24,7 +23,6 @@ func Test_Pulsar(t *testing.T) {
 		counter          uint32
 	)
 	pulsarContainer := PulsarResource(t)
-	time.Sleep(10 * time.Second)
 
 	conf := config.New()
 	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
