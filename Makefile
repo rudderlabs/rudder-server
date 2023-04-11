@@ -116,3 +116,7 @@ run-warehouse-integration: setup-warehouse-integration
       	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi
+
+.PHONY: bench-kafka
+bench-kafka:
+	go test -count 1 -run BenchmarkCompression -bench=. -benchmem ./services/streammanager/kafka/client
