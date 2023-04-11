@@ -719,6 +719,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
+				// Essential for event-filtering using connectionMode
+				source.FillSourceType()
 				writeKeySourceMap[source.WriteKey] = *source
 				if source.Enabled {
 					writeKeyDestinationMap[source.WriteKey] = source.Destinations
@@ -1503,6 +1505,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
+			source, srcGetErr := proc.getSourceByWriteKey(writeKey)
+			if srcGetErr != nil {
+				// Do Nothing for now!
+			}
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
@@ -1510,6 +1516,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					singularEvent,
 					proc.getEnabledDestinations(writeKey, *destType),
 				)
+				// Additional filteration based on connectionMode
+				enabledDestinationsList = lo.Filter(enabledDestinationsList, func(destination backendconfig.DestinationT, _ int) bool {
+					return destination.AllowEventToDestination(source, singularEvent)
+				})
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range enabledDestinationsList {
 					destination := &enabledDestinationsList[idx]

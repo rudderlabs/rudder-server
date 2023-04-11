@@ -22,10 +22,12 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/samber/lo"
 )
 
 var (
@@ -415,4 +417,179 @@ func (bc *backendConfigImpl) Identity() identity.Identifier {
 		return bc.workspaceConfig.Identity()
 	}
 	return result
+}
+
+/*
+Lets the caller know if the event is allowed to flow through server for a `specific destination`
+Introduced to support hybrid-mode, cloud-mode in a more scalable way
+
+The template inside `destinationDefinition.Config.supportedConnectionModes` would look like this
+```
+
+	[connectionMode]: {
+		[sourceType]: {
+			[eventProperty]: [...supportedEventPropertyValues]
+		}
+	}
+
+```
+
+Example:
+
+	{
+		...
+		"supportConnectionMode": {
+	    "device": {
+				"web": {
+					"messageType": ["track", "page"]
+				},
+				"cloud": {
+					"messageType": ["default"]
+				},
+				"cordova":{
+					"messageType": ["screen", "page"]
+				}
+			},
+		  "hybrid": {
+				"web": {
+					"messageType": ["track", "page", "screen"]
+				},
+				"ios": {
+					"messageType": ["track","page", "screen"]
+				}
+			},
+	  },
+		...
+	}
+*/
+func (destination *DestinationT) AllowEventToDestination(source *SourceT, event types.SingularEventT) bool {
+	// We are setting this value through logic in rudder-server
+	// Ideally we need to send this information from config-backend itself
+	srcType := source.SourceDefinition.Type
+
+	// Event-Type default check
+	eventTypeI := misc.MapLookup(event, "type")
+	if eventTypeI == nil {
+		// TODO: Need to think through if this condition is correct
+		pkgLogger.Error("Event type is not being sent for the event")
+		return false
+	}
+	eventType, isEventTypeString := eventTypeI.(string)
+	if !isEventTypeString {
+		// Seems like it makes sense!
+		pkgLogger.Errorf("Given event type :%v, cannot be casted to string", eventTypeI)
+		return false
+	}
+	isSupportedMsgType := evaluateSupportedTypes(destination.DestinationDefinition.Config, "supportedMessageTypes", eventType)
+
+	// Default behavior
+	// When something is missing in "supportedConnectionModes" or if "supportedConnectionModes" is not defined
+	// We would be checking for below things
+	// 1. Check if the event.type value is present in destination.Config["supportedMessageTypes"]
+	// 2. Check if the connectionMode of destination is cloud or hybrid(evaluated through `IsProcessorEnabled`)
+	// Only when 1 & 2 are true, we would allow the event to flow through to server
+	evaluatedDefaultBehaviour := isSupportedMsgType && destination.IsProcessorEnabled
+
+	/*
+		In future(near one) this will not be a string but rather an object
+		For every connection made to destination, we would basically have
+		```
+		{
+			connectionMode: {
+				[srcType]: oneof[cloud, hybrid, device]
+			}
+		}
+
+		```
+		Example
+		{
+			...
+			"connectionMode": {
+				"web": "", // one of cloud, hybrid or device
+				"cordova": "", // one of cloud, hybrid or device
+				"python": "", // one of cloud, hybrid or device
+				"cloud": "" // one of cloud, hybrid or device
+			}
+			...
+		}
+	*/
+	// New logic for evaluating "connectionMode"
+	// var destConnModeI interface{}
+	// for _, val := range []string{srcType, strings.ToLower(source.SourceDefinition.Name)} {
+	// 	destConnModeI = misc.MapLookup(destination.Config, "connectionMode", val)
+	// 	if destConnModeI != nil {
+	// 		break
+	// 	}
+	// }
+	// if destConnModeI == nil {
+	// 	return evaluatedDefaultBehaviour
+	// }
+	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
+	if destConnModeI == nil {
+		return evaluatedDefaultBehaviour
+	}
+	destConnectionMode, isDestConnModeMapOfString := destConnModeI.(string)
+	if !isDestConnModeMapOfString {
+		pkgLogger.Errorf("Given destination connection mode :%v, cannot be casted to string", destConnModeI)
+		return false
+	}
+
+	supportedConnectionModesI, connModesOk := destination.DestinationDefinition.Config["supportedConnectionModes"]
+	if !connModesOk {
+		// Probably the "supportedConnectionModes" key is not present, so we rely on Default behaviour
+		return evaluatedDefaultBehaviour
+	}
+	supportedConnectionModes := supportedConnectionModesI.(map[string]interface{})
+
+	supportedEventPropsMapI := misc.MapLookup(supportedConnectionModes, destConnectionMode, srcType)
+	if supportedEventPropsMapI == nil {
+		// Most probably sourceType would not be present in "supportedConnectionModes"
+		// Might also occur when destination connection mode is not provided in "supportedConnectionModes"
+		return evaluatedDefaultBehaviour
+	}
+	supportedEventPropsMap := supportedEventPropsMapI.(map[string]interface{})
+	// Flag indicating to let the event pass through
+	allowEvent := true
+	for eventProperty, supportedEventVals := range supportedEventPropsMap {
+		if !allowEvent {
+			allowEvent = evaluatedDefaultBehaviour
+			break
+		}
+		switch eventProperty {
+		case "messageType":
+			supportedVals := ConvertToArrayOfType[string](supportedEventVals)
+			// TODO: Should remove this
+			pkgLogger.Infof("SupportedVals: %v -- EventType from event: %v\n", supportedVals, eventType)
+			allowEvent = lo.Contains(supportedVals, eventType) && evaluatedDefaultBehaviour
+		}
+	}
+	return allowEvent
+}
+
+func evaluateSupportedTypes[T comparable](destConfig map[string]interface{}, evalKey string, checkValue T) bool {
+	if !lo.Contains([]string{"supportedMessageTypes"}, evalKey) {
+		return false
+	}
+	supportedValsI := misc.MapLookup(destConfig, evalKey)
+	if supportedValsI == nil {
+		return false
+	}
+	supportedVals := ConvertToArrayOfType[T](supportedValsI)
+	return lo.Contains(supportedVals, checkValue)
+}
+
+func ConvertToArrayOfType[R any](valsI interface{}) []R {
+	valuesArrI, ok := valsI.([]interface{})
+	if !ok {
+		return []R{}
+	}
+	convertedVals := make([]R, len(valuesArrI))
+	for i, v := range valuesArrI {
+		if val, ok := v.(R); ok {
+			convertedVals[i] = val
+		} else {
+			return []R{}
+		}
+	}
+	return convertedVals
 }
