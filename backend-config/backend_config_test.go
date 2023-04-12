@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	serverUtilsTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -594,4 +595,613 @@ func (m *mockIdentifier) BasicAuth() (string, string) {
 
 func (*mockIdentifier) Type() deployment.Type {
 	return deployment.Type(`mockType`)
+}
+
+func TestFilterConditions(t *testing.T) {
+	type TestDestinationT struct {
+		ID                 string
+		IsProcessorEnabled bool
+		DefinitionID       string
+		DefinitionConfig   map[string]interface{}
+		Config             map[string]interface{}
+	}
+
+	type TestSourceT struct {
+		Name          string
+		ID            string
+		SourceDefType string
+	}
+
+	type FilterConditionT struct {
+		Destination TestDestinationT
+		Source      TestSourceT
+		Event       serverUtilsTypes.SingularEventT
+	}
+
+	type TestCaseT struct {
+		CaseName string
+		Input    FilterConditionT
+		Expected bool
+	}
+
+	testCases := []TestCaseT{
+		{
+			CaseName: "when mode is cloud for web srcType if track event is sent, return true",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "1",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID: "1DefId",
+					Config: map[string]interface{}{
+						"connectionMode": map[string]interface{}{
+							"web": "cloud",
+						},
+					},
+					IsProcessorEnabled: true,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			Expected: true,
+		},
+		{
+			CaseName: "when mode is cloud for web srcType if identify event is sent, return false",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "2",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID: "1DefId",
+					Config: map[string]interface{}{
+						"connectionMode": map[string]interface{}{
+							"web": "cloud",
+						},
+					},
+					IsProcessorEnabled: true,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "identify",
+				},
+			},
+			Expected: false,
+		},
+		{
+			CaseName: "when mode is device for web srcType if track event is sent, return false",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "3",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID: "1DefId",
+					Config: map[string]interface{}{
+						"connectionMode": map[string]interface{}{
+							"web": "cloud",
+						},
+					},
+					IsProcessorEnabled: false,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			Expected: false,
+		},
+		{
+			CaseName: "when mode is hybrid for web srcType if page event is sent, return false",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "4",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID: "1DefId",
+					Config: map[string]interface{}{
+						"connectionMode": map[string]interface{}{
+							"web": "hybrid",
+						},
+					},
+					IsProcessorEnabled: true,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "page",
+				},
+			},
+			Expected: false,
+		},
+		{
+			CaseName: "when mode is hybrid for web srcType if track event is sent, return true",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "5",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID: "1DefId",
+					Config: map[string]interface{}{
+						"connectionMode": map[string]interface{}{
+							"web": "cloud",
+						},
+					},
+					IsProcessorEnabled: true,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			Expected: true,
+		},
+		{
+			CaseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to true, if track event is sent, return true",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "6",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID:       "1DefId",
+					Config:             map[string]interface{}{},
+					IsProcessorEnabled: true,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			Expected: true,
+		},
+		{
+			CaseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to false, if track event is sent, return false",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "7",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID:       "1DefId",
+					Config:             map[string]interface{}{},
+					IsProcessorEnabled: false,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			Expected: false,
+		},
+		{
+			CaseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to true, if identify event is sent, return false",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "8",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID:       "1DefId",
+					Config:             map[string]interface{}{},
+					IsProcessorEnabled: false,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "identify",
+				},
+			},
+			Expected: false,
+		},
+		{
+			CaseName: "when connectionMode is cloud for web srcType, supportedConnectionModes.cloud.web is empty map, isProcessorEnabled is true & track event is sent, return true",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "9",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID: "1DefId",
+					Config: map[string]interface{}{
+						"connectionMode": map[string]interface{}{
+							"web": "cloud",
+						},
+					},
+					IsProcessorEnabled: true,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			Expected: true,
+		},
+		{
+			CaseName: "when connectionMode is cloud for web srcType, supportedConnectionModes.cloud.web is empty map, isProcessorEnabled is false & track event is sent, return false",
+			Input: FilterConditionT{
+				Destination: TestDestinationT{
+					ID: "10",
+					DefinitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud": map[string]interface{}{
+								"web": map[string]interface{}{},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"cordova": map[string]interface{}{
+									"messageType": []string{"identify"},
+								},
+							},
+							"hybrid": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "group"},
+								},
+							},
+							"device": map[string]interface{}{
+								"web": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"ios": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+								"android": map[string]interface{}{
+									"messageType": []string{"track", "page", "group"},
+								},
+							},
+						},
+					},
+					DefinitionID: "1DefId",
+					Config: map[string]interface{}{
+						"connectionMode": map[string]interface{}{
+							"web": "cloud",
+						},
+					},
+					IsProcessorEnabled: false,
+				},
+				Source: TestSourceT{
+					Name:          "demo-source",
+					ID:            "1src",
+					SourceDefType: "web",
+				},
+				Event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			Expected: false,
+		},
+	}
+	destination := &DestinationT{
+		ID:   "1",
+		Name: "GA4-demo",
+		DestinationDefinition: DestinationDefinitionT{
+			ID:     "acpo9i",
+			Name:   "GA4",
+			Config: map[string]interface{}{},
+		},
+		Config: map[string]interface{}{},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.CaseName, func(t *testing.T) {
+			// Setting test-case values to some default values for destination
+			destination.Config = testCase.Input.Destination.Config
+			destination.DestinationDefinition.Config = testCase.Input.Destination.DefinitionConfig
+			destination.DestinationDefinition.ID = testCase.Input.Destination.DefinitionID
+			destination.ID = testCase.Input.Destination.ID
+			destination.IsProcessorEnabled = testCase.Input.Destination.IsProcessorEnabled
+
+			// Setting test-case values for source
+			source := &SourceT{
+				ID: testCase.Input.Source.ID,
+				SourceDefinition: SourceDefinitionT{
+					ID:   "src1",
+					Type: testCase.Input.Source.SourceDefType,
+				},
+			}
+
+			actualOutput := destination.AllowEventToDestination(source, testCase.Input.Event)
+
+			require.Equal(t, testCase.Expected, actualOutput)
+		})
+	}
+
 }

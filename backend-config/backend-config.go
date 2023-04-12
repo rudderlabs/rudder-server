@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -505,17 +506,14 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 		}
 	*/
 	// New logic for evaluating "connectionMode"
-	// var destConnModeI interface{}
-	// for _, val := range []string{srcType, strings.ToLower(source.SourceDefinition.Name)} {
-	// 	destConnModeI = misc.MapLookup(destination.Config, "connectionMode", val)
-	// 	if destConnModeI != nil {
-	// 		break
-	// 	}
-	// }
-	// if destConnModeI == nil {
-	// 	return evaluatedDefaultBehaviour
-	// }
-	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
+	var destConnModeI interface{}
+	for _, val := range []string{srcType, strings.ToLower(source.SourceDefinition.Name)} {
+		destConnModeI = misc.MapLookup(destination.Config, "connectionMode", val)
+		if destConnModeI != nil {
+			break
+		}
+	}
+	// destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
 	if destConnModeI == nil {
 		return evaluatedDefaultBehaviour
 	}
@@ -540,7 +538,7 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 	}
 	supportedEventPropsMap := supportedEventPropsMapI.(map[string]interface{})
 	// Flag indicating to let the event pass through
-	allowEvent := true
+	allowEvent := evaluatedDefaultBehaviour
 	for eventProperty, supportedEventVals := range supportedEventPropsMap {
 		if !allowEvent {
 			allowEvent = evaluatedDefaultBehaviour
@@ -570,17 +568,9 @@ func evaluateSupportedTypes[T comparable](destConfig map[string]interface{}, eva
 }
 
 func ConvertToArrayOfType[R any](valsI interface{}) []R {
-	valuesArrI, ok := valsI.([]interface{})
+	valuesArrI, ok := valsI.([]R)
 	if !ok {
 		return []R{}
 	}
-	convertedVals := make([]R, len(valuesArrI))
-	for i, v := range valuesArrI {
-		if val, ok := v.(R); ok {
-			convertedVals[i] = val
-		} else {
-			return []R{}
-		}
-	}
-	return convertedVals
+	return valuesArrI
 }
