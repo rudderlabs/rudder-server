@@ -78,7 +78,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)

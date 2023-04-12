@@ -431,7 +431,6 @@ type HandleT struct {
 	logger                        logger.Logger
 	writeCapacity                 chan struct{}
 	readCapacity                  chan struct{}
-	registerStatusHandler         bool
 	enableWriterQueue             bool
 	enableReaderQueue             bool
 	preciseActiveWsQuery          bool
@@ -651,12 +650,6 @@ func WithClearDB(clearDB bool) OptsFunc {
 	}
 }
 
-func WithStatusHandler() OptsFunc {
-	return func(jd *HandleT) {
-		jd.registerStatusHandler = true
-	}
-}
-
 // WithPreBackupHandlers, sets pre-backup handlers
 func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 	return func(jd *HandleT) {
@@ -711,12 +704,11 @@ multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
 	ownerType OwnerType, clearAll bool, tablePrefix string,
-	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
+	preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
-	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
 	jd.fileUploaderProvider = fileUploaderProvider
 	jd.init()
