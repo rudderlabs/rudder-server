@@ -544,8 +544,7 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 			allowEvent = evaluatedDefaultBehaviour
 			break
 		}
-		switch eventProperty {
-		case "messageType":
+		if eventProperty == "messageType" {
 			supportedVals := ConvertToArrayOfType[string](supportedEventVals)
 			pkgLogger.Debugf("SupportedVals: %v -- EventType from event: %v\n", supportedVals, eventType)
 			allowEvent = lo.Contains(supportedVals, eventType) && evaluatedDefaultBehaviour
