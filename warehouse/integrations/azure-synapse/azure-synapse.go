@@ -28,8 +28,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.Logger
-
 const (
 	host     = "host"
 	dbName   = "database"
@@ -115,9 +113,9 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewAzureSynapse() *AzureSynapse {
+func NewAzureSynapse(logger logger.Logger) *AzureSynapse {
 	return &AzureSynapse{
-		Logger: pkgLogger,
+		Logger: logger.Child("azure_synapse"),
 	}
 }
 
@@ -142,8 +140,7 @@ func connect(cred credentials) (*sql.DB, error) {
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.port)
 	if err != nil {
-		pkgLogger.Errorf("Error parsing synapse connection port : %v", err)
-		return nil, err
+		return nil, fmt.Errorf("invalid port: %w", err)
 	}
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
@@ -157,10 +154,6 @@ func connect(cred credentials) (*sql.DB, error) {
 		return nil, fmt.Errorf("synapse connection error : (%v)", err)
 	}
 	return db, nil
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("synapse")
 }
 
 func (as *AzureSynapse) getConnectionCredentials() credentials {
@@ -559,7 +552,7 @@ func (as *AzureSynapse) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');
 `, as.Namespace, as.Namespace)
-	pkgLogger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	as.Logger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
 	_, err = as.DB.Exec(sqlStatement)
 	if err == io.EOF {
 		return nil

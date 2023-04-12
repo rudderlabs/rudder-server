@@ -36,8 +36,6 @@ func TestIntegrationSnowflake(t *testing.T) {
 
 	t.Parallel()
 
-	snowflake.Init()
-
 	credentials, err := testhelper.SnowflakeCredentials(testhelper.SnowflakeIntegrationTestCredentials)
 	require.NoError(t, err)
 
@@ -214,7 +212,6 @@ func TestConfigurationValidationSnowflake(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	snowflake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

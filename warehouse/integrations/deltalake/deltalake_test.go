@@ -49,12 +49,10 @@ func TestIntegrationDeltalake(t *testing.T) {
 
 	t.Parallel()
 
-	deltalake.Init()
-
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
 
-	dl := deltalake.NewDeltalake()
+	dl := deltalake.NewDeltalake(logger.NOP)
 	deltalake.WithConfig(dl, config.Default)
 
 	db, err := dl.NewClient(&credentials, 0)
@@ -216,7 +214,6 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	deltalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
@@ -420,7 +417,7 @@ func TestDeltalake_CreateTable(t *testing.T) {
 				executeRes: tc.mockExecuteRes,
 			}
 
-			dl := deltalake.NewDeltalake()
+			dl := deltalake.NewDeltalake(logger.NOP)
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = model.Warehouse{
@@ -503,7 +500,7 @@ func TestDeltalake_CreateSchema(t *testing.T) {
 				schemasRes: tc.mockSchemasRes,
 			}
 
-			dl := deltalake.NewDeltalake()
+			dl := deltalake.NewDeltalake(logger.NOP)
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = model.Warehouse{
@@ -583,7 +580,7 @@ func TestDeltalake_DropTable(t *testing.T) {
 				executeRes: tc.mockExecuteRes,
 			}
 
-			dl := deltalake.NewDeltalake()
+			dl := deltalake.NewDeltalake(logger.NOP)
 			dl.Namespace = namespace
 			dl.Warehouse = model.Warehouse{
 				Type:        "test-type",
@@ -665,7 +662,7 @@ func TestDeltalake_AddColumns(t *testing.T) {
 				executeRes: tc.mockExecuteRes,
 			}
 
-			dl := deltalake.NewDeltalake()
+			dl := deltalake.NewDeltalake(logger.NOP)
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = model.Warehouse{
@@ -741,7 +738,7 @@ func TestDeltalake_GetTotalCountInTable(t *testing.T) {
 				totalCountInTableRes: tc.totalCountInTableRes,
 			}
 
-			dl := deltalake.NewDeltalake()
+			dl := deltalake.NewDeltalake(logger.NOP)
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = model.Warehouse{
@@ -808,7 +805,6 @@ func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 }
 
 func TestDeltalake_LoadTable(t *testing.T) {
-	deltalake.Init()
 	warehouseutils.Init()
 	encoding.Init()
 	misc.Init()
@@ -1031,7 +1027,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 			conf.Set("Warehouse.deltalake.loadTableStrategy", tc.loadTableStrategy)
 			conf.Set("Warehouse.deltalake.enablePartitionPruning", tc.partitionPruning)
 
-			dl := deltalake.NewDeltalake()
+			dl := deltalake.NewDeltalake(logger.NOP)
 			deltalake.WithConfig(dl, conf)
 
 			namespace := namespace
@@ -1122,7 +1118,7 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 			conf := config.New()
 			conf.Set("Warehouse.deltalake.loadTableStrategy", tc.loadTableStrategy)
 
-			dl := deltalake.NewDeltalake()
+			dl := deltalake.NewDeltalake(logger.NOP)
 			deltalake.WithConfig(dl, conf)
 
 			dl.Namespace = namespace
@@ -1207,7 +1203,7 @@ func TestDeltalake_LoadTestTable(t *testing.T) {
 				mockError: tc.mockClientError,
 			}
 
-			dl := deltalake.NewDeltalake()
+			dl := deltalake.NewDeltalake(logger.NOP)
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = model.Warehouse{

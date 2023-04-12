@@ -54,7 +54,6 @@ const (
 )
 
 var (
-	pkgLogger                    logger.Logger
 	clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 )
 
@@ -216,10 +215,6 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 	}
 }
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
-}
-
 // ConnectToClickhouse connects to clickhouse with provided credentials
 func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
 	dsn := url.URL{
@@ -261,9 +256,9 @@ func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool
 	return db, nil
 }
 
-func NewClickhouse() *Clickhouse {
+func NewClickhouse(logger logger.Logger) *Clickhouse {
 	return &Clickhouse{
-		Logger: pkgLogger,
+		Logger: logger.Child("clickhouse"),
 	}
 }
 

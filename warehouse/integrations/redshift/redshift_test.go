@@ -3,6 +3,7 @@ package redshift_test
 import (
 	"errors"
 	"fmt"
+	logger2 "github.com/rudderlabs/rudder-go-kit/logger"
 	"os"
 	"strings"
 	"testing"
@@ -38,8 +39,6 @@ func TestIntegrationRedshift(t *testing.T) {
 	}
 
 	t.Parallel()
-
-	redshift.Init()
 
 	var (
 		jobsDB        = testhelper.SetUpJobsDB(t)
@@ -157,7 +156,6 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	redshift.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
@@ -259,7 +257,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
-			rs := redshift.NewRedshift()
+			rs := redshift.NewRedshift(logger2.NOP)
 			redshift.WithConfig(rs, config.Default)
 
 			rs.DB = pgResource.DB

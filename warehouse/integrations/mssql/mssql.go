@@ -30,8 +30,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.Logger
-
 const (
 	host     = "host"
 	dbName   = "database"
@@ -124,9 +122,9 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-func NewMSSQL() *MSSQL {
+func NewMSSQL(logger logger.Logger) *MSSQL {
 	return &MSSQL{
-		Logger: pkgLogger,
+		Logger: logger.Child("mssql"),
 	}
 }
 
@@ -154,8 +152,7 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
-		pkgLogger.Errorf("Error parsing mssql connection port : %v", err)
-		return nil, err
+		return nil, fmt.Errorf("invalid port: %w", err)
 	}
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
@@ -171,10 +168,6 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	}
 
 	return db, nil
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("mssql")
 }
 
 func (ms *MSSQL) getConnectionCredentials() Credentials {
