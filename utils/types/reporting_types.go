@@ -95,6 +95,8 @@ type ConnectionDetails struct {
 	SourceDefinitionId      string `json:"sourceDefinitionId"`
 	DestinationDefinitionId string `string:"destinationDefinitionId"`
 	SourceCategory          string `json:"sourceCategory"`
+	TransformationId        string `json:"transformationId"`
+	TransformationVersionId string `json:"transformationVersionId"`
 	TrackingPlanId          string `json:"trackingPlanId"`
 	TrackingPlanVersion     int    `json:"trackingPlanVersion"`
 }
@@ -111,7 +113,7 @@ type PUReportedMetric struct {
 	StatusDetail *StatusDetail
 }
 
-func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc, tpid string, tpv int) *ConnectionDetails {
+func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc, trid, trvid, tpid string, tpv int) *ConnectionDetails {
 	return &ConnectionDetails{
 		SourceID:                sid,
 		DestinationID:           did,
@@ -121,6 +123,8 @@ func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc, tpid s
 		SourceDefinitionId:      sdid,
 		DestinationDefinitionId: ddid,
 		SourceCategory:          sc,
+		TransformationId:        trid,
+		TransformationVersionId: trvid,
 		TrackingPlanId:          tpid,
 		TrackingPlanVersion:     tpv,
 	}

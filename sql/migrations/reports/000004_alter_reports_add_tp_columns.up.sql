@@ -1,4 +1,6 @@
 ALTER TABLE reports
+ADD COLUMN IF NOT EXISTS transformation_id TEXT DEFAULT '',
+ADD COLUMN IF NOT EXISTS transformation_version_id TEXT DEFAULT '',
 ADD COLUMN IF NOT EXISTS tracking_plan_id TEXT DEFAULT '',
 ADD COLUMN IF NOT EXISTS tracking_plan_version INT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS error_type TEXT DEFAULT '',

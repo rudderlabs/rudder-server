@@ -217,7 +217,7 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 		return nil, 0
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
+	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement)
@@ -240,6 +240,8 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 			&metricReport.ConnectionDetails.SourceTaskRunID,
 			&metricReport.ConnectionDetails.SourceJobID,
 			&metricReport.ConnectionDetails.SourceJobRunID,
+			&metricReport.ConnectionDetails.TransformationId,
+			&metricReport.ConnectionDetails.TransformationVersionId,
 			&metricReport.ConnectionDetails.TrackingPlanId,
 			&metricReport.ConnectionDetails.TrackingPlanVersion,
 			&metricReport.PUDetails.InPU, &metricReport.PUDetails.PU,
@@ -272,6 +274,8 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 			report.ConnectionDetails.SourceTaskRunID,
 			report.ConnectionDetails.SourceJobID,
 			report.ConnectionDetails.SourceJobRunID,
+			report.ConnectionDetails.TransformationId,
+			report.ConnectionDetails.TransformationVersionId,
 			report.ConnectionDetails.TrackingPlanId,
 			fmt.Sprint(report.ConnectionDetails.TrackingPlanVersion),
 			report.PUDetails.InPU, report.PUDetails.PU,
@@ -300,6 +304,8 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 					SourceTaskRunID:         report.SourceTaskRunID,
 					SourceJobID:             report.SourceJobID,
 					SourceJobRunID:          report.SourceJobRunID,
+					TransformationId:        report.TransformationId,
+					TransformationVersionId: report.TransformationVersionId,
 					TrackingPlanId:          report.TrackingPlanId,
 					TrackingPlanVersion:     report.TrackingPlanVersion,
 				},
@@ -448,7 +454,7 @@ func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, client
 		httpRequestStart := time.Now()
 		resp, err := netClient.Do(req)
 		if err != nil {
-			r.log.Error(err.Error())
+			// r.log.Error(err.Error())
 			return err
 		}
 
@@ -472,7 +478,7 @@ func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, client
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		r.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
+		// r.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
 	})
 	if err != nil {
 		r.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
@@ -533,6 +539,8 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 		"source_task_run_id",
 		"source_job_id",
 		"source_job_run_id",
+		"transformation_id",
+		"transformation_version_id",
 		"tracking_plan_id",
 		"tracking_plan_version",
 		"in_pu", "pu",
@@ -569,6 +577,8 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 			metric.ConnectionDetails.SourceTaskRunID,
 			metric.ConnectionDetails.SourceJobID,
 			metric.ConnectionDetails.SourceJobRunID,
+			metric.ConnectionDetails.TransformationId,
+			metric.ConnectionDetails.TransformationVersionId,
 			metric.ConnectionDetails.TrackingPlanId,
 			metric.ConnectionDetails.TrackingPlanVersion,
 			metric.PUDetails.InPU, metric.PUDetails.PU,

@@ -216,6 +216,8 @@ type MetricMetadata struct {
 	sourceDefinitionID      string
 	destinationDefinitionID string
 	sourceCategory          string
+	transformationId        string
+	transformationVersionId string
 	trackingPlanId          string
 	trackingPlanVersion     int
 }
@@ -1046,16 +1048,20 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
 					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
 					sourceCategory:          event.Metadata.SourceCategory,
+					transformationId:        event.Metadata.TransformationId,
+					transformationVersionId: event.Metadata.TransformationVersionId,
 					trackingPlanId:          event.Metadata.TrackingPlanId,
 					trackingPlanVersion:     event.Metadata.TrackingPlanVersion,
 				}
 			}
 		}
 
-		key := fmt.Sprintf("%s:%s:%s:%s:%d:%s:%d:%s:%s",
+		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%d:%s:%d:%s:%s",
 			event.Metadata.SourceID,
 			event.Metadata.DestinationID,
 			event.Metadata.SourceJobRunID,
+			event.Metadata.TransformationId,
+			event.Metadata.TransformationVersionId,
 			event.Metadata.TrackingPlanId,
 			event.Metadata.TrackingPlanVersion,
 			status, event.StatusCode,
@@ -1073,6 +1079,8 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 				event.Metadata.SourceDefinitionID,
 				event.Metadata.DestinationDefinitionID,
 				event.Metadata.SourceCategory,
+				event.Metadata.TransformationId,
+				event.Metadata.TransformationVersionId,
 				event.Metadata.TrackingPlanId,
 				event.Metadata.TrackingPlanVersion,
 			)
@@ -1308,7 +1316,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 		if diff != 0 {
 			metricMetadata := inCountMetadataMap[key]
 			metric := &types.PUReportedMetric{
-				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory, metricMetadata.trackingPlanId, metricMetadata.trackingPlanVersion),
+				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory, metricMetadata.transformationId, metricMetadata.transformationVersionId, metricMetadata.trackingPlanId, metricMetadata.trackingPlanVersion),
 				PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
 				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, 0, "", []byte(`{}`), eventName, eventType, ""),
 			}
@@ -1986,6 +1994,11 @@ func (proc *Handle) transformSrcDest(
 		inCountMetadataMap = make(map[string]MetricMetadata)
 		for i := range eventList {
 			event := &eventList[i]
+			// enrich event metadata with transformation details if transformation is enabled
+			if transformationEnabled {
+				event.Metadata.TransformationId = destination.Transformations[0].ID
+				event.Metadata.TransformationVersionId = destination.Transformations[0].VersionID
+			}
 			key := strings.Join([]string{
 				event.Metadata.SourceID,
 				event.Metadata.DestinationID,
@@ -1997,7 +2010,20 @@ func (proc *Handle) transformSrcDest(
 				inCountMap[key] = 0
 			}
 			if _, ok := inCountMetadataMap[key]; !ok {
-				inCountMetadataMap[key] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID, sourceDefinitionID: event.Metadata.SourceDefinitionID, destinationDefinitionID: event.Metadata.DestinationDefinitionID, sourceCategory: event.Metadata.SourceCategory}
+				inCountMetadataMap[key] = MetricMetadata{
+					sourceID:                event.Metadata.SourceID,
+					destinationID:           event.Metadata.DestinationID,
+					sourceTaskRunID:         event.Metadata.SourceTaskRunID,
+					sourceJobID:             event.Metadata.SourceJobID,
+					sourceJobRunID:          event.Metadata.SourceJobRunID,
+					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
+					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
+					sourceCategory:          event.Metadata.SourceCategory,
+					transformationId:        event.Metadata.TransformationId,
+					transformationVersionId: event.Metadata.TransformationVersionId,
+					trackingPlanId:          event.Metadata.TrackingPlanId,
+					trackingPlanVersion:     event.Metadata.TrackingPlanVersion,
+				}
 			}
 			inCountMap[key] = inCountMap[key] + 1
 		}
