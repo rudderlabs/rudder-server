@@ -51,6 +51,7 @@ type config struct {
 	saslConfig                 *SASLConfig
 	network                    *dc.Network
 	dontUseDockerHostListeners bool
+	customAdvertisedListener   string
 	useSchemaRegistry          bool
 }
 
@@ -110,6 +111,13 @@ func WithNetwork(network *dc.Network) Option {
 func WithoutDockerHostListeners() Option {
 	return withOption{setup: func(c *config) {
 		c.dontUseDockerHostListeners = true
+	}}
+}
+
+// WithCustomAdvertisedListener allows to set a custom advertised listener
+func WithCustomAdvertisedListener(listener string) Option {
+	return withOption{setup: func(c *config) {
+		c.customAdvertisedListener = listener
 	}}
 }
 
@@ -329,6 +337,10 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 		if c.dontUseDockerHostListeners {
 			nodeEnvVars = append(nodeEnvVars, "KAFKA_CFG_ADVERTISED_LISTENERS="+fmt.Sprintf(
 				"INTERNAL://%s:9090,CLIENT://%s:%s", hostname, hostname, kafkaClientPort,
+			))
+		} else if c.customAdvertisedListener != "" {
+			nodeEnvVars = append(nodeEnvVars, "KAFKA_CFG_ADVERTISED_LISTENERS="+fmt.Sprintf(
+				"INTERNAL://%s:9090,CLIENT://%s", hostname, c.customAdvertisedListener,
 			))
 		} else {
 			nodeEnvVars = append(nodeEnvVars, "KAFKA_CFG_ADVERTISED_LISTENERS="+fmt.Sprintf(

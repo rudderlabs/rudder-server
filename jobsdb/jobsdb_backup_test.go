@@ -400,7 +400,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return triggerAddNewDS
 		},
 	}
-	err := jobsDB.Setup(ReadWrite, false, "rt", true, []prebackup.Handler{}, fileuploader)
+	err := jobsDB.Setup(ReadWrite, false, "rt", []prebackup.Handler{}, fileuploader)
 	require.NoError(t, err)
 
 	rtDS := newDataSet("rt", "1")
@@ -437,7 +437,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		},
 	}
 
-	err := jobsDB.Setup(ReadWrite, false, "batch_rt", true, []prebackup.Handler{}, fileUploaderProvider)
+	err := jobsDB.Setup(ReadWrite, false, "batch_rt", []prebackup.Handler{}, fileUploaderProvider)
 	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")

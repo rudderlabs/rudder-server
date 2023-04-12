@@ -114,6 +114,10 @@ var errorsMappings = []model.JobError{
 		Type:   model.InsufficientResourceError,
 		Format: regexp.MustCompile(`googleapi: Error 400: Job exceeded rate limits: Your project_and_region exceeded quota for concurrent queries.`),
 	},
+	{
+		Type:   model.ColumnCountError,
+		Format: regexp.MustCompile(`googleapi: Error 400: Too many total leaf fields: .*, max allowed field count: 10000`),
+	},
 }
 
 func getTableSchema(columns model.TableSchema) []*bigquery.FieldSchema {
