@@ -683,8 +683,8 @@ func NewForReadWrite(tablePrefix string, opts ...OptsFunc) *HandleT {
 
 func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *HandleT {
 	j := &HandleT{
-		ownerType:       ownerType,
-		tablePrefix:     tablePrefix,
+		ownerType:   ownerType,
+		tablePrefix: tablePrefix,
 	}
 
 	for _, fn := range opts {

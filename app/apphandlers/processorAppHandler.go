@@ -186,7 +186,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}))
 	}
 
-	eventSchemaDB := jobsdb.NewForReadWrite(
+	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
@@ -206,7 +206,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		routerDB,
 		batchRouterDB,
 		errDB,
-		eventSchemaDB,
+		schemaDB,
 		multitenantStats,
 		reportingI,
 		transientSources,
@@ -252,7 +252,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		RouterDB:         routerDB,
 		BatchRouterDB:    batchRouterDB,
 		ErrorDB:          errDB,
-		EventSchemasDB:   eventSchemaDB,
+		EventSchemaDB:    schemaDB,
 		Processor:        p,
 		Router:           rt,
 		MultiTenantStat:  multitenantStats,
