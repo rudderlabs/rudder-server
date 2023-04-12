@@ -3,11 +3,9 @@ package sqlquerywrapper
 import (
 	"context"
 	"database/sql"
-	"time"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"time"
 )
 
 type Opt func(*DB)
@@ -44,7 +42,7 @@ func WithSince(since func(time.Time) time.Duration) Opt {
 	}
 }
 
-func WIthSlowQueryThreshold(slowQueryThreshold time.Duration) Opt {
+func WithSlowQueryThreshold(slowQueryThreshold time.Duration) Opt {
 	return func(s *DB) {
 		s.slowQueryThreshold = slowQueryThreshold
 	}
@@ -71,52 +69,52 @@ func New(db *sql.DB, opts ...Opt) *DB {
 func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
 	startedAt := time.Now()
 	result, err := db.DB.Exec(query, args...)
-	db.logQuery(startedAt, query)
+	db.logQuery(query, db.since(startedAt))
 	return result, err
 }
 
-func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
 	startedAt := time.Now()
 	result, err := db.DB.ExecContext(ctx, query, args...)
-	db.logQuery(startedAt, query)
+	db.logQuery(query, db.since(startedAt))
 	return result, err
 }
 
 func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
 	startedAt := time.Now()
 	rows, err := db.DB.Query(query, args...)
-	db.logQuery(startedAt, query)
+	db.logQuery(query, db.since(startedAt))
 	return rows, err
 }
 
-func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	startedAt := time.Now()
 	rows, err := db.DB.QueryContext(ctx, query, args...)
-	db.logQuery(startedAt, query)
+	db.logQuery(query, db.since(startedAt))
 	return rows, err
 }
 
 func (db *DB) QueryRow(query string, args ...interface{}) *sql.Row {
 	startedAt := time.Now()
 	row := db.DB.QueryRow(query, args...)
-	db.logQuery(startedAt, query)
+	db.logQuery(query, db.since(startedAt))
 	return row
 }
 
-func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
 	startedAt := time.Now()
 	row := db.DB.QueryRowContext(ctx, query, args...)
-	db.logQuery(startedAt, query)
+	db.logQuery(query, db.since(startedAt))
 	return row
 }
 
-func (db *DB) logQuery(startedAt time.Time, query string) {
-	if executionTime := db.since(startedAt); executionTime > db.slowQueryThreshold {
+func (db *DB) logQuery(query string, elapsed time.Duration) {
+	if elapsed > db.slowQueryThreshold {
 		sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
 
 		keysAndValues := []any{
 			logfield.Query, sanitizedQuery,
-			logfield.QueryExecutionTime, executionTime,
+			logfield.QueryExecutionTime, elapsed,
 		}
 		keysAndValues = append(keysAndValues, db.keysAndValues...)
 

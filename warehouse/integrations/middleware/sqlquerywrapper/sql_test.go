@@ -61,7 +61,7 @@ func TestQueryWrapper(t *testing.T) {
 
 			qw := sqlquerywrapper.New(
 				pgResource.DB,
-				sqlquerywrapper.WIthSlowQueryThreshold(queryThreshold),
+				sqlquerywrapper.WithSlowQueryThreshold(queryThreshold),
 				sqlquerywrapper.WithLogger(mockLogger),
 				sqlquerywrapper.WithSince(func(time.Time) time.Duration {
 					return tc.executionTimeInSec
@@ -112,7 +112,7 @@ func TestQueryWrapper(t *testing.T) {
 
 			qw := sqlquerywrapper.New(
 				pgResource.DB,
-				sqlquerywrapper.WIthSlowQueryThreshold(queryThreshold),
+				sqlquerywrapper.WithSlowQueryThreshold(queryThreshold),
 				sqlquerywrapper.WithLogger(mockLogger),
 				sqlquerywrapper.WithSince(func(time.Time) time.Duration {
 					return tc.executionTimeInSec
