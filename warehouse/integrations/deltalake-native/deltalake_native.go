@@ -38,7 +38,10 @@ const (
 )
 
 const (
-	provider       = warehouseutils.DELTALAKE
+	provider = warehouseutils.DELTALAKE
+
+	// Corresponds to the max length set for event rudder-transformer
+	// https://github.com/rudderlabs/rudder-transformer/blob/fb8b818b2cbd05f784117b9f3040856dab1a7346/src/warehouse/v1/util.js#L34
 	tableNameLimit = 127
 )
 
@@ -95,8 +98,8 @@ var dataTypesMapToRudder = map[string]string{
 // excludeColumnsMap Columns you need to exclude
 // Since event_date is an auto generated column in order to support partitioning.
 // We need to ignore it during query generation.
-var excludeColumnsMap = map[string]bool{
-	"event_date": true,
+var excludeColumnsMap = map[string]struct{}{
+	"event_date": {},
 }
 
 var primaryKeyMap = map[string]string{
@@ -156,7 +159,7 @@ func WithConfig(h *Deltalake, config *config.Config) {
 
 func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
-	format := func(idx int, name string) string {
+	format := func(_ int, name string) string {
 		if _, ok := excludeColumnsMap[name]; ok {
 			return ""
 		}
@@ -175,14 +178,14 @@ func columnNames(columns []string) string {
 }
 
 func stagingColumnNames(keys []string) string {
-	format := func(idx int, str string) string {
+	format := func(_ int, str string) string {
 		return fmt.Sprintf(`STAGING.%s`, str)
 	}
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
 
 func columnsWithValues(keys []string) string {
-	format := func(idx int, str string) string {
+	format := func(_ int, str string) string {
 		return fmt.Sprintf(`MAIN.%[1]s = STAGING.%[1]s`, str)
 	}
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
@@ -298,7 +301,7 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 		return "", nil
 	}
 
-	dateRangeString := warehouseutils.JoinWithFormatting(dateRange, func(idx int, str string) string {
+	dateRangeString := warehouseutils.JoinWithFormatting(dateRange, func(_ int, str string) string {
 		return fmt.Sprintf(`'%s'`, str)
 	}, ",")
 	partitionQuery := fmt.Sprintf(`CAST ( MAIN.event_date AS string) IN (%s) AND`, dateRangeString)
@@ -369,7 +372,7 @@ func (d *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sor
 			diffCols = append(diffCols, key)
 		}
 
-		diffFormat := func(index int, value string) string {
+		diffFormat := func(_ int, value string) string {
 			return fmt.Sprintf(`NULL AS %s`, value)
 		}
 		diffString := warehouseutils.JoinWithFormatting(diffCols, diffFormat, ",")
@@ -485,13 +488,13 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 
 	if d.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		query = fmt.Sprintf(`
-			COPY INTO %v
+			COPY INTO %s
 			FROM
 			  (
 				SELECT
-				  %v
+				  %s
 				FROM
-				  '%v'
+				  '%s'
 			  )
 			FILEFORMAT = PARQUET
 			PATTERN = '*.parquet'
@@ -504,13 +507,13 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 	} else {
 		query = fmt.Sprintf(`
-			COPY INTO %v
+			COPY INTO %s
 			FROM
 			  (
 				SELECT
-				  %v
+				  %s
 				FROM
-				  '%v'
+				  '%s'
 			  )
 			FILEFORMAT = CSV
 			PATTERN = '*.gz'
@@ -976,7 +979,7 @@ func (d *Deltalake) CreateTable(tableName string, columns model.TableSchema) err
 	}
 
 	query := fmt.Sprintf(`
-		%s %s.%s ( %v ) USING DELTA %s %s;
+		%s %s.%s ( %s ) USING DELTA %s %s;
 `,
 		createTableClauseSql,
 		d.Namespace,
@@ -1286,13 +1289,13 @@ func (d *Deltalake) LoadTestTable(location, tableName string, _ map[string]inter
 
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		query = fmt.Sprintf(`
-			COPY INTO %v
+			COPY INTO %s
 			FROM
 			  (
 				SELECT
-				  %v
+				  %s
 				FROM
-				  '%v'
+				  '%s'
 			  )
 			FILEFORMAT = PARQUET
 			PATTERN = '*.parquet'
@@ -1306,13 +1309,13 @@ func (d *Deltalake) LoadTestTable(location, tableName string, _ map[string]inter
 		)
 	} else {
 		query = fmt.Sprintf(`
-			COPY INTO %v
+			COPY INTO %s
 			FROM
 			  (
 				SELECT
-				  %v
+				  %s
 				FROM
-				  '%v'
+				  '%s'
 			  )
 			FILEFORMAT = CSV
 			PATTERN = '*.gz'
