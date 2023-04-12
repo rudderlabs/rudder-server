@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -62,47 +60,47 @@ type WarehouseOperations interface {
 
 // New is a Factory function that returns a Manager of a given destination-type
 // TODO: Remove flag for useLegacy once the postgres new implementation is stable
-func New(destType string, log logger.Logger) (Manager, error) {
+func New(destType string) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.New(log)
+		rs := redshift.New()
 		redshift.WithConfig(rs, config.Default)
 		return rs, nil
 	case warehouseutils.BQ:
-		bq := bigquery.New(log)
+		bq := bigquery.New()
 		bigquery.WithConfig(bq, config.Default)
 		return bq, nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.New(log)
+		sf := snowflake.New()
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
 		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.New(log)
+			pg := postgreslegacy.New()
 			postgreslegacy.WithConfig(pg, config.Default)
 			return pg, nil
 		}
 
-		pg := postgres.New(log)
+		pg := postgres.New()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.New(log)
+		ch := clickhouse.New()
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		ms := mssql.New(log)
+		ms := mssql.New()
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		az := azuresynapse.New(log)
+		az := azuresynapse.New()
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		dl := datalake.New(log)
+		dl := datalake.New()
 		return dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.New(log)
+		dl := deltalake.New()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}
@@ -111,47 +109,47 @@ func New(destType string, log logger.Logger) (Manager, error) {
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
 // TODO: Remove flag for useLegacy once the postgres new implementation is stable
-func NewWarehouseOperations(destType string, log logger.Logger) (WarehouseOperations, error) {
+func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.New(log)
+		rs := redshift.New()
 		redshift.WithConfig(rs, config.Default)
 		return rs, nil
 	case warehouseutils.BQ:
-		bq := bigquery.New(log)
+		bq := bigquery.New()
 		bigquery.WithConfig(bq, config.Default)
 		return bq, nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.New(log)
+		sf := snowflake.New()
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
 		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.New(log)
+			pg := postgreslegacy.New()
 			postgreslegacy.WithConfig(pg, config.Default)
 			return pg, nil
 		}
 
-		pg := postgres.New(log)
+		pg := postgres.New()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.New(log)
+		ch := clickhouse.New()
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		ms := mssql.New(log)
+		ms := mssql.New()
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		az := azuresynapse.New(log)
+		az := azuresynapse.New()
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		dl := datalake.New(log)
+		dl := datalake.New()
 		return dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.New(log)
+		dl := deltalake.New()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}

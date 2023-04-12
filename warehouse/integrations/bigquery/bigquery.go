@@ -122,9 +122,9 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-func New(log logger.Logger) *BigQuery {
+func New() *BigQuery {
 	return &BigQuery{
-		Logger: log.Child("bigquery"),
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("bigquery"),
 	}
 }
 

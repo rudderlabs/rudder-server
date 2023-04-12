@@ -74,7 +74,7 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 		}
 	}
 
-	whManager, err := manager.New(warehouse.Type, pkgLogger)
+	whManager, err := manager.New(warehouse.Type)
 	if err != nil {
 		return err
 	}

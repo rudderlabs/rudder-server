@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	logger2 "github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/lib/pq"
@@ -258,7 +256,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
-			rs := redshift.New(logger2.NOP)
+			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
 			rs.DB = pgResource.DB

@@ -34,9 +34,9 @@ type Datalake struct {
 	Logger           logger.Logger
 }
 
-func New(log logger.Logger) *Datalake {
+func New() *Datalake {
 	return &Datalake{
-		Logger: log.Child("datalake"),
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("datalake"),
 	}
 }
 
@@ -44,7 +44,7 @@ func (d *Datalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uplo
 	d.Warehouse = warehouse
 	d.Uploader = uploader
 
-	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.Warehouse, d.Uploader, d.Logger)
+	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.Warehouse, d.Uploader)
 
 	return err
 }

@@ -364,7 +364,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					pgResource, err := resource.SetupPostgres(pool, t)
 					require.NoError(t, err)
 
-					rs := redshift.New(logger.NOP)
+					rs := redshift.New()
 					redshift.WithConfig(rs, config.Default)
 
 					rs.DB = pgResource.DB
@@ -431,7 +431,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
-			rs := redshift.New(logger.NOP)
+			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
 			rs.DB = pgResource.DB

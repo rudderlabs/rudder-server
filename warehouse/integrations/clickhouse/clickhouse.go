@@ -254,9 +254,9 @@ func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool
 	return db, nil
 }
 
-func New(log logger.Logger) *Clickhouse {
+func New() *Clickhouse {
 	return &Clickhouse{
-		Logger: log.Child("clickhouse"),
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("clickhouse"),
 	}
 }
 

@@ -181,9 +181,9 @@ type RedshiftCredentials struct {
 	TunnelInfo *tunnelling.TunnelInfo
 }
 
-func New(log logger.Logger) *Redshift {
+func New() *Redshift {
 	return &Redshift{
-		Logger: log.Child("redshift"),
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("redshift"),
 		stats:  stats.Default,
 	}
 }

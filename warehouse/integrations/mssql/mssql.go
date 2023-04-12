@@ -122,9 +122,9 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-func New(log logger.Logger) *MSSQL {
+func New() *MSSQL {
 	return &MSSQL{
-		Logger: log.Child("mssql"),
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("mssql"),
 	}
 }
 

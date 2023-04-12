@@ -8,7 +8,6 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
