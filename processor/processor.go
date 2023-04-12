@@ -1477,10 +1477,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
-			source, srcGetErr := proc.getSourceByWriteKey(writeKey)
-			if srcGetErr != nil {
-				// Do Nothing for now!
-			}
+			source, _ := proc.getSourceByWriteKey(writeKey)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
