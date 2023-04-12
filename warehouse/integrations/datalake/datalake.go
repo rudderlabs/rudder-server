@@ -44,7 +44,7 @@ func (d *Datalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uplo
 	d.Warehouse = warehouse
 	d.Uploader = uploader
 
-	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.Logger, d.Warehouse, d.Uploader)
+	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.Warehouse, d.Uploader, d.Logger)
 
 	return err
 }

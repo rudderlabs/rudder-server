@@ -2080,7 +2080,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 		err        error
 	)
 
-	if repository, err = schemarepository.NewSchemaRepository(pkgLogger, job.warehouse, job); err != nil {
+	if repository, err = schemarepository.NewSchemaRepository(job.warehouse, job, pkgLogger); err != nil {
 		return fmt.Errorf("create schema repository: %w", err)
 	}
 

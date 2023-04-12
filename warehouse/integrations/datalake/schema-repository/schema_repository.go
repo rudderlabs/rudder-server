@@ -49,9 +49,9 @@ func UseGlue(w *model.Warehouse) bool {
 	return glueConfig == "true" && hasAWSRegion
 }
 
-func NewSchemaRepository(log logger.Logger, wh model.Warehouse, uploader warehouseutils.Uploader) (SchemaRepository, error) {
+func NewSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader, log logger.Logger) (SchemaRepository, error) {
 	if UseGlue(&wh) {
-		return NewGlueSchemaRepository(log, wh)
+		return NewGlueSchemaRepository(wh, log)
 	}
 	return NewLocalSchemaRepository(wh, uploader)
 }
