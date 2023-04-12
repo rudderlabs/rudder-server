@@ -37,8 +37,8 @@ import (
 )
 
 func TestIntegrationClickHouse(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
 	clickhouse.Init()
@@ -199,8 +199,8 @@ func TestIntegrationClickHouse(t *testing.T) {
 }
 
 func TestConfigurationValidationClickhouse(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
 	misc.Init()
