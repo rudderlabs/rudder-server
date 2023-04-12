@@ -118,10 +118,10 @@ func New(logger logger.Logger) *AzureSynapse {
 		Logger: logger.Child("synapse"),
 	}
 }
+
 func WithConfig(h *AzureSynapse, config *config.Config) {
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.azure_synapse.numWorkersDownloadLoadFiles", 1)
 }
-
 
 func connect(cred credentials) (*sql.DB, error) {
 	// Create connection string

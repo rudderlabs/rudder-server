@@ -53,9 +53,7 @@ const (
 	partitionField = "received_at"
 )
 
-var (
-	clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
-)
+var clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 // clickhouse doesn't support bool, they recommend to use Uint8 and set 1,0
 var rudderDataTypesMapToClickHouse = map[string]string{

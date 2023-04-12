@@ -3,8 +3,9 @@ package manager
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 

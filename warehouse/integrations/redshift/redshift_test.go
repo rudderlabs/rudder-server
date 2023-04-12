@@ -3,10 +3,11 @@ package redshift_test
 import (
 	"errors"
 	"fmt"
-	logger2 "github.com/rudderlabs/rudder-go-kit/logger"
 	"os"
 	"strings"
 	"testing"
+
+	logger2 "github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
