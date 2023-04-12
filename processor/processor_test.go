@@ -1562,11 +1562,12 @@ var _ = Describe("Static Function Tests", func() {
 
 			inputEvent := &transformer.TransformerResponseT{
 				Metadata: transformer.MetadataT{
-					SourceID:       "source-id-1",
-					DestinationID:  "destination-id-1",
-					TrackingPlanId: "tracking-plan-id-1",
-					EventName:      "event-name-1",
-					EventType:      "event-type-1",
+					SourceID:         "source-id-1",
+					DestinationID:    "destination-id-1",
+					TransformationId: "transformation-id-1",
+					TrackingPlanId:   "tracking-plan-id-1",
+					EventName:        "event-name-1",
+					EventType:        "event-type-1",
 				},
 				StatusCode: 200,
 				Error:      "",
@@ -1594,6 +1595,8 @@ var _ = Describe("Static Function Tests", func() {
 				sourceDefinitionID:      inputEvent.Metadata.SourceDefinitionID,
 				destinationDefinitionID: inputEvent.Metadata.DestinationDefinitionID,
 				sourceCategory:          inputEvent.Metadata.SourceCategory,
+				transformationId:        inputEvent.Metadata.TransformationId,
+				transformationVersionId: inputEvent.Metadata.TransformationVersionId,
 				trackingPlanId:          inputEvent.Metadata.TrackingPlanId,
 				trackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
@@ -1606,6 +1609,8 @@ var _ = Describe("Static Function Tests", func() {
 				SourceDefinitionId:      inputEvent.Metadata.SourceDefinitionID,
 				DestinationDefinitionId: inputEvent.Metadata.DestinationDefinitionID,
 				SourceCategory:          inputEvent.Metadata.SourceCategory,
+				TransformationId:        inputEvent.Metadata.TransformationId,
+				TransformationVersionId: inputEvent.Metadata.TransformationVersionId,
 				TrackingPlanId:          inputEvent.Metadata.TrackingPlanId,
 				TrackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}

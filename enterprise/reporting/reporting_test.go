@@ -81,9 +81,10 @@ var _ = Describe("Reporting", func() {
 					WorkspaceID: "some-workspace-id",
 				},
 				ConnectionDetails: types.ConnectionDetails{
-					SourceID:       "some-source-id",
-					DestinationID:  "some-destination-id",
-					TrackingPlanId: "some-tracking-plan-id",
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationId: "some-transformation-id",
+					TrackingPlanId:   "some-tracking-plan-id",
 				},
 				PUDetails: types.PUDetails{
 					InPU: "some-in-pu",
@@ -107,9 +108,10 @@ var _ = Describe("Reporting", func() {
 					WorkspaceID: "some-workspace-id",
 				},
 				ConnectionDetails: types.ConnectionDetails{
-					SourceID:       "some-source-id",
-					DestinationID:  "some-destination-id",
-					TrackingPlanId: "some-tracking-plan-id",
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationId: "some-transformation-id",
+					TrackingPlanId:   "some-tracking-plan-id",
 				},
 				PUDetails: types.PUDetails{
 					InPU: "some-in-pu",
@@ -133,9 +135,10 @@ var _ = Describe("Reporting", func() {
 					WorkspaceID: "some-workspace-id",
 				},
 				ConnectionDetails: types.ConnectionDetails{
-					SourceID:       "some-source-id",
-					DestinationID:  "some-destination-id",
-					TrackingPlanId: "some-tracking-plan-id",
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationId: "some-transformation-id",
+					TrackingPlanId:   "some-tracking-plan-id",
 				},
 				PUDetails: types.PUDetails{
 					InPU: "some-in-pu",
@@ -162,9 +165,10 @@ var _ = Describe("Reporting", func() {
 					WorkspaceID: "some-workspace-id",
 				},
 				ConnectionDetails: types.ConnectionDetails{
-					SourceID:       "some-source-id",
-					DestinationID:  "some-destination-id",
-					TrackingPlanId: "some-tracking-plan-id",
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationId: "some-transformation-id",
+					TrackingPlanId:   "some-tracking-plan-id",
 				},
 				PUDetails: types.PUDetails{
 					InPU: "some-in-pu",
