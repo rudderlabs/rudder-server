@@ -16,7 +16,7 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.49.0
+	cloud.google.com/go/bigquery v1.50.0
 	cloud.google.com/go/pubsub v1.30.0
 	cloud.google.com/go/storage v1.29.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
@@ -32,7 +32,7 @@ require (
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dgraph-io/badger/v3 v3.2103.5
-	github.com/docker/docker v20.10.21+incompatible
+	github.com/docker/docker v23.0.3+incompatible
 	github.com/go-chi/chi/v5 v5.0.8
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -66,9 +66,9 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/rudder-go-kit v0.11.0
 	github.com/rudderlabs/sql-tunnels v0.1.2
-	github.com/samber/lo v1.37.0
+	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.38
-	github.com/shirou/gopsutil/v3 v3.23.1
+	github.com/shirou/gopsutil/v3 v3.23.3
 	github.com/snowflakedb/gosnowflake v1.6.17
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
@@ -84,7 +84,7 @@ require (
 	github.com/xitongsys/parquet-go-source v0.0.0-20200817004010-026bad9b25d0
 	go.etcd.io/etcd/api/v3 v3.5.7
 	go.etcd.io/etcd/client/v3 v3.5.7
-	go.uber.org/automaxprocs v1.5.1
+	go.uber.org/automaxprocs v1.5.2
 	go.uber.org/goleak v1.2.1
 	golang.org/x/crypto v0.6.0
 	golang.org/x/exp v0.0.0-20230310171629-522b1b587ee0
@@ -193,13 +193,14 @@ require (
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/moby/patternmatcher v0.5.0 // indirect
 	github.com/moby/term v0.0.0-20220808134915-39b0c02b01ae // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mtibben/percent v0.2.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0-rc2 // indirect
-	github.com/opencontainers/runc v1.1.4 // indirect
+	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.6 // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
