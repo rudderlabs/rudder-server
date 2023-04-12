@@ -62,47 +62,47 @@ type WarehouseOperations interface {
 
 // New is a Factory function that returns a Manager of a given destination-type
 // TODO: Remove flag for useLegacy once the postgres new implementation is stable
-func New(destType string, logger logger.Logger) (Manager, error) {
+func New(destType string, log logger.Logger) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.New(logger)
+		rs := redshift.New(log)
 		redshift.WithConfig(rs, config.Default)
 		return rs, nil
 	case warehouseutils.BQ:
-		bq := bigquery.New(logger)
+		bq := bigquery.New(log)
 		bigquery.WithConfig(bq, config.Default)
 		return bq, nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.New(logger)
+		sf := snowflake.New(log)
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
 		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.New(logger)
+			pg := postgreslegacy.New(log)
 			postgreslegacy.WithConfig(pg, config.Default)
 			return pg, nil
 		}
 
-		pg := postgres.New(logger)
+		pg := postgres.New(log)
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.New(logger)
+		ch := clickhouse.New(log)
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		ms := mssql.New(logger)
+		ms := mssql.New(log)
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		az := azuresynapse.New(logger)
+		az := azuresynapse.New(log)
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		dl := datalake.New(logger)
+		dl := datalake.New(log)
 		return dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.New(logger)
+		dl := deltalake.New(log)
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}
@@ -111,47 +111,47 @@ func New(destType string, logger logger.Logger) (Manager, error) {
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
 // TODO: Remove flag for useLegacy once the postgres new implementation is stable
-func NewWarehouseOperations(destType string, logger logger.Logger) (WarehouseOperations, error) {
+func NewWarehouseOperations(destType string, log logger.Logger) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.New(logger)
+		rs := redshift.New(log)
 		redshift.WithConfig(rs, config.Default)
 		return rs, nil
 	case warehouseutils.BQ:
-		bq := bigquery.New(logger)
+		bq := bigquery.New(log)
 		bigquery.WithConfig(bq, config.Default)
 		return bq, nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.New(logger)
+		sf := snowflake.New(log)
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
 		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.New(logger)
+			pg := postgreslegacy.New(log)
 			postgreslegacy.WithConfig(pg, config.Default)
 			return pg, nil
 		}
 
-		pg := postgres.New(logger)
+		pg := postgres.New(log)
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.New(logger)
+		ch := clickhouse.New(log)
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		ms := mssql.New(logger)
+		ms := mssql.New(log)
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		az := azuresynapse.New(logger)
+		az := azuresynapse.New(log)
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		dl := datalake.New(logger)
+		dl := datalake.New(log)
 		return dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.New(logger)
+		dl := deltalake.New(log)
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}

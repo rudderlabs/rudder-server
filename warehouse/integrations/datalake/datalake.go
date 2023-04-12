@@ -34,9 +34,9 @@ type Datalake struct {
 	Logger           logger.Logger
 }
 
-func New(logger logger.Logger) *Datalake {
+func New(log logger.Logger) *Datalake {
 	return &Datalake{
-		Logger: logger.Child("datalake"),
+		Logger: log.Child("datalake"),
 	}
 }
 

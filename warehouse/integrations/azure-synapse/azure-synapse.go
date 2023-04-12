@@ -113,9 +113,9 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func New(logger logger.Logger) *AzureSynapse {
+func New(log logger.Logger) *AzureSynapse {
 	return &AzureSynapse{
-		Logger: logger.Child("synapse"),
+		Logger: log.Child("synapse"),
 	}
 }
 

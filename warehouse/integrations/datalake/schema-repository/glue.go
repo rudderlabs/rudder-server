@@ -39,13 +39,13 @@ type GlueSchemaRepository struct {
 	Logger     logger.Logger
 }
 
-func NewGlueSchemaRepository(logger logger.Logger, wh model.Warehouse) (*GlueSchemaRepository, error) {
+func NewGlueSchemaRepository(log logger.Logger, wh model.Warehouse) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
 		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
 		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
-		Logger:    logger.Child("glue-schema-repository"),
+		Logger:    log.Child("glue-schema-repository"),
 	}
 
 	glueClient, err := getGlueClient(wh)
