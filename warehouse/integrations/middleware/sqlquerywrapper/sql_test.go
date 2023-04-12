@@ -1,8 +1,9 @@
-package middleware_test
+package sqlquerywrapper_test
 
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"testing"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/mocks/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/stretchr/testify/require"
 )
@@ -58,28 +58,28 @@ func TestQueryWrapper(t *testing.T) {
 
 			mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-			qw := middleware.NewSQLQueryWrapper(
+			qw := sqlquerywrapper.New(
 				pgResource.DB,
-				middleware.WIthSlowQueryThreshold(queryThreshold),
-				middleware.WithLogger(mockLogger),
-				middleware.WithSince(func(time.Time) time.Duration {
+				sqlquerywrapper.WIthSlowQueryThreshold(queryThreshold),
+				sqlquerywrapper.WithLogger(mockLogger),
+				sqlquerywrapper.WithSince(func(time.Time) time.Duration {
 					return tc.executionTimeInSec
 				}),
-				middleware.WithKeyAndValues(keysAndValues...),
+				sqlquerywrapper.WithKeyAndValues(keysAndValues...),
 			)
 
 			query := "SELECT 1;"
 
 			kvs := []any{
 				logfield.Query, query,
-				logfield.QueryExecutionTimeInSec, int64(tc.executionTimeInSec.Seconds()),
+				logfield.QueryExecutionTimeInSec, tc.executionTimeInSec,
 			}
 			kvs = append(kvs, keysAndValues...)
 
 			if tc.wantLog {
-				mockLogger.EXPECT().Infow(middleware.ExecutingQuery, kvs).Times(6)
+				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
 			} else {
-				mockLogger.EXPECT().Infow(middleware.ExecutingQuery, kvs).Times(0)
+				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
 			}
 
 			_, err := qw.Exec(query)
@@ -109,15 +109,15 @@ func TestQueryWrapper(t *testing.T) {
 
 			mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-			qw := middleware.NewSQLQueryWrapper(
+			qw := sqlquerywrapper.New(
 				pgResource.DB,
-				middleware.WIthSlowQueryThreshold(queryThreshold),
-				middleware.WithLogger(mockLogger),
-				middleware.WithSince(func(time.Time) time.Duration {
+				sqlquerywrapper.WIthSlowQueryThreshold(queryThreshold),
+				sqlquerywrapper.WithLogger(mockLogger),
+				sqlquerywrapper.WithSince(func(time.Time) time.Duration {
 					return tc.executionTimeInSec
 				}),
-				middleware.WithKeyAndValues(keysAndValues...),
-				middleware.WithSecretsRegex(map[string]string{
+				sqlquerywrapper.WithKeyAndValues(keysAndValues...),
+				sqlquerywrapper.WithSecretsRegex(map[string]string{
 					"PASSWORD '[^']*'": "PASSWORD '***'",
 				}),
 			)
@@ -126,21 +126,21 @@ func TestQueryWrapper(t *testing.T) {
 
 			createKvs := []any{
 				logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-				logfield.QueryExecutionTimeInSec, int64(tc.executionTimeInSec.Seconds()),
+				logfield.QueryExecutionTimeInSec, tc.executionTimeInSec,
 			}
 			alterKvs := []any{
 				logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-				logfield.QueryExecutionTimeInSec, int64(tc.executionTimeInSec.Seconds()),
+				logfield.QueryExecutionTimeInSec, tc.executionTimeInSec,
 			}
 
 			createKvs = append(createKvs, keysAndValues...)
 			alterKvs = append(alterKvs, keysAndValues...)
 
 			if tc.wantLog {
-				mockLogger.EXPECT().Infow(middleware.ExecutingQuery, createKvs).Times(1)
-				mockLogger.EXPECT().Infow(middleware.ExecutingQuery, alterKvs).Times(1)
+				mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
+				mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
 			} else {
-				mockLogger.EXPECT().Infow(middleware.ExecutingQuery, []any{}).Times(0)
+				mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
 			}
 
 			_, err := qw.Exec(fmt.Sprintf("CREATE USER %s;", user))

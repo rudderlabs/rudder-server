@@ -1,4 +1,4 @@
-package middleware
+package sqlquerywrapper
 
 import (
 	"context"
@@ -7,25 +7,26 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
-const ExecutingQuery = "executing query"
-
 type Opt func(*DB)
+
+type logger interface {
+	Infow(msg string, keysAndValues ...interface{})
+}
 
 type DB struct {
 	*sql.DB
 
-	since              func(time.Time) time.Duration
-	logger             logger.Logger
-	keysAndValues      []any
+	since         func(time.Time) time.Duration
+	logger        logger
+	keysAndValues []any
 	slowQueryThreshold time.Duration
 	secretsRegex       map[string]string
 }
 
-func WithLogger(logger logger.Logger) Opt {
+func WithLogger(logger logger) Opt {
 	return func(s *DB) {
 		s.logger = logger
 	}
@@ -55,7 +56,7 @@ func WithSecretsRegex(secretsRegex map[string]string) Opt {
 	}
 }
 
-func NewSQLQueryWrapper(db *sql.DB, opts ...Opt) *DB {
+func New(db *sql.DB, opts ...Opt) *DB {
 	s := &DB{
 		DB:                 db,
 		since:              time.Since,
@@ -115,10 +116,10 @@ func (db *DB) logQuery(startedAt time.Time, query string) {
 
 		keysAndValues := []any{
 			logfield.Query, sanitizedQuery,
-			logfield.QueryExecutionTimeInSec, int64(executionTime.Seconds()),
+			logfield.QueryExecutionTimeInSec, executionTime,
 		}
 		keysAndValues = append(keysAndValues, db.keysAndValues...)
 
-		db.logger.Infow(ExecutingQuery, keysAndValues...)
+		db.logger.Infow("executing query", keysAndValues...)
 	}
 }
