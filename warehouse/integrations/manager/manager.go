@@ -102,7 +102,7 @@ func New(destType string) (Manager, error) {
 		return &dl, nil
 	case warehouseutils.DELTALAKE:
 		if config.Default.GetBool("Warehouse.deltalake.useNative", false) {
-			dl := deltalake_native.NewDeltalake()
+			dl := deltalake_native.New()
 			deltalake_native.WithConfig(dl, config.Default)
 			return dl, nil
 		}
@@ -156,7 +156,7 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		return &dl, nil
 	case warehouseutils.DELTALAKE:
 		if config.Default.GetBool("Warehouse.deltalake.useNative", false) {
-			dl := deltalake_native.NewDeltalake()
+			dl := deltalake_native.New()
 			deltalake_native.WithConfig(dl, config.Default)
 			return dl, nil
 		}

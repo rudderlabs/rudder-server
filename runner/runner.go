@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
-
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
@@ -367,7 +365,6 @@ func runAllInit() {
 	redshift.Init()
 	snowflake.Init()
 	deltalake.Init()
-	deltalake_native.Init()
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()

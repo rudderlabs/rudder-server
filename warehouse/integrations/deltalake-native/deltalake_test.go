@@ -38,7 +38,6 @@ func TestIntegrationDeltalake(t *testing.T) {
 	t.Parallel()
 
 	deltalake.Init()
-	deltalake_native.Init()
 
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
@@ -50,7 +49,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 		Token: credentials.Token,
 	}
 
-	dl := deltalake_native.NewDeltalake()
+	dl := deltalake_native.New()
 	deltalake_native.WithConfig(dl, config.Default)
 
 	db, err := deltalake_native.Connect(nativeCredentials)
@@ -250,7 +249,6 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 	deltalake.Init()
-	deltalake_native.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 
