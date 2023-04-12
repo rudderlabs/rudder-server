@@ -644,7 +644,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
 	destType := warehouse.Destination.DestinationDefinition.Name
-	whManager, err := manager.NewWarehouseOperations(destType)
+	whManager, err := manager.NewWarehouseOperations(destType, pkgLogger)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}

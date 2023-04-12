@@ -113,15 +113,15 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewAzureSynapse(logger logger.Logger) *AzureSynapse {
+func New(logger logger.Logger) *AzureSynapse {
 	return &AzureSynapse{
 		Logger: logger.Child("azure_synapse"),
 	}
 }
-
 func WithConfig(h *AzureSynapse, config *config.Config) {
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.azure_synapse.numWorkersDownloadLoadFiles", 1)
 }
+
 
 func connect(cred credentials) (*sql.DB, error) {
 	// Create connection string

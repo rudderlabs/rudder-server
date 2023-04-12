@@ -43,7 +43,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 
 	var dbs []*sql.DB
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
-		ch := clickhouse.NewClickhouse(logger.NOP)
+		ch := clickhouse.New(logger.NOP)
 		db, err := ch.ConnectToClickhouse(clickhouse.Credentials{
 			Host:          host,
 			User:          "rudder",
@@ -287,7 +287,7 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", S3EngineEnabledWorkspaceIDs)
 
-			ch := clickhouse.NewClickhouse(logger.NOP)
+			ch := clickhouse.New(logger.NOP)
 			clickhouse.WithConfig(ch, c)
 
 			ch.Warehouse = model.Warehouse{
@@ -424,7 +424,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ch := clickhouse.NewClickhouse(logger.NOP)
+			ch := clickhouse.New(logger.NOP)
 			ch.Logger = logger.NOP
 
 			conf := config.New()
@@ -679,7 +679,7 @@ func TestHandle_TestConnection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ch := clickhouse.NewClickhouse(logger.NOP)
+			ch := clickhouse.New(logger.NOP)
 			ch.Logger = logger.NOP
 
 			host := "localhost"
@@ -770,7 +770,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ch := clickhouse.NewClickhouse(logger.NOP)
+			ch := clickhouse.New(logger.NOP)
 			ch.Logger = logger.NOP
 
 			warehouse := model.Warehouse{
@@ -840,7 +840,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse(logger.NOP)
+		ch := clickhouse.New(logger.NOP)
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -888,7 +888,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Invalid host", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse(logger.NOP)
+		ch := clickhouse.New(logger.NOP)
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -917,7 +917,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Invalid database", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse(logger.NOP)
+		ch := clickhouse.New(logger.NOP)
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -946,7 +946,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Empty schema", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse(logger.NOP)
+		ch := clickhouse.New(logger.NOP)
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -978,7 +978,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Unrecognized schema", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse(logger.NOP)
+		ch := clickhouse.New(logger.NOP)
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -1038,7 +1038,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	})
 	require.NoError(t, err)
 
-	db, err := clickhouse.NewClickhouse(logger.NOP).ConnectToClickhouse(clickhouse.Credentials{
+	db, err := clickhouse.New(logger.NOP).ConnectToClickhouse(clickhouse.Credentials{
 		Host:     "localhost",
 		Port:     resource.GetPort("9000/tcp"),
 		DBName:   databaseName,

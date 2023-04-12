@@ -756,7 +756,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			return nil, err
 		}
 
-		whManager, err := manager.New(wh.destType)
+		whManager, err := manager.New(wh.destType, wh.Logger)
 		if err != nil {
 			return nil, err
 		}

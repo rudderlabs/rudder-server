@@ -36,8 +36,6 @@ func TestIntegrationBigQuery(t *testing.T) {
 
 	t.Parallel()
 
-	bigquery2.Init()
-
 	credentials, err := testhelper.BigqueryCredentials()
 	require.NoError(t, err)
 
@@ -275,7 +273,6 @@ func TestConfigurationValidationBigQuery(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	bigquery2.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	bqCredentials, err := testhelper.BigqueryCredentials()

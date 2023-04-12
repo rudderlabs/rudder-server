@@ -55,8 +55,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse"
 	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -334,7 +332,6 @@ func runAllInit() {
 	backendconfig.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	bigquery.Init()
 	archiver.Init()
 	pgnotifier.Init()
 	jobsdb.Init()
@@ -348,7 +345,6 @@ func runAllInit() {
 	warehouse.Init6()
 	warehousearchiver.Init()
 	validations.Init()
-	datalake.Init()
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()

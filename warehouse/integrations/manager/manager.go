@@ -64,43 +64,44 @@ type WarehouseOperations interface {
 func New(destType string, logger logger.Logger) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.NewRedshift(logger)
+		rs := redshift.New(logger)
 		redshift.WithConfig(rs, config.Default)
 		return rs, nil
 	case warehouseutils.BQ:
-		var bq bigquery.HandleT
-		return &bq, nil
+		bq := bigquery.New(logger)
+		bigquery.WithConfig(bq, config.Default)
+		return bq, nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.NewSnowflake(logger)
+		sf := snowflake.New(logger)
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
 		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.NewPostgres(logger)
+			pg := postgreslegacy.New(logger)
 			postgreslegacy.WithConfig(pg, config.Default)
 			return pg, nil
 		}
 
-		pg := postgres.NewPostgres(logger)
+		pg := postgres.New(logger)
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.NewClickhouse(logger)
+		ch := clickhouse.New(logger)
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		ms := mssql.NewMSSQL(logger)
+		ms := mssql.New(logger)
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		az := azuresynapse.NewAzureSynapse(logger)
+		az := azuresynapse.New(logger)
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		var dl datalake.HandleT
-		return &dl, nil
+		dl := datalake.New(logger)
+		return dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.NewDeltalake(logger)
+		dl := deltalake.New(logger)
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}
@@ -112,43 +113,44 @@ func New(destType string, logger logger.Logger) (Manager, error) {
 func NewWarehouseOperations(destType string, logger logger.Logger) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.NewRedshift(logger)
+		rs := redshift.New(logger)
 		redshift.WithConfig(rs, config.Default)
 		return rs, nil
 	case warehouseutils.BQ:
-		var bq bigquery.HandleT
-		return &bq, nil
+		bq := bigquery.New(logger)
+		bigquery.WithConfig(bq, config.Default)
+		return bq, nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.NewSnowflake(logger)
+		sf := snowflake.New(logger)
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
 		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.NewPostgres(logger)
+			pg := postgreslegacy.New(logger)
 			postgreslegacy.WithConfig(pg, config.Default)
 			return pg, nil
 		}
 
-		pg := postgres.NewPostgres(logger)
+		pg := postgres.New(logger)
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.NewClickhouse(logger)
+		ch := clickhouse.New(logger)
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		ms := mssql.NewMSSQL(logger)
+		ms := mssql.New(logger)
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		az := azuresynapse.NewAzureSynapse(logger)
+		az := azuresynapse.New(logger)
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		var dl datalake.HandleT
-		return &dl, nil
+		dl := datalake.New(logger)
+		return dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.NewDeltalake(logger)
+		dl := deltalake.New(logger)
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}

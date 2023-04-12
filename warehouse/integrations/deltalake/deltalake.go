@@ -131,7 +131,7 @@ type Deltalake struct {
 	ConnectorURL           string
 }
 
-func NewDeltalake(logger logger.Logger) *Deltalake {
+func New(logger logger.Logger) *Deltalake {
 	return &Deltalake{
 		Logger: logger.Child("deltalake"),
 		Stats:  stats.Default,

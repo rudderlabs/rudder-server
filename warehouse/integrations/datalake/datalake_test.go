@@ -8,8 +8,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -25,8 +23,6 @@ func TestIntegrationDatalake(t *testing.T) {
 	}
 
 	t.Parallel()
-
-	datalake.Init()
 
 	testCases := []struct {
 		name          string
@@ -106,7 +102,6 @@ func TestConfigurationValidationDatalake(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	datalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 

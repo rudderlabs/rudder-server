@@ -523,7 +523,7 @@ func createManager(dest *backendconfig.DestinationT) (manager.WarehouseOperation
 		err        error
 	)
 
-	if operations, err = manager.NewWarehouseOperations(destType); err != nil {
+	if operations, err = manager.NewWarehouseOperations(destType, pkgLogger); err != nil {
 		return nil, fmt.Errorf("getting manager: %w", err)
 	}
 

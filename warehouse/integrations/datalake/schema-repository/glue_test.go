@@ -123,8 +123,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			warehouseutils.Init()
 			encoding.Init()
 
-			g, err := NewGlueSchemaRepository(warehouse)
-			g.Logger = logger.NOP
+			g, err := NewGlueSchemaRepository(logger.NOP, warehouse)
 			require.NoError(t, err)
 
 			t.Logf("Creating schema %s", testNamespace)

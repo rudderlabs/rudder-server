@@ -2,22 +2,17 @@ package schemarepository
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("datalake").Child("schema-repository")
-}
-
 const MAX_CHARACTER_LIMIT = 65535
 
 var (
-	pkgLogger    logger.Logger
 	VARCHAR_TYPE = fmt.Sprintf("varchar(%d)", MAX_CHARACTER_LIMIT)
 	dataTypesMap = map[string]string{
 		"boolean":  "boolean",
@@ -53,9 +48,9 @@ func UseGlue(w *model.Warehouse) bool {
 	return glueConfig == "true" && hasAWSRegion
 }
 
-func NewSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader) (SchemaRepository, error) {
+func NewSchemaRepository(logger logger.Logger, wh model.Warehouse, uploader warehouseutils.Uploader) (SchemaRepository, error) {
 	if UseGlue(&wh) {
-		return NewGlueSchemaRepository(wh)
+		return NewGlueSchemaRepository(logger, wh)
 	}
 	return NewLocalSchemaRepository(wh, uploader)
 }

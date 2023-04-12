@@ -196,7 +196,7 @@ type Snowflake struct {
 	EnableDeleteByJobs bool
 }
 
-func NewSnowflake(logger logger.Logger) *Snowflake {
+func New(logger logger.Logger) *Snowflake {
 	return &Snowflake{
 		Logger: logger.Child("snowflake"),
 		stats:  stats.Default,

@@ -168,7 +168,7 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewPostgres(logger logger.Logger) *Postgres {
+func New(logger logger.Logger) *Postgres {
 	return &Postgres{
 		logger: logger.Child("postgres-legacy"),
 	}
