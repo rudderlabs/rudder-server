@@ -19,9 +19,9 @@ type logger interface {
 type DB struct {
 	*sql.DB
 
-	since         func(time.Time) time.Duration
-	logger        logger
-	keysAndValues []any
+	since              func(time.Time) time.Duration
+	logger             logger
+	keysAndValues      []any
 	slowQueryThreshold time.Duration
 	secretsRegex       map[string]string
 }

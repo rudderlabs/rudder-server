@@ -3,9 +3,10 @@ package sqlquerywrapper_test
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/google/uuid"
 
