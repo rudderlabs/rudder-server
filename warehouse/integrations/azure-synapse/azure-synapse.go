@@ -115,7 +115,7 @@ var partitionKeyMap = map[string]string{
 
 func New(logger logger.Logger) *AzureSynapse {
 	return &AzureSynapse{
-		Logger: logger.Child("azure_synapse"),
+		Logger: logger.Child("synapse"),
 	}
 }
 func WithConfig(h *AzureSynapse, config *config.Config) {
