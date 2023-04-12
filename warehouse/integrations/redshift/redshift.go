@@ -455,7 +455,12 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	}, ",")
 
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	if err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload); err != nil {
+	_, err = rs.DB.Exec(fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
+		rs.Namespace,
+		stagingTableName,
+		tableName,
+	))
+	if err != nil {
 		return "", fmt.Errorf("creating staging table: %w", err)
 	}
 
