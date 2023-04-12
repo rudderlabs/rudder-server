@@ -1175,8 +1175,11 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 		log.Printf("Renaming tables to sharded tables for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
 		require.Eventually(t, func() bool {
-			_, err := clusterDB.Exec(sqlStatement)
-			return err == nil
+			if _, err := clusterDB.Exec(sqlStatement); err != nil {
+				t.Logf("renaming table: %s", err.Error())
+				return false
+			}
+			return true
 		},
 			5*time.Second,
 			1*time.Second,
@@ -1204,8 +1207,11 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 		log.Printf("Creating distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
 		require.Eventually(t, func() bool {
-			_, err := clusterDB.Exec(sqlStatement)
-			return err == nil
+			if _, err := clusterDB.Exec(sqlStatement); err != nil {
+				t.Logf("creating distribution view: %s", err.Error())
+				return false
+			}
+			return true
 		},
 			5*time.Second,
 			1*time.Second,
@@ -1230,8 +1236,11 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
 			require.Eventually(t, func() bool {
-				_, err := clusterDB.Exec(sqlStatement)
-				return err == nil
+				if _, err := clusterDB.Exec(sqlStatement); err != nil {
+					t.Logf("altering columns: %s", err.Error())
+					return false
+				}
+				return true
 			},
 				5*time.Second,
 				1*time.Second,

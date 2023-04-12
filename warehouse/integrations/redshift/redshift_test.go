@@ -101,8 +101,11 @@ func TestIntegrationRedshift(t *testing.T) {
 
 			t.Cleanup(func() {
 				require.Eventuallyf(t, func() bool {
-					_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-					return err == nil
+					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema)); err != nil {
+						t.Logf("dropping schema %s: %v", tc.schema, err.Error())
+						return false
+					}
+					return true
 				},
 					5*time.Second,
 					1*time.Second,
