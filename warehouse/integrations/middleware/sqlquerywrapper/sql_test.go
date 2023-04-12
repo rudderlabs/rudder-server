@@ -73,7 +73,7 @@ func TestQueryWrapper(t *testing.T) {
 
 			kvs := []any{
 				logfield.Query, query,
-				logfield.QueryExecutionTimeInSec, tc.executionTimeInSec,
+				logfield.QueryExecutionTime, tc.executionTimeInSec,
 			}
 			kvs = append(kvs, keysAndValues...)
 
@@ -127,11 +127,11 @@ func TestQueryWrapper(t *testing.T) {
 
 			createKvs := []any{
 				logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-				logfield.QueryExecutionTimeInSec, tc.executionTimeInSec,
+				logfield.QueryExecutionTime, tc.executionTimeInSec,
 			}
 			alterKvs := []any{
 				logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-				logfield.QueryExecutionTimeInSec, tc.executionTimeInSec,
+				logfield.QueryExecutionTime, tc.executionTimeInSec,
 			}
 
 			createKvs = append(createKvs, keysAndValues...)

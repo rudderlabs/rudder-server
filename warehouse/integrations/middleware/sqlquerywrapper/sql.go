@@ -116,7 +116,7 @@ func (db *DB) logQuery(startedAt time.Time, query string) {
 
 		keysAndValues := []any{
 			logfield.Query, sanitizedQuery,
-			logfield.QueryExecutionTimeInSec, executionTime,
+			logfield.QueryExecutionTime, executionTime,
 		}
 		keysAndValues = append(keysAndValues, db.keysAndValues...)
 
