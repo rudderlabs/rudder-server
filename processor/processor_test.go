@@ -557,7 +557,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 							messages["message-4"],
 							messages["message-5"],
 						},
-						createMessagePayloadWithoutSources,
+						createMessagePayload,
 					),
 					EventCount: 3,
 					Parameters: createBatchParameters(SourceIDEnabledNoUT),
