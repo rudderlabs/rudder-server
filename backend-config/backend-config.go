@@ -547,8 +547,7 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 		switch eventProperty {
 		case "messageType":
 			supportedVals := ConvertToArrayOfType[string](supportedEventVals)
-			// TODO: Should remove this
-			pkgLogger.Infof("SupportedVals: %v -- EventType from event: %v\n", supportedVals, eventType)
+			pkgLogger.Debugf("SupportedVals: %v -- EventType from event: %v\n", supportedVals, eventType)
 			allowEvent = lo.Contains(supportedVals, eventType) && evaluatedDefaultBehaviour
 		}
 	}
@@ -556,7 +555,7 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 }
 
 func evaluateSupportedTypes[T comparable](destConfig map[string]interface{}, evalKey string, checkValue T) bool {
-	if !lo.Contains([]string{"supportedMessageTypes"}, evalKey) {
+	if evalKey != "supportedMessageTypes" {
 		return false
 	}
 	supportedValsI := misc.MapLookup(destConfig, evalKey)
