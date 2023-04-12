@@ -685,9 +685,6 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 	j := &HandleT{
 		ownerType:       ownerType,
 		tablePrefix:     tablePrefix,
-		logger:          pkgLogger.Child(tablePrefix),
-		dsListLock:      lock.NewLocker(),
-		dsMigrationLock: lock.NewLocker(),
 	}
 
 	for _, fn := range opts {

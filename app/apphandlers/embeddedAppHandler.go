@@ -182,7 +182,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 
 	eventSchemasJobsDB := jobsdb.NewForReadWrite(
-		"es",
+		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		// jobsdb.WithStatusHandler(),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),

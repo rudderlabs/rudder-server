@@ -58,8 +58,6 @@ type processorApp struct {
 			webPort           int
 			MaxHeaderBytes    int
 		}
-
-		enableEventSchemasJobsDB bool
 	}
 }
 
@@ -189,7 +187,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 
 	eventSchemaDB := jobsdb.NewForReadWrite(
-		"es",
+		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 	)
