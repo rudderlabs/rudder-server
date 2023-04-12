@@ -26,15 +26,15 @@ import (
 )
 
 const (
-	Host                   = "host"
-	Port                   = "port"
-	Path                   = "path"
-	Token                  = "token"
-	Catalog                = "catalog"
-	UseSTSTokens           = "useSTSTokens"
-	EnableExternalLocation = "enableExternalLocation"
-	ExternalLocation       = "externalLocation"
-	UserAgent              = "Rudderstack"
+	host                   = "host"
+	port                   = "port"
+	path                   = "path"
+	token                  = "token"
+	catalog                = "catalog"
+	useSTSTokens           = "useSTSTokens"
+	enableExternalLocation = "enableExternalLocation"
+	externalLocation       = "externalLocation"
+	userAgent              = "Rudderstack"
 )
 
 const (
@@ -386,7 +386,7 @@ func (d *Deltalake) authQuery() (string, error) {
 	if d.ObjectStorage == warehouseutils.S3 {
 		var (
 			canUseRudderStorage = misc.IsConfiguredToUseRudderObjectStorage(d.Warehouse.Destination.Config)
-			canUseSTSTokens     = warehouseutils.GetConfigValueBoolString(UseSTSTokens, d.Warehouse) == "true"
+			canUseSTSTokens     = warehouseutils.GetConfigValueBoolString(useSTSTokens, d.Warehouse) == "true"
 
 			tempAccessKeyId     string
 			tempSecretAccessKey string
@@ -880,8 +880,8 @@ func (d *Deltalake) loadUserTables() map[string]error {
 
 func (d *Deltalake) tableLocationQuery(tableName string) string {
 	var (
-		enableExternalLocation = warehouseutils.GetConfigValueBoolString(EnableExternalLocation, d.Warehouse)
-		externalLocation       = warehouseutils.GetConfigValue(ExternalLocation, d.Warehouse)
+		enableExternalLocation = warehouseutils.GetConfigValueBoolString(enableExternalLocation, d.Warehouse)
+		externalLocation       = warehouseutils.GetConfigValue(externalLocation, d.Warehouse)
 	)
 
 	if enableExternalLocation != "true" {
@@ -930,7 +930,7 @@ func Connect(cred Credentials) (*sql.DB, error) {
 		dbsql.WithSessionParams(map[string]string{
 			"ansi_mode": "false",
 		}),
-		dbsql.WithUserAgentEntry(UserAgent),
+		dbsql.WithUserAgentEntry(userAgent),
 		dbsql.WithTimeout(cred.timeout),
 		dbsql.WithInitialNamespace(cred.Catalog, ""),
 	)
@@ -948,11 +948,11 @@ func Connect(cred Credentials) (*sql.DB, error) {
 
 func (d *Deltalake) credentials() Credentials {
 	return Credentials{
-		Host:    warehouseutils.GetConfigValue(Host, d.Warehouse),
-		Port:    warehouseutils.GetConfigValue(Port, d.Warehouse),
-		Path:    warehouseutils.GetConfigValue(Path, d.Warehouse),
-		Token:   warehouseutils.GetConfigValue(Token, d.Warehouse),
-		Catalog: warehouseutils.GetConfigValue(Catalog, d.Warehouse),
+		Host:    warehouseutils.GetConfigValue(host, d.Warehouse),
+		Port:    warehouseutils.GetConfigValue(port, d.Warehouse),
+		Path:    warehouseutils.GetConfigValue(path, d.Warehouse),
+		Token:   warehouseutils.GetConfigValue(token, d.Warehouse),
+		Catalog: warehouseutils.GetConfigValue(catalog, d.Warehouse),
 		timeout: d.ConnectTimeout,
 	}
 }

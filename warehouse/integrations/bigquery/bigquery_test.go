@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -53,11 +54,14 @@ func TestIntegrationBigQuery(t *testing.T) {
 
 	t.Cleanup(func() {
 		for _, dataset := range []string{schema, sourcesSchema} {
-			require.NoError(t,
-				testhelper.WithConstantBackoff(func() (err error) {
-					return db.Dataset(dataset).DeleteWithContents(context.TODO())
-				}),
-				fmt.Sprintf("Failed dropping dataset %s for BigQuery", dataset),
+			require.Eventuallyf(t, func() bool {
+				err := db.Dataset(dataset).DeleteWithContents(context.TODO())
+				return err == nil
+			},
+				5*time.Second,
+				1*time.Second,
+				"failed dropping dataset %s for BigQuery",
+				dataset,
 			)
 		}
 	})

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -155,13 +156,14 @@ func TestIntegrationSnowflake(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
-				require.NoError(
-					t,
-					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-						return
-					}),
-					fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema),
+				require.Eventuallyf(t, func() bool {
+					_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
+					return err == nil
+				},
+					5*time.Second,
+					1*time.Second,
+					"failed dropping schema %s for Snowflake",
+					tc.schema,
 				)
 			})
 

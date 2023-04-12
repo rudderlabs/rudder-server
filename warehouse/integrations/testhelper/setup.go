@@ -30,8 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-	"github.com/cenkalti/backoff"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
@@ -464,22 +462,26 @@ func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.UserID,
 			sqlStatement,
 		)
-		require.NoError(t, WithConstantBackoff(func() error {
+
+		require.Eventuallyf(t, func() bool {
 			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
 			if countErr != nil {
-				return countErr
+				return false
 			}
 			if count != int64(tableCount) {
-				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
-					wareHouseTest.Schema,
-					warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-					wareHouseTest.UserID,
-					count,
-					tableCount,
-				)
+				return false
 			}
-			return nil
-		}))
+			return true
+		},
+			10*time.Second,
+			1*time.Second,
+			"error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
+			wareHouseTest.Schema,
+			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
+			wareHouseTest.UserID,
+			count,
+			tableCount,
+		)
 	}
 
 	t.Logf("Completed verifying events in warehouse")
@@ -644,14 +646,16 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 	t.Helper()
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
-	require.NoError(t, WithConstantBackoff(func() error {
+	require.Eventuallyf(t, func() bool {
 		destinationValidator := validations.NewDestinationValidator()
 		response := destinationValidator.Validate(&destination)
-		if !response.Success {
-			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
-		}
-		return nil
-	}))
+		return response.Success
+	},
+		5*time.Second,
+		1*time.Second,
+		"failed to validate credentials for destination: %s",
+		destination.DestinationDefinition.Name,
+	)
 
 	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 }
@@ -682,11 +686,6 @@ func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
 		return 0, err
 	}
 	return strconv.ParseInt(result.Values[0][0], 10, 64)
-}
-
-func WithConstantBackoff(operation func() error) error {
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(BackoffDuration), uint64(BackoffRetryMax))
-	return backoff.Retry(operation, backoffWithMaxRetry)
 }
 
 func defaultSendEventsMap() EventsCountMap {

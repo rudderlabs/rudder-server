@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 
@@ -92,13 +93,14 @@ func TestIntegrationDeltalake(t *testing.T) {
 		tc := tc
 
 		t.Cleanup(func() {
-			require.NoError(
-				t,
-				testhelper.WithConstantBackoff(func() (err error) {
-					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, tc.schema))
-					return
-				}),
-				fmt.Sprintf("Failed dropping schema %s for Deltalake", tc.schema),
+			require.Eventuallyf(t, func() bool {
+				_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, tc.schema))
+				return err == nil
+			},
+				5*time.Second,
+				1*time.Second,
+				"failed dropping schema %s for Deltalake",
+				tc.schema,
 			)
 		})
 
@@ -131,7 +133,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 							Value: "false",
 						},
 						{
-							Key:   "Warehouse.deltalake.useLegacy",
+							Key:   "Warehouse.deltalake.useNative",
 							Value: strconv.FormatBool(tc.useLegacy),
 						},
 					})
@@ -156,7 +158,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 							Value: "false",
 						},
 						{
-							Key:   "Warehouse.deltalake.useLegacy",
+							Key:   "Warehouse.deltalake.useNative",
 							Value: strconv.FormatBool(tc.useLegacy),
 						},
 					})
@@ -181,7 +183,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 							Value: "true",
 						},
 						{
-							Key:   "Warehouse.deltalake.useLegacy",
+							Key:   "Warehouse.deltalake.useNative",
 							Value: strconv.FormatBool(tc.useLegacy),
 						},
 					})
@@ -349,7 +351,7 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 							Value: strconv.FormatBool(stc.useParquetLoadFiles),
 						},
 						{
-							Key:   "Warehouse.deltalake.useLegacy",
+							Key:   "Warehouse.deltalake.useNative",
 							Value: strconv.FormatBool(tc.useLegacy),
 						},
 					})
