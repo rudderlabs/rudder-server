@@ -26,6 +26,10 @@ var errorsMappings = []model.JobError{
 		Type:   model.PermissionError,
 		Format: regexp.MustCompile(`AccessDeniedException: Insufficient Lake Formation permission.*: Required Create Database on Catalog`),
 	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`AccessDeniedException: User: .* is not authorized to perform: .* on resource: .*`),
+	},
 }
 
 func Init() {
