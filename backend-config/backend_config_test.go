@@ -1203,5 +1203,4 @@ func TestFilterConditions(t *testing.T) {
 			require.Equal(t, testCase.Expected, actualOutput)
 		})
 	}
-
 }
