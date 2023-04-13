@@ -3,9 +3,10 @@ package sqlquerywrapper
 import (
 	"context"
 	"database/sql"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	"time"
 )
 
 type Opt func(*DB)
