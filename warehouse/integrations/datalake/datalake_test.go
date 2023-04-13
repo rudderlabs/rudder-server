@@ -20,11 +20,11 @@ import (
 )
 
 func TestIntegrationDatalake(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-
-	t.Parallel()
 
 	datalake.Init()
 
@@ -96,11 +96,11 @@ func TestIntegrationDatalake(t *testing.T) {
 }
 
 func TestConfigurationValidationDatalake(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-
-	t.Parallel()
 
 	misc.Init()
 	validations.Init()

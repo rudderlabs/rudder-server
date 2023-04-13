@@ -1312,7 +1312,7 @@ func (d *Deltalake) SetConnectionTimeout(timeout time.Duration) {
 }
 
 // ErrorMappings returns the error mappings
-func (d *Deltalake) ErrorMappings() []model.JobError {
+func (*Deltalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
 

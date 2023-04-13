@@ -31,14 +31,14 @@ import (
 )
 
 func TestIntegrationRedshift(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
-
-	t.Parallel()
 
 	redshift.Init()
 
@@ -195,6 +195,8 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 }
 
 func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name     string
 		err      error
@@ -230,6 +232,8 @@ func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
 }
 
 func TestRedshift_AlterColumn(t *testing.T) {
+	t.Parallel()
+
 	var (
 		bigString      = strings.Repeat("a", 1024)
 		smallString    = strings.Repeat("a", 510)
