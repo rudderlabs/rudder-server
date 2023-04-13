@@ -35,7 +35,7 @@ func Test_Pulsar(t *testing.T) {
 	require.NotNil(t, producer)
 	defer producer.Close()
 
-	consumer, err := client.Client.Subscribe(pulsar.ConsumerOptions{
+	consumer, err := client.client.Subscribe(pulsar.ConsumerOptions{
 		Topic:            topic,
 		SubscriptionName: subscriptionName,
 	})

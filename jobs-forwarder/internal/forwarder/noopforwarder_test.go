@@ -41,6 +41,7 @@ func Test_NOOPForwarder(t *testing.T) {
 	require.NotNil(t, nf)
 
 	nf.Start()
+	defer nf.Stop()
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
 		customVal := "MOCKDS"
 		js := make([]*jobsdb.JobT, numOfJob)
@@ -69,6 +70,4 @@ func Test_NOOPForwarder(t *testing.T) {
 		require.NoError(t, err)
 		return len(jobs.Jobs) == 10
 	}, 30*time.Second, 5*time.Second)
-
-	defer nf.Stop()
 }

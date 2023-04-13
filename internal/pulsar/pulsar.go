@@ -15,18 +15,18 @@ import (
 //go:generate mockgen -destination=../../mocks/pulsar/mock_pulsar.go -package=mock_pulsar "github.com/rudderlabs/rudder-server/internal/pulsar" ProducerAdapter
 
 type ClientConf struct {
-	Url               string
-	OperationTimeout  time.Duration
-	ConnectionTimeout time.Duration
+	url               string
+	operationTimeout  time.Duration
+	connectionTimeout time.Duration
 }
 
 type ProducerConf struct {
-	Topic string
+	topic string
 }
 
 type Producer struct {
-	Client   pulsar.Client
-	Producer pulsar.Producer
+	client   pulsar.Client
+	producer pulsar.Producer
 	log      logger.Logger
 }
 
@@ -38,7 +38,7 @@ type ProducerAdapter interface {
 }
 
 type Client struct {
-	Client pulsar.Client
+	client pulsar.Client
 }
 
 func New(config *config.Config) (ProducerAdapter, error) {
@@ -55,32 +55,32 @@ func New(config *config.Config) (ProducerAdapter, error) {
 }
 
 func newPulsarClient(conf ClientConf, log logger.Logger) (*Client, error) {
-	if conf.Url == "" {
+	if conf.url == "" {
 		return nil, errors.New("pulsar url is empty")
 	}
 	client, err := pulsar.NewClient(pulsar.ClientOptions{
-		URL:               conf.Url,
-		OperationTimeout:  conf.OperationTimeout,
-		ConnectionTimeout: conf.ConnectionTimeout,
+		URL:               conf.url,
+		OperationTimeout:  conf.operationTimeout,
+		ConnectionTimeout: conf.connectionTimeout,
 		Logger:            &pulsarLogAdapter{Logger: log},
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &Client{Client: client}, nil
+	return &Client{client: client}, nil
 }
 
 func newProducer(client *Client, conf ProducerConf, log logger.Logger) (*Producer, error) {
-	producer, err := client.Client.CreateProducer(pulsar.ProducerOptions{
-		Topic: conf.Topic,
+	producer, err := client.client.CreateProducer(pulsar.ProducerOptions{
+		Topic: conf.topic,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Producer{
-		Producer: producer,
+		producer: producer,
 		log:      log,
-		Client:   client.Client,
+		client:   client.client,
 	}, nil
 }
 
@@ -88,7 +88,7 @@ func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg
 	if p == nil {
 		return errors.New("producer is nil")
 	}
-	_, err := p.Producer.Send(ctx, &pulsar.ProducerMessage{
+	_, err := p.producer.Send(ctx, &pulsar.ProducerMessage{
 		Key:         key,
 		OrderingKey: orderingKey,
 		Payload:     msg,
@@ -97,10 +97,10 @@ func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg
 }
 
 func (p *Producer) SendMessageAsync(ctx context.Context, key, orderingKey string, msg []byte, statusfunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error)) {
-	if p.Producer == nil {
+	if p.producer == nil {
 		return
 	}
-	p.Producer.SendAsync(ctx, &pulsar.ProducerMessage{
+	p.producer.SendAsync(ctx, &pulsar.ProducerMessage{
 		Payload:     msg,
 		Key:         key,
 		OrderingKey: orderingKey,
@@ -111,28 +111,28 @@ func (p *Producer) Close() {
 	if p == nil {
 		return
 	}
-	p.Producer.Close()
-	p.Client.Close()
+	p.producer.Close()
+	p.client.Close()
 }
 
 func (p *Producer) Flush() error {
 	if p == nil {
 		return nil
 	}
-	return p.Producer.Flush()
+	return p.producer.Flush()
 }
 
 func getProducerConf(config *config.Config) ProducerConf {
 	return ProducerConf{
-		Topic: config.GetString("Pulsar.Producer.topic", ""),
+		topic: config.GetString("Pulsar.Producer.topic", ""),
 	}
 }
 
 func getClientConf(config *config.Config) ClientConf {
 	return ClientConf{
-		Url:               config.GetString("Pulsar.Client.url", "pulsar://localhost:6650"),
-		OperationTimeout:  config.GetDuration("Pulsar.Client.operationTimeout", 30, time.Second),
-		ConnectionTimeout: config.GetDuration("Pulsar.Client.connectionTimeout", 30, time.Second),
+		url:               config.GetString("Pulsar.Client.url", "pulsar://localhost:6650"),
+		operationTimeout:  config.GetDuration("Pulsar.Client.operationTimeout", 30, time.Second),
+		connectionTimeout: config.GetDuration("Pulsar.Client.connectionTimeout", 30, time.Second),
 	}
 }
 
