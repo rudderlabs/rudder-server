@@ -1197,7 +1197,7 @@ func (d *Deltalake) TestConnection(warehouse model.Warehouse) error {
 }
 
 // DownloadIdentityRules downloadchecking if schema exists identity rules
-func (_ *Deltalake) DownloadIdentityRules(*misc.GZipWriter) error {
+func (*Deltalake) DownloadIdentityRules(*misc.GZipWriter) error {
 	return nil
 }
 
@@ -1321,6 +1321,6 @@ func (d *Deltalake) DropTable(tableName string) error {
 	return d.dropTable(tableName)
 }
 
-func (_ *Deltalake) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+func (*Deltalake) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
