@@ -76,6 +76,11 @@ const (
 	RudderTestPayload             = "rudder-test-payload"
 )
 
+var (
+	regexGwHa               = regexp.MustCompile(`^.*-gw-ha-\d+-\w+-\w+$`)
+	regexGwNonHaOrProcessor = regexp.MustCompile(`^.*-\d+$`)
+)
+
 // ErrorStoreT : DS to store the app errors
 type ErrorStoreT struct {
 	Errors []RudderError
@@ -1382,4 +1387,19 @@ func GetBadgerDBUsage(dir string) (int64, int64, int64, error) {
 		return 0, 0, 0, err
 	}
 	return lsmSize, vlogSize, totSize, nil
+}
+
+func GetInstanceID() string {
+	instance := config.GetString("INSTANCE_ID", "")
+	instanceArr := strings.Split(instance, "-")
+	length := len(instanceArr)
+	// This handles 2 kinds of server instances
+	// a) Processor OR Gateway running in non HA mod where the instance name ends with the index
+	// b) Gateway running in HA mode, where the instance name is of the form *-gw-ha-<index>-<statefulset-id>-<pod-id>
+	if (regexGwHa.MatchString(instance)) && (length > 3) {
+		return instanceArr[length-3]
+	} else if (regexGwNonHaOrProcessor.MatchString(instance)) && (length > 1) {
+		return instanceArr[length-1]
+	}
+	return ""
 }

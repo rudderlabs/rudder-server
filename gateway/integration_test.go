@@ -16,10 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/gorilla/mux"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -132,7 +133,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	releaseName := t.Name() + "_" + appType
 	envArr := []string{
 		fmt.Sprintf("APP_TYPE=%s", appType),
-		fmt.Sprintf("INSTANCE_ID=%s", serverInstanceID),
+		fmt.Sprintf("INSTANCE_ID=%s", "rudderstackmt-v0-rudderstack-0"),
 		fmt.Sprintf("RELEASE_NAME=%s", releaseName),
 		fmt.Sprintf("JOBS_DB_PORT=%s", postgresContainer.Port),
 		fmt.Sprintf("JOBS_DB_USER=%s", postgresContainer.User),
