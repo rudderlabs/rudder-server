@@ -1,19 +1,19 @@
 package deltalake_native_test
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	dbsql "github.com/databricks/databricks-sql-go"
 
-	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -42,18 +42,21 @@ func TestIntegrationDeltalake(t *testing.T) {
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
 
-	nativeCredentials := deltalake_native.Credentials{
-		Host:  credentials.Host,
-		Port:  credentials.Port,
-		Path:  credentials.Path,
-		Token: credentials.Token,
-	}
-
-	dl := deltalake_native.New()
-	deltalake_native.WithConfig(dl, config.Default)
-
-	db, err := deltalake_native.connect(nativeCredentials)
+	port, err := strconv.Atoi(credentials.Port)
 	require.NoError(t, err)
+
+	connector, err := dbsql.NewConnector(
+		dbsql.WithServerHostname(credentials.Host),
+		dbsql.WithPort(port),
+		dbsql.WithHTTPPath(credentials.Path),
+		dbsql.WithAccessToken(credentials.Token),
+		dbsql.WithSessionParams(map[string]string{
+			"ansi_mode": "false",
+		}),
+	)
+	require.NoError(t, err)
+
+	db := sql.OpenDB(connector)
 
 	var (
 		jobsDB       = testhelper.SetUpJobsDB(t)
@@ -85,6 +88,14 @@ func TestIntegrationDeltalake(t *testing.T) {
 			destinationID: "36IDjdnoEus6DDNrth3SWO1FOpu",
 			schema:        nativeSchema,
 			useLegacy:     false,
+		},
+		{
+			name:          "Legacy",
+			writeKey:      "sToFgoilA0U1WxNeW1gdgUVDsEW",
+			sourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
+			destinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
+			schema:        schema,
+			useLegacy:     true,
 		},
 	}
 
@@ -131,6 +142,56 @@ func TestIntegrationDeltalake(t *testing.T) {
 						{
 							Key:   "Warehouse.deltalake.useParquetLoadFiles",
 							Value: "false",
+						},
+						{
+							Key:   "Warehouse.deltalake.useNative",
+							Value: strconv.FormatBool(tc.useLegacy),
+						},
+					})
+				},
+			},
+			{
+				name:               "Append Mode",
+				writeKey:           tc.writeKey,
+				schema:             tc.schema,
+				sourceID:           tc.sourceID,
+				destinationID:      tc.destinationID,
+				warehouseEventsMap: appendEventsMap(),
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.loadTableStrategy",
+							Value: "APPEND",
+						},
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: "false",
+						},
+						{
+							Key:   "Warehouse.deltalake.useNative",
+							Value: strconv.FormatBool(tc.useLegacy),
+						},
+					})
+				},
+			},
+			{
+				name:               "Parquet load files",
+				writeKey:           tc.writeKey,
+				schema:             tc.schema,
+				sourceID:           tc.sourceID,
+				destinationID:      tc.destinationID,
+				warehouseEventsMap: mergeEventsMap(),
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.loadTableStrategy",
+							Value: "MERGE",
+						},
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: "true",
 						},
 						{
 							Key:   "Warehouse.deltalake.useNative",

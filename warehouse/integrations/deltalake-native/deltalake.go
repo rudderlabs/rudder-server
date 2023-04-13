@@ -914,7 +914,7 @@ func partitionedByEventDate(columns []string) bool {
 }
 
 // LoadUserTables loads user tables
-func (d *Deltalake) loadUserTables() map[string]error {
+func (d *Deltalake) LoadUserTables() map[string]error {
 	var (
 		identifiesSchemaInUpload    = d.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
 		identifiesSchemaInWarehouse = d.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable)
@@ -1197,7 +1197,7 @@ func (d *Deltalake) TestConnection(warehouse model.Warehouse) error {
 }
 
 // DownloadIdentityRules download identity rules
-func (*Deltalake) DownloadIdentityRules(*misc.GZipWriter) error {
+func (_ *Deltalake) DownloadIdentityRules(*misc.GZipWriter) error {
 	return nil
 }
 
