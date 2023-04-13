@@ -1,10 +1,6 @@
 package testdata
 
 import (
-	"time"
-
-	"google.golang.org/protobuf/types/known/timestamppb"
-
 	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 )
@@ -63,12 +59,4 @@ var TestEventSchemaKey = proto.EventSchemaKey{
 	WriteKey:        WriteKeyEnabled,
 	EventType:       "track",
 	EventIdentifier: "event-name",
-}
-
-var TestEventSchemaMessage = proto.EventSchemaMessage{
-	WorkspaceID: SampleWorkspaceID,
-	Key:         &TestEventSchemaKey,
-	ObservedAt:  timestamppb.New(time.Now()),
-	Schema:      TrackSchema,
-	Sample:      []byte{},
 }
