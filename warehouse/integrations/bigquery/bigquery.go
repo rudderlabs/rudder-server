@@ -716,23 +716,11 @@ func dedupEnabled() bool {
 	return isDedupEnabled || isUsersTableDedupEnabled
 }
 
-func (bq *HandleT) CrashRecover(warehouse model.Warehouse) (err error) {
+func (bq *HandleT) CrashRecover() {
 	if !dedupEnabled() {
 		return
 	}
-	bq.warehouse = warehouse
-	bq.namespace = warehouse.Namespace
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
-	bq.db, err = bq.connect(BQCredentials{
-		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
-	})
-	if err != nil {
-		return
-	}
-	defer func() { _ = bq.db.Close() }()
 	bq.dropDanglingStagingTables()
-	return
 }
 
 func (bq *HandleT) dropDanglingStagingTables() bool {

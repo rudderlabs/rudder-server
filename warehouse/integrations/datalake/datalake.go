@@ -51,9 +51,7 @@ func (wh *HandleT) Setup(warehouse model.Warehouse, uploader warehouseutils.Uplo
 	return err
 }
 
-func (*HandleT) CrashRecover(_ model.Warehouse) (err error) {
-	return nil
-}
+func (*HandleT) CrashRecover() {}
 
 func (wh *HandleT) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
 	return wh.SchemaRepository.FetchSchema(warehouse)

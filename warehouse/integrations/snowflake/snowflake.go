@@ -1197,7 +1197,7 @@ func (sf *Snowflake) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error
 	return nil
 }
 
-func (*Snowflake) CrashRecover(_ model.Warehouse) (err error) {
+func (*Snowflake) CrashRecover() {
 	return
 }
 

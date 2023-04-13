@@ -678,16 +678,8 @@ func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader warehouseutils
 	return err
 }
 
-func (as *AzureSynapse) CrashRecover(warehouse model.Warehouse) (err error) {
-	as.Warehouse = warehouse
-	as.Namespace = warehouse.Namespace
-	as.DB, err = connect(as.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer as.DB.Close()
+func (as *AzureSynapse) CrashRecover() {
 	as.dropDanglingStagingTables()
-	return
 }
 
 func (as *AzureSynapse) dropDanglingStagingTables() bool {

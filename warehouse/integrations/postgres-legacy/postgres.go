@@ -832,16 +832,8 @@ func (pg *Handle) Setup(
 	return err
 }
 
-func (pg *Handle) CrashRecover(warehouse model.Warehouse) (err error) {
-	pg.Warehouse = warehouse
-	pg.Namespace = warehouse.Namespace
-	pg.DB, err = Connect(pg.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer pg.DB.Close()
+func (pg *Handle) CrashRecover() {
 	pg.dropDanglingStagingTables()
-	return
 }
 
 func (pg *Handle) dropDanglingStagingTables() bool {

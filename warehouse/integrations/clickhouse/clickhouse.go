@@ -959,9 +959,7 @@ func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.U
 	return err
 }
 
-func (*Clickhouse) CrashRecover(_ model.Warehouse) (err error) {
-	return
-}
+func (*Clickhouse) CrashRecover() {}
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
 func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {

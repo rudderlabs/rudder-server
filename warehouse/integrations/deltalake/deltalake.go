@@ -974,16 +974,8 @@ func (dl *Deltalake) Cleanup() {
 }
 
 // CrashRecover crash recover scenarios
-func (dl *Deltalake) CrashRecover(warehouse model.Warehouse) (err error) {
-	dl.Warehouse = warehouse
-	dl.Namespace = warehouse.Namespace
-	dl.Client, err = dl.connectToWarehouse()
-	if err != nil {
-		return err
-	}
-	defer dl.Client.Close()
+func (dl *Deltalake) CrashRecover() {
 	dl.dropDanglingStagingTables()
-	return
 }
 
 // IsEmpty checks if the warehouse is empty or not

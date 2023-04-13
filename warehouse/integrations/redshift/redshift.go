@@ -1386,12 +1386,12 @@ func (rs *Redshift) Cleanup() {
 	}
 }
 
-func (rs *Redshift) CrashRecover(warehouse model.Warehouse) (err error) {
+func (rs *Redshift) CrashRecover() {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.DB, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
-		return err
+		return
 	}
 	defer func() { _ = rs.DB.Close() }()
 	rs.dropDanglingStagingTables()
