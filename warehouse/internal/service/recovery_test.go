@@ -20,16 +20,14 @@ type mockRepo struct {
 
 type mockDestination struct {
 	recovered int
-	err       error
 }
 
 func (r *mockRepo) InterruptedDestinations(_ context.Context, destinationType string) ([]string, error) {
 	return r.m[destinationType], r.err
 }
 
-func (d *mockDestination) CrashRecover(_ model.Warehouse) error {
+func (d *mockDestination) CrashRecover() {
 	d.recovered += 1
-	return d.err
 }
 
 func TestRecovery(t *testing.T) {
@@ -41,7 +39,6 @@ func TestRecovery(t *testing.T) {
 		recovery bool
 
 		repoErr error
-		destErr error
 		wantErr error
 	}{
 		{
@@ -70,14 +67,6 @@ func TestRecovery(t *testing.T) {
 			repoErr:       fmt.Errorf("repo error"),
 			wantErr:       fmt.Errorf("repo interrupted destinations: repo error"),
 		},
-		{
-			name:          "destination error",
-			whType:        warehouseutils.MSSQL,
-			destinationID: "1",
-			recovery:      true,
-			destErr:       fmt.Errorf("dest error"),
-			wantErr:       fmt.Errorf("dest error"),
-		},
 	}
 
 	for _, tc := range testCases {
@@ -90,9 +79,7 @@ func TestRecovery(t *testing.T) {
 				err: tc.repoErr,
 			}
 
-			d := &mockDestination{
-				err: tc.destErr,
-			}
+			d := &mockDestination{}
 
 			recovery := service.NewRecovery(tc.whType, repo)
 

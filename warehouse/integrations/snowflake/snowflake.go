@@ -1197,9 +1197,7 @@ func (sf *Snowflake) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error
 	return nil
 }
 
-func (*Snowflake) CrashRecover() {
-	return
-}
+func (*Snowflake) CrashRecover() {}
 
 func (sf *Snowflake) IsEmpty(warehouse model.Warehouse) (empty bool, err error) {
 	empty = true

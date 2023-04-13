@@ -1387,15 +1387,7 @@ func (rs *Redshift) Cleanup() {
 }
 
 func (rs *Redshift) CrashRecover() {
-	rs.Warehouse = warehouse
-	rs.Namespace = warehouse.Namespace
-	rs.DB, err = Connect(rs.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer func() { _ = rs.DB.Close() }()
 	rs.dropDanglingStagingTables()
-	return
 }
 
 func (*Redshift) IsEmpty(_ model.Warehouse) (empty bool, err error) {
