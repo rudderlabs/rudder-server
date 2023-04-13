@@ -166,7 +166,7 @@ func TestProcessorManager(t *testing.T) {
 		},
 	}
 
-	err := tempDB.Setup(jobsdb.Write, true, "gw", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := tempDB.Setup(jobsdb.Write, true, "gw", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 

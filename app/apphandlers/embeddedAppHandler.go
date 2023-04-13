@@ -136,7 +136,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -145,7 +144,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.routerDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -154,7 +152,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.batchRouterDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -163,7 +160,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -276,7 +272,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 	)
 	defer gwDBForProcessor.Close()
 	if err = gatewayDB.Start(); err != nil {
@@ -308,7 +303,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
-			true, prebackupHandlers, fileUploaderProvider,
+			prebackupHandlers, fileUploaderProvider,
 		)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)
