@@ -458,25 +458,22 @@ func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 			sqlStatement,
 		)
 
-		require.Eventuallyf(t, func() bool {
+		require.NoError(t, WithConstantRetries(func() error {
 			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
 			if countErr != nil {
-				return false
+				return countErr
 			}
 			if count != int64(tableCount) {
-				return false
+				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
+					wareHouseTest.Schema,
+					warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
+					wareHouseTest.UserID,
+					count,
+					tableCount,
+				)
 			}
-			return true
-		},
-			1*time.Minute,
-			1*time.Second,
-			"error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
-			wareHouseTest.Schema,
-			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-			wareHouseTest.UserID,
-			count,
-			tableCount,
-		)
+			return nil
+		}))
 	}
 
 	t.Logf("Completed verifying events in warehouse")
@@ -641,16 +638,14 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 	t.Helper()
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
-	require.Eventuallyf(t, func() bool {
+	require.NoError(t, WithConstantRetries(func() error {
 		destinationValidator := validations.NewDestinationValidator()
 		response := destinationValidator.Validate(&destination)
-		return response.Success
-	},
-		1*time.Minute,
-		1*time.Second,
-		"failed to validate credentials for destination: %s",
-		destination.DestinationDefinition.Name,
-	)
+		if !response.Success {
+			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
+		}
+		return nil
+	}))
 
 	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 }
@@ -681,6 +676,16 @@ func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
 		return 0, err
 	}
 	return strconv.ParseInt(result.Values[0][0], 10, 64)
+}
+
+func WithConstantRetries(operation func() error) error {
+	var err error
+	for i := 0; i < 5; i++ {
+		if err = operation(); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 func defaultSendEventsMap() EventsCountMap {

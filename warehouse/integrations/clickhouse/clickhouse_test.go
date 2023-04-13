@@ -1182,16 +1182,10 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
 		log.Printf("Renaming tables to sharded tables for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-		require.Eventually(t, func() bool {
-			if _, err := clusterDB.Exec(sqlStatement); err != nil {
-				t.Logf("renaming table: %s", err.Error())
-				return false
-			}
-			return true
-		},
-			1*time.Minute,
-			1*time.Second,
-		)
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			_, err := clusterDB.Exec(sqlStatement)
+			return err
+		}))
 	}
 
 	// Create distribution views for tables
@@ -1214,16 +1208,10 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 		)
 		log.Printf("Creating distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-		require.Eventually(t, func() bool {
-			if _, err := clusterDB.Exec(sqlStatement); err != nil {
-				t.Logf("creating distribution view: %s", err.Error())
-				return false
-			}
-			return true
-		},
-			1*time.Minute,
-			1*time.Second,
-		)
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			_, err := clusterDB.Exec(sqlStatement)
+			return err
+		}))
 	}
 
 	// Alter columns to all the cluster tables
@@ -1243,16 +1231,10 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			sqlStatement = strings.TrimSuffix(sqlStatement, ",")
 			log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-			require.Eventually(t, func() bool {
-				if _, err := clusterDB.Exec(sqlStatement); err != nil {
-					t.Logf("altering columns: %s", err.Error())
-					return false
-				}
-				return true
-			},
-				1*time.Minute,
-				1*time.Second,
-			)
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := clusterDB.Exec(sqlStatement)
+				return err
+			}))
 		}
 	}
 }
