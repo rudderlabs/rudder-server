@@ -71,7 +71,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 		sourceID      string
 		destinationID string
 		schema        string
-		useLegacy     bool
+		useNative     bool
 	}{
 		{
 			name:          "Native",
@@ -79,7 +79,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 			sourceID:      "36H5EpYzojqQSepRSaGBrrPx3e4",
 			destinationID: "36IDjdnoEus6DDNrth3SWO1FOpu",
 			schema:        nativeSchema,
-			useLegacy:     false,
+			useNative:     true,
 		},
 		{
 			name:          "Legacy",
@@ -87,7 +87,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 			sourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
 			destinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
 			schema:        schema,
-			useLegacy:     true,
+			useNative:     false,
 		},
 	}
 
@@ -137,7 +137,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 						},
 						{
 							Key:   "Warehouse.deltalake.useNative",
-							Value: strconv.FormatBool(tc.useLegacy),
+							Value: strconv.FormatBool(tc.useNative),
 						},
 					})
 				},
@@ -162,7 +162,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 						},
 						{
 							Key:   "Warehouse.deltalake.useNative",
-							Value: strconv.FormatBool(tc.useLegacy),
+							Value: strconv.FormatBool(tc.useNative),
 						},
 					})
 				},
