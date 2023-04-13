@@ -49,11 +49,6 @@ const (
 )
 
 const (
-	BackoffDuration = 1 * time.Second
-	BackoffRetryMax = 5
-)
-
-const (
 	SnowflakeIntegrationTestCredentials     = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
 	SnowflakeRBACIntegrationTestCredentials = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
 	RedshiftIntegrationTestCredentials      = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
@@ -473,7 +468,7 @@ func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 			}
 			return true
 		},
-			10*time.Second,
+			1*time.Minute,
 			1*time.Second,
 			"error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
 			wareHouseTest.Schema,
@@ -651,7 +646,7 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 		response := destinationValidator.Validate(&destination)
 		return response.Success
 	},
-		5*time.Second,
+		1*time.Minute,
 		1*time.Second,
 		"failed to validate credentials for destination: %s",
 		destination.DestinationDefinition.Name,

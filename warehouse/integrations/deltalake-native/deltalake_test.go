@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	dbsql "github.com/databricks/databricks-sql-go"
 
@@ -97,10 +98,17 @@ func TestIntegrationDeltalake(t *testing.T) {
 			t.Parallel()
 
 			t.Cleanup(func() {
-				_, err := db.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %[1]s;`, tc.schema))
-				require.NoError(t, err)
+				require.Eventually(t, func() bool {
+					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, tc.schema)); err != nil {
+						t.Logf("dropping schema %s: %s", tc.schema, err.Error())
+						return false
+					}
+					return true
+				},
+					1*time.Minute,
+					1*time.Second,
+				)
 			})
-
 			subTestCases := []struct {
 				name               string
 				schema             string

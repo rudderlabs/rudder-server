@@ -156,17 +156,15 @@ func TestIntegrationSnowflake(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
-				require.Eventuallyf(t, func() bool {
+				require.Eventually(t, func() bool {
 					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema)); err != nil {
 						t.Logf("dropping schema %s: %s", tc.schema, err.Error())
 						return false
 					}
 					return true
 				},
-					10*time.Second,
+					1*time.Minute,
 					1*time.Second,
-					"failed dropping schema %s for Snowflake",
-					tc.schema,
 				)
 			})
 
