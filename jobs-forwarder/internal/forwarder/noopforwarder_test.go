@@ -1,4 +1,4 @@
-package jobforwarder
+package forwarder
 
 import (
 	"context"
@@ -7,32 +7,20 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/stretchr/testify/require"
 )
 
-func Test_JobsForwarder(t *testing.T) {
+func Test_NOOPForwarder(t *testing.T) {
 	g, ctx := errgroup.WithContext(context.Background())
 	conf := config.New()
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-
-	topic := "test-topic"
-	pulsarContainer := PulsarResource(t)
-
-	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
-	conf.Set("Pulsar.Producer.topic", topic)
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 
 	jobsdb.Init()
 	jobsdb.Init2()
@@ -48,20 +36,11 @@ func Test_JobsForwarder(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{SampleWorkspaceID: SampleBackendConfig}, Topic: string(topic)}
-			close(ch)
-			return ch
-		})
-
-	jf, err := New(ctx, g, schemasDB, conf, transientsource.NewEmptyService(), mockBackendConfig, logger.NOP)
+	nf, err := NewNOOPForwarder(ctx, g, schemasDB, conf, logger.NOP)
 	require.NoError(t, err)
-	require.NotNil(t, jf)
-	jf.Start()
-	defer jf.Stop()
+	require.NotNil(t, nf)
+
+	nf.Start()
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
 		customVal := "MOCKDS"
 		js := make([]*jobsdb.JobT, numOfJob)
@@ -84,19 +63,12 @@ func Test_JobsForwarder(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		jobs, err := schemasDB.GetProcessed(ctx, jobsdb.GetQueryParamsT{
-			StateFilters: []string{jobsdb.Succeeded.State},
+			StateFilters: []string{jobsdb.Aborted.State},
 			JobsLimit:    10,
 		})
 		require.NoError(t, err)
 		return len(jobs.Jobs) == 10
 	}, 30*time.Second, 5*time.Second)
-}
 
-// PulsarResource returns a pulsar container resource
-func PulsarResource(t *testing.T) *resource.PulsarResource {
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-	pulsarContainer, err := resource.SetupPulsar(pool, t)
-	require.NoError(t, err)
-	return pulsarContainer
+	defer nf.Stop()
 }

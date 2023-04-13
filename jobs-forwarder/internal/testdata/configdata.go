@@ -1,4 +1,4 @@
-package jobforwarder
+package testdata
 
 import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
