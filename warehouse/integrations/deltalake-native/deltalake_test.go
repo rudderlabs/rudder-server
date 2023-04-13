@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"testing"
-	"time"
 
 	dbsql "github.com/databricks/databricks-sql-go"
 
@@ -28,14 +27,14 @@ import (
 )
 
 func TestIntegrationDeltalake(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.DeltalakeIntegrationTestCredentials)
 	}
-
-	t.Parallel()
 
 	deltalake.Init()
 
@@ -94,146 +93,142 @@ func TestIntegrationDeltalake(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 
-		t.Cleanup(func() {
-			require.Eventually(t, func() bool {
-				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, tc.schema)); err != nil {
-					t.Logf("dropping schema %s: %s", tc.schema, err.Error())
-					return false
-				}
-				return true
-			},
-				5*time.Second,
-				1*time.Second,
-			)
-		})
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		subTestCases := []struct {
-			name               string
-			schema             string
-			writeKey           string
-			sourceID           string
-			destinationID      string
-			messageID          string
-			warehouseEventsMap testhelper.EventsCountMap
-			prerequisite       func(t testing.TB)
-		}{
-			{
-				name:               "Merge Mode",
-				writeKey:           tc.writeKey,
-				schema:             tc.schema,
-				sourceID:           tc.sourceID,
-				destinationID:      tc.destinationID,
-				warehouseEventsMap: mergeEventsMap(),
-				prerequisite: func(t testing.TB) {
-					t.Helper()
-					testhelper.SetConfig(t, []warehouseutils.KeyValue{
-						{
-							Key:   "Warehouse.deltalake.loadTableStrategy",
-							Value: "MERGE",
-						},
-						{
-							Key:   "Warehouse.deltalake.useParquetLoadFiles",
-							Value: "false",
-						},
-						{
-							Key:   "Warehouse.deltalake.useNative",
-							Value: strconv.FormatBool(tc.useNative),
-						},
-					})
-				},
-			},
-			{
-				name:               "Append Mode",
-				writeKey:           tc.writeKey,
-				schema:             tc.schema,
-				sourceID:           tc.sourceID,
-				destinationID:      tc.destinationID,
-				warehouseEventsMap: appendEventsMap(),
-				prerequisite: func(t testing.TB) {
-					t.Helper()
-					testhelper.SetConfig(t, []warehouseutils.KeyValue{
-						{
-							Key:   "Warehouse.deltalake.loadTableStrategy",
-							Value: "APPEND",
-						},
-						{
-							Key:   "Warehouse.deltalake.useParquetLoadFiles",
-							Value: "false",
-						},
-						{
-							Key:   "Warehouse.deltalake.useNative",
-							Value: strconv.FormatBool(tc.useNative),
-						},
-					})
-				},
-			},
-			{
-				name:               "Parquet load files",
-				writeKey:           tc.writeKey,
-				schema:             tc.schema,
-				sourceID:           tc.sourceID,
-				destinationID:      tc.destinationID,
-				warehouseEventsMap: mergeEventsMap(),
-				prerequisite: func(t testing.TB) {
-					t.Helper()
-					testhelper.SetConfig(t, []warehouseutils.KeyValue{
-						{
-							Key:   "Warehouse.deltalake.loadTableStrategy",
-							Value: "MERGE",
-						},
-						{
-							Key:   "Warehouse.deltalake.useParquetLoadFiles",
-							Value: "true",
-						},
-						{
-							Key:   "Warehouse.deltalake.useNative",
-							Value: strconv.FormatBool(tc.useNative),
-						},
-					})
-				},
-			},
-		}
-
-		for _, stc := range subTestCases {
-			stc := stc
-
-			t.Run(tc.name+" "+stc.name, func(t *testing.T) {
-				ts := testhelper.WareHouseTest{
-					Schema:        stc.schema,
-					WriteKey:      stc.writeKey,
-					SourceID:      stc.sourceID,
-					DestinationID: stc.destinationID,
-					Prerequisite:  stc.prerequisite,
-					JobsDB:        jobsDB,
-					Provider:      provider,
-					UserID:        testhelper.GetUserId(provider),
-					MessageID:     misc.FastUUID().String(),
-					Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-					WarehouseEventsMap: testhelper.EventsCountMap{
-						"identifies":    1,
-						"users":         1,
-						"tracks":        1,
-						"product_track": 1,
-						"pages":         1,
-						"screens":       1,
-						"aliases":       1,
-						"groups":        1,
-					},
-					Client: &warehouseclient.Client{
-						SQL:  db,
-						Type: warehouseclient.SQLClient,
-					},
-					StatsToVerify: []string{
-						"warehouse_deltalake_grpcExecTime",
-						"warehouse_deltalake_healthTimeouts",
-					},
-				}
-				ts.VerifyEvents(t)
-
-				ts.WarehouseEventsMap = stc.warehouseEventsMap
-				ts.VerifyModifiedEvents(t)
+			t.Cleanup(func() {
+				_, err := db.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %[1]s;`, tc.schema))
+				require.NoError(t, err)
 			})
-		}
+
+			subTestCases := []struct {
+				name               string
+				schema             string
+				writeKey           string
+				sourceID           string
+				destinationID      string
+				messageID          string
+				warehouseEventsMap testhelper.EventsCountMap
+				prerequisite       func(t testing.TB)
+			}{
+				{
+					name:               "Merge Mode",
+					writeKey:           tc.writeKey,
+					schema:             tc.schema,
+					sourceID:           tc.sourceID,
+					destinationID:      tc.destinationID,
+					warehouseEventsMap: mergeEventsMap(),
+					prerequisite: func(t testing.TB) {
+						t.Helper()
+						testhelper.SetConfig(t, []warehouseutils.KeyValue{
+							{
+								Key:   "Warehouse.deltalake.loadTableStrategy",
+								Value: "MERGE",
+							},
+							{
+								Key:   "Warehouse.deltalake.useParquetLoadFiles",
+								Value: "false",
+							},
+							{
+								Key:   "Warehouse.deltalake.useNative",
+								Value: strconv.FormatBool(tc.useNative),
+							},
+						})
+					},
+				},
+				{
+					name:               "Append Mode",
+					writeKey:           tc.writeKey,
+					schema:             tc.schema,
+					sourceID:           tc.sourceID,
+					destinationID:      tc.destinationID,
+					warehouseEventsMap: appendEventsMap(),
+					prerequisite: func(t testing.TB) {
+						t.Helper()
+						testhelper.SetConfig(t, []warehouseutils.KeyValue{
+							{
+								Key:   "Warehouse.deltalake.loadTableStrategy",
+								Value: "APPEND",
+							},
+							{
+								Key:   "Warehouse.deltalake.useParquetLoadFiles",
+								Value: "false",
+							},
+							{
+								Key:   "Warehouse.deltalake.useNative",
+								Value: strconv.FormatBool(tc.useNative),
+							},
+						})
+					},
+				},
+				{
+					name:               "Parquet load files",
+					writeKey:           tc.writeKey,
+					schema:             tc.schema,
+					sourceID:           tc.sourceID,
+					destinationID:      tc.destinationID,
+					warehouseEventsMap: mergeEventsMap(),
+					prerequisite: func(t testing.TB) {
+						t.Helper()
+						testhelper.SetConfig(t, []warehouseutils.KeyValue{
+							{
+								Key:   "Warehouse.deltalake.loadTableStrategy",
+								Value: "MERGE",
+							},
+							{
+								Key:   "Warehouse.deltalake.useParquetLoadFiles",
+								Value: "true",
+							},
+							{
+								Key:   "Warehouse.deltalake.useNative",
+								Value: strconv.FormatBool(tc.useNative),
+							},
+						})
+					},
+				},
+			}
+
+			for _, stc := range subTestCases {
+				stc := stc
+
+				t.Run(tc.name+" "+stc.name, func(t *testing.T) {
+					ts := testhelper.WareHouseTest{
+						Schema:        stc.schema,
+						WriteKey:      stc.writeKey,
+						SourceID:      stc.sourceID,
+						DestinationID: stc.destinationID,
+						Prerequisite:  stc.prerequisite,
+						JobsDB:        jobsDB,
+						Provider:      provider,
+						UserID:        testhelper.GetUserId(provider),
+						MessageID:     misc.FastUUID().String(),
+						Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+						WarehouseEventsMap: testhelper.EventsCountMap{
+							"identifies":    1,
+							"users":         1,
+							"tracks":        1,
+							"product_track": 1,
+							"pages":         1,
+							"screens":       1,
+							"aliases":       1,
+							"groups":        1,
+						},
+						Client: &warehouseclient.Client{
+							SQL:  db,
+							Type: warehouseclient.SQLClient,
+						},
+						StatsToVerify: []string{
+							"warehouse_deltalake_grpcExecTime",
+							"warehouse_deltalake_healthTimeouts",
+						},
+					}
+					ts.VerifyEvents(t)
+
+					ts.WarehouseEventsMap = stc.warehouseEventsMap
+					ts.VerifyModifiedEvents(t)
+				})
+			}
+		})
 	}
 }
 
