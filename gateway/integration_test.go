@@ -54,7 +54,6 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		group                errgroup.Group
 		postgresContainer    *resource.PostgresResource
 		transformerContainer *destination.TransformerResource
-		serverInstanceID     = "1"
 		workspaceToken       = "workspace-token"
 	)
 
