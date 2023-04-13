@@ -202,20 +202,8 @@ func (d *Deltalake) connect() (*sql.DB, error) {
 }
 
 // CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover(warehouse model.Warehouse) error {
-	d.Warehouse = warehouse
-	d.Namespace = warehouse.Namespace
-
-	db, err := d.connect()
-	if err != nil {
-		return fmt.Errorf("connecting: %w", err)
-	}
-
-	d.DB = db
-	defer func() { _ = d.DB.Close() }()
-
+func (d *Deltalake) CrashRecover(model.Warehouse) error {
 	d.dropDanglingStagingTables()
-
 	return nil
 }
 
@@ -311,9 +299,7 @@ func (d *Deltalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.
 	if err != nil {
 		return model.Schema{}, model.Schema{}, fmt.Errorf("connecting: %w", err)
 	}
-
-	d.DB = db
-	defer func() { _ = d.DB.Close() }()
+	defer func() { _ = db.Close() }()
 
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
@@ -1210,7 +1196,7 @@ func (d *Deltalake) TestConnection(warehouse model.Warehouse) error {
 	return nil
 }
 
-// DownloadIdentityRules download identity rules
+// DownloadIdentityRules downloadchecking if schema exists identity rules
 func (_ *Deltalake) DownloadIdentityRules(*misc.GZipWriter) error {
 	return nil
 }
