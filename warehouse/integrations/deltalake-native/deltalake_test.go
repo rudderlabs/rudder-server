@@ -52,7 +52,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 	dl := deltalake_native.New()
 	deltalake_native.WithConfig(dl, config.Default)
 
-	db, err := deltalake_native.Connect(nativeCredentials)
+	db, err := deltalake_native.connect(nativeCredentials)
 	require.NoError(t, err)
 
 	var (
@@ -66,7 +66,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 		t.Logf("dropping schema %s: %s", nativeSchema, err.Error())
 		return
 	}
-	if err ==  nil {
+	if err == nil {
 		return
 	}
 
