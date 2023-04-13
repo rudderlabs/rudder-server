@@ -28,14 +28,14 @@ import (
 )
 
 func TestIntegrationDeltalake(t *testing.T) {
-	t.Parallel()
-
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.DeltalakeIntegrationTestCredentials)
 	}
+
+	t.Parallel()
 
 	deltalake.Init()
 
@@ -95,8 +95,6 @@ func TestIntegrationDeltalake(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			t.Cleanup(func() {
 				require.Eventually(t, func() bool {
 					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, tc.schema)); err != nil {
