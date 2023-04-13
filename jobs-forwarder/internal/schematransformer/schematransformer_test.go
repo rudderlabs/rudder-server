@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/testdata"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
@@ -20,6 +21,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/stretchr/testify/require"
 )
+
+var TestEventPayload = EventPayload{
+	WriteKey: testdata.WriteKeyEnabled,
+	Event:    testdata.TrackEvent,
+}
 
 func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	conf := config.New()
@@ -35,52 +41,52 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{SampleWorkspaceID: SampleBackendConfig}, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{testdata.SampleWorkspaceID: testdata.SampleBackendConfig}, Topic: string(topic)}
 			close(ch)
 			return ch
 		})
 	schemaTransformer.Setup()
 	t.Run("Test getEventType", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getEventType(TrackEvent), "track")
-		require.Equal(t, schemaTransformer.getEventType(IdentifyEvent), "identify")
-		require.Equal(t, schemaTransformer.getEventIdentifier(TrackEvent, "track"), "event-name")
-		require.Equal(t, schemaTransformer.getEventIdentifier(IdentifyEvent, "identify"), "")
+		require.Equal(t, schemaTransformer.getEventType(testdata.TrackEvent), "track")
+		require.Equal(t, schemaTransformer.getEventType(testdata.IdentifyEvent), "identify")
+		require.Equal(t, schemaTransformer.getEventIdentifier(testdata.TrackEvent, "track"), "event-name")
+		require.Equal(t, schemaTransformer.getEventIdentifier(testdata.IdentifyEvent, "identify"), "")
 	})
 
 	t.Run("Test flattenEvent", func(t *testing.T) {
-		flattenedEvent, err := schemaTransformer.flattenEvent(CompositeEvent)
+		flattenedEvent, err := schemaTransformer.flattenEvent(testdata.CompositeEvent)
 		require.Nil(t, err)
-		require.Equal(t, flattenedEvent, CompositeFlattenedEvent)
+		require.Equal(t, flattenedEvent, testdata.CompositeFlattenedEvent)
 
-		flattenedIdentifyEvent, err := schemaTransformer.flattenEvent(IdentifyEvent)
+		flattenedIdentifyEvent, err := schemaTransformer.flattenEvent(testdata.IdentifyEvent)
 		require.Nil(t, err)
-		require.Equal(t, flattenedIdentifyEvent, IdentifyFlattenedEvent)
+		require.Equal(t, flattenedIdentifyEvent, testdata.IdentifyFlattenedEvent)
 	})
 
 	t.Run("Test getSchema", func(t *testing.T) {
-		schema := schemaTransformer.getSchema(TrackEvent)
-		require.Equal(t, schema, TrackSchema)
+		schema := schemaTransformer.getSchema(testdata.TrackEvent)
+		require.Equal(t, schema, testdata.TrackSchema)
 
-		compositeSchema := schemaTransformer.getSchema(CompositeFlattenedEvent)
-		require.Equal(t, compositeSchema, CompositeSchema)
+		compositeSchema := schemaTransformer.getSchema(testdata.CompositeFlattenedEvent)
+		require.Equal(t, compositeSchema, testdata.CompositeSchema)
 	})
 
 	t.Run("Test getSampleEvent", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getSampleEvent(IdentifyEvent, WriteKeyEnabled), []byte{})
+		require.Equal(t, schemaTransformer.getSampleEvent(testdata.IdentifyEvent, testdata.WriteKeyEnabled), []byte{})
 	})
 
 	t.Run("Test disablePIIReporting", func(t *testing.T) {
-		require.True(t, schemaTransformer.disablePIIReporting(WriteKeyEnabled))
+		require.True(t, schemaTransformer.disablePIIReporting(testdata.WriteKeyEnabled))
 	})
 
 	t.Run("Test getSchemaKeyFromJob", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(TestEventPayload), &TestEventSchemaKey)
+		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(TestEventPayload), &testdata.TestEventSchemaKey)
 	})
 
 	t.Run("Test getSchemaMessage", func(t *testing.T) {
 		schemaKey := schemaTransformer.getSchemaKeyFromJob(TestEventPayload)
 		timeNow := time.Now()
-		schemaMessage, err := schemaTransformer.getSchemaMessage(schemaKey, TrackEvent, SampleWorkspaceID, timeNow)
+		schemaMessage, err := schemaTransformer.getSchemaMessage(schemaKey, testdata.TrackEvent, testdata.SampleWorkspaceID, timeNow)
 		testEventSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
 		require.Equal(t, schemaMessage, testEventSchemaMessage)
@@ -112,7 +118,7 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{SampleWorkspaceID: SampleBackendConfig}, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{testdata.SampleWorkspaceID: testdata.SampleBackendConfig}, Topic: string(topic)}
 			close(ch)
 			defer close(closeChan)
 			return ch
@@ -137,10 +143,10 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 
 func generateTestEventSchemaMessage(time time.Time) *proto.EventSchemaMessage {
 	return &proto.EventSchemaMessage{
-		WorkspaceID: SampleWorkspaceID,
-		Key:         &TestEventSchemaKey,
+		WorkspaceID: testdata.SampleWorkspaceID,
+		Key:         &testdata.TestEventSchemaKey,
 		ObservedAt:  timestamppb.New(time),
-		Schema:      TrackSchema,
+		Schema:      testdata.TrackSchema,
 		Sample:      []byte{},
 	}
 }
@@ -160,7 +166,7 @@ func generateTestJob(t *testing.T, time time.Time) *jobsdb.JobT {
 		EventCount:    1,
 		PayloadSize:   100,
 		LastJobStatus: jobsdb.JobStatusT{},
-		WorkspaceId:   SampleWorkspaceID,
+		WorkspaceId:   testdata.SampleWorkspaceID,
 		Parameters:    []byte{},
 	}
 }

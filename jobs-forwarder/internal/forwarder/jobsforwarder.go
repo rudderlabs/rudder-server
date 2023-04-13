@@ -1,4 +1,4 @@
-package jobforwarder
+package forwarder
 
 import (
 	"context"
@@ -8,12 +8,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	pulsarType "github.com/apache/pulsar-client-go/pulsar"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/forwarder/baseforwarder"
 	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -21,7 +19,7 @@ import (
 )
 
 type JobsForwarder struct {
-	baseforwarder.BaseForwarder
+	BaseForwarder
 	pulsarProducer   pulsar.ProducerAdapter
 	transientSources transientsource.Service
 	backendConfig    backendconfig.BackendConfig
@@ -30,8 +28,8 @@ type JobsForwarder struct {
 	key              string
 }
 
-func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, transientSources transientsource.Service, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
-	baseForwarder := baseforwarder.BaseForwarder{}
+func NewJobsForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, transientSources transientsource.Service, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
+	baseForwarder := BaseForwarder{}
 	baseForwarder.LoadMetaData(ctx, g, schemaDB, log, config)
 	forwarder := JobsForwarder{
 		transientSources: transientSources,
@@ -51,13 +49,13 @@ func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config 
 }
 
 func (jf *JobsForwarder) Start() {
-	jf.ErrGroup.Go(misc.WithBugsnag(func() error {
+	jf.g.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
-			case <-jf.Ctx.Done():
+			case <-jf.ctx.Done():
 				return nil
 			default:
-				jobs, limitReached, err := jf.GetJobs(jf.Ctx)
+				jobs, limitReached, err := jf.GetJobs(jf.ctx)
 				if err != nil {
 					return err
 				}
@@ -98,12 +96,12 @@ func (jf *JobsForwarder) Start() {
 							})
 						}
 					}
-					jf.pulsarProducer.SendMessageAsync(jf.Ctx, jf.key, "", transformedBytes, statusFunc)
+					jf.pulsarProducer.SendMessageAsync(jf.ctx, jf.key, "", transformedBytes, statusFunc)
 					err = jf.pulsarProducer.Flush()
 					if err != nil {
 						return err
 					}
-					err = jf.MarkJobStatuses(jf.Ctx, statusList)
+					err = jf.MarkJobStatuses(jf.ctx, statusList)
 					if err != nil {
 						return err
 					}

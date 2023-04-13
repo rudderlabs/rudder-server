@@ -1,4 +1,4 @@
-package noopforwarder
+package forwarder
 
 import (
 	"context"
@@ -8,33 +8,32 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/forwarder/baseforwarder"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type NoopForwarder struct {
-	baseforwarder.BaseForwarder
+	BaseForwarder
 }
 
-func New(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*NoopForwarder, error) {
-	baseForwarder := baseforwarder.BaseForwarder{}
+func NewNOOPForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*NoopForwarder, error) {
+	baseForwarder := BaseForwarder{}
 	baseForwarder.LoadMetaData(ctx, g, schemaDB, log, config)
 	return &NoopForwarder{baseForwarder}, nil
 }
 
 func (nf *NoopForwarder) Start() {
-	nf.ErrGroup.Go(misc.WithBugsnag(func() error {
+	nf.g.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
-			case <-nf.Ctx.Done():
+			case <-nf.ctx.Done():
 				return nil
 			default:
-				jobList, limitReached, err := nf.GetJobs(nf.Ctx)
+				jobList, limitReached, err := nf.GetJobs(nf.ctx)
 				if err != nil {
 					panic(err)
 				}
-				nf.Log.Infof("NoopForwarder: Got %d jobs", len(jobList))
+				nf.log.Infof("NoopForwarder: Got %d jobs", len(jobList))
 				var statusList []*jobsdb.JobStatusT
 				for _, job := range jobList {
 					statusList = append(statusList, &jobsdb.JobStatusT{
@@ -49,9 +48,9 @@ func (nf *NoopForwarder) Start() {
 						WorkspaceId:   job.WorkspaceId,
 					})
 				}
-				err = nf.MarkJobStatuses(nf.Ctx, statusList)
+				err = nf.MarkJobStatuses(nf.ctx, statusList)
 				if err != nil {
-					nf.Log.Errorf("Error while updating job status: %v", err)
+					nf.log.Errorf("Error while updating job status: %v", err)
 					panic(err)
 				}
 				time.Sleep(nf.GetSleepTime(limitReached))
