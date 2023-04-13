@@ -31,7 +31,7 @@ func (nf *NoopForwarder) Start() {
 			default:
 				jobList, limitReached, err := nf.GetJobs(nf.ctx)
 				if err != nil {
-					panic(err)
+					return err
 				}
 				nf.log.Infof("NoopForwarder: Got %d jobs", len(jobList))
 				var statusList []*jobsdb.JobStatusT
@@ -51,7 +51,7 @@ func (nf *NoopForwarder) Start() {
 				err = nf.MarkJobStatuses(nf.ctx, statusList)
 				if err != nil {
 					nf.log.Errorf("Error while updating job status: %v", err)
-					panic(err)
+					return err
 				}
 				time.Sleep(nf.GetSleepTime(limitReached))
 			}
