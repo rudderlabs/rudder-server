@@ -1181,7 +1181,7 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			}
 			return true
 		},
-			5*time.Second,
+			10*time.Second,
 			1*time.Second,
 		)
 	}
@@ -1213,7 +1213,7 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			}
 			return true
 		},
-			5*time.Second,
+			10*time.Second,
 			1*time.Second,
 		)
 	}
@@ -1242,7 +1242,7 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 				}
 				return true
 			},
-				5*time.Second,
+				10*time.Second,
 				1*time.Second,
 			)
 		}

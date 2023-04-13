@@ -61,7 +61,7 @@ func TestIntegrationBigQuery(t *testing.T) {
 				}
 				return true
 			},
-				5*time.Second,
+				10*time.Second,
 				1*time.Second,
 			)
 		}

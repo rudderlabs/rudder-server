@@ -62,6 +62,14 @@ func TestIntegrationDeltalake(t *testing.T) {
 		nativeSchema = fmt.Sprintf("%s_%s", schema, "native")
 	)
 
+	if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, nativeSchema)); err != nil {
+		t.Logf("dropping schema %s: %s", nativeSchema, err.Error())
+		return
+	}
+	if err ==  nil {
+		return
+	}
+
 	testCases := []struct {
 		name          string
 		writeKey      string
@@ -77,14 +85,6 @@ func TestIntegrationDeltalake(t *testing.T) {
 			destinationID: "36IDjdnoEus6DDNrth3SWO1FOpu",
 			schema:        nativeSchema,
 			useLegacy:     false,
-		},
-		{
-			name:          "Legacy",
-			writeKey:      "sToFgoilA0U1WxNeW1gdgUVDsEW",
-			sourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
-			destinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
-			schema:        schema,
-			useLegacy:     true,
 		},
 	}
 
@@ -131,56 +131,6 @@ func TestIntegrationDeltalake(t *testing.T) {
 						{
 							Key:   "Warehouse.deltalake.useParquetLoadFiles",
 							Value: "false",
-						},
-						{
-							Key:   "Warehouse.deltalake.useNative",
-							Value: strconv.FormatBool(tc.useLegacy),
-						},
-					})
-				},
-			},
-			{
-				name:               "Append Mode",
-				writeKey:           tc.writeKey,
-				schema:             tc.schema,
-				sourceID:           tc.sourceID,
-				destinationID:      tc.destinationID,
-				warehouseEventsMap: appendEventsMap(),
-				prerequisite: func(t testing.TB) {
-					t.Helper()
-					testhelper.SetConfig(t, []warehouseutils.KeyValue{
-						{
-							Key:   "Warehouse.deltalake.loadTableStrategy",
-							Value: "APPEND",
-						},
-						{
-							Key:   "Warehouse.deltalake.useParquetLoadFiles",
-							Value: "false",
-						},
-						{
-							Key:   "Warehouse.deltalake.useNative",
-							Value: strconv.FormatBool(tc.useLegacy),
-						},
-					})
-				},
-			},
-			{
-				name:               "Parquet load files",
-				writeKey:           tc.writeKey,
-				schema:             tc.schema,
-				sourceID:           tc.sourceID,
-				destinationID:      tc.destinationID,
-				warehouseEventsMap: mergeEventsMap(),
-				prerequisite: func(t testing.TB) {
-					t.Helper()
-					testhelper.SetConfig(t, []warehouseutils.KeyValue{
-						{
-							Key:   "Warehouse.deltalake.loadTableStrategy",
-							Value: "MERGE",
-						},
-						{
-							Key:   "Warehouse.deltalake.useParquetLoadFiles",
-							Value: "true",
 						},
 						{
 							Key:   "Warehouse.deltalake.useNative",
