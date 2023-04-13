@@ -176,7 +176,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	schemasDB := jobsdb.NewForReadWrite(
 		"event_schema",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
