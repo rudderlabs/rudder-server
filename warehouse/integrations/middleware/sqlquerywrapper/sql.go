@@ -37,12 +37,6 @@ func WithKeyAndValues(keyAndValues ...any) Opt {
 	}
 }
 
-func WithSince(since func(time.Time) time.Duration) Opt {
-	return func(s *DB) {
-		s.since = since
-	}
-}
-
 func WithSlowQueryThreshold(slowQueryThreshold time.Duration) Opt {
 	return func(s *DB) {
 		s.slowQueryThreshold = slowQueryThreshold
@@ -110,15 +104,17 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interfa
 }
 
 func (db *DB) logQuery(query string, elapsed time.Duration) {
-	if elapsed > db.slowQueryThreshold {
-		sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
-
-		keysAndValues := []any{
-			logfield.Query, sanitizedQuery,
-			logfield.QueryExecutionTime, elapsed,
-		}
-		keysAndValues = append(keysAndValues, db.keysAndValues...)
-
-		db.logger.Infow("executing query", keysAndValues...)
+	if elapsed < db.slowQueryThreshold {
+		return
 	}
+
+	sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
+
+	keysAndValues := []any{
+		logfield.Query, sanitizedQuery,
+		logfield.QueryExecutionTime, elapsed,
+	}
+	keysAndValues = append(keysAndValues, db.keysAndValues...)
+
+	db.logger.Infow("executing query", keysAndValues...)
 }

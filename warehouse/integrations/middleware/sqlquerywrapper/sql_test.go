@@ -1,12 +1,10 @@
-package sqlquerywrapper_test
+package sqlquerywrapper
 
 import (
 	"context"
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/google/uuid"
 
@@ -59,15 +57,15 @@ func TestQueryWrapper(t *testing.T) {
 
 			mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-			qw := sqlquerywrapper.New(
+			qw := New(
 				pgResource.DB,
-				sqlquerywrapper.WithSlowQueryThreshold(queryThreshold),
-				sqlquerywrapper.WithLogger(mockLogger),
-				sqlquerywrapper.WithSince(func(time.Time) time.Duration {
-					return tc.executionTimeInSec
-				}),
-				sqlquerywrapper.WithKeyAndValues(keysAndValues...),
+				WithSlowQueryThreshold(queryThreshold),
+				WithLogger(mockLogger),
+				WithKeyAndValues(keysAndValues...),
 			)
+			qw.since = func(time.Time) time.Duration {
+				return tc.executionTimeInSec
+			}
 
 			query := "SELECT 1;"
 
@@ -110,18 +108,18 @@ func TestQueryWrapper(t *testing.T) {
 
 			mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-			qw := sqlquerywrapper.New(
+			qw := New(
 				pgResource.DB,
-				sqlquerywrapper.WithSlowQueryThreshold(queryThreshold),
-				sqlquerywrapper.WithLogger(mockLogger),
-				sqlquerywrapper.WithSince(func(time.Time) time.Duration {
-					return tc.executionTimeInSec
-				}),
-				sqlquerywrapper.WithKeyAndValues(keysAndValues...),
-				sqlquerywrapper.WithSecretsRegex(map[string]string{
+				WithSlowQueryThreshold(queryThreshold),
+				WithLogger(mockLogger),
+				WithKeyAndValues(keysAndValues...),
+				WithSecretsRegex(map[string]string{
 					"PASSWORD '[^']*'": "PASSWORD '***'",
 				}),
 			)
+			qw.since = func(time.Time) time.Duration {
+				return tc.executionTimeInSec
+			}
 
 			user := fmt.Sprintf("test_user_%d", uuid.New().ID())
 
