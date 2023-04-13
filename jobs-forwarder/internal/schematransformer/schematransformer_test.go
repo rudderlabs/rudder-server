@@ -25,7 +25,6 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	conf := config.New()
 	g, ctx := errgroup.WithContext(context.Background())
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
-	closeChan := make(chan struct{})
 	schemaTransformer := SchemaTransformer{
 		ctx:              ctx,
 		g:                g,
@@ -38,11 +37,9 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{SampleWorkspaceID: SampleBackendConfig}, Topic: string(topic)}
 			close(ch)
-			defer close(closeChan)
 			return ch
 		})
 	schemaTransformer.Setup()
-	<-closeChan
 	t.Run("Test getEventType", func(t *testing.T) {
 		require.Equal(t, schemaTransformer.getEventType(TrackEvent), "track")
 		require.Equal(t, schemaTransformer.getEventType(IdentifyEvent), "identify")
