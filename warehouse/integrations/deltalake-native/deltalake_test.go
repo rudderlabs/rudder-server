@@ -65,14 +65,6 @@ func TestIntegrationDeltalake(t *testing.T) {
 		nativeSchema = fmt.Sprintf("%s_%s", schema, "native")
 	)
 
-	if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, nativeSchema)); err != nil {
-		t.Logf("dropping schema %s: %s", nativeSchema, err.Error())
-		return
-	}
-	if err == nil {
-		return
-	}
-
 	testCases := []struct {
 		name          string
 		writeKey      string

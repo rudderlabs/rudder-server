@@ -863,6 +863,7 @@ func (d *Deltalake) canUseAuth() bool {
 	return canUseRudderStorage || canUseSTSTokens
 }
 
+// getLoadFolder returns the load folder for the warehouse load files
 func (d *Deltalake) getLoadFolder(location string) string {
 	loadFolder := warehouseutils.GetObjectFolderForDeltalake(d.ObjectStorage, location)
 
@@ -1253,6 +1254,7 @@ func (d *Deltalake) Connect(warehouse model.Warehouse) (warehouseclient.Client, 
 	return warehouseclient.Client{Type: warehouseclient.SQLClient, SQL: db}, nil
 }
 
+// LoadTestTable loads the test table
 func (d *Deltalake) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) error {
 	auth, err := d.authQuery()
 	if err != nil {
@@ -1318,10 +1320,12 @@ func (d *Deltalake) LoadTestTable(location, tableName string, _ map[string]inter
 	return nil
 }
 
+// SetConnectionTimeout sets the connection timeout
 func (d *Deltalake) SetConnectionTimeout(timeout time.Duration) {
 	d.ConnectTimeout = timeout
 }
 
+// ErrorMappings returns the error mappings
 func (d *Deltalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
