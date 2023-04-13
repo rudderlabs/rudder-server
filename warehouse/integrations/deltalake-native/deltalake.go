@@ -166,6 +166,7 @@ func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	return nil
 }
 
+// connect connects to the warehouse
 func (d *Deltalake) connect() (*sql.DB, error) {
 	port, err := strconv.Atoi(warehouseutils.GetConfigValue(port, d.Warehouse))
 	if err != nil {
@@ -218,6 +219,7 @@ func (d *Deltalake) CrashRecover(warehouse model.Warehouse) error {
 	return nil
 }
 
+// dropDanglingStagingTables drops dangling staging tables
 func (d *Deltalake) dropDanglingStagingTables() {
 	tableNames, err := d.fetchTables(rudderStagingTableRegex)
 	if err != nil {
@@ -236,6 +238,7 @@ func (d *Deltalake) dropDanglingStagingTables() {
 	d.dropStagingTables(tableNames)
 }
 
+// fetchTables fetches tables from the database
 func (d *Deltalake) fetchTables(regex string) ([]string, error) {
 	query := fmt.Sprintf(`SHOW tables FROM %s LIKE '%s';`, d.Namespace, regex)
 
@@ -268,6 +271,7 @@ func (d *Deltalake) fetchTables(regex string) ([]string, error) {
 	return tables, nil
 }
 
+// dropStagingTables drops all the staging tables
 func (d *Deltalake) dropStagingTables(stagingTables []string) {
 	for _, stagingTable := range stagingTables {
 		err := d.dropTable(stagingTable)
@@ -286,6 +290,7 @@ func (d *Deltalake) dropStagingTables(stagingTables []string) {
 	}
 }
 
+// DropTable drops a table from the warehouse
 func (d *Deltalake) dropTable(table string) error {
 	query := fmt.Sprintf(`DROP TABLE %s.%s;`, d.Namespace, table)
 
@@ -347,6 +352,7 @@ func (d *Deltalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.
 	return schema, unrecognizedSchema, nil
 }
 
+// fetchTableAttributes fetches the attributes of a table
 func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, error) {
 	tableSchema := make(model.TableSchema)
 
@@ -450,6 +456,7 @@ func (d *Deltalake) CreateTable(tableName string, columns model.TableSchema) err
 	return nil
 }
 
+// columnsWithDataTypes returns the columns with their data types.
 func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(_ int, name string) string {
@@ -465,6 +472,7 @@ func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
 
+// tableLocationQuery returns the location query for the table.
 func (d *Deltalake) tableLocationQuery(tableName string) string {
 	enableExternalLocation := warehouseutils.GetConfigValueBoolString("enableExternalLocation", d.Warehouse)
 	externalLocation := warehouseutils.GetConfigValue("externalLocation", d.Warehouse)
@@ -800,6 +808,7 @@ func primaryKey(tableName string) string {
 	return key
 }
 
+// sortedColumnNames returns the column names in the order of sortedColumnKeys
 func (d *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiff) string {
 	if d.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		return strings.Join(sortedColumnKeys, ",")
@@ -846,6 +855,7 @@ func (d *Deltalake) authQuery() (string, error) {
 	return auth, nil
 }
 
+// canUseAuth returns true if the warehouse is configured to use RudderObjectStorage or STS tokens
 func (d *Deltalake) canUseAuth() bool {
 	canUseRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(d.Warehouse.Destination.Config)
 	canUseSTSTokens := warehouseutils.GetConfigValueBoolString(useSTSTokens, d.Warehouse) == "true"
@@ -863,6 +873,7 @@ func (d *Deltalake) getLoadFolder(location string) string {
 	return loadFolder
 }
 
+// hasAWSCredentials returns true if the warehouse is configured to use AWS credentials
 func (d *Deltalake) hasAWSCredentials() bool {
 	awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, d.Warehouse)
 	awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, d.Warehouse)
@@ -909,6 +920,7 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 	return partitionQuery, nil
 }
 
+// partitionedByEventDate returns true if the table is partitioned by event_date
 func partitionedByEventDate(columns []string) bool {
 	return misc.Contains(columns, "event_date")
 }
@@ -1126,6 +1138,7 @@ func (d *Deltalake) LoadUserTables() map[string]error {
 	}
 }
 
+// getColumnProperties returns the column names and first value properties for the given table schema
 func getColumnProperties(usersSchemaInWarehouse model.TableSchema) ([]string, []string) {
 	var (
 		userColNames    []string
