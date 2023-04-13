@@ -42,6 +42,7 @@ func Test_NOOPForwarder(t *testing.T) {
 
 	nf.Start()
 	defer nf.Stop()
+
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
 		customVal := "MOCKDS"
 		js := make([]*jobsdb.JobT, numOfJob)
