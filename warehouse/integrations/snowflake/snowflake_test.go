@@ -25,6 +25,8 @@ import (
 )
 
 func TestIntegrationSnowflake(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -34,8 +36,6 @@ func TestIntegrationSnowflake(t *testing.T) {
 	if _, exists := os.LookupEnv(testhelper.SnowflakeRBACIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeRBACIntegrationTestCredentials)
 	}
-
-	t.Parallel()
 
 	snowflake.Init()
 
