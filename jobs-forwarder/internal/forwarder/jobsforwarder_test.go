@@ -63,34 +63,63 @@ func Test_JobsForwarder(t *testing.T) {
 	require.NotNil(t, jf)
 	jf.Start()
 	defer jf.Stop()
-	generateJobs := func(numOfJob int) []*jobsdb.JobT {
-		customVal := "MOCKDS"
-		js := make([]*jobsdb.JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
-			js[i] = &jobsdb.JobT{
+	t.Run("Test_JobsForwarder", func(t *testing.T) {
+		generateJobs := func(numOfJob int) []*jobsdb.JobT {
+			customVal := "MOCKDS"
+			js := make([]*jobsdb.JobT, numOfJob)
+			for i := 0; i < numOfJob; i++ {
+				js[i] = &jobsdb.JobT{
+					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+					EventPayload: []byte(`{"testKey":"testValue"}`),
+					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+					UUID:         uuid.New(),
+					CustomVal:    customVal,
+					EventCount:   1,
+					WorkspaceId:  "test_workspace",
+				}
+			}
+			return js
+		}
+		jobs := generateJobs(10)
+		err = schemasDB.Store(ctx, jobs)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			jobs, err := schemasDB.GetProcessed(ctx, jobsdb.GetQueryParamsT{
+				StateFilters: []string{jobsdb.Succeeded.State},
+				JobsLimit:    10,
+			})
+			require.NoError(t, err)
+			return len(jobs.Jobs) == 10
+		}, 30*time.Second, 5*time.Second)
+	})
+
+	t.Run("Test_FilterJobs", func(t *testing.T) {
+		jobs := []*jobsdb.JobT{
+			{
 				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
-				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.New(),
-				CustomVal:    customVal,
-				EventCount:   1,
-				WorkspaceId:  "test_workspace",
-			}
+				JobID:        1,
+				LastJobStatus: jobsdb.JobStatusT{
+					AttemptNum: 3,
+					JobState:   "failed",
+				},
+			},
+			{
+				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				JobID:        1,
+				LastJobStatus: jobsdb.JobStatusT{
+					AttemptNum: 1,
+					JobState:   "failed",
+				},
+			},
 		}
-		return js
-	}
-	jobs := generateJobs(10)
-	err = schemasDB.Store(ctx, jobs)
-	require.NoError(t, err)
-
-	require.Eventually(t, func() bool {
-		jobs, err := schemasDB.GetProcessed(ctx, jobsdb.GetQueryParamsT{
-			StateFilters: []string{jobsdb.Succeeded.State},
-			JobsLimit:    10,
-		})
-		require.NoError(t, err)
-		return len(jobs.Jobs) == 10
-	}, 30*time.Second, 5*time.Second)
+		filteredJobs, jobStatusList := jf.filterJobs(jobs)
+		require.Equal(t, 1, len(filteredJobs))
+		require.Equal(t, jobs[1], filteredJobs[0])
+		require.Equal(t, 1, len(jobStatusList))
+	})
 }
 
 // PulsarResource returns a pulsar container resource

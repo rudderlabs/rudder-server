@@ -59,8 +59,7 @@ func (jf *JobsForwarder) Start() {
 				if err != nil {
 					return err
 				}
-				var statusList []*jobsdb.JobStatusT
-				filteredJobs := jf.filterJobs(jobs, statusList)
+				filteredJobs, statusList := jf.filterJobs(jobs)
 				for _, job := range filteredJobs {
 					transformedBytes, err := jf.transformer.Transform(job)
 					if err != nil {
@@ -116,11 +115,12 @@ func (jf *JobsForwarder) Stop() {
 	jf.pulsarProducer.Close()
 }
 
-func (jf *JobsForwarder) filterJobs(jobs []*jobsdb.JobT, list []*jobsdb.JobStatusT) []*jobsdb.JobT {
+func (jf *JobsForwarder) filterJobs(jobs []*jobsdb.JobT) ([]*jobsdb.JobT, []*jobsdb.JobStatusT) {
 	var filteredJobs []*jobsdb.JobT
+	var statusList []*jobsdb.JobStatusT
 	for _, job := range jobs {
 		if job.LastJobStatus.JobState == "failed" && job.LastJobStatus.AttemptNum >= jf.retryAttempts {
-			list = append(list, &jobsdb.JobStatusT{
+			statusList = append(statusList, &jobsdb.JobStatusT{
 				JobID:      job.JobID,
 				AttemptNum: job.LastJobStatus.AttemptNum + 1,
 				JobState:   jobsdb.Aborted.State,
@@ -133,5 +133,5 @@ func (jf *JobsForwarder) filterJobs(jobs []*jobsdb.JobT, list []*jobsdb.JobStatu
 			filteredJobs = append(filteredJobs, job)
 		}
 	}
-	return filteredJobs
+	return filteredJobs, statusList
 }
