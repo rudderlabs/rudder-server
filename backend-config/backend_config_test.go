@@ -1313,10 +1313,10 @@ func TestFilterConditions(t *testing.T) {
 			Expected: true,
 		},
 		{
-			CaseName: "when connectionMode is cloud with web srcType if event type is sent as a map, return true",
+			CaseName: "when connectionMode is cloud with web srcType if event type is sent as a map, return false",
 			Input: FilterConditionT{
 				Destination: TestDestinationT{
-					ID: "1",
+					ID: "14",
 					DefinitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
