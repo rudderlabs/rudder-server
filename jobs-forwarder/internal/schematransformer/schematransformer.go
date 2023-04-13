@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -20,26 +18,6 @@ import (
 )
 
 //go:generate mockgen -destination=../../../mocks/schematransformer/mock_schematransformer.go -package=mock_schematransformer "github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer" Transformer
-
-// EventPayload : Generic type for gateway event payload
-type EventPayload struct {
-	WriteKey string
-	Event    map[string]interface{}
-}
-
-type SchemaTransformer struct {
-	ctx                        context.Context
-	g                          *errgroup.Group
-	backendConfig              backendconfig.BackendConfig
-	transientSources           transientsource.Service
-	sourceWriteKeyMap          map[string]string
-	newPIIReportingSettings    map[string]bool
-	writeKeyMapLock            sync.RWMutex
-	writeKeySourceIDMap        map[string]string
-	config                     *config.Config
-	shouldCaptureNilAsUnknowns bool
-	isInitialisedBool          atomic.Bool
-}
 
 type Transformer interface {
 	Setup()

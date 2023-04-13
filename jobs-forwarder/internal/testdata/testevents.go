@@ -1,7 +1,6 @@
 package testdata
 
 import (
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 )
 
@@ -48,11 +47,6 @@ var CompositeSchema = map[string]string{
 var IdentifyFlattenedEvent = map[string]interface{}{
 	"messageId": "message-id-identify",
 	"type":      "identify",
-}
-
-var TestEventPayload = schematransformer.EventPayload{
-	WriteKey: WriteKeyEnabled,
-	Event:    TrackEvent,
 }
 
 var TestEventSchemaKey = proto.EventSchemaKey{

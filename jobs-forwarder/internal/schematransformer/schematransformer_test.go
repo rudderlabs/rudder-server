@@ -22,6 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var TestEventPayload = EventPayload{
+	WriteKey: testdata.WriteKeyEnabled,
+	Event:    testdata.TrackEvent,
+}
+
 func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	conf := config.New()
 	g, ctx := errgroup.WithContext(context.Background())
@@ -75,11 +80,11 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	})
 
 	t.Run("Test getSchemaKeyFromJob", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(testdata.TestEventPayload), &testdata.TestEventSchemaKey)
+		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(TestEventPayload), &testdata.TestEventSchemaKey)
 	})
 
 	t.Run("Test getSchemaMessage", func(t *testing.T) {
-		schemaKey := schemaTransformer.getSchemaKeyFromJob(testdata.TestEventPayload)
+		schemaKey := schemaTransformer.getSchemaKeyFromJob(TestEventPayload)
 		timeNow := time.Now()
 		schemaMessage, err := schemaTransformer.getSchemaMessage(schemaKey, testdata.TrackEvent, testdata.SampleWorkspaceID, timeNow)
 		testEventSchemaMessage := generateTestEventSchemaMessage(timeNow)
@@ -147,7 +152,7 @@ func generateTestEventSchemaMessage(time time.Time) *proto.EventSchemaMessage {
 }
 
 func generateTestJob(t *testing.T, time time.Time) *jobsdb.JobT {
-	eventPayload, err := json.Marshal(testdata.TestEventPayload)
+	eventPayload, err := json.Marshal(TestEventPayload)
 	require.Nil(t, err)
 	jobUUID, err := uuid.NewUUID()
 	require.Nil(t, err)
