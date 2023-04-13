@@ -187,7 +187,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 						},
 						{
 							Key:   "Warehouse.deltalake.useNative",
-							Value: strconv.FormatBool(tc.useLegacy),
+							Value: strconv.FormatBool(tc.useNative),
 						},
 					})
 				},
