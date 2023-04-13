@@ -367,7 +367,7 @@ func (w *worker) workerProcess() {
 			}
 			if abort {
 				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
+					Job:           job,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
 					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
@@ -411,7 +411,7 @@ func (w *worker) workerProcess() {
 					resp := misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "blocking_id", *previousFailedJobID)
 					resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", userID)
 					status := jobsdb.JobStatusT{
-						JobID:         job.JobID,
+						Job:           job,
 						AttemptNum:    job.LastJobStatus.AttemptNum,
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
@@ -447,7 +447,7 @@ func (w *worker) workerProcess() {
 			w.rt.configSubscriberLock.RUnlock()
 			if !ok {
 				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
+					Job:           job,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
 					JobState:      jobsdb.Failed.State,
 					ExecTime:      time.Now(),
@@ -459,7 +459,7 @@ func (w *worker) workerProcess() {
 				}
 				if w.rt.guaranteeUserEventOrder {
 					orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
-					w.rt.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.workerID, status.JobID, orderKey)
+					w.rt.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.workerID, status.Job.JobID, orderKey)
 					if err := w.barrier.StateChanged(orderKey, job.JobID, status.JobState); err != nil {
 						panic(err)
 					}
@@ -822,13 +822,12 @@ func (w *worker) processDestinationJobs() {
 		attemptNum := destinationJobMetadata.AttemptNum
 		respStatusCode = routerJobResponse.respStatusCode
 		status := jobsdb.JobStatusT{
-			JobID:         destinationJobMetadata.JobID,
-			AttemptNum:    attemptNum,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			Parameters:    routerutils.EmptyPayload,
-			JobParameters: destinationJobMetadata.JobT.Parameters,
-			WorkspaceId:   destinationJobMetadata.WorkspaceID,
+			Job:         destinationJobMetadata.JobT,
+			AttemptNum:  attemptNum,
+			ExecTime:    time.Now(),
+			RetryTime:   time.Now(),
+			Parameters:  routerutils.EmptyPayload,
+			WorkspaceId: destinationJobMetadata.WorkspaceID,
 		}
 
 		routerJobResponse.status = &status
@@ -1026,7 +1025,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) // NOTE: Old key used was "error_response"
 		} else {
 			status.JobState = jobsdb.Failed.State
-			if !w.retryLimitReached(status) { // don't delay retry time if retry limit is reached, so that the job can be aborted immediately on the next loop
+			if !w.retryLimitReached(&status.Job.LastJobStatus) { // don't delay retry time if retry limit is reached, so that the job can be aborted immediately on the next loop
 				status.RetryTime = status.ExecTime.Add(durationBeforeNextAttempt(status.AttemptNum))
 			}
 		}
@@ -1035,7 +1034,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 			if status.JobState == jobsdb.Failed.State {
 
 				orderKey := jobOrderKey(destinationJobMetadata.UserID, destinationJobMetadata.DestinationID)
-				w.rt.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.workerID, status.JobID, orderKey)
+				w.rt.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.workerID, status.Job.JobID, orderKey)
 				if err := w.barrier.StateChanged(orderKey, destinationJobMetadata.JobID, status.JobState); err != nil {
 					panic(err)
 				}
@@ -1120,7 +1119,7 @@ func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage,
 	}
 }
 
-func (w *worker) retryLimitReached(status *jobsdb.JobStatusT) bool {
+func (w *worker) retryLimitReached(status *jobsdb.LastStateT) bool {
 	firstAttemptedAtTime := time.Now()
 	if firstAttemptedAt := gjson.GetBytes(status.ErrorResponse, "firstAttemptedAt").Str; firstAttemptedAt != "" {
 		if t, err := time.Parse(misc.RFC3339Milli, firstAttemptedAt); err == nil {
@@ -1401,7 +1400,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
 		sort.Slice(statusList, func(i, j int) bool {
-			return statusList[i].JobID < statusList[j].JobID
+			return statusList[i].Job.JobID < statusList[j].Job.JobID
 		})
 		// Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
@@ -1451,8 +1450,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			worker := resp.worker
 			if status != jobsdb.Failed.State {
 				orderKey := jobOrderKey(userID, gjson.GetBytes(resp.JobT.Parameters, "destination_id").String())
-				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.workerID, resp.status.JobID, orderKey, status)
-				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
+				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.workerID, resp.status.Job.JobID, orderKey, status)
+				if err := worker.barrier.StateChanged(orderKey, resp.status.Job.JobID, status); err != nil {
 					panic(err)
 				}
 			}
@@ -1683,7 +1682,7 @@ func (rt *HandleT) readAndProcess() int {
 		w := rt.findWorker(job, throttledOrderKeys)
 		if w != nil {
 			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
+				Job:           job,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
 				JobState:      jobsdb.Executing.State,
 				ExecTime:      time.Now(),

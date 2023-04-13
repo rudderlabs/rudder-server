@@ -679,6 +679,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		EventPayload: body,
 		EventCount:   jobData.numEvents,
 		WorkspaceId:  workspaceId,
+		SourceID:     sourceID,
 	}
 	jobData.job = job
 	return

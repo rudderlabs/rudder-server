@@ -295,8 +295,8 @@ func TestJobIterator(t *testing.T) {
 		it := New(initialPickup, jobsdb.GetQueryParamsT{}, m.GetJobs, WithLegacyOrderGroupKey(true))
 		// first batch will return 2 jobs from workspace A
 		m.jobs = []*jobsdb.JobT{
-			{JobID: 1, WorkspaceId: "A", LastJobStatus: jobsdb.JobStatusT{}},
-			{JobID: 3, WorkspaceId: "A", LastJobStatus: jobsdb.JobStatusT{JobState: jobsdb.Waiting.State}},
+			{JobID: 1, WorkspaceId: "A", LastJobStatus: jobsdb.LastStateT{}},
+			{JobID: 3, WorkspaceId: "A", LastJobStatus: jobsdb.LastStateT{JobState: jobsdb.Waiting.State}},
 		}
 
 		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
@@ -306,7 +306,7 @@ func TestJobIterator(t *testing.T) {
 
 		// 2nd batch should return 1 job from workspace A, but it's out of order
 		m.jobs = []*jobsdb.JobT{
-			{JobID: 2, WorkspaceId: "A", LastJobStatus: jobsdb.JobStatusT{JobState: jobsdb.Waiting.State}},
+			{JobID: 2, WorkspaceId: "A", LastJobStatus: jobsdb.LastStateT{JobState: jobsdb.Waiting.State}},
 		}
 
 		discardedJobID := int64(3)

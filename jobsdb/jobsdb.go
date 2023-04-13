@@ -341,7 +341,7 @@ job status. State can be one of
 ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 */
 type JobStatusT struct {
-	JobID         int64           `json:"JobID"`
+	Job           *JobT           `json:"JobID"`
 	JobState      string          `json:"JobState"` // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
 	AttemptNum    int             `json:"AttemptNum"`
 	ExecTime      time.Time       `json:"ExecTime"`
@@ -373,9 +373,21 @@ type JobT struct {
 	EventCount    int             `json:"EventCount"`
 	EventPayload  json.RawMessage `json:"EventPayload"`
 	PayloadSize   int64           `json:"PayloadSize"`
-	LastJobStatus JobStatusT      `json:"LastJobStatus"`
+	LastJobStatus LastStateT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
 	WorkspaceId   string          `json:"WorkspaceId"`
+	SourceID      string          `json:"SourceID"`
+	DestinationID string          `json:"DestinationID"`
+}
+
+type LastStateT struct {
+	JobState      string          `json:"JobState"`
+	AttemptNum    int             `json:"AttemptNum"`
+	ExecTime      time.Time       `json:"ExecTime"`
+	RetryTime     time.Time       `json:"RetryTime"`
+	ErrorResponse json.RawMessage `json:"ErrorResponse"`
+	Parameters    json.RawMessage `json:"Parameters"`
+	ErrorCode     string          `json:"ErrorCode"`
 }
 
 func (job *JobT) String() string {
@@ -385,21 +397,6 @@ func (job *JobT) String() string {
 func (job *JobT) sanitizeJson() {
 	job.EventPayload = sanitizeJson(job.EventPayload)
 	job.Parameters = sanitizeJson(job.Parameters)
-}
-
-// The struct fields need to be exposed to JSON package
-type dataSetT struct {
-	JobTable       string `json:"job"`
-	JobStatusTable string `json:"status"`
-	Index          string `json:"index"`
-}
-
-type dataSetRangeT struct {
-	minJobID  int64
-	maxJobID  int64
-	startTime int64
-	endTime   int64
-	ds        dataSetT
 }
 
 /*
@@ -1608,7 +1605,20 @@ func (jd *HandleT) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSet
 	).RecordDuration()()
 
 	tx.AddSuccessListener(func() {
-		jd.invalidateCacheForJobs(ds, jobList)
+		for _, job := range jobList {
+			increaseCount(
+				cacheSubject{
+					tablePrefix:   jd.tablePrefix,
+					dsIndex:       ds.Index,
+					workspaceID:   job.WorkspaceId,
+					customVal:     job.CustomVal,
+					sourceID:      job.SourceID,
+					destinationID: job.DestinationID,
+					jobState:      NotProcessed.State,
+				},
+				1,
+			)
+		}
 	})
 
 	return jd.doStoreJobsInTx(ctx, tx, ds, jobList)
@@ -1995,7 +2005,19 @@ func (jd *HandleT) storeJob(ctx context.Context, tx *Tx, ds dataSetT, job *JobT)
 	_, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
 	if err == nil {
 		tx.AddSuccessListener(func() {
-			jd.invalidateCacheForJobs(ds, []*JobT{job})
+			// Empty customValFilters means we want to clear for all
+			increaseCount(
+				cacheSubject{
+					tablePrefix:   jd.tablePrefix,
+					dsIndex:       ds.Index,
+					workspaceID:   job.WorkspaceId,
+					customVal:     job.CustomVal,
+					sourceID:      job.SourceID,
+					destinationID: job.DestinationID,
+					jobState:      NotProcessed.State,
+				},
+				1,
+			)
 		})
 		return
 	}
@@ -2093,7 +2115,7 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 									sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
 									job_latest_state.job_state, job_latest_state.attempt,
 									job_latest_state.exec_time, job_latest_state.retry_time,
-									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
+									job_latest_state.error_code, job_latest_state.error_response
 								FROM
 									%[1]q AS jobs
 									JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
@@ -2150,11 +2172,11 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
-			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
+			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse)
 		if err != nil {
 			return JobsResult{}, false, err
 		}
-		job.LastJobStatus.JobParameters = job.Parameters
+		job.LastJobStatus.Parameters = job.Parameters
 
 		if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
 			// events limit overflow is triggered as long as we have read at least one job
@@ -2166,6 +2188,8 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 			limitsReached = true
 			break
 		}
+		job.SourceID = gjson.GetBytes(job.Parameters, "source_id").String()
+		job.DestinationID = gjson.GetBytes(job.Parameters, "destination_id").String()
 		// we are adding the job only after testing for limitsReached
 		// so that we don't always overflow
 		jobList = append(jobList, &job)
@@ -2308,6 +2332,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 			limitsReached = true
 			break
 		}
+		job.SourceID = gjson.GetBytes(job.Parameters, "source_id").String()
+		job.DestinationID = gjson.GetBytes(job.Parameters, "destination_id").String()
 		// we are adding the job only after testing for limitsReached
 		// so that we don't always overflow
 		jobList = append(jobList, &job)
@@ -2372,7 +2398,7 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSet
 			if !utf8.ValidString(string(status.ErrorResponse)) {
 				status.ErrorResponse = []byte(`{}`)
 			}
-			_, err = stmt.ExecContext(ctx, status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
+			_, err = stmt.ExecContext(ctx, status.Job.JobID, status.JobState, status.AttemptNum, status.ExecTime,
 				status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
 			if err != nil {
 				return err
@@ -2408,6 +2434,38 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSet
 			err = store()
 		}
 	}
+	tx.AddSuccessListener(func() {
+		for _, status := range statusList {
+			increaseCount(
+				cacheSubject{
+					tablePrefix:   jd.tablePrefix,
+					dsIndex:       ds.Index,
+					workspaceID:   status.Job.WorkspaceId,
+					customVal:     status.Job.CustomVal,
+					sourceID:      status.Job.SourceID,
+					destinationID: status.Job.DestinationID,
+					jobState:      status.JobState,
+				},
+				1,
+			)
+			lastJobState := status.Job.LastJobStatus.JobState
+			if lastJobState == "" {
+				lastJobState = NotProcessed.State
+			}
+			decreaseCount(
+				cacheSubject{
+					tablePrefix:   jd.tablePrefix,
+					dsIndex:       ds.Index,
+					workspaceID:   status.Job.WorkspaceId,
+					customVal:     status.Job.CustomVal,
+					sourceID:      status.Job.SourceID,
+					destinationID: status.Job.DestinationID,
+					jobState:      lastJobState,
+				},
+				1,
+			)
+		}
+	})
 	return
 }
 
@@ -2824,7 +2882,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 
 	// First we sort by JobID
 	sort.Slice(statusList, func(i, j int) bool {
-		return statusList[i].JobID < statusList[j].JobID
+		return statusList[i].Job.JobID < statusList[j].Job.JobID
 	})
 
 	// We scan through the list of jobs and map them to DS
@@ -2837,14 +2895,14 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 		// We have processed upto (but excluding) lastPos on statusList.
 		// Hence, that element must lie in this or subsequent dataset's
 		// range
-		jd.assert(statusList[lastPos].JobID >= minID, fmt.Sprintf("statusList[lastPos].JobID: %d < minID:%d", statusList[lastPos].JobID, minID))
+		jd.assert(statusList[lastPos].Job.JobID >= minID, fmt.Sprintf("statusList[lastPos].JobID: %d < minID:%d", statusList[lastPos].Job.JobID, minID))
 		var i int
 		for i = lastPos; i < len(statusList); i++ {
 			// The JobID is outside this DS's range
-			if statusList[i].JobID > maxID {
+			if statusList[i].Job.JobID > maxID {
 				if i > lastPos {
-					jd.logger.Debug("Range:", ds, statusList[lastPos].JobID,
-						statusList[i-1].JobID, lastPos, i-1)
+					jd.logger.Debug("Range:", ds, statusList[lastPos].Job.JobID,
+						statusList[i-1].Job.JobID, lastPos, i-1)
 				}
 				var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 				updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
@@ -2861,7 +2919,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 		}
 		// Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
-			jd.logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
+			jd.logger.Debug("Range:", ds, statusList[lastPos].Job.JobID, statusList[i-1].Job.JobID, lastPos, i)
 			var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 			updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 			if err != nil {
@@ -2882,7 +2940,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 		dsList := jd.getDSList()
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		// Update status in the last element
-		jd.logger.Debug("RangeEnd ", statusList[lastPos].JobID, lastPos, len(statusList))
+		jd.logger.Debug("RangeEnd ", statusList[lastPos].Job.JobID, lastPos, len(statusList))
 		var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {

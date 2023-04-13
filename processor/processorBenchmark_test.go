@@ -63,7 +63,7 @@ var dummyBatchEvent jobsdb.JobT = jobsdb.JobT{
 	CustomVal:     "GW",
 	EventCount:    1,
 	EventPayload:  payload,
-	LastJobStatus: jobsdb.JobStatusT{},
+	LastJobStatus: jobsdb.LastStateT{},
 	Parameters:    gwParameters,
 	WorkspaceId:   "test",
 }

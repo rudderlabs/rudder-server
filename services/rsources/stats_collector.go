@@ -121,7 +121,7 @@ func (r *statsCollector) JobsFailed(jobs []*jobsdb.JobT) {
 	jobStatuses := make([]*jobsdb.JobStatusT, 0, len(jobs))
 	for i := range jobs {
 		jobStatuses = append(jobStatuses, &jobsdb.JobStatusT{
-			JobID:    jobs[i].JobID,
+			Job:      jobs[i],
 			JobState: jobsdb.Aborted.State,
 		})
 	}
@@ -146,7 +146,7 @@ func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
 	}
 	for i := range jobStatuses {
 		jobStatus := jobStatuses[i]
-		if statKey, statKeyOk := r.jobIdsToStatKeyIndex[jobStatus.JobID]; statKeyOk {
+		if statKey, statKeyOk := r.jobIdsToStatKeyIndex[jobStatus.Job.JobID]; statKeyOk {
 			stats, ok := r.statsIndex[statKey]
 			if ok {
 				switch jobStatus.JobState {
@@ -154,7 +154,7 @@ func (r *statsCollector) JobStatusesUpdated(jobStatuses []*jobsdb.JobStatusT) {
 					stats.Out++
 				case jobsdb.Aborted.State:
 					stats.Failed++
-					recordId := r.jobIdsToRecordIdIndex[jobStatus.JobID]
+					recordId := r.jobIdsToRecordIdIndex[jobStatus.Job.JobID]
 					if len(recordId) > 0 {
 						r.failedRecordsIndex[statKey] = append(r.failedRecordsIndex[statKey], recordId)
 					}

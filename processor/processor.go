@@ -1210,14 +1210,16 @@ func (proc *Handle) getFailedEventJobs(response transformer.ResponseT, commonMet
 		}
 
 		newFailedJob := jobsdb.JobT{
-			UUID:         id,
-			EventPayload: payload,
-			Parameters:   marshalledParams,
-			CreatedAt:    time.Now(),
-			ExpireAt:     time.Now(),
-			CustomVal:    commonMetaData.DestinationType,
-			UserID:       failedEvent.Metadata.RudderID,
-			WorkspaceId:  failedEvent.Metadata.WorkspaceID,
+			UUID:          id,
+			EventPayload:  payload,
+			Parameters:    marshalledParams,
+			CreatedAt:     time.Now(),
+			ExpireAt:      time.Now(),
+			CustomVal:     commonMetaData.DestinationType,
+			UserID:        failedEvent.Metadata.RudderID,
+			WorkspaceId:   failedEvent.Metadata.WorkspaceID,
+			SourceID:      commonMetaData.SourceID,
+			DestinationID: commonMetaData.DestinationID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
@@ -1534,7 +1536,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 
 		// Mark the batch event as processed
 		newStatus := jobsdb.JobStatusT{
-			JobID:         batchEvent.JobID,
+			Job:           batchEvent,
 			JobState:      jobsdb.Succeeded.State,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
@@ -2375,14 +2377,16 @@ func (proc *Handle) transformSrcDest(
 			}
 
 			newJob := jobsdb.JobT{
-				UUID:         id,
-				UserID:       rudderID,
-				Parameters:   marshalledParams,
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
-				CustomVal:    destType,
-				EventPayload: destEventJSON,
-				WorkspaceId:  workspaceId,
+				UUID:          id,
+				UserID:        rudderID,
+				Parameters:    marshalledParams,
+				CreatedAt:     time.Now(),
+				ExpireAt:      time.Now(),
+				CustomVal:     destType,
+				EventPayload:  destEventJSON,
+				WorkspaceId:   workspaceId,
+				SourceID:      sourceID,
+				DestinationID: destID,
 			}
 			if slices.Contains(proc.config.batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)
@@ -2552,7 +2556,7 @@ func (proc *Handle) markExecuting(jobs []*jobsdb.JobT) error {
 	statusList := make([]*jobsdb.JobStatusT, len(jobs))
 	for i, job := range jobs {
 		statusList[i] = &jobsdb.JobStatusT{
-			JobID:         job.JobID,
+			Job:           job,
 			AttemptNum:    job.LastJobStatus.AttemptNum,
 			JobState:      jobsdb.Executing.State,
 			ExecTime:      time.Now(),

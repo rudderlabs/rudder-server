@@ -179,7 +179,7 @@ func TestBackoff(t *testing.T) {
 		backoffJob := &jobsdb.JobT{
 			JobID:      1,
 			Parameters: []byte(`{"destination_id": "destination"}`),
-			LastJobStatus: jobsdb.JobStatusT{
+			LastJobStatus: jobsdb.LastStateT{
 				JobState:   jobsdb.Failed.State,
 				AttemptNum: 1,
 				RetryTime:  time.Now().Add(1 * time.Hour),
@@ -188,7 +188,7 @@ func TestBackoff(t *testing.T) {
 		noBackoffJob1 := &jobsdb.JobT{
 			JobID:      2,
 			Parameters: []byte(`{"destination_id": "destination"}`),
-			LastJobStatus: jobsdb.JobStatusT{
+			LastJobStatus: jobsdb.LastStateT{
 				JobState:   jobsdb.Waiting.State,
 				AttemptNum: 1,
 				RetryTime:  time.Now().Add(1 * time.Hour),
@@ -197,7 +197,7 @@ func TestBackoff(t *testing.T) {
 		noBackoffJob2 := &jobsdb.JobT{
 			JobID:      3,
 			Parameters: []byte(`{"destination_id": "destination"}`),
-			LastJobStatus: jobsdb.JobStatusT{
+			LastJobStatus: jobsdb.LastStateT{
 				JobState:   jobsdb.Failed.State,
 				AttemptNum: 0,
 				RetryTime:  time.Now().Add(1 * time.Hour),
@@ -206,7 +206,7 @@ func TestBackoff(t *testing.T) {
 		noBackoffJob3 := &jobsdb.JobT{
 			JobID:      4,
 			Parameters: []byte(`{"destination_id": "destination"}`),
-			LastJobStatus: jobsdb.JobStatusT{
+			LastJobStatus: jobsdb.LastStateT{
 				JobState:   jobsdb.Failed.State,
 				AttemptNum: 0,
 				RetryTime:  time.Now().Add(-1 * time.Hour),
@@ -297,7 +297,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
@@ -315,7 +315,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters:  []byte(parameters),
@@ -390,7 +390,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters:  []byte(parameters),
@@ -476,7 +476,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters:  []byte(parameters),
@@ -559,10 +559,10 @@ var _ = Describe("Router", func() {
 					ExpireAt:     firstAttemptedAt.Add(-time.Minute),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(`{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum:    router.maxFailedCountForJob,
-						JobState:      jobsdb.Failed.State,
-						ErrorCode:     "500",
+					LastJobStatus: jobsdb.LastStateT{
+						AttemptNum: router.maxFailedCountForJob,
+						JobState:   jobsdb.Failed.State,
+						// ErrorCode:     "500",
 						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))),
 					},
 					Parameters: []byte(fmt.Sprintf(`{
@@ -656,7 +656,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
@@ -673,7 +673,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -686,7 +686,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -699,7 +699,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -712,7 +712,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -783,7 +783,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 3, // done only to check the error response assertion(assertJobStatus) as well
 					},
 					Parameters: []byte(parameters),
@@ -893,7 +893,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
@@ -910,7 +910,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -923,7 +923,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1037,7 +1037,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
@@ -1053,7 +1053,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1066,7 +1066,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1206,7 +1206,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
@@ -1223,7 +1223,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1236,7 +1236,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1249,7 +1249,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1262,7 +1262,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1422,7 +1422,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
@@ -1439,7 +1439,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1452,7 +1452,7 @@ var _ = Describe("Router", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    customVal["GA"],
 					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -1550,7 +1550,7 @@ func assertRouterJobs(routerJob *types.RouterJobT, job *jobsdb.JobT) {
 }
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
-	Expect(status.JobID).To(Equal(job.JobID))
+	Expect(status.Job.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))
 	if attemptNum >= 1 {
@@ -1564,7 +1564,7 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState,
 }
 
 func assertTransformJobStatuses(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode string, attemptNum int) {
-	Expect(status.JobID).To(Equal(job.JobID))
+	Expect(status.Job.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))

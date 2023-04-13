@@ -225,9 +225,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, picku
 			return jobList, err
 		}
 
-		job.LastJobStatus = JobStatusT{
-			JobParameters: job.Parameters,
-		}
+		job.LastJobStatus = LastStateT{}
 		if _nullJS.Valid {
 			job.LastJobStatus.JobState = _nullJS.String
 		}

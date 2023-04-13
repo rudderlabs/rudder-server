@@ -211,7 +211,7 @@ var _ = Describe("BatchRouter", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["S3"],
 					EventPayload: []byte(s3Payload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
@@ -228,7 +228,7 @@ var _ = Describe("BatchRouter", func() {
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["S3"],
 					EventPayload: []byte(s3Payload),
-					LastJobStatus: jobsdb.JobStatusT{
+					LastJobStatus: jobsdb.LastStateT{
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
@@ -265,7 +265,7 @@ var _ = Describe("BatchRouter", func() {
 })
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorResponse string, attemptNum int) {
-	Expect(status.JobID).To(Equal(job.JobID))
+	Expect(status.Job.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	if attemptNum > 1 {
 		Expect(status.ErrorResponse).To(MatchJSON(errorResponse))

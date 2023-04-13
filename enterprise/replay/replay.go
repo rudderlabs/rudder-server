@@ -103,7 +103,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 		for _, job := range combinedList {
 			w := handle.workers[rand.Intn(handle.noOfWorkers)]
 			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
+				Job:           job,
 				JobState:      jobsdb.Executing.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),

@@ -75,7 +75,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	require.Equal(t, 3, len(unprocessedList.Jobs))
 
 	status1 := JobStatusT{
-		JobID:         unprocessedList.Jobs[0].JobID,
+		Job:           unprocessedList.Jobs[0],
 		JobState:      "waiting",
 		AttemptNum:    1,
 		ExecTime:      time.Now(),
@@ -86,7 +86,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 		WorkspaceId:   "testWorkspace",
 	}
 	status2 := JobStatusT{
-		JobID:         unprocessedList.Jobs[1].JobID,
+		Job:           unprocessedList.Jobs[1],
 		JobState:      "failed",
 		AttemptNum:    1,
 		ExecTime:      time.Now(),

@@ -749,7 +749,7 @@ var _ = Describe("Processor", Ordered, func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    nil,
 				},
 				{
@@ -767,7 +767,7 @@ var _ = Describe("Processor", Ordered, func() {
 						}, createMessagePayload,
 					),
 					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
 				},
 				{
@@ -778,7 +778,7 @@ var _ = Describe("Processor", Ordered, func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    nil,
 				},
 				{
@@ -789,7 +789,7 @@ var _ = Describe("Processor", Ordered, func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    nil,
 				},
 				{
@@ -945,7 +945,7 @@ var _ = Describe("Processor", Ordered, func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    nil,
 				},
 				{
@@ -964,7 +964,7 @@ var _ = Describe("Processor", Ordered, func() {
 						createMessagePayload,
 					),
 					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    createBatchParameters(SourceIDEnabledOnlyUT),
 				},
 				{
@@ -1141,7 +1141,7 @@ var _ = Describe("Processor", Ordered, func() {
 						createMessagePayloadWithSameMessageId,
 					),
 					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
@@ -1238,7 +1238,7 @@ var _ = Describe("Processor", Ordered, func() {
 						},
 						createMessagePayload,
 					),
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 			}
@@ -1376,7 +1376,7 @@ var _ = Describe("Processor", Ordered, func() {
 						},
 						createMessagePayload,
 					),
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 			}
@@ -1504,7 +1504,7 @@ var _ = Describe("Processor", Ordered, func() {
 					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  payload,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    createBatchParameters(SourceIDEnabledNoUT2),
 				},
 			}
@@ -2874,7 +2874,7 @@ func createBatchParameters(sourceId string) []byte {
 }
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string) {
-	Expect(status.JobID).To(Equal(job.JobID))
+	Expect(status.Job.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))

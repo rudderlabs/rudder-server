@@ -277,7 +277,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 			}
 		}
 		status := jobsdb.JobStatusT{
-			JobID:         job.JobID,
+			Job:           job,
 			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 			JobState:      state,
 			ExecTime:      time.Now(),
@@ -374,7 +374,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			for _, job := range combinedList {
 
 				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
+					Job:           job,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobState,
 					ExecTime:      time.Now(),

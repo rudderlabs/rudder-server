@@ -44,7 +44,7 @@ func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 		worker.replayJobsInFile(ctx, gjson.GetBytes(job.EventPayload, "location").String())
 
 		status := jobsdb.JobStatusT{
-			JobID:         job.JobID,
+			Job:           job,
 			JobState:      jobsdb.Succeeded.State,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),

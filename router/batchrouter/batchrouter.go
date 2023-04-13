@@ -378,7 +378,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
-											JobID:         job.JobID,
+											Job:           job,
 											JobState:      jobsdb.Succeeded.State,
 											ExecTime:      time.Now(),
 											RetryTime:     time.Now(),
@@ -424,9 +424,8 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									var status *jobsdb.JobStatusT
 									if errFailed != nil || errWarning != nil || errSuccess != nil || statusCode != 200 {
 										for _, job := range importingList {
-											jobID := job.JobID
 											status = &jobsdb.JobStatusT{
-												JobID:         jobID,
+												Job:           job,
 												JobState:      jobsdb.Failed.State,
 												ExecTime:      time.Now(),
 												RetryTime:     time.Now(),
@@ -459,7 +458,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										jobID := job.JobID
 										if slices.Contains(append(succeededKeys, warningKeys...), jobID) {
 											status = &jobsdb.JobStatusT{
-												JobID:         jobID,
+												Job:           job,
 												JobState:      jobsdb.Succeeded.State,
 												ExecTime:      time.Now(),
 												RetryTime:     time.Now(),
@@ -472,7 +471,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										} else if slices.Contains(failedKeys, job.JobID) {
 											errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
 											status = &jobsdb.JobStatusT{
-												JobID:         jobID,
+												Job:           job,
 												JobState:      jobsdb.Aborted.State,
 												ExecTime:      time.Now(),
 												RetryTime:     time.Now(),
@@ -534,7 +533,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								if isJobTerminated(statusCode) {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
-											JobID:         job.JobID,
+											Job:           job,
 											JobState:      jobsdb.Aborted.State,
 											ExecTime:      time.Now(),
 											RetryTime:     time.Now(),
@@ -551,7 +550,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								} else {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
-											JobID:         job.JobID,
+											Job:           job,
 											JobState:      jobsdb.Failed.State,
 											ExecTime:      time.Now(),
 											RetryTime:     time.Now(),
@@ -1232,7 +1231,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
 		status := jobsdb.JobStatusT{
-			JobID:         job.JobID,
+			Job:           job,
 			AttemptNum:    attemptNum,
 			JobState:      jobState,
 			ExecTime:      time.Now(),
@@ -1394,7 +1393,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 	if len(asyncOutput.ImportingJobIDs) > 0 {
 		for _, jobId := range asyncOutput.ImportingJobIDs {
 			status := jobsdb.JobStatusT{
-				JobID:         jobId,
+				Job:           job,
 				JobState:      jobsdb.Importing.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
@@ -1410,7 +1409,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 	if len(asyncOutput.SucceededJobIDs) > 0 {
 		for _, jobId := range asyncOutput.FailedJobIDs {
 			status := jobsdb.JobStatusT{
-				JobID:         jobId,
+				Job:           job,
 				JobState:      jobsdb.Succeeded.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
