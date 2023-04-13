@@ -631,42 +631,40 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "1",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
 					},
 					DefinitionID: "1DefId",
 					Config: map[string]interface{}{
-						"connectionMode": map[string]interface{}{
-							"web": "cloud",
-						},
+						"connectionMode": "cloud",
 					},
 					IsProcessorEnabled: true,
 				},
@@ -687,42 +685,40 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "2",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
 					},
 					DefinitionID: "1DefId",
 					Config: map[string]interface{}{
-						"connectionMode": map[string]interface{}{
-							"web": "cloud",
-						},
+						"connectionMode": "cloud",
 					},
 					IsProcessorEnabled: true,
 				},
@@ -743,42 +739,40 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "3",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
 					},
 					DefinitionID: "1DefId",
 					Config: map[string]interface{}{
-						"connectionMode": map[string]interface{}{
-							"web": "cloud",
-						},
+						"connectionMode": "cloud",
 					},
 					IsProcessorEnabled: false,
 				},
@@ -799,42 +793,40 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "4",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "group"},
+									"messageType": []interface{}{"track", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
 					},
 					DefinitionID: "1DefId",
 					Config: map[string]interface{}{
-						"connectionMode": map[string]interface{}{
-							"web": "hybrid",
-						},
+						"connectionMode": "hybrid",
 					},
 					IsProcessorEnabled: true,
 				},
@@ -855,42 +847,40 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "5",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "group"},
+									"messageType": []interface{}{"track", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
 					},
 					DefinitionID: "1DefId",
 					Config: map[string]interface{}{
-						"connectionMode": map[string]interface{}{
-							"web": "cloud",
-						},
+						"connectionMode": "cloud",
 					},
 					IsProcessorEnabled: true,
 				},
@@ -911,33 +901,33 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "6",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "group"},
+									"messageType": []interface{}{"track", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
@@ -963,33 +953,33 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "7",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "group"},
+									"messageType": []interface{}{"track", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
@@ -1015,33 +1005,33 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "8",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "group"},
+									"messageType": []interface{}{"track", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
@@ -1067,40 +1057,38 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "9",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "group"},
+									"messageType": []interface{}{"track", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
 					},
 					DefinitionID: "1DefId",
 					Config: map[string]interface{}{
-						"connectionMode": map[string]interface{}{
-							"web": "cloud",
-						},
+						"connectionMode": "cloud",
 					},
 					IsProcessorEnabled: true,
 				},
@@ -1121,40 +1109,38 @@ func TestFilterConditions(t *testing.T) {
 				Destination: TestDestinationT{
 					ID: "10",
 					DefinitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []string{"track", "page", "group"},
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
 								"web": map[string]interface{}{},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"cordova": map[string]interface{}{
-									"messageType": []string{"identify"},
+									"messageType": []interface{}{"identify"},
 								},
 							},
 							"hybrid": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "group"},
+									"messageType": []interface{}{"track", "group"},
 								},
 							},
 							"device": map[string]interface{}{
 								"web": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"ios": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 								"android": map[string]interface{}{
-									"messageType": []string{"track", "page", "group"},
+									"messageType": []interface{}{"track", "page", "group"},
 								},
 							},
 						},
 					},
 					DefinitionID: "1DefId",
 					Config: map[string]interface{}{
-						"connectionMode": map[string]interface{}{
-							"web": "cloud",
-						},
+						"connectionMode": "cloud",
 					},
 					IsProcessorEnabled: false,
 				},

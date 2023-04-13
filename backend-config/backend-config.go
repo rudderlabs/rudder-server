@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"reflect"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -462,9 +461,9 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 	// Event-Type default check
 	eventTypeI := misc.MapLookup(event, "type")
 	if eventTypeI == nil {
-		// TODO: Need to think through if this condition is correct
 		pkgLogger.Error("Event type is not being sent for the event")
-		return false
+		// We will allow the event to be sent to destination transformation
+		return true
 	}
 	eventType, isEventTypeString := eventTypeI.(string)
 	if !isEventTypeString {
@@ -477,7 +476,7 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 	// Default behavior
 	// When something is missing in "supportedConnectionModes" or if "supportedConnectionModes" is not defined
 	// We would be checking for below things
-	// 1. Check if the event.type value is present in destination.Config["supportedMessageTypes"]
+	// 1. Check if the event.type value is present in destination.DestinationDefinition.Config["supportedMessageTypes"]
 	// 2. Check if the connectionMode of destination is cloud or hybrid(evaluated through `IsProcessorEnabled`)
 	// Only when 1 & 2 are true, we would allow the event to flow through to server
 	evaluatedDefaultBehaviour := isSupportedMsgType && destination.IsProcessorEnabled
@@ -506,14 +505,14 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 		}
 	*/
 	// New logic for evaluating "connectionMode"
-	var destConnModeI interface{}
-	for _, val := range []string{srcType, strings.ToLower(source.SourceDefinition.Name)} {
-		destConnModeI = misc.MapLookup(destination.Config, "connectionMode", val)
-		if destConnModeI != nil {
-			break
-		}
-	}
-	// destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
+	// var destConnModeI interface{}
+	// for _, val := range []string{srcType, strings.ToLower(source.SourceDefinition.Name)} {
+	// 	destConnModeI = misc.MapLookup(destination.Config, "connectionMode", val)
+	// 	if destConnModeI != nil {
+	// 		break
+	// 	}
+	// }
+	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
 	if destConnModeI == nil {
 		return evaluatedDefaultBehaviour
 	}
@@ -536,7 +535,11 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 		// Might also occur when destination connection mode is not provided in "supportedConnectionModes"
 		return evaluatedDefaultBehaviour
 	}
-	supportedEventPropsMap := supportedEventPropsMapI.(map[string]interface{})
+	supportedEventPropsMap, isEventPropsMapTypeCastable := supportedEventPropsMapI.(map[string]interface{})
+	if !isEventPropsMapTypeCastable {
+		// fallback to default
+		return evaluatedDefaultBehaviour
+	}
 	// Flag indicating to let the event pass through
 	allowEvent := evaluatedDefaultBehaviour
 	for eventProperty, supportedEventVals := range supportedEventPropsMap {
@@ -553,7 +556,11 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 	return allowEvent
 }
 
-func evaluateSupportedTypes[T comparable](destConfig map[string]interface{}, evalKey string, checkValue T) bool {
+type EventPropsTypes interface {
+	~string
+}
+
+func evaluateSupportedTypes[T EventPropsTypes](destConfig map[string]interface{}, evalKey string, checkValue T) bool {
 	if evalKey != "supportedMessageTypes" {
 		return false
 	}
@@ -565,10 +572,18 @@ func evaluateSupportedTypes[T comparable](destConfig map[string]interface{}, eva
 	return lo.Contains(supportedVals, checkValue)
 }
 
-func ConvertToArrayOfType[R any](valsI interface{}) []R {
-	valuesArrI, ok := valsI.([]R)
-	if !ok {
-		return []R{}
+func ConvertToArrayOfType[T EventPropsTypes](data interface{}) []T {
+	switch value := data.(type) {
+	case []interface{}:
+		result := make([]T, len(value))
+		for i, v := range value {
+			var ok bool
+			result[i], ok = v.(T)
+			if !ok {
+				return []T{}
+			}
+		}
+		return result
 	}
-	return valuesArrI
+	return []T{}
 }
