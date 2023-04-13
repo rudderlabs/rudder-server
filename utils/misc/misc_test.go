@@ -707,3 +707,20 @@ func TestGetDiskUsage(t *testing.T) {
 	require.EqualValues(t, 1024*1024, fileSize.Size())
 	require.Greater(t, fileDiskUsage, int64(0))
 }
+
+func Test_GetInstanceID(t *testing.T) {
+	t.Setenv("INSTANCE_ID", "allbirds-v0-rudderstack-gw-ha-0-85d66f748f-8w4td")
+	require.Equal(t, "0", GetInstanceID())
+
+	t.Setenv("INSTANCE_ID", "prousmtusmt-v0-rs-gw-0")
+	require.Equal(t, "0", GetInstanceID())
+
+	t.Setenv("INSTANCE_ID", "prousmtusmt-v0-rs")
+	require.Equal(t, "", GetInstanceID())
+
+	t.Setenv("INSTANCE_ID", "prousmtusmt-v0-rs-gw-10")
+	require.Equal(t, "10", GetInstanceID())
+
+	t.Setenv("INSTANCE_ID", "prousmtusmt-v0-rs-gw-ha-12-234234-10")
+	require.Equal(t, "12", GetInstanceID())
+}
