@@ -30,14 +30,14 @@ import (
 )
 
 func TestIntegrationRedshift(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	t.Parallel()
+
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
-
-	t.Parallel()
 
 	redshift.Init()
 
@@ -99,14 +99,10 @@ func TestIntegrationRedshift(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
-				require.NoError(
-					t,
-					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-						return
-					}),
-					fmt.Sprintf("Failed dropping schema %s for Redshift", tc.schema),
-				)
+				require.NoError(t, testhelper.WithConstantRetries(func() error {
+					_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
+					return err
+				}))
 			})
 
 			ts := testhelper.WareHouseTest{
@@ -144,8 +140,8 @@ func TestIntegrationRedshift(t *testing.T) {
 }
 
 func TestConfigurationValidationRedshift(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
@@ -190,6 +186,8 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 }
 
 func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name     string
 		err      error
@@ -225,6 +223,8 @@ func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
 }
 
 func TestRedshift_AlterColumn(t *testing.T) {
+	t.Parallel()
+
 	var (
 		bigString      = strings.Repeat("a", 1024)
 		smallString    = strings.Repeat("a", 510)
