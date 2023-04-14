@@ -598,39 +598,39 @@ func (*mockIdentifier) Type() deployment.Type {
 }
 
 func TestFilterConditions(t *testing.T) {
-	type TestDestinationT struct {
-		ID                 string
-		IsProcessorEnabled bool
-		DefinitionID       string
-		DefinitionConfig   map[string]interface{}
-		Config             map[string]interface{}
+	type testDestinationT struct {
+		id                 string
+		isProcessorEnabled bool
+		definitionID       string
+		definitionConfig   map[string]interface{}
+		config             map[string]interface{}
 	}
 
-	type TestSourceT struct {
-		Name          string
-		ID            string
-		SourceDefType string
+	type testSourceT struct {
+		name          string
+		id            string
+		sourceDefType string
 	}
 
-	type FilterConditionT struct {
-		Destination TestDestinationT
-		Source      TestSourceT
-		Event       serverUtilsTypes.SingularEventT
+	type filterConditionT struct {
+		destination testDestinationT
+		source      testSourceT
+		event       serverUtilsTypes.SingularEventT
 	}
 
-	type TestCaseT struct {
-		CaseName string
-		Input    FilterConditionT
-		Expected bool
+	type testCaseT struct {
+		caseName string
+		input    filterConditionT
+		expected bool
 	}
 
-	testCases := []TestCaseT{
+	testCases := []testCaseT{
 		{
-			CaseName: "when mode is cloud for web srcType if track event is sent, return true",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "1",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when mode is cloud for web srcType if track event is sent, return true",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "1",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -662,29 +662,29 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "track",
 				},
 			},
-			Expected: true,
+			expected: true,
 		},
 		{
-			CaseName: "when mode is cloud for web srcType if identify event is sent, return false",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "2",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when mode is cloud for web srcType if identify event is sent, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "2",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -716,29 +716,29 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "identify",
 				},
 			},
-			Expected: false,
+			expected: false,
 		},
 		{
-			CaseName: "when mode is device for web srcType if track event is sent, return false",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "3",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when mode is device for web srcType if track event is sent, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "3",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -770,29 +770,29 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: false,
+					isProcessorEnabled: false,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "track",
 				},
 			},
-			Expected: false,
+			expected: false,
 		},
 		{
-			CaseName: "when mode is hybrid for web srcType if page event is sent, return false",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "4",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when mode is hybrid for web srcType if page event is sent, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "4",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -824,29 +824,29 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "hybrid",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "page",
 				},
 			},
-			Expected: false,
+			expected: false,
 		},
 		{
-			CaseName: "when mode is hybrid for web srcType if track event is sent, return true",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "5",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when mode is hybrid for web srcType if track event is sent, return true",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "5",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -878,29 +878,29 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "track",
 				},
 			},
-			Expected: true,
+			expected: true,
 		},
 		{
-			CaseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to true, if track event is sent, return true",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "6",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to true, if track event is sent, return true",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "6",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -932,27 +932,27 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID:       "1DefId",
-					Config:             map[string]interface{}{},
-					IsProcessorEnabled: true,
+					definitionID:       "1DefId",
+					config:             map[string]interface{}{},
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "track",
 				},
 			},
-			Expected: true,
+			expected: true,
 		},
 		{
-			CaseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to false, if track event is sent, return false",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "7",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to false, if track event is sent, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "7",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -984,27 +984,27 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID:       "1DefId",
-					Config:             map[string]interface{}{},
-					IsProcessorEnabled: false,
+					definitionID:       "1DefId",
+					config:             map[string]interface{}{},
+					isProcessorEnabled: false,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "track",
 				},
 			},
-			Expected: false,
+			expected: false,
 		},
 		{
-			CaseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to true, if identify event is sent, return false",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "8",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode does not exist & isProcessorEnabled is evaluated to true, if identify event is sent, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "8",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -1036,27 +1036,27 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID:       "1DefId",
-					Config:             map[string]interface{}{},
-					IsProcessorEnabled: false,
+					definitionID:       "1DefId",
+					config:             map[string]interface{}{},
+					isProcessorEnabled: false,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "identify",
 				},
 			},
-			Expected: false,
+			expected: false,
 		},
 		{
-			CaseName: "when connectionMode is cloud for web srcType, supportedConnectionModes.cloud.web is empty map, isProcessorEnabled is true & track event is sent, return true",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "9",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode is cloud for web srcType, supportedConnectionModes.cloud.web is empty map, isProcessorEnabled is true & track event is sent, return true",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "9",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -1086,29 +1086,29 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "track",
 				},
 			},
-			Expected: true,
+			expected: true,
 		},
 		{
-			CaseName: "when connectionMode is cloud for web srcType, supportedConnectionModes.cloud.web is empty map, isProcessorEnabled is false & track event is sent, return false",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "10",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode is cloud for web srcType, supportedConnectionModes.cloud.web is empty map, isProcessorEnabled is false & track event is sent, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "10",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -1138,29 +1138,29 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: false,
+					isProcessorEnabled: false,
 				},
-				Source: TestSourceT{
-					Name:          "demo-source",
-					ID:            "1src",
-					SourceDefType: "web",
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "web",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "track",
 				},
 			},
-			Expected: false,
+			expected: false,
 		},
 		{
-			CaseName: "when connectionMode is cloud without srcType if track event is sent, return true",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "1",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode is cloud without srcType if track event is sent, return true",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "1",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -1192,28 +1192,28 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name: "demo-source",
-					ID:   "1src",
+				source: testSourceT{
+					name: "demo-source",
+					id:   "1src",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "track",
 				},
 			},
-			Expected: true,
+			expected: true,
 		},
 		{
-			CaseName: "when connectionMode is cloud without srcType if alias event is sent, return false",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "1",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode is cloud without srcType if alias event is sent, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "1",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -1245,28 +1245,28 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name: "demo-source",
-					ID:   "1src",
+				source: testSourceT{
+					name: "demo-source",
+					id:   "1src",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": "alias",
 				},
 			},
-			Expected: false,
+			expected: false,
 		},
 		{
-			CaseName: "when connectionMode is cloud with web srcType if event type is not sent, return true",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "1",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode is cloud with web srcType if event type is not sent, return true",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "1",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -1298,26 +1298,26 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name: "demo-source",
-					ID:   "1src",
+				source: testSourceT{
+					name: "demo-source",
+					id:   "1src",
 				},
-				Event: serverUtilsTypes.SingularEventT{},
+				event: serverUtilsTypes.SingularEventT{},
 			},
-			Expected: true,
+			expected: true,
 		},
 		{
-			CaseName: "when connectionMode is cloud with web srcType if event type is sent as a map, return false",
-			Input: FilterConditionT{
-				Destination: TestDestinationT{
-					ID: "14",
-					DefinitionConfig: map[string]interface{}{
+			caseName: "when connectionMode is cloud with web srcType if event type is sent as a map, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "14",
+					definitionConfig: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "page", "group"},
 						"supportedConnectionModes": map[string]interface{}{
 							"cloud": map[string]interface{}{
@@ -1349,23 +1349,23 @@ func TestFilterConditions(t *testing.T) {
 							},
 						},
 					},
-					DefinitionID: "1DefId",
-					Config: map[string]interface{}{
+					definitionID: "1DefId",
+					config: map[string]interface{}{
 						"connectionMode": "cloud",
 					},
-					IsProcessorEnabled: true,
+					isProcessorEnabled: true,
 				},
-				Source: TestSourceT{
-					Name: "demo-source",
-					ID:   "1src",
+				source: testSourceT{
+					name: "demo-source",
+					id:   "1src",
 				},
-				Event: serverUtilsTypes.SingularEventT{
+				event: serverUtilsTypes.SingularEventT{
 					"type": map[string]interface{}{
 						"a": "aicn",
 					},
 				},
 			},
-			Expected: false,
+			expected: false,
 		},
 	}
 	destination := &DestinationT{
@@ -1379,64 +1379,64 @@ func TestFilterConditions(t *testing.T) {
 		Config: map[string]interface{}{},
 	}
 	for _, testCase := range testCases {
-		t.Run(testCase.CaseName, func(t *testing.T) {
+		t.Run(testCase.caseName, func(t *testing.T) {
 			// Setting test-case values to some default values for destination
-			destination.Config = testCase.Input.Destination.Config
-			destination.DestinationDefinition.Config = testCase.Input.Destination.DefinitionConfig
-			destination.DestinationDefinition.ID = testCase.Input.Destination.DefinitionID
-			destination.ID = testCase.Input.Destination.ID
-			destination.IsProcessorEnabled = testCase.Input.Destination.IsProcessorEnabled
+			destination.Config = testCase.input.destination.config
+			destination.DestinationDefinition.Config = testCase.input.destination.definitionConfig
+			destination.DestinationDefinition.ID = testCase.input.destination.definitionID
+			destination.ID = testCase.input.destination.id
+			destination.IsProcessorEnabled = testCase.input.destination.isProcessorEnabled
 
 			// Setting test-case values for source
 			source := &SourceT{
-				ID: testCase.Input.Source.ID,
+				ID: testCase.input.source.id,
 				SourceDefinition: SourceDefinitionT{
 					ID:   "src1",
-					Type: testCase.Input.Source.SourceDefType,
+					Type: testCase.input.source.sourceDefType,
 				},
 			}
 
-			actualOutput := destination.AllowEventToDestination(source, testCase.Input.Event)
+			actualOutput := destination.AllowEventToDestination(source, testCase.input.event)
 
-			require.Equal(t, testCase.Expected, actualOutput)
+			require.Equal(t, testCase.expected, actualOutput)
 		})
 	}
 }
 
 func TestConvertToArrayOfType(t *testing.T) {
-	type ConvertTestCases[T EventPropsTypes] struct {
-		CaseName string
-		Input    interface{}
-		Expected []T
+	type convertTestCases[T EventPropsTypes] struct {
+		caseName string
+		input    interface{}
+		expected []T
 	}
 
-	strTestCases := []ConvertTestCases[string]{
+	strTestCases := []convertTestCases[string]{
 		{
-			CaseName: "when proper input array of strings(internally) is sent, return proper []string",
-			Input:    []interface{}{"1", "2", "3"},
-			Expected: []string{"1", "2", "3"},
+			caseName: "when proper input array of strings(internally) is sent, return proper []string",
+			input:    []interface{}{"1", "2", "3"},
+			expected: []string{"1", "2", "3"},
 		},
 		{
-			CaseName: "when empty array of strings(internally) is sent, return empty string array",
-			Input:    []interface{}{},
-			Expected: []string{},
+			caseName: "when empty array of strings(internally) is sent, return empty string array",
+			input:    []interface{}{},
+			expected: []string{},
 		},
 		{
-			CaseName: "when empty array of different types is sent, return empty string array",
-			Input:    []interface{}{"1", 2, "omgo"},
-			Expected: []string{},
+			caseName: "when empty array of different types is sent, return empty string array",
+			input:    []interface{}{"1", 2, "omgo"},
+			expected: []string{},
 		},
 		{
-			CaseName: "when proper(golang type) string array is sent, return same string array",
-			Input:    []string{"lks", "omgo"},
-			Expected: []string{"lks", "omgo"},
+			caseName: "when proper(golang type) string array is sent, return same string array",
+			input:    []string{"lks", "omgo"},
+			expected: []string{"lks", "omgo"},
 		},
 	}
 
 	for _, strTestCase := range strTestCases {
-		t.Run(strTestCase.CaseName, func(t *testing.T) {
-			actual := ConvertToArrayOfType[string](strTestCase.Input)
-			require.EqualValues(t, strTestCase.Expected, actual)
+		t.Run(strTestCase.caseName, func(t *testing.T) {
+			actual := ConvertToArrayOfType[string](strTestCase.input)
+			require.EqualValues(t, strTestCase.expected, actual)
 		})
 	}
 }
