@@ -1439,5 +1439,4 @@ func TestConvertToArrayOfType(t *testing.T) {
 			require.EqualValues(t, strTestCase.Expected, actual)
 		})
 	}
-
 }
