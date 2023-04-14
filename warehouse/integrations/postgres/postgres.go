@@ -24,8 +24,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.Logger
-
 const (
 	host     = "host"
 	dbName   = "database"
@@ -147,9 +145,9 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewPostgres() *Postgres {
+func New() *Postgres {
 	return &Postgres{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("postgres"),
 	}
 }
 
@@ -200,10 +198,6 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	}
 
 	return db, nil
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
 }
 
 func (pg *Postgres) getConnectionCredentials() Credentials {

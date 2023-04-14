@@ -34,7 +34,6 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	db, err := postgres.Connect(postgres.Credentials{
@@ -129,8 +128,6 @@ func TestIntegrationPostgres(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-
-	postgres.Init()
 
 	db, err := postgres.Connect(postgres.Credentials{
 		DBName:   "rudderdb",
@@ -240,7 +237,6 @@ func TestConfigurationValidationPostgres(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

@@ -6,18 +6,14 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
@@ -62,8 +58,6 @@ func TestValidator(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 	validations.Init()
-	postgres.Init()
-	postgreslegacy.Init()
 
 	var (
 		provider  = "MINIO"
