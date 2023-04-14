@@ -41,11 +41,9 @@ func TestIntegrationClickHouse(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	clickhouse.Init()
-
 	var dbs []*sql.DB
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
-		ch := clickhouse.NewClickhouse()
+		ch := clickhouse.New()
 		db, err := ch.ConnectToClickhouse(clickhouse.Credentials{
 			Host:          host,
 			User:          "rudder",
@@ -207,7 +205,6 @@ func TestConfigurationValidationClickhouse(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	clickhouse.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
@@ -290,7 +287,7 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", S3EngineEnabledWorkspaceIDs)
 
-			ch := clickhouse.NewClickhouse()
+			ch := clickhouse.New()
 			clickhouse.WithConfig(ch, c)
 
 			ch.Warehouse = model.Warehouse{
@@ -347,7 +344,6 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	clickhouse.Init()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -430,7 +426,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ch := clickhouse.NewClickhouse()
+			ch := clickhouse.New()
 			ch.Logger = logger.NOP
 
 			conf := config.New()
@@ -636,7 +632,6 @@ func TestHandle_TestConnection(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	clickhouse.Init()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -688,7 +683,7 @@ func TestHandle_TestConnection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ch := clickhouse.NewClickhouse()
+			ch := clickhouse.New()
 			ch.Logger = logger.NOP
 
 			host := "localhost"
@@ -731,7 +726,6 @@ func TestHandle_LoadTestTable(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	clickhouse.Init()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -782,7 +776,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ch := clickhouse.NewClickhouse()
+			ch := clickhouse.New()
 			ch.Logger = logger.NOP
 
 			warehouse := model.Warehouse{
@@ -835,7 +829,6 @@ func TestHandle_FetchSchema(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	clickhouse.Init()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -855,7 +848,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse()
+		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -903,7 +896,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Invalid host", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse()
+		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -932,7 +925,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Invalid database", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse()
+		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -961,7 +954,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Empty schema", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse()
+		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -993,7 +986,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 	t.Run("Unrecognized schema", func(t *testing.T) {
 		t.Parallel()
 
-		ch := clickhouse.NewClickhouse()
+		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
 		warehouse := model.Warehouse{
@@ -1053,7 +1046,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	})
 	require.NoError(t, err)
 
-	db, err := clickhouse.NewClickhouse().ConnectToClickhouse(clickhouse.Credentials{
+	db, err := clickhouse.New().ConnectToClickhouse(clickhouse.Credentials{
 		Host:     "localhost",
 		Port:     resource.GetPort("9000/tcp"),
 		DBName:   databaseName,
