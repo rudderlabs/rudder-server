@@ -79,11 +79,6 @@ const (
 	RudderTestPayload             = "rudder-test-payload"
 )
 
-var (
-	regexGwHa               = regexp.MustCompile(`^.*-gw-ha-\d+-\w+-\w+$`)
-	regexGwNonHaOrProcessor = regexp.MustCompile(`^.*-\d+$`)
-)
-
 // ErrorStoreT : DS to store the app errors
 type ErrorStoreT struct {
 	Errors []RudderError

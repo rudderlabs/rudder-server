@@ -184,10 +184,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"WORKSPACE_NAMESPACE="+workspaceNamespace,
 			"RSERVER_WAREHOUSE_MODE=off",
 		)
-<<<<<<< HEAD:integration_test/multi_tenant_test/multi_tenant_test.go
-=======
-
->>>>>>> master:integration_test/multi_tentant_test/multi_tenant_test.go
 		stdout, err := cmd.StdoutPipe()
 		require.NoError(t, err)
 		stderr, err := cmd.StderrPipe()

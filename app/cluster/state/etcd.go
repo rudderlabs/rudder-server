@@ -12,7 +12,6 @@ import (
 	"google.golang.org/grpc"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
