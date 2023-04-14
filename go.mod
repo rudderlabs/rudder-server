@@ -115,8 +115,8 @@ require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/arrow/go/v11 v11.0.0 // indirect
-	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/apache/thrift v0.17.0 // indirect
+	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.16.16 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.8 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.12.20 // indirect
