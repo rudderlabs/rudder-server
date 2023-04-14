@@ -574,6 +574,8 @@ func evaluateSupportedTypes[T EventPropsTypes](destConfig map[string]interface{}
 
 func ConvertToArrayOfType[T EventPropsTypes](data interface{}) []T {
 	switch value := data.(type) {
+	case []T:
+		return value
 	case []interface{}:
 		result := make([]T, len(value))
 		for i, v := range value {
