@@ -44,7 +44,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/dedup"
-	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -336,7 +335,6 @@ func runAllInit() {
 	pgnotifier.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
-	destinationconnectiontester.Init()
 	warehouse.Init()
 	warehouse.Init2()
 	warehouse.Init3()
