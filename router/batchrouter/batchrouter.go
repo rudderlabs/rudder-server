@@ -807,7 +807,7 @@ func (brt *HandleT) sendJobsToStorage(batchJobs BatchJobsT) {
 	if disableEgress {
 		out := asyncdestinationmanager.AsyncUploadOutput{}
 		for _, job := range batchJobs.Jobs {
-			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
+			out.SucceededJobIDs = append(out.SucceededJobIDs, job)
 			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.DisabledEgress.Error())
 		}
 
@@ -827,7 +827,7 @@ func (brt *HandleT) sendJobsToStorage(batchJobs BatchJobsT) {
 		if brt.asyncDestinationStruct[destinationID].CanUpload {
 			out := asyncdestinationmanager.AsyncUploadOutput{}
 			for _, job := range batchJobs.Jobs {
-				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
+				out.FailedJobIDs = append(out.FailedJobIDs, job)
 				out.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
 			}
 
@@ -865,14 +865,14 @@ func (brt *HandleT) sendJobsToStorage(batchJobs BatchJobsT) {
 			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
 			jobString = jobString + fileData + "\n"
-			brt.asyncDestinationStruct[destinationID].ImportingJobIDs = append(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, job.JobID)
+			brt.asyncDestinationStruct[destinationID].ImportingJobIDs = append(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, job)
 			brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
 			brt.asyncDestinationStruct[destinationID].URL = gjson.Get(string(job.EventPayload), "endpoint").String()
 		} else {
 			brt.asyncDestinationStruct[destinationID].CanUpload = true
 			brt.logger.Debugf("BRT: Max Event Limit Reached.Stopped writing to File  %s", brt.asyncDestinationStruct[destinationID].FileName)
 			brt.asyncDestinationStruct[destinationID].URL = gjson.Get(string(job.EventPayload), "endpoint").String()
-			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job.JobID)
+			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job)
 		}
 	}
 
@@ -907,10 +907,26 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 
 				timeout := uploadIntervalMap[destinationID]
-				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
+				if brt.asyncDestinationStruct[destinationID].Exists &&
+					(brt.asyncDestinationStruct[destinationID].CanUpload ||
+						timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					uploadResponse := asyncdestinationmanager.Upload(resolveURL(transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
-					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
+					uploadResponse := asyncdestinationmanager.Upload(
+						resolveURL(
+							transformerURL,
+							brt.asyncDestinationStruct[destinationID].URL,
+						),
+						brt.asyncDestinationStruct[destinationID].FileName,
+						destinationsMap[destinationID].Destination.Config,
+						brt.destType,
+						brt.asyncDestinationStruct[destinationID].FailedJobIDs,
+						brt.asyncDestinationStruct[destinationID].ImportingJobIDs,
+						destinationID,
+					)
+					brt.setMultipleJobStatus(
+						uploadResponse,
+						brt.asyncDestinationStruct[destinationID].RsourcesStats,
+					)
 					brt.asyncStructCleanUp(destinationID)
 				}
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
@@ -973,8 +989,8 @@ func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
 
 func (brt *HandleT) asyncStructCleanUp(destinationID string) {
 	misc.RemoveFilePaths(brt.asyncDestinationStruct[destinationID].FileName)
-	brt.asyncDestinationStruct[destinationID].ImportingJobIDs = []int64{}
-	brt.asyncDestinationStruct[destinationID].FailedJobIDs = []int64{}
+	brt.asyncDestinationStruct[destinationID].ImportingJobIDs = []*jobsdb.JobT{}
+	brt.asyncDestinationStruct[destinationID].FailedJobIDs = []*jobsdb.JobT{}
 	brt.asyncDestinationStruct[destinationID].Size = 0
 	brt.asyncDestinationStruct[destinationID].Exists = false
 	brt.asyncDestinationStruct[destinationID].Count = 0
@@ -1391,7 +1407,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 	workspace := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var statusList []*jobsdb.JobStatusT
 	if len(asyncOutput.ImportingJobIDs) > 0 {
-		for _, jobId := range asyncOutput.ImportingJobIDs {
+		for _, job := range asyncOutput.ImportingJobIDs {
 			status := jobsdb.JobStatusT{
 				Job:           job,
 				JobState:      jobsdb.Importing.State,
@@ -1407,7 +1423,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 		}
 	}
 	if len(asyncOutput.SucceededJobIDs) > 0 {
-		for _, jobId := range asyncOutput.FailedJobIDs {
+		for _, job := range asyncOutput.FailedJobIDs {
 			status := jobsdb.JobStatusT{
 				Job:           job,
 				JobState:      jobsdb.Succeeded.State,
@@ -1423,9 +1439,9 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 		}
 	}
 	if len(asyncOutput.FailedJobIDs) > 0 {
-		for _, jobId := range asyncOutput.FailedJobIDs {
+		for _, job := range asyncOutput.FailedJobIDs {
 			status := jobsdb.JobStatusT{
-				JobID:         jobId,
+				Job:           job,
 				JobState:      jobsdb.Failed.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
@@ -1441,7 +1457,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 	if len(asyncOutput.AbortJobIDs) > 0 {
 		for _, jobId := range asyncOutput.AbortJobIDs {
 			status := jobsdb.JobStatusT{
-				JobID:         jobId,
+				Job:           jobId,
 				JobState:      jobsdb.Aborted.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
@@ -1645,7 +1661,7 @@ func (worker *workerT) workerProcess() {
 			brt.configSubscriberLock.RUnlock()
 			if drain {
 				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
+					Job:           job,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
@@ -1680,7 +1696,7 @@ func (worker *workerT) workerProcess() {
 				jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
 
 				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
+					Job:           job,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobsdb.Executing.State,
 					ExecTime:      time.Now(),

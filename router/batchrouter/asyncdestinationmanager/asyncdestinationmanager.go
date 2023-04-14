@@ -15,19 +15,19 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 )
 
 type AsyncUploadOutput struct {
 	Key                 string
-	ImportingJobIDs     []int64
+	ImportingJobIDs     []*jobsdb.JobT
 	ImportingParameters stdjson.RawMessage
-	SuccessJobIDs       []int64
-	FailedJobIDs        []int64
-	SucceededJobIDs     []int64
+	FailedJobIDs        []*jobsdb.JobT
+	SucceededJobIDs     []*jobsdb.JobT
 	SuccessResponse     string
 	FailedReason        string
-	AbortJobIDs         []int64
+	AbortJobIDs         []*jobsdb.JobT
 	AbortReason         string
 	importingCount      int
 	FailedCount         int
@@ -36,8 +36,8 @@ type AsyncUploadOutput struct {
 }
 
 type AsyncDestinationStruct struct {
-	ImportingJobIDs []int64
-	FailedJobIDs    []int64
+	ImportingJobIDs []*jobsdb.JobT
+	FailedJobIDs    []*jobsdb.JobT
 	Exists          bool
 	Size            int
 	CreatedAt       time.Time
@@ -124,7 +124,7 @@ func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int6
 	return succesfulJobIDs, failedJobIDsTrans
 }
 
-func Upload(url, filePath string, config map[string]interface{}, destType string, failedJobIDs, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
+func Upload(url, filePath string, config map[string]interface{}, destType string, failedJobIDs, importingJobIDs []*jobsdb.JobT, destinationID string) AsyncUploadOutput {
 	file, err := os.Open(filePath)
 	if err != nil {
 		panic("BRT: Read File Failed" + err.Error())
@@ -204,11 +204,23 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 		if err != nil {
 			panic("Errored in Marshalling" + err.Error())
 		}
-		successfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+		successfulJobIDs, failedJobIDsTrans := CleanUpData(
+			responseStruct.Metadata,
+			lo.Map(importingJobIDs, func(job *jobsdb.JobT, _ int) int64 {
+				return job.JobID
+			}),
+		)
+		importingJobMap := lo.SliceToMap(importingJobIDs, func(job *jobsdb.JobT) (int64, *jobsdb.JobT) {
+			return job.JobID, job
+		})
 
 		uploadResponse = AsyncUploadOutput{
-			ImportingJobIDs:     successfulJobIDs,
-			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
+			ImportingJobIDs: lo.Map(successfulJobIDs, func(jobID int64, _ int) *jobsdb.JobT {
+				return importingJobMap[jobID]
+			}),
+			FailedJobIDs: append(failedJobIDs, lo.Map(failedJobIDsTrans, func(jobID int64, _ int) *jobsdb.JobT {
+				return importingJobMap[jobID]
+			})...),
 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
 			ImportingParameters: stdjson.RawMessage(importParameters),
 			importingCount:      len(importingJobIDs),
@@ -225,11 +237,23 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 			"module":   "batch_router",
 			"destType": destType,
 		})
-		abortedJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+
+		importingJobMap := lo.SliceToMap(importingJobIDs, func(job *jobsdb.JobT) (int64, *jobsdb.JobT) {
+			return job.JobID, job
+		})
+		abortedJobIDs, failedJobIDsTrans := CleanUpData(
+			responseStruct.Metadata,
+			lo.Map(importingJobIDs, func(job *jobsdb.JobT, _ int) int64 {
+				return job.JobID
+			}))
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = AsyncUploadOutput{
-			AbortJobIDs:   abortedJobIDs,
-			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
+			AbortJobIDs: lo.Map(abortedJobIDs, func(jobID int64, _ int) *jobsdb.JobT {
+				return importingJobMap[jobID]
+			}),
+			FailedJobIDs: append(failedJobIDs, lo.Map(failedJobIDsTrans, func(jobID int64, _ int) *jobsdb.JobT {
+				return importingJobMap[jobID]
+			})...),
 			FailedReason:  `{"error":"Jobs flowed over the prescribed limit"}`,
 			AbortReason:   string(bodyBytes),
 			AbortCount:    len(importingJobIDs),
