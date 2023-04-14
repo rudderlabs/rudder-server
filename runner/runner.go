@@ -44,7 +44,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/dedup"
-	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -55,16 +54,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse"
 	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -342,13 +331,10 @@ func runAllInit() {
 	backendconfig.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	bigquery.Init()
-	clickhouse.Init()
 	archiver.Init()
 	pgnotifier.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
-	destinationconnectiontester.Init()
 	warehouse.Init()
 	warehouse.Init2()
 	warehouse.Init3()
@@ -357,14 +343,6 @@ func runAllInit() {
 	warehouse.Init6()
 	warehousearchiver.Init()
 	validations.Init()
-	datalake.Init()
-	azuresynapse.Init()
-	mssql.Init()
-	postgres.Init()
-	postgreslegacy.Init()
-	redshift.Init()
-	snowflake.Init()
-	deltalake.Init()
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()
