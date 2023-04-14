@@ -10,7 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/internal/throttling"
+	"github.com/rudderlabs/rudder-go-kit/throttling"
 )
 
 const (

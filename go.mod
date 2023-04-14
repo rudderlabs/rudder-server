@@ -39,7 +39,7 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/golang/mock v1.6.0
-	github.com/gomodule/redigo v1.8.5
+	github.com/gomodule/redigo v1.8.9
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
@@ -64,7 +64,7 @@ require (
 	github.com/prometheus/common v0.42.0
 	github.com/rs/cors v1.8.3
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
-	github.com/rudderlabs/rudder-go-kit v0.11.0
+	github.com/rudderlabs/rudder-go-kit v0.12.0
 	github.com/rudderlabs/sql-tunnels v0.1.2
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.38
@@ -75,7 +75,6 @@ require (
 	github.com/spf13/viper v1.15.0
 	github.com/stretchr/testify v1.8.2
 	github.com/thoas/go-funk v0.9.3
-	github.com/throttled/throttled/v2 v2.9.1
 	github.com/tidwall/gjson v1.14.4
 	github.com/tidwall/sjson v1.2.5
 	github.com/urfave/cli/v2 v2.25.1
@@ -177,7 +176,6 @@ require (
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/heetch/avro v0.3.1 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
@@ -212,8 +210,8 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
-	github.com/prometheus/client_golang v1.14.0 // indirect
-	github.com/prometheus/procfs v0.8.0 // indirect
+	github.com/prometheus/client_golang v1.15.0 // indirect
+	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/rivo/uniseg v0.1.0 // indirect
 	github.com/rs/xid v1.4.0 // indirect
 	github.com/rs/zerolog v1.28.0 // indirect
@@ -225,6 +223,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.4.2 // indirect
+	github.com/throttled/throttled/v2 v2.11.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
@@ -252,7 +251,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.14.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
-	go.uber.org/multierr v1.8.0 // indirect
+	go.uber.org/multierr v1.9.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/mod v0.8.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
