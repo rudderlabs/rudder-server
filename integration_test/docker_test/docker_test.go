@@ -59,7 +59,7 @@ var (
 	writeKey                     string
 	workspaceID                  string
 	kafkaContainer               *kafka.Resource
-	redisContainer               *destination.RedisResource
+	redisContainer               *resource.RedisResource
 	postgresContainer            *resource.PostgresResource
 	transformerContainer         *destination.TransformerResource
 	minioContainer               *destination.MINIOResource
@@ -400,7 +400,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return waitForKafka(kafkaCtx, t, kafkaContainer.Ports[0])
 	})
 	containersGroup.Go(func() (err error) {
-		redisContainer, err = destination.SetupRedis(containersCtx, pool, t)
+		redisContainer, err = resource.SetupRedis(containersCtx, pool, t)
 		return err
 	})
 	containersGroup.Go(func() (err error) {

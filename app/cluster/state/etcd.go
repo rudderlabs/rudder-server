@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )

@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -136,7 +137,7 @@ func makeCommonMetadataFromTransformerEvent(transformerEvent *transformer.Transf
 		SourceCategory:  metadata.SourceCategory,
 		WorkspaceID:     metadata.WorkspaceID,
 		Namespace:       config.GetKubeNamespace(),
-		InstanceID:      config.GetInstanceID(),
+		InstanceID:      misc.GetInstanceID(),
 		DestinationID:   metadata.DestinationID,
 		DestinationType: metadata.DestinationType,
 	}

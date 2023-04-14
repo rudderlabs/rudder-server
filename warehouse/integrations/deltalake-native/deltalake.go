@@ -202,9 +202,8 @@ func (d *Deltalake) connect() (*sql.DB, error) {
 }
 
 // CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover(model.Warehouse) error {
+func (d *Deltalake) CrashRecover() {
 	d.dropDanglingStagingTables()
-	return nil
 }
 
 // dropDanglingStagingTables drops dangling staging tables

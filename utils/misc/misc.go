@@ -55,6 +55,9 @@ var (
 	reservedFolderPaths []*RFP
 	jsonfast            = jsoniter.ConfigCompatibleWithStandardLibrary
 	notifyOnce          sync.Once
+
+	regexGwHa               = regexp.MustCompile(`^.*-gw-ha-\d+-\w+-\w+$`)
+	regexGwNonHaOrProcessor = regexp.MustCompile(`^.*-\d+$`)
 )
 
 const (

@@ -826,16 +826,8 @@ func (pg *Postgres) Setup(
 	return err
 }
 
-func (pg *Postgres) CrashRecover(warehouse model.Warehouse) (err error) {
-	pg.Warehouse = warehouse
-	pg.Namespace = warehouse.Namespace
-	pg.DB, err = Connect(pg.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer pg.DB.Close()
+func (pg *Postgres) CrashRecover() {
 	pg.dropDanglingStagingTables()
-	return
 }
 
 func (pg *Postgres) dropDanglingStagingTables() bool {

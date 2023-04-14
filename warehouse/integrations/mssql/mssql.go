@@ -719,16 +719,8 @@ func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader warehouseutils.Upload
 	return err
 }
 
-func (ms *MSSQL) CrashRecover(warehouse model.Warehouse) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.DB, err = Connect(ms.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer ms.DB.Close()
+func (ms *MSSQL) CrashRecover() {
 	ms.dropDanglingStagingTables()
-	return
 }
 
 func (ms *MSSQL) dropDanglingStagingTables() bool {
