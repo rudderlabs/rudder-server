@@ -37,8 +37,8 @@ import (
 )
 
 func TestIntegrationClickHouse(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
 	clickhouse.Init()
@@ -199,8 +199,8 @@ func TestIntegrationClickHouse(t *testing.T) {
 }
 
 func TestConfigurationValidationClickhouse(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
 	misc.Init()
@@ -342,6 +342,8 @@ func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) 
 }
 
 func TestHandle_LoadTableRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
@@ -629,6 +631,8 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 }
 
 func TestHandle_TestConnection(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
@@ -722,6 +726,8 @@ func TestHandle_TestConnection(t *testing.T) {
 }
 
 func TestHandle_LoadTestTable(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
@@ -824,6 +830,8 @@ func TestHandle_LoadTestTable(t *testing.T) {
 }
 
 func TestHandle_FetchSchema(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
@@ -1174,7 +1182,7 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
 		log.Printf("Renaming tables to sharded tables for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-		require.NoError(t, testhelper.WithConstantBackoff(func() error {
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
 			_, err := clusterDB.Exec(sqlStatement)
 			return err
 		}))
@@ -1200,7 +1208,7 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 		)
 		log.Printf("Creating distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-		require.NoError(t, testhelper.WithConstantBackoff(func() error {
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
 			_, err := clusterDB.Exec(sqlStatement)
 			return err
 		}))
@@ -1223,7 +1231,7 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			sqlStatement = strings.TrimSuffix(sqlStatement, ",")
 			log.Printf("Altering columns for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
-			require.NoError(t, testhelper.WithConstantBackoff(func() error {
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
 				_, err := clusterDB.Exec(sqlStatement)
 				return err
 			}))
