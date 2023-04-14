@@ -239,7 +239,7 @@ require (
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.5.7 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.5.8 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel v1.14.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.14.0 // indirect
