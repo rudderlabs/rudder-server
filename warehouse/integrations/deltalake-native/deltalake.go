@@ -702,10 +702,6 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 
 	row = d.DB.QueryRow(query)
 
-	if row.Err() != nil {
-		return "", fmt.Errorf("running deduplication: %w", row.Err())
-	}
-
 	var (
 		affected int64
 		updated  int64
@@ -721,6 +717,9 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 
 	if err != nil {
 		return "", fmt.Errorf("scanning deduplication: %w", err)
+	}
+	if row.Err() != nil {
+		return "", fmt.Errorf("running deduplication: %w", row.Err())
 	}
 
 	d.Stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
@@ -1064,13 +1063,6 @@ func (d *Deltalake) LoadUserTables() map[string]error {
 
 	row = d.DB.QueryRow(query)
 
-	if row.Err() != nil {
-		return map[string]error{
-			warehouseutils.IdentifiesTable: nil,
-			warehouseutils.UsersTable:      fmt.Errorf("running deduplication: %w", row.Err()),
-		}
-	}
-
 	var (
 		affected int64
 		updated  int64
@@ -1088,6 +1080,13 @@ func (d *Deltalake) LoadUserTables() map[string]error {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
 			warehouseutils.UsersTable:      fmt.Errorf("getting rows affected for dedup: %w", err),
+		}
+	}
+
+	if row.Err() != nil {
+		return map[string]error{
+			warehouseutils.IdentifiesTable: nil,
+			warehouseutils.UsersTable:      fmt.Errorf("running deduplication: %w", row.Err()),
 		}
 	}
 
