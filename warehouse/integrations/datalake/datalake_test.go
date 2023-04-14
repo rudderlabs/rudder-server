@@ -8,8 +8,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -20,13 +18,11 @@ import (
 )
 
 func TestIntegrationDatalake(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
-	}
-
 	t.Parallel()
 
-	datalake.Init()
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
+	}
 
 	testCases := []struct {
 		name          string
@@ -96,17 +92,16 @@ func TestIntegrationDatalake(t *testing.T) {
 }
 
 func TestConfigurationValidationDatalake(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
-	}
-
 	t.Parallel()
+
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
+	}
 
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	datalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 

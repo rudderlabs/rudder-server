@@ -46,8 +46,6 @@ const (
 	partitionNotFound   = "42000"
 )
 
-var pkgLogger logger.Logger
-
 // Rudder data type mapping with Delta lake mappings.
 var dataTypesMap = map[string]string{
 	"boolean":  "BOOLEAN",
@@ -133,14 +131,9 @@ type Deltalake struct {
 	ConnectorURL           string
 }
 
-// Init initializes the delta lake warehouse
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake")
-}
-
-func NewDeltalake() *Deltalake {
+func New() *Deltalake {
 	return &Deltalake{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("deltalake"),
 		Stats:  stats.Default,
 	}
 }
@@ -1075,7 +1068,6 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 
 	conn, err := grpc.DialContext(ctx, connectorURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		pkgLogger.Errorf("Error while creating grpc connection to databricks with error: %s", err.Error())
 		databricksBuildVersion = "Unable to create grpc connection to databricks."
 		return
 	}
@@ -1083,7 +1075,6 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 	versionClient := proto.NewVersionClient(conn)
 	versionResponse, err := versionClient.GetVersion(ctx, &proto.VersionRequest{})
 	if err != nil {
-		pkgLogger.Errorf("Error while getting version response from databricks with error : %s", err.Error())
 		databricksBuildVersion = "Unable to read response from databricks."
 		return
 	}

@@ -24,8 +24,10 @@ import (
 )
 
 func TestIntegrationSnowflake(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	t.Parallel()
+
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
@@ -33,10 +35,6 @@ func TestIntegrationSnowflake(t *testing.T) {
 	if _, exists := os.LookupEnv(testhelper.SnowflakeRBACIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeRBACIntegrationTestCredentials)
 	}
-
-	t.Parallel()
-
-	snowflake.Init()
 
 	credentials, err := testhelper.SnowflakeCredentials(testhelper.SnowflakeIntegrationTestCredentials)
 	require.NoError(t, err)
@@ -155,14 +153,10 @@ func TestIntegrationSnowflake(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
-				require.NoError(
-					t,
-					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-						return
-					}),
-					fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema),
-				)
+				require.NoError(t, testhelper.WithConstantRetries(func() error {
+					_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
+					return err
+				}))
 			})
 
 			ts := testhelper.WareHouseTest{
@@ -201,8 +195,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 }
 
 func TestConfigurationValidationSnowflake(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
@@ -214,7 +208,6 @@ func TestConfigurationValidationSnowflake(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	snowflake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
