@@ -1,4 +1,4 @@
-package deltalake_test
+package deltalake_native_test
 
 import (
 	"testing"

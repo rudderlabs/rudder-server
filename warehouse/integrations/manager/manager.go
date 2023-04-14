@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
+
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -100,6 +102,12 @@ func New(destType string) (Manager, error) {
 		dl := datalake.New()
 		return dl, nil
 	case warehouseutils.DELTALAKE:
+		if config.Default.GetBool("Warehouse.deltalake.useNative", false) {
+			dl := deltalake_native.New()
+			deltalake_native.WithConfig(dl, config.Default)
+			return dl, nil
+		}
+
 		dl := deltalake.New()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
@@ -149,6 +157,12 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		dl := datalake.New()
 		return dl, nil
 	case warehouseutils.DELTALAKE:
+		if config.Default.GetBool("Warehouse.deltalake.useNative", false) {
+			dl := deltalake_native.New()
+			deltalake_native.WithConfig(dl, config.Default)
+			return dl, nil
+		}
+
 		dl := deltalake.New()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
