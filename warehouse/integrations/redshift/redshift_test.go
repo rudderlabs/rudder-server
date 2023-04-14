@@ -39,8 +39,6 @@ func TestIntegrationRedshift(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
 
-	redshift.Init()
-
 	var (
 		jobsDB        = testhelper.SetUpJobsDB(t)
 		provider      = warehouseutils.RS
@@ -153,7 +151,6 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	redshift.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
@@ -259,7 +256,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
-			rs := redshift.NewRedshift()
+			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
 			rs.DB = pgResource.DB

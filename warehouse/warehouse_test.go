@@ -8,9 +8,6 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -63,8 +60,6 @@ func initWarehouse() {
 	Init5()
 	validations.Init()
 	misc.Init()
-	postgres.Init()
-	postgreslegacy.Init()
 }
 
 func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMeasurement) {
