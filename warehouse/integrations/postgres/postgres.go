@@ -389,9 +389,7 @@ func (pg *Postgres) Setup(
 	return err
 }
 
-func (pg *Postgres) CrashRecover(model.Warehouse) error {
-	return nil
-}
+func (pg *Postgres) CrashRecover() {}
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {

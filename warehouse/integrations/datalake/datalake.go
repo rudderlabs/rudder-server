@@ -49,9 +49,7 @@ func (d *Datalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uplo
 	return err
 }
 
-func (*Datalake) CrashRecover(_ model.Warehouse) (err error) {
-	return nil
-}
+func (*Datalake) CrashRecover() {}
 
 func (d *Datalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
 	return d.SchemaRepository.FetchSchema(warehouse)
