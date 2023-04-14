@@ -1402,3 +1402,42 @@ func TestFilterConditions(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertToArrayOfType(t *testing.T) {
+	type ConvertTestCases[T EventPropsTypes] struct {
+		CaseName string
+		Input    interface{}
+		Expected []T
+	}
+
+	strTestCases := []ConvertTestCases[string]{
+		{
+			CaseName: "when proper input array of strings(internally) is sent, return proper []string",
+			Input:    []interface{}{"1", "2", "3"},
+			Expected: []string{"1", "2", "3"},
+		},
+		{
+			CaseName: "when empty array of strings(internally) is sent, return empty string array",
+			Input:    []interface{}{},
+			Expected: []string{},
+		},
+		{
+			CaseName: "when empty array of different types is sent, return empty string array",
+			Input:    []interface{}{"1", 2, "omgo"},
+			Expected: []string{},
+		},
+		{
+			CaseName: "when proper(golang type) string array is sent, return same string array",
+			Input:    []string{"lks", "omgo"},
+			Expected: []string{"lks", "omgo"},
+		},
+	}
+
+	for _, strTestCase := range strTestCases {
+		t.Run(strTestCase.CaseName, func(t *testing.T) {
+			actual := ConvertToArrayOfType[string](strTestCase.Input)
+			require.EqualValues(t, strTestCase.Expected, actual)
+		})
+	}
+
+}
