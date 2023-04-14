@@ -27,8 +27,8 @@ import (
 )
 
 func TestIntegrationBigQuery(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
@@ -53,12 +53,9 @@ func TestIntegrationBigQuery(t *testing.T) {
 
 	t.Cleanup(func() {
 		for _, dataset := range []string{schema, sourcesSchema} {
-			require.NoError(t,
-				testhelper.WithConstantBackoff(func() (err error) {
-					return db.Dataset(dataset).DeleteWithContents(context.TODO())
-				}),
-				fmt.Sprintf("Failed dropping dataset %s for BigQuery", dataset),
-			)
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				return db.Dataset(dataset).DeleteWithContents(context.TODO())
+			}))
 		}
 	})
 
@@ -262,8 +259,8 @@ func TestIntegrationBigQuery(t *testing.T) {
 }
 
 func TestConfigurationValidationBigQuery(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)

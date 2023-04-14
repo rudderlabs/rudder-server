@@ -30,8 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-	"github.com/cenkalti/backoff"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
@@ -48,11 +46,6 @@ const (
 	WaitFor10Minute        = 10 * time.Minute
 	DefaultQueryFrequency  = 100 * time.Millisecond
 	AsyncJOBQueryFrequency = 1000 * time.Millisecond
-)
-
-const (
-	BackoffDuration = 1 * time.Second
-	BackoffRetryMax = 5
 )
 
 const (
@@ -464,7 +457,8 @@ func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.UserID,
 			sqlStatement,
 		)
-		require.NoError(t, WithConstantBackoff(func() error {
+
+		require.NoError(t, WithConstantRetries(func() error {
 			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
 			if countErr != nil {
 				return countErr
@@ -644,7 +638,7 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 	t.Helper()
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
-	require.NoError(t, WithConstantBackoff(func() error {
+	require.NoError(t, WithConstantRetries(func() error {
 		destinationValidator := validations.NewDestinationValidator()
 		response := destinationValidator.Validate(&destination)
 		if !response.Success {
@@ -684,9 +678,14 @@ func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
 	return strconv.ParseInt(result.Values[0][0], 10, 64)
 }
 
-func WithConstantBackoff(operation func() error) error {
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(BackoffDuration), uint64(BackoffRetryMax))
-	return backoff.Retry(operation, backoffWithMaxRetry)
+func WithConstantRetries(operation func() error) error {
+	var err error
+	for i := 0; i < 5; i++ {
+		if err = operation(); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 func defaultSendEventsMap() EventsCountMap {
@@ -860,6 +859,7 @@ func PopulateTemplateConfigurations() map[string]string {
 		"snowflakeRBACWriteKey":          "2eSafstqwcFYUILzXv2fcNIrWO7",
 		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
+		"deltalakeNativeWriteKey":        "dasFgoilA0U1WxNeW1gdgUVDfas",
 
 		"postgresSourcesWriteKey":  "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
 		"mssqlSourcesWriteKey":     "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
@@ -933,9 +933,11 @@ func enhanceWithDeltalakeConfigurations(values map[string]string) {
 
 	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("deltalake%s", k)] = v
+		values[fmt.Sprintf("deltalakeNative%s", k)] = v
 	}
 
 	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
+	values["deltalakeNativeNamespace"] = fmt.Sprintf("%s_%s", values["deltalakeNamespace"], "native")
 }
 
 func enhanceWithBQConfigurations(values map[string]string) {
