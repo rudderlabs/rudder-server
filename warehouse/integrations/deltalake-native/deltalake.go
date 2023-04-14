@@ -291,16 +291,7 @@ func (d *Deltalake) dropTable(table string) error {
 }
 
 // FetchSchema fetches the schema from the warehouse
-func (d *Deltalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
-	d.Warehouse = warehouse
-	d.Namespace = warehouse.Namespace
-
-	db, err := d.connect()
-	if err != nil {
-		return model.Schema{}, model.Schema{}, fmt.Errorf("connecting: %w", err)
-	}
-	defer func() { _ = db.Close() }()
-
+func (d *Deltalake) FetchSchema(model.Warehouse) (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 	tableNames, err := d.fetchTables(nonRudderStagingTableRegex)
@@ -1173,19 +1164,11 @@ func (*Deltalake) IsEmpty(model.Warehouse) (bool, error) {
 }
 
 // TestConnection tests the connection to the warehouse
-func (d *Deltalake) TestConnection(warehouse model.Warehouse) error {
-	d.Warehouse = warehouse
-
-	db, err := d.connect()
-	if err != nil {
-		return fmt.Errorf("connecting: %w", err)
-	}
-	defer func() { _ = db.Close() }()
-
+func (d *Deltalake) TestConnection(model.Warehouse) error {
 	ctx, cancel := context.WithTimeout(context.Background(), d.ConnectTimeout)
 	defer cancel()
 
-	err = db.PingContext(ctx)
+	err := d.DB.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)
 	}
