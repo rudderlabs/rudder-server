@@ -714,23 +714,11 @@ func (bq *BigQuery) dedupEnabled() bool {
 	return bq.isDedupEnabled || bq.isUsersTableDedupEnabled
 }
 
-func (bq *BigQuery) CrashRecover(warehouse model.Warehouse) (err error) {
+func (bq *BigQuery) CrashRecover() {
 	if !bq.dedupEnabled() {
 		return
 	}
-	bq.warehouse = warehouse
-	bq.namespace = warehouse.Namespace
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
-	bq.db, err = bq.connect(BQCredentials{
-		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
-	})
-	if err != nil {
-		return
-	}
-	defer func() { _ = bq.db.Close() }()
 	bq.dropDanglingStagingTables()
-	return
 }
 
 func (bq *BigQuery) dropDanglingStagingTables() bool {

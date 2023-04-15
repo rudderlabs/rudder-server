@@ -109,8 +109,6 @@ func (api *WarehouseAPI) Handler() http.Handler {
 }
 
 func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) {
-	api.Logger.LogRequest(r)
-
 	ctx := r.Context()
 	defer r.Body.Close()
 
