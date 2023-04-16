@@ -57,7 +57,6 @@ func cloneFiles(t *testing.T, files []string) []string {
 func TestLoadTable_Load(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
-	postgres.Init()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -343,7 +342,6 @@ func TestLoadTable_Load(t *testing.T) {
 func TestLoadUsersTable_Load(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
-	postgres.Init()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)

@@ -45,7 +45,7 @@ func NewGlueSchemaRepository(wh model.Warehouse) (*GlueSchemaRepository, error) 
 		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
-		Logger:    pkgLogger,
+		Logger:    logger.NewLogger().Child("warehouse").Child("integrations").Child("datalake").Child("schema-repository"),
 	}
 
 	glueClient, err := getGlueClient(wh)

@@ -30,8 +30,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.Logger
-
 var errorsMappings = []model.JobError{
 	{
 		Type:   model.AlterColumnError,
@@ -183,15 +181,11 @@ type RedshiftCredentials struct {
 	TunnelInfo *tunnelling.TunnelInfo
 }
 
-func NewRedshift() *Redshift {
+func New() *Redshift {
 	return &Redshift{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("redshift"),
 		stats:  stats.Default,
 	}
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("redshift")
 }
 
 func WithConfig(h *Redshift, config *config.Config) {
@@ -1386,16 +1380,8 @@ func (rs *Redshift) Cleanup() {
 	}
 }
 
-func (rs *Redshift) CrashRecover(warehouse model.Warehouse) (err error) {
-	rs.Warehouse = warehouse
-	rs.Namespace = warehouse.Namespace
-	rs.DB, err = Connect(rs.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = rs.DB.Close() }()
+func (rs *Redshift) CrashRecover() {
 	rs.dropDanglingStagingTables()
-	return
 }
 
 func (*Redshift) IsEmpty(_ model.Warehouse) (empty bool, err error) {

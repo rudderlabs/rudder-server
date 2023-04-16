@@ -53,10 +53,7 @@ const (
 	partitionField = "received_at"
 )
 
-var (
-	pkgLogger                    logger.Logger
-	clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
-)
+var clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 // clickhouse doesn't support bool, they recommend to use Uint8 and set 1,0
 var rudderDataTypesMapToClickHouse = map[string]string{
@@ -216,10 +213,6 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 	}
 }
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
-}
-
 // ConnectToClickhouse connects to clickhouse with provided credentials
 func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
 	dsn := url.URL{
@@ -261,9 +254,9 @@ func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool
 	return db, nil
 }
 
-func NewClickhouse() *Clickhouse {
+func New() *Clickhouse {
 	return &Clickhouse{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("clickhouse"),
 	}
 }
 
@@ -959,9 +952,7 @@ func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.U
 	return err
 }
 
-func (*Clickhouse) CrashRecover(_ model.Warehouse) (err error) {
-	return
-}
+func (*Clickhouse) CrashRecover() {}
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
 func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {

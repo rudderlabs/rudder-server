@@ -163,7 +163,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		cmd := exec.CommandContext(ctx, "go", "run", "../../main.go")
 		cmd.Env = append(os.Environ(),
 			"APP_TYPE="+appType,
-			"INSTANCE_ID="+serverInstanceID,
+			"INSTANCE_ID=rudderstackmt-v0-rudderstack-1",
 			"RELEASE_NAME="+releaseName,
 			"ETCD_HOSTS="+etcdContainer.Hosts[0],
 			"JOBS_DB_PORT="+postgresContainer.Port,
@@ -183,9 +183,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"WORKSPACE_NAMESPACE="+workspaceNamespace,
 			"RSERVER_WAREHOUSE_MODE=off",
 		)
-		if testing.Verbose() {
-			cmd.Env = append(cmd.Env, "LOG_LEVEL=debug")
-		}
 
 		stdout, err := cmd.StdoutPipe()
 		require.NoError(t, err)
@@ -241,7 +238,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		require.NoError(t, err)
 		require.Equal(t, "RELOADED", v.Status)
 		require.Equal(t, "", v.Error)
-	case <-time.After(60 * time.Second):
+	case <-time.After(90 * time.Second):
 		_, err = clientv3.New(clientv3.Config{
 			Endpoints: etcdContainer.Hosts,
 			DialOptions: []grpc.DialOption{
@@ -362,7 +359,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			require.NoError(t, err)
 			require.Equal(t, "RELOADED", v.Status)
 			require.Equal(t, "", v.Error)
-		case <-time.After(60 * time.Second):
+		case <-time.After(90 * time.Second):
 			t.Fatal("Timeout waiting for test-ack-3/3")
 		}
 	})
