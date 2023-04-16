@@ -417,8 +417,8 @@ Introduced to support hybrid-mode, cloud-mode in a more scalable way
 The template inside `destinationDefinition.Config.supportedConnectionModes` would look like this
 ```
 
-	[connectionMode]: {
-		[sourceType]: {
+	[sourceType]: {
+		[connectionMode]: {
 			[eventProperty]: [...supportedEventPropertyValues]
 		}
 	}
@@ -429,27 +429,24 @@ Example:
 
 	{
 		...
-		"supportConnectionMode": {
-	    "device": {
-				"web": {
-					"messageType": ["track", "page"]
-				},
+		"supportedConnectionModes": {
+			"unity": {
 				"cloud": {
-					"messageType": ["default"]
+					"messageTypes": { "allowAll": true },
 				},
-				"cordova":{
-					"messageType": ["screen", "page"]
+				"hybrid": {
+					"messageTypes": { "allowAll": true },
 				}
 			},
-		  "hybrid": {
-				"web": {
-					"messageType": ["track", "page", "screen"]
+			"web": {
+				"cloud": {
+					"messageTypes": { "allowAll": true },
 				},
-				"ios": {
-					"messageType": ["track","page", "screen"]
+				"device": {
+					"messageTypes": { "allowAll": true },
 				}
-			},
-	  },
+			}
+		},
 		...
 	}
 */
@@ -482,45 +479,34 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 	evaluatedDefaultBehaviour := isSupportedMsgType && destination.IsProcessorEnabled
 
 	/*
-		In future(near one) this will not be a string but rather an object
-		For every connection made to destination, we would basically have
 		```
+		From /workspaceConfig, /data-planes/v1/namespaces/:namespace/config, we get
 		{
-			connectionMode: {
-				[srcType]: oneof[cloud, hybrid, device]
-			}
-		}
-
-		```
-		Example
-		{
-			...
-			"connectionMode": {
-				"web": "", // one of cloud, hybrid or device
-				"cordova": "", // one of cloud, hybrid or device
-				"python": "", // one of cloud, hybrid or device
-				"cloud": "" // one of cloud, hybrid or device
-			}
-			...
+			connectionMode: string
 		}
 	*/
-	// New logic for evaluating "connectionMode"
-	// var destConnModeI interface{}
-	// for _, val := range []string{srcType, strings.ToLower(source.SourceDefinition.Name)} {
-	// 	destConnModeI = misc.MapLookup(destination.Config, "connectionMode", val)
-	// 	if destConnModeI != nil {
-	// 		break
-	// 	}
-	// }
 	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
 	if destConnModeI == nil {
 		return evaluatedDefaultBehaviour
 	}
-	destConnectionMode, isDestConnModeMapOfString := destConnModeI.(string)
-	if !isDestConnModeMapOfString {
-		pkgLogger.Errorf("Given destination connection mode :%v, cannot be casted to string", destConnModeI)
+	destConnectionMode, isDestConnModeString := destConnModeI.(string)
+	if !isDestConnModeString || destConnectionMode == "device" {
+		// includes Case 6
+		pkgLogger.Errorf("Provided connectionMode is in wrong format or the mode is device", destConnModeI)
 		return false
 	}
+	/*
+		Cases:
+		1. if supportedConnectionModes is not present -- rely on default behaviour
+		2. if sourceType not in supportedConnectionModes && sourceType is in supportedSourceTypes (the sourceType is not defined) -- rely on default behaviour
+		3. if sourceType = {} -- don't send the event(silently drop the event)
+		4. if connectionMode not in supportedConnectionModes.sourceType (some connectionMode is not defined) -- don't send the event(silently drop the event)
+		5. if sourceType.connectionMode = {} -- rely on default behaviour
+		6. "device" is defined as a key for a sourceType -- don't send the event
+		7. if eventProperty not in sourceType.connectionMode -- rely on property based default behaviour
+		8. if sourceType.connectionMode.eventProperty = {} (both allowAll, allowedValues are not included in defConfig) -- rely on default behaviour
+		9. if sourceType.connectionMode.eventProperty = { allowAll: true, allowedValues: ["track", "page"]} (both allowAll, allowedValues are included in defConfig) -- rely on default behaviour
+	*/
 
 	supportedConnectionModesI, connModesOk := destination.DestinationDefinition.Config["supportedConnectionModes"]
 	if !connModesOk {
@@ -529,28 +515,45 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 	}
 	supportedConnectionModes := supportedConnectionModesI.(map[string]interface{})
 
-	supportedEventPropsMapI := misc.MapLookup(supportedConnectionModes, destConnectionMode, srcType)
-	if supportedEventPropsMapI == nil {
-		// Most probably sourceType would not be present in "supportedConnectionModes"
-		// Might also occur when destination connection mode is not provided in "supportedConnectionModes"
-		return evaluatedDefaultBehaviour
+	supportedEventPropsMapI, supportedEventPropsLookupErr := misc.NestedMapLookup(supportedConnectionModes, srcType, destConnectionMode)
+	if supportedEventPropsLookupErr != nil {
+		if supportedEventPropsLookupErr.SearchKey == srcType {
+			// Case 2
+			pkgLogger.Infof("Failed with %v for SourceType(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), srcType)
+			return evaluatedDefaultBehaviour
+		}
+		// Cases 3 & 4
+		pkgLogger.Infof("Failed with %v for ConnectionMode(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), destConnectionMode)
+		return false
 	}
-	supportedEventPropsMap, isEventPropsMapTypeCastable := supportedEventPropsMapI.(map[string]interface{})
-	if !isEventPropsMapTypeCastable {
-		// fallback to default
+
+	supportedEventPropsMap, isEventPropsICastableToMap := supportedEventPropsMapI.(map[string]interface{})
+	if !isEventPropsICastableToMap || len(supportedEventPropsMap) == 0 {
+		// includes Case 5, 7
 		return evaluatedDefaultBehaviour
 	}
 	// Flag indicating to let the event pass through
 	allowEvent := evaluatedDefaultBehaviour
 	for eventProperty, supportedEventVals := range supportedEventPropsMap {
-		if !allowEvent {
+		eventPropMap, isMap := supportedEventVals.(map[string]interface{})
+
+		if !allowEvent || !isMap {
 			allowEvent = evaluatedDefaultBehaviour
 			break
 		}
 		if eventProperty == "messageType" {
-			supportedVals := ConvertToArrayOfType[string](supportedEventVals)
-			pkgLogger.Debugf("SupportedVals: %v -- EventType from event: %v\n", supportedVals, eventType)
-			allowEvent = lo.Contains(supportedVals, eventType) && evaluatedDefaultBehaviour
+			eventPropMap := ConvertEventPropMapToStruct[string](eventPropMap)
+			// eventPropMap == nil  -- occurs when both allowAll and allowedVals are not defined or when allowAll contains any value other than boolean
+			// eventPropMap.AllowAll -- When only allowAll is defined
+			//  len(eventPropMap.AllowedVals) == 0 -- when allowedVals is empty array(occurs when it is [] or when data-type of one of the values is not string)
+			if eventPropMap == nil || eventPropMap.AllowAll || len(eventPropMap.AllowedVals) == 0 {
+				allowEvent = evaluatedDefaultBehaviour
+				continue
+			}
+
+			// when allowedValues is defined and non-empty array values
+			pkgLogger.Debugf("SupportedVals: %v -- EventType from event: %v\n", eventPropMap.AllowedVals, eventType)
+			allowEvent = lo.Contains(eventPropMap.AllowedVals, eventType) && evaluatedDefaultBehaviour
 		}
 	}
 	return allowEvent
@@ -572,6 +575,9 @@ func evaluateSupportedTypes[T EventPropsTypes](destConfig map[string]interface{}
 	return lo.Contains(supportedVals, checkValue)
 }
 
+/*
+* Converts interface{} to []T if the go type-assertion allows it
+ */
 func ConvertToArrayOfType[T EventPropsTypes](data interface{}) []T {
 	switch value := data.(type) {
 	case []T:
@@ -588,4 +594,62 @@ func ConvertToArrayOfType[T EventPropsTypes](data interface{}) []T {
 		return result
 	}
 	return []T{}
+}
+
+type EventProperty[T EventPropsTypes] struct {
+	AllowAll    bool
+	AllowedVals []T
+}
+
+/*
+Converts the eventPropertyMap to a struct
+In an eventPropertyMap we expect only one of [allowAll, allowedValues] properties
+
+Possible cases
+
+ 1. { [eventProperty]: { allowAll: true/false }  }
+
+    - One of the expected ways
+
+    - EventProperty{AllowAll: true/false}
+
+ 2. { [eventProperty]: { allowedValues: [val1, val2, val3] }  }
+
+    - One of the expected ways
+
+    - Output: EventProperty{AllowedValues: [val1, val2, val3]}
+
+ 3. { [eventProperty]: { allowedValues: [val1, val2, val3], allowAll: true/false }  }
+
+    - Not expected
+
+    - EventProperty{AllowAll: true/false}
+
+ 4. { [eventProperty]: { }  }
+
+    - Not expected
+
+    - EventProperty{AllowAll:false}
+*/
+func ConvertEventPropMapToStruct[T EventPropsTypes](eventPropMap map[string]interface{}) *EventProperty[T] {
+	var eventPropertyStruct EventProperty[T]
+	for _, key := range []string{"allowAll", "allowedValues"} {
+		val, ok := eventPropMap[key]
+		if !ok {
+			pkgLogger.Debugf("'%v' not found in eventPropertiesMap(supportedConnectionModes.sourceType.connectionMode.[eventProperty])", key)
+			continue
+		}
+		switch key {
+		case "allowAll":
+			allowAll, convertable := val.(bool)
+			if !convertable {
+				return nil
+			}
+			eventPropertyStruct.AllowAll = allowAll
+		case "allowedValues":
+			allowedVals := ConvertToArrayOfType[T](val)
+			eventPropertyStruct.AllowedVals = allowedVals
+		}
+	}
+	return &eventPropertyStruct
 }
