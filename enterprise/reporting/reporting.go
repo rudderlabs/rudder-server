@@ -277,10 +277,10 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 			report.ConnectionDetails.TransformationId,
 			report.ConnectionDetails.TransformationVersionId,
 			report.ConnectionDetails.TrackingPlanId,
-			fmt.Sprint(report.ConnectionDetails.TrackingPlanVersion),
+			strconv.Itoa(report.ConnectionDetails.TrackingPlanVersion),
 			report.PUDetails.InPU, report.PUDetails.PU,
 			report.StatusDetail.Status,
-			fmt.Sprint(report.StatusDetail.StatusCode),
+			strconv.Itoa(report.StatusDetail.StatusCode),
 			report.StatusDetail.EventName, report.StatusDetail.EventType,
 		}
 		return strings.Join(groupingIdentifiers, `::`)
@@ -454,7 +454,7 @@ func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, client
 		httpRequestStart := time.Now()
 		resp, err := netClient.Do(req)
 		if err != nil {
-			// r.log.Error(err.Error())
+			r.log.Error(err.Error())
 			return err
 		}
 
@@ -478,7 +478,7 @@ func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, client
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		// r.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
+		r.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
 	})
 	if err != nil {
 		r.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
