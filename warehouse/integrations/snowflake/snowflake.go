@@ -38,10 +38,8 @@ const (
 	User               = "user"
 	Role               = "role"
 	Password           = "password"
-	Application        = "Rudderstack"
+	Application        = "Rudderstack_Warehouse"
 )
-
-var pkgLogger logger.Logger
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
@@ -158,6 +156,10 @@ var errorsMappings = []model.JobError{
 		Type:   model.ResourceNotFoundError,
 		Format: regexp.MustCompile(`Table .* does not exist`),
 	},
+	{
+		Type:   model.ColumnCountError,
+		Format: regexp.MustCompile(`Operation failed because soft limit on objects of type 'Column' per table was exceeded. Please reduce number of 'Column's or contact Snowflake support about raising the limit.`),
+	},
 }
 
 type Credentials struct {
@@ -194,13 +196,9 @@ type Snowflake struct {
 	EnableDeleteByJobs bool
 }
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
-}
-
-func NewSnowflake() *Snowflake {
+func New() *Snowflake {
 	return &Snowflake{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integration").Child("snowflake"),
 		stats:  stats.Default,
 	}
 }
@@ -1020,7 +1018,6 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	}
 
 	alterStatement := `ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`
-	pkgLogger.Infof("SF: Altering session with abort_detached_query for snowflake: %v", alterStatement)
 	_, err = db.Exec(alterStatement)
 	if err != nil {
 		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
@@ -1193,9 +1190,7 @@ func (sf *Snowflake) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error
 	return nil
 }
 
-func (*Snowflake) CrashRecover(_ model.Warehouse) (err error) {
-	return
-}
+func (*Snowflake) CrashRecover() {}
 
 func (sf *Snowflake) IsEmpty(warehouse model.Warehouse) (empty bool, err error) {
 	empty = true

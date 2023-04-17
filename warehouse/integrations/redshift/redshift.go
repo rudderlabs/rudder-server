@@ -30,8 +30,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.Logger
-
 var errorsMappings = []model.JobError{
 	{
 		Type:   model.AlterColumnError,
@@ -72,6 +70,10 @@ var errorsMappings = []model.JobError{
 	{
 		Type:   model.ResourceNotFoundError,
 		Format: regexp.MustCompile(`Bucket .* not found`),
+	},
+	{
+		Type:   model.ColumnCountError,
+		Format: regexp.MustCompile(`pq: tables can have at most 1600 columns`),
 	},
 }
 
@@ -179,15 +181,11 @@ type RedshiftCredentials struct {
 	TunnelInfo *tunnelling.TunnelInfo
 }
 
-func NewRedshift() *Redshift {
+func New() *Redshift {
 	return &Redshift{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("redshift"),
 		stats:  stats.Default,
 	}
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("redshift")
 }
 
 func WithConfig(h *Redshift, config *config.Config) {
@@ -451,7 +449,12 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	}, ",")
 
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	if err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload); err != nil {
+	_, err = rs.DB.Exec(fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
+		rs.Namespace,
+		stagingTableName,
+		tableName,
+	))
+	if err != nil {
 		return "", fmt.Errorf("creating staging table: %w", err)
 	}
 
@@ -571,7 +574,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			logfield.Error, err.Error(),
 		)
 
-		return "", fmt.Errorf("running copy command: %w", err)
+		return "", fmt.Errorf("running copy command: %w", normalizeError(err))
 	}
 
 	var (
@@ -650,7 +653,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 				logfield.Query, query,
 				logfield.Error, err.Error(),
 			)
-			return "", fmt.Errorf("deleting from original table for dedup: %w", err)
+			return "", fmt.Errorf("deleting from original table for dedup: %w", normalizeError(err))
 		}
 
 		if rowsAffected, err = result.RowsAffected(); err != nil {
@@ -732,7 +735,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			logfield.Error, err.Error(),
 		)
 
-		return "", fmt.Errorf("inserting into original table: %w", err)
+		return "", fmt.Errorf("inserting into original table: %w", normalizeError(err))
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -939,7 +942,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 			logfield.Error, err.Error(),
 		)
 		return map[string]error{
-			warehouseutils.UsersTable: fmt.Errorf("deleting from original table for dedup: %w", err),
+			warehouseutils.UsersTable: fmt.Errorf("deleting from original table for dedup: %w", normalizeError(err)),
 		}
 	}
 
@@ -983,7 +986,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
-			warehouseutils.UsersTable:      fmt.Errorf("inserting into users table from staging table: %w", err),
+			warehouseutils.UsersTable:      fmt.Errorf("inserting into users table from staging table: %w", normalizeError(err)),
 		}
 	}
 
@@ -1377,16 +1380,8 @@ func (rs *Redshift) Cleanup() {
 	}
 }
 
-func (rs *Redshift) CrashRecover(warehouse model.Warehouse) (err error) {
-	rs.Warehouse = warehouse
-	rs.Namespace = warehouse.Namespace
-	rs.DB, err = Connect(rs.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = rs.DB.Close() }()
+func (rs *Redshift) CrashRecover() {
 	rs.dropDanglingStagingTables()
-	return
 }
 
 func (*Redshift) IsEmpty(_ model.Warehouse) (empty bool, err error) {
@@ -1485,7 +1480,8 @@ func (rs *Redshift) LoadTestTable(location, tableName string, _ map[string]inter
 	}
 
 	_, err = rs.DB.Exec(sqlStatement)
-	return
+
+	return normalizeError(err)
 }
 
 func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
@@ -1494,4 +1490,14 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 
 func (rs *Redshift) ErrorMappings() []model.JobError {
 	return errorsMappings
+}
+
+func normalizeError(err error) error {
+	if pqErr, ok := err.(*pq.Error); ok {
+		return fmt.Errorf("pq: message: %s, detail: %s",
+			pqErr.Message,
+			pqErr.Detail,
+		)
+	}
+	return err
 }

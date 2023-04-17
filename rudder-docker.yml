@@ -36,7 +36,7 @@ services:
   d-transformer:
     depends_on:
       - metrics-exporter
-    image: rudderlabs/rudder-transformer:latest
+    image: rudderstack/rudder-transformer:latest
     ports:
       - "9090:9090"
     environment:

@@ -40,7 +40,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
@@ -279,7 +278,6 @@ type JobsDB interface {
 
 	/* Admin */
 
-	Status() interface{}
 	Ping() error
 	DeleteExecuting()
 	FailExecuting()
@@ -433,7 +431,6 @@ type HandleT struct {
 	logger                        logger.Logger
 	writeCapacity                 chan struct{}
 	readCapacity                  chan struct{}
-	registerStatusHandler         bool
 	enableWriterQueue             bool
 	enableReaderQueue             bool
 	preciseActiveWsQuery          bool
@@ -653,12 +650,6 @@ func WithClearDB(clearDB bool) OptsFunc {
 	}
 }
 
-func WithStatusHandler() OptsFunc {
-	return func(jd *HandleT) {
-		jd.registerStatusHandler = true
-	}
-}
-
 // WithPreBackupHandlers, sets pre-backup handlers
 func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 	return func(jd *HandleT) {
@@ -713,12 +704,11 @@ multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
 	ownerType OwnerType, clearAll bool, tablePrefix string,
-	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
+	preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
-	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
 	jd.fileUploaderProvider = fileUploaderProvider
 	jd.init()
@@ -845,9 +835,6 @@ func (jd *HandleT) workersAndAuxSetup() {
 	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
-	if jd.registerStatusHandler {
-		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
-	}
 	jd.BackupSettings = &backupSettings{}
 	jd.registerBackUpSettings()
 
@@ -1744,24 +1731,23 @@ func (jd *HandleT) clearCache(ds dataSetT, jobList []*JobT) {
 	jd.doClearCache(ds, customValParamMap)
 }
 
-func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string, staleDs error) {
+func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) (
+	errorMessagesMap map[uuid.UUID]string,
+	staleDs error,
+) {
 	const (
 		savepointSql = "SAVEPOINT storeWithRetryEach"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
 	)
 
 	failAll := func(err error) map[uuid.UUID]string {
-		errorMessagesMap = make(map[uuid.UUID]string)
+		errorMessagesMap = make(map[uuid.UUID]string, len(jobList))
 		for i := range jobList {
-			job := jobList[i]
-			errorMessagesMap[job.UUID] = err.Error()
+			errorMessagesMap[jobList[i].UUID] = err.Error()
 		}
 		return errorMessagesMap
 	}
-	defer jd.getTimerStat(
-		"store_jobs_retry_each",
-		nil,
-	).RecordDuration()()
+	defer jd.getTimerStat("store_jobs_retry_each", nil).RecordDuration()()
 
 	_, err := tx.ExecContext(ctx, savepointSql)
 	if err != nil {
@@ -3255,8 +3241,10 @@ func (jd *HandleT) StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[
 }
 
 func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) (map[uuid.UUID]string, error) {
-	var res map[uuid.UUID]string
-	var err error
+	var (
+		err error
+		res map[uuid.UUID]string
+	)
 	storeCmd := func() error {
 		command := func() interface{} {
 			dsList := jd.getDSList()
@@ -3276,7 +3264,7 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 }
 
 /*
-printLists is a debuggging function used to print
+printLists is a debugging function used to print
 the current in-memory copy of jobs and job ranges
 */
 func (jd *HandleT) printLists(console bool) {

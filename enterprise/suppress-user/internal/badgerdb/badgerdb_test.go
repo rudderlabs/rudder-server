@@ -103,8 +103,8 @@ func TestBadgerRepository(t *testing.T) {
 
 	t.Run("new with seeder", func(t *testing.T) {
 		basePath := path.Join(t.TempDir(), "badger-test-2")
-		_, err := badgerdb.NewRepository(basePath, logger.NOP, stats.Default, badgerdb.WithSeederSource(func() (io.Reader, error) {
-			return buffer, nil
+		_, err := badgerdb.NewRepository(basePath, logger.NOP, stats.Default, badgerdb.WithSeederSource(func() (io.ReadCloser, error) {
+			return io.NopCloser(buffer), nil
 		}), badgerdb.WithMaxSeedWait(1*time.Millisecond))
 		require.NoError(t, err)
 	})

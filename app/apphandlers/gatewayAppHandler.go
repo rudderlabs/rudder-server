@@ -59,11 +59,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	a.log.Info("Gateway starting")
 
-	readonlyGatewayDB, err := setupReadonlyDBs()
-	if err != nil {
-		return err
-	}
-
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %v", err)
@@ -83,7 +78,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
@@ -113,7 +107,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return fmt.Errorf("failed to create rate limiter: %w", err)
 	}
-	gw.SetReadonlyDB(readonlyGatewayDB)
 	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
 		return err

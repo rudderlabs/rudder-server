@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -70,7 +71,7 @@ type workspacesAckValue struct {
 func EnvETCDConfig() *ETCDConfig {
 	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	releaseName := config.GetReleaseName()
-	serverIndex := config.GetInstanceID()
+	serverIndex := misc.GetInstanceID()
 	var ackTimeout time.Duration
 
 	envConfigOnce.Do(func() {

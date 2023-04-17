@@ -25,12 +25,7 @@ type repo interface {
 }
 
 type destination interface {
-	CrashRecover(warehouse model.Warehouse) (err error)
-}
-
-type onceErr struct {
-	sync.Once
-	err error
+	CrashRecover()
 }
 
 type Recovery struct {
@@ -38,14 +33,14 @@ type Recovery struct {
 	detectErr       error
 	destinationType string
 	repo            repo
-	inRecovery      map[string]*onceErr
+	inRecovery      map[string]*sync.Once
 }
 
 func NewRecovery(destinationType string, repo repo) *Recovery {
 	return &Recovery{
 		destinationType: destinationType,
 		repo:            repo,
-		inRecovery:      make(map[string]*onceErr),
+		inRecovery:      make(map[string]*sync.Once),
 	}
 }
 
@@ -61,7 +56,7 @@ func (r *Recovery) detect(ctx context.Context) error {
 	}
 
 	for _, destID := range destIDs {
-		r.inRecovery[destID] = &onceErr{}
+		r.inRecovery[destID] = &sync.Once{}
 	}
 
 	return nil
@@ -82,8 +77,8 @@ func (r *Recovery) Recover(ctx context.Context, whManager destination, wh model.
 	}
 
 	once.Do(func() {
-		once.err = whManager.CrashRecover(wh)
+		whManager.CrashRecover()
 	})
 
-	return once.err
+	return nil
 }

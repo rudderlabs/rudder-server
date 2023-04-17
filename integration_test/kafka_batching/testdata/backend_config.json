@@ -1,0 +1,103 @@
+{
+  "{{.workspaceId}}": {
+    "enableMetrics": false,
+    "workspaceId": "{{.workspaceId}}",
+    "sources": [
+      {
+        "id": "xxxyyyzzEaEurW247ad9WYZLUyk",
+        "name": "Dev Integration Test 1",
+        "writeKey": "{{.writeKey}}",
+        "workspaceId": "{{.workspaceId}}",
+        "enabled": true,
+        "sourceDefinition": {
+          "id": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
+          "name": "HTTP"
+        },
+        "destinations": [
+          {
+          "config": {
+            "hostName": "localhost",
+            "port": "{{.kafkaPort}}",
+            "topic": "{{.kafkaTopic}}",
+            "sslEnabled": false,
+            "caCertificate": "key",
+            "useSASL": false,
+            "saslType": "plain",
+            "username": "",
+            "password": ""
+          },
+          "secretConfig": {},
+          "id": "xxxyyyzzhyrw8v0CrTMrDZ4ovej",
+          "name": "Dev Kafka Integration Test 1",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2021-08-27T06:44:37.836Z",
+          "updatedAt": "2021-08-27T09:09:11.873Z",
+          "transformations": [
+            {
+              "versionId": "23hZ5VLGt0Yl7Hxk9ysBGi5baud",
+              "config": {},
+              "id": "23VJjP3bbHMzUhWjI7bvNL5S9xx"
+            }
+          ],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "hostName",
+                  "port",
+                  "topic",
+                  "sslEnabled",
+                  "caCertificate",
+                  "useSASL",
+                  "saslType",
+                  "username",
+                  "password"
+                ]
+              },
+              "secretKeys": [
+                "password"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "warehouse",
+                "reactnative",
+                "flutter"
+              ],
+              "supportedMessageTypes": [
+                "alias",
+                "group",
+                "identify",
+                "page",
+                "screen",
+                "track"
+              ],
+              "saveDestinationResponse": true
+            },
+            "configSchema": null,
+            "responseRules": null,
+            "id": "xxxyyyzzsyAyCQ2QIxrKU9X5AoR",
+            "name": "KAFKA",
+            "displayName": "Apache Kafka",
+            "category": null,
+            "createdAt": "2020-05-12T17:13:54.165Z",
+            "updatedAt": "2021-08-27T08:09:44.485Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+        ]
+      }
+    ]
+  }
+}

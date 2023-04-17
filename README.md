@@ -1,5 +1,5 @@
 <p align="center">
-🏆 Join <b><a href="https://www.rudderstack.com/blog/join-the-transformations-challenge-for-a-chance-to-win/">RudderStack Transformations Challenge</a></b> (Last date - Apr 7, 2023)
+💬 Join <b><a href="https://rudderstack.com/join-rudderstack-slack-community">Join the commmunity of Data Engineers on Slack</a></b>
   <br/>
  </p>
 

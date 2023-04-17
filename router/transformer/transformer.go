@@ -86,14 +86,16 @@ func NewTransformer(netClientTimeout, backendProxyTimeout time.Duration) Transfo
 }
 
 var (
-	maxRetry   int
-	retrySleep time.Duration
-	pkgLogger  logger.Logger
+	maxRetry          int
+	disableKeepAlives bool
+	retrySleep        time.Duration
+	pkgLogger         logger.Logger
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
+	config.RegisterBoolConfigVariable(true, &disableKeepAlives, false, "Transformer.Client.disableKeepAlives")
 }
 
 func Init() {
@@ -103,8 +105,11 @@ func Init() {
 
 // Transform transforms router jobs to destination jobs
 func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+	var destinationJobs types.DestinationJobs
+	transformMessageCopy, jobs := transformMessage.Dehydrate()
+
 	// Call remote transformation
-	rawJSON, err := jsonfast.Marshal(transformMessage)
+	rawJSON, err := jsonfast.Marshal(&transformMessageCopy)
 	if err != nil {
 		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
 		panic(err)
@@ -162,7 +167,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 	}
 
-	var destinationJobs []types.DestinationJobT
 	if resp.StatusCode == http.StatusOK {
 		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get(apiVersionHeader))
 		if convErr != nil {
@@ -241,6 +245,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	}
 	func() { httputil.CloseResponse(resp) }()
 
+	destinationJobs.Hydrate(jobs)
 	return destinationJobs
 }
 
@@ -293,7 +298,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 
 func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
 	trans.logger = pkgLogger
-	trans.tr = &http.Transport{}
+	trans.tr = &http.Transport{DisableKeepAlives: disableKeepAlives}
 	// The timeout between server and transformer
 	// Basically this timeout is more for communication between transformer and server
 	trans.transformTimeout = transformTimeout

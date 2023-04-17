@@ -98,9 +98,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	a.log.Info("Processor starting")
 
-	if _, err := setupReadonlyDBs(); err != nil {
-		return err
-	}
 	g, ctx := errgroup.WithContext(ctx)
 
 	deploymentType, err := deployment.GetFromEnv()
@@ -145,7 +142,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -154,7 +150,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.routerDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -163,7 +158,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.batchRouterDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -172,7 +166,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
