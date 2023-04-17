@@ -1486,9 +1486,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					proc.getEnabledDestinations(writeKey, *destType),
 				)
 				// Additional filteration based on connectionMode
-				// filteredDestinationList := lo.Filter(enabledDestinationsList, func(destination backendconfig.DestinationT, _ int) bool {
-				// 	return destination.AllowEventToDestination(source, singularEvent)
-				// })
+				filteredDestinationList := lo.Filter(enabledDestinationsList, func(destination backendconfig.DestinationT, _ int) bool {
+					// return destination.AllowEventToDestination(source, singularEvent)
+					return true
+				})
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range filteredDestinationList {
 					destination := &filteredDestinationList[idx]
