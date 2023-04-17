@@ -48,45 +48,31 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 	a.logger.Infof("[WH-Jobs]: Extracting table names for the job run id %s", jobRunID)
 	var tableNames []string
 	var err error
-	query := `SELECT id
-		FROM
-		` + warehouseutils.WarehouseUploadsTable + `
-		WHERE metadata->>'source_job_run_id'=$1
-			AND metadata->>'source_task_run_id'=$2
-			AND source_id=$3
-            AND destination_id=$4`
+
+	query := `SELECT table_name FROM` + warehouseutils.WarehouseTableUploadsTable + `WHERE wh_upload_id IN` +
+		`(SELECT id FROM` + warehouseutils.WarehouseUploadsTable + `WHERE metadata->>'source_job_run_id'=$1
+				AND metadata->>'source_task_run_id'=$2
+				AND source_id=$3
+				AND destination_id=$4)`
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
 	rows, err := a.dbHandle.Query(query, jobRunID, taskRunID, sourceID, destinationID)
 	if err != nil {
-		a.logger.Errorf("[WH-Jobs]: Error carrying out the query %s ", query)
-		return nil, err
+		a.logger.Errorf("[WH-Jobs]: Error executing the query %s with error %s", query, err.Error())
+		return tableNames, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var uploadId string
-		err := rows.Scan(&uploadId)
+		var tableName string
+		err = rows.Scan(&tableName)
 		if err != nil {
-			a.logger.Errorf("[WH-Jobs]: Error carrying the scan operation to uploadId\n")
-			return nil, err
+			a.logger.Errorf("[WH-Jobs]: Error scanning the rows %s", err.Error())
+			return tableNames, err
 		}
-		query = fmt.Sprintf(`select table_name from %s where wh_upload_id=$1`, warehouseutils.WarehouseTableUploadsTable)
-		tables, err := a.dbHandle.Query(query, uploadId)
-		if err != nil {
-			a.logger.Errorf("[WH-Jobs]: Error carrying out the query %s ", query)
-			return nil, err
-		}
-		for tables.Next() {
-			var tableName string
-			err = tables.Scan(&tableName)
-			if err != nil {
-				a.logger.Errorf("[WH-Jobs]: Error carrying the scan operation to tablename\n")
-				return nil, err
-			}
-			if !contains(tableNames, tableName) {
-				tableNames = append(tableNames, tableName)
-			}
-
-		}
+		tableNames = append(tableNames, tableName)
+	}
+	if err = rows.Err(); err != nil {
+		a.logger.Errorf("[WH-Jobs]: Error iterating the rows %s", err.Error())
+		return tableNames, err
 	}
 	a.logger.Infof("Got the TableNames as %s\n", tableNames)
 	return tableNames, nil
@@ -114,7 +100,7 @@ func (a *AsyncJobWh) addJobsToDB(ctx context.Context, payload *AsyncJobPayload) 
 		return
 	}
 
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 	now := timeutil.Now()
 	row := stmt.QueryRow(payload.SourceID, payload.DestinationID, payload.TableName, WhJobWaiting, now, now, payload.AsyncJobType, payload.WorkspaceID, payload.MetaData)
 	err = row.Scan(&jobId)
@@ -154,7 +140,7 @@ func (a *AsyncJobWh) InitAsyncJobRunner() error {
 		g.Go(func() error {
 			return a.startAsyncJobRunner(ctx)
 		})
-		g.Wait()
+		_ = g.Wait()
 	}
 	return errors.New("unable to enable warehouse Async Job")
 }
@@ -170,8 +156,10 @@ func (a *AsyncJobWh) cleanUpAsyncTable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer row.Close()
-	return nil
+	if row.Err() != nil {
+		return row.Err()
+	}
+	return row.Close()
 }
 
 /*
@@ -290,7 +278,7 @@ func (a *AsyncJobWh) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayload
 		a.logger.Errorf("[WH-Jobs]: Error in getting pending wh async jobs with error %s", err.Error())
 		return asyncJobPayloads, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var asyncJobPayload AsyncJobPayload
 		err = rows.Scan(
@@ -308,6 +296,10 @@ func (a *AsyncJobWh) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayload
 		}
 		asyncJobPayloads = append(asyncJobPayloads, asyncJobPayload)
 		a.logger.Infof("Adding row with Id = %s & attempt no %d", asyncJobPayload.Id, attempt)
+	}
+	if err := rows.Err(); err != nil {
+		a.logger.Errorf("[WH-Jobs]: Error in getting pending wh async jobs with error %s", rows.Err().Error())
+		return asyncJobPayloads, err
 	}
 	return asyncJobPayloads, nil
 }
@@ -344,7 +336,7 @@ func (a *AsyncJobWh) updateAsyncJobStatus(ctx context.Context, Id, status, errMe
 	var err error
 	for retryCount := 0; retryCount < a.maxQueryRetries; retryCount++ {
 		a.logger.Debugf("[WH-Jobs]: updating async jobs table query %s, retry no : %d", sqlStatement, retryCount)
-		_, err = a.dbHandle.Query(sqlStatement, a.maxAttemptsPerJob, WhJobAborted, status, errMessage, Id, WhJobAborted, WhJobSucceeded)
+		row, err := a.dbHandle.Query(sqlStatement, a.maxAttemptsPerJob, WhJobAborted, status, errMessage, Id, WhJobAborted, WhJobSucceeded)
 		if err == nil {
 			a.logger.Info("Update successful")
 			a.logger.Debugf("query: %s successfully executed", sqlStatement)
@@ -354,6 +346,7 @@ func (a *AsyncJobWh) updateAsyncJobStatus(ctx context.Context, Id, status, errMe
 			}
 			return err
 		}
+		_ = row.Err()
 	}
 	if err != nil {
 		a.logger.Errorf("query: %s failed with Error : %s", sqlStatement, err.Error())
@@ -370,13 +363,13 @@ func (a *AsyncJobWh) updateAsyncJobAttempt(ctx context.Context, Id string) error
 	var err error
 	for queryRetry := 0; queryRetry < a.maxQueryRetries; queryRetry++ {
 		a.logger.Debugf("[WH-Jobs]: updating async jobs table query %s, retry no : %d", sqlStatement, queryRetry)
-		_, err = a.dbHandle.Query(sqlStatement, Id, WhJobAborted, WhJobSucceeded)
+		row, err := a.dbHandle.Query(sqlStatement, Id, WhJobAborted, WhJobSucceeded)
 		if err == nil {
 			a.logger.Info("Update successful")
 			a.logger.Debugf("query: %s successfully executed", sqlStatement)
 			return nil
 		}
-
+		_ = row.Err()
 	}
 	a.logger.Errorf("query: %s failed with Error : %s", sqlStatement, err.Error())
 	return err
@@ -396,11 +389,13 @@ func (a *AsyncJobWh) getStatusAsyncJob(ctx context.Context, payload *StartJobReq
 	rows, err := a.dbHandle.Query(sqlStatement, payload.JobRunID, payload.TaskRunID)
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error executing the query %s", err.Error())
-		statusResponse.Status = WhJobFailed
-		statusResponse.Err = err.Error()
+		statusResponse = WhStatusResponse{
+			Status: WhJobFailed,
+			Err:    err.Error(),
+		}
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var status string
 		var errMessage sql.NullString
@@ -440,6 +435,14 @@ func (a *AsyncJobWh) getStatusAsyncJob(ctx context.Context, payload *StartJobReq
 			return
 		}
 
+	}
+	if err = rows.Err(); err != nil {
+		a.logger.Errorf("[WH-Jobs]: Error scanning rows %s\n", err)
+		statusResponse = WhStatusResponse{
+			Status: WhJobFailed,
+			Err:    err.Error(),
+		}
+		return
 	}
 
 	a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is complete", payload.JobRunID, payload.TaskRunID)
