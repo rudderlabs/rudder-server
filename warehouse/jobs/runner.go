@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/samber/lo"
 
 	"golang.org/x/sync/errgroup"
 
@@ -75,7 +76,7 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 		return tableNames, err
 	}
 	a.logger.Infof("Got the TableNames as %s\n", tableNames)
-	return tableNames, nil
+	return lo.Uniq(tableNames), nil
 }
 
 // Takes AsyncJobPayload and adds rows to table wh_async_jobs

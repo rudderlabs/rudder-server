@@ -55,9 +55,9 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 
 	var jobIds []int64
 	// Add to wh_async_job queue each of the tables
-	for _, th := range tableNames {
+	for _, table := range tableNames {
 
-		switch strings.ToLower(th) {
+		switch strings.ToLower(table) {
 		case "rudder_discards", "rudder_identity_mappings", "rudder_identity_merge_rules":
 			continue
 		}
@@ -76,7 +76,7 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 		payload := AsyncJobPayload{
 			SourceID:      startJobPayload.SourceID,
 			DestinationID: startJobPayload.DestinationID,
-			TableName:     th,
+			TableName:     table,
 			AsyncJobType:  startJobPayload.AsyncJobType,
 			MetaData:      metadataJson,
 			WorkspaceID:   startJobPayload.WorkspaceID,
