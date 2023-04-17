@@ -1503,7 +1503,7 @@ func startWebHandler(ctx context.Context) error {
 				Stats:       stats.Default,
 				Repo:        repo.NewStagingFiles(dbHandle),
 				Multitenant: tenantManager,
-			}).Handler()).Methods("POST")
+			}).Handler())
 
 			// triggers upload only when there are pending events and triggerUpload is sent for a sourceId
 			srvMux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler).Methods("POST")

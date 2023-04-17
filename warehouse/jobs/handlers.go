@@ -33,12 +33,7 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
-	err = r.Body.Close()
-	if err != nil {
-		a.logger.Errorf("[WH-Jobs]: Error reading body: %v", err)
-		http.Error(w, "can't read body", http.StatusBadRequest)
-		return
-	}
+	_ = r.Body.Close()
 	var startJobPayload StartJobReqPayload
 	err = json.Unmarshal(body, &startJobPayload)
 	if err != nil {
@@ -106,7 +101,12 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func (a *AsyncJobWh) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
-	a.logger.Info("Got Async Job Status Request")
+	a.logger.Info("[WH-Status Handler] Got Async Job Status Request")
+	if !a.enabled {
+		a.logger.Errorf("[WH]: Error Warehouse Jobs API not initialized")
+		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
+		return
+	}
 	a.logger.LogRequest(r)
 	jobRunId := r.URL.Query().Get("job_run_id")
 	taskRunId := r.URL.Query().Get("task_run_id")
@@ -122,32 +122,18 @@ func (a *AsyncJobWh) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Re
 		WorkspaceID:   workspaceId,
 	}
 	if !validatePayload(payload) {
-
 		a.logger.Errorf("[WH]: Error Invalid Status Parameters")
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	startJobPayload := StartJobReqPayload{
-		JobRunID:      jobRunId,
-		TaskRunID:     taskRunId,
-		SourceID:      sourceId,
-		DestinationID: destinationId,
-	}
-	a.logger.Infof("Got Payload job_run_id %s, task_run_id %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
+	a.logger.Infof("Got Payload job_run_id %s, task_run_id %s \n", payload.JobRunID, payload.TaskRunID)
 
-	if !a.enabled {
-		a.logger.Errorf("[WH]: Error Warehouse Jobs API not initialized")
-		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
-		return
-	}
-
-	response := a.getStatusAsyncJob(a.context, &startJobPayload)
+	response := a.getStatusAsyncJob(a.context, &payload)
 
 	writeResponse, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	w.Write(writeResponse)
-
+	_, _ = w.Write(writeResponse)
 }

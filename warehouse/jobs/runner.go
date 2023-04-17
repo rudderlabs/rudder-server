@@ -11,12 +11,13 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/sync/errgroup"
 )
 
 // InitWarehouseJobsAPI Initializes AsyncJobWh structure with appropriate variabless
@@ -35,12 +36,12 @@ func InitWarehouseJobsAPI(
 }
 
 func WithConfig(a *AsyncJobWh, config *config.Config) {
-	a.MaxBatchSizeToProcess = config.GetInt("Warehouse.jobs.maxBatchSizeToProcess", 10)
-	a.MaxCleanUpRetries = config.GetInt("Warehouse.jobs.maxCleanUpRetries", 5)
-	a.MaxQueryRetries = config.GetInt("Warehouse.jobs.maxQueryRetries", 3)
-	a.MaxAttemptsPerJob = config.GetInt("Warehouse.jobs.maxAttemptsPerJob", 3)
-	a.RetryTimeInterval = config.GetDuration("Warehouse.jobs.retryTimeInterval", 10, time.Second)
-	a.AsyncJobTimeOut = config.GetDuration("Warehouse.jobs.asyncJobTimeOut", 300, time.Second)
+	a.maxBatchSizeToProcess = config.GetInt("Warehouse.jobs.maxBatchSizeToProcess", 10)
+	a.maxCleanUpRetries = config.GetInt("Warehouse.jobs.maxCleanUpRetries", 5)
+	a.maxQueryRetries = config.GetInt("Warehouse.jobs.maxQueryRetries", 3)
+	a.maxAttemptsPerJob = config.GetInt("Warehouse.jobs.maxAttemptsPerJob", 3)
+	a.retryTimeInterval = config.GetDuration("Warehouse.jobs.retryTimeInterval", 10, time.Second)
+	a.asyncJobTimeOut = config.GetDuration("Warehouse.jobs.asyncJobTimeOut", 300, time.Second)
 }
 
 func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunID string) ([]string, error) {
@@ -52,14 +53,8 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 		` + warehouseutils.WarehouseUploadsTable + `
 		WHERE metadata->>'source_job_run_id'=$1
 			AND metadata->>'source_task_run_id'=$2
-			AND metadata in (
-				SELECT
-					metadata
-				FROM
-				` + warehouseutils.WarehouseUploadsTable + `
-				WHERE source_id=$3
-				AND destination_id=$4
-			)`
+			AND source_id=$3
+            AND destination_id=$4`
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
 	rows, err := a.dbHandle.Query(query, jobRunID, taskRunID, sourceID, destinationID)
 	if err != nil {
@@ -142,7 +137,7 @@ func (a *AsyncJobWh) InitAsyncJobRunner() error {
 	g, ctx := errgroup.WithContext(ctx)
 	a.context = ctx
 	var err error
-	for retry := 0; retry < a.MaxCleanUpRetries; retry++ {
+	for retry := 0; retry < a.maxCleanUpRetries; retry++ {
 		err = a.cleanUpAsyncTable(ctx)
 		if err == nil {
 			a.logger.Info("[WH-Jobs]: successfully cleanup async table with error")
@@ -197,7 +192,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 		case <-ctx.Done():
 			a.logger.Info("[WH-Jobs]: Stopping AsyncJobRunner")
 			return nil
-		case <-time.After(a.RetryTimeInterval):
+		case <-time.After(a.retryTimeInterval):
 
 		}
 
@@ -240,7 +235,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 					a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
 					_ = a.updateAsyncJobs(ctx, asyncJobsStatusMap)
 					wg.Done()
-				case <-time.After(a.AsyncJobTimeOut):
+				case <-time.After(a.asyncJobTimeOut):
 					a.logger.Errorf("Go Routine timed out waiting for a response from PgNotifier", pendingAsyncJobs[0].Id)
 					asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
 					_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
@@ -290,7 +285,7 @@ func (a *AsyncJobWh) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayload
 			metadata,
 			attempt
 		FROM %s WHERE (status=$1 OR status=$2) LIMIT $3`, warehouseutils.WarehouseAsyncJobTable)
-	rows, err := a.dbHandle.Query(query, WhJobWaiting, WhJobFailed, a.MaxBatchSizeToProcess)
+	rows, err := a.dbHandle.Query(query, WhJobWaiting, WhJobFailed, a.maxBatchSizeToProcess)
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error in getting pending wh async jobs with error %s", err.Error())
 		return asyncJobPayloads, err
@@ -347,9 +342,9 @@ func (a *AsyncJobWh) updateAsyncJobStatus(ctx context.Context, Id, status, errMe
 															END) ,
 															error=$4 WHERE id=$5 AND status!=$6 AND status!=$7 `, warehouseutils.WarehouseAsyncJobTable)
 	var err error
-	for retryCount := 0; retryCount < a.MaxQueryRetries; retryCount++ {
+	for retryCount := 0; retryCount < a.maxQueryRetries; retryCount++ {
 		a.logger.Debugf("[WH-Jobs]: updating async jobs table query %s, retry no : %d", sqlStatement, retryCount)
-		_, err = a.dbHandle.Query(sqlStatement, a.MaxAttemptsPerJob, WhJobAborted, status, errMessage, Id, WhJobAborted, WhJobSucceeded)
+		_, err = a.dbHandle.Query(sqlStatement, a.maxAttemptsPerJob, WhJobAborted, status, errMessage, Id, WhJobAborted, WhJobSucceeded)
 		if err == nil {
 			a.logger.Info("Update successful")
 			a.logger.Debugf("query: %s successfully executed", sqlStatement)
@@ -373,7 +368,7 @@ func (a *AsyncJobWh) updateAsyncJobAttempt(ctx context.Context, Id string) error
 	a.logger.Info("[WH-Jobs]: Incrementing wh async jobs attempt")
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET attempt=attempt+1 WHERE id=$1 AND status!=$2 AND status!=$3 `, warehouseutils.WarehouseAsyncJobTable)
 	var err error
-	for queryRetry := 0; queryRetry < a.MaxQueryRetries; queryRetry++ {
+	for queryRetry := 0; queryRetry < a.maxQueryRetries; queryRetry++ {
 		a.logger.Debugf("[WH-Jobs]: updating async jobs table query %s, retry no : %d", sqlStatement, queryRetry)
 		_, err = a.dbHandle.Query(sqlStatement, Id, WhJobAborted, WhJobSucceeded)
 		if err == nil {
