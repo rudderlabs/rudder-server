@@ -95,9 +95,9 @@ type ConnectionDetails struct {
 	SourceDefinitionId      string `json:"sourceDefinitionId"`
 	DestinationDefinitionId string `string:"destinationDefinitionId"`
 	SourceCategory          string `json:"sourceCategory"`
-	TransformationId        string `json:"transformationId"`
-	TransformationVersionId string `json:"transformationVersionId"`
-	TrackingPlanId          string `json:"trackingPlanId"`
+	TransformationID        string `json:"transformationId"`
+	TransformationVersionID string `json:"transformationVersionId"`
+	TrackingPlanID          string `json:"trackingPlanId"`
 	TrackingPlanVersion     int    `json:"trackingPlanVersion"`
 }
 type PUDetails struct {
@@ -123,9 +123,9 @@ func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc, trid, 
 		SourceDefinitionId:      sdid,
 		DestinationDefinitionId: ddid,
 		SourceCategory:          sc,
-		TransformationId:        trid,
-		TransformationVersionId: trvid,
-		TrackingPlanId:          tpid,
+		TransformationID:        trid,
+		TransformationVersionID: trvid,
+		TrackingPlanID:          tpid,
 		TrackingPlanVersion:     tpv,
 	}
 }

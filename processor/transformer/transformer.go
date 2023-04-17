@@ -68,8 +68,8 @@ type MetadataT struct {
 	EventType               string   `json:"eventType"`
 	SourceDefinitionID      string   `json:"sourceDefinitionId"`
 	DestinationDefinitionID string   `json:"destinationDefinitionId"`
-	TransformationId        string   `json:"transformationId"`
-	TransformationVersionId string   `json:"transformationVersionId"`
+	TransformationID        string   `json:"transformationId"`
+	TransformationVersionID string   `json:"transformationVersionId"`
 }
 
 type TransformerEventT struct {

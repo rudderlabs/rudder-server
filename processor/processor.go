@@ -216,9 +216,9 @@ type MetricMetadata struct {
 	sourceDefinitionID      string
 	destinationDefinitionID string
 	sourceCategory          string
-	transformationId        string
-	transformationVersionId string
-	trackingPlanId          string
+	transformationID        string
+	transformationVersionID string
+	trackingPlanID          string
 	trackingPlanVersion     int
 }
 
@@ -939,11 +939,13 @@ func (proc *Handle) getDestTransformerEvents(response transformer.ResponseT, com
 				if stage != transformer.TrackingPlanValidationStage {
 					return []byte(`{}`)
 				}
+				if proc.transientSources.Apply(commonMetaData.SourceID) {
+					return []byte(`{}`)
+				}
+
 				sampleEvent, err := jsonfast.Marshal(message)
 				if err != nil {
 					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
-				}
-				if err != nil || proc.transientSources.Apply(commonMetaData.SourceID) {
 					sampleEvent = []byte(`{}`)
 				}
 				return sampleEvent
@@ -1048,9 +1050,9 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
 					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
 					sourceCategory:          event.Metadata.SourceCategory,
-					transformationId:        event.Metadata.TransformationId,
-					transformationVersionId: event.Metadata.TransformationVersionId,
-					trackingPlanId:          event.Metadata.TrackingPlanId,
+					transformationID:        event.Metadata.TransformationID,
+					transformationVersionID: event.Metadata.TransformationVersionID,
+					trackingPlanID:          event.Metadata.TrackingPlanId,
 					trackingPlanVersion:     event.Metadata.TrackingPlanVersion,
 				}
 			}
@@ -1060,8 +1062,8 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 			event.Metadata.SourceID,
 			event.Metadata.DestinationID,
 			event.Metadata.SourceJobRunID,
-			event.Metadata.TransformationId,
-			event.Metadata.TransformationVersionId,
+			event.Metadata.TransformationID,
+			event.Metadata.TransformationVersionID,
 			event.Metadata.TrackingPlanId,
 			event.Metadata.TrackingPlanVersion,
 			status, event.StatusCode,
@@ -1079,8 +1081,8 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 				event.Metadata.SourceDefinitionID,
 				event.Metadata.DestinationDefinitionID,
 				event.Metadata.SourceCategory,
-				event.Metadata.TransformationId,
-				event.Metadata.TransformationVersionId,
+				event.Metadata.TransformationID,
+				event.Metadata.TransformationVersionID,
 				event.Metadata.TrackingPlanId,
 				event.Metadata.TrackingPlanVersion,
 			)
@@ -1154,11 +1156,12 @@ func (proc *Handle) getFailedEventJobs(response transformer.ResponseT, commonMet
 
 		for _, message := range messages {
 			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, stage, func() json.RawMessage {
+				if proc.transientSources.Apply(commonMetaData.SourceID) {
+					return []byte(`{}`)
+				}
 				sampleEvent, err := jsonfast.Marshal(message)
 				if err != nil {
 					proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
-				}
-				if err != nil || proc.transientSources.Apply(commonMetaData.SourceID) {
 					sampleEvent = []byte(`{}`)
 				}
 				return sampleEvent
@@ -1316,7 +1319,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 		if diff != 0 {
 			metricMetadata := inCountMetadataMap[key]
 			metric := &types.PUReportedMetric{
-				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory, metricMetadata.transformationId, metricMetadata.transformationVersionId, metricMetadata.trackingPlanId, metricMetadata.trackingPlanVersion),
+				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory, metricMetadata.transformationID, metricMetadata.transformationVersionID, metricMetadata.trackingPlanID, metricMetadata.trackingPlanVersion),
 				PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
 				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, 0, "", []byte(`{}`), eventName, eventType, ""),
 			}
@@ -1996,8 +1999,8 @@ func (proc *Handle) transformSrcDest(
 			event := &eventList[i]
 			// enrich event metadata with transformation details if transformation is enabled
 			if transformationEnabled {
-				event.Metadata.TransformationId = destination.Transformations[0].ID
-				event.Metadata.TransformationVersionId = destination.Transformations[0].VersionID
+				event.Metadata.TransformationID = destination.Transformations[0].ID
+				event.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
 			}
 			key := strings.Join([]string{
 				event.Metadata.SourceID,
@@ -2019,9 +2022,9 @@ func (proc *Handle) transformSrcDest(
 					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
 					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
 					sourceCategory:          event.Metadata.SourceCategory,
-					transformationId:        event.Metadata.TransformationId,
-					transformationVersionId: event.Metadata.TransformationVersionId,
-					trackingPlanId:          event.Metadata.TrackingPlanId,
+					transformationID:        event.Metadata.TransformationID,
+					transformationVersionID: event.Metadata.TransformationVersionID,
+					trackingPlanID:          event.Metadata.TrackingPlanId,
 					trackingPlanVersion:     event.Metadata.TrackingPlanVersion,
 				}
 			}

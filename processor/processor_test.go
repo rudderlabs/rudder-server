@@ -1564,7 +1564,7 @@ var _ = Describe("Static Function Tests", func() {
 				Metadata: transformer.MetadataT{
 					SourceID:         "source-id-1",
 					DestinationID:    "destination-id-1",
-					TransformationId: "transformation-id-1",
+					TransformationID: "transformation-id-1",
 					TrackingPlanId:   "tracking-plan-id-1",
 					EventName:        "event-name-1",
 					EventType:        "event-type-1",
@@ -1595,9 +1595,9 @@ var _ = Describe("Static Function Tests", func() {
 				sourceDefinitionID:      inputEvent.Metadata.SourceDefinitionID,
 				destinationDefinitionID: inputEvent.Metadata.DestinationDefinitionID,
 				sourceCategory:          inputEvent.Metadata.SourceCategory,
-				transformationId:        inputEvent.Metadata.TransformationId,
-				transformationVersionId: inputEvent.Metadata.TransformationVersionId,
-				trackingPlanId:          inputEvent.Metadata.TrackingPlanId,
+				transformationID:        inputEvent.Metadata.TransformationID,
+				transformationVersionID: inputEvent.Metadata.TransformationVersionID,
+				trackingPlanID:          inputEvent.Metadata.TrackingPlanId,
 				trackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
 			expectedConnectionDetails := &types.ConnectionDetails{
@@ -1609,9 +1609,9 @@ var _ = Describe("Static Function Tests", func() {
 				SourceDefinitionId:      inputEvent.Metadata.SourceDefinitionID,
 				DestinationDefinitionId: inputEvent.Metadata.DestinationDefinitionID,
 				SourceCategory:          inputEvent.Metadata.SourceCategory,
-				TransformationId:        inputEvent.Metadata.TransformationId,
-				TransformationVersionId: inputEvent.Metadata.TransformationVersionId,
-				TrackingPlanId:          inputEvent.Metadata.TrackingPlanId,
+				TransformationID:        inputEvent.Metadata.TransformationID,
+				TransformationVersionID: inputEvent.Metadata.TransformationVersionID,
+				TrackingPlanID:          inputEvent.Metadata.TrackingPlanId,
 				TrackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
 			connectionDetailsMap := make(map[string]*types.ConnectionDetails)

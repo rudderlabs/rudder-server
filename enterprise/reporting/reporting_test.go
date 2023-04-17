@@ -83,8 +83,8 @@ var _ = Describe("Reporting", func() {
 				ConnectionDetails: types.ConnectionDetails{
 					SourceID:         "some-source-id",
 					DestinationID:    "some-destination-id",
-					TransformationId: "some-transformation-id",
-					TrackingPlanId:   "some-tracking-plan-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
 				},
 				PUDetails: types.PUDetails{
 					InPU: "some-in-pu",
@@ -110,8 +110,8 @@ var _ = Describe("Reporting", func() {
 				ConnectionDetails: types.ConnectionDetails{
 					SourceID:         "some-source-id",
 					DestinationID:    "some-destination-id",
-					TransformationId: "some-transformation-id",
-					TrackingPlanId:   "some-tracking-plan-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
 				},
 				PUDetails: types.PUDetails{
 					InPU: "some-in-pu",
@@ -137,8 +137,8 @@ var _ = Describe("Reporting", func() {
 				ConnectionDetails: types.ConnectionDetails{
 					SourceID:         "some-source-id",
 					DestinationID:    "some-destination-id",
-					TransformationId: "some-transformation-id",
-					TrackingPlanId:   "some-tracking-plan-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
 				},
 				PUDetails: types.PUDetails{
 					InPU: "some-in-pu",
@@ -167,8 +167,8 @@ var _ = Describe("Reporting", func() {
 				ConnectionDetails: types.ConnectionDetails{
 					SourceID:         "some-source-id",
 					DestinationID:    "some-destination-id",
-					TransformationId: "some-transformation-id",
-					TrackingPlanId:   "some-tracking-plan-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
 				},
 				PUDetails: types.PUDetails{
 					InPU: "some-in-pu",
