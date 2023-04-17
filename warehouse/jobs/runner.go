@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/samber/lo"
 
@@ -116,19 +116,17 @@ func (a *AsyncJobWh) addJobsToDB(payload *AsyncJobPayload) (int64, error) {
 func (a *AsyncJobWh) InitAsyncJobRunner() error {
 	// Start the asyncJobRunner
 	a.logger.Info("[WH-Jobs]: Initializing async job runner")
-	ctx, cancel := context.WithCancel(a.context)
-	defer cancel()
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := errgroup.WithContext(a.context)
 	a.context = ctx
-	var err error
-	for retry := 0; retry < a.maxCleanUpRetries; retry++ {
-		err = a.cleanUpAsyncTable(ctx)
-		if err == nil {
-			a.logger.Info("[WH-Jobs]: successfully cleanup async table with error")
-			a.enabled = true
-			break
+	err := misc.RetryWith(a.context, a.retryTimeInterval, a.maxCleanUpRetries, func(ctx context.Context) error {
+		err := a.cleanUpAsyncTable(ctx)
+		if err != nil {
+			a.logger.Errorf("[WH-Jobs]: unable to cleanup asynctable with error %s", err.Error())
+			return err
 		}
-	}
+		a.enabled = true
+		return nil
+	})
 
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: unable to cleanup asynctable with error %s", err.Error())
@@ -138,9 +136,8 @@ func (a *AsyncJobWh) InitAsyncJobRunner() error {
 		g.Go(func() error {
 			return a.startAsyncJobRunner(ctx)
 		})
-		_ = g.Wait()
 	}
-	return errors.New("unable to enable warehouse Async Job")
+	return g.Wait()
 }
 
 func (a *AsyncJobWh) cleanUpAsyncTable(ctx context.Context) error {
