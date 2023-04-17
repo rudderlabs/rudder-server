@@ -81,7 +81,7 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 			MetaData:      metadataJson,
 			WorkspaceID:   startJobPayload.WorkspaceID,
 		}
-		id, err := a.addJobsToDB(a.context, &payload)
+		id, err := a.addJobsToDB(&payload)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
