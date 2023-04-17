@@ -136,7 +136,7 @@ func Init() {
 func GetAuthType(config map[string]interface{}) AuthType {
 	var lookupErr *misc.MapLookupError
 	var authValue interface{}
-	if authValue, lookupErr = misc.NestedMapLookup(config, "auth", "type"); lookupErr.Err != nil {
+	if authValue, lookupErr = misc.NestedMapLookup(config, "auth", "type"); lookupErr != nil {
 		return ""
 	}
 	authType, ok := authValue.(string)
