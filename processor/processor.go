@@ -1577,6 +1577,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
+					if len(destination.Transformations) > 0 {
+						shallowEventCopy.Metadata.TransformationID = destination.Transformations[0].ID
+						shallowEventCopy.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
+					}
 					filterConfig(&shallowEventCopy)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
@@ -1997,11 +2001,6 @@ func (proc *Handle) transformSrcDest(
 		inCountMetadataMap = make(map[string]MetricMetadata)
 		for i := range eventList {
 			event := &eventList[i]
-			// enrich event metadata with transformation details if transformation is enabled
-			if transformationEnabled {
-				event.Metadata.TransformationID = destination.Transformations[0].ID
-				event.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
-			}
 			key := strings.Join([]string{
 				event.Metadata.SourceID,
 				event.Metadata.DestinationID,
