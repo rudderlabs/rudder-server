@@ -200,8 +200,7 @@ var _ = Describe("Reporting", func() {
 			},
 		}
 
-		var log logger.Logger
-		reportHandle := NewFromEnvConfig(log)
+		reportHandle := NewFromEnvConfig(logger.NOP)
 
 		aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
 		Expect(aggregatedMetrics).To(Equal(expectedResponse))
