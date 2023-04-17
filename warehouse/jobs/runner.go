@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/samber/lo"
 
 	"golang.org/x/sync/errgroup"
@@ -127,7 +126,6 @@ func (a *AsyncJobWh) InitAsyncJobRunner() error {
 		a.enabled = true
 		return nil
 	})
-
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: unable to cleanup asynctable with error %s", err.Error())
 		return err
@@ -196,8 +194,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 				Jobs:    notifierClaims,
 				JobType: AsyncJobType,
 			}
-			var schema model.Schema
-			ch, err := a.pgnotifier.Publish(messagePayload, (*warehouseutils.Schema)(&schema), 100)
+			ch, err := a.pgnotifier.Publish(messagePayload, &warehouseutils.Schema{}, 100)
 			if err != nil {
 				a.logger.Errorf("[WH-Jobs]: unable to get publish async jobs to pgnotifier. Task failed with error %s", err.Error())
 				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
