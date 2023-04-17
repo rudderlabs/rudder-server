@@ -47,8 +47,7 @@ const (
 )
 
 const (
-	AsyncJobType  = "async_job"
-	UploadJobType = "upload"
+	AsyncJobType = "async_job"
 )
 
 func Init() {
@@ -64,8 +63,6 @@ type PGNotifier struct {
 }
 
 type JobPayload json.RawMessage
-
-const MaxTrackAsyncBatchRetries = 5
 
 type Response struct {
 	JobID   int64

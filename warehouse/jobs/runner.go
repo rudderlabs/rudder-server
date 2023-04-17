@@ -205,6 +205,8 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 			_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
 			wg.Add(1)
 			go func() {
+				ticker := time.NewTicker(a.asyncJobTimeOut)
+				defer ticker.Stop()
 				select {
 				case responses := <-ch:
 					a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
@@ -212,7 +214,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 					a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
 					_ = a.updateAsyncJobs(ctx, asyncJobsStatusMap)
 					wg.Done()
-				case <-time.After(a.asyncJobTimeOut):
+				case <-ticker.C:
 					a.logger.Errorf("Go Routine timed out waiting for a response from PgNotifier", pendingAsyncJobs[0].Id)
 					asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
 					_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
