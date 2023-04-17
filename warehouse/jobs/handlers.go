@@ -128,7 +128,7 @@ func (a *AsyncJobWh) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Re
 	}
 	a.logger.Infof("Got Payload job_run_id %s, task_run_id %s \n", payload.JobRunID, payload.TaskRunID)
 
-	response := a.getStatusAsyncJob(a.context, &payload)
+	response := a.getStatusAsyncJob(&payload)
 
 	writeResponse, err := json.Marshal(response)
 	if err != nil {

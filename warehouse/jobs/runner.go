@@ -364,13 +364,13 @@ func (a *AsyncJobWh) updateAsyncJobAttempt(ctx context.Context, Id string) error
 // returns status and errMessage
 // Only succeeded, executing & waiting states should have empty errMessage
 // Rest of the states failed, aborted should send an error message conveying a message
-func (a *AsyncJobWh) getStatusAsyncJob(ctx context.Context, payload *StartJobReqPayload) WhStatusResponse {
+func (a *AsyncJobWh) getStatusAsyncJob(payload *StartJobReqPayload) WhStatusResponse {
 	var statusResponse WhStatusResponse
 	a.logger.Info("[WH-Jobs]: Getting status for wh async jobs %v", payload)
 	// Need to check for count first and see if there are any rows matching the job_run_id and task_run_id. If none, then raise an error instead of showing complete
 	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE metadata->>'job_run_id'=$1 AND metadata->>'task_run_id'=$2`, warehouseutils.WarehouseAsyncJobTable)
 	a.logger.Debugf("Query inside getStatusAsync function is %s", sqlStatement)
-	rows, err := a.dbHandle.QueryContext(ctx, sqlStatement, payload.JobRunID, payload.TaskRunID)
+	rows, err := a.dbHandle.QueryContext(a.context, sqlStatement, payload.JobRunID, payload.TaskRunID)
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error executing the query %s", err.Error())
 		return WhStatusResponse{
