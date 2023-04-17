@@ -1317,6 +1317,105 @@ func TestDestinationFilterCondition(t *testing.T) {
 			},
 			expected: true,
 		},
+
+		{
+			caseName: "when mode is `cloud` for `cloud` srcType & supportedConnectionModes is in previous version if track event is sent, return true",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "3",
+					definitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
+						"supportedSourceTypes":  []interface{}{"cloud", "android", "ios", "flutter", "reactnative"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud":       []interface{}{"cloud", "device"},
+							"android":     []interface{}{"cloud", "device"},
+							"ios":         []interface{}{"cloud", "device"},
+							"flutter":     []interface{}{"cloud", "device"},
+							"reactnative": []interface{}{"cloud", "device"},
+						},
+					},
+					definitionID: "2DefId",
+					config: map[string]interface{}{
+						"connectionMode": "cloud",
+					},
+					isProcessorEnabled: true,
+				},
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "cloud",
+				},
+				event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			expected: true,
+		},
+		{
+			caseName: "when mode is `cloud` for `cloud` srcType & supportedConnectionModes is in previous version if alias event is sent, return false",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "3",
+					definitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
+						"supportedSourceTypes":  []interface{}{"cloud", "android", "ios", "flutter", "reactnative"},
+						"supportedConnectionModes": map[string]interface{}{
+							"cloud":       []interface{}{"cloud", "device"},
+							"android":     []interface{}{"cloud", "device"},
+							"ios":         []interface{}{"cloud", "device"},
+							"flutter":     []interface{}{"cloud", "device"},
+							"reactnative": []interface{}{"cloud", "device"},
+						},
+					},
+					definitionID: "2DefId",
+					config: map[string]interface{}{
+						"connectionMode": "cloud",
+					},
+					isProcessorEnabled: true,
+				},
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "cloud",
+				},
+				event: serverUtilsTypes.SingularEventT{
+					"type": "alias",
+				},
+			},
+			expected: false,
+		},
+		{
+			caseName: "when mode is `cloud` for `cloud` srcType(not in supportedConnectionModes) & supportedConnectionModes is in previous version if track event is sent, return true",
+			input: filterConditionT{
+				destination: testDestinationT{
+					id: "4",
+					definitionConfig: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "page", "group"},
+						"supportedSourceTypes":  []interface{}{"cloud", "android", "ios", "flutter", "reactnative"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android":     []interface{}{"cloud", "device"},
+							"ios":         []interface{}{"cloud", "device"},
+							"flutter":     []interface{}{"cloud", "device"},
+							"reactnative": []interface{}{"cloud", "device"},
+						},
+					},
+					definitionID: "3DefId",
+					config: map[string]interface{}{
+						"connectionMode": "cloud",
+					},
+					isProcessorEnabled: true,
+				},
+				source: testSourceT{
+					name:          "demo-source",
+					id:            "1src",
+					sourceDefType: "cloud",
+				},
+				event: serverUtilsTypes.SingularEventT{
+					"type": "track",
+				},
+			},
+			expected: true,
+		},
 	}
 
 	destination := &DestinationT{
