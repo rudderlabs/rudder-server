@@ -1477,7 +1477,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
-			// source, _ := proc.getSourceByWriteKey(writeKey)
+			source, _ := proc.getSourceByWriteKey(writeKey)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
@@ -1487,8 +1487,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 				)
 				// Additional filteration based on connectionMode
 				filteredDestinationList := lo.Filter(enabledDestinationsList, func(destination backendconfig.DestinationT, _ int) bool {
-					// return destination.AllowEventToDestination(source, singularEvent)
-					return true
+					return destination.AllowEventToDestination(source, singularEvent)
+					// return true
 				})
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range filteredDestinationList {
