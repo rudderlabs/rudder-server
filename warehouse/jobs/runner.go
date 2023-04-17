@@ -364,7 +364,8 @@ func (a *AsyncJobWh) updateAsyncJobAttempt(ctx context.Context, Id string) error
 // returns status and errMessage
 // Only succeeded, executing & waiting states should have empty errMessage
 // Rest of the states failed, aborted should send an error message conveying a message
-func (a *AsyncJobWh) getStatusAsyncJob(ctx context.Context, payload *StartJobReqPayload) (statusResponse WhStatusResponse) {
+func (a *AsyncJobWh) getStatusAsyncJob(ctx context.Context, payload *StartJobReqPayload) WhStatusResponse {
+	var statusResponse WhStatusResponse
 	a.logger.Info("[WH-Jobs]: Getting status for wh async jobs %v", payload)
 	// Need to check for count first and see if there are any rows matching the job_run_id and task_run_id. If none, then raise an error instead of showing complete
 	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE metadata->>'job_run_id'=$1 AND metadata->>'task_run_id'=$2`, warehouseutils.WarehouseAsyncJobTable)
@@ -372,11 +373,10 @@ func (a *AsyncJobWh) getStatusAsyncJob(ctx context.Context, payload *StartJobReq
 	rows, err := a.dbHandle.QueryContext(ctx, sqlStatement, payload.JobRunID, payload.TaskRunID)
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error executing the query %s", err.Error())
-		statusResponse = WhStatusResponse{
+		return WhStatusResponse{
 			Status: WhJobFailed,
 			Err:    err.Error(),
 		}
-		return
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
@@ -385,50 +385,42 @@ func (a *AsyncJobWh) getStatusAsyncJob(ctx context.Context, payload *StartJobReq
 		err = rows.Scan(&status, &errMessage)
 		if err != nil {
 			a.logger.Errorf("[WH-Jobs]: Error scanning rows %s\n", err)
-			statusResponse = WhStatusResponse{
+			return WhStatusResponse{
 				Status: WhJobFailed,
 				Err:    err.Error(),
 			}
-			return
 		}
-		if status == WhJobFailed {
+
+		switch status {
+		case WhJobFailed:
 			a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is failed", payload.JobRunID, payload.TaskRunID)
 			statusResponse.Status = WhJobFailed
 			if !errMessage.Valid {
 				statusResponse.Err = "Failed while scanning"
-				return
 			}
 			statusResponse.Err = errMessage.String
-			return
-		}
-		if status == WhJobAborted {
+		case WhJobAborted:
 			a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is aborted", payload.JobRunID, payload.TaskRunID)
 			statusResponse.Status = WhJobAborted
 			if !errMessage.Valid {
 				statusResponse.Err = "Failed while scanning"
-				return
-
 			}
 			statusResponse.Err = errMessage.String
-			return
-		}
-		if status != WhJobSucceeded {
+		case WhJobExecuting:
 			a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is under processing", payload.JobRunID, payload.TaskRunID)
 			statusResponse.Status = WhJobExecuting
-			return
+		default:
+			a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is complete", payload.JobRunID, payload.TaskRunID)
+			statusResponse.Status = WhJobSucceeded
 		}
-
 	}
+
 	if err = rows.Err(); err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error scanning rows %s\n", err)
-		statusResponse = WhStatusResponse{
+		return WhStatusResponse{
 			Status: WhJobFailed,
 			Err:    err.Error(),
 		}
-		return
 	}
-
-	a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is complete", payload.JobRunID, payload.TaskRunID)
-	statusResponse.Status = WhJobSucceeded
-	return
+	return statusResponse
 }
