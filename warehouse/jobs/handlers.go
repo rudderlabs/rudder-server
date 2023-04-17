@@ -1,5 +1,5 @@
 /*
-	Warehouse jobs package provides the capability to running arbitrary jobs on the warehouses using the query parameters provided.
+	Warehouse jobs package provides the capability to run arbitrary jobs on the warehouses using the query parameters provided.
 	Some jobs that can be run are
 	1) delete by task run id,
 	2) delete by job run id,
@@ -21,6 +21,11 @@ import (
 // AddWarehouseJobHandler The following handler gets called for adding async
 func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	a.logger.Info("[WH-Jobs] Got Async Job Add Request")
+	if !a.enabled {
+		a.logger.Errorf("[WH-Jobs]: Error Warehouse Jobs API not initialized")
+		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
+		return
+	}
 	a.logger.LogRequest(r)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -42,13 +47,8 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if !validatePayload(startJobPayload) {
-		a.logger.Errorf("[WH-Jobs]: Invalid Payload %v", err)
+		a.logger.Errorf("[WH-Jobs]: Invalid Payload")
 		http.Error(w, "invalid Payload", http.StatusBadRequest)
-		return
-	}
-	if !a.enabled {
-		a.logger.Errorf("[WH-Jobs]: Error Warehouse Jobs API not initialized %v", err)
-		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
 		return
 	}
 	tableNames, err := a.getTableNamesBy(startJobPayload.SourceID, startJobPayload.DestinationID, startJobPayload.JobRunID, startJobPayload.TaskRunID)
@@ -106,53 +106,48 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func (a *AsyncJobWh) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		a.logger.Info("Got Async Job Status Request")
-		a.logger.LogRequest(r)
-		jobRunId := r.URL.Query().Get("job_run_id")
-		taskRunId := r.URL.Query().Get("task_run_id")
+	a.logger.Info("Got Async Job Status Request")
+	a.logger.LogRequest(r)
+	jobRunId := r.URL.Query().Get("job_run_id")
+	taskRunId := r.URL.Query().Get("task_run_id")
 
-		sourceId := r.URL.Query().Get("source_id")
-		destinationId := r.URL.Query().Get("destination_id")
-		workspaceId := r.URL.Query().Get("workspace_id")
-		payload := StartJobReqPayload{
-			TaskRunID:     taskRunId,
-			JobRunID:      jobRunId,
-			SourceID:      sourceId,
-			DestinationID: destinationId,
-			WorkspaceID:   workspaceId,
-		}
-		if !validatePayload(payload) {
+	sourceId := r.URL.Query().Get("source_id")
+	destinationId := r.URL.Query().Get("destination_id")
+	workspaceId := r.URL.Query().Get("workspace_id")
+	payload := StartJobReqPayload{
+		TaskRunID:     taskRunId,
+		JobRunID:      jobRunId,
+		SourceID:      sourceId,
+		DestinationID: destinationId,
+		WorkspaceID:   workspaceId,
+	}
+	if !validatePayload(payload) {
 
-			a.logger.Errorf("[WH]: Error Invalid Status Parameters")
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		startJobPayload := StartJobReqPayload{
-			JobRunID:      jobRunId,
-			TaskRunID:     taskRunId,
-			SourceID:      sourceId,
-			DestinationID: destinationId,
-		}
-		a.logger.Infof("Got Payload job_run_id %s, task_run_id %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
-
-		if !a.enabled {
-			a.logger.Errorf("[WH]: Error Warehouse Jobs API not initialized")
-			http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
-			return
-		}
-
-		response := a.getStatusAsyncJob(a.context, &startJobPayload)
-
-		writeResponse, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		w.Write(writeResponse)
-	} else {
-		a.logger.Errorf("[WH]: Error Invalid Method")
+		a.logger.Errorf("[WH]: Error Invalid Status Parameters")
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	startJobPayload := StartJobReqPayload{
+		JobRunID:      jobRunId,
+		TaskRunID:     taskRunId,
+		SourceID:      sourceId,
+		DestinationID: destinationId,
+	}
+	a.logger.Infof("Got Payload job_run_id %s, task_run_id %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
+
+	if !a.enabled {
+		a.logger.Errorf("[WH]: Error Warehouse Jobs API not initialized")
+		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
+		return
+	}
+
+	response := a.getStatusAsyncJob(a.context, &startJobPayload)
+
+	writeResponse, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Write(writeResponse)
+
 }

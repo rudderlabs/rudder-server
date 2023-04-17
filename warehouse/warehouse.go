@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"golang.org/x/sync/errgroup"
@@ -1152,12 +1153,6 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 
 	ctx := r.Context()
-
-	if r.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
 	// read body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -1492,34 +1487,34 @@ func getConnectionString() string {
 }
 
 func startWebHandler(ctx context.Context) error {
-	mux := http.NewServeMux()
+	srvMux := mux.NewRouter()
 
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
-		mux.HandleFunc("/health", healthHandler)
+		srvMux.HandleFunc("/health", healthHandler).Methods("GET")
 	}
 	if runningMode != DegradedMode {
 		if isMaster() {
 			pkgLogger.Infof("WH: Warehouse master service waiting for BackendConfig before starting on %d", webPort)
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			mux.Handle("/v1/process", (&api.WarehouseAPI{
+			srvMux.Handle("/v1/process", (&api.WarehouseAPI{
 				Logger:      pkgLogger,
 				Stats:       stats.Default,
 				Repo:        repo.NewStagingFiles(dbHandle),
 				Multitenant: tenantManager,
-			}).Handler())
+			}).Handler()).Methods("POST")
 
 			// triggers upload only when there are pending events and triggerUpload is sent for a sourceId
-			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+			srvMux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler).Methods("POST")
 			// triggers uploads for a source
-			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
-			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
-			mux.HandleFunc("/v1/setConfig", setConfigHandler)
+			srvMux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler).Methods("POST")
+			srvMux.HandleFunc("/databricksVersion", databricksVersionHandler).Methods("GET")
+			srvMux.HandleFunc("/v1/setConfig", setConfigHandler).Methods("POST")
 
 			// Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)           // FIXME: add degraded mode
-			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // FIXME: add degraded mode
+			srvMux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler).Methods("POST")          // FIXME: add degraded mode
+			srvMux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler).Methods("GET") // FIXME: add degraded mode
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
@@ -1529,7 +1524,7 @@ func startWebHandler(ctx context.Context) error {
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", webPort),
-		Handler:           bugsnag.Handler(mux),
+		Handler:           bugsnag.Handler(srvMux),
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
