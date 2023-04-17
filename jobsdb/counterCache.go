@@ -7,21 +7,6 @@ import (
 	"github.com/samber/lo"
 )
 
-// The struct fields need to be exposed to JSON package
-type dataSetT struct {
-	JobTable       string `json:"job"`
-	JobStatusTable string `json:"status"`
-	Index          string `json:"index"`
-}
-
-type dataSetRangeT struct {
-	minJobID  int64
-	maxJobID  int64
-	startTime int64
-	endTime   int64
-	ds        dataSetT
-}
-
 // cache subject structure
 // workspaceID.sourceID.destinationID.jobState
 
@@ -74,7 +59,7 @@ func getSubjectPowerSet(cs cacheSubject) []subject {
 	comps := composites[1:]
 	nonWildCardCompIndices := lo.Filter(
 		lo.Range(len(comps)),
-		func(i int, _ int) bool {
+		func(i, _ int) bool {
 			return comps[i] != "*"
 		},
 	)

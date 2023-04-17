@@ -37,6 +37,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -399,6 +400,21 @@ func (job *JobT) sanitizeJson() {
 	job.Parameters = sanitizeJson(job.Parameters)
 }
 
+// The struct fields need to be exposed to JSON package
+type dataSetT struct {
+	JobTable       string `json:"job"`
+	JobStatusTable string `json:"status"`
+	Index          string `json:"index"`
+}
+
+type dataSetRangeT struct {
+	minJobID  int64
+	maxJobID  int64
+	startTime int64
+	endTime   int64
+	ds        dataSetT
+}
+
 /*
 HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
@@ -460,6 +476,8 @@ type HandleT struct {
 		mu      sync.Mutex
 		started bool
 	}
+
+	insertCountNotifier bool
 }
 
 // The struct which is written to the journal
@@ -642,6 +660,56 @@ func Init2() {
 
 type OptsFunc func(jd *HandleT)
 
+func WithInsertCountNotifier() OptsFunc {
+	return func(jd *HandleT) {
+		jd.insertCountNotifier = true
+	}
+}
+
+func WithInsertCountListener() OptsFunc {
+	return func(jd *HandleT) {
+		pool, err := pgxpool.New(
+			context.Background(),
+			misc.GetConnectionString(),
+		)
+		if err != nil {
+			panic(err)
+		}
+
+		go func() {
+			defer pool.Close()
+			conn, err := pool.Acquire(context.Background())
+			if err != nil {
+				panic(err)
+			}
+			defer conn.Release()
+			_, err = conn.Exec(context.Background(), "listen counts")
+			if err != nil {
+				panic(err)
+			}
+			for {
+				notification, err := conn.Conn().WaitForNotification(context.Background())
+				if err != nil {
+					panic(err)
+				}
+				if notification.Channel == "counts" {
+					cs := cacheSubject{
+						tablePrefix: jd.tablePrefix,
+					}
+					payloadString := notification.Payload
+					// jobCount := gjson.Get(payloadString, "data.jobcount").String()
+					cs.dsIndex = gjson.Get(payloadString, "data.ds_index").String()
+					cs.workspaceID = gjson.Get(payloadString, "data.workspace_id").String()
+					cs.jobState = gjson.Get(payloadString, "data.job_state").String()
+					cs.customVal = gjson.Get(payloadString, "data.custom_val").String()
+					cs.sourceID = gjson.Get(payloadString, "data.source_id").String()
+					cs.destinationID = gjson.Get(payloadString, "data.destination_id").String()
+				}
+			}
+		}()
+	}
+}
+
 // WithClearDB, if set to true it will remove all existing tables
 func WithClearDB(clearDB bool) OptsFunc {
 	return func(jd *HandleT) {
@@ -777,6 +845,40 @@ func (jd *HandleT) init() {
 	}
 	jd.workersAndAuxSetup()
 
+	if jd.insertCountNotifier {
+		jd.dbHandle.ExecContext(
+			context.Background(),
+			`CREATE OR REPLACE FUNCTION job_insert_count_notify()
+				RETURNS trigger AS
+				$$
+						DECLARE
+						_message json; 
+						_extendedAttributes jsonb;
+				
+						 BEGIN
+								SELECT json_agg(tmp)
+								INTO _extendedAttributes
+								FROM (
+								SELECT 
+									count(*) as jobCount, custom_val, workspace_id, 
+									parameters->>'source_id' as sourceID
+									from newTable 
+									group by custom_val, workspace_id, sourceID
+								) tmp;
+				
+					_message :=json_build_object('data',_extendedAttributes);
+				
+					PERFORM pg_notify('counts',_message::text);
+				
+					   RETURN NULL;
+					   END;
+				
+						$$
+				  LANGUAGE plpgsql;
+				`,
+		)
+	}
+
 	err := jd.WithTx(func(tx *Tx) error {
 		// only one migration should run at a time and block all other processes from adding or removing tables
 		return jd.withDistributedLock(context.Background(), tx, "schema_migrate", func() error {
@@ -788,12 +890,13 @@ func (jd *HandleT) init() {
 				if writer && jd.clearAll {
 					jd.dropDatabaseTables(l)
 				}
+				var datasets []dataSetT
 				templateData := func() map[string]interface{} {
 					// Important: if jobsdb type is acting as a writer then refreshDSList
 					// doesn't return the full list of datasets, only the rightmost two.
 					// But we need to run the schema migration against all datasets, no matter
 					// whether jobsdb is a writer or not.
-					datasets := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+					datasets = getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
 					datasetIndices := make([]string, 0)
 					for _, dataset := range datasets {
@@ -821,6 +924,60 @@ func (jd *HandleT) init() {
 
 				// finally refresh the dataset list to make sure [datasetList] field is populated
 				jd.refreshDSList(l)
+
+				// get job counts grouped by customVal, workspaceID, sourceID, destinationID, jobState over all datasets
+				for _, ds := range datasets {
+					rows, err := tx.QueryContext(
+						context.Background(),
+						fmt.Sprintf(
+							`with joined as
+							(
+							select
+							count(*) as jobCount,
+							j.custom_val as customVal,
+							j.workspace_id as workspaceID,
+							j.parameters->>'source_id' as sourceID,
+							j.parameters->>'destination_id' as destinationID,
+							s.job_state as jobState
+							from %[1]q j left join "v_last_%[1]s" s on j.job_id = s.job_id
+							group by customVal, workspaceID, sourceID, destinationID, jobState
+							)
+							select * from joined;`,
+							ds.JobTable, ds.JobStatusTable,
+						),
+					)
+					if err != nil {
+						panic(fmt.Errorf("failed to query job counts: %w", err))
+					}
+					defer rows.Close()
+
+					for rows.Next() {
+						row := cacheSubject{
+							tablePrefix: jd.tablePrefix,
+							dsIndex:     ds.Index,
+						}
+						var count sql.NullInt64
+						err := rows.Scan(
+							&count,
+							&row.customVal,
+							&row.workspaceID,
+							&row.sourceID,
+							&row.destinationID,
+							&row.jobState,
+						)
+						if err != nil {
+							panic(fmt.Errorf("failed to scan job counts: %w", err))
+						}
+						row.dsIndex = ds.Index
+						increaseCount(
+							row,
+							int(count.Int64),
+						)
+					}
+					if rows.Err() != nil {
+						panic(fmt.Errorf("failed to iterate over job counts: %w", rows.Err()))
+					}
+				}
 			})
 			return nil
 		})
@@ -1333,6 +1490,24 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
 		return err
 	}
+
+	if jd.insertCountNotifier {
+		if _, err := tx.ExecContext(
+			context.TODO(),
+			fmt.Sprintf(
+				`CREATE TRIGGER "%[1]s_insert_trigger"
+				AFTER INSERT
+				ON %[1]q
+				REFERENCING NEW TABLE AS newTable
+				FOR EACH STATEMENT
+				EXECUTE PROCEDURE job_insert_count_notify();`,
+				newDS.JobTable,
+			),
+		); err != nil {
+			return err
+		}
+	}
+
 	err = jd.journalMarkDoneInTx(tx, opID)
 	if err != nil {
 		return err
@@ -2232,6 +2407,19 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
+	// if getCount(cacheSubject{
+	// 	tablePrefix: jd.tablePrefix,
+	// 	dsIndex:     ds.Index,
+	// 	workspaceID: workspaceID,
+	// 	// customVal : ,	// TODO: go over all customVals(do we even need a list,
+	// 	// because no one queries for multiple customVals)
+	// 	// sourceID    : ,
+	// 	// destinationID: ,
+	// 	jobState: NotProcessed.State,
+	// }) == 0 {
+	// 	jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+	// 	return JobsResult{}, false, nil
+	// }
 
 	tags := statTags{
 		CustomValFilters: params.CustomValFilters,

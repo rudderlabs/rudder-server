@@ -80,6 +80,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
+		jobsdb.WithInsertCountNotifier(),
 	)
 	defer gatewayDB.Close()
 	if err := gatewayDB.Start(); err != nil {

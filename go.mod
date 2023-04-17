@@ -57,6 +57,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.2
 	github.com/hashicorp/yamux v0.1.1
 	github.com/iancoleman/strcase v0.2.0
+	github.com/jackc/pgx/v5 v5.3.1
 	github.com/jeremywohl/flatten v1.0.1
 	github.com/joho/godotenv v1.5.1
 	github.com/json-iterator/go v1.1.12
@@ -198,6 +199,9 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/heetch/avro v0.4.4 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
+	github.com/jackc/puddle/v2 v2.2.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
