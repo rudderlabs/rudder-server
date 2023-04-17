@@ -517,7 +517,7 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 
 	supportedEventPropsMapI, supportedEventPropsLookupErr := misc.NestedMapLookup(supportedConnectionModes, srcType, destConnectionMode)
 	if supportedEventPropsLookupErr != nil {
-		if supportedEventPropsLookupErr.SearchKey == srcType {
+		if supportedEventPropsLookupErr.Level == 0 {
 			// Case 2
 			pkgLogger.Infof("Failed with %v for SourceType(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), srcType)
 			return evaluatedDefaultBehaviour

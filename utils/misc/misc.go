@@ -1217,6 +1217,7 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 type MapLookupError struct {
 	SearchKey string // indicates the searchkey which is not present in the map
 	Err       error  // contains the error occurred string while looking up the key in the map
+	Level     int    // indicates the nesting level at which error has occurred
 }
 
 func (e *MapLookupError) Error() string {
@@ -1231,21 +1232,27 @@ func (e *MapLookupError) Error() string {
 // Returns: (Exactly one of these will be nil)
 // rval: the target node (if found)
 // err:  an error created by fmt.Errorf
-func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, err *MapLookupError) {
+func NestedMapLookup(m map[string]interface{}, ks ...string) (interface{}, *MapLookupError) {
 	var ok bool
 
-	if len(ks) == 0 { // degenerate input
-		return nil, &MapLookupError{Err: fmt.Errorf("NestedMapLookup needs at least one key")}
+	var lookupWithLevel func(map[string]interface{}, int, ...string) (interface{}, *MapLookupError)
+
+	lookupWithLevel = func(searchMap map[string]interface{}, level int, keys ...string) (rval interface{}, err *MapLookupError) {
+		if len(keys) == 0 { // degenerate input
+			return nil, &MapLookupError{Err: fmt.Errorf("NestedMapLookup needs at least one key"), Level: level}
+		}
+		if rval, ok = m[keys[0]]; !ok {
+			return nil, &MapLookupError{Err: fmt.Errorf("key: %v not found", keys[0]), SearchKey: keys[0], Level: level}
+		} else if len(keys) == 1 { // we've reached the final key
+			return rval, nil
+		} else if m, ok = rval.(map[string]interface{}); !ok {
+			return nil, &MapLookupError{Err: fmt.Errorf("malformed structure at %#v", rval), SearchKey: keys[0], Level: level}
+		}
+		// 1+ more keys
+		level += 1
+		return lookupWithLevel(m, level, keys[1:]...)
 	}
-	if rval, ok = m[ks[0]]; !ok {
-		return nil, &MapLookupError{Err: fmt.Errorf("key: %v not found", ks[0]), SearchKey: ks[0]}
-	} else if len(ks) == 1 { // we've reached the final key
-		return rval, nil
-	} else if m, ok = rval.(map[string]interface{}); !ok {
-		return nil, &MapLookupError{Err: fmt.Errorf("malformed structure at %#v", rval), SearchKey: ks[0]}
-	}
-	// 1+ more keys
-	return NestedMapLookup(m, ks[1:]...)
+	return lookupWithLevel(m, 0, ks...)
 }
 
 // GetJsonSchemaDTFromGoDT returns the json schema supported data types from go lang supported data types.
