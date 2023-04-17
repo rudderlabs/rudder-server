@@ -1233,11 +1233,10 @@ func (e *MapLookupError) Error() string {
 // rval: the target node (if found)
 // err:  an error created by fmt.Errorf
 func NestedMapLookup(m map[string]interface{}, ks ...string) (interface{}, *MapLookupError) {
-	var ok bool
-
 	var lookupWithLevel func(map[string]interface{}, int, ...string) (interface{}, *MapLookupError)
 
 	lookupWithLevel = func(searchMap map[string]interface{}, level int, keys ...string) (rval interface{}, err *MapLookupError) {
+		var ok bool
 		if len(keys) == 0 { // degenerate input
 			return nil, &MapLookupError{Err: fmt.Errorf("NestedMapLookup needs at least one key"), Level: level}
 		}
