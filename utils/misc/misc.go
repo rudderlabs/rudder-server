@@ -1241,16 +1241,16 @@ func NestedMapLookup(m map[string]interface{}, ks ...string) (interface{}, *MapL
 		if len(keys) == 0 { // degenerate input
 			return nil, &MapLookupError{Err: fmt.Errorf("NestedMapLookup needs at least one key"), Level: level}
 		}
-		if rval, ok = m[keys[0]]; !ok {
+		if rval, ok = searchMap[keys[0]]; !ok {
 			return nil, &MapLookupError{Err: fmt.Errorf("key: %v not found", keys[0]), SearchKey: keys[0], Level: level}
 		} else if len(keys) == 1 { // we've reached the final key
 			return rval, nil
-		} else if m, ok = rval.(map[string]interface{}); !ok {
+		} else if searchMap, ok = rval.(map[string]interface{}); !ok {
 			return nil, &MapLookupError{Err: fmt.Errorf("malformed structure at %#v", rval), SearchKey: keys[0], Level: level}
 		}
 		// 1+ more keys
 		level += 1
-		return lookupWithLevel(m, level, keys[1:]...)
+		return lookupWithLevel(searchMap, level, keys[1:]...)
 	}
 	return lookupWithLevel(m, 0, ks...)
 }
