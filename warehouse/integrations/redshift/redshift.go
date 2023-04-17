@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
@@ -142,7 +143,7 @@ var partitionKeyMap = map[string]string{
 }
 
 type Redshift struct {
-	DB             *sql.DB
+	DB             *sqlmiddleware.DB
 	Namespace      string
 	Warehouse      model.Warehouse
 	Uploader       warehouseutils.Uploader
@@ -1025,7 +1026,8 @@ func (rs *Redshift) loadUserTables() map[string]error {
 	}
 }
 
-func Connect(cred RedshiftCredentials) (*sql.DB, error) {
+func (rs *Redshift) connect() (*sqlmiddleware.DB, error) {
+	cred := rs.getConnectionCredentials()
 	dsn := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cred.Username, cred.Password),
@@ -1062,7 +1064,8 @@ func Connect(cred RedshiftCredentials) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("redshift set query_group error : %v", err)
 	}
-	return db, nil
+	middleware := sqlmiddleware.New(db)
+	return middleware, nil
 }
 
 func (rs *Redshift) dropDanglingStagingTables() bool {
@@ -1107,8 +1110,8 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 	return delSuccess
 }
 
-func (rs *Redshift) connectToWarehouse() (*sql.DB, error) {
-	return Connect(rs.getConnectionCredentials())
+func (rs *Redshift) connectToWarehouse() (*sqlmiddleware.DB, error) {
+	return rs.connect()
 }
 
 func (rs *Redshift) CreateSchema() (err error) {
@@ -1277,7 +1280,7 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := rs.connect()
 	if err != nil {
 		return
 	}
@@ -1353,7 +1356,7 @@ func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 
 func (rs *Redshift) TestConnection(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
-	rs.DB, err = Connect(rs.getConnectionCredentials())
+	rs.DB, err = rs.connect()
 	if err != nil {
 		return
 	}
@@ -1428,7 +1431,7 @@ func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) 
 func (rs *Redshift) Connect(warehouse model.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := rs.connect()
 	if err != nil {
 		return client.Client{}, err
 	}
