@@ -50,8 +50,8 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 	var tableNames []string
 	var err error
 
-	query := `SELECT table_name FROM` + warehouseutils.WarehouseTableUploadsTable + `WHERE wh_upload_id IN` +
-		`(SELECT id FROM` + warehouseutils.WarehouseUploadsTable + `WHERE metadata->>'source_job_run_id'=$1
+	query := `SELECT table_name FROM ` + warehouseutils.WarehouseTableUploadsTable + ` WHERE wh_upload_id IN ` +
+		` (SELECT id FROM ` + warehouseutils.WarehouseUploadsTable + ` WHERE metadata->>'source_job_run_id'=$1
 				AND metadata->>'source_task_run_id'=$2
 				AND source_id=$3
 				AND destination_id=$4)`
