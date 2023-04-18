@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
-
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -442,13 +440,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 		}
 		defer whManager.Cleanup()
 
-		job.schemaHandler = schema.NewHandler(
-			job.dbHandle,
-			job.warehouse,
-		)
-		schema.WithConfig(job.schemaHandler, config.Default)
-
-		job.schemaHandler.SchemaInWarehouse, job.schemaHandler.UnrecognizedSchemaInWarehouse, err = job.schemaHandler.FetchSchemaFromWarehouse(whManager)
+		err = job.schemaHandle.FetchSchemaFromWarehouse(whManager)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)

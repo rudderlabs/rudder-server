@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -156,8 +154,8 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				stats: store,
-				schemaHandler: &schema.Handler{
-					SchemaInWarehouse: model.Schema{
+				schemaHandle: &Schema{
+					schemaInWarehouse: model.Schema{
 						tableName: model.TableSchema{
 							"test-column-1": "string",
 							"test-column-2": "string",
@@ -183,7 +181,7 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := store.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				require.EqualValues(t, m1.LastValue(), len(j.schemaHandler.SchemaInWarehouse[tableName]))
+				require.EqualValues(t, m1.LastValue(), len(j.schemaHandle.schemaInWarehouse[tableName]))
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
 			} else {
 				require.Nil(t, m1)

@@ -1,4 +1,4 @@
-package schema
+package warehouse
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -20,24 +21,14 @@ import (
 )
 
 var (
-	ErrIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
-	ErrSchemaConversionNotSupported = errors.New("schema conversion not supported")
+	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
+	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
 )
 
-type Handler struct {
-	Warehouse                     model.Warehouse
-	LocalSchema                   model.Schema
-	SchemaInWarehouse             model.Schema
-	UnrecognizedSchemaInWarehouse model.Schema
-	UploadSchema                  model.Schema
-	WhSchemaRepo                  schemaRepo
-	StagingRepo                   stagingFileRepo
-	Logger                        logger.Logger
-
-	StagingFilesSchemaPaginationSize int
-	SkipDeepEqualSchemas             bool
-	IDResolutionEnabled              bool
-}
+// deprecatedColumnsRegex
+// This regex is used to identify deprecated columns in the warehouse
+// Example: abc-deprecated-dba626a7-406a-4757-b3e0-3875559c5840
+var deprecatedColumnsRegex = regexp.MustCompile(`.*-deprecated-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 type schemaRepo interface {
 	GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error)
@@ -52,73 +43,42 @@ type fetchSchemaRepo interface {
 	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
 }
 
-func NewHandler(
+type Schema struct {
+	warehouse                        model.Warehouse
+	localSchema                      model.Schema
+	schemaInWarehouse                model.Schema
+	unrecognizedSchemaInWarehouse    model.Schema
+	uploadSchema                     model.Schema
+	schemaRepo                       schemaRepo
+	stagingFileRepo                  stagingFileRepo
+	log                              logger.Logger
+	stagingFilesSchemaPaginationSize int
+	skipDeepEqualSchemas             bool
+	enableIDResolution               bool
+}
+
+func NewSchema(
 	db *sql.DB,
 	warehouse model.Warehouse,
-) *Handler {
-	return &Handler{
-		Warehouse:           warehouse,
-		WhSchemaRepo:        repo.NewWHSchemas(db),
-		StagingRepo:         repo.NewStagingFiles(db),
-		Logger:              logger.NewLogger().Child("warehouse").Child("schema"),
-		IDResolutionEnabled: warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type),
+	conf *config.Config,
+) *Schema {
+	return &Schema{
+		warehouse:                        warehouse,
+		schemaRepo:                       repo.NewWHSchemas(db),
+		stagingFileRepo:                  repo.NewStagingFiles(db),
+		log:                              logger.NewLogger().Child("warehouse").Child("schema"),
+		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
+		skipDeepEqualSchemas:             conf.GetBool("Warehouse.skipDeepEqualSchemas", false),
+		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
 	}
 }
 
-func WithConfig(h *Handler, conf *config.Config) {
-	h.StagingFilesSchemaPaginationSize = conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
-	h.SkipDeepEqualSchemas = conf.GetBool("Warehouse.skipDeepEqualSchemas", false)
-}
-
-func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
-	var (
-		newColumnVal any
-		err          error
-	)
-
-	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
-		// only stringify if the previous type is non-string/text/json
-		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
-			newColumnVal = fmt.Sprintf("%v", value)
-		} else {
-			newColumnVal = value
-		}
-	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
-		intVal, ok := value.(int)
-		if !ok {
-			err = ErrIncompatibleSchemaConversion
-		} else {
-			newColumnVal = float64(intVal)
-		}
-	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
-		floatVal, ok := value.(float64)
-		if !ok {
-			err = ErrIncompatibleSchemaConversion
-		} else {
-			newColumnVal = int(floatVal)
-		}
-	} else if existingDataType == model.JSONDataType {
-		var interfaceSliceSample []any
-		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
-			newColumnVal = fmt.Sprintf("%v", value)
-		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
-			newColumnVal = value
-		} else {
-			newColumnVal = fmt.Sprintf(`"%v"`, value)
-		}
-	} else {
-		err = ErrSchemaConversionNotSupported
-	}
-
-	return newColumnVal, err
-}
-
-func (sh *Handler) GetLocalSchema() (model.Schema, error) {
-	whSchema, err := sh.WhSchemaRepo.GetForNamespace(
+func (sh *Schema) GetLocalSchema() (model.Schema, error) {
+	whSchema, err := sh.schemaRepo.GetForNamespace(
 		context.TODO(),
-		sh.Warehouse.Source.ID,
-		sh.Warehouse.Destination.ID,
-		sh.Warehouse.Namespace,
+		sh.warehouse.Source.ID,
+		sh.warehouse.Destination.ID,
+		sh.warehouse.Namespace,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)
@@ -129,41 +89,61 @@ func (sh *Handler) GetLocalSchema() (model.Schema, error) {
 	return whSchema.Schema, nil
 }
 
-func (sh *Handler) UpdateLocalSchema(uploadId int64, updatedSchema model.Schema) error {
-	_, err := sh.WhSchemaRepo.Insert(context.TODO(), &model.WHSchema{
+func (sh *Schema) updateLocalSchema(uploadId int64, updatedSchema model.Schema) error {
+	_, err := sh.schemaRepo.Insert(context.TODO(), &model.WHSchema{
 		UploadID:        uploadId,
-		SourceID:        sh.Warehouse.Source.ID,
-		Namespace:       sh.Warehouse.Namespace,
-		DestinationID:   sh.Warehouse.Destination.ID,
-		DestinationType: sh.Warehouse.Type,
+		SourceID:        sh.warehouse.Source.ID,
+		Namespace:       sh.warehouse.Namespace,
+		DestinationID:   sh.warehouse.Destination.ID,
+		DestinationType: sh.warehouse.Type,
 		Schema:          updatedSchema,
 	})
-	return err
-}
-
-func (sh *Handler) FetchSchemaFromWarehouse(repo fetchSchemaRepo) (model.Schema, model.Schema, error) {
-	schemaInWarehouse, unrecognizedSchemaInWarehouse, err := repo.FetchSchema(sh.Warehouse)
 	if err != nil {
-		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching schema from warehouse: %w", err)
+		return fmt.Errorf("updating schema: %w", err)
 	}
 
-	sh.skipDeprecatedColumns(schemaInWarehouse)
-	sh.skipDeprecatedColumns(unrecognizedSchemaInWarehouse)
+	sh.localSchema = updatedSchema
 
-	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
+	return nil
+}
+
+func (sh *Schema) FetchSchemaFromLocal() error {
+	localSchema, err := sh.GetLocalSchema()
+	if err != nil {
+		return fmt.Errorf("fetching schema from local: %w", err)
+	}
+
+	sh.localSchema = localSchema
+
+	return nil
+}
+
+func (sh *Schema) FetchSchemaFromWarehouse(repo fetchSchemaRepo) error {
+	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema(sh.warehouse)
+	if err != nil {
+		return fmt.Errorf("fetching schema from warehouse: %w", err)
+	}
+
+	sh.skipDeprecatedColumns(warehouseSchema)
+	sh.skipDeprecatedColumns(unrecognizedWarehouseSchema)
+
+	sh.schemaInWarehouse = warehouseSchema
+	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema
+
+	return nil
 }
 
 // skipDeprecatedColumns skips deprecated columns from the schema
-func (sh *Handler) skipDeprecatedColumns(schema model.Schema) {
+func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
-			if warehouseutils.DeprecatedColumnsRegex.MatchString(columnName) {
-				sh.Logger.Debugw("skipping deprecated column",
-					logfield.SourceID, sh.Warehouse.Source.ID,
-					logfield.DestinationID, sh.Warehouse.Destination.ID,
-					logfield.DestinationType, sh.Warehouse.Destination.DestinationDefinition.Name,
-					logfield.WorkspaceID, sh.Warehouse.WorkspaceID,
-					logfield.Namespace, sh.Warehouse.Namespace,
+			if deprecatedColumnsRegex.MatchString(columnName) {
+				sh.log.Debugw("skipping deprecated column",
+					logfield.SourceID, sh.warehouse.Source.ID,
+					logfield.DestinationID, sh.warehouse.Destination.ID,
+					logfield.DestinationType, sh.warehouse.Destination.DestinationDefinition.Name,
+					logfield.WorkspaceID, sh.warehouse.WorkspaceID,
+					logfield.Namespace, sh.warehouse.Namespace,
 					logfield.TableName, tableName,
 					logfield.ColumnName, columnName,
 				)
@@ -174,12 +154,12 @@ func (sh *Handler) skipDeprecatedColumns(schema model.Schema) {
 	}
 }
 
-// ConsolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
-func (sh *Handler) ConsolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles []*model.StagingFile) (model.Schema, error) {
+// consolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
+func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles []*model.StagingFile) (model.Schema, error) {
 	consolidatedSchema := model.Schema{}
-	batches := lo.Chunk(stagingFiles, sh.StagingFilesSchemaPaginationSize)
+	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
 	for _, batch := range batches {
-		schemas, err := sh.StagingRepo.GetSchemasByIDs(
+		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(
 			context.TODO(),
 			repo.StagingFileIDs(batch),
 		)
@@ -189,10 +169,10 @@ func (sh *Handler) ConsolidateStagingFilesSchemaUsingWarehouseSchema(stagingFile
 
 		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
 	}
-	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.LocalSchema)
-	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.Warehouse.Type)
-	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.Warehouse.Type)
-	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.IDResolutionEnabled, sh.Warehouse.Type)
+	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.localSchema)
+	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type)
+	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
+	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
 	return consolidatedSchema, nil
 }
 
@@ -219,8 +199,8 @@ func consolidateStagingSchemas(consolidatedSchema model.Schema, schemas []model.
 	return consolidatedSchema
 }
 
-// consolidateWarehouseSchema overwrites the consolidatedSchema with the warehouseSchema
-// Prefer the type of the warehouseSchema, If the type is text, prefer text
+// consolidateWarehouseSchema overwrites the consolidatedSchema with the schemaInWarehouse
+// Prefer the type of the schemaInWarehouse, If the type is text, prefer text
 func consolidateWarehouseSchema(consolidatedSchema, warehouseSchema model.Schema) model.Schema {
 	for tableName, columnMap := range warehouseSchema {
 		if _, ok := consolidatedSchema[tableName]; !ok {
@@ -318,16 +298,20 @@ func enhanceSchemaWithIDResolution(consolidatedSchema model.Schema, isIDResoluti
 	return consolidatedSchema
 }
 
-// HasSchemaChanged compares the localSchema with the schemaInWarehouse and returns true if they are not equal
-func (sh *Handler) HasSchemaChanged(localSchema, schemaInWarehouse model.Schema) bool {
-	if !sh.SkipDeepEqualSchemas {
-		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
+func (sh *Schema) isIDResolutionEnabled() bool {
+	return sh.enableIDResolution && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+}
+
+// HasLocalSchemaChanged compares the localSchema with the schemaInWarehouse and returns true if they are not equal
+func (sh *Schema) HasLocalSchemaChanged() bool {
+	if !sh.skipDeepEqualSchemas {
+		eq := reflect.DeepEqual(sh.localSchema, sh.schemaInWarehouse)
 		return !eq
 	}
 	// Iterating through all tableName in the localSchema
-	for tableName := range localSchema {
-		localColumns := localSchema[tableName]
-		warehouseColumns, whColumnsExist := schemaInWarehouse[tableName]
+	for tableName := range sh.localSchema {
+		localColumns := sh.localSchema[tableName]
+		warehouseColumns, whColumnsExist := sh.schemaInWarehouse[tableName]
 
 		// If warehouse does  not contain the specified table return true.
 		if !whColumnsExist {
@@ -347,36 +331,32 @@ func (sh *Handler) HasSchemaChanged(localSchema, schemaInWarehouse model.Schema)
 	return false
 }
 
-// GetTableSchemaDiff returns the diff between the current schema and the upload schema
-func GetTableSchemaDiff(tableName string, currentSchema, uploadSchema model.Schema) (diff warehouseutils.TableSchemaDiff) {
-	diff = warehouseutils.TableSchemaDiff{
+// GetUploadSchemaDiff returns the diff between the warehouse schema and the upload schema
+func (sh *Schema) GetUploadSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
+	diff := warehouseutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
 		UpdatedSchema:    make(model.TableSchema),
 		AlteredColumnMap: make(model.TableSchema),
 	}
 
-	var (
-		currentTableSchema model.TableSchema
-		ok                 bool
-	)
-
-	if currentTableSchema, ok = currentSchema[tableName]; !ok {
-		if _, ok := uploadSchema[tableName]; !ok {
-			return
+	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
+	if !ok {
+		if _, ok := sh.uploadSchema[tableName]; !ok {
+			return diff
 		}
 		diff.Exists = true
 		diff.TableToBeCreated = true
-		diff.ColumnMap = uploadSchema[tableName]
-		diff.UpdatedSchema = uploadSchema[tableName]
+		diff.ColumnMap = sh.uploadSchema[tableName]
+		diff.UpdatedSchema = sh.uploadSchema[tableName]
 		return diff
 	}
 
-	for columnName, columnType := range currentSchema[tableName] {
+	for columnName, columnType := range currentTableSchema {
 		diff.UpdatedSchema[columnName] = columnType
 	}
 
 	diff.ColumnMap = make(model.TableSchema)
-	for columnName, columnType := range uploadSchema[tableName] {
+	for columnName, columnType := range sh.uploadSchema[tableName] {
 		if _, ok := currentTableSchema[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType
@@ -388,4 +368,47 @@ func GetTableSchemaDiff(tableName string, currentSchema, uploadSchema model.Sche
 		}
 	}
 	return diff
+}
+
+func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
+	var (
+		newColumnVal any
+		err          error
+	)
+
+	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
+		// only stringify if the previous type is non-string/text/json
+		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else {
+			newColumnVal = value
+		}
+	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
+		intVal, ok := value.(int)
+		if !ok {
+			err = ErrIncompatibleSchemaConversion
+		} else {
+			newColumnVal = float64(intVal)
+		}
+	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
+		floatVal, ok := value.(float64)
+		if !ok {
+			err = ErrIncompatibleSchemaConversion
+		} else {
+			newColumnVal = int(floatVal)
+		}
+	} else if existingDataType == model.JSONDataType {
+		var interfaceSliceSample []any
+		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
+			newColumnVal = value
+		} else {
+			newColumnVal = fmt.Sprintf(`"%v"`, value)
+		}
+	} else {
+		err = ErrSchemaConversionNotSupported
+	}
+
+	return newColumnVal, err
 }

@@ -9,7 +9,11 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
-var ErrCancellingStatement = errors.New("[error] pq: canceling statement due to user request")
+var (
+	ErrIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
+	ErrSchemaConversionNotSupported = errors.New("schema conversion not supported")
+	ErrCancellingStatement          = errors.New("[error] pq: canceling statement due to user request")
+)
 
 type InvalidDestinationCredErr struct {
 	Base      error

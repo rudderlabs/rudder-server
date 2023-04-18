@@ -1,4 +1,4 @@
-package schema_test
+package warehouse
 
 import (
 	"context"
@@ -9,11 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -127,140 +123,140 @@ func TestHandleSchemaChange(t *testing.T) {
 			existingDatatype: "boolean",
 			currentDataType:  "int",
 			value:            1,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is float",
 			existingDatatype: "boolean",
 			currentDataType:  "float",
 			value:            1.501,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is string",
 			existingDatatype: "boolean",
 			currentDataType:  "string",
 			value:            "string value",
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is datetime",
 			existingDatatype: "boolean",
 			currentDataType:  "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is json",
 			existingDatatype: "boolean",
 			currentDataType:  "json",
 			value:            `{"json":true}`,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is int, new datatype is boolean",
 			existingDatatype: "int",
 			currentDataType:  "boolean",
 			value:            false,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is int, new datatype is string",
 			existingDatatype: "int",
 			currentDataType:  "string",
 			value:            "string value",
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is int, new datatype is datetime",
 			existingDatatype: "int",
 			currentDataType:  "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is int, new datatype is json",
 			existingDatatype: "int",
 			currentDataType:  "json",
 			value:            `{"json":true}`,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is int, new datatype is float",
 			existingDatatype: "int",
 			currentDataType:  "float",
 			value:            1,
-			convError:        schema.ErrIncompatibleSchemaConversion,
+			convError:        errIncompatibleSchemaConversion,
 		},
 		{
 			name:             "existing datatype is float, new datatype is boolean",
 			existingDatatype: "float",
 			currentDataType:  "boolean",
 			value:            false,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is float, new datatype is int",
 			existingDatatype: "float",
 			currentDataType:  "int",
 			value:            1.0,
-			convError:        schema.ErrIncompatibleSchemaConversion,
+			convError:        errIncompatibleSchemaConversion,
 		},
 		{
 			name:             "existing datatype is float, new datatype is string",
 			existingDatatype: "float",
 			currentDataType:  "string",
 			value:            "string value",
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is float, new datatype is datetime",
 			existingDatatype: "float",
 			currentDataType:  "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is float, new datatype is json",
 			existingDatatype: "float",
 			currentDataType:  "json",
 			value:            `{"json":true}`,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is boolean",
 			existingDatatype: "datetime",
 			currentDataType:  "boolean",
 			value:            false,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is string",
 			existingDatatype: "datetime",
 			currentDataType:  "string",
 			value:            "string value",
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is int",
 			existingDatatype: "datetime",
 			currentDataType:  "int",
 			value:            1,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is float",
 			existingDatatype: "datetime",
 			currentDataType:  "float",
 			value:            1.501,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is json",
 			existingDatatype: "datetime",
 			currentDataType:  "json",
 			value:            `{"json":true}`,
-			convError:        schema.ErrSchemaConversionNotSupported,
+			convError:        errSchemaConversionNotSupported,
 		},
 	}
 	for _, ip := range inputs {
@@ -269,7 +265,7 @@ func TestHandleSchemaChange(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			newColumnVal, convError := schema.HandleSchemaChange(
+			newColumnVal, convError := HandleSchemaChange(
 				model.SchemaType(tc.existingDatatype),
 				model.SchemaType(tc.currentDataType),
 				tc.value,
@@ -320,7 +316,7 @@ func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64) ([]model
 	return m.schemas, m.err
 }
 
-func TestHandler_LocalSchema(t *testing.T) {
+func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 	const (
 		sourceID      = "test_source"
 		destID        = "test_dest"
@@ -388,8 +384,8 @@ func TestHandler_LocalSchema(t *testing.T) {
 				schemaMap: map[string]model.WHSchema{},
 			}
 
-			handler := schema.Handler{
-				Warehouse: model.Warehouse{
+			sch := Schema{
+				warehouse: model.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,
 					},
@@ -399,18 +395,18 @@ func TestHandler_LocalSchema(t *testing.T) {
 					Namespace: namespace,
 					Type:      warehouseType,
 				},
-				WhSchemaRepo: mockSchemaRepo,
+				schemaRepo: mockSchemaRepo,
 			}
 
-			err := handler.UpdateLocalSchema(uploadID, tc.mockSchema.Schema)
+			err := sch.updateLocalSchema(uploadID, tc.mockSchema.Schema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tc.wantError.Error())
 			}
 
-			localSchema, err := handler.GetLocalSchema()
-			require.Equal(t, tc.wantSchema, localSchema)
+			err = sch.FetchSchemaFromLocal()
+			require.Equal(t, tc.wantSchema, sch.localSchema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 			} else {
@@ -420,8 +416,8 @@ func TestHandler_LocalSchema(t *testing.T) {
 	}
 }
 
-func TestHandler_FetchSchemaFromWarehouse(t *testing.T) {
-	warehouse.Init4()
+func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
+	Init4()
 
 	testCases := []struct {
 		name           string
@@ -436,11 +432,10 @@ func TestHandler_FetchSchemaFromWarehouse(t *testing.T) {
 			expectedSchema: model.Schema{},
 		},
 		{
-			name:           "error in fetching schema from warehouse",
-			mockSchema:     model.Schema{},
-			mockErr:        errors.New("test error"),
-			expectedSchema: model.Schema{},
-			wantError:      errors.New("fetching schema from warehouse: test error"),
+			name:       "error in fetching schema from warehouse",
+			mockSchema: model.Schema{},
+			mockErr:    errors.New("test error"),
+			wantError:  errors.New("fetching schema from warehouse: test error"),
 		},
 		{
 			name: "no deprecated columns",
@@ -554,8 +549,8 @@ func TestHandler_FetchSchemaFromWarehouse(t *testing.T) {
 				err:                           tc.mockErr,
 			}
 
-			sh := &schema.Handler{
-				Warehouse: model.Warehouse{
+			sh := &Schema{
+				warehouse: model.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,
 					},
@@ -568,22 +563,22 @@ func TestHandler_FetchSchemaFromWarehouse(t *testing.T) {
 					WorkspaceID: workspaceID,
 					Namespace:   namespace,
 				},
-				Logger: logger.NOP,
+				log: logger.NOP,
 			}
 
-			schemaInWarehouse, unrecognizedSchemaInWarehouse, err := sh.FetchSchemaFromWarehouse(&fechSchemaRepo)
+			err := sh.FetchSchemaFromWarehouse(&fechSchemaRepo)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectedSchema, schemaInWarehouse)
-			require.Equal(t, tc.expectedSchema, unrecognizedSchemaInWarehouse)
+			require.Equal(t, tc.expectedSchema, sh.schemaInWarehouse)
+			require.Equal(t, tc.expectedSchema, sh.unrecognizedSchemaInWarehouse)
 		})
 	}
 }
 
-func TestGetTableSchemaDiff(t *testing.T) {
+func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 	testCases := []struct {
 		name          string
 		tableName     string
@@ -708,13 +703,17 @@ func TestGetTableSchemaDiff(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			diff := schema.GetTableSchemaDiff(tc.tableName, tc.currentSchema, tc.uploadSchema)
+			sch := Schema{
+				schemaInWarehouse: tc.currentSchema,
+				uploadSchema:      tc.uploadSchema,
+			}
+			diff := sch.GetUploadSchemaDiff(tc.tableName)
 			require.EqualValues(t, diff, tc.expected)
 		})
 	}
 }
 
-func TestHandler_HasSchemaChanged(t *testing.T) {
+func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 	testCases := []struct {
 		name              string
 		localSchema       model.Schema
@@ -858,23 +857,26 @@ func TestHandler_HasSchemaChanged(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			handler := &schema.Handler{
-				Warehouse: model.Warehouse{
+			sch := &Schema{
+				warehouse: model.Warehouse{
 					Type: warehouseutils.SNOWFLAKE,
 				},
-				SkipDeepEqualSchemas: tc.skipDeepEquals,
+				skipDeepEqualSchemas: tc.skipDeepEquals,
+				localSchema:          tc.localSchema,
+				schemaInWarehouse:    tc.schemaInWarehouse,
 			}
-			hasSchemaChanged := handler.HasSchemaChanged(tc.localSchema, tc.schemaInWarehouse)
-			require.Equal(t, tc.expected, hasSchemaChanged)
+			require.Equal(t, tc.expected, sch.HasLocalSchemaChanged())
 		})
 	}
 }
 
-func TestHandler_ConsolidateStagingFilesSchemaUsingWarehouseSchema(t *testing.T) {
+func TestSchema_ConsolidateStagingFilesSchemaUsingWarehouseSchema(t *testing.T) {
+	warehouseutils.Init()
+
 	const (
 		sourceID    = "test-source-id"
 		destID      = "test-dest-id"
-		destType    = "RS"
+		destType    = "BQ"
 		workspaceID = "test-workspace-id"
 		namespace   = "test-namespace"
 	)
@@ -1697,8 +1699,8 @@ func TestHandler_ConsolidateStagingFilesSchemaUsingWarehouseSchema(t *testing.T)
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			sh := &schema.Handler{
-				Warehouse: model.Warehouse{
+			sh := &Schema{
+				warehouse: model.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,
 					},
@@ -1712,21 +1714,17 @@ func TestHandler_ConsolidateStagingFilesSchemaUsingWarehouseSchema(t *testing.T)
 					Namespace:   namespace,
 					Type:        tc.warehouseType,
 				},
-				Logger: logger.NOP,
-				StagingRepo: &mockStagingFileRepo{
+				log: logger.NOP,
+				stagingFileRepo: &mockStagingFileRepo{
 					schemas: tc.mockSchemas,
 					err:     tc.mockErr,
 				},
-				IDResolutionEnabled: tc.idResolutionEnabled,
-				LocalSchema:         tc.warehouseSchema,
+				enableIDResolution:               tc.idResolutionEnabled,
+				localSchema:                      tc.warehouseSchema,
+				stagingFilesSchemaPaginationSize: 2,
 			}
 
-			conf := config.New()
-			conf.Set("Warehouse.stagingFilesSchemaPaginationSize", "2")
-
-			schema.WithConfig(sh, conf)
-
-			consolidatedSchema, err := sh.ConsolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles)
+			consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {

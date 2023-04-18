@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -527,7 +525,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, convError := schema.HandleSchemaChange(
+				newColumnVal, convError := HandleSchemaChange(
 					model.SchemaType(dataTypeInSchema),
 					model.SchemaType(columnType),
 					columnVal,
