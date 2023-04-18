@@ -858,7 +858,7 @@ func (jd *HandleT) init() {
 	jd.workersAndAuxSetup()
 
 	if jd.insertCountNotifier {
-		jd.dbHandle.ExecContext(
+		_ = lo.Must(jd.dbHandle.ExecContext(
 			context.Background(),
 			`CREATE OR REPLACE FUNCTION job_insert_count_notify()
 				RETURNS trigger AS
@@ -888,7 +888,7 @@ func (jd *HandleT) init() {
 						$$
 				  LANGUAGE plpgsql;
 				`,
-		)
+		))
 	}
 
 	err := jd.WithTx(func(tx *Tx) error {
@@ -2574,17 +2574,15 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 	}, true, nil
 }
 
-func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates map[string]map[string]map[ParameterFilterT]struct{}, err error) {
+func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (err error) {
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	defer jd.getTimerStat(
 		"update_job_status_ds_time",
 		&tags,
 	).RecordDuration()()
-	// workspace -> state -> params
-	updatedStates = map[string]map[string]map[ParameterFilterT]struct{}{}
 	store := func() error {
 		stmt, err := tx.PrepareContext(ctx, pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
 			"retry_time", "error_code", "error_response", "parameters"))
@@ -2592,20 +2590,6 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSet
 			return err
 		}
 		for _, status := range statusList {
-			//  Handle the case when google analytics returns gif in response
-			if _, ok := updatedStates[status.WorkspaceId]; !ok {
-				updatedStates[status.WorkspaceId] = make(map[string]map[ParameterFilterT]struct{})
-			}
-			if _, ok := updatedStates[status.WorkspaceId][status.JobState]; !ok {
-				updatedStates[status.WorkspaceId][status.JobState] = make(map[ParameterFilterT]struct{})
-			}
-			if status.JobParameters != nil {
-				for _, param := range cacheParameterFilters {
-					v := gjson.GetBytes(status.JobParameters, param).Str
-					updatedStates[status.WorkspaceId][status.JobState][ParameterFilterT{Name: param, Value: v}] = struct{}{}
-				}
-			}
-
 			if !utf8.ValidString(string(status.ErrorResponse)) {
 				status.ErrorResponse = []byte(`{}`)
 			}
@@ -2645,34 +2629,28 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSet
 			err = store()
 		}
 	}
+
 	tx.AddSuccessListener(func() {
 		for _, status := range statusList {
+			cs := cacheSubject{
+				tablePrefix:   jd.tablePrefix,
+				dsIndex:       ds.Index,
+				workspaceID:   status.Job.WorkspaceId,
+				customVal:     status.Job.CustomVal,
+				sourceID:      status.Job.SourceID,
+				destinationID: status.Job.DestinationID,
+				jobState:      status.JobState,
+			}
 			increaseCount(
-				cacheSubject{
-					tablePrefix:   jd.tablePrefix,
-					dsIndex:       ds.Index,
-					workspaceID:   status.Job.WorkspaceId,
-					customVal:     status.Job.CustomVal,
-					sourceID:      status.Job.SourceID,
-					destinationID: status.Job.DestinationID,
-					jobState:      status.JobState,
-				},
+				cs,
 				1,
 			)
-			lastJobState := status.Job.LastJobStatus.JobState
-			if lastJobState == "" {
-				lastJobState = NotProcessed.State
+			cs.jobState = status.Job.LastJobStatus.JobState
+			if cs.jobState == "" {
+				cs.jobState = NotProcessed.State
 			}
 			decreaseCount(
-				cacheSubject{
-					tablePrefix:   jd.tablePrefix,
-					dsIndex:       ds.Index,
-					workspaceID:   status.Job.WorkspaceId,
-					customVal:     status.Job.CustomVal,
-					sourceID:      status.Job.SourceID,
-					destinationID: status.Job.DestinationID,
-					jobState:      lastJobState,
-				},
+				cs,
 				1,
 			)
 		}
@@ -3050,33 +3028,10 @@ func (jd *HandleT) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, stat
 	).RecordDuration()()
 
 	// do update
-	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, statusList, tags)
-	if err != nil {
+	if err := jd.doUpdateJobStatusInTx(ctx, tx, statusList, tags); err != nil {
 		jd.logger.Infof("[[ %s ]]: Error occurred while updating job statuses. Returning err, %v", jd.tablePrefix, err)
 		return err
 	}
-
-	tx.AddSuccessListener(func() {
-		// clear cache
-		for ds, dsKeys := range updatedStatesByDS {
-			if len(dsKeys) == 0 { // if no keys, we need to invalidate all keys
-				jd.noResultsCache.Invalidate(ds.Index, "", nil, nil, nil)
-			}
-			for workspace, wsKeys := range dsKeys {
-				if len(wsKeys) == 0 { // if no keys, we need to invalidate all keys
-					jd.noResultsCache.Invalidate(ds.Index, workspace, nil, nil, nil)
-				}
-				for state, parametersMap := range wsKeys {
-					stateList := []string{state}
-					if len(parametersMap) == 0 { // if no keys, we need to invalidate all keys
-						jd.noResultsCache.Invalidate(ds.Index, workspace, customValFilters, stateList, nil)
-					}
-					parameterFilters := lo.Keys(parametersMap)
-					jd.noResultsCache.Invalidate(ds.Index, workspace, customValFilters, stateList, parameterFilters)
-				}
-			}
-		}
-	})
 
 	return nil
 }
@@ -3086,9 +3041,9 @@ doUpdateJobStatusInTx updates the status of a batch of jobs
 customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]map[string]map[string]map[ParameterFilterT]struct{}, err error) {
+func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList []*JobStatusT, tags statTags) error {
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	// First we sort by JobID
@@ -3097,9 +3052,11 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 	})
 
 	// We scan through the list of jobs and map them to DS
-	var lastPos int
+	var (
+		lastPos int
+		err     error
+	)
 	dsRangeList := jd.getDSRangeList()
-	updatedStatesByDS = make(map[dataSetT]map[string]map[string]map[ParameterFilterT]struct{})
 	for _, ds := range dsRangeList {
 		minID := ds.minJobID
 		maxID := ds.maxJobID
@@ -3115,14 +3072,9 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 					jd.logger.Debug("Range:", ds, statusList[lastPos].Job.JobID,
 						statusList[i-1].Job.JobID, lastPos, i-1)
 				}
-				var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
-				updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
+				err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 				if err != nil {
-					return
-				}
-				// do not set for ds without any new state written as it would clear emptyCache
-				if len(updatedStates) > 0 {
-					updatedStatesByDS[ds.ds] = updatedStates
+					return err
 				}
 				lastPos = i
 				break
@@ -3131,14 +3083,9 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 		// Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			jd.logger.Debug("Range:", ds, statusList[lastPos].Job.JobID, statusList[i-1].Job.JobID, lastPos, i)
-			var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
-			updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
+			err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 			if err != nil {
-				return
-			}
-			// do not set for ds without any new state written as it would clear emptyCache
-			if len(updatedStates) > 0 {
-				updatedStatesByDS[ds.ds] = updatedStates
+				return err
 			}
 			lastPos = i
 			break
@@ -3152,17 +3099,12 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		// Update status in the last element
 		jd.logger.Debug("RangeEnd ", statusList[lastPos].Job.JobID, lastPos, len(statusList))
-		var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
-		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
+		err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {
-			return
-		}
-		// do not set for ds without any new state written as it would clear emptyCache
-		if len(updatedStates) > 0 {
-			updatedStatesByDS[dsList[len(dsList)-1]] = updatedStates
+			return err
 		}
 	}
-	return
+	return nil
 }
 
 // Store stores new jobs to the jobsdb.
