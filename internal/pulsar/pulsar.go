@@ -25,9 +25,7 @@ type ProducerConf struct {
 }
 
 type Producer struct {
-	client   pulsar.Client
-	producer pulsar.Producer
-	log      logger.Logger
+	pulsar.Producer
 }
 
 type ProducerAdapter interface {
@@ -38,25 +36,34 @@ type ProducerAdapter interface {
 }
 
 type Client struct {
-	client pulsar.Client
+	pulsar.Client
 }
 
-func New(config *config.Config) (ProducerAdapter, error) {
+func NewClient(config *config.Config) (Client, error) {
 	log := logger.NewLogger().Child("pulsar")
 	client, err := newPulsarClient(getClientConf(config), log)
 	if err != nil {
-		return nil, fmt.Errorf("error creating pulsar client : %v", err)
+		return Client{}, fmt.Errorf("error creating pulsar client : %v", err)
 	}
-	producer, err := newProducer(client, getProducerConf(config), log)
-	if err != nil {
-		return nil, fmt.Errorf("error creating pulsar producer : %v", err)
-	}
-	return producer, nil
+	return client, nil
 }
 
-func newPulsarClient(conf ClientConf, log logger.Logger) (*Client, error) {
+func (c *Client) NewProducer(config *config.Config) (ProducerAdapter, error) {
+	conf := getProducerConf(config)
+	producer, err := c.CreateProducer(pulsar.ProducerOptions{
+		Topic: conf.topic,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Producer{
+		producer,
+	}, nil
+}
+
+func newPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
 	if conf.url == "" {
-		return nil, errors.New("pulsar url is empty")
+		return Client{}, errors.New("pulsar url is empty")
 	}
 	client, err := pulsar.NewClient(pulsar.ClientOptions{
 		URL:               conf.url,
@@ -65,30 +72,16 @@ func newPulsarClient(conf ClientConf, log logger.Logger) (*Client, error) {
 		Logger:            &pulsarLogAdapter{Logger: log},
 	})
 	if err != nil {
-		return nil, err
+		return Client{}, err
 	}
-	return &Client{client: client}, nil
-}
-
-func newProducer(client *Client, conf ProducerConf, log logger.Logger) (*Producer, error) {
-	producer, err := client.client.CreateProducer(pulsar.ProducerOptions{
-		Topic: conf.topic,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &Producer{
-		producer: producer,
-		log:      log,
-		client:   client.client,
-	}, nil
+	return Client{client}, nil
 }
 
 func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg []byte) error {
 	if p == nil {
 		return errors.New("producer is nil")
 	}
-	_, err := p.producer.Send(ctx, &pulsar.ProducerMessage{
+	_, err := p.Send(ctx, &pulsar.ProducerMessage{
 		Key:         key,
 		OrderingKey: orderingKey,
 		Payload:     msg,
@@ -97,29 +90,14 @@ func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg
 }
 
 func (p *Producer) SendMessageAsync(ctx context.Context, key, orderingKey string, msg []byte, statusfunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error)) {
-	if p.producer == nil {
+	if p == nil {
 		return
 	}
-	p.producer.SendAsync(ctx, &pulsar.ProducerMessage{
+	p.SendAsync(ctx, &pulsar.ProducerMessage{
 		Payload:     msg,
 		Key:         key,
 		OrderingKey: orderingKey,
 	}, statusfunc)
-}
-
-func (p *Producer) Close() {
-	if p == nil {
-		return
-	}
-	p.producer.Close()
-	p.client.Close()
-}
-
-func (p *Producer) Flush() error {
-	if p == nil {
-		return nil
-	}
-	return p.producer.Flush()
 }
 
 func getProducerConf(config *config.Config) ProducerConf {

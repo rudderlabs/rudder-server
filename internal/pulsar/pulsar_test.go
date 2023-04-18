@@ -30,12 +30,13 @@ func Test_Pulsar(t *testing.T) {
 	client, err := newPulsarClient(getClientConf(conf), logger.NewLogger())
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	producer, err := newProducer(client, getProducerConf(conf), logger.NewLogger())
+	defer client.Close()
+	producer, err := client.NewProducer(conf)
 	require.NoErrorf(t, err, "got error %+v", err)
 	require.NotNil(t, producer)
 	defer producer.Close()
 
-	consumer, err := client.client.Subscribe(pulsar.ConsumerOptions{
+	consumer, err := client.Subscribe(pulsar.ConsumerOptions{
 		Topic:            topic,
 		SubscriptionName: subscriptionName,
 	})
@@ -71,10 +72,14 @@ func Test_PulsarInterface(t *testing.T) {
 	conf := config.New()
 	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
 	conf.Set("Pulsar.Producer.topic", topic)
-	producer, err := New(conf)
+	client, err := NewClient(conf)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	producer, err := client.NewProducer(conf)
 	require.NoError(t, err)
 	require.NotNil(t, producer)
-	defer producer.Close()
+	producer.Close()
+	client.Close()
 }
 
 // PulsarResource returns a pulsar container resource

@@ -14,54 +14,50 @@ import (
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type JobsForwarder struct {
 	BaseForwarder
-	pulsarProducer   pulsar.ProducerAdapter
-	transientSources transientsource.Service
-	backendConfig    backendconfig.BackendConfig
-	transformer      schematransformer.Transformer
-	retryAttempts    int
-	key              string
+	pulsarProducer pulsar.ProducerAdapter
+	backendConfig  backendconfig.BackendConfig
+	transformer    schematransformer.Transformer
+	retryAttempts  int
+	key            string
 }
 
-func NewJobsForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, transientSources transientsource.Service, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
-	baseForwarder := BaseForwarder{}
-	baseForwarder.LoadMetaData(ctx, g, schemaDB, log, config)
+func NewJobsForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
 	forwarder := JobsForwarder{
-		transientSources: transientSources,
-		BaseForwarder:    baseForwarder,
-		retryAttempts:    config.GetInt("JobsForwarder.retryAttempts", 3),
-		key:              config.GetString("JobsForwarder.key", "event-schema"),
+		retryAttempts: config.GetInt("JobsForwarder.retryAttempts", 3),
+		key:           config.GetString("JobsForwarder.key", "event-schema"),
 	}
-	client, err := pulsar.New(config)
+	forwarder.LoadMetaData(ctx, g, schemaDB, log, config)
+	producer, err := client.NewProducer(config)
 	if err != nil {
 		return nil, err
 	}
-	forwarder.pulsarProducer = client
+	forwarder.pulsarProducer = producer
 	forwarder.backendConfig = backendConfig
-	forwarder.transformer = schematransformer.New(ctx, g, backendConfig, transientSources, config)
-	forwarder.transformer.Setup()
+	forwarder.transformer = schematransformer.New(ctx, g, backendConfig, config)
 	return &forwarder, nil
 }
 
 func (jf *JobsForwarder) Start() {
+	var sleepTime time.Duration
+	jf.transformer.Start()
 	jf.g.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
 			case <-jf.ctx.Done():
 				return nil
-			default:
+			case <-time.After(sleepTime):
 				jobs, limitReached, err := jf.GetJobs(jf.ctx)
 				if err != nil {
 					return err
 				}
 				filteredJobs, statusList := jf.filterJobs(jobs)
 				for _, job := range filteredJobs {
-					transformedBytes, err := jf.transformer.Transform(job)
+					transformedBytes, orderingKey, err := jf.transformer.Transform(job)
 					if err != nil {
 						statusList = append(statusList, &jobsdb.JobStatusT{
 							JobID:         job.JobID,
@@ -73,6 +69,7 @@ func (jf *JobsForwarder) Start() {
 							Parameters:    []byte{},
 							ErrorResponse: json.RawMessage(err.Error()),
 						})
+						continue
 					}
 					statusFunc := func(_ pulsarType.MessageID, _ *pulsarType.ProducerMessage, err error) {
 						if err != nil {
@@ -95,23 +92,39 @@ func (jf *JobsForwarder) Start() {
 							})
 						}
 					}
-					jf.pulsarProducer.SendMessageAsync(jf.ctx, jf.key, "", transformedBytes, statusFunc)
-					err = jf.pulsarProducer.Flush()
+					// Temporary to make it work
+					eventPayload, err := transformedBytes.MustMarshal()
 					if err != nil {
-						return err
+						statusList = append(statusList, &jobsdb.JobStatusT{
+							JobID:         job.JobID,
+							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+							JobState:      jobsdb.Failed.State,
+							ExecTime:      time.Now(),
+							RetryTime:     time.Now(),
+							ErrorCode:     "500",
+							Parameters:    []byte{},
+							ErrorResponse: json.RawMessage(err.Error()),
+						})
+						continue
 					}
-					err = jf.MarkJobStatuses(jf.ctx, statusList)
-					if err != nil {
-						return err
-					}
+					jf.pulsarProducer.SendMessageAsync(jf.ctx, orderingKey, orderingKey, eventPayload, statusFunc)
 				}
-				time.Sleep(jf.GetSleepTime(limitReached))
+				err = jf.pulsarProducer.Flush()
+				if err != nil {
+					return err
+				}
+				err = jf.MarkJobStatuses(jf.ctx, statusList)
+				if err != nil {
+					return err
+				}
+				sleepTime = jf.GetSleepTime(limitReached)
 			}
 		}
 	}))
 }
 
 func (jf *JobsForwarder) Stop() {
+	jf.transformer.Stop()
 	jf.pulsarProducer.Close()
 }
 

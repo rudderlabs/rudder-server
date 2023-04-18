@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	jobs_forwarder "github.com/rudderlabs/rudder-server/jobs-forwarder"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -197,11 +198,24 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
-	jobsForwarder, err := jobs_forwarder.Setup(ctx, g, schemasDB, transientSources, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"))
-	if err != nil {
-		return err
+	config := config.New()
+	var jobsForwarder jobs_forwarder.Forwarder
+	if config.GetBool("JobsForwarder.enabled", false) {
+		client, err := pulsar.NewClient(config)
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(ctx, g, schemasDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config)
+		if err != nil {
+			return err
+		}
+	} else {
+		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(ctx, g, schemasDB, logger.NewLogger().Child("jobs_forwarder"), config)
+		if err != nil {
+			return err
+		}
 	}
-
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
 		return err

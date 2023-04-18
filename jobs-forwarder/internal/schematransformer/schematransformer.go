@@ -14,28 +14,27 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 )
 
 //go:generate mockgen -destination=../../../mocks/schematransformer/mock_schematransformer.go -package=mock_schematransformer "github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer" Transformer
 
 type Transformer interface {
-	Setup()
-	Transform(job *jobsdb.JobT) ([]byte, error)
+	Start()
+	Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error)
+	Stop()
 }
 
-func New(ctx context.Context, g *errgroup.Group, backendConfig backendconfig.BackendConfig, transientSources transientsource.Service, config *config.Config) Transformer {
+func New(ctx context.Context, g *errgroup.Group, backendConfig backendconfig.BackendConfig, config *config.Config) Transformer {
 	return &SchemaTransformer{
 		ctx:                        ctx,
 		g:                          g,
 		backendConfig:              backendConfig,
-		transientSources:           transientSources,
 		config:                     config,
 		shouldCaptureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
 	}
 }
 
-func (st *SchemaTransformer) Setup() {
+func (st *SchemaTransformer) Start() {
 	st.g.Go(func() error {
 		st.backendConfigSubscriber(st.ctx)
 		return nil
@@ -45,22 +44,21 @@ func (st *SchemaTransformer) Setup() {
 	}
 }
 
-func (st *SchemaTransformer) Transform(job *jobsdb.JobT) ([]byte, error) {
+func (st *SchemaTransformer) Stop() {
+}
+
+func (st *SchemaTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {
 	var eventPayload EventPayload
 	err := json.Unmarshal(job.EventPayload, &eventPayload)
 	if err != nil {
-		return []byte{}, err
+		return &proto.EventSchemaMessage{}, "", err
 	}
 	schemaKey := st.getSchemaKeyFromJob(eventPayload)
 	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload.Event, job.WorkspaceId, job.CreatedAt)
 	if err != nil {
-		return []byte{}, err
+		return &proto.EventSchemaMessage{}, "", err
 	}
-	result, err := schemaMessage.MustMarshal()
-	if err != nil {
-		return []byte{}, err
-	}
-	return result, nil
+	return schemaMessage, eventPayload.WriteKey, nil
 }
 
 func (st *SchemaTransformer) getSchemaKeyFromJob(eventPayload EventPayload) *proto.EventSchemaKey {

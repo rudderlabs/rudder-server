@@ -14,10 +14,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/testdata"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +58,9 @@ func Test_JobsForwarder(t *testing.T) {
 			return ch
 		})
 
-	jf, err := NewJobsForwarder(ctx, g, schemasDB, conf, transientsource.NewEmptyService(), mockBackendConfig, logger.NOP)
+	client, err := pulsar.NewClient(conf)
+	require.NoError(t, err)
+	jf, err := NewJobsForwarder(ctx, g, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, jf)
 	jf.Start()

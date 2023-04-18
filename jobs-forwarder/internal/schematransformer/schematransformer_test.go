@@ -45,7 +45,8 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 			close(ch)
 			return ch
 		})
-	schemaTransformer.Setup()
+	schemaTransformer.Start()
+	defer schemaTransformer.Stop()
 	t.Run("Test getEventType", func(t *testing.T) {
 		require.Equal(t, schemaTransformer.getEventType(testdata.TrackEvent), "track")
 		require.Equal(t, schemaTransformer.getEventType(testdata.IdentifyEvent), "identify")
@@ -94,17 +95,16 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 
 	t.Run("Test Transform", func(t *testing.T) {
 		timeNow := time.Now()
-		eventSchemaMessage, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
+		eventSchemaMessage, writeKey, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
 		require.Nil(t, err)
+		require.Equal(t, writeKey, testdata.WriteKeyEnabled)
 		testSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
-		result, err := proto.UnmarshalEventSchemaMessage(eventSchemaMessage)
-		require.Nil(t, err)
-		require.Equal(t, result.Schema, testSchemaMessage.Schema)
-		require.Equal(t, string(result.Sample), string(testSchemaMessage.Sample))
-		require.Equal(t, result.WorkspaceID, testSchemaMessage.WorkspaceID)
-		require.Equal(t, result.Key, testSchemaMessage.Key)
-		require.Equal(t, result.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
+		require.Equal(t, eventSchemaMessage.Schema, testSchemaMessage.Schema)
+		require.Equal(t, string(eventSchemaMessage.Sample), string(testSchemaMessage.Sample))
+		require.Equal(t, eventSchemaMessage.WorkspaceID, testSchemaMessage.WorkspaceID)
+		require.Equal(t, eventSchemaMessage.Key, testSchemaMessage.Key)
+		require.Equal(t, eventSchemaMessage.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
 	})
 }
 
@@ -113,7 +113,7 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 	g, ctx := errgroup.WithContext(context.Background())
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 	closeChan := make(chan struct{})
-	schemaTransformer := New(ctx, g, mockBackendConfig, transientsource.NewEmptyService(), conf)
+	schemaTransformer := New(ctx, g, mockBackendConfig, conf)
 	require.NotNil(t, schemaTransformer)
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
@@ -123,21 +123,21 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 			defer close(closeChan)
 			return ch
 		})
-	schemaTransformer.Setup()
+	schemaTransformer.Start()
+	defer schemaTransformer.Stop()
 	<-closeChan
 	t.Run("Test Transform", func(t *testing.T) {
 		timeNow := time.Now()
-		eventSchemaMessage, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
+		eventSchemaMessage, writeKey, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
 		require.Nil(t, err)
+		require.Equal(t, writeKey, testdata.WriteKeyEnabled)
 		testSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
-		result, err := proto.UnmarshalEventSchemaMessage(eventSchemaMessage)
-		require.Nil(t, err)
-		require.Equal(t, result.Schema, testSchemaMessage.Schema)
-		require.Equal(t, string(result.Sample), string(testSchemaMessage.Sample))
-		require.Equal(t, result.WorkspaceID, testSchemaMessage.WorkspaceID)
-		require.Equal(t, result.Key, testSchemaMessage.Key)
-		require.Equal(t, result.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
+		require.Equal(t, eventSchemaMessage.Schema, testSchemaMessage.Schema)
+		require.Equal(t, string(eventSchemaMessage.Sample), string(testSchemaMessage.Sample))
+		require.Equal(t, eventSchemaMessage.WorkspaceID, testSchemaMessage.WorkspaceID)
+		require.Equal(t, eventSchemaMessage.Key, testSchemaMessage.Key)
+		require.Equal(t, eventSchemaMessage.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
 	})
 }
 
