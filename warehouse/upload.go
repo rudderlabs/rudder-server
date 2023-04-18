@@ -305,7 +305,7 @@ func (job *UploadJob) syncRemoteSchema() (bool, error) {
 
 		err = job.schemaHandle.updateLocalSchema(job.upload.ID, job.schemaHandle.schemaInWarehouse)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("updating local schema: %w", err)
 		}
 	}
 
