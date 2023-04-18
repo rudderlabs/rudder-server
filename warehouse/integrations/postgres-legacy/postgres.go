@@ -528,7 +528,7 @@ func (pg *Postgres) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 			tb,
 		)
 		pg.logger.Infof("PG: Deleting rows in table in postgres for PG:%s", pg.Warehouse.Destination.ID)
-		pg.logger.Debugf("PG: Executing the statement  %v", sqlStatement)
+		pg.logger.Infof("PG: Executing the statement  %v", sqlStatement)
 		if pg.EnableDeleteByJobs {
 			_, err = pg.DB.Exec(sqlStatement,
 				params.JobRunId,
