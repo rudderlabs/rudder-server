@@ -1557,6 +1557,7 @@ var _ = Describe("Static Function Tests", func() {
 	Context("ConvertToTransformerResponse Tests", func() {
 		It("Should filter out unsupported message types", func() {
 			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"identify"},
