@@ -324,7 +324,7 @@ func (rs *Redshift) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 				params.StartTime,
 			)
 			if err != nil {
-				rs.Logger.Errorf("Error in executing the query %s", err.Error)
+				rs.Logger.Errorf("Error in executing the query %s", err.Error())
 				return err
 			}
 		}
