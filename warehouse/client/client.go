@@ -8,7 +8,6 @@ import (
 	deltalakeclient "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"cloud.google.com/go/bigquery"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -22,7 +21,7 @@ const (
 )
 
 type Client struct {
-	SQL             *sqlmiddleware.DB
+	SQL             *sql.DB
 	BQ              *bigquery.Client
 	DeltalakeClient *deltalakeclient.Client
 	Type            string

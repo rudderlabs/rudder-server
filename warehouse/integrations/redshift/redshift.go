@@ -150,6 +150,7 @@ type Redshift struct {
 	ConnectTimeout time.Duration
 	Logger         logger.Logger
 	stats          stats.Stats
+	SlowQueryThreshold time.Duration
 
 	DedupWindow                   bool
 	DedupWindowInHours            time.Duration
@@ -195,6 +196,7 @@ func WithConfig(h *Redshift, config *config.Config) {
 	h.SkipDedupDestinationIDs = config.GetStringSlice("Warehouse.redshift.skipDedupDestinationIDs", nil)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
 }
 
 // getRSDataType gets datatype for rs which is mapped with RudderStack datatype
@@ -1064,7 +1066,24 @@ func (rs *Redshift) connect() (*sqlmiddleware.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("redshift set query_group error : %v", err)
 	}
-	middleware := sqlmiddleware.New(db)
+	middleware := sqlmiddleware.New(
+			db,
+			sqlmiddleware.WithLogger(rs.Logger),
+			sqlmiddleware.WithKeyAndValues(
+				logfield.SourceID, rs.Warehouse.Source.ID,
+				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, rs.Warehouse.Destination.ID,
+				logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+				logfield.Schema, rs.Namespace,
+			),
+			sqlmiddleware.WithSlowQueryThreshold(rs.SlowQueryThreshold),
+			sqlmiddleware.WithSecretsRegex(map[string]string{
+				"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
+				"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+				"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
+			}),
+	)
 	return middleware, nil
 }
 
@@ -1108,10 +1127,6 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 		}
 	}
 	return delSuccess
-}
-
-func (rs *Redshift) connectToWarehouse() (*sqlmiddleware.DB, error) {
-	return rs.connect()
 }
 
 func (rs *Redshift) CreateSchema() (err error) {
@@ -1350,7 +1365,7 @@ func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
 
-	rs.DB, err = rs.connectToWarehouse()
+	rs.DB, err = rs.connect()
 	return err
 }
 
@@ -1436,7 +1451,7 @@ func (rs *Redshift) Connect(warehouse model.Warehouse) (client.Client, error) {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
 }
 
 func (rs *Redshift) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {

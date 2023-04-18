@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -96,17 +95,12 @@ func TestIntegrationRedshift(t *testing.T) {
 			credentials, err := testhelper.RedshiftCredentials()
 			require.NoError(t, err)
 
-			dsn := url.URL{
-				Scheme: "postgres",
-				User:   url.UserPassword(credentials.Username, credentials.Password),
-				Host:   fmt.Sprintf("%s:%s", credentials.Host, credentials.Port),
-				Path:   credentials.DbName,
-			}
-			params := url.Values{}
-			params.Add("sslmode", "require")
+			dsn := fmt.Sprintf(
+				"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				credentials.Username, credentials.Password, credentials.Host, credentials.Port, credentials.DbName,
+				)
 
-			dsn.RawQuery = params.Encode()
-			db, err := sql.Open("postgres", dsn.String())
+			db, err := sql.Open("postgres", dsn)
 			require.NoError(t, err)
 
 			sqlmiddleware := sqlmiddleware.New(db)
@@ -136,7 +130,7 @@ func TestIntegrationRedshift(t *testing.T) {
 				TaskRunID:             misc.FastUUID().String(),
 				UserID:                testhelper.GetUserId(provider),
 				Client: &client.Client{
-					SQL:  sqlmiddleware,
+					SQL:  sqlmiddleware.DB,
 					Type: client.SQLClient,
 				},
 			}
