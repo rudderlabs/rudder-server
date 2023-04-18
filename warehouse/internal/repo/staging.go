@@ -251,51 +251,28 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 	return *entries[0], err
 }
 
-// GetSchemaByID returns staging file schema field the given ID.
-func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (jsonstd.RawMessage, error) {
-	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = $1`
-
-	row := repo.db.QueryRowContext(ctx, query, ID)
-	if row.Err() != nil {
-		return nil, fmt.Errorf("querying staging files: %w", row.Err())
-	}
-
-	var schema jsonstd.RawMessage
-	err := row.Scan(&schema)
-	if err != nil {
-		return nil, fmt.Errorf("parsing rows: %w", err)
-	}
-
-	return schema, err
-}
-
 // GetSchemasByIDs returns staging file schemas for the given IDs.
 func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
-	var (
-		schemas []model.Schema
-		err     error
-		rows    *sql.Rows
-	)
-
 	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
-	rows, err = repo.db.QueryContext(ctx, query, pq.Array(ids))
+
+	rows, err := repo.db.QueryContext(ctx, query, pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("querying schemas: %w", err)
 	}
-
 	defer func() { _ = rows.Close() }()
+
+	schemas := make([]model.Schema, 0, len(ids))
 
 	for rows.Next() {
 		var (
 			rawSchema jsonstd.RawMessage
 			schema    model.Schema
-			err       error
 		)
 
-		if err = rows.Scan(&rawSchema); err != nil {
+		if err := rows.Scan(&rawSchema); err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
 		}
-		if err = json.Unmarshal(rawSchema, &schema); err != nil {
+		if err := json.Unmarshal(rawSchema, &schema); err != nil {
 			return nil, fmt.Errorf("unmarshal staging schema: %w", err)
 		}
 
@@ -309,7 +286,7 @@ func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]m
 		return nil, fmt.Errorf("not all schemas were found")
 	}
 
-	return schemas, err
+	return schemas, nil
 }
 
 // GetForUploadID returns all the staging files for that uploadID

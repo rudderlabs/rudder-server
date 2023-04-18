@@ -1,5 +1,3 @@
-//go:build !warehouse_integration
-
 package repo_test
 
 import (
@@ -127,11 +125,6 @@ func TestStagingFileRepo(t *testing.T) {
 			expected.UpdatedAt = now
 
 			require.Equal(t, expected.StagingFile, retrieved)
-
-			schema, err := r.GetSchemaByID(ctx, id)
-			require.NoError(t, err)
-
-			require.Equal(t, expected.Schema, schema)
 		})
 	}
 
