@@ -468,7 +468,7 @@ func (destination *DestinationT) AllowEventToDestination(source *SourceT, event 
 		pkgLogger.Errorf("Given event type :%v, cannot be casted to string", eventTypeI)
 		return false
 	}
-	isSupportedMsgType := evaluateSupportedTypes(destination.DestinationDefinition.Config, "supportedMessageTypes", eventType)
+	isSupportedMsgType := true //evaluateSupportedTypes(destination.DestinationDefinition.Config, "supportedMessageTypes", eventType)
 
 	// Default behavior
 	// When something is missing in "supportedConnectionModes" or if "supportedConnectionModes" is not defined
