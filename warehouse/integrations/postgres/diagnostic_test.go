@@ -35,7 +35,6 @@ func (m *mockTxn) Rollback() error {
 func TestDiagnostic_Exec(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
-	postgres.Init()
 
 	var (
 		namespace       = "test_namespace"
@@ -154,7 +153,6 @@ func TestDiagnostic_Exec(t *testing.T) {
 func TestDiagnostic_Execute(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
-	postgres.Init()
 
 	var (
 		namespace       = "test_namespace"

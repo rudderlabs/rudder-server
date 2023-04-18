@@ -29,8 +29,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.Logger
-
 const (
 	host     = "host"
 	dbName   = "database"
@@ -130,7 +128,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 	"jsonb":                    "json",
 }
 
-type Handle struct {
+type Postgres struct {
 	DB                                          *sql.DB
 	Namespace                                   string
 	ObjectStorage                               string
@@ -170,13 +168,13 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewHandle() *Handle {
-	return &Handle{
-		logger: pkgLogger,
+func New() *Postgres {
+	return &Postgres{
+		logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("postgres"),
 	}
 }
 
-func WithConfig(h *Handle, config *config.Config) {
+func WithConfig(h *Postgres, config *config.Config) {
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.postgres.skipComputingUserLatestTraits", false)
 	h.TxnRollbackTimeout = config.GetDuration("Warehouse.postgres.txnRollbackTimeout", 30, time.Second)
 	h.EnableSQLStatementExecutionPlan = config.GetBool("Warehouse.postgres.enableSQLStatementExecutionPlan", false)
@@ -229,11 +227,7 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	return db, nil
 }
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres-legacy")
-}
-
-func (pg *Handle) getConnectionCredentials() Credentials {
+func (pg *Postgres) getConnectionCredentials() Credentials {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
 	creds := Credentials{
 		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
@@ -260,11 +254,11 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*Handle) IsEmpty(_ model.Warehouse) (empty bool, err error) {
+func (*Postgres) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (pg *Handle) DownloadLoadFiles(tableName string) ([]string, error) {
+func (pg *Postgres) DownloadLoadFiles(tableName string) ([]string, error) {
 	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
@@ -323,7 +317,7 @@ func handleRollbackTimeout(tags stats.Tags) {
 	stats.Default.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
 }
 
-func (pg *Handle) runRollbackWithTimeout(f func() error, onTimeout func(tags stats.Tags), d time.Duration, tags stats.Tags) {
+func (pg *Postgres) runRollbackWithTimeout(f func() error, onTimeout func(tags stats.Tags), d time.Duration, tags stats.Tags) {
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
@@ -341,7 +335,7 @@ func (pg *Handle) runRollbackWithTimeout(f func() error, onTimeout func(tags sta
 	}
 }
 
-func (pg *Handle) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (pg *Postgres) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)
 	if err != nil {
@@ -522,7 +516,7 @@ func (pg *Handle) loadTable(tableName string, tableSchemaInUpload model.TableSch
 }
 
 // DeleteBy Need to create a structure with delete parameters instead of simply adding a long list of params
-func (pg *Handle) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+func (pg *Postgres) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pg.logger.Infof("PG: Cleaning up the following tables in postgres for PG:%s : %+v", tableNames, params)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
@@ -551,7 +545,7 @@ func (pg *Handle) DeleteBy(tableNames []string, params warehouseutils.DeleteByPa
 	return nil
 }
 
-func (pg *Handle) loadUserTables() (errorMap map[string]error) {
+func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err := pg.DB.Exec(sqlStatement)
@@ -697,13 +691,13 @@ func (pg *Handle) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (pg *Handle) schemaExists(_ string) (exists bool, err error) {
+func (pg *Postgres) schemaExists(_ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
 	err = pg.DB.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
 
-func (pg *Handle) CreateSchema() (err error) {
+func (pg *Postgres) CreateSchema() (err error) {
 	var schemaExists bool
 	schemaExists, err = pg.schemaExists(pg.Namespace)
 	if err != nil {
@@ -720,7 +714,7 @@ func (pg *Handle) CreateSchema() (err error) {
 	return
 }
 
-func (pg *Handle) dropStagingTable(stagingTableName string) {
+func (pg *Postgres) dropStagingTable(stagingTableName string) {
 	pg.logger.Infof("PG: dropping table %+v\n", stagingTableName)
 	_, err := pg.DB.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
 	if err != nil {
@@ -728,14 +722,14 @@ func (pg *Handle) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (pg *Handle) createTable(name string, columns model.TableSchema) (err error) {
+func (pg *Postgres) createTable(name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pg.logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.DB.Exec(sqlStatement)
 	return
 }
 
-func (pg *Handle) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
+func (pg *Postgres) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)
@@ -747,14 +741,14 @@ func (pg *Handle) CreateTable(tableName string, columnMap model.TableSchema) (er
 	return err
 }
 
-func (pg *Handle) DropTable(tableName string) (err error) {
+func (pg *Postgres) DropTable(tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
 	pg.logger.Infof("PG: Dropping table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.DB.Exec(fmt.Sprintf(sqlStatement, pg.Namespace, tableName))
 	return
 }
 
-func (pg *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (pg *Postgres) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query        string
 		queryBuilder strings.Builder
@@ -786,11 +780,11 @@ func (pg *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.Colu
 	return
 }
 
-func (*Handle) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+func (*Postgres) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (pg *Handle) TestConnection(warehouse model.Warehouse) (err error) {
+func (pg *Postgres) TestConnection(warehouse model.Warehouse) (err error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
 			pg.logger.Error(sslKeyError.Error())
@@ -819,7 +813,7 @@ func (pg *Handle) TestConnection(warehouse model.Warehouse) (err error) {
 	return nil
 }
 
-func (pg *Handle) Setup(
+func (pg *Postgres) Setup(
 	warehouse model.Warehouse,
 	uploader warehouseutils.Uploader,
 ) (err error) {
@@ -832,19 +826,11 @@ func (pg *Handle) Setup(
 	return err
 }
 
-func (pg *Handle) CrashRecover(warehouse model.Warehouse) (err error) {
-	pg.Warehouse = warehouse
-	pg.Namespace = warehouse.Namespace
-	pg.DB, err = Connect(pg.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer pg.DB.Close()
+func (pg *Postgres) CrashRecover() {
 	pg.dropDanglingStagingTables()
-	return
 }
 
-func (pg *Handle) dropDanglingStagingTables() bool {
+func (pg *Postgres) dropDanglingStagingTables() bool {
 	sqlStatement := `
 			SELECT
 			  table_name
@@ -887,7 +873,7 @@ func (pg *Handle) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Handle) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
+func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(pg.getConnectionCredentials())
@@ -950,35 +936,35 @@ func (pg *Handle) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSc
 	return
 }
 
-func (pg *Handle) LoadUserTables() map[string]error {
+func (pg *Postgres) LoadUserTables() map[string]error {
 	return pg.loadUserTables()
 }
 
-func (pg *Handle) LoadTable(tableName string) error {
+func (pg *Postgres) LoadTable(tableName string) error {
 	_, err := pg.loadTable(tableName, pg.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }
 
-func (pg *Handle) Cleanup() {
+func (pg *Postgres) Cleanup() {
 	if pg.DB != nil {
 		pg.dropDanglingStagingTables()
 		pg.DB.Close()
 	}
 }
 
-func (*Handle) LoadIdentityMergeRulesTable() (err error) {
+func (*Postgres) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (*Handle) LoadIdentityMappingsTable() (err error) {
+func (*Postgres) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (*Handle) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*Postgres) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (pg *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+func (pg *Postgres) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
 	var (
 		total        int64
 		err          error
@@ -994,7 +980,7 @@ func (pg *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (i
 	return total, err
 }
 
-func (pg *Handle) Connect(warehouse model.Warehouse) (client.Client, error) {
+func (pg *Postgres) Connect(warehouse model.Warehouse) (client.Client, error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 			pg.logger.Error(err.Error())
@@ -1016,7 +1002,7 @@ func (pg *Handle) Connect(warehouse model.Warehouse) (client.Client, error) {
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *Handle) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (pg *Postgres) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,
@@ -1027,7 +1013,7 @@ func (pg *Handle) LoadTestTable(_, tableName string, payloadMap map[string]inter
 	return
 }
 
-func (pg *Handle) SetConnectionTimeout(timeout time.Duration) {
+func (pg *Postgres) SetConnectionTimeout(timeout time.Duration) {
 	pg.ConnectTimeout = timeout
 }
 
@@ -1049,7 +1035,7 @@ func (q *QueryParams) validate() (err error) {
 // Print execution plan if enableWithQueryPlan is set to true else return result set.
 // Currently, these statements are supported by EXPLAIN
 // Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
-func (pg *Handle) handleExec(e *QueryParams) (err error) {
+func (pg *Postgres) handleExec(e *QueryParams) (err error) {
 	sqlStatement := e.query
 
 	if err = e.validate(); err != nil {
@@ -1092,6 +1078,6 @@ func (pg *Handle) handleExec(e *QueryParams) (err error) {
 	return
 }
 
-func (pq *Handle) ErrorMappings() []model.JobError {
+func (pq *Postgres) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

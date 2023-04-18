@@ -15,7 +15,6 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
-	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -43,6 +42,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -802,7 +802,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
-	commonMetadata.InstanceID = config.GetInstanceID()
+	commonMetadata.InstanceID = misc.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
@@ -1887,7 +1887,7 @@ func (proc *Handle) transformSrcDest(
 		SourceCategory:  eventList[0].Metadata.SourceCategory,
 		WorkspaceID:     workspaceID,
 		Namespace:       config.GetKubeNamespace(),
-		InstanceID:      config.GetInstanceID(),
+		InstanceID:      misc.GetInstanceID(),
 		DestinationID:   destID,
 		DestinationType: destination.DestinationDefinition.Name,
 	}
