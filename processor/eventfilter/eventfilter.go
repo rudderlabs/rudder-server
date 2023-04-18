@@ -1,6 +1,8 @@
 package eventfilter
 
 import (
+	"strings"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -151,6 +153,8 @@ func FilterUsingSupportedConnectionModes(eventFilterParams EventFilterParams) bo
 		// we might need to drop the event
 		return false
 	}
+
+	eventType = strings.TrimSpace(strings.ToLower(eventType))
 
 	/*
 		```

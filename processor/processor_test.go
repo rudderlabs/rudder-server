@@ -1623,6 +1623,7 @@ var _ = Describe("Static Function Tests", func() {
 				Config: map[string]interface{}{
 					"enableServerSideIdentify": false,
 				},
+				IsProcessorEnabled: true, //assuming the mode is cloud/hybrid
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"identify", "track"},
