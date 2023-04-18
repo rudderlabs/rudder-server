@@ -284,7 +284,8 @@ func (bq *BigQuery) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 			DELETE FROM
 				%[1]s
 			WHERE
-				context_sources_job_run_id <> @jobrunid AND
+				context_sources_job_run_id <>
+			@jobrunid AND
 				context_sources_task_run_id <> @taskrunid AND
 				context_source_id = @sourceid AND
 				received_at < @starttime;

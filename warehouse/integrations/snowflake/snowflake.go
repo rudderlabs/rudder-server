@@ -315,7 +315,7 @@ func (sf *Snowflake) DeleteBy(tableNames []string, params warehouseutils.DeleteB
 		)
 
 		sf.Logger.Infof("SF: Deleting rows in table in snowflake for SF:%s", sf.Warehouse.Destination.ID)
-		sf.Logger.Debugf("SF: Executing the sql statement %v", sqlStatement)
+		sf.Logger.Infof("SF: Executing the sql statement %v", sqlStatement)
 
 		if sf.EnableDeleteByJobs {
 			_, err = sf.DB.Exec(sqlStatement)
