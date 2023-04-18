@@ -821,6 +821,8 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
 	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
 
+	commonMetadata.SourceDefinitionType = source.SourceDefinition.Type
+
 	return &commonMetadata
 }
 
@@ -847,6 +849,7 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.DestinationID = destination.ID
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
+	metadata.SourceDefinitionType = commonMetadata.SourceDefinitionType
 	event.Metadata = metadata
 }
 
@@ -1485,18 +1488,18 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					singularEvent,
 					proc.getEnabledDestinations(writeKey, *destType),
 				)
-				// Additional filteration based on connectionMode
-				filteredDestinationList := lo.Filter(enabledDestinationsList, func(destination backendconfig.DestinationT, _ int) bool {
-					return destination.AllowEventToDestination(source, singularEvent)
-					// return true
-				})
+
 				// Adding a singular event multiple times if there are multiple destinations of same type
-				for idx := range filteredDestinationList {
-					destination := &filteredDestinationList[idx]
+				for idx := range enabledDestinationsList {
+					destination := &enabledDestinationsList[idx]
 					shallowEventCopy := transformer.TransformerEventT{}
 					shallowEventCopy.Message = singularEvent
 					shallowEventCopy.Destination = *destination
 					shallowEventCopy.Libraries = workspaceLibraries
+					// just in-case the source-type value is not set
+					if event.Metadata.SourceDefinitionType == "" {
+						event.Metadata.SourceDefinitionType = source.SourceDefinition.Type
+					}
 					shallowEventCopy.Metadata = event.Metadata
 
 					// At the TP flow we are not having destination information, so adding it here.
@@ -2267,7 +2270,26 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					continue
 				}
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !misc.Contains(supportedTypes.values, messageType) {
+				isSupportedMsgType := misc.Contains(supportedTypes.values, messageType)
+				if !isSupportedMsgType {
+					continue
+				}
+
+				// filter events based on "supportedConnectionModes"
+				allow := eventfilter.FilterUsingSupportedConnectionModes(eventfilter.EventFilterParams{
+					Destination: &event.Destination,
+					SrcType:     event.Metadata.SourceDefinitionType,
+					Event:       &event.Message,
+					// Default behavior
+					// When something is missing in "supportedConnectionModes" or if "supportedConnectionModes" is not defined
+					// We would be checking for below things
+					// 1. Check if the event.type value is present in destination.DestinationDefinition.Config["supportedMessageTypes"]
+					// 2. Check if the connectionMode of destination is cloud or hybrid(evaluated through `IsProcessorEnabled`)
+					// Only when 1 & 2 are true, we would allow the event to flow through to server
+					// As when this will be called, we would have already checked if event.type in supportedMessageTypes
+					DefaultBehaviour: event.Destination.IsProcessorEnabled && isSupportedMsgType,
+				})
+				if !allow {
 					continue
 				}
 			}
