@@ -968,14 +968,17 @@ func (jd *HandleT) init() {
 							tablePrefix: jd.tablePrefix,
 							dsIndex:     ds.Index,
 						}
-						var count sql.NullInt64
-						var state sql.NullString
-						var destinationID sql.NullString
+						var (
+							count         sql.NullInt64
+							state         sql.NullString
+							destinationID sql.NullString
+							sourceID      sql.NullString
+						)
 						err := rows.Scan(
 							&count,
 							&row.customVal,
 							&row.workspaceID,
-							&row.sourceID,
+							&sourceID,
 							&destinationID,
 							&state,
 						)
@@ -984,6 +987,9 @@ func (jd *HandleT) init() {
 						}
 						if destinationID.Valid {
 							row.destinationID = destinationID.String
+						}
+						if sourceID.Valid {
+							row.sourceID = sourceID.String
 						}
 						if state.Valid {
 							row.jobState = state.String

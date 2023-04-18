@@ -762,12 +762,14 @@ func TestCacheScenarios(t *testing.T) {
 		js := make([]*JobT, numOfJob)
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
-				EventPayload: []byte(`{"testKey":"testValue"}`),
-				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.New(),
-				CustomVal:    customVal,
-				EventCount:   1,
+				Parameters:    []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				EventPayload:  []byte(`{"testKey":"testValue"}`),
+				UserID:        "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:          uuid.New(),
+				CustomVal:     customVal,
+				EventCount:    1,
+				SourceID:      "sourceID",
+				DestinationID: destinationID,
 			}
 		}
 		return js
@@ -1015,12 +1017,14 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 		js := make([]*JobT, numOfJob)
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
-				EventPayload: []byte(`{"testKey":"testValue"}`),
-				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.New(),
-				CustomVal:    customVal,
-				EventCount:   1,
+				Parameters:    []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				EventPayload:  []byte(`{"testKey":"testValue"}`),
+				UserID:        "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:          uuid.New(),
+				CustomVal:     customVal,
+				EventCount:    1,
+				SourceID:      "sourceID",
+				DestinationID: destinationID,
 			}
 		}
 		return js
@@ -1092,12 +1096,14 @@ func TestDeleteExecuting(t *testing.T) {
 		js := make([]*JobT, numOfJob)
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
-				EventPayload: []byte(`{"testKey":"testValue"}`),
-				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.New(),
-				CustomVal:    customVal,
-				EventCount:   1,
+				Parameters:    []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				EventPayload:  []byte(`{"testKey":"testValue"}`),
+				UserID:        "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:          uuid.New(),
+				CustomVal:     customVal,
+				EventCount:    1,
+				SourceID:      "sourceID",
+				DestinationID: destinationID,
 			}
 		}
 		return js
@@ -1146,12 +1152,14 @@ func TestFailExecuting(t *testing.T) {
 		js := make([]*JobT, numOfJob)
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
-				EventPayload: []byte(`{"testKey":"testValue"}`),
-				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.New(),
-				CustomVal:    customVal,
-				EventCount:   1,
+				Parameters:    []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				EventPayload:  []byte(`{"testKey":"testValue"}`),
+				UserID:        "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:          uuid.New(),
+				CustomVal:     customVal,
+				EventCount:    1,
+				SourceID:      "sourceID",
+				DestinationID: destinationID,
 			}
 		}
 		return js

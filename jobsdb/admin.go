@@ -50,7 +50,7 @@ func (jd *HandleT) deleteJobStatus() {
 				return err
 			}
 			tx.Tx().AddSuccessListener(func() {
-				jd.noResultsCache.InvalidateDataset(ds.Index)
+				deleteExecuting(ds.Index, jd.tablePrefix)
 			})
 		}
 
@@ -111,7 +111,7 @@ func (jd *HandleT) failExecuting() {
 				return err
 			}
 			tx.Tx().AddSuccessListener(func() {
-				jd.noResultsCache.InvalidateDataset(ds.Index)
+				failExecuting(ds.Index, jd.tablePrefix)
 			})
 		}
 		return nil

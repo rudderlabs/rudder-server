@@ -217,3 +217,66 @@ func getLookupSubjects(
 	}
 	return subjects
 }
+
+// for when direct queries are made against the database tables
+// migration/fail executing/ delete executing
+
+func failExecuting(dsIndex, tablePrefix string) {
+	subjectPrefix := tablePrefix + "." + dsIndex
+	subjectSuffix := Executing.State
+	failedCountersMap := make(map[string]int)
+	instance.Range(
+		func(key, value interface{}) bool {
+			if m, ok := key.(subject); ok {
+				if gauge, ok := value.(metric.Gauge); ok {
+					subjectString := string(m)
+					if strings.HasPrefix(subjectString, subjectPrefix) &&
+						strings.HasSuffix(subjectString, subjectSuffix) {
+						preFailCount := gauge.IntValue()
+						failedCountersMap[strings.Replace(
+							subjectString,
+							subjectSuffix,
+							Failed.State,
+							1,
+						)] = preFailCount
+						gauge.Set(0)
+					}
+				}
+			}
+			return true
+		},
+	)
+	for sub, count := range failedCountersMap {
+		instance.MustGetGauge(subject(sub)).Add(float64(count))
+	}
+}
+
+func deleteExecuting(dsIndex, tablePrefix string) {
+	subjectPrefix := tablePrefix + "." + dsIndex
+	subjectSuffix := Executing.State
+	executingCountsMap := make(map[string]int)
+	instance.Range(
+		func(key, value interface{}) bool {
+			if m, ok := key.(subject); ok {
+				if gauge, ok := value.(metric.Gauge); ok {
+					subjectString := string(m)
+					if strings.HasPrefix(subjectString, subjectPrefix) &&
+						strings.HasSuffix(subjectString, subjectSuffix) {
+						preStatusDeleteCount := gauge.IntValue()
+						executingCountsMap[strings.Replace(
+							subjectString,
+							subjectSuffix,
+							NotProcessed.State,
+							1,
+						)] = preStatusDeleteCount
+						gauge.Set(0)
+					}
+				}
+			}
+			return true
+		},
+	)
+	for sub, count := range executingCountsMap {
+		instance.MustGetGauge(subject(sub)).Add(float64(count))
+	}
+}

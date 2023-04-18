@@ -496,7 +496,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    nil,
 				},
 				{
@@ -515,7 +515,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 						createMessagePayloadWithoutSources,
 					),
 					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
 				},
 				{
@@ -526,7 +526,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    nil,
 				},
 				{
@@ -537,7 +537,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
-					LastJobStatus: jobsdb.JobStatusT{},
+					LastJobStatus: jobsdb.LastStateT{},
 					Parameters:    nil,
 				},
 				{
