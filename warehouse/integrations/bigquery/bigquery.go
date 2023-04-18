@@ -278,7 +278,7 @@ func (bq *BigQuery) dropStagingTable(stagingTableName string) {
 
 func (bq *BigQuery) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	for _, tb := range tableNames {
-		bq.Logger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s : %v", tb)
+		bq.Logger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s", tb)
 		tableName := fmt.Sprintf("`%s`.`%s`", bq.namespace, tb)
 		sqlStatement := fmt.Sprintf(`
 			DELETE FROM

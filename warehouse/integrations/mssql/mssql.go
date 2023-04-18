@@ -197,8 +197,8 @@ func (*MSSQL) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 }
 
 func (ms *MSSQL) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	ms.Logger.Infof("MS: Cleaning up the following tables in mysql for MS for tables %s and params %+v", tableNames, params)
 	for _, tb := range tableNames {
+		ms.Logger.Infof("MS: Cleaning up the following tables in mysql for MS for tables %s ", tb)
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> @jobrunid AND
 		context_sources_task_run_id <> @taskrunid AND
