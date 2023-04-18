@@ -1062,7 +1062,7 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 		var statuses []*JobStatusT
 		for _, job := range unprocessed.Jobs {
 			statuses = append(statuses, &JobStatusT{
-				JobID:         job.JobID,
+				Job:           job,
 				JobState:      Failed.State,
 				AttemptNum:    1,
 				ExecTime:      time.Now(),
@@ -1116,7 +1116,7 @@ func TestDeleteExecuting(t *testing.T) {
 	var statuses []*JobStatusT
 	for _, job := range unprocessed.Jobs {
 		statuses = append(statuses, &JobStatusT{
-			JobID:         job.JobID,
+			Job:           job,
 			JobState:      Executing.State,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
@@ -1171,7 +1171,7 @@ func TestFailExecuting(t *testing.T) {
 	var statuses []*JobStatusT
 	for _, job := range unprocessed.Jobs {
 		statuses = append(statuses, &JobStatusT{
-			JobID:         job.JobID,
+			Job:           job,
 			JobState:      Executing.State,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
@@ -1284,7 +1284,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.NoError(t, err)
 	statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
 		return &JobStatusT{
-			JobID:       job.JobID,
+			Job:         job,
 			JobState:    Succeeded.State,
 			AttemptNum:  1,
 			WorkspaceId: "ws-3",

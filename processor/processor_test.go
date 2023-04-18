@@ -3206,10 +3206,10 @@ var _ = Describe("TestSubJobMerger", func() {
 	expectedMergedJob := storeMessage{
 		statusList: []*jobsdb.JobStatusT{
 			{
-				JobID: 1,
+				Job: &jobsdb.JobT{JobID: 1},
 			},
 			{
-				JobID: 2,
+				Job: &jobsdb.JobT{JobID: 2},
 			},
 		},
 		destJobs: []*jobsdb.JobT{
@@ -3266,7 +3266,7 @@ var _ = Describe("TestSubJobMerger", func() {
 				{
 					statusList: []*jobsdb.JobStatusT{
 						{
-							JobID: 1,
+							Job: &jobsdb.JobT{JobID: 1},
 						},
 					},
 					destJobs: []*jobsdb.JobT{
@@ -3306,7 +3306,7 @@ var _ = Describe("TestSubJobMerger", func() {
 				{
 					statusList: []*jobsdb.JobStatusT{
 						{
-							JobID: 2,
+							Job: &jobsdb.JobT{JobID: 2},
 						},
 					},
 					destJobs: []*jobsdb.JobT{
@@ -3368,10 +3368,10 @@ var _ = Describe("TestSubJobMerger", func() {
 				{
 					statusList: []*jobsdb.JobStatusT{
 						{
-							JobID: 1,
+							Job: &jobsdb.JobT{JobID: 1},
 						},
 						{
-							JobID: 2,
+							Job: &jobsdb.JobT{JobID: 2},
 						},
 					},
 					destJobs: []*jobsdb.JobT{

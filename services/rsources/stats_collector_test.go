@@ -466,21 +466,21 @@ func newJob(id int64, params jobParams) *jobsdb.JobT { // skipcq: CRT-P0003
 
 func newSucceededStatus(jobId int64) *jobsdb.JobStatusT {
 	return &jobsdb.JobStatusT{
-		JobID:    jobId,
+		Job:      &jobsdb.JobT{JobID: jobId},
 		JobState: jobsdb.Succeeded.State,
 	}
 }
 
 func newFailedStatus(jobId int64) *jobsdb.JobStatusT {
 	return &jobsdb.JobStatusT{
-		JobID:    jobId,
+		Job:      &jobsdb.JobT{JobID: jobId},
 		JobState: jobsdb.Failed.State,
 	}
 }
 
 func newAbortedStatus(jobId int64) *jobsdb.JobStatusT {
 	return &jobsdb.JobStatusT{
-		JobID:    jobId,
+		Job:      &jobsdb.JobT{JobID: jobId},
 		JobState: jobsdb.Aborted.State,
 	}
 }

@@ -502,7 +502,7 @@ func (*backupTestCase) getJobsFromAbortedJobs(t *testing.T, file *os.File) ([]*J
 		jobs = append(jobs, job)
 
 		jobStatus := &JobStatusT{
-			JobID:         gjson.GetBytes(lineByte, "job_id").Int(),
+			Job:           &JobT{JobID: gjson.GetBytes(lineByte, "job_id").Int()},
 			JobState:      gjson.GetBytes(lineByte, "job_state").String(),
 			AttemptNum:    int(gjson.GetBytes(lineByte, "attempt").Int()),
 			ErrorCode:     gjson.GetBytes(lineByte, "error_code").String(),
@@ -598,7 +598,7 @@ func (*backupTestCase) readGzipStatusFile(fileName string) ([]*JobStatusT, error
 	for sc.Scan() {
 		lineByte := sc.Bytes()
 		jobStatus := &JobStatusT{
-			JobID:         gjson.GetBytes(lineByte, "job_id").Int(),
+			Job:           &JobT{JobID: gjson.GetBytes(lineByte, "job_id").Int()},
 			JobState:      gjson.GetBytes(lineByte, "job_state").String(),
 			AttemptNum:    int(gjson.GetBytes(lineByte, "attempt").Int()),
 			ErrorCode:     gjson.GetBytes(lineByte, "error_code").String(),
@@ -622,7 +622,7 @@ func getStatusByWorkspace(jobStatus []*JobStatusT, jobsByWorkspace map[string][]
 	jobStatusByWorkspace := make(map[string][]*JobStatusT)
 	jobStatusByJobID := make(map[int64]*JobStatusT)
 	for _, status := range jobStatus {
-		jobStatusByJobID[status.JobID] = status
+		jobStatusByJobID[status.Job.JobID] = status
 	}
 	for workspaceId, job := range jobsByWorkspace {
 		for _, job := range job {

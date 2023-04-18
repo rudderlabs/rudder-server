@@ -43,7 +43,7 @@ func genJobStatuses(jobs []*JobT, state string) []*JobStatusT {
 	for i := range jobs {
 		job := jobs[i]
 		statuses = append(statuses, &JobStatusT{
-			JobID:         job.JobID,
+			Job:           job,
 			JobState:      state,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
@@ -102,7 +102,7 @@ func TestJobsDB(t *testing.T) {
 	require.Equal(t, 1, len(unprocessedList))
 
 	status := JobStatusT{
-		JobID:         unprocessedList[0].JobID,
+		Job:           unprocessedList[0],
 		JobState:      "succeeded",
 		AttemptNum:    1,
 		ExecTime:      time.Now(),
@@ -180,7 +180,7 @@ func TestJobsDB(t *testing.T) {
 		n := time.Now().Add(time.Hour * -1)
 		for i := range statuses {
 			statuses[i] = &JobStatusT{
-				JobID:         JobLimitList[i].JobID,
+				Job:           JobLimitList[i],
 				JobState:      Failed.State,
 				AttemptNum:    1,
 				ExecTime:      n,
@@ -273,7 +273,7 @@ func TestJobsDB(t *testing.T) {
 			n := time.Now().Add(time.Hour * -1)
 			for i := range statuses {
 				statuses[i] = &JobStatusT{
-					JobID:         allJobs.Jobs[i].JobID,
+					Job:           allJobs.Jobs[i],
 					JobState:      Failed.State,
 					AttemptNum:    1,
 					ExecTime:      n,
@@ -521,7 +521,7 @@ func TestJobsDB(t *testing.T) {
 		require.Equal(t, 20, len(fetchedJobs))
 
 		status := JobStatusT{
-			JobID:         fetchedJobs[0].JobID,
+			Job:           fetchedJobs[0],
 			JobState:      "succeeded",
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
@@ -617,7 +617,7 @@ func TestJobsDB(t *testing.T) {
 		// process some jobs
 		for _, job := range jobsResult.Jobs[:15] {
 			status := JobStatusT{
-				JobID:         job.JobID,
+				Job:           job,
 				JobState:      "succeeded",
 				AttemptNum:    1,
 				ExecTime:      time.Now(),
@@ -658,7 +658,7 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, err)
 		for _, job := range jobsResult.Jobs[5:20] {
 			status := JobStatusT{
-				JobID:         job.JobID,
+				Job:           job,
 				JobState:      Succeeded.State,
 				AttemptNum:    1,
 				ExecTime:      time.Now(),
@@ -1011,7 +1011,7 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 	require.Equal(t, 1, len(unprocessedList))
 	j := unprocessedList[0]
 	jobStatus := &JobStatusT{
-		JobID:         j.JobID,
+		Job:           j,
 		JobState:      "succeeded",
 		AttemptNum:    1,
 		ExecTime:      time.Now(),
@@ -1257,7 +1257,7 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *HandleT, totalJobs, pageS
 					status := make([]*JobStatusT, len(unprocessedList))
 					for i, j := range unprocessedList {
 						status[i] = &JobStatusT{
-							JobID:         j.JobID,
+							Job:           j,
 							JobState:      "succeeded",
 							AttemptNum:    1,
 							ExecTime:      time.Now(),
@@ -1373,7 +1373,7 @@ func consume(t testing.TB, db *HandleT, count int) {
 	status := make([]*JobStatusT, len(unprocessedList.Jobs))
 	for i, j := range unprocessedList.Jobs {
 		status[i] = &JobStatusT{
-			JobID:         j.JobID,
+			Job:           j,
 			JobState:      "succeeded",
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
