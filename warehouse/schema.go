@@ -73,22 +73,6 @@ func NewSchema(
 	}
 }
 
-func (sh *Schema) GetLocalSchema() (model.Schema, error) {
-	whSchema, err := sh.schemaRepo.GetForNamespace(
-		context.TODO(),
-		sh.warehouse.Source.ID,
-		sh.warehouse.Destination.ID,
-		sh.warehouse.Namespace,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("getting schema for namespace: %w", err)
-	}
-	if whSchema.Schema == nil {
-		return model.Schema{}, nil
-	}
-	return whSchema.Schema, nil
-}
-
 func (sh *Schema) updateLocalSchema(uploadId int64, updatedSchema model.Schema) error {
 	_, err := sh.schemaRepo.Insert(context.TODO(), &model.WHSchema{
 		UploadID:        uploadId,
@@ -108,7 +92,7 @@ func (sh *Schema) updateLocalSchema(uploadId int64, updatedSchema model.Schema) 
 }
 
 func (sh *Schema) FetchSchemaFromLocal() error {
-	localSchema, err := sh.GetLocalSchema()
+	localSchema, err := sh.getLocalSchema()
 	if err != nil {
 		return fmt.Errorf("fetching schema from local: %w", err)
 	}
@@ -116,6 +100,22 @@ func (sh *Schema) FetchSchemaFromLocal() error {
 	sh.localSchema = localSchema
 
 	return nil
+}
+
+func (sh *Schema) getLocalSchema() (model.Schema, error) {
+	whSchema, err := sh.schemaRepo.GetForNamespace(
+		context.TODO(),
+		sh.warehouse.Source.ID,
+		sh.warehouse.Destination.ID,
+		sh.warehouse.Namespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return model.Schema{}, nil
+	}
+	return whSchema.Schema, nil
 }
 
 func (sh *Schema) FetchSchemaFromWarehouse(repo fetchSchemaRepo) error {
@@ -302,8 +302,8 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-// HasLocalSchemaChanged compares the localSchema with the schemaInWarehouse and returns true if they are not equal
-func (sh *Schema) HasLocalSchemaChanged() bool {
+// hasLocalSchemaChanged compares the localSchema with the schemaInWarehouse and returns true if they are not equal
+func (sh *Schema) hasLocalSchemaChanged() bool {
 	if !sh.skipDeepEqualSchemas {
 		eq := reflect.DeepEqual(sh.localSchema, sh.schemaInWarehouse)
 		return !eq
@@ -331,8 +331,8 @@ func (sh *Schema) HasLocalSchemaChanged() bool {
 	return false
 }
 
-// GetUploadSchemaDiff returns the diff between the warehouse schema and the upload schema
-func (sh *Schema) GetUploadSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
+// uploadSchemaDiff returns the diff between the warehouse schema and the upload schema
+func (sh *Schema) uploadSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
 	diff := warehouseutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
 		UpdatedSchema:    make(model.TableSchema),
@@ -370,7 +370,7 @@ func (sh *Schema) GetUploadSchemaDiff(tableName string) warehouseutils.TableSche
 	return diff
 }
 
-func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
+func handleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
 	var (
 		newColumnVal any
 		err          error

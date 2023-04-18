@@ -292,7 +292,7 @@ func (job *UploadJob) syncRemoteSchema() (bool, error) {
 		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	schemaChanged := job.schemaHandle.HasLocalSchemaChanged()
+	schemaChanged := job.schemaHandle.hasLocalSchemaChanged()
 	if schemaChanged {
 		pkgLogger.Infow("schema changed",
 			logfield.SourceID, job.warehouse.Source.ID,
@@ -968,7 +968,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 }
 
 func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := job.schemaHandle.GetUploadSchemaDiff(tName)
+	tableSchemaDiff := job.schemaHandle.uploadSchemaDiff(tName)
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1264,7 +1264,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 		errorMap[tableName] = nil
 
-		tableSchemaDiff := job.schemaHandle.GetUploadSchemaDiff(tableName)
+		tableSchemaDiff := job.schemaHandle.uploadSchemaDiff(tableName)
 		if tableSchemaDiff.Exists {
 			err := job.UpdateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -2072,7 +2072,7 @@ func initializeStateMachine() {
 }
 
 func (job *UploadJob) GetLocalSchema() (model.Schema, error) {
-	return job.schemaHandle.GetLocalSchema()
+	return job.schemaHandle.getLocalSchema()
 }
 
 func (job *UploadJob) UpdateLocalSchema(schema model.Schema) error {

@@ -265,7 +265,7 @@ func TestHandleSchemaChange(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			newColumnVal, convError := HandleSchemaChange(
+			newColumnVal, convError := handleSchemaChange(
 				model.SchemaType(tc.existingDatatype),
 				model.SchemaType(tc.currentDataType),
 				tc.value,
@@ -707,7 +707,7 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 				schemaInWarehouse: tc.currentSchema,
 				uploadSchema:      tc.uploadSchema,
 			}
-			diff := sch.GetUploadSchemaDiff(tc.tableName)
+			diff := sch.uploadSchemaDiff(tc.tableName)
 			require.EqualValues(t, diff, tc.expected)
 		})
 	}
@@ -865,7 +865,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 				localSchema:          tc.localSchema,
 				schemaInWarehouse:    tc.schemaInWarehouse,
 			}
-			require.Equal(t, tc.expected, sch.HasLocalSchemaChanged())
+			require.Equal(t, tc.expected, sch.hasLocalSchemaChanged())
 		})
 	}
 }
