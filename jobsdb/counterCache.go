@@ -56,6 +56,7 @@ func getSubjectPowerSet(cs cacheSubject) []subject {
 	// need not take tablePrefix into consideration here because while all the
 	// other composites may/may not be wildcards,
 	// tablePrefix is always guaranteed to be non wildcard
+	tablePrefix := composites[0]
 	comps := composites[1:]
 	nonWildCardCompIndices := lo.Filter(
 		lo.Range(len(comps)),
@@ -69,15 +70,14 @@ func getSubjectPowerSet(cs cacheSubject) []subject {
 	// get powerset (composites could be either wildcard or non-wildcard)
 	indexPowerSet := powerSet(nonWildCardCompIndices)
 	subjects := make([]subject, len(indexPowerSet))
-	subjects[0] = getSubject(cs)
-	for i := range indexPowerSet[1:] { // first one is empty
+	for i := range indexPowerSet {
 		subSet := make([]string, len(composites))
-		subSet[0] = composites[0]
-		for j := range comps {
+		subSet[0] = tablePrefix
+		for j := 0; j < len(comps); j++ {
 			if lo.Contains(indexPowerSet[i], j) {
-				subSet[j] = "*"
+				subSet[j+1] = "*"
 			} else {
-				subSet[j] = comps[j]
+				subSet[j+1] = comps[j]
 			}
 		}
 		subjects[i] = subject(strings.Join(subSet, "."))
@@ -118,23 +118,102 @@ func powerSet[T any](s []T) [][]T {
 	return ps
 }
 
+var instance = metric.Instance.GetRegistry(metric.PublishedMetrics)
+
 func increaseCount(cs cacheSubject, count int) {
-	subjects := getSubjectPowerSet(cs)
-	for _, subject := range subjects {
-		metric.Instance.GetRegistry(metric.PublishedMetrics).
-			MustGetGauge(subject).Add(float64(count))
-	}
+	lo.ForEach(
+		getSubjectPowerSet(cs),
+		func(subject subject, _ int) {
+			instance.MustGetGauge(subject).Add(float64(count))
+		},
+	)
 }
 
 func decreaseCount(cs cacheSubject, count int) {
-	subjects := getSubjectPowerSet(cs)
-	for _, subject := range subjects {
-		metric.Instance.GetRegistry(metric.PublishedMetrics).
-			MustGetGauge(subject).Sub(float64(count))
-	}
+	lo.ForEach(
+		getSubjectPowerSet(cs),
+		func(subject subject, _ int) {
+			instance.MustGetGauge(subject).Sub(float64(count))
+		},
+	)
 }
 
-func getCount(cs cacheSubject) int {
-	return metric.Instance.GetRegistry(metric.PublishedMetrics).
-		MustGetGauge(getSubject(cs)).IntValue()
+func jobsExist(cs cacheSubject) bool {
+	return instance.MustGetGauge(getSubject(cs)).IntValue() > 0
+}
+
+// check counters and return true if any of the following is non-zero
+//
+// otherwise return false
+func checkIfJobsExist(
+	tablePrefix,
+	dsIndex,
+	workspaceID string,
+	customVals []string,
+	sources []string,
+	destinations []string,
+	states []string,
+) bool {
+	if workspaceID == "" {
+		workspaceID = "*"
+	}
+	subjects := getLookupSubjects(
+		tablePrefix,
+		dsIndex,
+		workspaceID,
+		customVals,
+		sources,
+		destinations,
+		states,
+	)
+	for _, subject := range subjects {
+		if jobsExist(subject) {
+			return true
+		}
+	}
+
+	// ideally checking for any one of the most granular level should be enough?
+	return false
+}
+
+func checkAndSetWildcard(compositeList []string) []string {
+	if len(compositeList) == 0 {
+		return []string{"*"}
+	}
+	return compositeList
+}
+
+func getLookupSubjects(
+	tablePrefix,
+	dsIndex,
+	workspaceID string,
+	customVals []string,
+	sources []string,
+	destinations []string,
+	states []string,
+) []cacheSubject {
+	customVals = checkAndSetWildcard(customVals)
+	sources = checkAndSetWildcard(sources)
+	destinations = checkAndSetWildcard(destinations)
+	states = checkAndSetWildcard(states)
+	subjects := make([]cacheSubject, 0)
+	for _, customVal := range customVals {
+		for _, source := range sources {
+			for _, destination := range destinations {
+				for _, state := range states {
+					subjects = append(subjects, cacheSubject{
+						tablePrefix:   tablePrefix,
+						dsIndex:       dsIndex,
+						workspaceID:   workspaceID,
+						customVal:     customVal,
+						sourceID:      source,
+						destinationID: destination,
+						jobState:      state,
+					},
+					)
+				}
+			}
+		}
+	}
+	return subjects
 }

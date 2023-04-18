@@ -37,6 +37,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -692,19 +693,30 @@ func WithInsertCountListener() OptsFunc {
 				if err != nil {
 					panic(err)
 				}
-				if notification.Channel == "counts" {
-					cs := cacheSubject{
-						tablePrefix: jd.tablePrefix,
+				go func(notification *pgconn.Notification) {
+					if notification.Channel == "counts" {
+						cs := cacheSubject{
+							tablePrefix: jd.tablePrefix,
+						}
+						payloadString := notification.Payload
+						jd.logger.Info("Received notification", payloadString)
+						counts := gjson.Get(payloadString, "data")
+						counts.ForEach(func(key, value gjson.Result) bool {
+							jd.logger.Info()
+							jobCount := value.Get("jobcount").Int()
+							cs.tablePrefix = jd.tablePrefix
+							cs.dsIndex = value.Get("ds_index").String()
+							cs.workspaceID = value.Get("workspace_id").String()
+							cs.customVal = value.Get("custom_val").String()
+							cs.sourceID = value.Get("sourceid").String()
+							cs.destinationID = value.Get("destinationid").String()
+							cs.jobState = NotProcessed.State // considering these are insert numbers
+							jd.logger.Info("Received notification", cs, int(jobCount))
+							increaseCount(cs, int(jobCount))
+							return true
+						})
 					}
-					payloadString := notification.Payload
-					// jobCount := gjson.Get(payloadString, "data.jobcount").String()
-					cs.dsIndex = gjson.Get(payloadString, "data.ds_index").String()
-					cs.workspaceID = gjson.Get(payloadString, "data.workspace_id").String()
-					cs.jobState = gjson.Get(payloadString, "data.job_state").String()
-					cs.customVal = gjson.Get(payloadString, "data.custom_val").String()
-					cs.sourceID = gjson.Get(payloadString, "data.source_id").String()
-					cs.destinationID = gjson.Get(payloadString, "data.destination_id").String()
-				}
+				}(notification)
 			}
 		}()
 	}
@@ -939,7 +951,7 @@ func (jd *HandleT) init() {
 							j.parameters->>'source_id' as sourceID,
 							j.parameters->>'destination_id' as destinationID,
 							s.job_state as jobState
-							from %[1]q j left join "v_last_%[1]s" s on j.job_id = s.job_id
+							from %[1]q j left join "v_last_%[2]s" s on j.job_id = s.job_id
 							group by customVal, workspaceID, sourceID, destinationID, jobState
 							)
 							select * from joined;`,
@@ -957,22 +969,33 @@ func (jd *HandleT) init() {
 							dsIndex:     ds.Index,
 						}
 						var count sql.NullInt64
+						var state sql.NullString
+						var destinationID sql.NullString
 						err := rows.Scan(
 							&count,
 							&row.customVal,
 							&row.workspaceID,
 							&row.sourceID,
-							&row.destinationID,
-							&row.jobState,
+							&destinationID,
+							&state,
 						)
 						if err != nil {
 							panic(fmt.Errorf("failed to scan job counts: %w", err))
 						}
-						row.dsIndex = ds.Index
-						increaseCount(
-							row,
-							int(count.Int64),
-						)
+						if destinationID.Valid {
+							row.destinationID = destinationID.String
+						}
+						if state.Valid {
+							row.jobState = state.String
+						} else {
+							row.jobState = NotProcessed.State
+						}
+						if count.Valid {
+							increaseCount(
+								row,
+								int(count.Int64),
+							)
+						}
 					}
 					if rows.Err() != nil {
 						panic(fmt.Errorf("failed to iterate over job counts: %w", rows.Err()))
@@ -2229,8 +2252,26 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
-	if jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, stateFilters, parameterFilters) {
-		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+	if !checkIfJobsExist(
+		jd.tablePrefix,
+		ds.Index,
+		workspaceID,
+		customValFilters,
+		lo.FilterMap(parameterFilters, func(param ParameterFilterT, _ int) (string, bool) {
+			if param.Name == "source_id" {
+				return param.Value, true
+			}
+			return "", false
+		}),
+		lo.FilterMap(parameterFilters, func(param ParameterFilterT, _ int) (string, bool) {
+			if param.Name == "destination_id" {
+				return param.Value, true
+			}
+			return "", false
+		}),
+		stateFilters,
+	) {
+		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %s, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
 
@@ -2242,12 +2283,6 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	}
 
 	defer jd.getTimerStat("processed_ds_time", &tags).RecordDuration()()
-
-	skipCacheResult := params.AfterJobID != nil
-	var cacheTx *cache.NoResultTx[ParameterFilterT]
-	if !skipCacheResult {
-		cacheTx = jd.noResultsCache.StartNoResultTx(ds.Index, workspaceID, customValFilters, stateFilters, parameterFilters)
-	}
 
 	var stateQuery string
 	if len(stateFilters) > 0 {
@@ -2378,12 +2413,6 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 		limitsReached = true
 	}
 
-	if !skipCacheResult {
-		if len(jobList) == 0 {
-			cacheTx.Commit()
-		}
-	}
-
 	return JobsResult{
 		Jobs:          jobList,
 		LimitsReached: limitsReached,
@@ -2403,23 +2432,30 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 	parameterFilters := params.ParameterFilters
 	workspaceID := params.WorkspaceID
 
-	if jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, []string{NotProcessed.State}, parameterFilters) {
-		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+	if !checkIfJobsExist(
+		jd.tablePrefix,
+		ds.Index,
+		workspaceID,
+		customValFilters,
+		lo.FilterMap(parameterFilters, func(param ParameterFilterT, _ int) (string, bool) {
+			if param.Name == "source_id" {
+				return param.Value, true
+			}
+			return "", false
+		}),
+		lo.FilterMap(parameterFilters, func(param ParameterFilterT, _ int) (string, bool) {
+			if param.Name == "destination_id" {
+				return param.Value, true
+			}
+			return "", false
+		}),
+		[]string{NotProcessed.State},
+	) {
+		jd.logger.Debug(
+			"[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v",
+			ds, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
-	// if getCount(cacheSubject{
-	// 	tablePrefix: jd.tablePrefix,
-	// 	dsIndex:     ds.Index,
-	// 	workspaceID: workspaceID,
-	// 	// customVal : ,	// TODO: go over all customVals(do we even need a list,
-	// 	// because no one queries for multiple customVals)
-	// 	// sourceID    : ,
-	// 	// destinationID: ,
-	// 	jobState: NotProcessed.State,
-	// }) == 0 {
-	// 	jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-	// 	return JobsResult{}, false, nil
-	// }
 
 	tags := statTags{
 		CustomValFilters: params.CustomValFilters,
@@ -2427,12 +2463,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 		WorkspaceID:      workspaceID,
 	}
 	defer jd.getTimerStat("unprocessed_ds_time", &tags).RecordDuration()()
-
-	skipCacheResult := params.AfterJobID != nil
-	var cacheTx *cache.NoResultTx[ParameterFilterT]
-	if !skipCacheResult {
-		cacheTx = jd.noResultsCache.StartNoResultTx(ds.Index, workspaceID, customValFilters, []string{NotProcessed.State}, parameterFilters)
-	}
 
 	var rows *sql.Rows
 	var err error
@@ -2536,13 +2566,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 		limitsReached = true
 	}
 
-	if !skipCacheResult {
-		dsList := jd.getDSList()
-		// if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
-		if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
-			cacheTx.Commit()
-		}
-	}
 	return JobsResult{
 		Jobs:          jobList,
 		LimitsReached: limitsReached,
