@@ -91,7 +91,8 @@ func (sh *Schema) updateLocalSchema(uploadId int64, updatedSchema model.Schema) 
 	return nil
 }
 
-func (sh *Schema) FetchSchemaFromLocal() error {
+// fetchSchemaFromLocal fetches schema from local
+func (sh *Schema) fetchSchemaFromLocal() error {
 	localSchema, err := sh.getLocalSchema()
 	if err != nil {
 		return fmt.Errorf("fetching schema from local: %w", err)
@@ -118,7 +119,8 @@ func (sh *Schema) getLocalSchema() (model.Schema, error) {
 	return whSchema.Schema, nil
 }
 
-func (sh *Schema) FetchSchemaFromWarehouse(repo fetchSchemaRepo) error {
+// fetchSchemaFromWarehouse fetches schema from warehouse
+func (sh *Schema) fetchSchemaFromWarehouse(repo fetchSchemaRepo) error {
 	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema(sh.warehouse)
 	if err != nil {
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
@@ -302,7 +304,7 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-// hasLocalSchemaChanged compares the localSchema with the schemaInWarehouse and returns true if they are not equal
+// hasLocalSchemaChanged compares the localSchema with the schemaInWarehouse
 func (sh *Schema) hasLocalSchemaChanged() bool {
 	if !sh.skipDeepEqualSchemas {
 		eq := reflect.DeepEqual(sh.localSchema, sh.schemaInWarehouse)
@@ -331,7 +333,7 @@ func (sh *Schema) hasLocalSchemaChanged() bool {
 	return false
 }
 
-// uploadSchemaDiff returns the diff between the warehouse schema and the upload schema
+// uploadSchemaDiff returns the diff between the localSchema and the schemaInWarehouse
 func (sh *Schema) uploadSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
 	diff := warehouseutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
@@ -370,6 +372,7 @@ func (sh *Schema) uploadSchemaDiff(tableName string) warehouseutils.TableSchemaD
 	return diff
 }
 
+// handleSchemaChange checks if the existing column type is compatible with the new column type
 func handleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
 	var (
 		newColumnVal any

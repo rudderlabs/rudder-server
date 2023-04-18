@@ -405,7 +405,7 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 				require.ErrorContains(t, err, tc.wantError.Error())
 			}
 
-			err = sch.FetchSchemaFromLocal()
+			err = sch.fetchSchemaFromLocal()
 			require.Equal(t, tc.wantSchema, sch.localSchema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
@@ -566,7 +566,7 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 				log: logger.NOP,
 			}
 
-			err := sh.FetchSchemaFromWarehouse(&fechSchemaRepo)
+			err := sh.fetchSchemaFromWarehouse(&fechSchemaRepo)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {

@@ -282,12 +282,12 @@ func (job *UploadJob) initTableUploads() error {
 }
 
 func (job *UploadJob) syncRemoteSchema() (bool, error) {
-	err := job.schemaHandle.FetchSchemaFromLocal()
+	err := job.schemaHandle.fetchSchemaFromLocal()
 	if err != nil {
 		return false, fmt.Errorf("fetching schema from local: %w", err)
 	}
 
-	err = job.schemaHandle.FetchSchemaFromWarehouse(job.whManager)
+	err = job.schemaHandle.fetchSchemaFromWarehouse(job.whManager)
 	if err != nil {
 		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
