@@ -2,6 +2,7 @@ package controlplane_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -340,5 +341,56 @@ func TestRetriesTimeout(t *testing.T) {
 				require.ErrorContains(t, err, "deadline exceeded")
 			})
 		})
+	}
+}
+
+func TestGetDestinationSSHKeys(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		if r.Header.Get("Content-Type") != "application/json" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if r.Header.Get("User-Agent") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if r.URL.Path != "/destinations/123/sshKeys" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(controlplane.PublicPrivateKeyPair{PrivateKey: "test-private-key", PublicKey: "test-public-key"}))
+	}))
+
+	defer mockServer.Close()
+	validSecret := "valid-secret"
+
+	identity := &identity.Namespace{
+		Namespace:    "valid-namespace",
+		HostedSecret: validSecret,
+	}
+	client := controlplane.NewClient(mockServer.URL, identity, controlplane.WithHTTPClient(mockServer.Client()))
+
+	privateKey, err := client.GetDestinationSSHKeys(context.Background(), "123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if privateKey != "test-private-key" {
+		t.Errorf("unexpected private key: %s", privateKey)
+	}
+
+	_, err = client.GetDestinationSSHKeys(context.Background(), "456")
+	if err == nil {
+		t.Error("expected error, but got nil")
 	}
 }
