@@ -107,7 +107,7 @@ func TestDynamicCluster(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	jobsForwarder.EXPECT().Start().Return().AnyTimes()
+	jobsForwarder.EXPECT().Start().Return(nil).AnyTimes()
 	jobsForwarder.EXPECT().Stop().AnyTimes()
 	wait := make(chan struct{})
 	go func() {

@@ -260,7 +260,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-	jobsForwarder.EXPECT().Start().Return().AnyTimes()
+	jobsForwarder.EXPECT().Start().Return(nil).AnyTimes()
 	jobsForwarder.EXPECT().Stop().AnyTimes()
 
 	provider := &mockModeProvider{modeCh: make(chan servermode.ChangeEvent)}
@@ -270,6 +270,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		BatchRouterDB: brtDB,
 		ErrorDB:       errDB,
 		EventSchemaDB: eschDB,
+		JobsForwarder: jobsForwarder,
 
 		Processor:       processor,
 		Router:          router,
