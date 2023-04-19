@@ -231,32 +231,14 @@ func FilterUsingSupportedConnectionModes(connectionModeFilterParams ConnectionMo
 		return false, nil
 	}
 
-	supportedConnectionModesI, connModesOk := destination.DestinationDefinition.Config["supportedConnectionModes"]
-	if !connModesOk {
-		return evaluatedDefaultBehaviour, nil
-	}
-	supportedConnectionModes := supportedConnectionModesI.(map[string]interface{})
-
-	supportedEventPropsMapI, supportedEventPropsLookupErr := misc.NestedMapLookup(supportedConnectionModes, srcType, destConnectionMode)
-	if supportedEventPropsLookupErr != nil {
-		if supportedEventPropsLookupErr.Level == 0 {
-			// Case 2
-			pkgLogger.Infof("Failed with %v for SourceType(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), srcType)
-			return evaluatedDefaultBehaviour, nil
-		}
-		// Cases 3 & 4
-		pkgLogger.Infof("Failed with %v for ConnectionMode(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), destConnectionMode)
-		return false, nil
+	eventProperties := getSupportedEventPropertiesMap(destination.DestinationDefinition.Config, srcType, destConnectionMode, evaluatedDefaultBehaviour)
+	if len(eventProperties.EventPropsMap) == 0 {
+		return eventProperties.Allow, eventProperties.FailedResponse
 	}
 
-	supportedEventPropsMap, isEventPropsICastableToMap := supportedEventPropsMapI.(map[string]interface{})
-	if !isEventPropsICastableToMap || len(supportedEventPropsMap) == 0 {
-		// includes Case 5, 7
-		return evaluatedDefaultBehaviour, nil
-	}
 	// Flag indicating to let the event pass through
 	allowEvent := evaluatedDefaultBehaviour
-	for eventProperty, supportedEventVals := range supportedEventPropsMap {
+	for eventProperty, supportedEventVals := range eventProperties.EventPropsMap {
 		eventPropMap, isMap := supportedEventVals.(map[string]interface{})
 
 		if !allowEvent || !isMap {
@@ -264,17 +246,17 @@ func FilterUsingSupportedConnectionModes(connectionModeFilterParams ConnectionMo
 			break
 		}
 		if eventProperty == "messageType" {
-			eventPropMap := ConvertEventPropMapToStruct[string](eventPropMap)
+			messageTypeEventPropDef := ConvertEventPropMapToStruct[string](eventPropMap)
 			// eventPropMap == nil  -- occurs when both allowAll and allowedVals are not defined or when allowAll contains any value other than boolean
 			// eventPropMap.AllowAll -- When only allowAll is defined
 			//  len(eventPropMap.AllowedVals) == 0 -- when allowedVals is empty array(occurs when it is [] or when data-type of one of the values is not string)
-			if eventPropMap == nil || eventPropMap.AllowAll || len(eventPropMap.AllowedVals) == 0 {
+			if eventPropMap == nil || messageTypeEventPropDef.AllowAll || len(messageTypeEventPropDef.AllowedVals) == 0 {
 				allowEvent = evaluatedDefaultBehaviour
 				continue
 			}
 
-			pkgLogger.Debugf("SupportedVals: %v -- EventType from event: %v\n", eventPropMap.AllowedVals, messageType)
-			allowEvent = lo.Contains(eventPropMap.AllowedVals, messageType) && evaluatedDefaultBehaviour
+			pkgLogger.Debugf("SupportedVals: %v -- EventType from event: %v\n", messageTypeEventPropDef.AllowedVals, messageType)
+			allowEvent = lo.Contains(messageTypeEventPropDef.AllowedVals, messageType) && evaluatedDefaultBehaviour
 		}
 	}
 	return allowEvent, nil
@@ -361,4 +343,37 @@ func ConvertEventPropMapToStruct[T EventPropsTypes](eventPropMap map[string]inte
 		}
 	}
 	return &eventPropertyStruct
+}
+
+type supportedEventProperties struct {
+	EventPropsMap  map[string]interface{}
+	Allow          bool
+	FailedResponse *transformer.TransformerResponseT
+}
+
+func getSupportedEventPropertiesMap(destinationDefinitionConfig map[string]interface{}, srcType, destConnectionMode string, defaultBehaviour bool) supportedEventProperties {
+	supportedConnectionModesI, connModesOk := destinationDefinitionConfig["supportedConnectionModes"]
+	if !connModesOk {
+		return supportedEventProperties{Allow: defaultBehaviour}
+	}
+	supportedConnectionModes := supportedConnectionModesI.(map[string]interface{})
+
+	supportedEventPropsMapI, supportedEventPropsLookupErr := misc.NestedMapLookup(supportedConnectionModes, srcType, destConnectionMode)
+	if supportedEventPropsLookupErr != nil {
+		if supportedEventPropsLookupErr.Level == 0 {
+			// Case 2
+			pkgLogger.Infof("Failed with %v for SourceType(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), srcType)
+			return supportedEventProperties{Allow: defaultBehaviour}
+		}
+		// Cases 3 & 4
+		pkgLogger.Infof("Failed with %v for ConnectionMode(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), destConnectionMode)
+		return supportedEventProperties{Allow: false}
+	}
+
+	supportedEventPropsMap, isEventPropsICastableToMap := supportedEventPropsMapI.(map[string]interface{})
+	if !isEventPropsICastableToMap || len(supportedEventPropsMap) == 0 {
+		// includes Case 5, 7
+		return supportedEventProperties{Allow: defaultBehaviour}
+	}
+	return supportedEventProperties{EventPropsMap: supportedEventPropsMap, Allow: true}
 }
