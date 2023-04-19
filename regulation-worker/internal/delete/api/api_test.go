@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,7 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 )
 
 func (d *deleteAPI) handler() http.Handler {
