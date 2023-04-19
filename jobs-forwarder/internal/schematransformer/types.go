@@ -13,8 +13,7 @@ import (
 
 // EventPayload : Generic type for gateway event payload
 type EventPayload struct {
-	WriteKey string
-	Event    map[string]interface{}
+	Event map[string]interface{}
 }
 
 type SchemaTransformer struct {

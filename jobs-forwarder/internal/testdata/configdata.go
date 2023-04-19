@@ -32,7 +32,7 @@ var SampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
-			WriteKey: WriteKeyEnabled,
+			WriteKey: WriteKeyEnabledNoUT,
 			Enabled:  false,
 		},
 		{

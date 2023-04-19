@@ -22,8 +22,7 @@ import (
 )
 
 var TestEventPayload = EventPayload{
-	WriteKey: testdata.WriteKeyEnabled,
-	Event:    testdata.TrackEvent,
+	Event: testdata.TrackEvent,
 }
 
 func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
@@ -79,11 +78,11 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	})
 
 	t.Run("Test getSchemaKeyFromJob", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(TestEventPayload), &testdata.TestEventSchemaKey)
+		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(TestEventPayload, testdata.WriteKeyEnabled), &testdata.TestEventSchemaKey)
 	})
 
 	t.Run("Test getSchemaMessage", func(t *testing.T) {
-		schemaKey := schemaTransformer.getSchemaKeyFromJob(TestEventPayload)
+		schemaKey := schemaTransformer.getSchemaKeyFromJob(TestEventPayload, testdata.WriteKeyEnabled)
 		timeNow := time.Now()
 		schemaMessage, err := schemaTransformer.getSchemaMessage(schemaKey, testdata.TrackEvent, testdata.SampleWorkspaceID, timeNow)
 		testEventSchemaMessage := generateTestEventSchemaMessage(timeNow)
@@ -165,6 +164,6 @@ func generateTestJob(t *testing.T, time time.Time) *jobsdb.JobT {
 		PayloadSize:   100,
 		LastJobStatus: jobsdb.JobStatusT{},
 		WorkspaceId:   testdata.SampleWorkspaceID,
-		Parameters:    []byte{},
+		Parameters:    []byte(`{"source_id": "enabled-source"}`),
 	}
 }

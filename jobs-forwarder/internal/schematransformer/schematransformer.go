@@ -51,18 +51,19 @@ func (st *SchemaTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMess
 	if err != nil {
 		return &proto.EventSchemaMessage{}, "", err
 	}
-	schemaKey := st.getSchemaKeyFromJob(eventPayload)
+	writeKey := st.getWriteKeyFromParams(job.Parameters)
+	schemaKey := st.getSchemaKeyFromJob(eventPayload, writeKey)
 	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload.Event, job.WorkspaceId, job.CreatedAt)
 	if err != nil {
 		return &proto.EventSchemaMessage{}, "", err
 	}
-	return schemaMessage, eventPayload.WriteKey, nil
+	return schemaMessage, writeKey, nil
 }
 
-func (st *SchemaTransformer) getSchemaKeyFromJob(eventPayload EventPayload) *proto.EventSchemaKey {
+func (st *SchemaTransformer) getSchemaKeyFromJob(eventPayload EventPayload, writeKey string) *proto.EventSchemaKey {
 	eventType := st.getEventType(eventPayload.Event)
 	return &proto.EventSchemaKey{
-		WriteKey:        eventPayload.WriteKey,
+		WriteKey:        writeKey,
 		EventType:       eventType,
 		EventIdentifier: st.getEventIdentifier(eventPayload.Event, eventType),
 	}
@@ -73,20 +74,17 @@ func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
 	for data := range ch {
 		configData := data.Data.(map[string]backendconfig.ConfigT)
 		sourceWriteKeyMap := map[string]string{}
-		writeKeySourceIDMap := map[string]string{}
 		newPIIReportingSettings := map[string]bool{}
 		for _, wConfig := range configData {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				sourceWriteKeyMap[source.ID] = source.WriteKey
-				writeKeySourceIDMap[source.WriteKey] = source.ID
 				newPIIReportingSettings[source.WriteKey] = wConfig.Settings.DataRetention.DisableReportingPII
 			}
 		}
 		st.writeKeyMapLock.Lock()
 		st.sourceWriteKeyMap = sourceWriteKeyMap
 		st.newPIIReportingSettings = newPIIReportingSettings
-		st.writeKeySourceIDMap = writeKeySourceIDMap
 		st.writeKeyMapLock.Unlock()
 		st.isInitialisedBool.CompareAndSwap(false, true)
 	}
@@ -164,4 +162,19 @@ func (st *SchemaTransformer) getSampleEvent(event map[string]interface{}, writeK
 		return []byte{}
 	}
 	return sampleEvent
+}
+
+func (st *SchemaTransformer) getWriteKeyFromParams(parameters json.RawMessage) string {
+	var params map[string]interface{}
+	err := json.Unmarshal(parameters, &params)
+	if err != nil {
+		return ""
+	}
+	sourceId, ok := params["source_id"].(string)
+	if !ok {
+		return ""
+	}
+	st.writeKeyMapLock.RLock()
+	defer st.writeKeyMapLock.RUnlock()
+	return st.sourceWriteKeyMap[sourceId]
 }
