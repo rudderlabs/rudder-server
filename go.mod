@@ -2,13 +2,16 @@ module github.com/rudderlabs/rudder-server
 
 go 1.20
 
+// Addressing snyk vulnerabilities in indirect dependencies
+// When upgrading a dependency, please make sure that
+// the same version is used both here and in the require section
 replace (
-	// Addressing vulnerabilities in indirect dependencies
-	// When upgrading a dependency, please make sure that
-	// the same version is used both here and in the require section
-	github.com/containerd/containerd => github.com/containerd/containerd v1.6.18
+	github.com/containerd/containerd => github.com/containerd/containerd v1.6.20
+	github.com/docker/docker => github.com/docker/docker v23.0.4+incompatible
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.7.7
+	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.5
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.15.0
+	github.com/satori/go.uuid => github.com/satori/go.uuid v1.1.0
 	github.com/spf13/viper => github.com/spf13/viper v1.15.0
 	go.mongodb.org/mongo-driver => go.mongodb.org/mongo-driver v1.11.4
 	golang.org/x/crypto => golang.org/x/crypto v0.8.0
@@ -215,7 +218,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mtibben/percent v0.2.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.1.0-rc2 // indirect
+	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b // indirect
 	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.6 // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
