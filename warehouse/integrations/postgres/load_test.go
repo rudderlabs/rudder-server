@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
@@ -159,6 +160,7 @@ func TestLoadTable_Load(t *testing.T) {
 
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
+				sqlmiddleware := sqlmiddleware.New(pgResource.DB)
 
 				store := memstats.New()
 				c := config.New()
@@ -172,11 +174,11 @@ func TestLoadTable_Load(t *testing.T) {
 				}
 
 				if !tc.skipSchemaCreation {
-					_, err = pgResource.DB.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
+					_, err = sqlmiddleware.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
 					require.NoError(t, err)
 				}
 				if !tc.skipTableCreation && !tc.skipSchemaCreation {
-					_, err = pgResource.DB.Exec(fmt.Sprintf(`
+					_, err = sqlmiddleware.Exec(fmt.Sprintf(`
 					CREATE TABLE IF NOT EXISTS %s.%s (
 						test_bool boolean,
 						test_datetime timestamp,
@@ -199,7 +201,7 @@ func TestLoadTable_Load(t *testing.T) {
 
 				lt := postgres.LoadTable{
 					Logger:    logger.NOP,
-					DB:        pgResource.DB,
+					DB:        sqlmiddleware,
 					Namespace: namespace,
 					Warehouse: warehouse,
 					Stats:     store,
@@ -277,6 +279,7 @@ func TestLoadTable_Load(t *testing.T) {
 
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
+				sqlmiddleware := sqlmiddleware.New(pgResource.DB)
 
 				store := memstats.New()
 				c := config.New()
@@ -289,11 +292,11 @@ func TestLoadTable_Load(t *testing.T) {
 				}
 
 				if !tc.skipSchemaCreation {
-					_, err = pgResource.DB.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
+					_, err = sqlmiddleware.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
 					require.NoError(t, err)
 				}
 				if !tc.skipTableCreation && !tc.skipSchemaCreation {
-					_, err = pgResource.DB.Exec(fmt.Sprintf(`
+					_, err = sqlmiddleware.Exec(fmt.Sprintf(`
 					CREATE TABLE IF NOT EXISTS %s.%s (
 						"column_name"  "varchar",
 						"column_value" "varchar",
@@ -314,7 +317,7 @@ func TestLoadTable_Load(t *testing.T) {
 
 				lt := postgres.LoadTable{
 					Logger:    logger.NOP,
-					DB:        pgResource.DB,
+					DB:        sqlmiddleware,
 					Namespace: namespace,
 					Warehouse: warehouse,
 					Stats:     store,
@@ -425,6 +428,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
+			sqlmiddleware := sqlmiddleware.New(pgResource.DB)
 
 			store := memstats.New()
 			c := config.New()
@@ -432,12 +436,12 @@ func TestLoadUsersTable_Load(t *testing.T) {
 			ctx := context.Background()
 
 			if !tc.skipSchemaCreation {
-				_, err = pgResource.DB.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
+				_, err = sqlmiddleware.Exec("CREATE SCHEMA IF NOT EXISTS " + namespace)
 				require.NoError(t, err)
 			}
 			if !tc.skipTableCreation && !tc.skipSchemaCreation {
 				for _, table := range []string{warehouseutils.UsersTable, warehouseutils.IdentifiesTable} {
-					_, err = pgResource.DB.Exec(fmt.Sprintf(`
+					_, err = sqlmiddleware.Exec(fmt.Sprintf(`
 					CREATE TABLE IF NOT EXISTS %s.%s (
 						test_bool boolean,
 						test_datetime timestamp,
@@ -464,7 +468,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 
 			lt := postgres.LoadUsersTable{
 				Logger:    logger.NOP,
-				DB:        pgResource.DB,
+				DB:        sqlmiddleware,
 				Namespace: namespace,
 				Warehouse: &model.Warehouse{
 					Source: backendconfig.SourceT{

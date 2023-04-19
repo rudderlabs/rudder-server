@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -109,7 +109,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type Postgres struct {
-	DB                          *sql.DB
+	DB                          *sqlmiddleware.DB
 	Namespace                   string
 	ObjectStorage               string
 	Warehouse                   model.Warehouse
@@ -119,6 +119,7 @@ type Postgres struct {
 	EnableDeleteByJobs          bool
 	NumWorkersDownloadLoadFiles int
 	LoadFileDownloader          downloader.Downloader
+	SlowQueryThreshold          time.Duration
 }
 
 type Credentials struct {
@@ -154,9 +155,28 @@ func New() *Postgres {
 func WithConfig(h *Postgres, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.postgres.slowQueryThreshold", 5, time.Minute)
 }
 
-func Connect(cred Credentials) (*sql.DB, error) {
+func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
+	middleware := sqlmiddleware.New(
+		db,
+		sqlmiddleware.WithLogger(pg.Logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, pg.Warehouse.Source.ID,
+			logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, pg.Warehouse.Destination.ID,
+			logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+			logfield.Schema, pg.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(pg.SlowQueryThreshold),
+	)
+	return middleware
+}
+
+func (pg *Postgres) connect() (*sqlmiddleware.DB, error) {
+	cred := pg.getConnectionCredentials()
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -190,14 +210,14 @@ func Connect(cred Credentials) (*sql.DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
-		return db, nil
+		return pg.getNewMiddleWare(db), nil
 	}
 
 	if db, err = sql.Open("postgres", dsn.String()); err != nil {
 		return nil, fmt.Errorf("opening connection to postgres: %w", err)
 	}
 
-	return db, nil
+	return pg.getNewMiddleWare(db), nil
 }
 
 func (pg *Postgres) getConnectionCredentials() Credentials {
@@ -355,7 +375,7 @@ func (pg *Postgres) TestConnection(warehouse model.Warehouse) (err error) {
 		}
 	}
 	pg.Warehouse = warehouse
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = pg.connect()
 	if err != nil {
 		return
 	}
@@ -385,7 +405,7 @@ func (pg *Postgres) Setup(
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	pg.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, pg.NumWorkersDownloadLoadFiles)
 
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = pg.connect()
 	return err
 }
 
@@ -395,7 +415,7 @@ func (pg *Postgres) CrashRecover() {}
 func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := pg.connect()
 	if err != nil {
 		return
 	}
@@ -568,12 +588,12 @@ func (pg *Postgres) Connect(warehouse model.Warehouse) (client.Client, error) {
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := pg.connect()
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
 }
 
 func (pg *Postgres) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {

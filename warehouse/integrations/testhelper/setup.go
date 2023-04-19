@@ -191,7 +191,11 @@ func SetUpJobsDB(t testing.TB) *sql.DB {
 		Port:     "5432",
 	}
 
-	db, err := postgres.Connect(*pgCredentials)
+	dsn := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		pgCredentials.User, pgCredentials.Password, pgCredentials.Host, pgCredentials.Port, pgCredentials.DBName,
+	)
+	db, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
 
 	err = db.Ping()

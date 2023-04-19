@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -174,7 +175,7 @@ type Credentials struct {
 }
 
 type tableLoadResp struct {
-	db           *sql.DB
+	db           *sqlmiddleware.DB
 	stagingTable string
 }
 
@@ -183,15 +184,16 @@ type optionalCreds struct {
 }
 
 type Snowflake struct {
-	DB             *sql.DB
-	Namespace      string
-	CloudProvider  string
-	ObjectStorage  string
-	Warehouse      model.Warehouse
-	Uploader       warehouseutils.Uploader
-	ConnectTimeout time.Duration
-	Logger         logger.Logger
-	stats          stats.Stats
+	DB                 *sqlmiddleware.DB
+	Namespace          string
+	CloudProvider      string
+	ObjectStorage      string
+	Warehouse          model.Warehouse
+	Uploader           warehouseutils.Uploader
+	ConnectTimeout     time.Duration
+	Logger             logger.Logger
+	stats              stats.Stats
+	SlowQueryThreshold time.Duration
 
 	EnableDeleteByJobs bool
 }
@@ -205,6 +207,7 @@ func New() *Snowflake {
 
 func WithConfig(h *Snowflake, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
 }
 
 func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
@@ -331,7 +334,7 @@ func (sf *Snowflake) DeleteBy(tableNames []string, params warehouseutils.DeleteB
 func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipClosingDBSession bool) (tableLoadResp, error) {
 	var (
 		csvObjectLocation string
-		db                *sql.DB
+		db                *sqlmiddleware.DB
 		err               error
 	)
 
@@ -345,8 +348,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		logfield.TableName, tableName,
 	)
 
-	credentials := sf.getConnectionCredentials(optionalCreds{schemaName: sf.Namespace})
-	if db, err = Connect(credentials); err != nil {
+	if db, err = sf.connect(optionalCreds{schemaName: sf.Namespace}); err != nil {
 		return tableLoadResp{}, fmt.Errorf("connect: %w", err)
 	}
 
@@ -640,7 +642,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable() (err error) {
 		return err
 	}
 
-	dbHandle, err := Connect(sf.getConnectionCredentials(optionalCreds{schemaName: sf.Namespace}))
+	dbHandle, err := sf.connect(optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
 		sf.Logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMergeRulesTable, err)
 		return
@@ -680,7 +682,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable() (err error) {
 		return err
 	}
 
-	dbHandle, err := Connect(sf.getConnectionCredentials(optionalCreds{schemaName: sf.Namespace}))
+	dbHandle, err := sf.connect(optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
 		sf.Logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMappingsTable, err)
 		return
@@ -990,7 +992,8 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 	}
 }
 
-func Connect(cred Credentials) (*sql.DB, error) {
+func (sf *Snowflake) connect(opts optionalCreds) (*sqlmiddleware.DB, error) {
+	cred := sf.getConnectionCredentials(opts)
 	urlConfig := snowflake.Config{
 		Account:     cred.Account,
 		User:        cred.User,
@@ -1022,7 +1025,25 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
 	}
-	return db, nil
+	middleware := sqlmiddleware.New(
+		db,
+		sqlmiddleware.WithLogger(sf.Logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, sf.Warehouse.Source.ID,
+			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, sf.Warehouse.Destination.ID,
+			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
+			logfield.Schema, sf.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(sf.SlowQueryThreshold),
+		sqlmiddleware.WithSecretsRegex(map[string]string{
+			"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
+			"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+			"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
+		}),
+	)
+	return middleware, nil
 }
 
 func (sf *Snowflake) CreateSchema() (err error) {
@@ -1197,7 +1218,7 @@ func (sf *Snowflake) IsEmpty(warehouse model.Warehouse) (empty bool, err error) 
 
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	sf.DB, err = Connect(sf.getConnectionCredentials(optionalCreds{}))
+	sf.DB, err = sf.connect(optionalCreds{})
 	if err != nil {
 		return
 	}
@@ -1248,13 +1269,13 @@ func (sf *Snowflake) Setup(warehouse model.Warehouse, uploader warehouseutils.Up
 	sf.Uploader = uploader
 	sf.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
 
-	sf.DB, err = Connect(sf.getConnectionCredentials(optionalCreds{}))
+	sf.DB, err = sf.connect(optionalCreds{})
 	return err
 }
 
 func (sf *Snowflake) TestConnection(warehouse model.Warehouse) (err error) {
 	sf.Warehouse = warehouse
-	sf.DB, err = Connect(sf.getConnectionCredentials(optionalCreds{}))
+	sf.DB, err = sf.connect(optionalCreds{})
 	if err != nil {
 		return
 	}
@@ -1278,7 +1299,7 @@ func (sf *Snowflake) TestConnection(warehouse model.Warehouse) (err error) {
 func (sf *Snowflake) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(sf.getConnectionCredentials(optionalCreds{}))
+	dbHandle, err := sf.connect(optionalCreds{})
 	if err != nil {
 		return
 	}
@@ -1374,12 +1395,12 @@ func (sf *Snowflake) Connect(warehouse model.Warehouse) (client.Client, error) {
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(sf.getConnectionCredentials(optionalCreds{}))
+	dbHandle, err := sf.connect(optionalCreds{})
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
 }
 
 func (sf *Snowflake) LoadTestTable(location, tableName string, _ map[string]interface{}, _ string) (err error) {

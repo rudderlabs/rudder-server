@@ -98,7 +98,7 @@ func TestIntegrationRedshift(t *testing.T) {
 			dsn := fmt.Sprintf(
 				"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 				credentials.Username, credentials.Password, credentials.Host, credentials.Port, credentials.DbName,
-				)
+			)
 
 			db, err := sql.Open("postgres", dsn)
 			require.NoError(t, err)

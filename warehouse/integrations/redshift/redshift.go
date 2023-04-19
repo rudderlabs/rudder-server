@@ -143,13 +143,13 @@ var partitionKeyMap = map[string]string{
 }
 
 type Redshift struct {
-	DB             *sqlmiddleware.DB
-	Namespace      string
-	Warehouse      model.Warehouse
-	Uploader       warehouseutils.Uploader
-	ConnectTimeout time.Duration
-	Logger         logger.Logger
-	stats          stats.Stats
+	DB                 *sqlmiddleware.DB
+	Namespace          string
+	Warehouse          model.Warehouse
+	Uploader           warehouseutils.Uploader
+	ConnectTimeout     time.Duration
+	Logger             logger.Logger
+	stats              stats.Stats
 	SlowQueryThreshold time.Duration
 
 	DedupWindow                   bool
@@ -1067,22 +1067,22 @@ func (rs *Redshift) connect() (*sqlmiddleware.DB, error) {
 		return nil, fmt.Errorf("redshift set query_group error : %v", err)
 	}
 	middleware := sqlmiddleware.New(
-			db,
-			sqlmiddleware.WithLogger(rs.Logger),
-			sqlmiddleware.WithKeyAndValues(
-				logfield.SourceID, rs.Warehouse.Source.ID,
-				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, rs.Warehouse.Destination.ID,
-				logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
-				logfield.Schema, rs.Namespace,
-			),
-			sqlmiddleware.WithSlowQueryThreshold(rs.SlowQueryThreshold),
-			sqlmiddleware.WithSecretsRegex(map[string]string{
-				"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
-				"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
-				"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
-			}),
+		db,
+		sqlmiddleware.WithLogger(rs.Logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Schema, rs.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(rs.SlowQueryThreshold),
+		sqlmiddleware.WithSecretsRegex(map[string]string{
+			"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
+			"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+			"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
+		}),
 	)
 	return middleware, nil
 }
