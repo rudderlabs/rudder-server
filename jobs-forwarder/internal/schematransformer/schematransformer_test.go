@@ -81,6 +81,10 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(TestEventPayload, testdata.WriteKeyEnabled), &testdata.TestEventSchemaKey)
 	})
 
+	t.Run("Test getWriteKeyFromParams", func(t *testing.T) {
+		require.Equal(t, schemaTransformer.getWriteKeyFromParams(testdata.TestParams), testdata.WriteKeyEnabled)
+	})
+
 	t.Run("Test getSchemaMessage", func(t *testing.T) {
 		schemaKey := schemaTransformer.getSchemaKeyFromJob(TestEventPayload, testdata.WriteKeyEnabled)
 		timeNow := time.Now()

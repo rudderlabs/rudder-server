@@ -54,3 +54,5 @@ var TestEventSchemaKey = proto.EventSchemaKey{
 	EventType:       "track",
 	EventIdentifier: "event-name",
 }
+
+var TestParams = []byte(`{"source_id": "enabled-source"}`)
