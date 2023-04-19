@@ -351,6 +351,22 @@ type supportedEventProperties struct {
 	FailedResponse *transformer.TransformerResponseT
 }
 
+/*
+We obtain the supported event properties map data from destination.Definition.Config.supportedConnectionModes
+Structure looks like this
+
+	[sourceType]: {
+		[connectionMode]: {
+			[eventProperty]: [...supportedEventPropertyValues]
+		}
+	}
+
+@returns
+
+	{
+		[eventProperty]: [...supportedEventPropertyValues]
+	}
+*/
 func getSupportedEventPropertiesMap(destinationDefinitionConfig map[string]interface{}, srcType, destConnectionMode string, defaultBehaviour bool) supportedEventProperties {
 	supportedConnectionModesI, connModesOk := destinationDefinitionConfig["supportedConnectionModes"]
 	if !connModesOk {
