@@ -32,7 +32,10 @@ func NewJobsForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.Jo
 		key:           config.GetString("JobsForwarder.key", "event-schema"),
 	}
 	forwarder.LoadMetaData(ctx, g, schemaDB, log, config)
-	producer, err := client.NewProducer(config)
+	producer, err := client.NewProducer(pulsarType.ProducerOptions{
+		Topic:              config.GetString("Pulsar.Producer.topic", ""),
+		BatcherBuilderType: pulsarType.KeyBasedBatchBuilder,
+	})
 	if err != nil {
 		return nil, err
 	}

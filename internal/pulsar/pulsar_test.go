@@ -31,7 +31,10 @@ func Test_Pulsar(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	defer client.Close()
-	producer, err := client.NewProducer(conf)
+	producer, err := client.NewProducer(pulsar.ProducerOptions{
+		Topic:              topic,
+		BatcherBuilderType: pulsar.KeyBasedBatchBuilder,
+	})
 	require.NoErrorf(t, err, "got error %+v", err)
 	require.NotNil(t, producer)
 	defer producer.Close()
@@ -75,7 +78,10 @@ func Test_PulsarInterface(t *testing.T) {
 	client, err := NewClient(conf)
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	producer, err := client.NewProducer(conf)
+	producer, err := client.NewProducer(pulsar.ProducerOptions{
+		Topic:              topic,
+		BatcherBuilderType: pulsar.KeyBasedBatchBuilder,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, producer)
 	producer.Close()

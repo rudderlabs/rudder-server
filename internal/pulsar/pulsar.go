@@ -18,10 +18,6 @@ type ClientConf struct {
 	connectionTimeout time.Duration
 }
 
-type ProducerConf struct {
-	topic string
-}
-
 type Producer struct {
 	pulsar.Producer
 }
@@ -46,11 +42,8 @@ func NewClient(config *config.Config) (Client, error) {
 	return client, nil
 }
 
-func (c *Client) NewProducer(config *config.Config) (ProducerAdapter, error) {
-	conf := getProducerConf(config)
-	producer, err := c.CreateProducer(pulsar.ProducerOptions{
-		Topic: conf.topic,
-	})
+func (c *Client) NewProducer(opts pulsar.ProducerOptions) (ProducerAdapter, error) {
+	producer, err := c.CreateProducer(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -96,12 +89,6 @@ func (p *Producer) SendMessageAsync(ctx context.Context, key, orderingKey string
 		Key:         key,
 		OrderingKey: orderingKey,
 	}, statusfunc)
-}
-
-func getProducerConf(config *config.Config) ProducerConf {
-	return ProducerConf{
-		topic: config.GetString("Pulsar.Producer.topic", ""),
-	}
 }
 
 func getClientConf(config *config.Config) ClientConf {
