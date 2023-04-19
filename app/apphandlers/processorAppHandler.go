@@ -174,14 +174,11 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
-	schemasDB := jobsdb.NewForReadWrite(
-		"event_schema",
+	schemaDB := jobsdb.NewForReadWrite(
+		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
-		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
-	defer schemasDB.Close()
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
@@ -206,16 +203,17 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			return err
 		}
 		defer client.Close()
-		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(ctx, g, schemasDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config)
+		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(ctx, g, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config)
 		if err != nil {
 			return err
 		}
 	} else {
-		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(ctx, g, schemasDB, logger.NewLogger().Child("jobs_forwarder"), config)
+		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(ctx, g, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config)
 		if err != nil {
 			return err
 		}
 	}
+
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
 		return err
@@ -230,6 +228,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		routerDB,
 		batchRouterDB,
 		errDB,
+		schemaDB,
 		multitenantStats,
 		reportingI,
 		transientSources,
@@ -275,8 +274,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		RouterDB:         routerDB,
 		BatchRouterDB:    batchRouterDB,
 		ErrorDB:          errDB,
-		EventSchemasDB:   schemasDB,
 		JobsForwarder:    jobsForwarder,
+		EventSchemaDB:    schemaDB,
 		Processor:        p,
 		Router:           rt,
 		MultiTenantStat:  multitenantStats,
