@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
@@ -1367,37 +1368,23 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					source,
 				)
 
-				payloadFunc := func() func(json.RawMessage) json.RawMessage {
-					var (
-						called        bool
-						actualPayload json.RawMessage
-					)
-					return func(defaultPayload json.RawMessage) json.RawMessage {
-						if !called {
-							actualPayload = func() json.RawMessage {
-								if proc.transientSources.Apply(source.ID) {
-									return nil
-								}
-								payloadBytes, err := jsonfast.Marshal(singularEvent)
-								if err != nil {
-									return nil
-								}
-								return payloadBytes
-							}()
-							called = true
-						}
-						if actualPayload == nil {
-							return defaultPayload
-						}
-						return actualPayload
+				payloadFunc := ro.Memoize(func() json.RawMessage {
+					if proc.transientSources.Apply(source.ID) {
+						return nil
 					}
-				}()
+					payloadBytes, err := jsonfast.Marshal(singularEvent)
+					if err != nil {
+						return nil
+					}
+					return payloadBytes
+				},
+				)
 				if proc.config.eventSchemaV2Enabled && // schemas enabled
 					// source has schemas enabled or if we override schemas for all sources
 					(source.EventSchemasEnabled || proc.config.eventSchemaV2AllSources) &&
 					// TODO: could use source.SourceDefinition.Category instead?
 					commonMetadataFromSingularEvent.SourceJobRunID == "" {
-					if payload := payloadFunc(nil); payload != nil {
+					if payload := payloadFunc(); payload != nil {
 						eventSchemaJobs = append(eventSchemaJobs,
 							&jobsdb.JobT{
 								UUID:         batchEvent.UUID,
@@ -1426,7 +1413,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 						event,
 						jobsdb.Succeeded.State,
 						func() json.RawMessage {
-							return payloadFunc([]byte("{}"))
+							if payload := payloadFunc(); payload != nil {
+								return payload
+							}
+							return []byte("{}")
 						},
 					)
 				}
