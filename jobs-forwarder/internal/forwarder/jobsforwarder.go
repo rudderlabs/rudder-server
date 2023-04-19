@@ -3,6 +3,7 @@ package forwarder
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -71,7 +72,7 @@ func (jf *JobsForwarder) Start() error {
 							RetryTime:     time.Now(),
 							ErrorCode:     "500",
 							Parameters:    []byte{},
-							ErrorResponse: json.RawMessage(err.Error()),
+							ErrorResponse: json.RawMessage(fmt.Sprintf(`{"error": %v}`, err.Error())),
 						})
 						continue
 					}
@@ -85,7 +86,7 @@ func (jf *JobsForwarder) Start() error {
 								RetryTime:     time.Now(),
 								ErrorCode:     "500",
 								Parameters:    []byte{},
-								ErrorResponse: json.RawMessage(err.Error()),
+								ErrorResponse: json.RawMessage(fmt.Sprintf(`{"error": %v}`, err.Error())),
 							})
 						} else {
 							statusList = append(statusList, &jobsdb.JobStatusT{
@@ -107,7 +108,7 @@ func (jf *JobsForwarder) Start() error {
 							RetryTime:     time.Now(),
 							ErrorCode:     "500",
 							Parameters:    []byte{},
-							ErrorResponse: json.RawMessage(err.Error()),
+							ErrorResponse: json.RawMessage(fmt.Sprintf(`{"error": %v}`, err.Error())),
 						})
 						continue
 					}
