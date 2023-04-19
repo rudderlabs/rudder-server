@@ -10,8 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	jobs_forwarder "github.com/rudderlabs/rudder-server/jobs-forwarder"
-
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -53,10 +51,10 @@ type Dynamic struct {
 	Router    lifecycle
 
 	MultiTenantStat lifecycle
+	JobsForwarder   lifecycle
 
 	currentMode         servermode.Mode
 	currentWorkspaceIDs string
-	JobsForwarder       jobs_forwarder.Forwarder
 
 	serverStartTimeStat  stats.Measurement
 	serverStopTimeStat   stats.Measurement
@@ -179,7 +177,9 @@ func (d *Dynamic) start() error {
 	if err := d.Processor.Start(); err != nil {
 		return fmt.Errorf("processor start: %w", err)
 	}
-	d.JobsForwarder.Start()
+	if err := d.JobsForwarder.Start(); err != nil {
+		return fmt.Errorf("jobs forwarder start: %w", err)
+	}
 	if err := d.Router.Start(); err != nil {
 		return fmt.Errorf("router start: %w", err)
 	}

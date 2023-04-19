@@ -63,7 +63,8 @@ func Test_JobsForwarder(t *testing.T) {
 	jf, err := NewJobsForwarder(ctx, g, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, jf)
-	jf.Start()
+	err = jf.Start()
+	require.NoError(t, err)
 	defer jf.Stop()
 	t.Run("Test_JobsForwarder", func(t *testing.T) {
 		generateJobs := func(numOfJob int) []*jobsdb.JobT {

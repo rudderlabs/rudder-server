@@ -22,7 +22,7 @@ func NewNOOPForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.Jo
 	return &NoopForwarder{baseForwarder}, nil
 }
 
-func (nf *NoopForwarder) Start() {
+func (nf *NoopForwarder) Start() error {
 	nf.g.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
@@ -57,6 +57,7 @@ func (nf *NoopForwarder) Start() {
 			}
 		}
 	}))
+	return nil
 }
 
 func (nf *NoopForwarder) Stop() {

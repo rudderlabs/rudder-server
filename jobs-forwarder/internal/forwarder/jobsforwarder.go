@@ -42,7 +42,7 @@ func NewJobsForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.Jo
 	return &forwarder, nil
 }
 
-func (jf *JobsForwarder) Start() {
+func (jf *JobsForwarder) Start() error {
 	var sleepTime time.Duration
 	jf.transformer.Start()
 	jf.g.Go(misc.WithBugsnag(func() error {
@@ -57,6 +57,7 @@ func (jf *JobsForwarder) Start() {
 				}
 				filteredJobs, statusList := jf.filterJobs(jobs)
 				for _, job := range filteredJobs {
+					job := job
 					transformedBytes, orderingKey, err := jf.transformer.Transform(job)
 					if err != nil {
 						statusList = append(statusList, &jobsdb.JobStatusT{
@@ -121,6 +122,7 @@ func (jf *JobsForwarder) Start() {
 			}
 		}
 	}))
+	return nil
 }
 
 func (jf *JobsForwarder) Stop() {
