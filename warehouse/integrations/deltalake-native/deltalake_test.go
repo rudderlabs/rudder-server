@@ -9,8 +9,6 @@ import (
 
 	dbsql "github.com/databricks/databricks-sql-go"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -35,8 +33,6 @@ func TestIntegrationDeltalake(t *testing.T) {
 	}
 
 	t.Parallel()
-
-	deltalake.Init()
 
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
@@ -246,7 +242,6 @@ func TestConfigurationValidationDeltalake(t *testing.T) {
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
-	deltalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 

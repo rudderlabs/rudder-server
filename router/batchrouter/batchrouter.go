@@ -23,7 +23,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
-	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -202,14 +201,6 @@ func (brt *HandleT) backendConfigSubscriber() {
 									brt.encounteredMergeRuleMap[warehouseConnIdentifier] = make(map[string]bool)
 								}
 								brt.encounteredMergeRuleMapLock.Unlock()
-							}
-
-							if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) {
-								destination := destination
-								rruntime.Go(func() {
-									testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
-									destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-								})
 							}
 						}
 					}

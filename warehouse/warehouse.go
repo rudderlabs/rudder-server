@@ -1125,8 +1125,6 @@ func CheckPGHealth(dbHandle *sql.DB) bool {
 }
 
 func setConfigHandler(w http.ResponseWriter, r *http.Request) {
-	pkgLogger.LogRequest(r)
-
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
