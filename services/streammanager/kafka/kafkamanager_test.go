@@ -117,6 +117,19 @@ func TestNewProducer(t *testing.T) {
 			require.Nil(t, p)
 			require.EqualError(t, err, `[Kafka] Error while unmarshalling destination configuration map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], got error: json: cannot unmarshal object into Go struct field avroSchema.AvroSchemas.Schema of type string`)
 		})
+		t.Run("invalid ssh config", func(t *testing.T) {
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+			destConfig := map[string]interface{}{
+				"topic":    "some-topic",
+				"hostname": "localhost",
+				"port":     "1234",
+				"useSSH":   true,
+			}
+			dest := backendconfig.DestinationT{Config: destConfig}
+
+			_, err := NewProducer(&dest, common.Opts{})
+			require.EqualError(t, err, `[Kafka] invalid configuration: ssh host cannot be empty`)
+		})
 	})
 
 	t.Run("ok", func(t *testing.T) {
@@ -129,11 +142,14 @@ func TestNewProducer(t *testing.T) {
 			dockerKafka.WithLogger(t),
 			dockerKafka.WithBrokers(1))
 		require.NoError(t, err)
-
 		destConfig := map[string]interface{}{
 			"topic":    "some-topic",
 			"hostname": "localhost",
 			"port":     kafkaContainer.Ports[0],
+			"useSSH":   true,
+			"sshHost":  "localhost",
+			"sshPort":  "22",
+			"sshUser":  "test",
 		}
 		dest := backendconfig.DestinationT{Config: destConfig}
 

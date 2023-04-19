@@ -20,6 +20,7 @@ import (
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 )
@@ -32,18 +33,26 @@ type avroSchema struct {
 
 // configuration is the config that is required to send data to Kafka
 type configuration struct {
-	Topic             string
-	HostName          string
-	Port              string
-	SslEnabled        bool
-	CACertificate     string
-	UseSASL           bool
-	SaslType          string
-	Username          string
-	Password          string
+	Topic    string
+	HostName string
+	Port     string
+
+	SslEnabled    bool
+	CACertificate string
+	UseSASL       bool
+	SaslType      string
+	Username      string
+	Password      string
+
 	ConvertToAvro     bool
 	EmbedAvroSchemaID bool
 	AvroSchemas       []avroSchema
+
+	UseSSH        bool
+	SSHHost       string
+	SSHPort       string
+	SSHUser       string
+	SSHPrivateKey string
 }
 
 func (c *configuration) validate() error {
@@ -59,6 +68,17 @@ func (c *configuration) validate() error {
 	}
 	if port < 1 {
 		return fmt.Errorf("invalid port: %d", port)
+	}
+	if c.UseSSH {
+		if c.SSHHost == "" {
+			return fmt.Errorf("ssh host cannot be empty")
+		}
+		if c.SSHPort == "" {
+			return fmt.Errorf("ssh port cannot be empty")
+		}
+		if c.SSHUser == "" {
+			return fmt.Errorf("ssh user cannot be empty")
+		}
 	}
 	return nil
 }
@@ -308,7 +328,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 			codecs[avroSchema.SchemaId] = newCodec
 		}
 	}
-
+	// TODO: once control-plane changes to get this config from it is in production. We can safely remove this.
 	sshConfig, err := getSSHConfig(destination.ID, config.Default)
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
@@ -337,6 +357,18 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 			clientConf.SASL.ScramHashGen, err = client.ScramHashGeneratorFromString(destConfig.SaslType)
 			if err != nil {
 				return nil, fmt.Errorf("[Kafka] invalid SASL type: %w", err)
+			}
+		}
+
+		if destConfig.UseSSH {
+			privateKey, err := getSSHPrivateKey(context.Background(), destination.ID)
+			if err != nil {
+				return nil, fmt.Errorf("[Kafka] invalid SSH private key: %w", err)
+			}
+			clientConf.SSHConfig = &client.SSHConfig{
+				Host:       fmt.Sprintf("%s:%s", destConfig.SSHHost, destConfig.SSHPort),
+				User:       destConfig.SSHUser,
+				PrivateKey: privateKey,
 			}
 		}
 	}
@@ -787,4 +819,12 @@ func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, er
 		PrivateKey:       string(rawPrivateKey),
 		AcceptAnyHostKey: c.GetBool("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", false),
 	}, nil
+}
+
+func getSSHPrivateKey(ctx context.Context, destinationID string) (string, error) {
+	c := controlplane.NewClient(
+		config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		backendconfig.DefaultBackendConfig.Identity(),
+	)
+	return c.GetDestinationSSHKeys(ctx, destinationID)
 }

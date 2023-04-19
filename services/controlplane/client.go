@@ -67,6 +67,11 @@ type componentSchema struct {
 	Features []string `json:"features"`
 }
 
+type PublicPrivateKeyPair struct {
+	PublicKey  string
+	PrivateKey string
+}
+
 func hostname() string {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -104,6 +109,42 @@ func (c *Client) retry(ctx context.Context, fn func() error) error {
 	opts = backoff.WithContext(opts, ctx)
 
 	return backoff.Retry(fn, opts)
+}
+
+func (c *Client) GetDestinationSSHKeys(ctx context.Context, destinationID string) (string, error) {
+	url := fmt.Sprintf("%s/destinations/%s/sshKeys", c.url, destinationID)
+
+	var pair PublicPrivateKeyPair
+
+	err := c.retry(ctx, func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+		if err != nil {
+			return fmt.Errorf("creating new request with ctx: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", c.ua)
+		req.SetBasicAuth(c.identity.BasicAuth())
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("making request: %w", err)
+		}
+
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&pair); err != nil {
+			return fmt.Errorf("decoding response: %w", err)
+		}
+
+		return nil
+	})
+
+	return pair.PrivateKey, err
 }
 
 func (c *Client) SendFeatures(ctx context.Context, component string, features []string) error {
