@@ -188,7 +188,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	config := config.New()
 	var jobsForwarder jobs_forwarder.Forwarder
-	if config.GetBool("JobsForwarder.enabled", false) {
+	if config.GetBool("JEventSchemas2.enabled", false) {
 		client, err := pulsar.NewClient(config)
 		if err != nil {
 			return err

@@ -41,10 +41,6 @@ func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, sc
 }
 
 func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, error) {
-	if bf.jobsDB == nil {
-		bf.log.Errorf("base forwarder: jobsDB is nil")
-		return []*jobsdb.JobT{}, true, nil
-	}
 	var combinedList []*jobsdb.JobT
 	queryParams := bf.generateQueryParams()
 	toRetry, err := misc.QueryWithRetriesAndNotify(ctx, bf.baseConfig.jobsDBQueryRequestTimeout, bf.baseConfig.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
@@ -75,10 +71,6 @@ func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, err
 }
 
 func (bf *BaseForwarder) MarkJobStatuses(ctx context.Context, statusList []*jobsdb.JobStatusT) error {
-	if bf.jobsDB == nil {
-		bf.log.Errorf("base forwarder: jobsDB is nil")
-		return nil
-	}
 	err := misc.RetryWithNotify(ctx, bf.baseConfig.jobsDBQueryRequestTimeout, bf.baseConfig.jobsDBMaxRetries, func(ctx context.Context) error {
 		return bf.jobsDB.WithUpdateSafeTx(ctx, func(txn jobsdb.UpdateSafeTx) error {
 			return bf.jobsDB.UpdateJobStatusInTx(ctx, txn, statusList, nil, nil)
