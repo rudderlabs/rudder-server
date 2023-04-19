@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	serverUtilsTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +25,7 @@ func TestDestinationFilterCondition(t *testing.T) {
 	type filterConditionT struct {
 		destination        testDestinationT
 		source             testSourceT
-		event              serverUtilsTypes.SingularEventT
+		event              *EventParams
 		isSupportedMsgType bool
 	}
 
@@ -72,8 +71,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -113,8 +112,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "page",
+				event: &EventParams{
+					MessageType: "page",
 				},
 			},
 			expected: false,
@@ -154,8 +153,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: false,
@@ -195,48 +194,7 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{},
-			},
-			expected: false,
-		},
-		{
-			caseName: "when mode is hybrid for web srcType if event type is not a valid string, return false",
-			input: filterConditionT{
-				isSupportedMsgType: false,
-				destination: testDestinationT{
-					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web"},
-						"supportedConnectionModes": map[string]interface{}{
-							"web": map[string]interface{}{
-								"cloud": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowedValues": []interface{}{"track", "group"},
-									},
-								},
-								"hybrid": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowAll": true,
-									},
-								},
-							},
-						},
-					},
-					definitionID: "1DefId",
-					config: map[string]interface{}{
-						"connectionMode": "cloud",
-					},
-					isProcessorEnabled: true,
-				},
-				source: testSourceT{
-					name:          "demo-source",
-					id:            "1src",
-					sourceDefType: "web",
-				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": 12343,
-				},
+				event: &EventParams{},
 			},
 			expected: false,
 		},
@@ -273,8 +231,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -300,8 +258,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -341,8 +299,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "android",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -382,8 +340,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: false,
@@ -419,8 +377,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -455,8 +413,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "page",
+				event: &EventParams{
+					MessageType: "page",
 				},
 			},
 			expected: false,
@@ -491,8 +449,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -527,8 +485,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "page",
+				event: &EventParams{
+					MessageType: "page",
 				},
 			},
 			expected: true,
@@ -563,8 +521,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "identify",
+				event: &EventParams{
+					MessageType: "identify",
 				},
 			},
 			expected: false,
@@ -601,8 +559,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "page",
+				event: &EventParams{
+					MessageType: "page",
 				},
 			},
 			expected: true,
@@ -635,8 +593,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "page",
+				event: &EventParams{
+					MessageType: "page",
 				},
 			},
 			expected: true,
@@ -669,8 +627,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "alias",
+				event: &EventParams{
+					MessageType: "alias",
 				},
 			},
 			expected: false,
@@ -705,8 +663,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "identify",
+				event: &EventParams{
+					MessageType: "identify",
 				},
 			},
 			expected: false,
@@ -742,8 +700,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "web",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -777,8 +735,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "cloud",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -811,8 +769,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "cloud",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "alias",
+				event: &EventParams{
+					MessageType: "alias",
 				},
 			},
 			expected: false,
@@ -844,8 +802,8 @@ func TestDestinationFilterCondition(t *testing.T) {
 					id:            "1src",
 					sourceDefType: "cloud",
 				},
-				event: serverUtilsTypes.SingularEventT{
-					"type": "track",
+				event: &EventParams{
+					MessageType: "track",
 				},
 			},
 			expected: true,
@@ -880,12 +838,12 @@ func TestDestinationFilterCondition(t *testing.T) {
 				},
 			}
 
-			actualOutput := FilterUsingSupportedConnectionModes(
-				EventFilterParams{
-					Destination:      destination,
+			actualOutput, _ := FilterUsingSupportedConnectionModes(
+				ConnectionModeFilterParams{
 					SrcType:          source.SourceDefinition.Type,
-					Event:            &testCase.input.event,
-					DefaultBehaviour: testCase.input.isSupportedMsgType,
+					Destination:      destination,
+					Event:            testCase.input.event,
+					DefaultBehaviour: testCase.input.isSupportedMsgType && testCase.input.destination.isProcessorEnabled,
 				},
 			)
 

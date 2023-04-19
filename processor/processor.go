@@ -2261,35 +2261,11 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				supportedMessageTypesCache[event.Destination.ID] = supportedTypes
 			}
 			if supportedTypes.ok {
-				messageType, typOk := event.Message["type"].(string)
-				if !typOk {
-					// add to FailedEvents
-					errMessage = "Invalid message type. Type assertion failed"
-					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-					failedEvents = append(failedEvents, resp)
-					continue
-				}
-				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				isSupportedMsgType := misc.Contains(supportedTypes.values, messageType)
-				if !isSupportedMsgType {
-					continue
-				}
-
-				// filter events based on "supportedConnectionModes"
-				allow := eventfilter.FilterUsingSupportedConnectionModes(eventfilter.EventFilterParams{
-					Destination: &event.Destination,
-					SrcType:     event.Metadata.SourceDefinitionType,
-					Event:       &event.Message,
-					// Default behavior
-					// When something is missing in "supportedConnectionModes" or if "supportedConnectionModes" is not defined
-					// We would be checking for below things
-					// 1. Check if the event.type value is present in destination.DestinationDefinition.Config["supportedMessageTypes"]
-					// 2. Check if the connectionMode of destination is cloud or hybrid(evaluated through `IsProcessorEnabled`)
-					// Only when 1 & 2 are true, we would allow the event to flow through to server
-					// As when this will be called, we would have already checked if event.type in supportedMessageTypes
-					DefaultBehaviour: event.Destination.IsProcessorEnabled && isSupportedMsgType,
-				})
+				allow, failedEvent := eventfilter.AllowEventToDestTransformation(event, supportedTypes.values)
 				if !allow {
+					if failedEvent != nil {
+						failedEvents = append(failedEvents, *failedEvent)
+					}
 					continue
 				}
 			}
