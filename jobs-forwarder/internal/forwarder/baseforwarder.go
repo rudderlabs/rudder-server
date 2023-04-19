@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -25,6 +26,7 @@ type BaseForwarder struct {
 		loopSleepTime             time.Duration
 		jobsDBQueryRequestTimeout time.Duration
 		jobsDBMaxRetries          int
+		jobsDBPayloadSize         int64
 	}
 }
 
@@ -34,6 +36,7 @@ func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, sc
 	bf.baseConfig.loopSleepTime = config.GetDuration("JobsForwarder.loopSleepTime", 10, time.Second)
 	bf.baseConfig.jobsDBQueryRequestTimeout = config.GetDuration("JobsForwarder.queryTimeout", 10, time.Second)
 	bf.baseConfig.jobsDBMaxRetries = config.GetInt("JobsForwarder.maxRetries", 3)
+	bf.baseConfig.jobsDBPayloadSize = config.GetInt64("JobsForwarder.payloadSize", 20*bytesize.MB)
 	bf.log = log
 	bf.jobsDB = schemaDB
 	bf.ctx = ctx
@@ -93,7 +96,8 @@ func (bf *BaseForwarder) sendQueryRetryStats(attempt int) {
 
 func (bf *BaseForwarder) generateQueryParams() jobsdb.GetQueryParamsT {
 	return jobsdb.GetQueryParamsT{
-		EventsLimit: bf.baseConfig.pickupSize,
-		JobsLimit:   bf.baseConfig.pickupSize,
+		EventsLimit:      bf.baseConfig.pickupSize,
+		JobsLimit:        bf.baseConfig.pickupSize,
+		PayloadSizeLimit: bf.baseConfig.jobsDBPayloadSize,
 	}
 }
