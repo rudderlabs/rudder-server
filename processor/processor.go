@@ -1487,7 +1487,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 						statusDetailsMap,
 						event,
 						jobsdb.Succeeded.State,
-            types.GATEWAY,
+						types.GATEWAY,
 						func() json.RawMessage {
 							if payload := payloadFunc(); payload != nil {
 								return payload

@@ -151,7 +151,7 @@ func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
 	}
 }
 
-func AssertSameKeys[V1 any, V2 any](m1 map[string]V1, m2 map[string]V2) {
+func AssertSameKeys[V1, V2 any](m1 map[string]V1, m2 map[string]V2) {
 	if len(m1) != len(m2) {
 		panic("maps length don't match") // TODO improve msg
 	}
