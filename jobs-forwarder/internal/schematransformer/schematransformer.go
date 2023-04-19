@@ -152,10 +152,7 @@ func (st *SchemaTransformer) flattenEvent(event map[string]interface{}) (map[str
 func (st *SchemaTransformer) disablePIIReporting(writeKey string) bool {
 	st.writeKeyMapLock.RLock()
 	defer st.writeKeyMapLock.RUnlock()
-	if st.newPIIReportingSettings[writeKey] {
-		return true
-	}
-	return false
+	return st.newPIIReportingSettings[writeKey]
 }
 
 func (st *SchemaTransformer) getSampleEvent(event map[string]interface{}, writeKey string) []byte {

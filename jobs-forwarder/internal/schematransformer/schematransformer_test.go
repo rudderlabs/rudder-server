@@ -17,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/stretchr/testify/require"
 )
@@ -32,11 +31,10 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	g, ctx := errgroup.WithContext(context.Background())
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 	schemaTransformer := SchemaTransformer{
-		ctx:              ctx,
-		g:                g,
-		backendConfig:    mockBackendConfig,
-		transientSources: transientsource.NewEmptyService(),
-		config:           conf,
+		ctx:           ctx,
+		g:             g,
+		backendConfig: mockBackendConfig,
+		config:        conf,
 	}
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
