@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
@@ -63,13 +64,16 @@ func NewHandle(transformer transformer.Transformer) *Handle {
 
 // Handle is a handle to the processor module
 type Handle struct {
-	backendConfig             backendconfig.BackendConfig
-	transformer               transformer.Transformer
-	lastJobID                 int64
-	gatewayDB                 jobsdb.JobsDB
-	routerDB                  jobsdb.JobsDB
-	batchRouterDB             jobsdb.JobsDB
-	errorDB                   jobsdb.JobsDB
+	backendConfig backendconfig.BackendConfig
+	transformer   transformer.Transformer
+	lastJobID     int64
+
+	gatewayDB     jobsdb.JobsDB
+	routerDB      jobsdb.JobsDB
+	batchRouterDB jobsdb.JobsDB
+	errorDB       jobsdb.JobsDB
+	eventSchemaDB jobsdb.JobsDB
+
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
 	dedupHandler              dedup.DedupI
@@ -130,6 +134,8 @@ type Handle struct {
 		pollInterval              time.Duration
 		GWCustomVal               string
 		asyncInit                 *misc.AsyncInit
+		eventSchemaV2Enabled      bool
+		eventSchemaV2AllSources   bool
 	}
 
 	adaptiveLimit func(int64) int64
@@ -309,8 +315,8 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 
 // Setup initializes the module
 func (proc *Handle) Setup(
-	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
-	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
+	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
+	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
@@ -329,6 +335,7 @@ func (proc *Handle) Setup(
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.errorDB = errorDB
+	proc.eventSchemaDB = eventSchemaDB
 
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
@@ -569,7 +576,9 @@ func (proc *Handle) loadConfig() {
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
-
+	// EventSchemas2 feature.
+	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2Enabled, false, "EventSchemas2.enabled")
+	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2AllSources, false, "EventSchemas2.enableAllSources")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
@@ -992,7 +1001,15 @@ func (proc *Handle) getDestTransformerEvents(response transformer.ResponseT, com
 	return eventsToTransform, successMetrics, successCountMap, successCountMetadataMap
 }
 
-func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata, countMap map[string]int64, connectionDetailsMap map[string]*types.ConnectionDetails, statusDetailsMap map[string]*types.StatusDetail, event *transformer.TransformerResponseT, status string, payload func() json.RawMessage) {
+func (proc *Handle) updateMetricMaps(
+	countMetadataMap map[string]MetricMetadata,
+	countMap map[string]int64,
+	connectionDetailsMap map[string]*types.ConnectionDetails,
+	statusDetailsMap map[string]*types.StatusDetail,
+	event *transformer.TransformerResponseT,
+	status string,
+	payload func() json.RawMessage,
+) {
 	if proc.isReportingEnabled() {
 		var eventName string
 		var eventType string
@@ -1269,6 +1286,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	groupedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEventT)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobs []*jobsdb.JobT
+	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
 		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
@@ -1355,18 +1373,57 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					source,
 				)
 
+				payloadFunc := ro.Memoize(func() json.RawMessage {
+					if proc.transientSources.Apply(source.ID) {
+						return nil
+					}
+					payloadBytes, err := jsonfast.Marshal(singularEvent)
+					if err != nil {
+						return nil
+					}
+					return payloadBytes
+				},
+				)
+				if proc.config.eventSchemaV2Enabled && // schemas enabled
+					// source has schemas enabled or if we override schemas for all sources
+					(source.EventSchemasEnabled || proc.config.eventSchemaV2AllSources) &&
+					// TODO: could use source.SourceDefinition.Category instead?
+					commonMetadataFromSingularEvent.SourceJobRunID == "" {
+					if payload := payloadFunc(); payload != nil {
+						eventSchemaJobs = append(eventSchemaJobs,
+							&jobsdb.JobT{
+								UUID:         batchEvent.UUID,
+								UserID:       batchEvent.UserID,
+								Parameters:   batchEvent.Parameters,
+								CustomVal:    batchEvent.CustomVal,
+								EventPayload: payload,
+								CreatedAt:    time.Now(),
+								ExpireAt:     time.Now(),
+								WorkspaceId:  batchEvent.WorkspaceId,
+							},
+						)
+					}
+				}
+
 				// REPORTING - GATEWAY metrics - START
 				// dummy event for metrics purposes only
 				event := &transformer.TransformerResponseT{}
 				if proc.isReportingEnabled() {
 					event.Metadata = *commonMetadataFromSingularEvent
-					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, func() json.RawMessage {
-						sampleEvent, err := jsonfast.Marshal(singularEvent)
-						if err != nil || proc.transientSources.Apply(source.ID) {
-							sampleEvent = []byte(`{}`)
-						}
-						return sampleEvent
-					})
+					proc.updateMetricMaps(
+						inCountMetadataMap,
+						inCountMap,
+						connectionDetailsMap,
+						statusDetailsMap,
+						event,
+						jobsdb.Succeeded.State,
+						func() json.RawMessage {
+							if payload := payloadFunc(); payload != nil {
+								return payload
+							}
+							return []byte("{}")
+						},
+					)
 				}
 				// REPORTING - GATEWAY metrics - END
 
@@ -1413,6 +1470,27 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 			WorkspaceId:   batchEvent.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
+	}
+
+	if len(eventSchemaJobs) > 0 {
+		err := misc.RetryWithNotify(
+			context.Background(),
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.eventSchemaDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						return proc.eventSchemaDB.StoreInTx(ctx, tx, eventSchemaJobs)
+					},
+				)
+			}, proc.sendRetryStoreStats)
+		if err != nil {
+			proc.logger.Errorf("Store into event schema table failed with error: %v", err)
+			proc.logger.Errorf("eventSchemaJobs: %v", eventSchemaJobs)
+			panic(err)
+		}
+		proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(eventSchemaJobs))
 	}
 
 	// REPORTING - GATEWAY metrics - START
@@ -1706,8 +1784,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	beforeStoreStatus := time.Now()
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-
 		err := misc.RetryWithNotify(
 			context.Background(),
 			proc.jobsDBCommandTimeout,
@@ -1732,6 +1808,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		if err != nil {
 			panic(err)
 		}
+		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
 		proc.multitenantI.ReportProcLoopAddStats(
 			getJobCountsByWorkspaceDestType(batchDestJobs),
@@ -1745,8 +1822,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}
 
 	if len(destJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-
 		err := misc.RetryWithNotify(
 			context.Background(),
 			proc.jobsDBCommandTimeout,
@@ -1771,6 +1846,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		if err != nil {
 			panic(err)
 		}
+		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
 		proc.multitenantI.ReportProcLoopAddStats(
 			getJobCountsByWorkspaceDestType(destJobs),
@@ -1787,7 +1863,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
 	}
 	if len(in.procErrorJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
 		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 			return proc.errorDB.Store(ctx, in.procErrorJobs)
 		}, proc.sendRetryStoreStats)
@@ -1796,8 +1871,10 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
 			panic(err)
 		}
+		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
 		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
+
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()

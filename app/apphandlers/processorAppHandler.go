@@ -186,6 +186,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}))
 	}
 
+	schemaDB := jobsdb.NewForReadWrite(
+		"esch",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+	)
+
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
 		return err
@@ -200,6 +206,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		routerDB,
 		batchRouterDB,
 		errDB,
+		schemaDB,
 		multitenantStats,
 		reportingI,
 		transientSources,
@@ -245,6 +252,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		RouterDB:         routerDB,
 		BatchRouterDB:    batchRouterDB,
 		ErrorDB:          errDB,
+		EventSchemaDB:    schemaDB,
 		Processor:        p,
 		Router:           rt,
 		MultiTenantStat:  multitenantStats,
