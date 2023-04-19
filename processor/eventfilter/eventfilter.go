@@ -377,18 +377,18 @@ func getSupportedEventPropertiesMap(destinationDefinitionConfig map[string]inter
 	supportedEventPropsMapI, supportedEventPropsLookupErr := misc.NestedMapLookup(supportedConnectionModes, srcType, destConnectionMode)
 	if supportedEventPropsLookupErr != nil {
 		if supportedEventPropsLookupErr.Level == 0 {
-			// Case 2
+			// Case 2(refer cases in `FilterUsingSupportedConnectionModes` function)
 			pkgLogger.Infof("Failed with %v for SourceType(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), srcType)
 			return supportedEventProperties{Allow: defaultBehaviour}
 		}
-		// Cases 3 & 4
+		// Cases 3 & 4(refer cases in `FilterUsingSupportedConnectionModes` function)
 		pkgLogger.Infof("Failed with %v for ConnectionMode(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), destConnectionMode)
 		return supportedEventProperties{Allow: false}
 	}
 
 	supportedEventPropsMap, isEventPropsICastableToMap := supportedEventPropsMapI.(map[string]interface{})
 	if !isEventPropsICastableToMap || len(supportedEventPropsMap) == 0 {
-		// includes Case 5, 7
+		// includes Case 5, 7(refer cases in `FilterUsingSupportedConnectionModes` function)
 		return supportedEventProperties{Allow: defaultBehaviour}
 	}
 	return supportedEventProperties{EventPropsMap: supportedEventPropsMap, Allow: true}
