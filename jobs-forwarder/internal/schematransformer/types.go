@@ -23,7 +23,6 @@ type SchemaTransformer struct {
 	sourceWriteKeyMap          map[string]string
 	newPIIReportingSettings    map[string]bool
 	writeKeyMapLock            sync.RWMutex
-	writeKeySourceIDMap        map[string]string
 	config                     *config.Config
 	shouldCaptureNilAsUnknowns bool
 	isInitialisedBool          atomic.Bool

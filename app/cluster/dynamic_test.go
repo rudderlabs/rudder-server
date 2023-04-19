@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
+	mockjobsforwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -76,7 +76,7 @@ func TestDynamicCluster(t *testing.T) {
 	routerDB := &mockLifecycle{status: "", callCount: &callCount}
 	batchRouterDB := &mockLifecycle{status: "", callCount: &callCount}
 	errorDB := &mockLifecycle{status: "", callCount: &callCount}
-	jobsForwarder := mock_jobs_forwarder.NewMockForwarder(gomock.NewController(t))
+	jobsForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
 	eschDB := &mockLifecycle{status: "", callCount: &callCount}
 
 	processor := &mockLifecycle{status: "", callCount: &callCount}
