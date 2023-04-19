@@ -926,12 +926,9 @@ func (proc *Handle) getDestTransformerEvents(response transformer.ResponseT, com
 		userTransformedEvent := &response.Events[i]
 		var messages []types.SingularEventT
 		if len(userTransformedEvent.Metadata.MessageIDs) > 0 {
-			messageIds := userTransformedEvent.Metadata.MessageIDs
-			for _, msgID := range messageIds {
-				messages = append(messages, eventsByMessageID[msgID].SingularEvent)
-			}
+			messages = lo.Map(userTransformedEvent.Metadata.MessageIDs, func(msgID string, _ int) types.SingularEventT { return eventsByMessageID[msgID].SingularEvent })
 		} else {
-			messages = append(messages, eventsByMessageID[userTransformedEvent.Metadata.MessageID].SingularEvent)
+			messages = []types.SingularEventT{eventsByMessageID[userTransformedEvent.Metadata.MessageID].SingularEvent}
 		}
 
 		for _, message := range messages {
@@ -1095,7 +1092,7 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 		// create status details for each validation error
 		// single event can have multiple validation errors of same type
 		veCount := len(event.ValidationErrors)
-		if stage == transformer.TrackingPlanValidationStage && status == types.SUCCEEDED {
+		if stage == transformer.TrackingPlanValidationStage && status == jobsdb.Succeeded.State {
 			if veCount > 0 {
 				status = types.SUCCEEDED_WITH_VIOLATIONS
 			} else {
@@ -1141,12 +1138,9 @@ func (proc *Handle) getFailedEventJobs(response transformer.ResponseT, commonMet
 		failedEvent := &response.FailedEvents[i]
 		var messages []types.SingularEventT
 		if len(failedEvent.Metadata.MessageIDs) > 0 {
-			messageIds := failedEvent.Metadata.MessageIDs
-			for _, msgID := range messageIds {
-				messages = append(messages, eventsByMessageID[msgID].SingularEvent)
-			}
+			messages = lo.Map(failedEvent.Metadata.MessageIDs, func(msgID string, _ int) types.SingularEventT { return eventsByMessageID[msgID].SingularEvent })
 		} else {
-			messages = append(messages, eventsByMessageID[failedEvent.Metadata.MessageID].SingularEvent)
+			messages = []types.SingularEventT{eventsByMessageID[failedEvent.Metadata.MessageID].SingularEvent}
 		}
 		payload, err := jsonfast.Marshal(messages)
 		if err != nil {

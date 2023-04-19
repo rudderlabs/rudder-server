@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/thoas/go-funk"
+	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -320,10 +320,10 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 				},
 			}
 		}
-		statusDetailInterface := funk.Find(metricsByGroup[identifier].StatusDetails, func(i *types.StatusDetail) bool {
+		statusDetailInterface, found := lo.Find(metricsByGroup[identifier].StatusDetails, func(i *types.StatusDetail) bool {
 			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode && i.ErrorType == report.StatusDetail.ErrorType
 		})
-		if statusDetailInterface == nil {
+		if !found {
 			metricsByGroup[identifier].StatusDetails = append(metricsByGroup[identifier].StatusDetails, &types.StatusDetail{
 				Status:         report.StatusDetail.Status,
 				StatusCode:     report.StatusDetail.StatusCode,
@@ -337,7 +337,7 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 			})
 			continue
 		}
-		statusDetail := statusDetailInterface.(*types.StatusDetail)
+		statusDetail := statusDetailInterface
 		statusDetail.Count += report.StatusDetail.Count
 		statusDetail.ViolationCount += report.StatusDetail.ViolationCount
 		statusDetail.SampleResponse = report.StatusDetail.SampleResponse

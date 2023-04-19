@@ -37,10 +37,8 @@ var (
 
 var (
 	// Tracking plan validation states
-	SUCCEEDED                    = "succeeded"
 	SUCCEEDED_WITHOUT_VIOLATIONS = "succeeded_without_violations"
 	SUCCEEDED_WITH_VIOLATIONS    = "succeeded_with_violations"
-	ABORTED                      = "aborted"
 )
 
 type Client struct {
@@ -153,7 +151,7 @@ func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
 	}
 }
 
-func AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]map[string]*StatusDetail) {
+func AssertSameKeys[V1 any, V2 any](m1 map[string]V1, m2 map[string]V2) {
 	if len(m1) != len(m2) {
 		panic("maps length don't match") // TODO improve msg
 	}

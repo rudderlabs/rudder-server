@@ -1373,6 +1373,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 
 	// REPORTING - ROUTER - START
+	utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 	for k, cd := range connectionDetailsMap {
 		var inPu string
 		if transformedAtMap[k] == "processor" {
