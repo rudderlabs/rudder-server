@@ -40,7 +40,8 @@ func Test_NOOPForwarder(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, nf)
 
-	nf.Start()
+	err = nf.Start()
+	require.NoError(t, err)
 	defer nf.Stop()
 
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
