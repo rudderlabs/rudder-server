@@ -12,8 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
-//go:generate mockgen -destination=../../mocks/pulsar/mock_pulsar.go -package=mock_pulsar "github.com/rudderlabs/rudder-server/internal/pulsar" ProducerAdapter
-
 type ClientConf struct {
 	url               string
 	operationTimeout  time.Duration

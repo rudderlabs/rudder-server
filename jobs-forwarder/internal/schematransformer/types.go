@@ -9,7 +9,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 )
 
 // EventPayload : Generic type for gateway event payload
@@ -22,7 +21,6 @@ type SchemaTransformer struct {
 	ctx                        context.Context
 	g                          *errgroup.Group
 	backendConfig              backendconfig.BackendConfig
-	transientSources           transientsource.Service
 	sourceWriteKeyMap          map[string]string
 	newPIIReportingSettings    map[string]bool
 	writeKeyMapLock            sync.RWMutex

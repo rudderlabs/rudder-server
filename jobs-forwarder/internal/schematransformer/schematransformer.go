@@ -16,8 +16,6 @@ import (
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 )
 
-//go:generate mockgen -destination=../../../mocks/schematransformer/mock_schematransformer.go -package=mock_schematransformer "github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer" Transformer
-
 type Transformer interface {
 	Start()
 	Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error)
@@ -157,7 +155,7 @@ func (st *SchemaTransformer) disablePIIReporting(writeKey string) bool {
 	if st.newPIIReportingSettings[writeKey] {
 		return true
 	}
-	return st.transientSources.Apply(st.writeKeySourceIDMap[writeKey])
+	return false
 }
 
 func (st *SchemaTransformer) getSampleEvent(event map[string]interface{}, writeKey string) []byte {
