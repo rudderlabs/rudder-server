@@ -123,18 +123,18 @@ Example:
 		"supportedConnectionModes": {
 			"unity": {
 				"cloud": {
-					"messageTypes": { "allowAll": true },
+					"messageType": { "allowAll": true },
 				},
 				"hybrid": {
-					"messageTypes": { "allowAll": true },
+					"messageType": { "allowedValues": ["group","track"] },
 				}
 			},
 			"web": {
 				"cloud": {
-					"messageTypes": { "allowAll": true },
+					"messageType": { "allowedValues": ["group","track"] },
 				},
 				"device": {
-					"messageTypes": { "allowAll": true },
+					"messageType": { "allowAll": true },
 				}
 			}
 		},
@@ -157,7 +157,6 @@ func FilterUsingSupportedConnectionModes(eventFilterParams EventFilterParams) bo
 	eventType = strings.TrimSpace(strings.ToLower(eventType))
 
 	/*
-		```
 		From /workspaceConfig, /data-planes/v1/namespaces/:namespace/config, we get
 		{
 			connectionMode: string
@@ -170,7 +169,7 @@ func FilterUsingSupportedConnectionModes(eventFilterParams EventFilterParams) bo
 	destConnectionMode, isDestConnModeString := destConnModeI.(string)
 	if !isDestConnModeString || destConnectionMode == "device" {
 		// includes Case 6
-		pkgLogger.Errorf("Provided connectionMode is in wrong format or the mode is device", destConnModeI)
+		pkgLogger.Errorf("Provided connectionMode(%v) is in wrong format or the mode is device", destConnModeI)
 		return false
 	}
 	/*

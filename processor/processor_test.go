@@ -1946,6 +1946,167 @@ var _ = Describe("Static Function Tests", func() {
 			response := ConvertToFilteredTransformerResponse(events, true)
 			Expect(response).To(Equal(expectedResponse))
 		})
+
+		It("When web sourceType is sending events to cloud-mode destination, should filter out any event types that are not track/page", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "cloud",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"web": map[string]interface{}{
+								"cloud": map[string]interface{}{
+									"messageType": map[string]interface{}{
+										"allowedValues": []interface{}{"track", "group"},
+									},
+								},
+								"hybrid": map[string]interface{}{
+									"messageType": map[string]interface{}{
+										"allowAll": true,
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to device-mode destination, should filter out all the events to this destination", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "device",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"web": map[string]interface{}{
+								"cloud": map[string]interface{}{
+									"messageType": map[string]interface{}{
+										"allowedValues": []interface{}{"track", "group"},
+									},
+								},
+								"device": map[string]interface{}{
+									"messageType": map[string]interface{}{
+										"allowAll": true,
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events:       nil,
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
 	})
 })
 
