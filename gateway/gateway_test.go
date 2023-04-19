@@ -752,16 +752,19 @@ var _ = Describe("Gateway", func() {
 			}).Return(nil)
 			c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
 
-			validBody := `{"batch": [{"data": "valid-json", "type": "extract"}]}`
 			for handlerType, handler := range extractHandlers {
-				if handlerType == "extract" {
-					validBody = `{"data": "valid-json", "type": "extract"}`
+				var body string
+				switch handlerType {
+				case "extract":
+					body = `{"data": "valid-json", "type": "extract"}`
+				default:
+					body = `{"batch": [{"data": "valid-json", "type": "extract"}]}`
 				}
 				expectHandlerResponse(
 					handler,
 					authorizedRequest(
 						WriteKeyEnabled,
-						bytes.NewBufferString(validBody),
+						bytes.NewBufferString(body),
 					),
 					200,
 					"OK",
