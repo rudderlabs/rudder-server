@@ -343,6 +343,13 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 	if _, err := tx.Exec(fmt.Sprintf(`ANALYZE %q, %q`, destDS.JobTable, destDS.JobStatusTable)); err != nil {
 		return 0, err
 	}
+	tx.AddSuccessListener(func() {
+		postMigrationCounterUpdate(
+			srcDS.Index,
+			destDS.Index,
+			jd.tablePrefix,
+		)
+	})
 	return int(numJobsMigrated), nil
 }
 

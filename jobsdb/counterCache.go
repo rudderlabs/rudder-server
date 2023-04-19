@@ -222,53 +222,61 @@ func getLookupSubjects(
 // migration/fail executing/ delete executing
 
 func failExecuting(dsIndex, tablePrefix string) {
-	subjectPrefix := tablePrefix + "." + dsIndex
-	subjectSuffix := Executing.State
-	failedCountersMap := make(map[string]int)
-	instance.Range(
-		func(key, value interface{}) bool {
-			if m, ok := key.(subject); ok {
-				if gauge, ok := value.(metric.Gauge); ok {
-					subjectString := string(m)
-					if strings.HasPrefix(subjectString, subjectPrefix) &&
-						strings.HasSuffix(subjectString, subjectSuffix) {
-						preFailCount := gauge.IntValue()
-						failedCountersMap[strings.Replace(
-							subjectString,
-							subjectSuffix,
-							Failed.State,
-							1,
-						)] = preFailCount
-						gauge.Set(0)
-					}
-				}
-			}
-			return true
-		},
-	)
+	failedCountersMap := removeState(dsIndex, tablePrefix, Executing.State)
 	for sub, count := range failedCountersMap {
-		instance.MustGetGauge(subject(sub)).Add(float64(count))
+		instance.MustGetGauge(
+			subject(
+				strings.Replace(sub, Executing.State, Failed.State, 1),
+			),
+		).Add(float64(count))
 	}
 }
 
 func deleteExecuting(dsIndex, tablePrefix string) {
+	executingCountsMap := removeState(dsIndex, tablePrefix, Executing.State)
+	for sub, count := range executingCountsMap {
+		instance.MustGetGauge(
+			subject(
+				strings.Replace(sub, Executing.State, NotProcessed.State, 1),
+			),
+		).Add(float64(count))
+	}
+}
+
+// clear termnial counters for old DS
+//
+// update non-terminal counters from old to migrated(new) DS
+func postMigrationCounterUpdate(oldDS, newDS, tablePrefix string) {
+	for _, state := range validTerminalStates {
+		_ = removeState(oldDS, tablePrefix, state)
+	}
+	for _, state := range validNonTerminalStates {
+		clearedCountsMap := removeState(oldDS, tablePrefix, state)
+		for sub, count := range clearedCountsMap {
+			instance.MustGetGauge(
+				subject(
+					strings.Replace(sub, oldDS, newDS, 1),
+				),
+			).Add(float64(count))
+		}
+	}
+}
+
+// sets count to 0 for all counters with the given dsIndex, tablePrefix and jobState
+//
+// and returns a map of the counters that were cleared
+func removeState(dsIndex, tablePrefix, jobState string) map[string]int {
 	subjectPrefix := tablePrefix + "." + dsIndex
-	subjectSuffix := Executing.State
-	executingCountsMap := make(map[string]int)
+	clearedCountsMap := make(map[string]int)
 	instance.Range(
 		func(key, value interface{}) bool {
 			if m, ok := key.(subject); ok {
 				if gauge, ok := value.(metric.Gauge); ok {
 					subjectString := string(m)
 					if strings.HasPrefix(subjectString, subjectPrefix) &&
-						strings.HasSuffix(subjectString, subjectSuffix) {
+						strings.HasSuffix(subjectString, jobState) {
 						preStatusDeleteCount := gauge.IntValue()
-						executingCountsMap[strings.Replace(
-							subjectString,
-							subjectSuffix,
-							NotProcessed.State,
-							1,
-						)] = preStatusDeleteCount
+						clearedCountsMap[subjectString] = preStatusDeleteCount
 						gauge.Set(0)
 					}
 				}
@@ -276,7 +284,5 @@ func deleteExecuting(dsIndex, tablePrefix string) {
 			return true
 		},
 	)
-	for sub, count := range executingCountsMap {
-		instance.MustGetGauge(subject(sub)).Add(float64(count))
-	}
+	return clearedCountsMap
 }
