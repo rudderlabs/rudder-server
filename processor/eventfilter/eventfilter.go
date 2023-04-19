@@ -133,6 +133,7 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 
 	isSupportedMsgType := lo.Contains(supportedMsgTypes, messageType)
 	if !isSupportedMsgType {
+		pkgLogger.Debug("event filtered out due to unsupported msg types")
 		// We will not allow the event
 		return false, nil
 	}
@@ -222,6 +223,7 @@ func FilterUsingSupportedConnectionModes(connectionModeFilterParams ConnectionMo
 
 	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
 	if destConnModeI == nil {
+		pkgLogger.Debug("connectionMode not present, filtering event based on default behaviour")
 		return evaluatedDefaultBehaviour, nil
 	}
 	destConnectionMode, isDestConnModeString := destConnModeI.(string)
@@ -242,6 +244,7 @@ func FilterUsingSupportedConnectionModes(connectionModeFilterParams ConnectionMo
 		eventPropMap, isMap := supportedEventVals.(map[string]interface{})
 
 		if !allowEvent || !isMap {
+			pkgLogger.Debugf("Previous evaluation of allowAll is false or type assertion failed for an event property(%v), filtering event based on default behaviour", eventProperty)
 			allowEvent = evaluatedDefaultBehaviour
 			break
 		}
@@ -251,6 +254,7 @@ func FilterUsingSupportedConnectionModes(connectionModeFilterParams ConnectionMo
 			// eventPropMap.AllowAll -- When only allowAll is defined
 			//  len(eventPropMap.AllowedVals) == 0 -- when allowedVals is empty array(occurs when it is [] or when data-type of one of the values is not string)
 			if eventPropMap == nil || messageTypeEventPropDef.AllowAll || len(messageTypeEventPropDef.AllowedVals) == 0 {
+				pkgLogger.Debug("Problem with message type event property map, filtering event based on default behaviour")
 				allowEvent = evaluatedDefaultBehaviour
 				continue
 			}
@@ -370,6 +374,7 @@ Structure looks like this
 func getSupportedEventPropertiesMap(destinationDefinitionConfig map[string]interface{}, srcType, destConnectionMode string, defaultBehaviour bool) supportedEventProperties {
 	supportedConnectionModesI, connModesOk := destinationDefinitionConfig["supportedConnectionModes"]
 	if !connModesOk {
+		pkgLogger.Debug("supportedConnectionModes not present, filtering event based on default behaviour")
 		return supportedEventProperties{Allow: defaultBehaviour}
 	}
 	supportedConnectionModes := supportedConnectionModesI.(map[string]interface{})
@@ -378,17 +383,18 @@ func getSupportedEventPropertiesMap(destinationDefinitionConfig map[string]inter
 	if supportedEventPropsLookupErr != nil {
 		if supportedEventPropsLookupErr.Level == 0 {
 			// Case 2(refer cases in `FilterUsingSupportedConnectionModes` function)
-			pkgLogger.Infof("Failed with %v for SourceType(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), srcType)
+			pkgLogger.Debugf("Failed with %v for SourceType(%v) while looking up for it in supportedConnectionModes, filtering based on default behaviour", supportedEventPropsLookupErr.Err.Error(), srcType)
 			return supportedEventProperties{Allow: defaultBehaviour}
 		}
 		// Cases 3 & 4(refer cases in `FilterUsingSupportedConnectionModes` function)
-		pkgLogger.Infof("Failed with %v for ConnectionMode(%v) while looking up for it in supportedConnectionModes", supportedEventPropsLookupErr.Err.Error(), destConnectionMode)
+		pkgLogger.Debugf("Failed with %v for ConnectionMode(%v) while looking up for it in supportedConnectionModes, filtering out the event", supportedEventPropsLookupErr.Err.Error(), destConnectionMode)
 		return supportedEventProperties{Allow: false}
 	}
 
 	supportedEventPropsMap, isEventPropsICastableToMap := supportedEventPropsMapI.(map[string]interface{})
 	if !isEventPropsICastableToMap || len(supportedEventPropsMap) == 0 {
 		// includes Case 5, 7(refer cases in `FilterUsingSupportedConnectionModes` function)
+		pkgLogger.Debug("Invalid event properties or event properties are not present, filtering event based on default behaviour")
 		return supportedEventProperties{Allow: defaultBehaviour}
 	}
 	return supportedEventProperties{EventPropsMap: supportedEventPropsMap, Allow: true}
