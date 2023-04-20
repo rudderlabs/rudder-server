@@ -419,26 +419,26 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	).RecordDuration()()
 
 	var delCount, totalCount, statusCount int
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&totalCount)
-	jd.assertError(err)
 
-	// Jobs which have either succeeded or expired
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
-                                      from %q
-                                      WHERE job_state IN ('%s')`,
-		ds.JobStatusTable, strings.Join(validTerminalStates, "', '"))
-	row = jd.dbHandle.QueryRow(sqlStatement)
-	err = row.Scan(&delCount)
-	jd.assertError(err)
+	totalCount = getJobCount(cacheSubject{
+		tablePrefix: jd.tablePrefix,
+		dsIndex:     ds.Index,
+	})
+
+	for _, state := range validTerminalStates {
+		delCount += getJobCount(cacheSubject{
+			tablePrefix: jd.tablePrefix,
+			dsIndex:     ds.Index,
+			jobState:    state,
+		})
+	}
 
 	if jobStatusCountMigrationCheck {
 		// Total number of job status. If this table grows too big (e.g. a lot of retries)
 		// we migrate to a new table and get rid of old job status
-		sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobStatusTable)
-		row = jd.dbHandle.QueryRow(sqlStatement)
-		err = row.Scan(&statusCount)
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobStatusTable)
+		row := jd.dbHandle.QueryRow(sqlStatement)
+		err := row.Scan(&statusCount)
 		jd.assertError(err)
 	}
 
@@ -446,9 +446,9 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	if jd.MinDSRetentionPeriod > 0 {
 		var maxCreatedAt time.Time
-		sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
-		row = jd.dbHandle.QueryRow(sqlStatement)
-		err = row.Scan(&maxCreatedAt)
+		sqlStatement := fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
+		row := jd.dbHandle.QueryRow(sqlStatement)
+		err := row.Scan(&maxCreatedAt)
 		jd.assertError(err)
 
 		if time.Since(maxCreatedAt) < jd.MinDSRetentionPeriod {
@@ -458,7 +458,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	if jd.MaxDSRetentionPeriod > 0 {
 		var terminalJobsExist bool
-		sqlStatement = fmt.Sprintf(`SELECT EXISTS (
+		sqlStatement := fmt.Sprintf(`SELECT EXISTS (
 									SELECT id
 										FROM %q
 										WHERE job_state = ANY($1) and exec_time < $2)`,
@@ -467,7 +467,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 		jd.assertError(err)
 		defer func() { _ = stmt.Close() }()
 
-		row = stmt.QueryRow(pq.Array(validTerminalStates), time.Now().Add(-1*jd.MaxDSRetentionPeriod))
+		row := stmt.QueryRow(pq.Array(validTerminalStates), time.Now().Add(-1*jd.MaxDSRetentionPeriod))
 		err = row.Scan(&terminalJobsExist)
 		jd.assertError(err)
 		if terminalJobsExist {

@@ -2659,6 +2659,8 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSet
 				cs,
 				1,
 			)
+			status.Job.LastJobStatus.JobState = status.JobState
+			status.Job.LastJobStatus.AttemptNum = status.AttemptNum
 		}
 	})
 	return

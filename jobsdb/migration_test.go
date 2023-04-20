@@ -46,7 +46,7 @@ func TestMigration(t *testing.T) {
 	jobs := genJobs(defaultWorkspaceID, customVal, 30, 1)
 	require.NoError(t, jobDB.Store(context.Background(), jobs[:10]))
 
-	// let 8 jobs succeed, and 2 repeatedly fail
+	// let 9 jobs succeed, and 1 repeatedly fail
 	require.NoError(
 		t,
 		jobDB.UpdateJobStatus(
