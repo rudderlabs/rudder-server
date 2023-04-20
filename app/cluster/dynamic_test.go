@@ -75,6 +75,7 @@ func TestDynamicCluster(t *testing.T) {
 	routerDB := &mockLifecycle{status: "", callCount: &callCount}
 	batchRouterDB := &mockLifecycle{status: "", callCount: &callCount}
 	errorDB := &mockLifecycle{status: "", callCount: &callCount}
+	eschDB := &mockLifecycle{status: "", callCount: &callCount}
 
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
@@ -92,6 +93,7 @@ func TestDynamicCluster(t *testing.T) {
 		RouterDB:      routerDB,
 		BatchRouterDB: batchRouterDB,
 		ErrorDB:       errorDB,
+		EventSchemaDB: eschDB,
 
 		Processor: processor,
 		Router:    router,

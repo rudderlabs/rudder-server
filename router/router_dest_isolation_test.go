@@ -16,7 +16,6 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -66,20 +65,10 @@ func Test_RouterDestIsolation(t *testing.T) {
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	var (
-		group                errgroup.Group
-		postgresContainer    *resource.PostgresResource
-		transformerContainer *destination.TransformerResource
-	)
-	group.Go(func() (err error) {
-		postgresContainer, err = resource.SetupPostgres(pool, t)
-		return err
-	})
-	group.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
-		return err
-	})
-	require.NoError(t, group.Wait())
+	postgresContainer, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+	transformerContainer, err := destination.SetupTransformer(pool, t)
+	require.NoError(t, err)
 
 	writeKey := trand.String(27)
 	workspaceID := trand.String(27)
