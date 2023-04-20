@@ -402,12 +402,12 @@ func (a *AsyncJobWh) getStatusAsyncJob(payload *StartJobReqPayload) WhStatusResp
 				statusResponse.Err = "Failed while scanning"
 			}
 			statusResponse.Err = errMessage.String
-		case WhJobExecuting:
-			a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is under processing", payload.JobRunID, payload.TaskRunID)
-			statusResponse.Status = WhJobExecuting
-		default:
+		case WhJobSucceeded:
 			a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is complete", payload.JobRunID, payload.TaskRunID)
 			statusResponse.Status = WhJobSucceeded
+		default:
+			a.logger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is under processing", payload.JobRunID, payload.TaskRunID)
+			statusResponse.Status = WhJobExecuting
 		}
 	}
 
