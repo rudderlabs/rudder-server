@@ -182,6 +182,8 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	gwDB := jobsdb.NewForReadWrite("gw")
 	defer gwDB.TearDown()
+	eschDB := jobsdb.NewForReadWrite("esch")
+	defer eschDB.TearDown()
 	rtDB := jobsdb.NewForReadWrite("rt")
 	defer rtDB.TearDown()
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
@@ -196,7 +198,21 @@ func TestDynamicClusterManager(t *testing.T) {
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService(),
+	processor := processor.New(
+		ctx,
+		&clearDb,
+		gwDB,
+		rtDB,
+		brtDB,
+		errDB,
+		eschDB,
+		mockMTI,
+		&reporting.NOOP{},
+		transientsource.NewEmptyService(),
+		fileuploader.NewDefaultProvider(),
+		rsources.NewNoOpService(),
+		destinationdebugger.NewNoOpService(),
+		transformationdebugger.NewNoOpService(),
 		processor.WithFeaturesRetryMaxAttempts(0))
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
@@ -246,6 +262,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		RouterDB:      rtDB,
 		BatchRouterDB: brtDB,
 		ErrorDB:       errDB,
+		EventSchemaDB: eschDB,
 
 		Processor:       processor,
 		Router:          router,
