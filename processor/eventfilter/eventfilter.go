@@ -16,8 +16,10 @@ const (
 	eventProperty_allowedValues = "allowedValues"
 )
 
-var eventPropertyKeys = []string{eventProperty_allowAll, eventProperty_allowedValues}
-var pkgLogger = logger.NewLogger().Child("eventfilter")
+var (
+	eventPropertyKeys = []string{eventProperty_allowAll, eventProperty_allowedValues}
+	pkgLogger         = logger.NewLogger().Child("eventfilter")
+)
 
 // GetSupportedMessageTypes returns the supported message types for the given event, based on configuration.
 // If no relevant configuration is found, returns false
