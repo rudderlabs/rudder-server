@@ -639,10 +639,7 @@ func (*AzureSynapse) AlterColumn(_, _, _ string) (model.AlterTableResponse, erro
 	return model.AlterTableResponse{}, nil
 }
 
-func (as *AzureSynapse) TestConnection(model.Warehouse) error {
-	ctx, cancel := context.WithTimeout(context.Background(), as.ConnectTimeout)
-	defer cancel()
-
+func (as *AzureSynapse) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	err := as.DB.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)
@@ -653,7 +650,6 @@ func (as *AzureSynapse) TestConnection(model.Warehouse) error {
 
 	return nil
 }
-
 
 func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	as.Warehouse = warehouse

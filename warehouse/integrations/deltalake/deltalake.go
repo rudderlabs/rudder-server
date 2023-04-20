@@ -952,7 +952,7 @@ func (dl *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Up
 }
 
 // TestConnection test the connection for the warehouse
-func (dl *Deltalake) TestConnection(model.Warehouse) error {
+func (dl *Deltalake) TestConnection(context.Context, model.Warehouse) error {
 	return nil
 }
 

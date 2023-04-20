@@ -710,7 +710,7 @@ func TestHandle_TestConnection(t *testing.T) {
 
 			ch.SetConnectionTimeout(tc.timeout)
 
-			err := ch.TestConnection(warehouse)
+			err := ch.TestConnection(nil, warehouse)
 			if tc.wantError != nil {
 				require.ErrorContains(t, err, tc.wantError.Error())
 				return

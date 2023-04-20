@@ -681,10 +681,7 @@ func (*MSSQL) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (ms *MSSQL) TestConnection(model.Warehouse) error {
-	ctx, cancel := context.WithTimeout(context.TODO(), ms.ConnectTimeout)
-	defer cancel()
-
+func (ms *MSSQL) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	err := ms.DB.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)

@@ -1253,10 +1253,7 @@ func (sf *Snowflake) Setup(warehouse model.Warehouse, uploader warehouseutils.Up
 	return err
 }
 
-func (sf *Snowflake) TestConnection(model.Warehouse) error {
-	ctx, cancel := context.WithTimeout(context.TODO(), sf.ConnectTimeout)
-	defer cancel()
-
+func (sf *Snowflake) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	err := sf.DB.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)

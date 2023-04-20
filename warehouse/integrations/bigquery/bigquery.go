@@ -819,7 +819,7 @@ func (bq *BigQuery) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	return err
 }
 
-func (bq *BigQuery) TestConnection(model.Warehouse) (err error) {
+func (bq *BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
 	return nil
 }
 

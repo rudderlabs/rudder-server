@@ -1352,10 +1352,7 @@ func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	return err
 }
 
-func (rs *Redshift) TestConnection(model.Warehouse) error {
-	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
-	defer cancel()
-
+func (rs *Redshift) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	err := rs.DB.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)
