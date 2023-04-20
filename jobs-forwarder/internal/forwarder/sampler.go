@@ -30,6 +30,6 @@ func newSampler[K comparable](period time.Duration, cacheSize int) *sampler[K] {
 	return &sampler[K]{
 		period: period,
 		cache:  cache,
-		now:    func() time.Time { return time.Now() },
+		now:    time.Now,
 	}
 }
