@@ -243,7 +243,7 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 }
 
 func (job *UploadJob) generateUploadSchema() error {
-	err := job.schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema(
+	err := job.schemaHandle.prepareUploadSchema(
 		job.stagingFiles,
 	)
 	if err != nil {

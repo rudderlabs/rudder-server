@@ -870,7 +870,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 	}
 }
 
-func TestSchema_ConsolidateStagingFilesSchemaUsingWarehouseSchema(t *testing.T) {
+func TestSchema_PrepareUploadSchema(t *testing.T) {
 	warehouseutils.Init()
 
 	const (
@@ -902,8 +902,7 @@ func TestSchema_ConsolidateStagingFilesSchemaUsingWarehouseSchema(t *testing.T) 
 			warehouseType:  warehouseutils.RS,
 			mockSchemas:    []model.Schema{},
 			mockErr:        errors.New("test error"),
-			expectedSchema: model.Schema{},
-			wantError:      errors.New("getting staging files schema: test error"),
+			wantError:      errors.New("consolidating staging files schema: getting staging files schema: test error"),
 		},
 
 		{
@@ -1724,13 +1723,13 @@ func TestSchema_ConsolidateStagingFilesSchemaUsingWarehouseSchema(t *testing.T) 
 				stagingFilesSchemaPaginationSize: 2,
 			}
 
-			consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles)
+			err := sh.prepareUploadSchema(stagingFiles)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectedSchema, consolidatedSchema)
+			require.Equal(t, tc.expectedSchema, sh.uploadSchema)
 		})
 	}
 }
