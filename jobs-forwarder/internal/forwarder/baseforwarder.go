@@ -42,24 +42,7 @@ func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, sc
 }
 
 func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, error) {
-	var combinedList []*jobsdb.JobT
 	queryParams := bf.generateQueryParams()
-	toRetry, err := misc.QueryWithRetriesAndNotify(ctx, bf.baseConfig.jobsDBQueryRequestTimeout, bf.baseConfig.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
-		return bf.jobsDB.GetToRetry(ctx, queryParams)
-	}, bf.sendQueryRetryStats)
-	if err != nil {
-		bf.log.Errorf("base forwarder: Error while reading failed from DB: %v", err)
-		return nil, false, err
-	}
-	combinedList = toRetry.Jobs
-	if toRetry.LimitsReached {
-		bf.log.Infof("base forwarder: Reached limit while reading failed from DB")
-		return combinedList, true, nil
-	}
-	queryParams.JobsLimit -= len(toRetry.Jobs)
-	if queryParams.PayloadSizeLimit > 0 {
-		queryParams.PayloadSizeLimit -= toRetry.PayloadSize
-	}
 	unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, bf.baseConfig.jobsDBQueryRequestTimeout, bf.baseConfig.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return bf.jobsDB.GetUnprocessed(ctx, queryParams)
 	}, bf.sendQueryRetryStats)
@@ -67,8 +50,7 @@ func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, err
 		bf.log.Errorf("base forwarder: Error while reading unprocessed from DB: %v", err)
 		return nil, false, err
 	}
-	combinedList = append(combinedList, unprocessed.Jobs...)
-	return combinedList, unprocessed.LimitsReached, nil
+	return unprocessed.Jobs, unprocessed.LimitsReached, nil
 }
 
 func (bf *BaseForwarder) MarkJobStatuses(ctx context.Context, statusList []*jobsdb.JobStatusT) error {

@@ -96,33 +96,6 @@ func Test_JobsForwarder(t *testing.T) {
 			return len(jobs.Jobs) == 10
 		}, 30*time.Second, 5*time.Second)
 	})
-
-	t.Run("Test_FilterJobs", func(t *testing.T) {
-		jobs := []*jobsdb.JobT{
-			{
-				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
-				EventPayload: []byte(`{"testKey":"testValue"}`),
-				JobID:        1,
-				LastJobStatus: jobsdb.JobStatusT{
-					AttemptNum: 3,
-					JobState:   "failed",
-				},
-			},
-			{
-				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
-				EventPayload: []byte(`{"testKey":"testValue"}`),
-				JobID:        1,
-				LastJobStatus: jobsdb.JobStatusT{
-					AttemptNum: 1,
-					JobState:   "failed",
-				},
-			},
-		}
-		filteredJobs, jobStatusList := jf.filterJobs(jobs)
-		require.Equal(t, 1, len(filteredJobs))
-		require.Equal(t, jobs[1], filteredJobs[0])
-		require.Equal(t, 1, len(jobStatusList))
-	})
 }
 
 // PulsarResource returns a pulsar container resource

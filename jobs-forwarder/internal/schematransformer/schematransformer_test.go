@@ -21,10 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var TestEventPayload = EventPayload{
-	Event: testdata.TrackEvent,
-}
-
 func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	conf := config.New()
 	g, ctx := errgroup.WithContext(context.Background())
@@ -34,6 +30,7 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		g:             g,
 		backendConfig: mockBackendConfig,
 		config:        conf,
+		initialised:   make(chan struct{}),
 	}
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
@@ -69,16 +66,12 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		require.Equal(t, compositeSchema, testdata.CompositeSchema)
 	})
 
-	t.Run("Test getSampleEvent", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getSampleEvent(testdata.IdentifyEvent, testdata.WriteKeyEnabled), []byte{})
-	})
-
 	t.Run("Test disablePIIReporting", func(t *testing.T) {
 		require.True(t, schemaTransformer.disablePIIReporting(testdata.WriteKeyEnabled))
 	})
 
 	t.Run("Test getSchemaKeyFromJob", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(TestEventPayload, testdata.WriteKeyEnabled), &testdata.TestEventSchemaKey)
+		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(testdata.TrackEvent, testdata.WriteKeyEnabled), &testdata.TestEventSchemaKey)
 	})
 
 	t.Run("Test getWriteKeyFromParams", func(t *testing.T) {
@@ -86,9 +79,9 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	})
 
 	t.Run("Test getSchemaMessage", func(t *testing.T) {
-		schemaKey := schemaTransformer.getSchemaKeyFromJob(TestEventPayload, testdata.WriteKeyEnabled)
+		schemaKey := schemaTransformer.getSchemaKeyFromJob(testdata.TrackEvent, testdata.WriteKeyEnabled)
 		timeNow := time.Now()
-		schemaMessage, err := schemaTransformer.getSchemaMessage(schemaKey, testdata.TrackEvent, testdata.SampleWorkspaceID, timeNow)
+		schemaMessage, err := schemaTransformer.getSchemaMessage(schemaKey, testdata.TrackEvent, []byte{}, testdata.SampleWorkspaceID, timeNow)
 		testEventSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
 		require.Equal(t, schemaMessage, testEventSchemaMessage)
@@ -148,12 +141,12 @@ func generateTestEventSchemaMessage(time time.Time) *proto.EventSchemaMessage {
 		Key:         &testdata.TestEventSchemaKey,
 		ObservedAt:  timestamppb.New(time),
 		Schema:      testdata.TrackSchema,
-		Sample:      []byte{},
+		Sample:      []byte("{}"),
 	}
 }
 
 func generateTestJob(t *testing.T, time time.Time) *jobsdb.JobT {
-	eventPayload, err := json.Marshal(TestEventPayload)
+	eventPayload, err := json.Marshal(testdata.TrackEvent)
 	require.Nil(t, err)
 	jobUUID, err := uuid.NewUUID()
 	require.Nil(t, err)

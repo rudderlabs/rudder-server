@@ -14,6 +14,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
+	"github.com/tidwall/gjson"
 )
 
 type Transformer interface {
@@ -29,6 +30,7 @@ func New(ctx context.Context, g *errgroup.Group, backendConfig backendconfig.Bac
 		backendConfig:              backendConfig,
 		config:                     config,
 		shouldCaptureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
+		initialised:                make(chan struct{}),
 	}
 }
 
@@ -37,35 +39,32 @@ func (st *SchemaTransformer) Start() {
 		st.backendConfigSubscriber(st.ctx)
 		return nil
 	})
-	for !st.isInitialisedBool.Load() {
-		time.Sleep(100 * time.Millisecond)
-	}
+	<-st.initialised
 }
 
 func (st *SchemaTransformer) Stop() {
 }
 
 func (st *SchemaTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {
-	var eventPayload EventPayload
-	err := json.Unmarshal(job.EventPayload, &eventPayload)
-	if err != nil {
+	var eventPayload map[string]interface{}
+	if err := json.Unmarshal(job.EventPayload, &eventPayload); err != nil {
 		return &proto.EventSchemaMessage{}, "", err
 	}
 	writeKey := st.getWriteKeyFromParams(job.Parameters)
 	schemaKey := st.getSchemaKeyFromJob(eventPayload, writeKey)
-	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload.Event, job.WorkspaceId, job.CreatedAt)
+	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, job.EventPayload, job.WorkspaceId, job.CreatedAt)
 	if err != nil {
 		return &proto.EventSchemaMessage{}, "", err
 	}
 	return schemaMessage, writeKey, nil
 }
 
-func (st *SchemaTransformer) getSchemaKeyFromJob(eventPayload EventPayload, writeKey string) *proto.EventSchemaKey {
-	eventType := st.getEventType(eventPayload.Event)
+func (st *SchemaTransformer) getSchemaKeyFromJob(eventPayload map[string]interface{}, writeKey string) *proto.EventSchemaKey {
+	eventType := st.getEventType(eventPayload)
 	return &proto.EventSchemaKey{
 		WriteKey:        writeKey,
 		EventType:       eventType,
-		EventIdentifier: st.getEventIdentifier(eventPayload.Event, eventType),
+		EventIdentifier: st.getEventIdentifier(eventPayload, eventType),
 	}
 }
 
@@ -86,7 +85,9 @@ func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
 		st.sourceWriteKeyMap = sourceWriteKeyMap
 		st.newPIIReportingSettings = newPIIReportingSettings
 		st.writeKeyMapLock.Unlock()
-		st.isInitialisedBool.CompareAndSwap(false, true)
+		st.initialisedOnce.Do(func() {
+			close(st.initialised)
+		})
 	}
 }
 
@@ -110,19 +111,21 @@ func (st *SchemaTransformer) getEventIdentifier(event map[string]interface{}, ev
 	return eventIdentifier
 }
 
-func (st *SchemaTransformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]interface{}, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
+func (st *SchemaTransformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]interface{}, marshalledEvent json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
 	flattenedEvent, err := st.flattenEvent(event)
 	if err != nil {
 		return nil, err
 	}
 	schema := st.getSchema(flattenedEvent)
-	sampleEvent := st.getSampleEvent(event, key.WriteKey)
+	if st.disablePIIReporting(key.WriteKey) {
+		marshalledEvent = []byte("{}")
+	}
 	return &proto.EventSchemaMessage{
 		WorkspaceID: workspaceId,
 		Key:         key,
 		ObservedAt:  timestamppb.New(observedAt),
 		Schema:      schema,
-		Sample:      sampleEvent,
+		Sample:      marshalledEvent,
 	}, nil
 }
 
@@ -153,26 +156,10 @@ func (st *SchemaTransformer) disablePIIReporting(writeKey string) bool {
 	return st.newPIIReportingSettings[writeKey]
 }
 
-func (st *SchemaTransformer) getSampleEvent(event map[string]interface{}, writeKey string) []byte {
-	if st.disablePIIReporting(writeKey) {
-		return []byte{}
-	}
-	sampleEvent, err := json.Marshal(event)
-	if err != nil {
-		return []byte{}
-	}
-	return sampleEvent
-}
-
 func (st *SchemaTransformer) getWriteKeyFromParams(parameters json.RawMessage) string {
-	var params map[string]interface{}
-	err := json.Unmarshal(parameters, &params)
-	if err != nil {
-		return ""
-	}
-	sourceId, ok := params["source_id"].(string)
-	if !ok {
-		return ""
+	sourceId := gjson.GetBytes(parameters, "source_id").Str
+	if sourceId == "" {
+		return sourceId
 	}
 	st.writeKeyMapLock.RLock()
 	defer st.writeKeyMapLock.RUnlock()

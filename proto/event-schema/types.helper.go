@@ -6,20 +6,20 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (esk *EventSchemaKey) MustMarshal() ([]byte, error) {
+func (esk *EventSchemaKey) MustMarshal() []byte {
 	m, err := proto.MarshalOptions{}.Marshal(esk)
 	if err != nil {
-		return []byte{}, fmt.Errorf("marshalling event schema key failed: %w", err)
+		panic(fmt.Errorf("marshalling event schema key failed: %w", err))
 	}
-	return m, nil
+	return m
 }
 
-func (esm *EventSchemaMessage) MustMarshal() ([]byte, error) {
+func (esm *EventSchemaMessage) MustMarshal() []byte {
 	m, err := proto.MarshalOptions{}.Marshal(esm)
 	if err != nil {
-		return []byte{}, fmt.Errorf("marshalling event schema message failed: %w", err)
+		panic(fmt.Errorf("marshalling event schema message failed: %w", err))
 	}
-	return m, nil
+	return m
 }
 
 // UnmarshalEventSchemaMessage creates a new event schema message from the provided protobuf bytes.
