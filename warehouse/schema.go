@@ -157,7 +157,7 @@ func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
 }
 
 // consolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
-func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles []*model.StagingFile) (model.Schema, error) {
+func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles []*model.StagingFile) error {
 	consolidatedSchema := model.Schema{}
 	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
 	for _, batch := range batches {
@@ -166,7 +166,7 @@ func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles
 			repo.StagingFileIDs(batch),
 		)
 		if err != nil {
-			return model.Schema{}, fmt.Errorf("getting staging files schema: %v", err)
+			return fmt.Errorf("getting staging files schema: %v", err)
 		}
 
 		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
@@ -175,7 +175,10 @@ func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles
 	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type)
 	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
 	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
-	return consolidatedSchema, nil
+
+	sh.uploadSchema = consolidatedSchema
+
+	return nil
 }
 
 // consolidateStagingSchemas merges multiple schemas into one

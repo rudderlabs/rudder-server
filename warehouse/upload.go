@@ -243,17 +243,17 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 }
 
 func (job *UploadJob) generateUploadSchema() error {
-	uploadSchema, err := job.schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema(
+	err := job.schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema(
 		job.stagingFiles,
 	)
 	if err != nil {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
-	if err := job.setMergedSchema(uploadSchema); err != nil {
+	if err := job.setMergedSchema(job.schemaHandle.uploadSchema); err != nil {
 		return fmt.Errorf("set merged schema: %w", err)
 	}
-	if err := job.setUploadSchema(uploadSchema); err != nil {
+	if err := job.setUploadSchema(job.schemaHandle.uploadSchema); err != nil {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
 
