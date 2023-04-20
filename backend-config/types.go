@@ -1,10 +1,7 @@
 package backendconfig
 
 import (
-	"strings"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/samber/lo"
 )
 
 // Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
@@ -204,36 +201,6 @@ func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType
 		return emptyMap
 	}
 	return dgSourceTPConfigT.Config[eventType]
-}
-
-/*
-Fills in sourceType value to make sure we have the capability to filter events
-
-TODO:
-May be if this value is sent from config-backend itself somehow, it'd be better for us!
-As the logic will be at a single place
-*/
-func (src *SourceT) FillSourceType() {
-	srcName := strings.ToLower(src.SourceDefinition.Name)
-	if srcTypeVal, ok := SourceTypeMapping[srcName]; ok {
-		src.SourceDefinition.Type = srcTypeVal
-		return
-	}
-	strList := []string{
-		"android",
-		"ios",
-		"unity",
-		"reactnative",
-		"amp",
-		"flutter",
-		"cordova",
-	}
-	if lo.Contains(strList, srcName) {
-		src.SourceDefinition.Type = srcName
-		return
-	}
-	// Default-case
-	src.SourceDefinition.Type = "cloud"
 }
 
 type TrackingPlanT struct {

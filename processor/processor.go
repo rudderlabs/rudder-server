@@ -700,8 +700,6 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
-				// Essential for event-filtering using connectionMode
-				source.FillSourceType()
 				writeKeySourceMap[source.WriteKey] = *source
 				if source.Enabled {
 					writeKeyDestinationMap[source.WriteKey] = source.Destinations
