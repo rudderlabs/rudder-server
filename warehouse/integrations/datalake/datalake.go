@@ -112,7 +112,7 @@ func (*Datalake) IsEmpty(_ model.Warehouse) (bool, error) {
 	return false, nil
 }
 
-func (*Datalake) TestConnection(_ model.Warehouse) error {
+func (*Datalake) TestConnection(model.Warehouse) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 

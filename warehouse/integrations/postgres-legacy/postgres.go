@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -784,30 +785,22 @@ func (*Postgres) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (pg *Postgres) TestConnection(warehouse model.Warehouse) (err error) {
-	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+func (pg *Postgres) TestConnection(warehouse model.Warehouse) error {
+	if warehouse.Destination.Config["sslMode"] == verifyCA {
 		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
-			pg.logger.Error(sslKeyError.Error())
-			err = fmt.Errorf(sslKeyError.Error())
-			return
+			return fmt.Errorf("writing ssl keys: %w", sslKeyError)
 		}
 	}
-	pg.Warehouse = warehouse
-	pg.DB, err = Connect(pg.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer pg.DB.Close()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), pg.ConnectTimeout)
 	defer cancel()
 
-	err = pg.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", pg.ConnectTimeout/time.Second)
+	err := pg.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil

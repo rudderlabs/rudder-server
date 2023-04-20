@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -1351,26 +1352,19 @@ func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	return err
 }
 
-func (rs *Redshift) TestConnection(warehouse model.Warehouse) (err error) {
-	rs.Warehouse = warehouse
-	rs.DB, err = Connect(rs.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer func() { _ = rs.DB.Close() }()
-
+func (rs *Redshift) TestConnection(model.Warehouse) error {
 	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
 	defer cancel()
 
-	err = rs.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", rs.ConnectTimeout/time.Second)
+	err := rs.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
-	return
+	return nil
 }
 
 func (rs *Redshift) Cleanup() {

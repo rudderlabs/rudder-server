@@ -819,17 +819,8 @@ func (bq *BigQuery) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	return err
 }
 
-func (bq *BigQuery) TestConnection(warehouse model.Warehouse) (err error) {
-	bq.warehouse = warehouse
-	bq.db, err = bq.connect(BQCredentials{
-		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
-	})
-	if err != nil {
-		return
-	}
-	defer func() { _ = bq.db.Close() }()
-	return
+func (bq *BigQuery) TestConnection(model.Warehouse) (err error) {
+	return nil
 }
 
 func (bq *BigQuery) LoadTable(tableName string) error {

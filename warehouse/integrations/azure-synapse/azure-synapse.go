@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -638,27 +639,21 @@ func (*AzureSynapse) AlterColumn(_, _, _ string) (model.AlterTableResponse, erro
 	return model.AlterTableResponse{}, nil
 }
 
-func (as *AzureSynapse) TestConnection(warehouse model.Warehouse) (err error) {
-	as.Warehouse = warehouse
-	as.DB, err = connect(as.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer as.DB.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), as.ConnectTimeout)
+func (as *AzureSynapse) TestConnection(model.Warehouse) error {
+	ctx, cancel := context.WithTimeout(context.Background(), as.ConnectTimeout)
 	defer cancel()
 
-	err = as.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", as.ConnectTimeout/time.Second)
+	err := as.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
 }
+
 
 func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	as.Warehouse = warehouse

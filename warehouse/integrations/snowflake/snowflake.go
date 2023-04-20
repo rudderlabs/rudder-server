@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -1252,23 +1253,16 @@ func (sf *Snowflake) Setup(warehouse model.Warehouse, uploader warehouseutils.Up
 	return err
 }
 
-func (sf *Snowflake) TestConnection(warehouse model.Warehouse) (err error) {
-	sf.Warehouse = warehouse
-	sf.DB, err = Connect(sf.getConnectionCredentials(optionalCreds{}))
-	if err != nil {
-		return
-	}
-	defer sf.DB.Close()
-
+func (sf *Snowflake) TestConnection(model.Warehouse) error {
 	ctx, cancel := context.WithTimeout(context.TODO(), sf.ConnectTimeout)
 	defer cancel()
 
-	err = sf.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", sf.ConnectTimeout/time.Second)
+	err := sf.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil

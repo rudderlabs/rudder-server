@@ -918,23 +918,16 @@ func (*Clickhouse) AlterColumn(_, _, _ string) (model.AlterTableResponse, error)
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection
-func (ch *Clickhouse) TestConnection(warehouse model.Warehouse) (err error) {
-	ch.Warehouse = warehouse
-	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
-	if err != nil {
-		return
-	}
-	defer ch.DB.Close()
-
+func (ch *Clickhouse) TestConnection(model.Warehouse) error {
 	ctx, cancel := context.WithTimeout(context.TODO(), ch.ConnectTimeout)
 	defer cancel()
 
-	err = ch.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", ch.ConnectTimeout/time.Second)
+	err := ch.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
