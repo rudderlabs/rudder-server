@@ -314,7 +314,7 @@ func (rs *Redshift) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 		)
 
 		rs.Logger.Infof("RS: Deleting rows in table in redshift for RS:%s", rs.Warehouse.Destination.ID)
-		rs.Logger.Debugf("RS: Executing the query %v", sqlStatement)
+		rs.Logger.Infof("RS: Executing the query %v", sqlStatement)
 
 		if rs.EnableDeleteByJobs {
 			_, err = rs.DB.Exec(sqlStatement,

@@ -209,7 +209,7 @@ func (ms *MSSQL) DeleteBy(tableNames []string, params warehouseutils.DeleteByPar
 		)
 
 		ms.Logger.Infof("MSSQL: Deleting rows in table in mysql for MS:%s ", ms.Warehouse.Destination.ID)
-		ms.Logger.Debugf("MSSQL: Executing the statement %v", sqlStatement)
+		ms.Logger.Infof("MSSQL: Executing the statement %v", sqlStatement)
 
 		if ms.EnableDeleteByJobs {
 			_, err = ms.DB.Exec(sqlStatement,
