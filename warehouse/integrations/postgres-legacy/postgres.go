@@ -788,7 +788,7 @@ func (*Postgres) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 func (pg *Postgres) TestConnection(ctx context.Context, warehouse model.Warehouse) error {
 	if warehouse.Destination.Config["sslMode"] == verifyCA {
 		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
-			return fmt.Errorf("writing ssl keys: %w", sslKeyError)
+			return fmt.Errorf("writing ssl keys: %s", sslKeyError.Error())
 		}
 	}
 
