@@ -898,11 +898,11 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		idResolutionEnabled bool
 	}{
 		{
-			name:           "error fetching staging schema",
-			warehouseType:  warehouseutils.RS,
-			mockSchemas:    []model.Schema{},
-			mockErr:        errors.New("test error"),
-			wantError:      errors.New("consolidating staging files schema: getting staging files schema: test error"),
+			name:          "error fetching staging schema",
+			warehouseType: warehouseutils.RS,
+			mockSchemas:   []model.Schema{},
+			mockErr:       errors.New("test error"),
+			wantError:     errors.New("consolidating staging files schema: getting staging files schema: test error"),
 		},
 
 		{
