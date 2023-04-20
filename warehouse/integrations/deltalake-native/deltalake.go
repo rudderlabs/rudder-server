@@ -11,6 +11,7 @@ import (
 	"time"
 
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
@@ -121,7 +122,7 @@ var errorsMappings = []model.JobError{
 }
 
 type Deltalake struct {
-	DB                     *sql.DB
+	DB                     *sqlmiddleware.DB
 	Namespace              string
 	ObjectStorage          string
 	Warehouse              model.Warehouse
@@ -131,6 +132,7 @@ type Deltalake struct {
 	Stats                  stats.Stats
 	LoadTableStrategy      string
 	EnablePartitionPruning bool
+	SlowQueryThreshold time.Duration
 }
 
 func New() *Deltalake {
@@ -143,6 +145,7 @@ func New() *Deltalake {
 func WithConfig(h *Deltalake, config *config.Config) {
 	h.LoadTableStrategy = config.GetString("Warehouse.deltalake.loadTableStrategy", mergeMode)
 	h.EnablePartitionPruning = config.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.deltalake.slowQueryThreshold", 5, time.Minute)
 }
 
 // Setup sets up the warehouse
@@ -167,7 +170,7 @@ func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 }
 
 // connect connects to the warehouse
-func (d *Deltalake) connect() (*sql.DB, error) {
+func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	port, err := strconv.Atoi(warehouseutils.GetConfigValue(port, d.Warehouse))
 	if err != nil {
 		return nil, fmt.Errorf("port is not a number: %w", err)
@@ -197,8 +200,21 @@ func (d *Deltalake) connect() (*sql.DB, error) {
 	}
 
 	db := sql.OpenDB(connector)
+	middleware := sqlmiddleware.New(
+		db,
+		sqlmiddleware.WithLogger(d.Logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, d.Warehouse.Source.ID,
+			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, d.Warehouse.Destination.ID,
+			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+			logfield.Schema, d.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(d.SlowQueryThreshold),
+	)
 
-	return db, nil
+	return middleware, nil
 }
 
 // CrashRecover crash recover scenarios
@@ -1218,7 +1234,7 @@ func (d *Deltalake) Connect(warehouse model.Warehouse) (warehouseclient.Client, 
 		return warehouseclient.Client{}, fmt.Errorf("connecting: %w", err)
 	}
 
-	return warehouseclient.Client{Type: warehouseclient.SQLClient, SQL: db}, nil
+	return warehouseclient.Client{Type: warehouseclient.SQLClient, SQL: db.DB}, nil
 }
 
 // LoadTestTable loads the test table
