@@ -35,6 +35,12 @@ var (
 	WAREHOUSE              = "warehouse"
 )
 
+var (
+	// Tracking plan validation states
+	SUCCEEDED_WITHOUT_VIOLATIONS = "succeeded_without_violations"
+	SUCCEEDED_WITH_VIOLATIONS    = "succeeded_with_violations"
+)
+
 type Client struct {
 	Config
 	DbHandle *sql.DB
@@ -48,6 +54,8 @@ type StatusDetail struct {
 	SampleEvent    json.RawMessage `json:"sampleEvent"`
 	EventName      string          `json:"eventName"`
 	EventType      string          `json:"eventType"`
+	ErrorType      string          `json:"errorType"`
+	ViolationCount int64           `json:"violationCount"`
 }
 
 type ReportByStatus struct {
@@ -85,6 +93,10 @@ type ConnectionDetails struct {
 	SourceDefinitionId      string `json:"sourceDefinitionId"`
 	DestinationDefinitionId string `string:"destinationDefinitionId"`
 	SourceCategory          string `json:"sourceCategory"`
+	TransformationID        string `json:"transformationId"`
+	TransformationVersionID string `json:"transformationVersionId"`
+	TrackingPlanID          string `json:"trackingPlanId"`
+	TrackingPlanVersion     int    `json:"trackingPlanVersion"`
 }
 type PUDetails struct {
 	InPU       string `json:"inReportedBy"`
@@ -99,7 +111,7 @@ type PUReportedMetric struct {
 	StatusDetail *StatusDetail
 }
 
-func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc string) *ConnectionDetails {
+func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc, trid, trvid, tpid string, tpv int) *ConnectionDetails {
 	return &ConnectionDetails{
 		SourceID:                sid,
 		DestinationID:           did,
@@ -109,18 +121,24 @@ func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc string)
 		SourceDefinitionId:      sdid,
 		DestinationDefinitionId: ddid,
 		SourceCategory:          sc,
+		TransformationID:        trid,
+		TransformationVersionID: trvid,
+		TrackingPlanID:          tpid,
+		TrackingPlanVersion:     tpv,
 	}
 }
 
-func CreateStatusDetail(status string, count int64, code int, resp string, event json.RawMessage, eventName, eventType string) *StatusDetail {
+func CreateStatusDetail(status string, count, violationCount int64, code int, resp string, event json.RawMessage, eventName, eventType, errorType string) *StatusDetail {
 	return &StatusDetail{
 		Status:         status,
 		Count:          count,
+		ViolationCount: violationCount,
 		StatusCode:     code,
 		SampleResponse: resp,
 		SampleEvent:    event,
 		EventName:      eventName,
 		EventType:      eventType,
+		ErrorType:      errorType,
 	}
 }
 
@@ -133,7 +151,7 @@ func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
 	}
 }
 
-func AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]*StatusDetail) {
+func AssertSameKeys[V1, V2 any](m1 map[string]V1, m2 map[string]V2) {
 	if len(m1) != len(m2) {
 		panic("maps length don't match") // TODO improve msg
 	}

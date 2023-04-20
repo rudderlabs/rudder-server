@@ -1,0 +1,32 @@
+# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
+version: v1.22.1
+ignore: 
+  # runc
+  SNYK-GOLANG-GITHUBCOMOPENCONTAINERSRUNCLIBCONTAINER-3339620:
+    - '*':
+        reason: Not using opencontainers/runc in rudder-server binary
+        expires: 2025-01-01T00:00:00.000Z
+
+  SNYK-GOLANG-GITHUBCOMDOCKERDOCKER-5411366:
+    - '*':
+        reason: Not using docker in rudder-server binary
+        expires: 2025-01-01T00:00:00.000Z
+
+  # go-restful
+  SNYK-GOLANG-GITHUBCOMEMICKLEIGORESTFULV3-2859829:
+    - '*':
+        reason: Not using go-restful in rudder-server binary
+        expires: 2025-01-01T00:00:00.000Z
+  
+  SNYK-GOLANG-GITHUBCOMEMICKLEIGORESTFUL-2435653:
+    - '*':
+        reason: Not using go-restful in rudder-server binary
+        expires: 2025-01-01T00:00:00.000Z
+  
+  SNYK-GOLANG-GITHUBCOMEMICKLEIGORESTFULV3-2435654:
+    - '*':
+        reason: Not using go-restful in rudder-server binary
+        expires: 2025-01-01T00:00:00.000Z
+
+# patches apply the minimum changes required to fix a vulnerability
+patch: {}
