@@ -28,6 +28,8 @@ services:
       - CONFIG_BACKEND_URL=https://api.rudderstack.com
       - WORKSPACE_TOKEN=<your_workspace_token> # Must be written without quotes e.g. WORKSPACE_TOKEN=20TokEO34NWitou2t3quO8teS7
       - STATSD_SERVER_URL=metrics-exporter:9125
+      # DO NOT REMOVE - Mandatory env for Shopify
+      - RSERVER_GATEWAY_WEBHOOK_SOURCE_LIST_FOR_PARSING_PARAMS=Shopify 
       # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
       # - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=<workspace_config_filepath_in_container> # For ex., /etc/rudderstack/workspaceConfig.json
     # Uncomment the following lines to mount workspaceConfig file
