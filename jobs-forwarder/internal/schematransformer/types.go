@@ -11,7 +11,7 @@ import (
 )
 
 type SchemaTransformer struct {
-	ctx                        context.Context
+	cancel                     context.CancelFunc
 	g                          *errgroup.Group
 	backendConfig              backendconfig.BackendConfig
 	sourceWriteKeyMap          map[string]string

@@ -23,10 +23,8 @@ type Transformer interface {
 	Stop()
 }
 
-func New(ctx context.Context, g *errgroup.Group, backendConfig backendconfig.BackendConfig, config *config.Config) Transformer {
+func New(backendConfig backendconfig.BackendConfig, config *config.Config) Transformer {
 	return &SchemaTransformer{
-		ctx:                        ctx,
-		g:                          g,
 		backendConfig:              backendConfig,
 		config:                     config,
 		shouldCaptureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
@@ -35,14 +33,19 @@ func New(ctx context.Context, g *errgroup.Group, backendConfig backendconfig.Bac
 }
 
 func (st *SchemaTransformer) Start() {
+	ctx, cancel := context.WithCancel(context.Background())
+	st.cancel = cancel
+	st.g, ctx = errgroup.WithContext(ctx)
 	st.g.Go(func() error {
-		st.backendConfigSubscriber(st.ctx)
+		st.backendConfigSubscriber(ctx)
 		return nil
 	})
 	<-st.initialised
 }
 
 func (st *SchemaTransformer) Stop() {
+	st.cancel()
+	_ = st.g.Wait()
 }
 
 func (st *SchemaTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {

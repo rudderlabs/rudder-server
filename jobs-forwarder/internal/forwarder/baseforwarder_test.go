@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -18,7 +16,6 @@ import (
 
 func Test_BaseForwarder(t *testing.T) {
 	bf := BaseForwarder{}
-	g, ctx := errgroup.WithContext(context.Background())
 	conf := config.New()
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -37,7 +34,7 @@ func Test_BaseForwarder(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	bf.LoadMetaData(ctx, g, schemasDB, logger.NOP, conf)
+	bf.LoadMetaData(func() {}, schemasDB, logger.NOP, conf)
 
 	t.Run("Test GetSleepTime", func(t *testing.T) {
 		require.Equal(t, 10*time.Second, bf.GetSleepTime(false))
@@ -69,9 +66,9 @@ func Test_BaseForwarder(t *testing.T) {
 			}
 			return js
 		}
-		err := schemasDB.Store(bf.ctx, generateJobs(10))
+		err := schemasDB.Store(context.Background(), generateJobs(10))
 		require.NoError(t, err)
-		getJobs, limitReached, err := bf.GetJobs(ctx)
+		getJobs, limitReached, err := bf.GetJobs(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, 10, len(getJobs))
 		require.Equal(t, false, limitReached)
@@ -80,7 +77,6 @@ func Test_BaseForwarder(t *testing.T) {
 
 func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 	bf := BaseForwarder{}
-	g, ctx := errgroup.WithContext(context.Background())
 	conf := config.New()
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -99,7 +95,7 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	bf.LoadMetaData(ctx, g, schemasDB, logger.NOP, conf)
+	bf.LoadMetaData(func() {}, schemasDB, logger.NOP, conf)
 
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
 		customVal := "MOCKDS"
@@ -118,9 +114,9 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 		return js
 	}
 	jobs := generateJobs(10)
-	err = schemasDB.Store(bf.ctx, jobs)
+	err = schemasDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
-	jobs, limitReached, err := bf.GetJobs(ctx)
+	jobs, limitReached, err := bf.GetJobs(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 10, len(jobs))
 	require.Equal(t, false, limitReached)
@@ -137,9 +133,9 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 			Parameters:    []byte(`{}`),
 		})
 	}
-	err = bf.MarkJobStatuses(ctx, statuses)
+	err = bf.MarkJobStatuses(context.Background(), statuses)
 	require.NoError(t, err)
-	jobs, limitReached, err = bf.GetJobs(ctx)
+	jobs, limitReached, err = bf.GetJobs(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 0, len(jobs))
 	require.Equal(t, false, limitReached)

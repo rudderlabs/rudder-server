@@ -16,11 +16,12 @@ import (
 )
 
 type BaseForwarder struct {
-	ctx        context.Context
-	g          *errgroup.Group
-	jobsDB     jobsdb.JobsDB
-	log        logger.Logger
-	baseConfig struct {
+	parentCancel context.CancelFunc
+	cancel       context.CancelFunc
+	g            *errgroup.Group
+	jobsDB       jobsdb.JobsDB
+	log          logger.Logger
+	baseConfig   struct {
 		pickupSize                int
 		loopSleepTime             time.Duration
 		jobsDBQueryRequestTimeout time.Duration
@@ -29,7 +30,8 @@ type BaseForwarder struct {
 	}
 }
 
-func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, log logger.Logger, config *config.Config) {
+func (bf *BaseForwarder) LoadMetaData(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, log logger.Logger, config *config.Config) {
+	bf.parentCancel = parentCancel
 	bf.baseConfig.pickupSize = config.GetInt("JobsForwarder.eventCount", 10000)
 	bf.baseConfig.loopSleepTime = config.GetDuration("JobsForwarder.loopSleepTime", 10, time.Second)
 	bf.baseConfig.jobsDBQueryRequestTimeout = config.GetDuration("JobsForwarder.queryTimeout", 10, time.Second)
@@ -37,8 +39,6 @@ func (bf *BaseForwarder) LoadMetaData(ctx context.Context, g *errgroup.Group, sc
 	bf.baseConfig.jobsDBPayloadSize = config.GetInt64("JobsForwarder.payloadSize", 20*bytesize.MB)
 	bf.log = log
 	bf.jobsDB = schemaDB
-	bf.ctx = ctx
-	bf.g = g
 }
 
 func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, error) {
@@ -47,7 +47,7 @@ func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, err
 		return bf.jobsDB.GetUnprocessed(ctx, queryParams)
 	}, bf.sendQueryRetryStats)
 	if err != nil {
-		bf.log.Errorf("base forwarder: Error while reading unprocessed from DB: %v", err)
+		bf.log.Errorf("forwarder error while reading unprocessed from DB: %v", err)
 		return nil, false, err
 	}
 	return unprocessed.Jobs, unprocessed.LimitsReached, nil
@@ -70,7 +70,7 @@ func (bf *BaseForwarder) GetSleepTime(limitReached bool) time.Duration {
 }
 
 func (bf *BaseForwarder) sendQueryRetryStats(attempt int) {
-	bf.log.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
+	bf.log.Warnf("Timeout during query jobs in jobs forwarder, attempt %d", attempt)
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "jobs_forwarder"}).Count(1)
 }
 

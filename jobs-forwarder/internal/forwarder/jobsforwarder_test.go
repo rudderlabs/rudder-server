@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -23,7 +21,6 @@ import (
 )
 
 func Test_JobsForwarder(t *testing.T) {
-	g, ctx := errgroup.WithContext(context.Background())
 	conf := config.New()
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -60,7 +57,7 @@ func Test_JobsForwarder(t *testing.T) {
 
 	client, err := pulsar.NewClient(conf)
 	require.NoError(t, err)
-	jf, err := NewJobsForwarder(ctx, g, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
+	jf, err := NewJobsForwarder(func() {}, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, jf)
 	err = jf.Start()
@@ -84,11 +81,11 @@ func Test_JobsForwarder(t *testing.T) {
 			return js
 		}
 		jobs := generateJobs(10)
-		err = schemasDB.Store(ctx, jobs)
+		err = schemasDB.Store(context.Background(), jobs)
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			jobs, err := schemasDB.GetProcessed(ctx, jobsdb.GetQueryParamsT{
+			jobs, err := schemasDB.GetProcessed(context.Background(), jobsdb.GetQueryParamsT{
 				StateFilters: []string{jobsdb.Succeeded.State},
 				JobsLimit:    10,
 			})

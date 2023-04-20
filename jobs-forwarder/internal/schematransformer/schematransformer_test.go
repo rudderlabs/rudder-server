@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/golang/mock/gomock"
@@ -23,11 +22,8 @@ import (
 
 func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	conf := config.New()
-	g, ctx := errgroup.WithContext(context.Background())
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 	schemaTransformer := SchemaTransformer{
-		ctx:           ctx,
-		g:             g,
 		backendConfig: mockBackendConfig,
 		config:        conf,
 		initialised:   make(chan struct{}),
@@ -104,10 +100,9 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 
 func Test_SchemaTransformer_Interface(t *testing.T) {
 	conf := config.New()
-	g, ctx := errgroup.WithContext(context.Background())
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 	closeChan := make(chan struct{})
-	schemaTransformer := New(ctx, g, mockBackendConfig, conf)
+	schemaTransformer := New(mockBackendConfig, conf)
 	require.NotNil(t, schemaTransformer)
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {

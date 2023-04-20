@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,71 +19,87 @@ import (
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
 )
 
 type JobsForwarder struct {
 	BaseForwarder
-	transformer          schematransformer.Transformer
-	sampler              *sampler[string]
-	pulsarProducer       pulsar.ProducerAdapter
+	transformer    schematransformer.Transformer // transformer to transform jobs to destination schema
+	sampler        *sampler[string]              // sampler to decide when payloads should be sampled
+	pulsarProducer pulsar.ProducerAdapter
+
+	maxSampleSize        int64         // max sample size for the payload
 	initialRetryInterval time.Duration // 10 * time.Second
 	maxRetryInterval     time.Duration // 1 * time.Minute
 	maxRetryElapsedTime  time.Duration // 1 * time.Hour
 }
 
-func NewJobsForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
-	var forwarder JobsForwarder
-	config.RegisterDurationConfigVariable(10, &forwarder.initialRetryInterval, true, time.Second, "JobsForwarder.initialRetryInterval")
-	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryInterval, true, time.Second, "JobsForwarder.maxRetryInterval")
-	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryElapsedTime, true, time.Minute, "JobsForwarder.maxRetryElapsedTime")
-
-	forwarder.LoadMetaData(ctx, g, schemaDB, log, config)
+func NewJobsForwarder(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
 	producer, err := client.NewProducer(pulsarType.ProducerOptions{
-		Topic:              config.GetString("Pulsar.Producer.topic", ""),
+		Topic:              config.GetString("JobsForwarder.pulsarTopic", "event-schema"),
 		BatcherBuilderType: pulsarType.KeyBasedBatchBuilder,
 	})
 	if err != nil {
 		return nil, err
 	}
+	var forwarder JobsForwarder
+	forwarder.LoadMetaData(parentCancel, schemaDB, log, config)
+	config.RegisterDurationConfigVariable(10, &forwarder.initialRetryInterval, true, time.Second, "JobsForwarder.initialRetryInterval")
+	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryInterval, true, time.Second, "JobsForwarder.maxRetryInterval")
+	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryElapsedTime, true, time.Minute, "JobsForwarder.maxRetryElapsedTime")
+	config.RegisterInt64ConfigVariable(10*bytesize.KB, &forwarder.maxSampleSize, true, 1, "JobsForwarder.maxSampleSize")
+
 	forwarder.pulsarProducer = producer
-	forwarder.transformer = schematransformer.New(ctx, g, backendConfig, config)
+	forwarder.transformer = schematransformer.New(backendConfig, config)
 	forwarder.sampler = newSampler[string](config.GetDuration("JobsForwarder.samplingPeriod", 10, time.Minute), config.GetInt("JobsForwarder.sampleCacheSize", 10000))
 	return &forwarder, nil
 }
 
 func (jf *JobsForwarder) Start() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	jf.cancel = cancel
+	jf.g, ctx = errgroup.WithContext(ctx)
+
 	var sleepTime time.Duration
 	jf.transformer.Start()
 	jf.g.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
-			case <-jf.ctx.Done():
+			case <-ctx.Done():
 				return nil
 			case <-time.After(sleepTime):
-				jobs, limitReached, err := jf.GetJobs(jf.ctx)
+				jobs, limitReached, err := jf.GetJobs(ctx)
 				if err != nil {
+					if ctx.Err() != nil { // we are shutting down
+						return nil //nolint:nilerr
+					}
+					jf.parentCancel()
 					return err
 				}
 				var mu sync.Mutex // protects statuses and retryJobs
 				var statuses []*jobsdb.JobStatusT
-				retryJobs := append([]*jobsdb.JobT{}, jobs...)
+				toRetry := append([]*jobsdb.JobT{}, jobs...)
 
-				removeJob := func(job *jobsdb.JobT) {
-					_, idx, _ := lo.FindIndexOf(retryJobs, func(j *jobsdb.JobT) bool {
+				jobDone := func(job *jobsdb.JobT) {
+					_, idx, _ := lo.FindIndexOf(toRetry, func(j *jobsdb.JobT) bool {
 						return j.JobID == job.JobID
 					})
-					retryJobs = slices.Delete(retryJobs, idx, idx+1)
+					toRetry = slices.Delete(toRetry, idx, idx+1)
 				}
+
 				tryForwardJobs := func() error {
-					toForward := append([]*jobsdb.JobT{}, retryJobs...)
+					if ctx.Err() != nil { // we are shutting down
+						return nil //nolint:nilerr
+					}
+					toForward := append([]*jobsdb.JobT{}, toRetry...)
 					for _, job := range toForward {
 						job := job // job can be used in a goroutine
 						msg, orderKey, err := jf.transformer.Transform(job)
-						if err != nil { // mark job as aborted and remove from retryJobs
+						if err != nil { // mark job as aborted and remove from toRetry
 							mu.Lock()
-							removeJob(job)
+							jobDone(job)
 							statuses = append(statuses, &jobsdb.JobStatusT{
 								JobID:         job.JobID,
 								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -96,15 +113,17 @@ func (jf *JobsForwarder) Start() error {
 							mu.Unlock()
 							continue
 						}
-						if !jf.sampler.Sample(msg.Key.String()) {
-							msg.Sample = nil
+						if !bytes.Equal(msg.Sample, []byte("{}")) && // if the sample is not an empty json object (redacted) and
+							(len(msg.Sample) > int(jf.maxSampleSize) || // sample is too big or
+								!jf.sampler.Sample(msg.Key.String())) { // sample should be skipped
+							msg.Sample = nil // by setting to sample to nil we are instructing the schema worker to keep the previous sample
 						}
-						jf.pulsarProducer.SendMessageAsync(jf.ctx, orderKey, orderKey, msg.MustMarshal(),
+						jf.pulsarProducer.SendMessageAsync(ctx, orderKey, orderKey, msg.MustMarshal(),
 							func(_ pulsarType.MessageID, _ *pulsarType.ProducerMessage, err error) {
-								if err == nil { // mark job as succeeded and remove from retryJobs
+								if err == nil { // mark job as succeeded and remove from toRetry
 									mu.Lock()
 									defer mu.Unlock()
-									removeJob(job)
+									jobDone(job)
 									statuses = append(statuses, &jobsdb.JobStatusT{
 										JobID:      job.JobID,
 										AttemptNum: job.LastJobStatus.AttemptNum + 1,
@@ -116,12 +135,11 @@ func (jf *JobsForwarder) Start() error {
 								}
 							})
 					}
-					err = jf.pulsarProducer.Flush()
-					if err != nil {
-						return err
+					if err := jf.pulsarProducer.Flush(); err != nil {
+						return fmt.Errorf("failed to flush pulsar producer: %w", err)
 					}
-					if len(retryJobs) > 0 {
-						return fmt.Errorf("failed to forward %d jobs", len(retryJobs))
+					if len(toRetry) > 0 {
+						return fmt.Errorf("failed to forward %d jobs", len(toRetry))
 					}
 					return nil
 				}
@@ -130,9 +148,9 @@ func (jf *JobsForwarder) Start() error {
 				expB.InitialInterval = jf.initialRetryInterval
 				expB.MaxInterval = jf.maxRetryInterval
 				expB.MaxElapsedTime = jf.maxRetryElapsedTime
-				if err = backoff.Retry(tryForwardJobs, backoff.WithContext(expB, jf.ctx)); err != nil {
+				if err = backoff.Retry(tryForwardJobs, backoff.WithContext(expB, ctx)); err != nil {
 					// mark all to retry jobs as aborted
-					for _, job := range retryJobs {
+					for _, job := range toRetry {
 						statuses = append(statuses, &jobsdb.JobStatusT{
 							JobID:         job.JobID,
 							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -145,9 +163,12 @@ func (jf *JobsForwarder) Start() error {
 						})
 					}
 				}
-				err = jf.MarkJobStatuses(jf.ctx, statuses)
-				if err != nil {
-					return err
+				if err := jf.MarkJobStatuses(ctx, statuses); err != nil {
+					if ctx.Err() != nil { // we are shutting down
+						return nil //nolint:nilerr
+					}
+					jf.parentCancel()
+					return fmt.Errorf("failed to mark schema job statuses in forwarder: %w", err)
 				}
 				sleepTime = jf.GetSleepTime(limitReached)
 			}
@@ -157,6 +178,8 @@ func (jf *JobsForwarder) Start() error {
 }
 
 func (jf *JobsForwarder) Stop() {
+	jf.cancel()
+	_ = jf.g.Wait()
 	jf.transformer.Stop()
 	jf.pulsarProducer.Close()
 }

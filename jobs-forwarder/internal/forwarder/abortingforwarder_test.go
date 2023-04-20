@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -16,8 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_NOOPForwarder(t *testing.T) {
-	g, ctx := errgroup.WithContext(context.Background())
+func Test_AbortingForwarder(t *testing.T) {
 	conf := config.New()
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -36,13 +33,12 @@ func Test_NOOPForwarder(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	nf, err := NewNOOPForwarder(ctx, g, schemasDB, conf, logger.NOP)
+	forwarder, err := NewAbortingForwarder(func() {}, schemasDB, conf, logger.NOP)
 	require.NoError(t, err)
-	require.NotNil(t, nf)
+	require.NotNil(t, forwarder)
 
-	err = nf.Start()
-	require.NoError(t, err)
-	defer nf.Stop()
+	require.NoError(t, forwarder.Start())
+	defer forwarder.Stop()
 
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
 		customVal := "MOCKDS"
@@ -61,11 +57,11 @@ func Test_NOOPForwarder(t *testing.T) {
 		return js
 	}
 	jobs := generateJobs(10)
-	err = schemasDB.Store(ctx, jobs)
+	err = schemasDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		jobs, err := schemasDB.GetProcessed(ctx, jobsdb.GetQueryParamsT{
+		jobs, err := schemasDB.GetProcessed(context.Background(), jobsdb.GetQueryParamsT{
 			StateFilters: []string{jobsdb.Aborted.State},
 			JobsLimit:    10,
 		})

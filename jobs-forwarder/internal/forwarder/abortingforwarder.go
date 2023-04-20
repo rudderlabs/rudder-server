@@ -4,33 +4,40 @@ import (
 	"context"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"golang.org/x/sync/errgroup"
 )
 
-type NoopForwarder struct {
+type AbortingForwarder struct {
 	BaseForwarder
 }
 
-func NewNOOPForwarder(ctx context.Context, g *errgroup.Group, schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*NoopForwarder, error) {
+func NewAbortingForwarder(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*AbortingForwarder, error) {
 	baseForwarder := BaseForwarder{}
-	baseForwarder.LoadMetaData(ctx, g, schemaDB, log, config)
-	return &NoopForwarder{baseForwarder}, nil
+	baseForwarder.LoadMetaData(parentCancel, schemaDB, log, config)
+	return &AbortingForwarder{baseForwarder}, nil
 }
 
-func (nf *NoopForwarder) Start() error {
+func (nf *AbortingForwarder) Start() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	nf.g, ctx = errgroup.WithContext(ctx)
+	nf.cancel = cancel
+
 	nf.g.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
-			case <-nf.ctx.Done():
+			case <-ctx.Done():
 				return nil
 			default:
-				jobList, limitReached, err := nf.GetJobs(nf.ctx)
+				jobList, limitReached, err := nf.GetJobs(ctx)
 				if err != nil {
+					if ctx.Err() != nil { // we are shutting down
+						return nil //nolint:nilerr
+					}
+					nf.parentCancel()
 					return err
 				}
 				nf.log.Infof("NoopForwarder: Got %d jobs", len(jobList))
@@ -48,9 +55,13 @@ func (nf *NoopForwarder) Start() error {
 						WorkspaceId:   job.WorkspaceId,
 					})
 				}
-				err = nf.MarkJobStatuses(nf.ctx, statusList)
+				err = nf.MarkJobStatuses(ctx, statusList)
 				if err != nil {
+					if ctx.Err() != nil { // we are shutting down
+						return nil //nolint:nilerr
+					}
 					nf.log.Errorf("Error while updating job status: %v", err)
+					nf.parentCancel()
 					return err
 				}
 				time.Sleep(nf.GetSleepTime(limitReached))
@@ -60,5 +71,7 @@ func (nf *NoopForwarder) Start() error {
 	return nil
 }
 
-func (nf *NoopForwarder) Stop() {
+func (nf *AbortingForwarder) Stop() {
+	nf.cancel()
+	_ = nf.g.Wait()
 }

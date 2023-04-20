@@ -101,7 +101,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("processor service cannot start, database is not setup")
 	}
 	a.log.Info("Processor starting")
-
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 
 	deploymentType, err := deployment.GetFromEnv()
@@ -203,12 +204,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			return err
 		}
 		defer client.Close()
-		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(ctx, g, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config)
+		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(cancel, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config)
 		if err != nil {
 			return err
 		}
 	} else {
-		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(ctx, g, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config)
+		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(cancel, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config)
 		if err != nil {
 			return err
 		}
