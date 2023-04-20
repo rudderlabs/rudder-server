@@ -11,6 +11,12 @@ import (
 	"github.com/samber/lo"
 )
 
+const (
+	eventProperty_allowAll      = "allowAll"
+	eventProperty_allowedValues = "allowedValues"
+)
+
+var eventPropertyKeys = []string{eventProperty_allowAll, eventProperty_allowedValues}
 var pkgLogger = logger.NewLogger().Child("eventfilter")
 
 // GetSupportedMessageTypes returns the supported message types for the given event, based on configuration.
@@ -102,16 +108,16 @@ func getMessageType(event *types.SingularEventT) string {
 	}
 	eventMessageType, isEventTypeString := eventMessageTypeI.(string)
 	if !isEventTypeString {
-		pkgLogger.Errorf("Invalid message type :%v, Type assertion failed", eventMessageTypeI)
+		pkgLogger.Errorf("Invalid message type: type assertion failed: %v", eventMessageTypeI)
 		return ""
 	}
 	return eventMessageType
 }
 
 /*
-This methods lets the caller know if we need to allow the event to proceed to destination transformation
+AllowEventToDestTransformation lets the caller know if we need to allow the event to proceed to destination transformation.
 
-Currently this method supports below validations(executed in the same order)
+Currently this method supports below validations(executed in the same order):
 
 1. Validate if messageType sent in event is included in SupportedMessageTypes
 
@@ -163,7 +169,7 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 }
 
 /*
-Lets the caller know if the event is allowed to flow through server for a `specific destination`
+FilterUsingSupportedConnectionModes lets the caller know if the event is allowed to flow through server for a `specific destination`
 Introduced to support hybrid-mode, cloud-mode in a more scalable way
 
 The template inside `destinationDefinition.Config.supportedConnectionModes` would look like this
@@ -328,20 +334,20 @@ Possible cases
 */
 func ConvertEventPropMapToStruct[T EventPropsTypes](eventPropMap map[string]interface{}) *EventProperty[T] {
 	var eventPropertyStruct EventProperty[T]
-	for _, key := range []string{"allowAll", "allowedValues"} {
+	for _, key := range eventPropertyKeys {
 		val, ok := eventPropMap[key]
 		if !ok {
-			pkgLogger.Debugf("'%v' not found in eventPropertiesMap(supportedConnectionModes.sourceType.connectionMode.[eventProperty])", key)
+			pkgLogger.Debugf(" %q not found in eventPropertiesMap(supportedConnectionModes.sourceType.connectionMode.[eventProperty])", key)
 			continue
 		}
 		switch key {
-		case "allowAll":
+		case eventProperty_allowAll:
 			allowAll, convertable := val.(bool)
 			if !convertable {
 				return nil
 			}
 			eventPropertyStruct.AllowAll = allowAll
-		case "allowedValues":
+		case eventProperty_allowedValues:
 			allowedVals := ConvertToArrayOfType[T](val)
 			eventPropertyStruct.AllowedVals = allowedVals
 		}
