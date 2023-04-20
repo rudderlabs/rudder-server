@@ -15,9 +15,9 @@ type AbortingForwarder struct {
 	BaseForwarder
 }
 
-func NewAbortingForwarder(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*AbortingForwarder, error) {
+func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*AbortingForwarder, error) {
 	baseForwarder := BaseForwarder{}
-	baseForwarder.LoadMetaData(parentCancel, schemaDB, log, config)
+	baseForwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
 	return &AbortingForwarder{baseForwarder}, nil
 }
 
@@ -37,7 +37,7 @@ func (nf *AbortingForwarder) Start() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
 					}
-					nf.parentCancel()
+					nf.terminalErrFn(err)
 					return err
 				}
 				nf.log.Infof("NoopForwarder: Got %d jobs", len(jobList))
@@ -61,7 +61,7 @@ func (nf *AbortingForwarder) Start() error {
 						return nil //nolint:nilerr
 					}
 					nf.log.Errorf("Error while updating job status: %v", err)
-					nf.parentCancel()
+					nf.terminalErrFn(err)
 					return err
 				}
 				time.Sleep(nf.GetSleepTime(limitReached))

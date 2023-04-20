@@ -1,8 +1,6 @@
 package jobs_forwarder
 
 import (
-	"context"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -18,10 +16,10 @@ type Forwarder interface {
 	Stop()
 }
 
-func SetupJobsForwarder(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, client *pulsar.Client, backendConfig backendConfig.BackendConfig, log logger.Logger, conf *config.Config) (Forwarder, error) {
-	return forwarder.NewJobsForwarder(parentCancel, schemaDB, client, conf, backendConfig, log)
+func SetupJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, backendConfig backendConfig.BackendConfig, log logger.Logger, conf *config.Config) (Forwarder, error) {
+	return forwarder.NewJobsForwarder(terminalErrFn, schemaDB, client, conf, backendConfig, log)
 }
 
-func SetupAbortForwarder(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, log logger.Logger, conf *config.Config) (Forwarder, error) {
-	return forwarder.NewAbortingForwarder(parentCancel, schemaDB, conf, log)
+func SetupAbortForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, log logger.Logger, conf *config.Config) (Forwarder, error) {
+	return forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, conf, log)
 }

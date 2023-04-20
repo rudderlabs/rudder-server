@@ -85,9 +85,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
 	}
 	a.log.Info("Embedded mode: Starting Rudder Core")
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
+	terminalErrFn := terminalErrorFunction(ctx, g)
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
@@ -187,20 +186,19 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
-	config := config.New()
 	var jobsForwarder jobs_forwarder.Forwarder
 	if config.GetBool("JEventSchemas2.enabled", false) {
-		client, err := pulsar.NewClient(config)
+		client, err := pulsar.NewClient(config.Default)
 		if err != nil {
 			return err
 		}
 		defer client.Close()
-		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(cancel, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config)
+		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default)
 		if err != nil {
 			return err
 		}
 	} else {
-		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(cancel, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config)
+		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default)
 		if err != nil {
 			return err
 		}

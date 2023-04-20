@@ -34,7 +34,7 @@ func Test_BaseForwarder(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	bf.LoadMetaData(func() {}, schemasDB, logger.NOP, conf)
+	bf.LoadMetaData(func(error) {}, schemasDB, logger.NOP, conf)
 
 	t.Run("Test GetSleepTime", func(t *testing.T) {
 		require.Equal(t, 10*time.Second, bf.GetSleepTime(false))
@@ -95,7 +95,7 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	bf.LoadMetaData(func() {}, schemasDB, logger.NOP, conf)
+	bf.LoadMetaData(func(error) {}, schemasDB, logger.NOP, conf)
 
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
 		customVal := "MOCKDS"

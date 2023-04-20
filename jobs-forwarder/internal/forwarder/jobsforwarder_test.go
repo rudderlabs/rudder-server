@@ -57,7 +57,7 @@ func Test_JobsForwarder(t *testing.T) {
 
 	client, err := pulsar.NewClient(conf)
 	require.NoError(t, err)
-	jf, err := NewJobsForwarder(func() {}, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
+	jf, err := NewJobsForwarder(func(error) {}, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, jf)
 	err = jf.Start()

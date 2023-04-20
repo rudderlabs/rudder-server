@@ -16,12 +16,12 @@ import (
 )
 
 type BaseForwarder struct {
-	parentCancel context.CancelFunc
-	cancel       context.CancelFunc
-	g            *errgroup.Group
-	jobsDB       jobsdb.JobsDB
-	log          logger.Logger
-	baseConfig   struct {
+	terminalErrFn func(error)
+	cancel        context.CancelFunc
+	g             *errgroup.Group
+	jobsDB        jobsdb.JobsDB
+	log           logger.Logger
+	baseConfig    struct {
 		pickupSize                int
 		loopSleepTime             time.Duration
 		jobsDBQueryRequestTimeout time.Duration
@@ -30,8 +30,8 @@ type BaseForwarder struct {
 	}
 }
 
-func (bf *BaseForwarder) LoadMetaData(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, log logger.Logger, config *config.Config) {
-	bf.parentCancel = parentCancel
+func (bf *BaseForwarder) LoadMetaData(terminalErrFn func(error), schemaDB jobsdb.JobsDB, log logger.Logger, config *config.Config) {
+	bf.terminalErrFn = terminalErrFn
 	bf.baseConfig.pickupSize = config.GetInt("JobsForwarder.eventCount", 10000)
 	bf.baseConfig.loopSleepTime = config.GetDuration("JobsForwarder.loopSleepTime", 10, time.Second)
 	bf.baseConfig.jobsDBQueryRequestTimeout = config.GetDuration("JobsForwarder.queryTimeout", 10, time.Second)

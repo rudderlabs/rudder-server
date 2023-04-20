@@ -33,7 +33,7 @@ func Test_AbortingForwarder(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	forwarder, err := NewAbortingForwarder(func() {}, schemasDB, conf, logger.NOP)
+	forwarder, err := NewAbortingForwarder(func(error) {}, schemasDB, conf, logger.NOP)
 	require.NoError(t, err)
 	require.NotNil(t, forwarder)
 

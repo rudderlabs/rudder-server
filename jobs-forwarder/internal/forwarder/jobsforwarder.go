@@ -36,7 +36,7 @@ type JobsForwarder struct {
 	maxRetryElapsedTime  time.Duration // 1 * time.Hour
 }
 
-func NewJobsForwarder(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
+func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
 	producer, err := client.NewProducer(pulsarType.ProducerOptions{
 		Topic:              config.GetString("JobsForwarder.pulsarTopic", "event-schema"),
 		BatcherBuilderType: pulsarType.KeyBasedBatchBuilder,
@@ -45,7 +45,7 @@ func NewJobsForwarder(parentCancel context.CancelFunc, schemaDB jobsdb.JobsDB, c
 		return nil, err
 	}
 	var forwarder JobsForwarder
-	forwarder.LoadMetaData(parentCancel, schemaDB, log, config)
+	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
 	config.RegisterDurationConfigVariable(10, &forwarder.initialRetryInterval, true, time.Second, "JobsForwarder.initialRetryInterval")
 	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryInterval, true, time.Second, "JobsForwarder.maxRetryInterval")
 	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryElapsedTime, true, time.Minute, "JobsForwarder.maxRetryElapsedTime")
@@ -75,7 +75,7 @@ func (jf *JobsForwarder) Start() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
 					}
-					jf.parentCancel()
+					jf.terminalErrFn(err)
 					return err
 				}
 				var mu sync.Mutex // protects statuses and retryJobs
@@ -167,7 +167,7 @@ func (jf *JobsForwarder) Start() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
 					}
-					jf.parentCancel()
+					jf.terminalErrFn(err)
 					return fmt.Errorf("failed to mark schema job statuses in forwarder: %w", err)
 				}
 				sleepTime = jf.GetSleepTime(limitReached)
