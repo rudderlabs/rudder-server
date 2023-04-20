@@ -65,6 +65,7 @@ type SourceT struct {
 	WriteKey                   string
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 	Transient                  bool
+	EventSchemasEnabled        bool
 }
 
 type WorkspaceRegulationT struct {
