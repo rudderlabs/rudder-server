@@ -657,7 +657,7 @@ func TestHandle_TestConnection(t *testing.T) {
 	}{
 		{
 			name:      "DeadlineExceeded",
-			wantError: errors.New("connection testing timed out after 0 sec"),
+			wantError: errors.New("connection timeout: context deadline exceeded"),
 		},
 		{
 			name:    "Success",
@@ -708,9 +708,13 @@ func TestHandle_TestConnection(t *testing.T) {
 				},
 			}
 
+			err = ch.Setup(warehouse, &mockUploader{})
+			require.NoError(t, err)
+
 			ch.SetConnectionTimeout(tc.timeout)
 
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.TODO(), tc.timeout)
+			defer cancel()
 
 			err := ch.TestConnection(ctx, warehouse)
 			if tc.wantError != nil {

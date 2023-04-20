@@ -150,7 +150,7 @@ func TestValidator(t *testing.T) {
 				config: map[string]interface{}{
 					"database": "invalid_database",
 				},
-				wantError: errors.New("pq: database \"invalid_database\" does not exist"),
+				wantError: errors.New("pinging: pq: database \"invalid_database\" does not exist"),
 			},
 			{
 				name: "valid credentials",
