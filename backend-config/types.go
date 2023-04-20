@@ -28,13 +28,6 @@ const (
 	GlobalEventType = "global"
 )
 
-var SourceTypeMapping = map[string]string{
-	"cloud":           "cloud",
-	"warehouse":       "warehouse",
-	"javascript":      "web",
-	"singer-protocol": "cloud",
-}
-
 type DestinationDefinitionT struct {
 	ID            string
 	Name          string
