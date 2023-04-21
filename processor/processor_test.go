@@ -2302,7 +2302,7 @@ var _ = Describe("Static Function Tests", func() {
 			Expect(response).To(Equal(expectedResponse))
 		})
 
-		It("When web sourceType is sending events to cloud-mode destination, should filter out any event types that are not track/page", func() {
+		It("When web sourceType is sending events to cloud-mode destination, should filter out any event types that are not track/group", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]interface{}{
@@ -2315,19 +2315,21 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedMessageTypes": []interface{}{"track", "group", "page"},
 						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
 							"web": map[string]interface{}{
-								"cloud": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowedValues": []interface{}{"track", "group"},
-									},
-								},
-								"hybrid": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowAll": true,
-									},
-								},
+								"messageType": []interface{}{"track", "group"},
 							},
 						},
 					},
@@ -2352,8 +2354,8 @@ var _ = Describe("Static Function Tests", func() {
 						SourceDefinitionType: "web",
 					},
 					Message: map[string]interface{}{
-						"type":  "track",
-						"event": "Credit Card Added",
+						"type":  "identify",
+						"event": "User Authenticated",
 					},
 					Destination: destinationConfig,
 				},
@@ -2376,11 +2378,11 @@ var _ = Describe("Static Function Tests", func() {
 						StatusCode: 200,
 						Metadata:   events[0].Metadata,
 					},
-					{
-						Output:     events[1].Message,
-						StatusCode: 200,
-						Metadata:   events[1].Metadata,
-					},
+					// {
+					// 	Output:     events[1].Message,
+					// 	StatusCode: 200,
+					// 	Metadata:   events[1].Metadata,
+					// },
 				},
 				FailedEvents: nil,
 			}
@@ -2388,9 +2390,9 @@ var _ = Describe("Static Function Tests", func() {
 			Expect(response).To(Equal(expectedResponse))
 		})
 
-		It("When web sourceType is sending events to device-mode(available in supportedConnectionModes) destination, should filter out all the events to this destination", func() {
+		It("When web sourceType is sending events to device-mode destination, should filter out all the events to this destination", func() {
 			destinationConfig := backendconfig.DestinationT{
-				IsProcessorEnabled: true,
+				IsProcessorEnabled: false,
 				Config: map[string]interface{}{
 					"enableServerSideIdentify": false,
 					"listOfConversions": []interface{}{
@@ -2403,17 +2405,19 @@ var _ = Describe("Static Function Tests", func() {
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
 						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
 							"web": map[string]interface{}{
-								"cloud": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowedValues": []interface{}{"track", "group"},
-									},
-								},
-								"device": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowAll": true,
-									},
-								},
+								"messageType": []interface{}{"track", "group"},
 							},
 						},
 					},
@@ -2463,7 +2467,7 @@ var _ = Describe("Static Function Tests", func() {
 			Expect(response).To(Equal(expectedResponse))
 		})
 
-		It("When web sourceType is sending events to hybrid-mode(not in supportedConnectionModes) destination, should filter out all the events to this destination", func() {
+		It("When web sourceType is sending events to hybrid-mode destination, should filter out any event types that are not track/group", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]interface{}{
@@ -2478,17 +2482,19 @@ var _ = Describe("Static Function Tests", func() {
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
 						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
 							"web": map[string]interface{}{
-								"cloud": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowedValues": []interface{}{"track", "group"},
-									},
-								},
-								"device": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowAll": true,
-									},
-								},
+								"messageType": []interface{}{"track", "group"},
 							},
 						},
 					},
@@ -2531,14 +2537,25 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 			expectedResponse := transformer.ResponseT{
-				Events:       nil,
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
 				FailedEvents: nil,
 			}
 			response := ConvertToFilteredTransformerResponse(events, true)
 			Expect(response).To(Equal(expectedResponse))
 		})
 
-		It("When web sourceType(not mentioned in supportedConnectionModes) is sending events to cloud-mode(available in supportedConnectionModes) destination, should not filter all the events with event.type in supportedMessageTypes to this destination", func() {
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter is not present, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]interface{}{
@@ -2547,23 +2564,20 @@ var _ = Describe("Static Function Tests", func() {
 						map[string]interface{}{"conversions": "Credit Card Added"},
 						map[string]interface{}{"conversions": 1},
 					},
-					"connectionMode": "cloud",
+					"connectionMode": "hybrid",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
 						"supportedConnectionModes": map[string]interface{}{
-							"ios": map[string]interface{}{
-								"cloud": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowedValues": []interface{}{"track", "group"},
-									},
-								},
-								"device": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowAll": true,
-									},
-								},
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
 							},
 						},
 					},
@@ -2599,7 +2613,7 @@ var _ = Describe("Static Function Tests", func() {
 						SourceDefinitionType: "web",
 					},
 					Message: map[string]interface{}{
-						"type":  "group",
+						"type":  "screen",
 						"event": 2,
 					},
 					Destination: destinationConfig,
@@ -2617,11 +2631,6 @@ var _ = Describe("Static Function Tests", func() {
 						StatusCode: 200,
 						Metadata:   events[1].Metadata,
 					},
-					{
-						Output:     events[2].Message,
-						StatusCode: 200,
-						Metadata:   events[2].Metadata,
-					},
 				},
 				FailedEvents: nil,
 			}
@@ -2629,7 +2638,7 @@ var _ = Describe("Static Function Tests", func() {
 			Expect(response).To(Equal(expectedResponse))
 		})
 
-		It("When web sourceType(mentioned in supportedConnectionModes) is sending events to cloud-mode(available in supportedConnectionModes) destination, should filter all the events without 'event.type' to this destination", func() {
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web is a string, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]interface{}{
@@ -2638,23 +2647,111 @@ var _ = Describe("Static Function Tests", func() {
 						map[string]interface{}{"conversions": "Credit Card Added"},
 						map[string]interface{}{"conversions": 1},
 					},
-					"connectionMode": "cloud",
+					"connectionMode": "hybrid",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
 						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": "al",
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "group",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web.messageType is a string, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
 							"web": map[string]interface{}{
-								"cloud": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowedValues": []interface{}{"track", "group"},
-									},
-								},
-								"device": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowAll": true,
-									},
-								},
+								"messageType": "someString",
 							},
 						},
 					},
@@ -2668,6 +2765,7 @@ var _ = Describe("Static Function Tests", func() {
 						SourceDefinitionType: "web",
 					},
 					Message: map[string]interface{}{
+						"type":  "track",
 						"event": "Cart Cleared",
 					},
 					Destination: destinationConfig,
@@ -2689,90 +2787,7 @@ var _ = Describe("Static Function Tests", func() {
 						SourceDefinitionType: "web",
 					},
 					Message: map[string]interface{}{
-						"type":  "group",
-						"event": 2,
-					},
-					Destination: destinationConfig,
-				},
-			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
-					{
-						Output:     events[1].Message,
-						StatusCode: 200,
-						Metadata:   events[1].Metadata,
-					},
-					{
-						Output:     events[2].Message,
-						StatusCode: 200,
-						Metadata:   events[2].Metadata,
-					},
-				},
-				FailedEvents: []transformer.TransformerResponseT{
-					{
-						Output:     events[0].Message,
-						StatusCode: 400,
-						Metadata:   events[0].Metadata,
-						Error:      "Invalid message type. Type assertion failed",
-					},
-				},
-			}
-			response := ConvertToFilteredTransformerResponse(events, true)
-
-			Expect(response).To(Equal(expectedResponse))
-		})
-
-		It("When web sourceType is sending events to cloud-mode destination with supportedConnectionModes in previous version , should not filter events to this destination", func() {
-			destinationConfig := backendconfig.DestinationT{
-				IsProcessorEnabled: true,
-				Config: map[string]interface{}{
-					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
-					},
-					"connectionMode": "cloud",
-				},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
-						"supportedConnectionModes": map[string]interface{}{
-							"web": []interface{}{"cloud", "device"},
-						},
-					},
-				},
-			}
-
-			events := []transformer.TransformerEventT{
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-1",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"event": "Cart Cleared",
-						"type":  "track",
-					},
-					Destination: destinationConfig,
-				},
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-2",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"type":  "track",
-						"event": "Credit Card Added",
-					},
-					Destination: destinationConfig,
-				},
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-3",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"type":  "group",
+						"type":  "screen",
 						"event": 2,
 					},
 					Destination: destinationConfig,
@@ -2789,194 +2804,11 @@ var _ = Describe("Static Function Tests", func() {
 						Output:     events[1].Message,
 						StatusCode: 200,
 						Metadata:   events[1].Metadata,
-					},
-					{
-						Output:     events[2].Message,
-						StatusCode: 200,
-						Metadata:   events[2].Metadata,
 					},
 				},
 				FailedEvents: nil,
 			}
 			response := ConvertToFilteredTransformerResponse(events, true)
-
-			Expect(response).To(Equal(expectedResponse))
-		})
-
-		It("When web sourceType is sending events to cloud-mode destination with supportedConnectionModes not containing 'messageType' defined, should not filter events to this destination", func() {
-			destinationConfig := backendconfig.DestinationT{
-				IsProcessorEnabled: true,
-				Config: map[string]interface{}{
-					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
-					},
-					"connectionMode": "cloud",
-				},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
-						"supportedConnectionModes": map[string]interface{}{
-							"web": map[string]interface{}{
-								"cloud": map[string]interface{}{},
-								"device": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowAll": true,
-									},
-								},
-							},
-						},
-					},
-				},
-			}
-
-			events := []transformer.TransformerEventT{
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-1",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"event": "Cart Cleared",
-						"type":  "track",
-					},
-					Destination: destinationConfig,
-				},
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-2",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"type":  "track",
-						"event": "Credit Card Added",
-					},
-					Destination: destinationConfig,
-				},
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-3",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"type":  "group",
-						"event": 2,
-					},
-					Destination: destinationConfig,
-				},
-			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
-					{
-						Output:     events[0].Message,
-						StatusCode: 200,
-						Metadata:   events[0].Metadata,
-					},
-					{
-						Output:     events[1].Message,
-						StatusCode: 200,
-						Metadata:   events[1].Metadata,
-					},
-					{
-						Output:     events[2].Message,
-						StatusCode: 200,
-						Metadata:   events[2].Metadata,
-					},
-				},
-				FailedEvents: nil,
-			}
-			response := ConvertToFilteredTransformerResponse(events, true)
-
-			Expect(response).To(Equal(expectedResponse))
-		})
-		It("When web sourceType is sending events to cloud-mode destination with supportedConnectionModes not containing 'messageType' is empty, should not filter events to this destination", func() {
-			destinationConfig := backendconfig.DestinationT{
-				IsProcessorEnabled: true,
-				Config: map[string]interface{}{
-					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
-					},
-					"connectionMode": "cloud",
-				},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
-						"supportedConnectionModes": map[string]interface{}{
-							"web": map[string]interface{}{
-								"cloud": map[string]interface{}{
-									"messageType": map[string]interface{}{},
-								},
-								"device": map[string]interface{}{
-									"messageType": map[string]interface{}{
-										"allowAll": true,
-									},
-								},
-							},
-						},
-					},
-				},
-			}
-
-			events := []transformer.TransformerEventT{
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-1",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"event": "Cart Cleared",
-						"type":  "track",
-					},
-					Destination: destinationConfig,
-				},
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-2",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"type":  "track",
-						"event": "Credit Card Added",
-					},
-					Destination: destinationConfig,
-				},
-				{
-					Metadata: transformer.MetadataT{
-						MessageID:            "message-3",
-						SourceDefinitionType: "web",
-					},
-					Message: map[string]interface{}{
-						"type":  "group",
-						"event": 2,
-					},
-					Destination: destinationConfig,
-				},
-			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
-					{
-						Output:     events[0].Message,
-						StatusCode: 200,
-						Metadata:   events[0].Metadata,
-					},
-					{
-						Output:     events[1].Message,
-						StatusCode: 200,
-						Metadata:   events[1].Metadata,
-					},
-					{
-						Output:     events[2].Message,
-						StatusCode: 200,
-						Metadata:   events[2].Metadata,
-					},
-				},
-				FailedEvents: nil,
-			}
-			response := ConvertToFilteredTransformerResponse(events, true)
-
 			Expect(response).To(Equal(expectedResponse))
 		})
 	})
