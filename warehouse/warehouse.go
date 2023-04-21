@@ -973,8 +973,8 @@ func (wh *HandleT) resetInProgressJobs() {
 	}
 }
 
-func minimalConfigSubscriber() {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+func minimalConfigSubscriber(ctx context.Context) {
+	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	for data := range ch {
 		pkgLogger.Debug("Got config from config-backend", data)
 		configData := data.Data.(map[string]backendconfig.ConfigT)
@@ -1651,7 +1651,7 @@ func Start(ctx context.Context, app app.App) error {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
 			rruntime.GoForWarehouse(func() {
-				minimalConfigSubscriber()
+				minimalConfigSubscriber(ctx)
 			})
 			err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 			if err != nil {
@@ -1704,7 +1704,7 @@ func Start(ctx context.Context, app app.App) error {
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			minimalConfigSubscriber()
+			minimalConfigSubscriber(ctx)
 			return nil
 		}))
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
