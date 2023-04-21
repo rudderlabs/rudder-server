@@ -81,6 +81,7 @@ var (
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
 	connectionsMap                      map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
+	slaveConnectionsMap                 map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
 	connectionsMapLock                  sync.RWMutex
 	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
 	triggerUploadsMapLock               sync.RWMutex
@@ -220,16 +221,16 @@ func (wh *HandleT) workerIdentifier(warehouse model.Warehouse) (identifier strin
 	return
 }
 
-func getDestinationFromConnectionMap(DestinationId, SourceId string) (model.Warehouse, error) {
-	if DestinationId == "" || SourceId == "" {
+func getDestinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
+	if destinationId == "" || sourceId == "" {
 		return model.Warehouse{}, errors.New("invalid Parameters")
 	}
-	sourceMap, ok := connectionsMap[DestinationId]
+	sourceMap, ok := slaveConnectionsMap[destinationId]
 	if !ok {
 		return model.Warehouse{}, errors.New("invalid Destination Id")
 	}
 
-	conn, ok := sourceMap[SourceId]
+	conn, ok := sourceMap[sourceId]
 	if !ok {
 		return model.Warehouse{}, errors.New("invalid Source Id")
 	}
@@ -330,7 +331,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					wh.workerChannelMapLock.Unlock()
 
 					connectionsMapLock.Lock()
-					if connectionsMap[destination.ID] == nil {
+					if _, ok := connectionsMap[destination.ID]; !ok {
 						connectionsMap[destination.ID] = map[string]model.Warehouse{}
 					}
 					if warehouse.Destination.Config["sslMode"] == "verify-ca" {
@@ -962,11 +963,11 @@ func (wh *HandleT) resetInProgressJobs() {
 		true,
 	)
 	rows, err := wh.dbHandle.Query(sqlStatement)
-	if rows.Err() != nil {
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, rows.Err()))
-	}
 	if err != nil {
 		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
+	}
+	if rows.Err() != nil {
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, rows.Err()))
 	}
 }
 
@@ -993,11 +994,15 @@ func minimalConfigSubscriber() {
 							destType: destination.DestinationDefinition.Name,
 						}
 						namespace := wh.getNamespace(source, destination)
+
 						connectionsMapLock.Lock()
-						if connectionsMap[destination.ID] == nil {
+						if _, ok := slaveConnectionsMap[destination.ID]; !ok {
+							slaveConnectionsMap[destination.ID] = map[string]model.Warehouse{}
+						}
+						if _, ok := connectionsMap[destination.ID]; !ok {
 							connectionsMap[destination.ID] = map[string]model.Warehouse{}
 						}
-						connectionsMap[destination.ID][source.ID] = model.Warehouse{
+						warehouse := model.Warehouse{
 							WorkspaceID: workspaceID,
 							Destination: destination,
 							Namespace:   namespace,
@@ -1005,6 +1010,14 @@ func minimalConfigSubscriber() {
 							Source:      source,
 							Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
 						}
+						if destination.Config["sslMode"] == "verify-ca" {
+							if err := warehouseutils.WriteSSLKeys(destination); err.IsError() {
+								wh.Logger.Error(err.Error())
+								persistSSLFileErrorStat(workspaceID, wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+							}
+						}
+						slaveConnectionsMap[destination.ID][source.ID] = warehouse
+						connectionsMap[destination.ID][source.ID] = warehouse
 						connectionsMapLock.Unlock()
 					}
 				}
@@ -1120,11 +1133,15 @@ func CheckPGHealth(dbHandle *sql.DB) bool {
 		return false
 	}
 	rows, err := dbHandle.Query(`SELECT 'Rudder Warehouse DB Health Check'::text as message`)
+	defer func() { _ = rows.Close() }()
 	if err != nil {
 		pkgLogger.Error(err)
 		return false
 	}
-	defer func() { _ = rows.Close() }()
+	if rows.Err() != nil {
+		pkgLogger.Error(rows.Err())
+		return false
+	}
 	return true
 }
 
@@ -1683,6 +1700,10 @@ func Start(ctx context.Context, app app.App) error {
 
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			minimalConfigSubscriber()
+			return nil
+		}))
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return setupSlave(ctx)
 		}))
