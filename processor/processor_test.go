@@ -1823,6 +1823,89 @@ var _ = Describe("Static Function Tests", func() {
 		})
 	})
 
+	Context("updateMetricMaps Tests", func() {
+		It("Should update metric maps", func() {
+			proc := NewHandle(nil)
+			proc.reportingEnabled = true
+			proc.reporting = &mockReportingTypes.MockReportingI{}
+
+			inputEvent := &transformer.TransformerResponseT{
+				Metadata: transformer.MetadataT{
+					SourceID:         "source-id-1",
+					DestinationID:    "destination-id-1",
+					TransformationID: "transformation-id-1",
+					TrackingPlanId:   "tracking-plan-id-1",
+					EventName:        "event-name-1",
+					EventType:        "event-type-1",
+				},
+				StatusCode: 200,
+				Error:      "",
+				ValidationErrors: []transformer.ValidationErrorT{
+					{
+						Type:    "type-1",
+						Message: "message-1",
+					},
+					{
+						Type:    "type-1",
+						Message: "message-2",
+					},
+					{
+						Type:    "type-2",
+						Message: "message-1",
+					},
+				},
+			}
+			expectedMetricMetadata := MetricMetadata{
+				sourceID:                inputEvent.Metadata.SourceID,
+				destinationID:           inputEvent.Metadata.DestinationID,
+				sourceJobRunID:          inputEvent.Metadata.SourceJobRunID,
+				sourceJobID:             inputEvent.Metadata.SourceJobID,
+				sourceTaskRunID:         inputEvent.Metadata.SourceTaskRunID,
+				sourceDefinitionID:      inputEvent.Metadata.SourceDefinitionID,
+				destinationDefinitionID: inputEvent.Metadata.DestinationDefinitionID,
+				sourceCategory:          inputEvent.Metadata.SourceCategory,
+				transformationID:        inputEvent.Metadata.TransformationID,
+				transformationVersionID: inputEvent.Metadata.TransformationVersionID,
+				trackingPlanID:          inputEvent.Metadata.TrackingPlanId,
+				trackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
+			}
+			expectedConnectionDetails := &types.ConnectionDetails{
+				SourceID:                inputEvent.Metadata.SourceID,
+				DestinationID:           inputEvent.Metadata.DestinationID,
+				SourceJobRunID:          inputEvent.Metadata.SourceJobRunID,
+				SourceJobID:             inputEvent.Metadata.SourceJobID,
+				SourceTaskRunID:         inputEvent.Metadata.SourceTaskRunID,
+				SourceDefinitionId:      inputEvent.Metadata.SourceDefinitionID,
+				DestinationDefinitionId: inputEvent.Metadata.DestinationDefinitionID,
+				SourceCategory:          inputEvent.Metadata.SourceCategory,
+				TransformationID:        inputEvent.Metadata.TransformationID,
+				TransformationVersionID: inputEvent.Metadata.TransformationVersionID,
+				TrackingPlanID:          inputEvent.Metadata.TrackingPlanId,
+				TrackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
+			}
+			connectionDetailsMap := make(map[string]*types.ConnectionDetails)
+			statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
+			countMap := make(map[string]int64)
+			countMetadataMap := make(map[string]MetricMetadata)
+			// update metric maps
+			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, transformer.TrackingPlanValidationStage, func() json.RawMessage { return []byte(`{}`) })
+
+			Expect(len(countMetadataMap)).To(Equal(1))
+			Expect(len(countMap)).To(Equal(1))
+			for k := range countMetadataMap {
+				Expect(countMetadataMap[k]).To(Equal(expectedMetricMetadata))
+				Expect(countMap[k]).To(Equal(int64(1)))
+			}
+
+			Expect(len(connectionDetailsMap)).To(Equal(1))
+			Expect(len(statusDetailsMap)).To(Equal(1))
+			for k := range connectionDetailsMap {
+				Expect(connectionDetailsMap[k]).To(Equal(expectedConnectionDetails))
+				Expect(len(statusDetailsMap[k])).To(Equal(3)) // count of distinct error types: "type-1", "type-2", ""
+			}
+		})
+	})
+
 	Context("ConvertToTransformerResponse Tests", func() {
 		It("Should filter out unsupported message types", func() {
 			destinationConfig := backendconfig.DestinationT{
