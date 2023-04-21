@@ -1,4 +1,4 @@
-package schematransformer
+package transformer
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 
 func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
-	schemaTransformer := SchemaTransformer{
+	schemaTransformer := transformer{
 		backendConfig: mockBackendConfig,
 	}
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).

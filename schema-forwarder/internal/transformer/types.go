@@ -1,4 +1,4 @@
-package schematransformer
+package transformer
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
-type SchemaTransformer struct {
+type transformer struct {
 	cancel context.CancelFunc // cancel function for the Start context (used to stop all goroutines during Stop)
 	g      *errgroup.Group    // errgroup for the Start context (used to wait for all goroutines to exit)
 

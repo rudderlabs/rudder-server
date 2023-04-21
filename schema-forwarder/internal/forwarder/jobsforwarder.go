@@ -19,7 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/schematransformer"
+	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/transformer"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
@@ -29,10 +29,10 @@ import (
 type JobsForwarder struct {
 	BaseForwarder
 
-	transformer    schematransformer.Transformer // transformer used to transform jobs to destination schema
-	sampler        *sampler[string]              // sampler used to decide how often payloads should be sampled
-	pulsarClient   *pulsar.Client                // pulsar client used to create producers
-	pulsarProducer pulsar.ProducerAdapter        // pulsar producer used to forward jobs to pulsar
+	transformer    transformer.Transformer // transformer used to transform jobs to destination schema
+	sampler        *sampler[string]        // sampler used to decide how often payloads should be sampled
+	pulsarClient   *pulsar.Client          // pulsar client used to create producers
+	pulsarProducer pulsar.ProducerAdapter  // pulsar producer used to forward jobs to pulsar
 
 	topic                string        // topic to which jobs are forwarded
 	maxSampleSize        int64         // max payload size for the samples to include in the schema messages
@@ -46,7 +46,7 @@ func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client 
 	var forwarder JobsForwarder
 	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config, stat)
 
-	forwarder.transformer = schematransformer.New(backendConfig, config)
+	forwarder.transformer = transformer.New(backendConfig, config)
 	forwarder.sampler = newSampler[string](config.GetDuration("SchemaForwarder.samplingPeriod", 10, time.Minute), config.GetInt("SchemaForwarder.sampleCacheSize", 10000))
 	forwarder.pulsarClient = client
 
