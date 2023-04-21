@@ -199,7 +199,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
 
-	jobsForwarder := mock_jobs_forwarder.NewMockForwarder(gomock.NewController(t))
+	schemaForwarder := mock_jobs_forwarder.NewMockForwarder(gomock.NewController(t))
 
 	processor := processor.New(
 		ctx,
@@ -258,17 +258,17 @@ func TestDynamicClusterManager(t *testing.T) {
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-	jobsForwarder.EXPECT().Start().Return(nil).AnyTimes()
-	jobsForwarder.EXPECT().Stop().AnyTimes()
+	schemaForwarder.EXPECT().Start().Return(nil).AnyTimes()
+	schemaForwarder.EXPECT().Stop().AnyTimes()
 
 	provider := &mockModeProvider{modeCh: make(chan servermode.ChangeEvent)}
 	dCM := &cluster.Dynamic{
-		GatewayDB:     gwDB,
-		RouterDB:      rtDB,
-		BatchRouterDB: brtDB,
-		ErrorDB:       errDB,
-		EventSchemaDB: eschDB,
-		JobsForwarder: jobsForwarder,
+		GatewayDB:       gwDB,
+		RouterDB:        rtDB,
+		BatchRouterDB:   brtDB,
+		ErrorDB:         errDB,
+		EventSchemaDB:   eschDB,
+		SchemaForwarder: schemaForwarder,
 
 		Processor:       processor,
 		Router:          router,

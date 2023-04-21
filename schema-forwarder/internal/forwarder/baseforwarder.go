@@ -18,6 +18,7 @@ import (
 type BaseForwarder struct {
 	terminalErrFn func(error) // function to call when a terminal error occurs
 	log           logger.Logger
+	stat          stats.Stats
 	jobsDB        jobsdb.JobsDB
 
 	cancel context.CancelFunc // cancel function for the Start context (used to stop all goroutines during Stop)
@@ -33,16 +34,17 @@ type BaseForwarder struct {
 }
 
 // LoadMetaData loads the metadata required by the forwarders
-func (bf *BaseForwarder) LoadMetaData(terminalErrFn func(error), schemaDB jobsdb.JobsDB, log logger.Logger, config *config.Config) {
+func (bf *BaseForwarder) LoadMetaData(terminalErrFn func(error), schemaDB jobsdb.JobsDB, log logger.Logger, config *config.Config, stat stats.Stats) {
 	bf.terminalErrFn = terminalErrFn
 	bf.log = log
+	bf.stat = stat
 	bf.jobsDB = schemaDB
 
-	bf.conf.pickupSize = config.GetInt("JobsForwarder.eventCount", 10000)
-	bf.conf.loopSleepTime = config.GetDuration("JobsForwarder.loopSleepTime", 10, time.Second)
-	bf.conf.jobsDBQueryRequestTimeout = config.GetDuration("JobsForwarder.queryTimeout", 10, time.Second)
-	bf.conf.jobsDBMaxRetries = config.GetInt("JobsForwarder.maxRetries", 3)
-	bf.conf.jobsDBPayloadSize = config.GetInt64("JobsForwarder.payloadSize", 20*bytesize.MB)
+	bf.conf.pickupSize = config.GetInt("SchemaForwarder.eventCount", 10000)
+	bf.conf.loopSleepTime = config.GetDuration("SchemaForwarder.loopSleepTime", 10, time.Second)
+	bf.conf.jobsDBQueryRequestTimeout = config.GetDuration("SchemaForwarder.queryTimeout", 10, time.Second)
+	bf.conf.jobsDBMaxRetries = config.GetInt("SchemaForwarder.maxRetries", 3)
+	bf.conf.jobsDBPayloadSize = config.GetInt64("SchemaForwarder.payloadSize", 20*bytesize.MB)
 }
 
 // GetJobs is an abstraction over the GetUnprocessed method of the jobsdb which includes retries

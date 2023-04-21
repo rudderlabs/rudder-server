@@ -15,10 +15,11 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/schematransformer"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/schematransformer"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
@@ -41,19 +42,19 @@ type JobsForwarder struct {
 }
 
 // NewJobsForwarder returns a new, properly initialized, JobsForwarder
-func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) *JobsForwarder {
+func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger, stat stats.Stats) *JobsForwarder {
 	var forwarder JobsForwarder
-	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
+	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config, stat)
 
 	forwarder.transformer = schematransformer.New(backendConfig, config)
-	forwarder.sampler = newSampler[string](config.GetDuration("JobsForwarder.samplingPeriod", 10, time.Minute), config.GetInt("JobsForwarder.sampleCacheSize", 10000))
+	forwarder.sampler = newSampler[string](config.GetDuration("SchemaForwarder.samplingPeriod", 10, time.Minute), config.GetInt("SchemaForwarder.sampleCacheSize", 10000))
 	forwarder.pulsarClient = client
 
-	forwarder.topic = config.GetString("JobsForwarder.pulsarTopic", "event-schema")
-	config.RegisterDurationConfigVariable(10, &forwarder.initialRetryInterval, true, time.Second, "JobsForwarder.initialRetryInterval")
-	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryInterval, true, time.Second, "JobsForwarder.maxRetryInterval")
-	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryElapsedTime, true, time.Minute, "JobsForwarder.maxRetryElapsedTime")
-	config.RegisterInt64ConfigVariable(10*bytesize.KB, &forwarder.maxSampleSize, true, 1, "JobsForwarder.maxSampleSize")
+	forwarder.topic = config.GetString("SchemaForwarder.pulsarTopic", "event-schema")
+	config.RegisterDurationConfigVariable(10, &forwarder.initialRetryInterval, true, time.Second, "SchemaForwarder.initialRetryInterval")
+	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryInterval, true, time.Second, "SchemaForwarder.maxRetryInterval")
+	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryElapsedTime, true, time.Minute, "SchemaForwarder.maxRetryElapsedTime")
+	config.RegisterInt64ConfigVariable(10*bytesize.KB, &forwarder.maxSampleSize, true, 1, "SchemaForwarder.maxSampleSize")
 
 	return &forwarder
 }
@@ -82,6 +83,7 @@ func (jf *JobsForwarder) Start() error {
 			case <-ctx.Done():
 				return nil
 			case <-time.After(sleepTime):
+				start := time.Now()
 				jobs, limitReached, err := jf.GetJobs(ctx)
 				if err != nil {
 					if ctx.Err() != nil { // we are shutting down
@@ -123,6 +125,7 @@ func (jf *JobsForwarder) Start() error {
 								Parameters:    []byte{},
 								ErrorResponse: json.RawMessage(fmt.Sprintf(`{"transform_error": %q}`, err.Error())),
 							})
+							jf.stat.NewTaggedStat("schema_forwarder_jobs", stats.CountType, stats.Tags{"state": "invalid"}).Increment()
 							mu.Unlock()
 							continue
 						}
@@ -143,7 +146,9 @@ func (jf *JobsForwarder) Start() error {
 										JobState:   jobsdb.Succeeded.State,
 										ExecTime:   time.Now(),
 									})
+									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Increment()
 								} else {
+									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "failed"}).Increment()
 									jf.log.Errorf("failed to forward job %s: %v", job.JobID, err)
 								}
 							})
@@ -175,6 +180,7 @@ func (jf *JobsForwarder) Start() error {
 							ErrorResponse: json.RawMessage(fmt.Sprintf(`{"error": %q}`, err.Error())),
 						})
 					}
+					jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "abort"}).Count(len(toRetry))
 				}
 				if err := jf.MarkJobStatuses(ctx, statuses); err != nil {
 					if ctx.Err() != nil { // we are shutting down
@@ -183,6 +189,7 @@ func (jf *JobsForwarder) Start() error {
 					jf.terminalErrFn(err) // we are signaling to shutdown the app
 					return fmt.Errorf("failed to mark schema job statuses in forwarder: %w", err)
 				}
+				jf.stat.NewStat("schema_forwarder_loop", stats.TimerType).Since(start)
 				sleepTime = jf.GetSleepTime(limitReached)
 			}
 		}

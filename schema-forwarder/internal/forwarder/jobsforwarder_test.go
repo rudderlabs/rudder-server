@@ -10,12 +10,13 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/testdata"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/testdata"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/stretchr/testify/require"
 )
@@ -25,12 +26,10 @@ func Test_JobsForwarder(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	topic := "test-topic"
 	pulsarContainer := PulsarResource(t)
 
 	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
-	conf.Set("Pulsar.Producer.topic", topic)
-	conf.Set("JobsForwarder.loopSleepTime", time.Millisecond)
+	conf.Set("SchemaForwarder.loopSleepTime", time.Millisecond)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 
 	jobsdb.Init()
@@ -58,7 +57,7 @@ func Test_JobsForwarder(t *testing.T) {
 
 	client, err := pulsar.NewClient(conf)
 	require.NoError(t, err)
-	jf := NewJobsForwarder(func(error) {}, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
+	jf := NewJobsForwarder(func(error) {}, schemasDB, &client, conf, mockBackendConfig, logger.NOP, stats.Default)
 	require.NotNil(t, jf)
 	require.NoError(t, jf.Start())
 	defer jf.Stop()

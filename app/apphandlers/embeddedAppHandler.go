@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
-	jobs_forwarder "github.com/rudderlabs/rudder-server/jobs-forwarder"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -24,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
 	rtThrottler "github.com/rudderlabs/rudder-server/router/throttler"
+	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -186,16 +186,16 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
-	var jobsForwarder jobs_forwarder.Forwarder
+	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
 		client, err := pulsar.NewClient(config.Default)
 		if err != nil {
 			return err
 		}
 		defer client.Close()
-		jobsForwarder = jobs_forwarder.NewJobsForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
 	} else {
-		jobsForwarder = jobs_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -260,7 +260,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		EventSchemaDB:   schemaDB,
 		Processor:       proc,
 		Router:          rt,
-		JobsForwarder:   jobsForwarder,
+		SchemaForwarder: schemaForwarder,
 		MultiTenantStat: multitenantStats,
 	}
 

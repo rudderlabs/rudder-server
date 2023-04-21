@@ -51,7 +51,7 @@ type Dynamic struct {
 	Router    lifecycle
 
 	MultiTenantStat lifecycle
-	JobsForwarder   lifecycle
+	SchemaForwarder lifecycle
 
 	currentMode         servermode.Mode
 	currentWorkspaceIDs string
@@ -177,7 +177,7 @@ func (d *Dynamic) start() error {
 	if err := d.Processor.Start(); err != nil {
 		return fmt.Errorf("processor start: %w", err)
 	}
-	if err := d.JobsForwarder.Start(); err != nil {
+	if err := d.SchemaForwarder.Start(); err != nil {
 		return fmt.Errorf("jobs forwarder start: %w", err)
 	}
 	if err := d.Router.Start(); err != nil {
@@ -201,7 +201,7 @@ func (d *Dynamic) stop() {
 	d.logger.Debug("Router stopped")
 	d.MultiTenantStat.Stop()
 	d.logger.Debug("MultiTenantStat stopped")
-	d.JobsForwarder.Stop()
+	d.SchemaForwarder.Stop()
 	d.logger.Debug("JobsForwarder stopped")
 
 	d.RouterDB.Stop()

@@ -76,7 +76,7 @@ func TestDynamicCluster(t *testing.T) {
 	routerDB := &mockLifecycle{status: "", callCount: &callCount}
 	batchRouterDB := &mockLifecycle{status: "", callCount: &callCount}
 	errorDB := &mockLifecycle{status: "", callCount: &callCount}
-	jobsForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
+	schemaForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
 	eschDB := &mockLifecycle{status: "", callCount: &callCount}
 
 	processor := &mockLifecycle{status: "", callCount: &callCount}
@@ -97,9 +97,9 @@ func TestDynamicCluster(t *testing.T) {
 		ErrorDB:       errorDB,
 		EventSchemaDB: eschDB,
 
-		Processor:     processor,
-		Router:        router,
-		JobsForwarder: jobsForwarder,
+		Processor:       processor,
+		Router:          router,
+		SchemaForwarder: schemaForwarder,
 
 		MultiTenantStat: mtStat,
 		BackendConfig:   backendConfig,
@@ -107,8 +107,8 @@ func TestDynamicCluster(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	jobsForwarder.EXPECT().Start().Return(nil).AnyTimes()
-	jobsForwarder.EXPECT().Stop().AnyTimes()
+	schemaForwarder.EXPECT().Start().Return(nil).AnyTimes()
+	schemaForwarder.EXPECT().Stop().AnyTimes()
 	wait := make(chan struct{})
 	go func() {
 		_ = dc.Run(ctx)

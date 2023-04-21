@@ -12,10 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jobs-forwarder/internal/testdata"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
+	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/testdata"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/stretchr/testify/require"
 )

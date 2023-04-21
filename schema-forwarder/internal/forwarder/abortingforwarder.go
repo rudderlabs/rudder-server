@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -18,9 +19,9 @@ type AbortingForwarder struct {
 }
 
 // NewAbortingForwarder returns a new, properly initialized, AbortingForwarder
-func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) *AbortingForwarder {
+func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger, stat stats.Stats) *AbortingForwarder {
 	var forwarder AbortingForwarder
-	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
+	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config, stat)
 	return &forwarder
 }
 

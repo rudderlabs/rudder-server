@@ -9,6 +9,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/stretchr/testify/require"
@@ -33,7 +34,7 @@ func Test_AbortingForwarder(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	forwarder := NewAbortingForwarder(func(error) {}, schemasDB, conf, logger.NOP)
+	forwarder := NewAbortingForwarder(func(error) {}, schemasDB, conf, logger.NOP, stats.Default)
 	require.NotNil(t, forwarder)
 
 	require.NoError(t, forwarder.Start())

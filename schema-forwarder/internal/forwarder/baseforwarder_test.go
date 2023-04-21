@@ -9,6 +9,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func Test_BaseForwarder(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	bf.LoadMetaData(func(error) {}, schemasDB, logger.NOP, conf)
+	bf.LoadMetaData(func(error) {}, schemasDB, logger.NOP, conf, stats.Default)
 
 	t.Run("Test GetSleepTime", func(t *testing.T) {
 		require.Equal(t, 10*time.Second, bf.GetSleepTime(false))
@@ -87,7 +88,7 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 	err = schemasDB.Start()
 	require.NoError(t, err)
 	defer schemasDB.TearDown()
-	bf.LoadMetaData(func(error) {}, schemasDB, logger.NOP, conf)
+	bf.LoadMetaData(func(error) {}, schemasDB, logger.NOP, conf, stats.Default)
 
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
 		customVal := "MOCKDS"
