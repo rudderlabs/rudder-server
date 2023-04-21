@@ -335,6 +335,9 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					if _, ok := connectionsMap[destination.ID]; !ok {
 						connectionsMap[destination.ID] = map[string]model.Warehouse{}
 					}
+					if _, ok := slaveConnectionsMap[destination.ID]; !ok {
+						slaveConnectionsMap[destination.ID] = map[string]model.Warehouse{}
+					}
 					if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 						if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 							wh.Logger.Error(err.Error())
