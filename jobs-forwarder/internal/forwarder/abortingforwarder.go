@@ -4,23 +4,26 @@ import (
 	"context"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/sync/errgroup"
 )
 
 type AbortingForwarder struct {
 	BaseForwarder
 }
 
+// NewAbortingForwarder returns a new instance of AbortingForwarder
 func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*AbortingForwarder, error) {
 	baseForwarder := BaseForwarder{}
 	baseForwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
 	return &AbortingForwarder{baseForwarder}, nil
 }
 
+// Start starts the forwarder which reads jobs from the database and aborts them
 func (nf *AbortingForwarder) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	nf.g, ctx = errgroup.WithContext(ctx)
@@ -71,6 +74,7 @@ func (nf *AbortingForwarder) Start() error {
 	return nil
 }
 
+// Stop stops the forwarder
 func (nf *AbortingForwarder) Stop() {
 	nf.cancel()
 	_ = nf.g.Wait()

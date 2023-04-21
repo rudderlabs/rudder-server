@@ -30,6 +30,7 @@ type BaseForwarder struct {
 	}
 }
 
+// LoadMetaData loads the metadata required by the forwarders
 func (bf *BaseForwarder) LoadMetaData(terminalErrFn func(error), schemaDB jobsdb.JobsDB, log logger.Logger, config *config.Config) {
 	bf.terminalErrFn = terminalErrFn
 	bf.baseConfig.pickupSize = config.GetInt("JobsForwarder.eventCount", 10000)
@@ -41,6 +42,7 @@ func (bf *BaseForwarder) LoadMetaData(terminalErrFn func(error), schemaDB jobsdb
 	bf.jobsDB = schemaDB
 }
 
+// GetJobs is an abstraction over the GetUnprocessed method of the jobsdb which includes retries
 func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, error) {
 	queryParams := bf.generateQueryParams()
 	unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, bf.baseConfig.jobsDBQueryRequestTimeout, bf.baseConfig.jobsDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
@@ -53,6 +55,7 @@ func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, err
 	return unprocessed.Jobs, unprocessed.LimitsReached, nil
 }
 
+// MarkJobStatuses is an abstraction over the UpdateJobStatusInTx method of the jobsdb which includes retries
 func (bf *BaseForwarder) MarkJobStatuses(ctx context.Context, statusList []*jobsdb.JobStatusT) error {
 	err := misc.RetryWithNotify(ctx, bf.baseConfig.jobsDBQueryRequestTimeout, bf.baseConfig.jobsDBMaxRetries, func(ctx context.Context) error {
 		return bf.jobsDB.WithUpdateSafeTx(ctx, func(txn jobsdb.UpdateSafeTx) error {
@@ -62,6 +65,7 @@ func (bf *BaseForwarder) MarkJobStatuses(ctx context.Context, statusList []*jobs
 	return err
 }
 
+// GetSleepTime returns the sleep time based on the limitReached flag
 func (bf *BaseForwarder) GetSleepTime(limitReached bool) time.Duration {
 	if limitReached {
 		return time.Duration(0)

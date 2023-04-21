@@ -23,6 +23,7 @@ type Transformer interface {
 	Stop()
 }
 
+// New returns a new instance of Schema Transformer
 func New(backendConfig backendconfig.BackendConfig, config *config.Config) Transformer {
 	return &SchemaTransformer{
 		backendConfig:              backendConfig,
@@ -32,6 +33,7 @@ func New(backendConfig backendconfig.BackendConfig, config *config.Config) Trans
 	}
 }
 
+// Start starts the schema transformer
 func (st *SchemaTransformer) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	st.cancel = cancel
@@ -43,11 +45,13 @@ func (st *SchemaTransformer) Start() {
 	<-st.initialised
 }
 
+// Stop stops the schema transformer
 func (st *SchemaTransformer) Stop() {
 	st.cancel()
 	_ = st.g.Wait()
 }
 
+// Transform transforms the job into a schema message and returns the schema message along with write key
 func (st *SchemaTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {
 	var eventPayload map[string]interface{}
 	if err := json.Unmarshal(job.EventPayload, &eventPayload); err != nil {
@@ -62,6 +66,7 @@ func (st *SchemaTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMess
 	return schemaMessage, writeKey, nil
 }
 
+// getSchemaKeyFromJob returns the schema key from the job based on the event type and event identifier
 func (st *SchemaTransformer) getSchemaKeyFromJob(eventPayload map[string]interface{}, writeKey string) *proto.EventSchemaKey {
 	eventType := st.getEventType(eventPayload)
 	return &proto.EventSchemaKey{
@@ -94,6 +99,7 @@ func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
 	}
 }
 
+// getEventType returns the event type from the event
 func (st *SchemaTransformer) getEventType(event map[string]interface{}) string {
 	eventType, ok := event["type"].(string)
 	if !ok {
@@ -102,6 +108,7 @@ func (st *SchemaTransformer) getEventType(event map[string]interface{}) string {
 	return eventType
 }
 
+// getEventIdentifier returns the event identifier from the event
 func (st *SchemaTransformer) getEventIdentifier(event map[string]interface{}, eventType string) string {
 	eventIdentifier := ""
 	if eventType == "track" {
@@ -114,6 +121,7 @@ func (st *SchemaTransformer) getEventIdentifier(event map[string]interface{}, ev
 	return eventIdentifier
 }
 
+// getSchemaMessage returns the schema message from the event by flattening the event and getting the schema
 func (st *SchemaTransformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]interface{}, marshalledEvent json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
 	flattenedEvent, err := st.flattenEvent(event)
 	if err != nil {
@@ -132,6 +140,7 @@ func (st *SchemaTransformer) getSchemaMessage(key *proto.EventSchemaKey, event m
 	}, nil
 }
 
+// getSchema returns the schema from the flattened event
 func (st *SchemaTransformer) getSchema(flattenedEvent map[string]interface{}) map[string]string {
 	schema := make(map[string]string)
 	for k, v := range flattenedEvent {
@@ -145,6 +154,7 @@ func (st *SchemaTransformer) getSchema(flattenedEvent map[string]interface{}) ma
 	return schema
 }
 
+// flattenEvent flattens the event
 func (st *SchemaTransformer) flattenEvent(event map[string]interface{}) (map[string]interface{}, error) {
 	flattenedEvent, err := flatten.Flatten(event, "", flatten.DotStyle)
 	if err != nil {
@@ -153,12 +163,14 @@ func (st *SchemaTransformer) flattenEvent(event map[string]interface{}) (map[str
 	return flattenedEvent, nil
 }
 
+// disablePIIReporting returns whether PII reporting is disabled for the write key
 func (st *SchemaTransformer) disablePIIReporting(writeKey string) bool {
 	st.writeKeyMapLock.RLock()
 	defer st.writeKeyMapLock.RUnlock()
 	return st.newPIIReportingSettings[writeKey]
 }
 
+// getWriteKeyFromParams returns the write key from the job parameters
 func (st *SchemaTransformer) getWriteKeyFromParams(parameters json.RawMessage) string {
 	sourceId := gjson.GetBytes(parameters, "source_id").Str
 	if sourceId == "" {

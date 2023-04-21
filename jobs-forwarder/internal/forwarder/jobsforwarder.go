@@ -36,6 +36,7 @@ type JobsForwarder struct {
 	maxRetryElapsedTime  time.Duration // 1 * time.Hour
 }
 
+// NewJobsForwarder returns a new instance of JobsForwarder
 func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
 	producer, err := client.NewProducer(pulsarType.ProducerOptions{
 		Topic:              config.GetString("JobsForwarder.pulsarTopic", "event-schema"),
@@ -57,6 +58,7 @@ func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client 
 	return &forwarder, nil
 }
 
+// Start starts the forwarder which will start forwarding jobs from database to the appropriate pulsar topics
 func (jf *JobsForwarder) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	jf.cancel = cancel
@@ -177,6 +179,7 @@ func (jf *JobsForwarder) Start() error {
 	return nil
 }
 
+// Stop stops the forwarder
 func (jf *JobsForwarder) Stop() {
 	jf.cancel()
 	_ = jf.g.Wait()
