@@ -3,9 +3,10 @@ package sqlquerywrapper
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -120,32 +121,69 @@ func TestQueryWrapper(t *testing.T) {
 				return tc.executionTimeInSec
 			}
 
-			user := fmt.Sprintf("test_user_%d", uuid.New().ID())
+			t.Run("DB", func(t *testing.T) {
+				user := fmt.Sprintf("test_user_%d", uuid.New().ID())
 
-			createKvs := []any{
-				logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
-			}
-			alterKvs := []any{
-				logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
-			}
+				createKvs := []any{
+					logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
+					logfield.QueryExecutionTime, tc.executionTimeInSec,
+				}
+				alterKvs := []any{
+					logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
+					logfield.QueryExecutionTime, tc.executionTimeInSec,
+				}
 
-			createKvs = append(createKvs, keysAndValues...)
-			alterKvs = append(alterKvs, keysAndValues...)
+				createKvs = append(createKvs, keysAndValues...)
+				alterKvs = append(alterKvs, keysAndValues...)
 
-			if tc.wantLog {
-				mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
-				mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
-			} else {
-				mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
-			}
+				if tc.wantLog {
+					mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
+					mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
+				} else {
+					mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
+				}
 
-			_, err := qw.Exec(fmt.Sprintf("CREATE USER %s;", user))
-			require.NoError(t, err)
+				_, err := qw.Exec(fmt.Sprintf("CREATE USER %s;", user))
+				require.NoError(t, err)
 
-			_, err = qw.Exec(fmt.Sprintf("ALTER USER %s WITH PASSWORD 'test_password';", user))
-			require.NoError(t, err)
+				_, err = qw.Exec(fmt.Sprintf("ALTER USER %s WITH PASSWORD 'test_password';", user))
+				require.NoError(t, err)
+			})
+
+			t.Run("Tx", func(t *testing.T) {
+				user := fmt.Sprintf("test_user_%d", uuid.New().ID())
+
+				createKvs := []any{
+					logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
+					logfield.QueryExecutionTime, tc.executionTimeInSec,
+				}
+				alterKvs := []any{
+					logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
+					logfield.QueryExecutionTime, tc.executionTimeInSec,
+				}
+
+				createKvs = append(createKvs, keysAndValues...)
+				alterKvs = append(alterKvs, keysAndValues...)
+
+				if tc.wantLog {
+					mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
+					mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
+				} else {
+					mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
+				}
+
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_, err = tx.Exec(fmt.Sprintf("CREATE USER %s;", user))
+				require.NoError(t, err)
+
+				_, err = tx.Exec(fmt.Sprintf("ALTER USER %s WITH PASSWORD 'test_password';", user))
+				require.NoError(t, err)
+
+				err = tx.Commit()
+				require.NoError(t, err)
+			})
 		})
 
 		t.Run(tc.name+" with transaction", func(t *testing.T) {
@@ -245,61 +283,6 @@ func TestQueryWrapper(t *testing.T) {
 				err = tx.Commit()
 				require.NoError(t, err)
 			})
-		})
-
-		t.Run(tc.name+" with transaction and secrets", func(t *testing.T) {
-			t.Parallel()
-
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
-
-			mockLogger := mock_logger.NewMockLogger(mockCtrl)
-
-			qw := New(
-				pgResource.DB,
-				WithSlowQueryThreshold(queryThreshold),
-				WithLogger(mockLogger),
-				WithKeyAndValues(keysAndValues...),
-				WithSecretsRegex(map[string]string{
-					"PASSWORD '[^']*'": "PASSWORD '***'",
-				}),
-			)
-			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
-			}
-
-			user := fmt.Sprintf("test_user_%d", uuid.New().ID())
-
-			createKvs := []any{
-				logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
-			}
-			alterKvs := []any{
-				logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
-			}
-
-			createKvs = append(createKvs, keysAndValues...)
-			alterKvs = append(alterKvs, keysAndValues...)
-
-			if tc.wantLog {
-				mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
-				mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
-			} else {
-				mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
-			}
-
-			tx, err :=  qw.Begin()
-			require.NoError(t, err)
-
-			_, err = tx.Exec(fmt.Sprintf("CREATE USER %s;", user))
-			require.NoError(t, err)
-
-			_, err = tx.Exec(fmt.Sprintf("ALTER USER %s WITH PASSWORD 'test_password';", user))
-			require.NoError(t, err)
-
-			err = tx.Commit()
-			require.NoError(t, err)
 		})
 	}
 }
