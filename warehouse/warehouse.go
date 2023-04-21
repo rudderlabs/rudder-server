@@ -191,6 +191,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
 	connectionsMap = map[string]map[string]model.Warehouse{}
+	slaveConnectionsMap = map[string]map[string]model.Warehouse{}
 	triggerUploadsMap = map[string]bool{}
 	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
