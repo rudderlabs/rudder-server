@@ -375,7 +375,7 @@ func (rs *Redshift) generateManifest(tableName string) (string, error) {
 	if err != nil {
 		panic(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: warehouseutils.S3,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
@@ -1479,7 +1479,7 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 	rs.ConnectTimeout = timeout
 }
 
-func (rs *Redshift) ErrorMappings() []model.JobError {
+func (*Redshift) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
 

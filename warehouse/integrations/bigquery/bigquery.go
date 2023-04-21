@@ -819,7 +819,7 @@ func (bq *BigQuery) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	return err
 }
 
-func (bq *BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
+func (*BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
 	return nil
 }
 
@@ -1195,6 +1195,6 @@ func (bq *BigQuery) LoadTestTable(location, tableName string, _ map[string]inter
 func (*BigQuery) SetConnectionTimeout(_ time.Duration) {
 }
 
-func (bq *BigQuery) ErrorMappings() []model.JobError {
+func (*BigQuery) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

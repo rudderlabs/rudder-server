@@ -886,6 +886,6 @@ func (ms *MSSQL) SetConnectionTimeout(timeout time.Duration) {
 	ms.ConnectTimeout = timeout
 }
 
-func (ms *MSSQL) ErrorMappings() []model.JobError {
+func (*MSSQL) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

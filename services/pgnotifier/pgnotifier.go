@@ -149,11 +149,11 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PGNotifie
 	return
 }
 
-func (notifier PGNotifier) GetDBHandle() *sql.DB {
+func (notifier *PGNotifier) GetDBHandle() *sql.DB {
 	return notifier.db
 }
 
-func (notifier PGNotifier) ClearJobs(ctx context.Context) (err error) {
+func (notifier *PGNotifier) ClearJobs(ctx context.Context) (err error) {
 	// clean up all jobs in pgnotifier for same workspace
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
 	if notifier.workspaceIdentifier != "" {
