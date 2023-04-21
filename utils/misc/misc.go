@@ -44,8 +44,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
-	"github.com/thoas/go-funk"
-
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -214,7 +212,7 @@ func GetHash(s string) int {
 
 // GetMD5Hash returns EncodeToString(md5 hash of the input string)
 func GetMD5Hash(input string) string {
-	hash := md5.Sum([]byte(input))
+	hash := md5.Sum([]byte(input)) // skipcq: GO-S1023
 	return hex.EncodeToString(hash[:])
 }
 
@@ -472,15 +470,6 @@ func GetIPFromReq(req *http.Request) string {
 	return strings.ReplaceAll(addresses[0], " ", "")
 }
 
-func Contains[K comparable](slice []K, item K) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
 // IncrementMapByKey starts with 1 and increments the counter of a key
 func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]
@@ -495,12 +484,6 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 //  timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
-}
-
-func StringKeys(input interface{}) []string {
-	keys := funk.Keys(input)
-	stringKeys := keys.([]string)
-	return stringKeys
 }
 
 func MapStringKeys(input map[string]interface{}) []string {
@@ -943,7 +926,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 }
 
 func GetSpacesLocation(location string) (region string) {
-	r, _ := regexp.Compile(`\.*.*\.digitaloceanspaces\.com`)
+	r, _ := regexp.Compile(`\.*.*\.digitaloceanspaces\.com`) // skipcq: GO-S1009
 	subLocation := r.FindString(location)
 	regionTokens := strings.Split(subLocation, ".")
 	if len(regionTokens) == 3 {
@@ -991,7 +974,7 @@ func GetMD5UUID(str string) (uuid.UUID, error) {
 
 	// google/uuid doesn't allow us to modify the version and variant
 	// so we are doing it manually, using gofrs/uuid library implementation.
-	md5Sum := md5.Sum([]byte(str))
+	md5Sum := md5.Sum([]byte(str)) // skipcq: GO-S1023
 	// SetVariant: VariantRFC4122
 	md5Sum[8] = md5Sum[8]&(0xff>>2) | (0x02 << 6)
 	// SetVersion: Version 4

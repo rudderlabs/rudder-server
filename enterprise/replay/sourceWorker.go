@@ -51,6 +51,7 @@ func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 			ErrorCode:     "",
 			ErrorResponse: []byte(`{}`), // check
 			Parameters:    []byte(`{}`), // check
+			JobParameters: job.Parameters,
 		}
 		err := worker.replayHandler.db.UpdateJobStatus(ctx, []*jobsdb.JobStatusT{&status}, []string{"replay"}, nil)
 		if err != nil {

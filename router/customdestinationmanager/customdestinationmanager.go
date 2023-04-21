@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sony/gobreaker"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -18,7 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -285,10 +285,10 @@ type Opts struct {
 
 // New returns CustomdestinationManager
 func New(destType string, o Opts) DestinationManager {
-	if misc.Contains(Destinations, destType) {
+	if slices.Contains(Destinations, destType) {
 
 		managerType := STREAM
-		if misc.Contains(KVStoreDestinations, destType) {
+		if slices.Contains(KVStoreDestinations, destType) {
 			managerType = KV
 		}
 
