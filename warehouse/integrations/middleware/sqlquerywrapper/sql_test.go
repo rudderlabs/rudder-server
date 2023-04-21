@@ -3,10 +3,9 @@ package sqlquerywrapper
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -146,6 +145,160 @@ func TestQueryWrapper(t *testing.T) {
 			require.NoError(t, err)
 
 			_, err = qw.Exec(fmt.Sprintf("ALTER USER %s WITH PASSWORD 'test_password';", user))
+			require.NoError(t, err)
+		})
+
+		t.Run(tc.name+" with transaction", func(t *testing.T) {
+			t.Parallel()
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			mockLogger := mock_logger.NewMockLogger(mockCtrl)
+
+			qw := New(
+				pgResource.DB,
+				WithSlowQueryThreshold(queryThreshold),
+				WithLogger(mockLogger),
+				WithKeyAndValues(keysAndValues...),
+			)
+			qw.since = func(time.Time) time.Duration {
+				return tc.executionTimeInSec
+			}
+
+			query := "SELECT 1;"
+
+			kvs := []any{
+				logfield.Query, query,
+				logfield.QueryExecutionTime, tc.executionTimeInSec,
+			}
+			kvs = append(kvs, keysAndValues...)
+
+			if tc.wantLog {
+				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
+			} else {
+				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
+			}
+
+			t.Run("Exec", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_, err = tx.Exec(query)
+				require.NoError(t, err)
+
+				err = tx.Commit()
+				require.NoError(t, err)
+			})
+
+			t.Run("ExecContext", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_, err = tx.ExecContext(ctx, query)
+				require.NoError(t, err)
+
+				err = tx.Commit()
+				require.NoError(t, err)
+			})
+
+			t.Run("Query", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_, err = tx.Query(query)
+				require.NoError(t, err)
+
+				err = tx.Commit()
+				require.NoError(t, err)
+			})
+
+			t.Run("QueryContext", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_, err = tx.QueryContext(ctx, query)
+				require.NoError(t, err)
+
+				err = tx.Commit()
+				require.NoError(t, err)
+			})
+
+			t.Run("QueryRow", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_ = tx.QueryRow(query)
+				require.NoError(t, err)
+
+				err = tx.Commit()
+				require.NoError(t, err)
+			})
+
+			t.Run("QueryRowContext", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_ = tx.QueryRowContext(ctx, query)
+				require.NoError(t, err)
+
+				err = tx.Commit()
+				require.NoError(t, err)
+			})
+		})
+
+		t.Run(tc.name+" with transaction and secrets", func(t *testing.T) {
+			t.Parallel()
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			mockLogger := mock_logger.NewMockLogger(mockCtrl)
+
+			qw := New(
+				pgResource.DB,
+				WithSlowQueryThreshold(queryThreshold),
+				WithLogger(mockLogger),
+				WithKeyAndValues(keysAndValues...),
+				WithSecretsRegex(map[string]string{
+					"PASSWORD '[^']*'": "PASSWORD '***'",
+				}),
+			)
+			qw.since = func(time.Time) time.Duration {
+				return tc.executionTimeInSec
+			}
+
+			user := fmt.Sprintf("test_user_%d", uuid.New().ID())
+
+			createKvs := []any{
+				logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
+				logfield.QueryExecutionTime, tc.executionTimeInSec,
+			}
+			alterKvs := []any{
+				logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
+				logfield.QueryExecutionTime, tc.executionTimeInSec,
+			}
+
+			createKvs = append(createKvs, keysAndValues...)
+			alterKvs = append(alterKvs, keysAndValues...)
+
+			if tc.wantLog {
+				mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
+				mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
+			} else {
+				mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
+			}
+
+			tx, err :=  qw.Begin()
+			require.NoError(t, err)
+
+			_, err = tx.Exec(fmt.Sprintf("CREATE USER %s;", user))
+			require.NoError(t, err)
+
+			_, err = tx.Exec(fmt.Sprintf("ALTER USER %s WITH PASSWORD 'test_password';", user))
+			require.NoError(t, err)
+
+			err = tx.Commit()
 			require.NoError(t, err)
 		})
 	}
