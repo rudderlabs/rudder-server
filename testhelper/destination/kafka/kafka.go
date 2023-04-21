@@ -176,7 +176,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 	zookeeperPort := fmt.Sprintf("%d/tcp", zookeeperPortInt)
 	zookeeperContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "bitnami/zookeeper",
-		Tag:        "latest",
+		Tag:        "3.8.1-debian-11-r23",
 		NetworkID:  network.ID,
 		Hostname:   "zookeeper",
 		PortBindings: map[dc.Port][]dc.PortBinding{
@@ -209,7 +209,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 		}
 		src, err := pool.RunWithOptions(&dockertest.RunOptions{
 			Repository:   "bitnami/schema-registry",
-			Tag:          "latest",
+			Tag:          "7.3.3-debian-11-r2",
 			NetworkID:    network.ID,
 			Hostname:     "schemaregistry",
 			ExposedPorts: []string{"8081"},
@@ -349,7 +349,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 		}
 		containers[i], err = pool.RunWithOptions(&dockertest.RunOptions{
 			Repository: "bitnami/kafka",
-			Tag:        "latest",
+			Tag:        "3.4.0-debian-11-r20",
 			NetworkID:  network.ID,
 			Hostname:   hostname,
 			PortBindings: map[dc.Port][]dc.PortBinding{

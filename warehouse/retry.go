@@ -7,8 +7,8 @@ import (
 	"net/http"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"golang.org/x/exp/slices"
 )
 
 type RetryRequest struct {
@@ -58,7 +58,7 @@ func (retryReq *RetryRequest) RetryWHUploads(ctx context.Context) (response Retr
 		err = fmt.Errorf("unauthorized request")
 		return
 	}
-	if retryReq.SourceID != "" && !misc.Contains(sourceIDs, retryReq.SourceID) {
+	if retryReq.SourceID != "" && !slices.Contains(sourceIDs, retryReq.SourceID) {
 		err = fmt.Errorf("no such sourceID exists")
 		return
 	}
@@ -109,7 +109,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Retr
 		err = fmt.Errorf("unauthorized request")
 		return
 	}
-	if retryReq.SourceID != "" && !misc.Contains(sourceIDs, retryReq.SourceID) {
+	if retryReq.SourceID != "" && !slices.Contains(sourceIDs, retryReq.SourceID) {
 		err = fmt.Errorf("no such sourceID exists")
 		return
 	}

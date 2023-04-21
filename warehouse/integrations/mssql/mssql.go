@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -680,29 +681,13 @@ func (*MSSQL) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (ms *MSSQL) TestConnection(warehouse model.Warehouse) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.ObjectStorage = warehouseutils.ObjectStorageType(
-		warehouseutils.MSSQL,
-		warehouse.Destination.Config,
-		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
-	)
-	ms.DB, err = Connect(ms.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer ms.DB.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), ms.ConnectTimeout)
-	defer cancel()
-
-	err = ms.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", ms.ConnectTimeout/time.Second)
+func (ms *MSSQL) TestConnection(ctx context.Context, _ model.Warehouse) error {
+	err := ms.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil

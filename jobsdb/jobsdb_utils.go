@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
+	"github.com/samber/lo"
 )
 
 type sqlDbOrTx interface {
@@ -130,16 +131,11 @@ func constructQueryOR(paramKey string, paramList []string) string {
 // constructParameterJSONQuery construct and return query
 func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilterT) string {
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
-	var allKeyValues, mandatoryKeyValues, opNullConditions []string
-	for _, parameter := range parameterFilters {
-		allKeyValues = append(allKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
-		mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
-	}
-	opQuery := ""
-	if len(opNullConditions) > 0 {
-		opQuery += fmt.Sprintf(` OR (%q.parameters @> '{%s}' AND %s)`, alias, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
-	}
-	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, alias, strings.Join(allKeyValues, ","), opQuery)
+	conditions := lo.Map(parameterFilters, func(parameter ParameterFilterT, _ int) string {
+		return fmt.Sprintf(`%s.parameters->>'%s'='%s'`, alias, parameter.Name, parameter.Value)
+	})
+
+	return "(" + strings.Join(conditions, " OR ") + ")"
 }
 
 // statTags is a struct to hold tags for stats
@@ -174,7 +170,7 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 			statTagsMap["stateFilters"] = stateFiltersTag
 		}
 
-		if tags.WorkspaceID != "" && tags.WorkspaceID != allWorkspaces {
+		if tags.WorkspaceID != "" && tags.WorkspaceID != "*" {
 			statTagsMap["workspaceId"] = tags.WorkspaceID
 		}
 

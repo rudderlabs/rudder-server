@@ -1,0 +1,5 @@
+{{range .Datasets}}
+    CREATE INDEX IF NOT EXISTS "idx_{{$.Prefix}}_jobs_{{.}}_cv" ON "{{$.Prefix}}_jobs_{{.}}" (custom_val);
+    CREATE INDEX IF NOT EXISTS "idx_{{$.Prefix}}_jobs_{{.}}_source_id" ON "{{$.Prefix}}_jobs_{{.}}" USING BTREE ((parameters->>'source_id'));
+    CREATE INDEX IF NOT EXISTS "idx_{{$.Prefix}}_jobs_{{.}}_destination_id" ON "{{$.Prefix}}_jobs_{{.}}" USING BTREE ((parameters->>'destination_id'));
+{{end}}

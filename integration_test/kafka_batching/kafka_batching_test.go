@@ -19,11 +19,12 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	promClient "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"

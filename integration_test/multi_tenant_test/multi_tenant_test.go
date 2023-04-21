@@ -17,12 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+
+	"github.com/gorilla/mux"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
 
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -183,7 +184,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"WORKSPACE_NAMESPACE="+workspaceNamespace,
 			"RSERVER_WAREHOUSE_MODE=off",
 		)
-
 		stdout, err := cmd.StdoutPipe()
 		require.NoError(t, err)
 		stderr, err := cmd.StderrPipe()
