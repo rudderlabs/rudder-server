@@ -22,6 +22,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -29,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -655,7 +656,10 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
-	whManager.Setup(warehouse, whasyncjob)
+	err = whManager.Setup(warehouse, whasyncjob)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
 	defer whManager.Cleanup()
 	tableNames := []string{asyncjob.TableName}
 	if asyncjob.AsyncJobType == "deletebyjobrunid" {

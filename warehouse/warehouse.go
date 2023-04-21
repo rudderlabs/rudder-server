@@ -961,7 +961,10 @@ func (wh *HandleT) resetInProgressJobs() {
 		wh.destType,
 		true,
 	)
-	_, err := wh.dbHandle.Query(sqlStatement)
+	rows, err := wh.dbHandle.Query(sqlStatement)
+	if rows.Err() != nil {
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, rows.Err())
+	}
 	if err != nil {
 		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
