@@ -72,9 +72,6 @@ func newPulsarClient(conf ClientConf, log logger.Logger) (Client, error) {
 
 // SendMessage sends a message to pulsar synchronously
 func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg []byte) error {
-	if p == nil {
-		return errors.New("producer is nil")
-	}
 	_, err := p.Send(ctx, &pulsar.ProducerMessage{
 		Key:         key,
 		OrderingKey: orderingKey,
@@ -85,9 +82,6 @@ func (p *Producer) SendMessage(ctx context.Context, key, orderingKey string, msg
 
 // SendMessageAsync sends a message to pulsar asynchronously
 func (p *Producer) SendMessageAsync(ctx context.Context, key, orderingKey string, msg []byte, statusfunc func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error)) {
-	if p == nil {
-		return
-	}
 	p.SendAsync(ctx, &pulsar.ProducerMessage{
 		Payload:     msg,
 		Key:         key,

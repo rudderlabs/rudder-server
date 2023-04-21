@@ -6,19 +6,18 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 type SchemaTransformer struct {
-	cancel                     context.CancelFunc
-	g                          *errgroup.Group
-	backendConfig              backendconfig.BackendConfig
-	sourceWriteKeyMap          map[string]string
-	newPIIReportingSettings    map[string]bool
-	writeKeyMapLock            sync.RWMutex
-	config                     *config.Config
-	shouldCaptureNilAsUnknowns bool
-	initialisedOnce            sync.Once
-	initialised                chan struct{}
+	cancel context.CancelFunc // cancel function for the Start context (used to stop all goroutines during Stop)
+	g      *errgroup.Group    // errgroup for the Start context (used to wait for all goroutines to exit)
+
+	backendConfig backendconfig.BackendConfig
+
+	mu                      sync.RWMutex      // protects the following fields
+	sourceWriteKeyMap       map[string]string // map of sourceID to writeKey
+	newPIIReportingSettings map[string]bool   // map of writeKey to PII protection enabled setting
+
+	captureNilAsUnknowns bool // if true, nil values will be captured as unknowns
 }

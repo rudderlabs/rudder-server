@@ -30,6 +30,7 @@ func Test_JobsForwarder(t *testing.T) {
 
 	conf.Set("Pulsar.Client.url", pulsarContainer.URL)
 	conf.Set("Pulsar.Producer.topic", topic)
+	conf.Set("JobsForwarder.loopSleepTime", time.Millisecond)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 
 	jobsdb.Init()
@@ -57,19 +58,18 @@ func Test_JobsForwarder(t *testing.T) {
 
 	client, err := pulsar.NewClient(conf)
 	require.NoError(t, err)
-	jf, err := NewJobsForwarder(func(error) {}, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
-	require.NoError(t, err)
+	jf := NewJobsForwarder(func(error) {}, schemasDB, &client, conf, mockBackendConfig, logger.NOP)
 	require.NotNil(t, jf)
-	err = jf.Start()
-	require.NoError(t, err)
+	require.NoError(t, jf.Start())
 	defer jf.Stop()
-	t.Run("Test_JobsForwarder", func(t *testing.T) {
+
+	t.Run("jobs for a valid source should succeed", func(t *testing.T) {
 		generateJobs := func(numOfJob int) []*jobsdb.JobT {
 			customVal := "MOCKDS"
 			js := make([]*jobsdb.JobT, numOfJob)
 			for i := 0; i < numOfJob; i++ {
 				js[i] = &jobsdb.JobT{
-					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+					Parameters:   []byte(`{"batch_id":1,"source_id":"enabled-source","source_job_run_id":""}`),
 					EventPayload: []byte(`{"testKey":"testValue"}`),
 					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 					UUID:         uuid.New(),
@@ -91,7 +91,38 @@ func Test_JobsForwarder(t *testing.T) {
 			})
 			require.NoError(t, err)
 			return len(jobs.Jobs) == 10
-		}, 30*time.Second, 5*time.Second)
+		}, 20*time.Second, 100*time.Millisecond)
+	})
+
+	t.Run("jobs for an invalid source should be aborted", func(t *testing.T) {
+		generateJobs := func(numOfJob int) []*jobsdb.JobT {
+			customVal := "MOCKDS"
+			js := make([]*jobsdb.JobT, numOfJob)
+			for i := 0; i < numOfJob; i++ {
+				js[i] = &jobsdb.JobT{
+					Parameters:   []byte(`{"batch_id":1,"source_id":"invalid","source_job_run_id":""}`),
+					EventPayload: []byte(`{"testKey":"testValue"}`),
+					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+					UUID:         uuid.New(),
+					CustomVal:    customVal,
+					EventCount:   1,
+					WorkspaceId:  "test_workspace",
+				}
+			}
+			return js
+		}
+		jobs := generateJobs(10)
+		err = schemasDB.Store(context.Background(), jobs)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			jobs, err := schemasDB.GetProcessed(context.Background(), jobsdb.GetQueryParamsT{
+				StateFilters: []string{jobsdb.Aborted.State},
+				JobsLimit:    10,
+			})
+			require.NoError(t, err)
+			return len(jobs.Jobs) == 10
+		}, 20*time.Second, 100*time.Millisecond)
 	})
 }
 

@@ -191,8 +191,6 @@ func TestDynamicClusterManager(t *testing.T) {
 	defer brtDB.TearDown()
 	errDB := jobsdb.NewForReadWrite("proc_error")
 	defer errDB.TearDown()
-	schemasDB := jobsdb.NewForReadWrite("event_schemas")
-	defer schemasDB.TearDown()
 
 	clearDb := false
 	ctx := context.Background()

@@ -41,14 +41,6 @@ func Test_BaseForwarder(t *testing.T) {
 		require.Equal(t, 0*time.Second, bf.GetSleepTime(true))
 	})
 
-	t.Run("Test generateQueryParams", func(t *testing.T) {
-		require.Equal(t, jobsdb.GetQueryParamsT{
-			EventsLimit:      bf.conf.pickupSize,
-			JobsLimit:        bf.conf.pickupSize,
-			PayloadSizeLimit: bf.conf.jobsDBPayloadSize,
-		}, bf.generateQueryParams())
-	})
-
 	t.Run("Test GetJobs", func(t *testing.T) {
 		generateJobs := func(numOfJob int) []*jobsdb.JobT {
 			customVal := "MOCKDS"

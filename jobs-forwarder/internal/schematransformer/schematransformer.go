@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -27,10 +28,8 @@ type Transformer interface {
 // New returns a new instance of Schema Transformer
 func New(backendConfig backendconfig.BackendConfig, config *config.Config) Transformer {
 	return &SchemaTransformer{
-		backendConfig:              backendConfig,
-		config:                     config,
-		shouldCaptureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
-		initialised:                make(chan struct{}),
+		backendConfig:        backendConfig,
+		captureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
 	}
 }
 
@@ -39,11 +38,21 @@ func (st *SchemaTransformer) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	st.cancel = cancel
 	st.g, ctx = errgroup.WithContext(ctx)
+
+	var initialisedOnce sync.Once
+	initialised := make(chan struct{})
+	loopFn := func() {
+		initialisedOnce.Do(func() {
+			close(initialised)
+		})
+	}
+
 	st.g.Go(func() error {
-		st.backendConfigSubscriber(ctx)
+		st.backendConfigSubscriber(ctx, loopFn)
 		return nil
 	})
-	<-st.initialised
+
+	<-initialised
 }
 
 // Stop stops the schema transformer
@@ -80,7 +89,7 @@ func (st *SchemaTransformer) getSchemaKeyFromJob(eventPayload map[string]interfa
 	}
 }
 
-func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
+func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context, loopFn func()) {
 	ch := st.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
 	for data := range ch {
 		configData := data.Data.(map[string]backendconfig.ConfigT)
@@ -93,13 +102,11 @@ func (st *SchemaTransformer) backendConfigSubscriber(ctx context.Context) {
 				newPIIReportingSettings[source.WriteKey] = wConfig.Settings.DataRetention.DisableReportingPII
 			}
 		}
-		st.writeKeyMapLock.Lock()
+		st.mu.Lock()
 		st.sourceWriteKeyMap = sourceWriteKeyMap
 		st.newPIIReportingSettings = newPIIReportingSettings
-		st.writeKeyMapLock.Unlock()
-		st.initialisedOnce.Do(func() {
-			close(st.initialised)
-		})
+		st.mu.Unlock()
+		loopFn()
 	}
 }
 
@@ -126,21 +133,21 @@ func (st *SchemaTransformer) getEventIdentifier(event map[string]interface{}, ev
 }
 
 // getSchemaMessage returns the schema message from the event by flattening the event and getting the schema
-func (st *SchemaTransformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]interface{}, marshalledEvent json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
+func (st *SchemaTransformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]interface{}, sample json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
 	flattenedEvent, err := st.flattenEvent(event)
 	if err != nil {
 		return nil, err
 	}
 	schema := st.getSchema(flattenedEvent)
 	if st.disablePIIReporting(key.WriteKey) {
-		marshalledEvent = []byte("{}") // redact event
+		sample = []byte("{}") // redact event
 	}
 	return &proto.EventSchemaMessage{
 		WorkspaceID: workspaceId,
 		Key:         key,
-		ObservedAt:  timestamppb.New(observedAt),
 		Schema:      schema,
-		Sample:      marshalledEvent,
+		ObservedAt:  timestamppb.New(observedAt),
+		Sample:      sample,
 	}, nil
 }
 
@@ -151,7 +158,7 @@ func (st *SchemaTransformer) getSchema(flattenedEvent map[string]interface{}) ma
 		reflectType := reflect.TypeOf(v)
 		if reflectType != nil {
 			schema[k] = reflectType.String()
-		} else if !(v == nil && !st.shouldCaptureNilAsUnknowns) {
+		} else if !(v == nil && !st.captureNilAsUnknowns) {
 			schema[k] = "unknown"
 		}
 	}
@@ -169,8 +176,8 @@ func (st *SchemaTransformer) flattenEvent(event map[string]interface{}) (map[str
 
 // disablePIIReporting returns whether PII reporting is disabled for the write key
 func (st *SchemaTransformer) disablePIIReporting(writeKey string) bool {
-	st.writeKeyMapLock.RLock()
-	defer st.writeKeyMapLock.RUnlock()
+	st.mu.RLock()
+	defer st.mu.RUnlock()
 	return st.newPIIReportingSettings[writeKey]
 }
 
@@ -180,7 +187,7 @@ func (st *SchemaTransformer) getWriteKeyFromParams(parameters json.RawMessage) s
 	if sourceId == "" {
 		return sourceId
 	}
-	st.writeKeyMapLock.RLock()
-	defer st.writeKeyMapLock.RUnlock()
+	st.mu.RLock()
+	defer st.mu.RUnlock()
 	return st.sourceWriteKeyMap[sourceId]
 }

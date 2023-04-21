@@ -30,8 +30,10 @@ type JobsForwarder struct {
 
 	transformer    schematransformer.Transformer // transformer used to transform jobs to destination schema
 	sampler        *sampler[string]              // sampler used to decide how often payloads should be sampled
+	pulsarClient   *pulsar.Client                // pulsar client used to create producers
 	pulsarProducer pulsar.ProducerAdapter        // pulsar producer used to forward jobs to pulsar
 
+	topic                string        // topic to which jobs are forwarded
 	maxSampleSize        int64         // max payload size for the samples to include in the schema messages
 	initialRetryInterval time.Duration // initial retry interval for the backoff mechanism
 	maxRetryInterval     time.Duration // max retry interval for the backoff mechanism
@@ -39,36 +41,42 @@ type JobsForwarder struct {
 }
 
 // NewJobsForwarder returns a new, properly initialized, JobsForwarder
-func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
-	producer, err := client.NewProducer(pulsarType.ProducerOptions{
-		Topic:              config.GetString("JobsForwarder.pulsarTopic", "event-schema"),
-		BatcherBuilderType: pulsarType.KeyBasedBatchBuilder,
-	})
-	if err != nil {
-		return nil, err
-	}
+func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) *JobsForwarder {
 	var forwarder JobsForwarder
 	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
+
+	forwarder.transformer = schematransformer.New(backendConfig, config)
+	forwarder.sampler = newSampler[string](config.GetDuration("JobsForwarder.samplingPeriod", 10, time.Minute), config.GetInt("JobsForwarder.sampleCacheSize", 10000))
+	forwarder.pulsarClient = client
+
+	forwarder.topic = config.GetString("JobsForwarder.pulsarTopic", "event-schema")
 	config.RegisterDurationConfigVariable(10, &forwarder.initialRetryInterval, true, time.Second, "JobsForwarder.initialRetryInterval")
 	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryInterval, true, time.Second, "JobsForwarder.maxRetryInterval")
 	config.RegisterDurationConfigVariable(60, &forwarder.maxRetryElapsedTime, true, time.Minute, "JobsForwarder.maxRetryElapsedTime")
 	config.RegisterInt64ConfigVariable(10*bytesize.KB, &forwarder.maxSampleSize, true, 1, "JobsForwarder.maxSampleSize")
 
-	forwarder.pulsarProducer = producer
-	forwarder.transformer = schematransformer.New(backendConfig, config)
-	forwarder.sampler = newSampler[string](config.GetDuration("JobsForwarder.samplingPeriod", 10, time.Minute), config.GetInt("JobsForwarder.sampleCacheSize", 10000))
-	return &forwarder, nil
+	return &forwarder
 }
 
 // Start starts the forwarder which will start forwarding jobs from database to the appropriate pulsar topics
 func (jf *JobsForwarder) Start() error {
+	producer, err := jf.pulsarClient.NewProducer(pulsarType.ProducerOptions{
+		Topic:              jf.topic,
+		BatcherBuilderType: pulsarType.KeyBasedBatchBuilder,
+	})
+	if err != nil {
+		return err
+	}
+	jf.pulsarProducer = producer
+
+	jf.transformer.Start()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	jf.cancel = cancel
 	jf.g, ctx = errgroup.WithContext(ctx)
 
-	var sleepTime time.Duration
-	jf.transformer.Start()
 	jf.g.Go(misc.WithBugsnag(func() error {
+		var sleepTime time.Duration
 		for {
 			select {
 			case <-ctx.Done():

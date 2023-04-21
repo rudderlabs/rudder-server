@@ -201,15 +201,9 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			return err
 		}
 		defer client.Close()
-		jobsForwarder, err = jobs_forwarder.NewJobsForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default)
-		if err != nil {
-			return err
-		}
+		jobsForwarder = jobs_forwarder.NewJobsForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default)
 	} else {
-		jobsForwarder, err = jobs_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default)
-		if err != nil {
-			return err
-		}
+		jobsForwarder = jobs_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)

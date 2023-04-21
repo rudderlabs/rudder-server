@@ -18,10 +18,10 @@ type AbortingForwarder struct {
 }
 
 // NewAbortingForwarder returns a new, properly initialized, AbortingForwarder
-func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*AbortingForwarder, error) {
-	baseForwarder := BaseForwarder{}
-	baseForwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
-	return &AbortingForwarder{baseForwarder}, nil
+func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) *AbortingForwarder {
+	var forwarder AbortingForwarder
+	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
+	return &forwarder
 }
 
 // Start starts the forwarder which reads jobs from the database and aborts them

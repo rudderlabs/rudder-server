@@ -21,12 +21,9 @@ import (
 )
 
 func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
-	conf := config.New()
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 	schemaTransformer := SchemaTransformer{
 		backendConfig: mockBackendConfig,
-		config:        conf,
-		initialised:   make(chan struct{}),
 	}
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
