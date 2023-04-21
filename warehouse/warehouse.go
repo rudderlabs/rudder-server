@@ -341,6 +341,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 						}
 					}
 					connectionsMap[destination.ID][source.ID] = warehouse
+					slaveConnectionsMap[destination.ID][source.ID] = warehouse
 					connectionsMapLock.Unlock()
 
 					if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
