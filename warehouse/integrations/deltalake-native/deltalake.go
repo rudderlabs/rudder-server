@@ -1182,10 +1182,7 @@ func (*Deltalake) IsEmpty(model.Warehouse) (bool, error) {
 }
 
 // TestConnection tests the connection to the warehouse
-func (d *Deltalake) TestConnection(model.Warehouse) error {
-	ctx, cancel := context.WithTimeout(context.Background(), d.ConnectTimeout)
-	defer cancel()
-
+func (d *Deltalake) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	err := d.DB.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)

@@ -871,7 +871,7 @@ func PopulateTemplateConfigurations() map[string]string {
 		"redshiftSourcesWriteKey":  "BNAwdCxmM8BIabKERsUhPNmMmdf",
 		"snowflakeSourcesWriteKey": "2eSJyYtqwcFYerwzXv2fcNIrWO7",
 
-		"minioBucketName":      "devintegrationtest",
+		"minioBucketName":      "testbucket",
 		"minioAccesskeyID":     "MYACCESSKEY",
 		"minioSecretAccessKey": "MYSECRETKEY",
 		"minioEndpoint":        "wh-minio:9000",

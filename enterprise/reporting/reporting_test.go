@@ -8,6 +8,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -71,6 +72,138 @@ var _ = Describe("Reporting", func() {
 			transformedMetric := transformMetricForPII(inputMetric, piiColumnsToExclude)
 			assertReportMetric(expectedResponse, transformedMetric)
 		})
+	})
+
+	Context("getAggregatedReports Tests", func() {
+		inputReports := []*types.ReportByStatus{
+			{
+				InstanceDetails: types.InstanceDetails{
+					WorkspaceID: "some-workspace-id",
+				},
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
+				},
+				PUDetails: types.PUDetails{
+					InPU: "some-in-pu",
+					PU:   "some-pu",
+				},
+				ReportMetadata: types.ReportMetadata{
+					ReportedAt: 28017690,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:         "some-status",
+					Count:          3,
+					ViolationCount: 5,
+					StatusCode:     200,
+					SampleResponse: "",
+					SampleEvent:    []byte(`{}`),
+					ErrorType:      "",
+				},
+			},
+			{
+				InstanceDetails: types.InstanceDetails{
+					WorkspaceID: "some-workspace-id",
+				},
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
+				},
+				PUDetails: types.PUDetails{
+					InPU: "some-in-pu",
+					PU:   "some-pu",
+				},
+				ReportMetadata: types.ReportMetadata{
+					ReportedAt: 28017690,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:         "some-status",
+					Count:          2,
+					ViolationCount: 10,
+					StatusCode:     200,
+					SampleResponse: "",
+					SampleEvent:    []byte(`{}`),
+					ErrorType:      "some-error-type",
+				},
+			},
+			{
+				InstanceDetails: types.InstanceDetails{
+					WorkspaceID: "some-workspace-id",
+				},
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
+				},
+				PUDetails: types.PUDetails{
+					InPU: "some-in-pu",
+					PU:   "some-pu",
+				},
+				ReportMetadata: types.ReportMetadata{
+					ReportedAt: 28017690,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:         "some-status",
+					Count:          3,
+					ViolationCount: 10,
+					StatusCode:     200,
+					SampleResponse: "",
+					SampleEvent:    []byte(`{}`),
+					ErrorType:      "some-error-type",
+				},
+			},
+		}
+
+		expectedResponse := []*types.Metric{
+			{
+				InstanceDetails: types.InstanceDetails{
+					WorkspaceID: "some-workspace-id",
+				},
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
+				},
+				PUDetails: types.PUDetails{
+					InPU: "some-in-pu",
+					PU:   "some-pu",
+				},
+				ReportMetadata: types.ReportMetadata{
+					ReportedAt: 28017690 * 60 * 1000,
+				},
+				StatusDetails: []*types.StatusDetail{
+					{
+						Status:         "some-status",
+						Count:          3,
+						ViolationCount: 5,
+						StatusCode:     200,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+						ErrorType:      "",
+					},
+					{
+						Status:         "some-status",
+						Count:          5,
+						ViolationCount: 20,
+						StatusCode:     200,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+						ErrorType:      "some-error-type",
+					},
+				},
+			},
+		}
+
+		reportHandle := NewFromEnvConfig(logger.NOP)
+
+		aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
+		Expect(aggregatedMetrics).To(Equal(expectedResponse))
 	})
 })
 
