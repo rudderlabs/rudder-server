@@ -1309,7 +1309,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
-			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory, "", "", "", 0)
 			connectionDetailsMap[key] = cd
 			transformedAtMap[key] = parameters.TransformAt
 		}
@@ -1323,7 +1323,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			if rt.transientSources.Apply(parameters.SourceID) {
 				sampleEvent = routerutils.EmptyPayload
 			}
-			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), sampleEvent, eventName, eventType)
+			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, 0, errorCode, string(resp.status.ErrorResponse), sampleEvent, eventName, eventType, "")
 			statusDetailsMap[key] = sd
 		}
 

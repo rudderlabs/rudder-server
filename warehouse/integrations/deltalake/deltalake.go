@@ -952,10 +952,8 @@ func (dl *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Up
 }
 
 // TestConnection test the connection for the warehouse
-func (dl *Deltalake) TestConnection(warehouse model.Warehouse) (err error) {
-	dl.Warehouse = warehouse
-	dl.Client, err = dl.connectToWarehouse()
-	return
+func (dl *Deltalake) TestConnection(context.Context, model.Warehouse) error {
+	return nil
 }
 
 // Cleanup cleanup when upload is done.

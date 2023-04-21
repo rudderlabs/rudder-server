@@ -283,7 +283,10 @@ func (os *objectStorage) Validate() error {
 func (c *connections) Validate() error {
 	defer c.manager.Cleanup()
 
-	return c.manager.TestConnection(createDummyWarehouse(c.destination))
+	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
+	defer cancel()
+
+	return c.manager.TestConnection(ctx, createDummyWarehouse(c.destination))
 }
 
 func (cs *createSchema) Validate() error {
