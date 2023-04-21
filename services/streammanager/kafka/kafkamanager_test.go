@@ -130,6 +130,21 @@ func TestNewProducer(t *testing.T) {
 			_, err := NewProducer(&dest, common.Opts{})
 			require.EqualError(t, err, `[Kafka] invalid configuration: ssh host cannot be empty`)
 		})
+		t.Run("invalid ssh config: missing sshUser", func(t *testing.T) {
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+			destConfig := map[string]interface{}{
+				"topic":    "some-topic",
+				"hostname": "localhost",
+				"port":     "1234",
+				"useSSH":   true,
+				"sshHost":  "random-host",
+				"sshPort":  "1234",
+			}
+			dest := backendconfig.DestinationT{Config: destConfig}
+
+			_, err := NewProducer(&dest, common.Opts{})
+			require.EqualError(t, err, `[Kafka] invalid configuration: ssh user cannot be empty`)
+		})
 	})
 
 	t.Run("ok", func(t *testing.T) {
