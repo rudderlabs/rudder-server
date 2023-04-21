@@ -991,8 +991,9 @@ func minimalConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 						wh := &HandleT{
-							dbHandle: dbHandle,
-							destType: destination.DestinationDefinition.Name,
+							dbHandle:     dbHandle,
+							destType:     destination.DestinationDefinition.Name,
+							whSchemaRepo: repo.NewWHSchemas(dbHandle),
 						}
 						namespace := wh.getNamespace(source, destination)
 
