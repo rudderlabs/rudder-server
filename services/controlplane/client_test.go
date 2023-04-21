@@ -368,7 +368,7 @@ func TestGetDestinationSSHKeys(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		require.NoError(t, json.NewEncoder(w).Encode(controlplane.PublicPrivateKeyPair{PrivateKey: "test-private-key", PublicKey: "test-public-key"}))
+		require.NoError(t, json.NewEncoder(w).Encode(controlplane.SSHKey{PrivateKey: "test-private-key", PublicKey: "test-public-key"}))
 	}))
 
 	defer mockServer.Close()

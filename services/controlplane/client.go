@@ -67,7 +67,7 @@ type componentSchema struct {
 	Features []string `json:"features"`
 }
 
-type PublicPrivateKeyPair struct {
+type SSHKey struct {
 	PublicKey  string
 	PrivateKey string
 }
@@ -111,10 +111,10 @@ func (c *Client) retry(ctx context.Context, fn func() error) error {
 	return backoff.Retry(fn, opts)
 }
 
-func (c *Client) GetDestinationSSHKeys(ctx context.Context, destinationID string) (string, error) {
+func (c *Client) GetDestinationSSHKeys(ctx context.Context, destinationID string) (SSHKey, error) {
 	url := fmt.Sprintf("%s/destinations/%s/sshKeys", c.url, destinationID)
 
-	var pair PublicPrivateKeyPair
+	var sshKey SSHKey
 
 	err := c.retry(ctx, func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
@@ -137,14 +137,14 @@ func (c *Client) GetDestinationSSHKeys(ctx context.Context, destinationID string
 			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&pair); err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&sshKey); err != nil {
 			return fmt.Errorf("decoding response: %w", err)
 		}
 
 		return nil
 	})
 
-	return pair.PrivateKey, err
+	return sshKey, err
 }
 
 func (c *Client) SendFeatures(ctx context.Context, component string, features []string) error {
