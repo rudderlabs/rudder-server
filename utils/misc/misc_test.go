@@ -45,8 +45,7 @@ var _ = Describe("Misc", func() {
 			Expect(err).To(BeNil())
 			Expect(FileExists(path)).To(BeTrue())
 			Expect(FolderExists(targetDir)).To(BeTrue())
-
-			defer file.Close()
+			_ = file.Close()
 		}
 		onPostFileCreation := func(sourceFile, targetDir string) {
 			RemoveFilePaths(sourceFile)
@@ -502,28 +501,6 @@ var _ = Describe("Misc", func() {
 		Entry("Unique Test 2 : ", []string{"a", "b", "c"}, []string{"a", "b", "c"}),
 	)
 })
-
-func TestContains(t *testing.T) {
-	t.Run("strings", func(t *testing.T) {
-		list := []string{"a", "b", "c"}
-
-		for _, item := range list {
-			require.True(t, Contains(list, item))
-		}
-
-		require.False(t, Contains(list, "0"))
-	})
-
-	t.Run("int", func(t *testing.T) {
-		list := []int{1, 2, 3}
-
-		for _, item := range list {
-			require.True(t, Contains(list, item))
-		}
-
-		require.False(t, Contains(list, -1))
-	})
-}
 
 func TestHasAWSRoleARNInConfig(t *testing.T) {
 	t.Run("Config has valid IAM Role ARN", func(t *testing.T) {

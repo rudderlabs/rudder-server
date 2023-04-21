@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -191,7 +192,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 
 	var extraColumns []string
 	for _, column := range previousColumnKeys {
-		if !misc.Contains(sortedColumnKeys, column) {
+		if !slices.Contains(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
 		}
 	}
@@ -840,6 +841,6 @@ func (as *AzureSynapse) SetConnectionTimeout(timeout time.Duration) {
 	as.ConnectTimeout = timeout
 }
 
-func (as *AzureSynapse) ErrorMappings() []model.JobError {
+func (*AzureSynapse) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

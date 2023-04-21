@@ -807,9 +807,15 @@ func TestSSH(t *testing.T) {
 
 	pubCtx, pubCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer pubCancel()
-	require.NoError(t, p.Publish(pubCtx,
-		Message{Key: []byte("key-01"), Value: []byte("value-01"), Topic: t.Name()},
-	))
+	require.Eventually(t, func() bool {
+		err = p.Publish(pubCtx,
+			Message{Key: []byte("key-01"), Value: []byte("value-01"), Topic: t.Name()},
+		)
+		if err != nil {
+			t.Logf("Could not publish message: %v", err)
+		}
+		return err == nil
+	}, 30*time.Second, time.Second, "could not publish message: %v", err)
 
 	// Verify that the message has been published and it's readable
 	consumer := c.NewConsumer(t.Name(), ConsumerConfig{})

@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
 )
 
 var (
@@ -167,7 +168,7 @@ func GetTransformerURL() string {
 // GetDestinationURL returns node URL
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", destTransformURL, strings.ToLower(destType))
-	if misc.Contains(warehouseutils.WarehouseDestinations, destType) {
+	if slices.Contains(warehouseutils.WarehouseDestinations, destType) {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
 		if destType == "RS" {
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam

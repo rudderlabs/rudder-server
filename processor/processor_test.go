@@ -42,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -50,9 +49,6 @@ import (
 )
 
 type testContext struct {
-	dbReadBatchSize  int
-	processEventSize int
-
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
 	mockGatewayJobsDB     *mocksJobsDB.MockJobsDB
@@ -88,8 +84,6 @@ func (c *testContext) Setup() {
 			close(ch)
 			return ch
 		})
-	c.dbReadBatchSize = 10000
-	c.processEventSize = 10000
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
 	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
@@ -680,8 +674,14 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			payloadLimit := processor.payloadLimit
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
+				gomock.Any(),
+				jobsdb.GetQueryParamsT{
+					CustomValFilters: gatewayCustomVal,
+					JobsLimit:        processor.config.maxEventsToProcess,
+					EventsLimit:      processor.config.maxEventsToProcess,
+					PayloadSizeLimit: processor.payloadLimit,
+				}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs("")
 			Expect(didWork).To(Equal(false))
@@ -812,14 +812,14 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: gatewayCustomVal,
-					JobsLimit:        c.dbReadBatchSize,
-					EventsLimit:      c.processEventSize,
-					PayloadSizeLimit: payloadLimit,
+					JobsLimit:        processor.config.maxEventsToProcess,
+					EventsLimit:      processor.config.maxEventsToProcess,
+					PayloadSizeLimit: processor.payloadLimit,
 				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
@@ -879,7 +879,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1009,12 +1008,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
+
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        c.dbReadBatchSize,
-				EventsLimit:      c.processEventSize,
-				PayloadSizeLimit: payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess,
+				EventsLimit:      processor.config.maxEventsToProcess,
+				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
@@ -1083,8 +1083,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
-
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1292,12 +1290,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
+
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        c.dbReadBatchSize,
-				EventsLimit:      c.processEventSize,
-				PayloadSizeLimit: payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess,
+				EventsLimit:      processor.config.maxEventsToProcess,
+				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -1330,8 +1329,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertErrStoreJob(job, i)
 					}
 				})
-
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1430,12 +1427,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
+
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        c.dbReadBatchSize,
-				EventsLimit:      c.processEventSize,
-				PayloadSizeLimit: payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess,
+				EventsLimit:      processor.config.maxEventsToProcess,
+				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
@@ -1468,8 +1466,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertErrStoreJob(job)
 					}
 				})
-
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1517,12 +1513,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
+
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        c.dbReadBatchSize,
-				EventsLimit:      c.processEventSize,
-				PayloadSizeLimit: payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess,
+				EventsLimit:      processor.config.maxEventsToProcess,
+				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
@@ -1546,8 +1543,6 @@ var _ = Describe("Processor", Ordered, func() {
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
-
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})

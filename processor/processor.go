@@ -17,6 +17,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -544,7 +545,7 @@ func (proc *Handle) loadConfig() {
 	defaultReadLoopSleepMs := int64(200)
 	defaultMaxLoopSleeppMs := int64(5000)
 
-	defaultIsolationMode := isolation.ModeNone
+	defaultIsolationMode := isolation.ModeSource
 	if config.IsSet("WORKSPACE_NAMESPACE") {
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
@@ -1420,7 +1421,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					continue
 				}
 
-				if proc.config.enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
+				if proc.config.enableDedup && slices.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
@@ -1538,6 +1539,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
+			JobParameters: batchEvent.Parameters,
 			WorkspaceId:   batchEvent.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
@@ -2373,7 +2375,7 @@ func (proc *Handle) transformSrcDest(
 				EventPayload: destEventJSON,
 				WorkspaceId:  workspaceId,
 			}
-			if misc.Contains(proc.config.batchDestinations, newJob.CustomVal) {
+			if slices.Contains(proc.config.batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)
 			} else {
 				destJobs = append(destJobs, &newJob)
@@ -2433,7 +2435,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					continue
 				}
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !misc.Contains(supportedTypes.values, messageType) {
+				if !slices.Contains(supportedTypes.values, messageType) {
 					continue
 				}
 			}
@@ -2454,7 +2456,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					failedEvents = append(failedEvents, resp)
 					continue
 				}
-				if !misc.Contains(supportedEvents.values, messageEvent) {
+				if !slices.Contains(supportedEvents.values, messageEvent) {
 					continue
 				}
 			}
@@ -2554,6 +2556,7 @@ func (proc *Handle) markExecuting(jobs []*jobsdb.JobT) error {
 			ErrorCode:     "",
 			ErrorResponse: []byte(`{}`),
 			Parameters:    []byte(`{}`),
+			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 		}
 	}
