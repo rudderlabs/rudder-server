@@ -3,6 +3,7 @@ package schematransformer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -55,13 +56,16 @@ func (st *SchemaTransformer) Stop() {
 func (st *SchemaTransformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {
 	var eventPayload map[string]interface{}
 	if err := json.Unmarshal(job.EventPayload, &eventPayload); err != nil {
-		return &proto.EventSchemaMessage{}, "", err
+		return nil, "", err
 	}
 	writeKey := st.getWriteKeyFromParams(job.Parameters)
+	if writeKey == "" {
+		return nil, "", fmt.Errorf("writeKey could not be found")
+	}
 	schemaKey := st.getSchemaKeyFromJob(eventPayload, writeKey)
 	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, job.EventPayload, job.WorkspaceId, job.CreatedAt)
 	if err != nil {
-		return &proto.EventSchemaMessage{}, "", err
+		return nil, "", err
 	}
 	return schemaMessage, writeKey, nil
 }
@@ -129,7 +133,7 @@ func (st *SchemaTransformer) getSchemaMessage(key *proto.EventSchemaKey, event m
 	}
 	schema := st.getSchema(flattenedEvent)
 	if st.disablePIIReporting(key.WriteKey) {
-		marshalledEvent = []byte("{}")
+		marshalledEvent = []byte("{}") // redact event
 	}
 	return &proto.EventSchemaMessage{
 		WorkspaceID: workspaceId,

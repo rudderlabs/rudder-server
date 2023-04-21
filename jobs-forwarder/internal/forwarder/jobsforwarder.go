@@ -24,19 +24,21 @@ import (
 	"github.com/samber/lo"
 )
 
+// JobsForwarder is a forwarder that transforms and forwards jobs to a pulsar topic
 type JobsForwarder struct {
 	BaseForwarder
-	transformer    schematransformer.Transformer // transformer to transform jobs to destination schema
-	sampler        *sampler[string]              // sampler to decide when payloads should be sampled
-	pulsarProducer pulsar.ProducerAdapter
 
-	maxSampleSize        int64         // max sample size for the payload
-	initialRetryInterval time.Duration // 10 * time.Second
-	maxRetryInterval     time.Duration // 1 * time.Minute
-	maxRetryElapsedTime  time.Duration // 1 * time.Hour
+	transformer    schematransformer.Transformer // transformer used to transform jobs to destination schema
+	sampler        *sampler[string]              // sampler used to decide how often payloads should be sampled
+	pulsarProducer pulsar.ProducerAdapter        // pulsar producer used to forward jobs to pulsar
+
+	maxSampleSize        int64         // max payload size for the samples to include in the schema messages
+	initialRetryInterval time.Duration // initial retry interval for the backoff mechanism
+	maxRetryInterval     time.Duration // max retry interval for the backoff mechanism
+	maxRetryElapsedTime  time.Duration // max retry elapsed time for the backoff mechanism
 }
 
-// NewJobsForwarder returns a new instance of JobsForwarder
+// NewJobsForwarder returns a new, properly initialized, JobsForwarder
 func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, config *config.Config, backendConfig backendconfig.BackendConfig, log logger.Logger) (*JobsForwarder, error) {
 	producer, err := client.NewProducer(pulsarType.ProducerOptions{
 		Topic:              config.GetString("JobsForwarder.pulsarTopic", "event-schema"),
@@ -77,7 +79,7 @@ func (jf *JobsForwarder) Start() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
 					}
-					jf.terminalErrFn(err)
+					jf.terminalErrFn(err) // we are signaling to shutdown the app
 					return err
 				}
 				var mu sync.Mutex // protects statuses and retryJobs
@@ -91,6 +93,7 @@ func (jf *JobsForwarder) Start() error {
 					toRetry = slices.Delete(toRetry, idx, idx+1)
 				}
 
+				// try to forward toRetry jobs to pulsar. Succeeded or invalid jobs are removed from toRetry
 				tryForwardJobs := func() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
@@ -146,13 +149,13 @@ func (jf *JobsForwarder) Start() error {
 					return nil
 				}
 
+				// Retry to forward the jobs batch to pulsar until there are no more jobs to retry or until maxRetryElapsedTime is reached
 				expB := backoff.NewExponentialBackOff()
 				expB.InitialInterval = jf.initialRetryInterval
 				expB.MaxInterval = jf.maxRetryInterval
 				expB.MaxElapsedTime = jf.maxRetryElapsedTime
 				if err = backoff.Retry(tryForwardJobs, backoff.WithContext(expB, ctx)); err != nil {
-					// mark all to retry jobs as aborted
-					for _, job := range toRetry {
+					for _, job := range toRetry { // mark all to retry jobs as aborted
 						statuses = append(statuses, &jobsdb.JobStatusT{
 							JobID:         job.JobID,
 							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -169,7 +172,7 @@ func (jf *JobsForwarder) Start() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
 					}
-					jf.terminalErrFn(err)
+					jf.terminalErrFn(err) // we are signaling to shutdown the app
 					return fmt.Errorf("failed to mark schema job statuses in forwarder: %w", err)
 				}
 				sleepTime = jf.GetSleepTime(limitReached)

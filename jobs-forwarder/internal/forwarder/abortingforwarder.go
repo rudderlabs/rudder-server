@@ -12,11 +12,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+// AbortingForwarder is a forwarder which aborts all jobs instead of forwarding them
 type AbortingForwarder struct {
 	BaseForwarder
 }
 
-// NewAbortingForwarder returns a new instance of AbortingForwarder
+// NewAbortingForwarder returns a new, properly initialized, AbortingForwarder
 func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, config *config.Config, log logger.Logger) (*AbortingForwarder, error) {
 	baseForwarder := BaseForwarder{}
 	baseForwarder.LoadMetaData(terminalErrFn, schemaDB, log, config)
@@ -40,7 +41,7 @@ func (nf *AbortingForwarder) Start() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
 					}
-					nf.terminalErrFn(err)
+					nf.terminalErrFn(err) // we are signaling to shutdown the app
 					return err
 				}
 				nf.log.Infof("NoopForwarder: Got %d jobs", len(jobList))
@@ -64,7 +65,7 @@ func (nf *AbortingForwarder) Start() error {
 						return nil //nolint:nilerr
 					}
 					nf.log.Errorf("Error while updating job status: %v", err)
-					nf.terminalErrFn(err)
+					nf.terminalErrFn(err) // we are signaling to shutdown the app
 					return err
 				}
 				time.Sleep(nf.GetSleepTime(limitReached))

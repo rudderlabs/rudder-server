@@ -48,12 +48,11 @@ type processorApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		processorDSLimit    int
-		routerDSLimit       int
-		batchRouterDSLimit  int
-		gatewayDSLimit      int
-		eventSchemasEnabled bool
-		http                struct {
+		processorDSLimit   int
+		routerDSLimit      int
+		batchRouterDSLimit int
+		gatewayDSLimit     int
+		http               struct {
 			ReadTimeout       time.Duration
 			ReadHeaderTimeout time.Duration
 			WriteTimeout      time.Duration
@@ -75,7 +74,6 @@ func (a *processorApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterBoolConfigVariable(false, &a.config.eventSchemasEnabled, false, "EventSchemasEnabled")
 }
 
 func (a *processorApp) Setup(options *app.Options) error {
@@ -101,6 +99,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("processor service cannot start, database is not setup")
 	}
 	a.log.Info("Processor starting")
+
 	g, ctx := errgroup.WithContext(ctx)
 	terminalErrFn := terminalErrorFunction(ctx, g)
 
@@ -202,12 +201,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			return err
 		}
 		defer client.Close()
-		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default)
+		jobsForwarder, err = jobs_forwarder.NewJobsForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default)
 		if err != nil {
 			return err
 		}
 	} else {
-		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default)
+		jobsForwarder, err = jobs_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default)
 		if err != nil {
 			return err
 		}

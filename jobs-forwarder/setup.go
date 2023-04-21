@@ -16,10 +16,12 @@ type Forwarder interface {
 	Stop()
 }
 
-func SetupJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, backendConfig backendConfig.BackendConfig, log logger.Logger, conf *config.Config) (Forwarder, error) {
+// NewJobsForwarder creates a new jobs forwarder that transforms and forwards jobs to pulsar
+func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client *pulsar.Client, backendConfig backendConfig.BackendConfig, log logger.Logger, conf *config.Config) (Forwarder, error) {
 	return forwarder.NewJobsForwarder(terminalErrFn, schemaDB, client, conf, backendConfig, log)
 }
 
-func SetupAbortForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, log logger.Logger, conf *config.Config) (Forwarder, error) {
+// NewAbortingForwarder creates a new aborting forwarder that marks jobs as aborted without trying to forward them
+func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, log logger.Logger, conf *config.Config) (Forwarder, error) {
 	return forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, conf, log)
 }

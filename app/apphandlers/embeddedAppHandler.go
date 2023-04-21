@@ -187,18 +187,18 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		}))
 	}
 	var jobsForwarder jobs_forwarder.Forwarder
-	if config.GetBool("JEventSchemas2.enabled", false) {
+	if config.GetBool("EventSchemas2.enabled", false) {
 		client, err := pulsar.NewClient(config.Default)
 		if err != nil {
 			return err
 		}
 		defer client.Close()
-		jobsForwarder, err = jobs_forwarder.SetupJobsForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default)
+		jobsForwarder, err = jobs_forwarder.NewJobsForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default)
 		if err != nil {
 			return err
 		}
 	} else {
-		jobsForwarder, err = jobs_forwarder.SetupAbortForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default)
+		jobsForwarder, err = jobs_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default)
 		if err != nil {
 			return err
 		}
@@ -262,8 +262,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		GatewayDB:       gwDBForProcessor,
 		RouterDB:        routerDB,
 		BatchRouterDB:   batchRouterDB,
-		EventSchemaDB:   schemaDB,
 		ErrorDB:         errDB,
+		EventSchemaDB:   schemaDB,
 		Processor:       proc,
 		Router:          rt,
 		JobsForwarder:   jobsForwarder,

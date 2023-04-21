@@ -43,9 +43,9 @@ func Test_BaseForwarder(t *testing.T) {
 
 	t.Run("Test generateQueryParams", func(t *testing.T) {
 		require.Equal(t, jobsdb.GetQueryParamsT{
-			EventsLimit:      bf.baseConfig.pickupSize,
-			JobsLimit:        bf.baseConfig.pickupSize,
-			PayloadSizeLimit: bf.baseConfig.jobsDBPayloadSize,
+			EventsLimit:      bf.conf.pickupSize,
+			JobsLimit:        bf.conf.pickupSize,
+			PayloadSizeLimit: bf.conf.jobsDBPayloadSize,
 		}, bf.generateQueryParams())
 	})
 
