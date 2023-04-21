@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	mockjobsforwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -75,6 +76,7 @@ func TestDynamicCluster(t *testing.T) {
 	routerDB := &mockLifecycle{status: "", callCount: &callCount}
 	batchRouterDB := &mockLifecycle{status: "", callCount: &callCount}
 	errorDB := &mockLifecycle{status: "", callCount: &callCount}
+	schemaForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
 	eschDB := &mockLifecycle{status: "", callCount: &callCount}
 
 	processor := &mockLifecycle{status: "", callCount: &callCount}
@@ -95,8 +97,9 @@ func TestDynamicCluster(t *testing.T) {
 		ErrorDB:       errorDB,
 		EventSchemaDB: eschDB,
 
-		Processor: processor,
-		Router:    router,
+		Processor:       processor,
+		Router:          router,
+		SchemaForwarder: schemaForwarder,
 
 		MultiTenantStat: mtStat,
 		BackendConfig:   backendConfig,
@@ -104,6 +107,8 @@ func TestDynamicCluster(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	schemaForwarder.EXPECT().Start().Return(nil).AnyTimes()
+	schemaForwarder.EXPECT().Stop().AnyTimes()
 	wait := make(chan struct{})
 	go func() {
 		_ = dc.Run(ctx)

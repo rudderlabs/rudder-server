@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -310,7 +311,6 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 	}
 
 	etcdWatchChan := manager.Client.Watch(ctx, workspaceRequestKey, clientv3.WithRev(revision))
-
 	go func() {
 		for watchResp := range etcdWatchChan {
 			if watchResp.Err() != nil {

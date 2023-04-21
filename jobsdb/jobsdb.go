@@ -529,18 +529,15 @@ var (
 	NotProcessed = jobStateT{isValid: false, isTerminal: false, State: "not_picked_yet"}
 
 	// Valid, Not terminal
-	Failed       = jobStateT{isValid: true, isTerminal: false, State: "failed"}
-	Executing    = jobStateT{isValid: true, isTerminal: false, State: "executing"}
-	Waiting      = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
-	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
-	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
-	Importing    = jobStateT{isValid: true, isTerminal: false, State: "importing"}
+	Failed    = jobStateT{isValid: true, isTerminal: false, State: "failed"}
+	Executing = jobStateT{isValid: true, isTerminal: false, State: "executing"}
+	Waiting   = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
+	Importing = jobStateT{isValid: true, isTerminal: false, State: "importing"}
 
 	// Valid, Terminal
-	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
-	Aborted     = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
-	Migrated    = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
-	WontMigrate = jobStateT{isValid: true, isTerminal: true, State: "wont_migrate"}
+	Succeeded = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
+	Aborted   = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
+	Migrated  = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
 
 	validTerminalStates    []string
 	validNonTerminalStates []string
@@ -552,12 +549,9 @@ var jobStates = []jobStateT{
 	Failed,
 	Executing,
 	Waiting,
-	WaitingRetry,
-	Migrating,
 	Succeeded,
 	Aborted,
 	Migrated,
-	WontMigrate,
 	Importing,
 }
 
