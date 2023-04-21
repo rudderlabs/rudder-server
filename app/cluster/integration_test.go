@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -198,6 +199,8 @@ func TestDynamicClusterManager(t *testing.T) {
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
 
+	schemaForwarder := mock_jobs_forwarder.NewMockForwarder(gomock.NewController(t))
+
 	processor := processor.New(
 		ctx,
 		&clearDb,
@@ -255,14 +258,17 @@ func TestDynamicClusterManager(t *testing.T) {
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	schemaForwarder.EXPECT().Start().Return(nil).AnyTimes()
+	schemaForwarder.EXPECT().Stop().AnyTimes()
 
 	provider := &mockModeProvider{modeCh: make(chan servermode.ChangeEvent)}
 	dCM := &cluster.Dynamic{
-		GatewayDB:     gwDB,
-		RouterDB:      rtDB,
-		BatchRouterDB: brtDB,
-		ErrorDB:       errDB,
-		EventSchemaDB: eschDB,
+		GatewayDB:       gwDB,
+		RouterDB:        rtDB,
+		BatchRouterDB:   brtDB,
+		ErrorDB:         errDB,
+		EventSchemaDB:   eschDB,
+		SchemaForwarder: schemaForwarder,
 
 		Processor:       processor,
 		Router:          router,
