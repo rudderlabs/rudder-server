@@ -132,7 +132,7 @@ type Deltalake struct {
 	Stats                  stats.Stats
 	LoadTableStrategy      string
 	EnablePartitionPruning bool
-	SlowQueryThreshold time.Duration
+	SlowQueryThreshold     time.Duration
 }
 
 func New() *Deltalake {
@@ -212,8 +212,12 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 			logfield.Schema, d.Namespace,
 		),
 		sqlmiddleware.WithSlowQueryThreshold(d.SlowQueryThreshold),
+		sqlmiddleware.WithSecretsRegex(map[string]string{
+			"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
+			"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
+			"'awsSessionToken' = '[^']*'": "'awsSessionToken' = '***'",
+		}),
 	)
-
 	return middleware, nil
 }
 

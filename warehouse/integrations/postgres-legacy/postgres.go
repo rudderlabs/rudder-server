@@ -144,7 +144,7 @@ type Postgres struct {
 	EnableDeleteByJobs                          bool
 	SkipComputingUserLatestTraitsWorkspaceIDs   []string
 	EnableSQLStatementExecutionPlanWorkspaceIDs []string
-	SlowQueryThreshold time.Duration
+	SlowQueryThreshold                          time.Duration
 }
 
 func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
