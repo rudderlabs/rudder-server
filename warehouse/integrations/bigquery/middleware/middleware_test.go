@@ -3,6 +3,7 @@ package middleware_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -17,12 +18,12 @@ import (
 )
 
 func TestQueryWrapper(t *testing.T) {
-	// if os.Getenv("SLOW") != "1" {
-	// 	t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
-	// }
-	// if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
-	// 	t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
-	// }
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
+	}
+	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
+	}
 
 	t.Parallel()
 
