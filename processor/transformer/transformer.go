@@ -70,7 +70,7 @@ type MetadataT struct {
 	DestinationDefinitionID string   `json:"destinationDefinitionId"`
 	TransformationID        string   `json:"transformationId"`
 	TransformationVersionID string   `json:"transformationVersionId"`
-	SourceDefinitionType    string
+	SourceDefinitionType    string   `json:"-"`
 }
 
 type TransformerEventT struct {
