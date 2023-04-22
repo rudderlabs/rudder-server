@@ -212,6 +212,7 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 
 	sourceEventPropertiesI := misc.MapLookup(destination.DestinationDefinition.Config, hybridModeEventsFilterKey, srcType)
 	if sourceEventPropertiesI == nil {
+		pkgLogger.Debugf("Destination definition config doesn't contain proper values for %[1]v or %[1]v.%[2]v", hybridModeEventsFilterKey, srcType)
 		return evaluatedDefaultBehaviour, nil
 	}
 	eventProperties, isOk := sourceEventPropertiesI.(map[string]interface{})
