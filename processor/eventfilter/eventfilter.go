@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -138,7 +139,7 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 
 	isSupportedMsgType := lo.Contains(supportedMsgTypes, messageType)
 	if !isSupportedMsgType {
-		pkgLogger.Info("event filtered out due to unsupported msg types")
+		pkgLogger.Debug("event filtered out due to unsupported msg types")
 		// We will not allow the event
 		return false, nil
 	}
@@ -200,7 +201,7 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 
 	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
 	if destConnModeI == nil {
-		pkgLogger.Info("connectionMode not present, filtering event based on default behaviour")
+		pkgLogger.Debug("connectionMode not present, filtering event based on default behaviour")
 		return evaluatedDefaultBehaviour, nil
 	}
 	destConnectionMode, isDestConnModeString := destConnModeI.(string)
@@ -216,7 +217,7 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 	eventProperties, isOk := sourceEventPropertiesI.(map[string]interface{})
 
 	if len(eventProperties) == 0 || !isOk {
-		pkgLogger.Infof("'%v.%v' is not correctly defined", hybridModeEventsFilterKey, srcType)
+		pkgLogger.Debugf("'%v.%v' is not correctly defined", hybridModeEventsFilterKey, srcType)
 		return evaluatedDefaultBehaviour, nil
 	}
 
@@ -225,20 +226,21 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 	for eventProperty, supportedEventVals := range eventProperties {
 
 		if !allowEvent {
-			pkgLogger.Infof("Previous evaluation of allowAll is false or type assertion failed for an event property(%v), filtering event based on default behaviour", eventProperty)
+			pkgLogger.Debugf("Previous evaluation of allowAll is false or type assertion failed for an event property(%v), filtering event based on default behaviour", eventProperty)
 			allowEvent = evaluatedDefaultBehaviour
 			break
 		}
 		if eventProperty == "messageType" {
 			messageTypes := ConvertToArrayOfType[string](supportedEventVals)
 			if len(messageTypes) == 0 {
-				pkgLogger.Info("Problem with message type event property map, filtering event based on default behaviour")
+				pkgLogger.Debug("Problem with message type event property map, filtering event based on default behaviour")
 				allowEvent = evaluatedDefaultBehaviour
 				continue
 			}
 
-			pkgLogger.Infof("MessageTypes allowed: %v -- MessageType from event: %v\n", messageTypes, messageType)
-			allowEvent = lo.Contains(messageTypes, messageType) && evaluatedDefaultBehaviour
+			pkgLogger.Debugf("MessageTypes allowed: %v -- MessageType from event: %v\n", messageTypes, messageType)
+
+			allowEvent = slices.Contains(messageTypes, messageType) && evaluatedDefaultBehaviour
 		}
 	}
 	return allowEvent, nil
