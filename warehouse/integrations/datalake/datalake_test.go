@@ -29,6 +29,31 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+type gcsTestCredentials struct {
+	BucketName  string `json:"bucketName"`
+	Credentials string `json:"credentials"`
+}
+
+func getGCSTestCredentials() (*gcsTestCredentials, error) {
+	cred, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials)
+	if !exists {
+		return nil, fmt.Errorf("gcs credentials not found")
+	}
+
+	var credentials gcsTestCredentials
+	err := json.Unmarshal([]byte(cred), &credentials)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal gcs credentials: %w", err)
+	}
+
+	return &credentials, nil
+}
+
+func isGCSTestCredentialsAvailable() bool {
+	_, err := getGCSTestCredentials()
+	return err == nil
+}
+
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
@@ -72,8 +97,8 @@ func TestIntegration(t *testing.T) {
 		"minioSecretAccessKey":       "MYSECRETKEY",
 		"minioEndpoint":              fmt.Sprintf("localhost:%d", minioPort),
 	}
-	if isGCSCredentialsAvailable() {
-		credentials, err := getCGSCredentials()
+	if isGCSTestCredentialsAvailable() {
+		credentials, err := getGCSTestCredentials()
 		require.NoError(t, err)
 
 		escapedCredentials, err := json.Marshal(credentials.Credentials)
@@ -181,7 +206,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					if !isGCSCredentialsAvailable() {
+					if !isGCSTestCredentialsAvailable() {
 						t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
 					}
 				},
@@ -278,11 +303,11 @@ func TestIntegration(t *testing.T) {
 	t.Run("GCS DataLake Validation", func(t *testing.T) {
 		t.Parallel()
 
-		if !isGCSCredentialsAvailable() {
+		if !isGCSTestCredentialsAvailable() {
 			t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
 		}
 
-		credentials, err := getCGSCredentials()
+		credentials, err := getGCSTestCredentials()
 		require.NoError(t, err)
 
 		destination := backendconfig.DestinationT{
@@ -334,28 +359,4 @@ func TestIntegration(t *testing.T) {
 
 	ctxCancel()
 	<-svcDone
-}
-
-func isGCSCredentialsAvailable() bool {
-	return os.Getenv(testhelper.BigqueryIntegrationTestCredentials) != ""
-}
-
-type GCSCredentials struct {
-	BucketName  string `json:"bucketName"`
-	Credentials string `json:"credentials"`
-}
-
-func getCGSCredentials() (*GCSCredentials, error) {
-	cred, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials)
-	if !exists {
-		return nil, fmt.Errorf("gcs credentials not found")
-	}
-
-	var credentials GCSCredentials
-	err := json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal gcs credentials: %w", err)
-	}
-
-	return &credentials, nil
 }

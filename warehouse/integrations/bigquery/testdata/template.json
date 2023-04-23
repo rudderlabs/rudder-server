@@ -1,0 +1,330 @@
+{
+  "enableMetrics": false,
+  "workspaceId": "{{.workspaceId}}",
+  "sources": [
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1646073666353
+      },
+      "id": "24p1HhPk09FW25Kuzxv7GshCLKR",
+      "name": "bigquery-wh-integration",
+      "writeKey": "{{.bigqueryWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "24p1CMAkx18KwNbFDXlR7sUhqaa",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2022-02-08T09:30:27.073Z",
+      "updatedAt": "2022-02-28T18:41:06.362Z",
+      "destinations": [
+        {
+          "config": {
+            "project": "{{.bigqueryProjectID}}",
+            "location": "{{.bigqueryLocation}}",
+            "bucketName": "{{.bigqueryBucketName}}",
+            "credentials": "{{.bigqueryCredentials}}",
+            "prefix": "",
+            "namespace": "{{.bigqueryNamespace}}",
+            "syncFrequency": "30"
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "26Bgm9FrQDZjvadSwAlpd35atwn",
+          "name": "bigquery-wh-integration",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-03-10T08:55:49.791Z",
+          "updatedAt": "2022-03-10T08:55:49.791Z",
+          "revisionId": "29eejWUH80lK1abiB766fzv5Iba",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "project",
+                  "location",
+                  "bucketName",
+                  "credentials",
+                  "prefix",
+                  "namespace",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "excludeWindow"
+                ]
+              },
+              "secretKeys": [
+                "credentials"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1UmeD7xhVGHsPDEHoCiSPEGytS3",
+            "name": "BQ",
+            "displayName": "BigQuery",
+            "category": "warehouse",
+            "createdAt": "2019-12-10T08:21:15.841Z",
+            "updatedAt": "2022-02-08T06:46:30.483Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1653346591988
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1653346591988
+      },
+      "id": "279L3gEKqwruNoKGZXatSVX7vIy",
+      "name": "gcs-datalake-wh-integration",
+      "writeKey": "{{.gcsDatalakeWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "279Kz3NhcXsUAx2KHnx1HKhdtbk",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "createdAt": "2022-03-31T11:45:57.339Z",
+      "updatedAt": "2022-05-23T22:56:32.000Z",
+      "destinations": [
+        {
+          "config": {
+            "bucketName": "{{.bigqueryBucketName}}",
+            "prefix": "",
+            "credentials": "{{.bigqueryCredentials}}",
+            "syncFrequency": "30"
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "27SthahyhhqEZGHaT4NTtNPl06V",
+          "name": "gcs-datalake-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-04-07T09:57:14.783Z",
+          "updatedAt": "2022-05-17T08:16:32.613Z",
+          "revisionId": "29HgOWobnr0RYZpLASwPINb2987",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "bucketName",
+                  "prefix",
+                  "namespace",
+                  "tableSuffix",
+                  "timeWindowLayout",
+                  "credentials",
+                  "syncFrequency",
+                  "syncStartAt"
+                ]
+              },
+              "secretKeys": [],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "warehouse",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": {},
+            "options": null,
+            "uiConfig": null,
+            "id": "20lzWVRwzEimkq87sNQuz1or2GA",
+            "name": "GCS_DATALAKE",
+            "displayName": "Google Cloud Storage Datalake",
+            "category": "warehouse",
+            "createdAt": "2021-11-11T12:33:13.960Z",
+            "updatedAt": "2022-07-20T17:05:23.745Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "config": {
+          "row_batch_size": 200,
+          "credentials": {
+            "auth_type": "Client",
+            "accountId": "29hOyXzmdF9rz7yR2FTq4pohyXL"
+          },
+          "spreadsheet_id": "1bKQpN-KkhYZd4eqUUoq3Tec6HrJzgqSc8jwVvajnpk8"
+        },
+        "schedule": {
+          "type": "manual",
+          "every": 0,
+          "unit": "minutes"
+        },
+        "prefix": "SGS5"
+      },
+      "liveEventsConfig": {},
+      "id": "2DkCpUr0xgjfBNasIwqyqfyHdq4",
+      "name": "bigquery-wh-sources-integration",
+      "writeKey": "{{.bigquerySourcesWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
+      "createdBy": "279BPpjT6BGqKKhT5qAZuUVZa1h",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "transient": false,
+      "secretVersion": null,
+      "createdAt": "2022-08-23T00:21:18.366Z",
+      "updatedAt": "2022-08-23T00:21:18.366Z",
+      "sourceDefinition": {
+        "options": {
+          "auth": {
+            "provider": "Google",
+            "oauthRole": "google_sheets"
+          },
+          "image": "source-google-sheets:v2",
+          "isBeta": true
+        },
+        "id": "29seNpaVfhMp7YVpiBUszPOvmO1",
+        "name": "singer-google-sheets",
+        "displayName": "Singer Google Sheets",
+        "category": "singer-protocol",
+        "createdAt": "2022-05-30T04:53:02.188Z",
+        "updatedAt": "2022-05-30T04:53:02.188Z"
+      },
+      "destinations": [
+        {
+          "config": {
+            "project": "{{.bigqueryProjectID}}",
+            "location": "{{.bigqueryLocation}}",
+            "bucketName": "{{.bigqueryBucketName}}",
+            "credentials": "{{.bigqueryCredentials}}",
+            "prefix": "",
+            "namespace": "{{.bigquerySourcesNamespace}}",
+            "syncFrequency": "30"
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "26Bgm9FrQDZjvadBnalpd35atwn",
+          "name": "bigquery-wh-sources-integration",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-03-10T08:55:49.791Z",
+          "updatedAt": "2022-03-10T08:55:49.791Z",
+          "revisionId": "29eejWUH80lK1abiB766fzv5Iba",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "project",
+                  "location",
+                  "bucketName",
+                  "credentials",
+                  "prefix",
+                  "namespace",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "excludeWindow"
+                ]
+              },
+              "secretKeys": [
+                "credentials"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1UmeD7xhVGHsPDEHoCiSPEGytS3",
+            "name": "BQ",
+            "displayName": "BigQuery",
+            "category": "warehouse",
+            "createdAt": "2019-12-10T08:21:15.841Z",
+            "updatedAt": "2022-02-08T06:46:30.483Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "dgSourceTrackingPlanConfig": null
+    }
+  ],
+  "libraries": [
+    {
+      "versionId": "23Uxw7QEiOg8e0KkQV8LmNfWaWh"
+    }
+  ]
+}
