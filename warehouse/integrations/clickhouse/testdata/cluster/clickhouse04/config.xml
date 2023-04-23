@@ -61,7 +61,7 @@
 
     <zookeeper>
         <node index="1">
-            <host>wh-clickhouse-zookeeper</host>
+            <host>wh-zookeeper</host>
             <port>2181</port>
         </node>
     </zookeeper>
