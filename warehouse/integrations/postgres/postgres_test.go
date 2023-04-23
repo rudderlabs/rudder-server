@@ -308,8 +308,6 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-
 				ts := testhelper.WareHouseTest{
 					Schema:                tc.schema,
 					WriteKey:              tc.writeKey,

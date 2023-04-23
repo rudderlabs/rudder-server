@@ -5,8 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/compose-test/testcompose"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -36,210 +43,306 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIntegrationClickHouse(t *testing.T) {
+func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	var dbs []*sql.DB
-	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
-		ch := clickhouse.New()
-		db, err := ch.ConnectToClickhouse(clickhouse.Credentials{
-			Host:          host,
-			User:          "rudder",
-			Password:      "rudder-password",
-			DBName:        "rudderdb",
-			Secure:        "false",
-			SkipVerify:    "true",
-			TLSConfigName: "",
-			Port:          "9000",
-		}, true)
-		require.NoError(t, err)
+	c := testcompose.New(t, "testdata/docker-compose.yml")
 
-		err = db.Ping()
-		require.NoError(t, err)
-
-		dbs = append(dbs, db)
-	}
-
-	var (
-		provider = warehouseutils.CLICKHOUSE
-		jobsDB   = testhelper.SetUpJobsDB(t)
-		tables   = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-	)
-
-	testCases := []struct {
-		name                        string
-		sourceID                    string
-		destinationID               string
-		writeKey                    string
-		warehouseEvents             testhelper.EventsCountMap
-		warehouseModifiedEvents     testhelper.EventsCountMap
-		clusterSetup                func(t testing.TB)
-		db                          *sql.DB
-		s3EngineEnabledWorkspaceIDs []string
-	}{
-		{
-			name:          "Single Setup",
-			sourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
-			destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-			writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
-			db:            dbs[0],
-		},
-		{
-			name:          "Single Setup with S3 Engine",
-			sourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
-			destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-			writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
-			db:            dbs[0],
-			s3EngineEnabledWorkspaceIDs: []string{
-				"BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-			},
-		},
-		{
-			name:          "Cluster Mode Setup",
-			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
-			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
-			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-			db:            dbs[1],
-			warehouseModifiedEvents: testhelper.EventsCountMap{
-				"identifies":    8,
-				"users":         2,
-				"tracks":        8,
-				"product_track": 8,
-				"pages":         8,
-				"screens":       8,
-				"aliases":       8,
-				"groups":        8,
-			},
-			clusterSetup: func(t testing.TB) {
-				t.Helper()
-				initializeClickhouseClusterMode(t, dbs[1:], tables)
-			},
-		},
-		{
-			name:          "Cluster Mode Setup with S3 Engine",
-			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
-			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
-			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-			db:            dbs[1],
-			warehouseEvents: testhelper.EventsCountMap{
-				"identifies":    8,
-				"users":         2,
-				"tracks":        8,
-				"product_track": 8,
-				"pages":         8,
-				"screens":       8,
-				"aliases":       8,
-				"groups":        8,
-			},
-			warehouseModifiedEvents: testhelper.EventsCountMap{
-				"identifies":    8,
-				"users":         2,
-				"tracks":        8,
-				"product_track": 8,
-				"pages":         8,
-				"screens":       8,
-				"aliases":       8,
-				"groups":        8,
-			},
-			s3EngineEnabledWorkspaceIDs: []string{
-				"BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-
-		t.Run(tc.name, func(t *testing.T) {
-			testhelper.SetConfig(t, []warehouseutils.KeyValue{
-				{
-					Key:   "Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs",
-					Value: tc.s3EngineEnabledWorkspaceIDs,
-				},
-			})
-
-			ts := testhelper.WareHouseTest{
-				Schema:             "rudderdb",
-				WriteKey:           tc.writeKey,
-				SourceID:           tc.sourceID,
-				DestinationID:      tc.destinationID,
-				WarehouseEventsMap: tc.warehouseEvents,
-				Tables:             tables,
-				Provider:           provider,
-				JobsDB:             jobsDB,
-				UserID:             testhelper.GetUserId(provider),
-				StatsToVerify: []string{
-					"warehouse_clickhouse_commitTimeouts",
-					"warehouse_clickhouse_execTimeouts",
-					"warehouse_clickhouse_failedRetries",
-					"warehouse_clickhouse_syncLoadFileTime",
-					"warehouse_clickhouse_downloadLoadFilesTime",
-					"warehouse_clickhouse_numRowsLoadFile",
-				},
-				Client: &client.Client{
-					SQL:  tc.db,
-					Type: client.SQLClient,
-				},
-			}
-			ts.VerifyEvents(t)
-
-			if tc.clusterSetup != nil {
-				tc.clusterSetup(t)
-			}
-
-			ts.UserID = testhelper.GetUserId(provider)
-			ts.WarehouseEventsMap = tc.warehouseModifiedEvents
-			ts.VerifyModifiedEvents(t)
-		})
-	}
-}
-
-func TestConfigurationValidationClickhouse(t *testing.T) {
-	if os.Getenv("SLOW") != "1" {
-		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
-	}
+	t.Cleanup(func() {
+		c.Stop(context.Background())
+	})
+	c.Start(context.Background())
 
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
 
-	configurations := testhelper.PopulateTemplateConfigurations()
-	destination := backendconfig.DestinationT{
-		ID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-		Config: map[string]any{
-			"host":             configurations["clickHouseHost"],
-			"database":         configurations["clickHouseDatabase"],
-			"cluster":          "",
-			"user":             configurations["clickHouseUser"],
-			"password":         configurations["clickHousePassword"],
-			"port":             configurations["clickHousePort"],
-			"secure":           false,
-			"namespace":        "",
-			"bucketProvider":   "MINIO",
-			"bucketName":       configurations["minioBucketName"],
-			"accessKeyID":      configurations["minioAccesskeyID"],
-			"secretAccessKey":  configurations["minioSecretAccessKey"],
-			"useSSL":           false,
-			"endPoint":         configurations["minioEndpoint"],
-			"syncFrequency":    "30",
-			"useRudderStorage": false,
-		},
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			ID:          "1eBvkIRSwc2ESGMK9dj6OXq2G12",
-			Name:        "CLICKHOUSE",
-			DisplayName: "ClickHouse",
-		},
-		Name:       "clickhouse-demo",
-		Enabled:    true,
-		RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
+	jobsDBPort := c.Port("wh-jobsDb", 5432)
+	minioPort := c.Port("wh-minio", 9000)
+	transformerPort := c.Port("wh-transformer", 9090)
+	clickhousePort := c.Port("wh-clickhouse", 9000)
+	clickhouse01Port := c.Port("wh-clickhouse01", 9000)
+	clickhouse02Port := c.Port("wh-clickhouse02", 9000)
+	clickhouse03Port := c.Port("wh-clickhouse03", 9000)
+	clickhouse04Port := c.Port("wh-clickhouse04", 9000)
+
+	httpPort, err := kitHelper.GetFreePort()
+	require.NoError(t, err)
+	httpAdminPort, err := kitHelper.GetFreePort()
+	require.NoError(t, err)
+
+	templateConfigurations := map[string]any{
+		"workspaceId":               "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+		"clickHouseWriteKey":        "C5AWX39IVUWSP2NcHciWvqZTa2N",
+		"clickHouseHost":            "localhost",
+		"clickHouseDatabase":        "rudderdb",
+		"clickHouseUser":            "rudder",
+		"clickHousePassword":        "rudder-password",
+		"clickHousePort":            fmt.Sprint(clickhousePort),
+		"clickhouseClusterWriteKey": "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+		"clickhouseClusterHost":     "localhost",
+		"clickhouseClusterDatabase": "rudderdb",
+		"clickhouseClusterCluster":  "rudder_cluster",
+		"clickhouseClusterUser":     "rudder",
+		"clickhouseClusterPassword": "rudder-password",
+		"clickhouseClusterPort":     fmt.Sprint(clickhouse01Port),
+		"minioBucketName":           "testbucket",
+		"minioAccesskeyID":          "MYACCESSKEY",
+		"minioSecretAccessKey":      "MYSECRETKEY",
+		"minioEndpoint":             fmt.Sprintf("localhost:%d", minioPort),
 	}
-	testhelper.VerifyConfigurationTest(t, destination)
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+
+	t.Setenv("JOBS_DB_HOST", "localhost")
+	t.Setenv("JOBS_DB_NAME", "jobsdb")
+	t.Setenv("JOBS_DB_DB_NAME", "jobsdb")
+	t.Setenv("JOBS_DB_USER", "rudder")
+	t.Setenv("JOBS_DB_PASSWORD", "password")
+	t.Setenv("JOBS_DB_SSL_MODE", "disable")
+	t.Setenv("JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
+	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
+	t.Setenv("JOBS_BACKUP_BUCKET", "devintegrationtest")
+	t.Setenv("JOBS_BACKUP_PREFIX", "test")
+	t.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
+	t.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
+	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
+	t.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
+	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
+	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
+	t.Setenv("MINIO_ACCESS_KEY_ID", "MYACCESSKEY")
+	t.Setenv("MINIO_SECRET_ACCESS_KEY", "MYSECRETKEY")
+	t.Setenv("MINIO_MINIO_ENDPOINT", fmt.Sprintf("localhost:%d", minioPort))
+	t.Setenv("MINIO_SSL", "false")
+	t.Setenv("GO_ENV", "production")
+	t.Setenv("LOG_LEVEL", "INFO")
+	t.Setenv("INSTANCE_ID", "1")
+	t.Setenv("ALERT_PROVIDER", "pagerduty")
+	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
+	t.Setenv("DEST_TRANSFORM_URL", fmt.Sprintf("http://localhost:%d", transformerPort))
+	t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
+	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
+	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
+	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
+	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
+	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
+	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+
+	svcDone := make(chan struct{})
+	ctx, ctxCancel := context.WithCancel(context.Background())
+	go func() {
+		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
+		_ = r.Run(ctx, []string{"clickhouse-integration-test"})
+
+		close(svcDone)
+	}()
+
+	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
+	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
+
+	t.Run("Events flow", func(t *testing.T) {
+		var dbs []*sql.DB
+
+		for _, port := range []int{clickhousePort, clickhouse01Port, clickhouse02Port, clickhouse03Port, clickhouse04Port} {
+			ch := clickhouse.New()
+			db, err := ch.ConnectToClickhouse(clickhouse.Credentials{
+				Host:          "localhost",
+				User:          "rudder",
+				Password:      "rudder-password",
+				DBName:        "rudderdb",
+				Secure:        "false",
+				SkipVerify:    "true",
+				TLSConfigName: "",
+				Port:          fmt.Sprint(port),
+			}, true)
+			require.NoError(t, err)
+			require.NoError(t, db.Ping())
+
+			dbs = append(dbs, db)
+		}
+
+		jobsDB, err := postgres.Connect(postgres.Credentials{
+			DBName:   "jobsdb",
+			Password: "password",
+			User:     "rudder",
+			Host:     "localhost",
+			SSLMode:  "disable",
+			Port:     fmt.Sprint(jobsDBPort),
+		})
+		require.NoError(t, err)
+		require.NoError(t, jobsDB.Ping())
+
+		var (
+			provider = warehouseutils.CLICKHOUSE
+			tables   = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+		)
+
+		testCases := []struct {
+			name                        string
+			sourceID                    string
+			destinationID               string
+			writeKey                    string
+			warehouseEvents             testhelper.EventsCountMap
+			warehouseModifiedEvents     testhelper.EventsCountMap
+			clusterSetup                func(t testing.TB)
+			db                          *sql.DB
+			s3EngineEnabledWorkspaceIDs string
+		}{
+			{
+				name:          "Single Setup",
+				sourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
+				destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
+				writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
+				db:            dbs[0],
+			},
+			{
+				name:                        "Single Setup with S3 Engine",
+				sourceID:                    "1wRvLmEnMOOxNM79pwaZhyCqXRE",
+				destinationID:               "21Ev6TI6emCFDKph2Zn6XfTP7PI",
+				writeKey:                    "C5AWX39IVUWSP2NcHciWvqZTa2N",
+				db:                          dbs[0],
+				s3EngineEnabledWorkspaceIDs: "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+			},
+			{
+				name:          "Cluster Mode Setup",
+				sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
+				destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+				writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+				db:            dbs[1],
+				warehouseModifiedEvents: testhelper.EventsCountMap{
+					"identifies":    8,
+					"users":         2,
+					"tracks":        8,
+					"product_track": 8,
+					"pages":         8,
+					"screens":       8,
+					"aliases":       8,
+					"groups":        8,
+				},
+				clusterSetup: func(t testing.TB) {
+					t.Helper()
+					initializeClickhouseClusterMode(t, dbs[1:], tables)
+				},
+			},
+			{
+				name:          "Cluster Mode Setup with S3 Engine",
+				sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
+				destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+				writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+				db:            dbs[1],
+				warehouseEvents: testhelper.EventsCountMap{
+					"identifies":    8,
+					"users":         2,
+					"tracks":        8,
+					"product_track": 8,
+					"pages":         8,
+					"screens":       8,
+					"aliases":       8,
+					"groups":        8,
+				},
+				warehouseModifiedEvents: testhelper.EventsCountMap{
+					"identifies":    8,
+					"users":         2,
+					"tracks":        8,
+					"product_track": 8,
+					"pages":         8,
+					"screens":       8,
+					"aliases":       8,
+					"groups":        8,
+				},
+				s3EngineEnabledWorkspaceIDs: "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				t.Setenv("RUDDER_WAREHOUSE_CLICKHOUSE_S3_ENGINE_ENABLED_WORKSPACE_IDS", tc.s3EngineEnabledWorkspaceIDs)
+
+				ts := testhelper.WareHouseTest{
+					Schema:             "rudderdb",
+					WriteKey:           tc.writeKey,
+					SourceID:           tc.sourceID,
+					DestinationID:      tc.destinationID,
+					WarehouseEventsMap: tc.warehouseEvents,
+					Tables:             tables,
+					Provider:           provider,
+					JobsDB:             jobsDB,
+					UserID:             testhelper.GetUserId(provider),
+					StatsToVerify: []string{
+						"warehouse_clickhouse_commitTimeouts",
+						"warehouse_clickhouse_execTimeouts",
+						"warehouse_clickhouse_failedRetries",
+						"warehouse_clickhouse_syncLoadFileTime",
+						"warehouse_clickhouse_downloadLoadFilesTime",
+						"warehouse_clickhouse_numRowsLoadFile",
+					},
+					Client: &client.Client{
+						SQL:  tc.db,
+						Type: client.SQLClient,
+					},
+					HTTPPort: httpPort,
+				}
+				ts.VerifyEvents(t)
+
+				if tc.clusterSetup != nil {
+					tc.clusterSetup(t)
+				}
+
+				ts.UserID = testhelper.GetUserId(provider)
+				ts.WarehouseEventsMap = tc.warehouseModifiedEvents
+				ts.VerifyModifiedEvents(t)
+			})
+		}
+	})
+
+	t.Run("Validations", func(t *testing.T) {
+		destination := backendconfig.DestinationT{
+			ID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
+			Config: map[string]any{
+				"host":             templateConfigurations["clickHouseHost"],
+				"database":         templateConfigurations["clickHouseDatabase"],
+				"cluster":          "",
+				"user":             templateConfigurations["clickHouseUser"],
+				"password":         templateConfigurations["clickHousePassword"],
+				"port":             templateConfigurations["clickHousePort"],
+				"secure":           false,
+				"namespace":        "",
+				"bucketProvider":   "MINIO",
+				"bucketName":       templateConfigurations["minioBucketName"],
+				"accessKeyID":      templateConfigurations["minioAccesskeyID"],
+				"secretAccessKey":  templateConfigurations["minioSecretAccessKey"],
+				"useSSL":           false,
+				"endPoint":         templateConfigurations["minioEndpoint"],
+				"syncFrequency":    "30",
+				"useRudderStorage": false,
+			},
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				ID:          "1eBvkIRSwc2ESGMK9dj6OXq2G12",
+				Name:        "CLICKHOUSE",
+				DisplayName: "ClickHouse",
+			},
+			Name:       "clickhouse-demo",
+			Enabled:    true,
+			RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
+		}
+		testhelper.VerifyConfigurationTest(t, destination)
+	})
+
+	ctxCancel()
+	<-svcDone
 }
 
-func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
+func TestClickhouse_UseS3CopyEngineForLoading(t *testing.T) {
 	S3EngineEnabledWorkspaceIDs := []string{"BpLnfgDsc2WD8F2qNfHK5a84jjJ"}
 
 	testCases := []struct {
@@ -338,7 +441,7 @@ func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) 
 	return m.metadata
 }
 
-func TestHandle_LoadTableRoundTrip(t *testing.T) {
+func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	misc.Init()
@@ -626,7 +729,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 	}
 }
 
-func TestHandle_TestConnection(t *testing.T) {
+func TestClickhouse_TestConnection(t *testing.T) {
 	t.Parallel()
 
 	misc.Init()
@@ -726,7 +829,7 @@ func TestHandle_TestConnection(t *testing.T) {
 	}
 }
 
-func TestHandle_LoadTestTable(t *testing.T) {
+func TestClickhouse_LoadTestTable(t *testing.T) {
 	t.Parallel()
 
 	misc.Init()
@@ -829,7 +932,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 	}
 }
 
-func TestHandle_FetchSchema(t *testing.T) {
+func TestClickhouse_FetchSchema(t *testing.T) {
 	t.Parallel()
 
 	misc.Init()
