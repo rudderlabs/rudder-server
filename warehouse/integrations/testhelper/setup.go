@@ -13,11 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
-
-	"github.com/minio/minio-go/v6"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -688,22 +687,6 @@ func GetUserId(provider string) string {
 	return fmt.Sprintf("userId_%s_%s", strings.ToLower(provider), warehouseutils.RandHex())
 }
 
-func CreateBucketForMinio(t testing.TB, bucketName string) {
-	t.Helper()
-	t.Logf("Creating bucket for minio: %s", bucketName)
-
-	const (
-		endPoint    = "wh-minio:9000"
-		accessKeyID = "MYACCESSKEY"
-		accessKey   = "MYSECRETKEY"
-		secure      = false
-	)
-	minioClient, err := minio.New(endPoint, accessKeyID, accessKey, secure)
-	require.NoError(t, err)
-
-	_ = minioClient.MakeBucket(bucketName, "us-east-1")
-}
-
 func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 	t.Helper()
 
@@ -719,47 +702,6 @@ func PopulateTemplateConfigurations() map[string]any {
 	configurations := map[string]any{
 		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 
-		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-		"postgresHost":     "wh-postgres",
-		"postgresDatabase": "rudderdb",
-		"postgresUser":     "rudder",
-		"postgresPassword": "rudder-password",
-		"postgresPort":     "5432",
-
-		"clickHouseWriteKey": "C5AWX39IVUWSP2NcHciWvqZTa2N",
-		"clickHouseHost":     "wh-clickhouse",
-		"clickHouseDatabase": "rudderdb",
-		"clickHouseUser":     "rudder",
-		"clickHousePassword": "rudder-password",
-		"clickHousePort":     "9000",
-
-		"clickhouseClusterWriteKey": "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-		"clickhouseClusterHost":     "wh-clickhouse01",
-		"clickhouseClusterDatabase": "rudderdb",
-		"clickhouseClusterCluster":  "rudder_cluster",
-		"clickhouseClusterUser":     "rudder",
-		"clickhouseClusterPassword": "rudder-password",
-		"clickhouseClusterPort":     "9000",
-
-		"mssqlWriteKey": "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		"mssqlHost":     "localhost",
-		"mssqlDatabase": "master",
-		"mssqlUser":     "SA",
-		"mssqlPassword": "reallyStrongPwd123",
-		"mssqlPort":     "1433",
-
-		"azureDatalakeWriteKey":      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
-		"azureDatalakeContainerName": "azure-datalake-test",
-		"azureDatalakeAccountName":   "MYACCESSKEY",
-		"azureDatalakeAccountKey":    "TVlTRUNSRVRLRVk=",
-		"azureDatalakeEndPoint":      "wh-azure:10000",
-
-		"s3DatalakeWriteKey":   "ZapZJHfSxUN96GTIuShnz6bv0zi",
-		"s3DatalakeBucketName": "s3-datalake-test",
-		"s3DatalakeRegion":     "us-east-1",
-
-		"gcsDatalakeWriteKey": "9zZFfcRqr2LpwerxICilhQmMybn",
-
 		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
 		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
@@ -768,8 +710,6 @@ func PopulateTemplateConfigurations() map[string]any {
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
 		"deltalakeNativeWriteKey":        "dasFgoilA0U1WxNeW1gdgUVDfas",
 
-		"postgresSourcesWriteKey":  "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
-		"mssqlSourcesWriteKey":     "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
 		"bigquerySourcesWriteKey":  "J77aeABtLFJ84qYU6UrN8ctewZt",
 		"redshiftSourcesWriteKey":  "BNAwdCxmM8BIabKERsUhPNmMmdf",
 		"snowflakeSourcesWriteKey": "2eSJyYtqwcFYerwzXv2fcNIrWO7",
@@ -778,17 +718,6 @@ func PopulateTemplateConfigurations() map[string]any {
 		"minioAccesskeyID":     "MYACCESSKEY",
 		"minioSecretAccessKey": "MYSECRETKEY",
 		"minioEndpoint":        "wh-minio:9000",
-
-		"postgresTunnelledWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3w",
-		"sshUser":                   "rudderstack",
-		"sshPort":                   "2222",
-		"sshHost":                   "wh-ssh-server",
-		"sshPrivateKey":             "-----BEGIN OPENSSH PRIVATE KEY-----\\n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\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----",
-		"privatePostgresHost":       "db-private-postgres",
-		"privatePostgresDatabase":   "postgres",
-		"privatePostgresPort":       "5432",
-		"privatePostgresUser":       "postgres",
-		"privatePostgresPassword":   "postgres",
 	}
 
 	//enhanceWithRedshiftConfigurations(configurations)
@@ -955,4 +884,24 @@ func DatabricksCredentials() (credentials client.Credentials, err error) {
 		return
 	}
 	return
+}
+
+func CreateTempFile(t testing.TB, templatePath string, values map[string]string) string {
+	t.Helper()
+
+	tpl, err := template.ParseFiles(templatePath)
+	require.NoError(t, err)
+
+	tmpFile, err := os.CreateTemp("", "workspaceConfig.*.json")
+	require.NoError(t, err)
+	defer func() { _ = tmpFile.Close() }()
+
+	require.NoError(t, tpl.Execute(tmpFile, values))
+	t.Cleanup(func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Logf("Error while removing workspace config: %v", err)
+		}
+	})
+
+	return tmpFile.Name()
 }

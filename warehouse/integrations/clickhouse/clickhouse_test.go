@@ -74,7 +74,7 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	templateConfigurations := map[string]any{
+	templateConfigurations := map[string]string{
 		"workspaceId":               "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 		"clickHouseWriteKey":        "C5AWX39IVUWSP2NcHciWvqZTa2N",
 		"clickHouseHost":            "localhost",
@@ -94,7 +94,7 @@ func TestIntegration(t *testing.T) {
 		"minioSecretAccessKey":      "MYSECRETKEY",
 		"minioEndpoint":             fmt.Sprintf("localhost:%d", minioPort),
 	}
-	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 	t.Setenv("JOBS_DB_HOST", "localhost")
 	t.Setenv("JOBS_DB_NAME", "jobsdb")

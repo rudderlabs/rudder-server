@@ -7,7 +7,6 @@ import (
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"strings"
@@ -60,7 +59,7 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	templateConfigurations := map[string]any{
+	templateConfigurations := map[string]string{
 		"workspaceId":               "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 		"postgresWriteKey":          "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
 		"postgresHost":              "localhost",
@@ -84,7 +83,7 @@ func TestIntegration(t *testing.T) {
 		"minioSecretAccessKey":      "MYSECRETKEY",
 		"minioEndpoint":             fmt.Sprintf("localhost:%d", minioPort),
 	}
-	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 	t.Setenv("JOBS_DB_HOST", "localhost")
 	t.Setenv("JOBS_DB_NAME", "jobsdb")
@@ -251,18 +250,18 @@ func TestIntegration(t *testing.T) {
 		t.Skip()
 
 		db, err := postgres.Connect(postgres.Credentials{
-			DBName:   templateConfigurations["privatePostgresDatabase"].(string),
-			Password: templateConfigurations["privatePostgresPassword"].(string),
-			User:     templateConfigurations["privatePostgresUser"].(string),
-			Host:     templateConfigurations["privatePostgresHost"].(string),
-			Port:     templateConfigurations["privatePostgresPort"].(string),
+			DBName:   templateConfigurations["privatePostgresDatabase"],
+			Password: templateConfigurations["privatePostgresPassword"],
+			User:     templateConfigurations["privatePostgresUser"],
+			Host:     templateConfigurations["privatePostgresHost"],
+			Port:     templateConfigurations["privatePostgresPort"],
 			SSLMode:  "disable",
 			TunnelInfo: &tunnelling.TunnelInfo{
 				Config: map[string]interface{}{
 					"sshUser":       templateConfigurations["sshUser"],
 					"sshPort":       templateConfigurations["sshPort"],
 					"sshHost":       templateConfigurations["sshHost"],
-					"sshPrivateKey": strings.ReplaceAll(templateConfigurations["sshPrivateKey"].(string), "\\n", "\n"),
+					"sshPrivateKey": strings.ReplaceAll(templateConfigurations["sshPrivateKey"], "\\n", "\n"),
 				},
 			},
 		})

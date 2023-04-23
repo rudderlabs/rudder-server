@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  wh-jobsDb:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=jobsdb
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=rudder
+    ports:
+      - "5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1s
+      retries: 25
+  wh-transformer:
+    image: rudderstack/develop-rudder-transformer:latest
+    ports:
+      - "9090"
+  wh-minio:
+    image: minio/minio:latest
+    ports:
+      - "9000/tcp"
+    environment:
+      - MINIO_ACCESS_KEY=MYACCESSKEY
+      - MINIO_SECRET_KEY=MYSECRETKEY
+      - MINIO_SITE_REGION=us-east-1
+    command: server /data
+    healthcheck:
+      test: curl --fail http://localhost:9000/minio/health/live || exit 1
+      interval: 1s
+      retries: 25
+  wh-azure:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    ports:
+      - "10000"
+    environment:
+      - AZURITE_ACCOUNTS=MYACCESSKEY:TVlTRUNSRVRLRVk=
+      - DefaultEndpointsProtocol=http
+    healthcheck:
+      test: nc -z localhost 10000 || exit 1
+      interval: 1s
+      retries: 25

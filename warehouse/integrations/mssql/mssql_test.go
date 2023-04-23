@@ -7,7 +7,6 @@ import (
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
@@ -52,7 +51,7 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	templateConfigurations := map[string]any{
+	templateConfigurations := map[string]string{
 		"workspaceId":          "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 		"mssqlWriteKey":        "YSQ3n267l1VQKGNbSuJE9fQbzON",
 		"mssqlHost":            "localhost",
@@ -66,7 +65,7 @@ func TestIntegration(t *testing.T) {
 		"minioSecretAccessKey": "MYSECRETKEY",
 		"minioEndpoint":        fmt.Sprintf("localhost:%d", minioPort),
 	}
-	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 	t.Setenv("JOBS_DB_HOST", "localhost")
 	t.Setenv("JOBS_DB_NAME", "jobsdb")
