@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	jsonstd "encoding/json"
 	"fmt"
-	"time"
-
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -33,7 +31,7 @@ type LoadFiles repo
 func NewLoadFiles(db *sql.DB, opts ...Opt) *LoadFiles {
 	r := &LoadFiles{
 		db:  db,
-		now: time.Now,
+		now: timeutil.Now,
 	}
 
 	for _, opt := range opts {

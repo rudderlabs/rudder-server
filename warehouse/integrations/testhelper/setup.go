@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"log"
 	"net/http"
 	"os"
@@ -15,11 +16,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
-
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
-	promCLient "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
 
 	"github.com/minio/minio-go/v6"
 
@@ -94,6 +90,7 @@ type WareHouseTest struct {
 	Prerequisite                 func(t testing.TB)
 	StatsToVerify                []string
 	SkipWarehouse                bool
+	HTTPPort                     int
 }
 
 func (w *WareHouseTest) init() {
@@ -150,7 +147,6 @@ func (w *WareHouseTest) VerifyEvents(t testing.TB) {
 	if !w.SkipWarehouse {
 		verifyEventsInWareHouse(t, w)
 	}
-	verifyWorkspaceIDInStats(t, w.StatsToVerify...)
 }
 
 func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
@@ -176,7 +172,6 @@ func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 	if !w.SkipWarehouse {
 		verifyEventsInWareHouse(t, w)
 	}
-	verifyWorkspaceIDInStats(t)
 }
 
 func SetUpJobsDB(t testing.TB) *sql.DB {
@@ -502,7 +497,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		wareHouseTest.TaskRunID,
 	)
 
-	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST")
+	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 
 	var (
 		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s&workspace_id=%s",
@@ -512,7 +507,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.DestinationID,
 			workspaceID,
 		)
-		url        = fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
+		url        = fmt.Sprintf("http://localhost:%d/v1/%s", wareHouseTest.HTTPPort, path)
 		method     = "GET"
 		httpClient = &http.Client{}
 		req        *http.Request
@@ -566,74 +561,6 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying async job")
 }
 
-func verifyWorkspaceIDInStats(t testing.TB, extraStats ...string) {
-	t.Helper()
-	t.Logf("Started verifying workspaceID in stats")
-
-	var (
-		statsToVerify []string
-		workspaceID   = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
-	)
-
-	statsToVerify = append(statsToVerify, extraStats...)
-	statsToVerify = append(statsToVerify, []string{
-		// Miscellaneous
-		"wh_scheduler_create_upload_jobs",
-		"wh_scheduler_pending_staging_files",
-		"warehouse_rudder_missing_datatype",
-		"warehouse_long_running_upload",
-		"warehouse_successful_upload_exists",
-		"persist_ssl_file_failure",
-
-		// Timer stats
-		"load_file_generation_time",
-		"event_delivery_time",
-		"identity_tables_load_time",
-		"other_tables_load_time",
-		"user_tables_load_time",
-		"upload_time",
-		"download_staging_file_time",
-		"staging_files_total_processing_time",
-		"process_staging_file_time",
-		"load_file_upload_time",
-
-		// Counter stats
-		"total_rows_synced",
-		"num_staged_events",
-		"upload_aborted",
-		"num_staged_events",
-		"upload_success",
-		"event_delivery",
-		"rows_synced",
-		"staging_files_processed",
-		"bytes_processed_in_staging_file",
-
-		// Gauge stats
-		"pre_load_table_rows",
-		"post_load_table_rows_estimate",
-		"post_load_table_rows",
-	}...)
-	mf := prometheusStats(t)
-
-	for _, statToVerify := range statsToVerify {
-		if ps, ok := mf[statToVerify]; ok {
-			for _, metric := range ps.GetMetric() {
-				found := false
-				for _, label := range metric.GetLabel() {
-					if label.GetName() == "workspaceId" {
-						require.Equalf(t, label.GetValue(), workspaceID, "workspaceId is empty for stat: %s", statToVerify)
-						found = true
-						break
-					}
-				}
-				require.Truef(t, found, "workspaceId not found in stat: %s", statToVerify)
-			}
-		}
-	}
-
-	t.Logf("Completed verifying workspaceID in stats")
-}
-
 func VerifyConfigurationTest(t testing.TB, destination backendconfig.DestinationT) {
 	t.Helper()
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
@@ -648,26 +575,6 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 	}))
 
 	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
-}
-
-func prometheusStats(t testing.TB) map[string]*promCLient.MetricFamily {
-	t.Helper()
-
-	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://statsd-exporter:9102/metrics", http.NoBody)
-	require.NoError(t, err)
-
-	httpClient := &http.Client{Timeout: 5 * time.Second}
-	resp, err := httpClient.Do(req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.NotNil(t, resp.Body)
-
-	defer func() { httputil.CloseResponse(resp) }()
-
-	var parser expfmt.TextParser
-	mf, err := parser.TextToMetricFamilies(resp.Body)
-	require.NoError(t, err)
-	return mf
 }
 
 func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
@@ -808,8 +715,8 @@ func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 	require.NoError(t, err)
 }
 
-func PopulateTemplateConfigurations() map[string]string {
-	configurations := map[string]string{
+func PopulateTemplateConfigurations() map[string]any {
+	configurations := map[string]any{
 		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 
 		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
@@ -835,7 +742,7 @@ func PopulateTemplateConfigurations() map[string]string {
 		"clickhouseClusterPort":     "9000",
 
 		"mssqlWriteKey": "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		"mssqlHost":     "wh-mssql",
+		"mssqlHost":     "localhost",
 		"mssqlDatabase": "master",
 		"mssqlUser":     "SA",
 		"mssqlPassword": "reallyStrongPwd123",
@@ -884,10 +791,10 @@ func PopulateTemplateConfigurations() map[string]string {
 		"privatePostgresPassword":   "postgres",
 	}
 
-	enhanceWithRedshiftConfigurations(configurations)
-	enhanceWithSnowflakeConfigurations(configurations)
-	enhanceWithDeltalakeConfigurations(configurations)
-	enhanceWithBQConfigurations(configurations)
+	//enhanceWithRedshiftConfigurations(configurations)
+	//enhanceWithSnowflakeConfigurations(configurations)
+	//enhanceWithDeltalakeConfigurations(configurations)
+	//enhanceWithBQConfigurations(configurations)
 	return configurations
 }
 

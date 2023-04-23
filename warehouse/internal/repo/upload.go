@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -68,7 +69,7 @@ type UploadMetadata struct {
 func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
 	u := &Uploads{
 		db:  db,
-		now: time.Now,
+		now: timeutil.Now,
 	}
 
 	for _, opt := range opts {

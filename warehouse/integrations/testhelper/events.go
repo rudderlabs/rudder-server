@@ -392,7 +392,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -407,7 +407,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -422,7 +422,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
+			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -437,7 +437,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -452,7 +452,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -467,7 +467,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -485,7 +485,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.TaskRunID,
 				),
 			)
-			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
+			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 }
@@ -509,7 +509,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -524,7 +524,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -539,7 +539,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
+			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -554,7 +554,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -569,7 +569,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -583,7 +583,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -601,7 +601,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.TaskRunID,
 				),
 			)
-			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
+			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 }
@@ -626,7 +626,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -642,7 +642,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -658,7 +658,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
+			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -674,7 +674,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -689,7 +689,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -705,7 +705,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 
@@ -724,17 +724,17 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.TaskRunID,
 				),
 			)
-			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
+			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 		}
 	}
 }
 
-func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method string) {
+func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method string, port int) {
 	t.Helper()
 
 	t.Logf("Sending event: %s for writeKey: %s", eventType, writeKey)
 
-	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", eventType)
+	url := fmt.Sprintf("http://localhost:%d/v1/%s", port, eventType)
 	httpClient := &http.Client{}
 
 	req, err := http.NewRequest(method, url, payload)

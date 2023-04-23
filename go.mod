@@ -105,6 +105,8 @@ require (
 	google.golang.org/protobuf v1.30.0
 )
 
+require github.com/rudderlabs/compose-test v0.0.0-20221205185752-1290775b38f6 // indirect
+
 require (
 	cloud.google.com/go v0.110.0 // indirect
 	cloud.google.com/go/compute v1.19.0 // indirect
