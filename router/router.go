@@ -18,6 +18,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -373,6 +374,7 @@ func (w *worker) workerProcess() {
 					RetryTime:     time.Now(),
 					ErrorCode:     strconv.Itoa(routerutils.DRAIN_ERROR_CODE),
 					Parameters:    routerutils.EmptyPayload,
+					JobParameters: job.Parameters,
 					ErrorResponse: routerutils.EnhanceJSON(routerutils.EmptyPayload, "reason", abortReason),
 					WorkspaceId:   job.WorkspaceId,
 				}
@@ -416,6 +418,7 @@ func (w *worker) workerProcess() {
 						JobState:      jobsdb.Waiting.State,
 						ErrorResponse: resp, // check
 						Parameters:    routerutils.EmptyPayload,
+						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
 					w.rt.responseQ <- jobResponseT{status: &status, worker: w, userID: userID, JobT: job}
@@ -451,6 +454,7 @@ func (w *worker) workerProcess() {
 					RetryTime:     time.Now(),
 					ErrorResponse: []byte(`{"reason":"failed because destination is not available in the config"}`),
 					Parameters:    routerutils.EmptyPayload,
+					JobParameters: job.Parameters,
 					WorkspaceId:   job.WorkspaceId,
 				}
 				if w.rt.guaranteeUserEventOrder {
@@ -818,12 +822,13 @@ func (w *worker) processDestinationJobs() {
 		attemptNum := destinationJobMetadata.AttemptNum
 		respStatusCode = routerJobResponse.respStatusCode
 		status := jobsdb.JobStatusT{
-			JobID:       destinationJobMetadata.JobID,
-			AttemptNum:  attemptNum,
-			ExecTime:    time.Now(),
-			RetryTime:   time.Now(),
-			Parameters:  routerutils.EmptyPayload,
-			WorkspaceId: destinationJobMetadata.WorkspaceID,
+			JobID:         destinationJobMetadata.JobID,
+			AttemptNum:    attemptNum,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			Parameters:    routerutils.EmptyPayload,
+			JobParameters: destinationJobMetadata.JobT.Parameters,
+			WorkspaceId:   destinationJobMetadata.WorkspaceID,
 		}
 
 		routerJobResponse.status = &status
@@ -869,7 +874,7 @@ func (w *worker) processDestinationJobs() {
 			}
 			sourcesIDs := make([]string, 0)
 			for _, metadata := range routerJobResponse.destinationJob.JobMetadataArray {
-				if !misc.Contains(sourcesIDs, metadata.SourceID) {
+				if !slices.Contains(sourcesIDs, metadata.SourceID) {
 					sourcesIDs = append(sourcesIDs, metadata.SourceID)
 				}
 			}
@@ -1686,6 +1691,7 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorCode:     "",
 				ErrorResponse: routerutils.EmptyPayload, // check
 				Parameters:    routerutils.EmptyPayload,
+				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 			}
 			statusList = append(statusList, &status)

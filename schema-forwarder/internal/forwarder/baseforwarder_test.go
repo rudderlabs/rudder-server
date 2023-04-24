@@ -124,6 +124,7 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":true}`),
 			Parameters:    []byte(`{}`),
+			JobParameters: job.Parameters,
 		})
 	}
 	err = bf.MarkJobStatuses(context.Background(), statuses)

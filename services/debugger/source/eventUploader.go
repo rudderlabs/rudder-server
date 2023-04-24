@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"golang.org/x/exp/slices"
 )
 
 // GatewayEventBatchT is a structure to hold batch of events
@@ -122,7 +123,7 @@ func (h *Handle) RecordEvent(writeKey string, eventBatch []byte) bool {
 	// Check if writeKey part of enabled sources
 	h.uploadEnabledWriteKeysMu.RLock()
 	defer h.uploadEnabledWriteKeysMu.RUnlock()
-	if !misc.Contains(h.uploadEnabledWriteKeys, writeKey) {
+	if !slices.Contains(h.uploadEnabledWriteKeys, writeKey) {
 		err := h.eventsCache.Update(writeKey, eventBatch)
 		if err != nil {
 			h.log.Errorf("Error while updating cache: %v", err)

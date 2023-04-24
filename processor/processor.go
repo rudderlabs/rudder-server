@@ -17,6 +17,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -544,7 +545,7 @@ func (proc *Handle) loadConfig() {
 	defaultReadLoopSleepMs := int64(200)
 	defaultMaxLoopSleeppMs := int64(5000)
 
-	defaultIsolationMode := isolation.ModeNone
+	defaultIsolationMode := isolation.ModeSource
 	if config.IsSet("WORKSPACE_NAMESPACE") {
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
@@ -832,6 +833,8 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
 	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
 
+	commonMetadata.SourceDefinitionType = source.SourceDefinition.Type
+
 	return &commonMetadata
 }
 
@@ -858,6 +861,7 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.DestinationID = destination.ID
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
+	metadata.SourceDefinitionType = commonMetadata.SourceDefinitionType
 	event.Metadata = metadata
 }
 
@@ -1420,7 +1424,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					continue
 				}
 
-				if proc.config.enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
+				if proc.config.enableDedup && slices.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
@@ -1538,6 +1542,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
+			JobParameters: batchEvent.Parameters,
 			WorkspaceId:   batchEvent.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
@@ -1631,6 +1636,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
+			source, _ := proc.getSourceByWriteKey(writeKey)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
@@ -1638,6 +1644,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					singularEvent,
 					proc.getEnabledDestinations(writeKey, *destType),
 				)
+
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range enabledDestinationsList {
 					destination := &enabledDestinationsList[idx]
@@ -1645,6 +1652,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					shallowEventCopy.Message = singularEvent
 					shallowEventCopy.Destination = *destination
 					shallowEventCopy.Libraries = workspaceLibraries
+					// just in-case the source-type value is not set
+					if event.Metadata.SourceDefinitionType == "" {
+						event.Metadata.SourceDefinitionType = source.SourceDefinition.Type
+					}
 					shallowEventCopy.Metadata = event.Metadata
 
 					// At the TP flow we are not having destination information, so adding it here.
@@ -2373,7 +2384,7 @@ func (proc *Handle) transformSrcDest(
 				EventPayload: destEventJSON,
 				WorkspaceId:  workspaceId,
 			}
-			if misc.Contains(proc.config.batchDestinations, newJob.CustomVal) {
+			if slices.Contains(proc.config.batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)
 			} else {
 				destJobs = append(destJobs, &newJob)
@@ -2424,16 +2435,11 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				supportedMessageTypesCache[event.Destination.ID] = supportedTypes
 			}
 			if supportedTypes.ok {
-				messageType, typOk := event.Message["type"].(string)
-				if !typOk {
-					// add to FailedEvents
-					errMessage = "Invalid message type. Type assertion failed"
-					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-					failedEvents = append(failedEvents, resp)
-					continue
-				}
-				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !misc.Contains(supportedTypes.values, messageType) {
+				allow, failedEvent := eventfilter.AllowEventToDestTransformation(event, supportedTypes.values)
+				if !allow {
+					if failedEvent != nil {
+						failedEvents = append(failedEvents, *failedEvent)
+					}
 					continue
 				}
 			}
@@ -2454,7 +2460,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					failedEvents = append(failedEvents, resp)
 					continue
 				}
-				if !misc.Contains(supportedEvents.values, messageEvent) {
+				if !slices.Contains(supportedEvents.values, messageEvent) {
 					continue
 				}
 			}
@@ -2554,6 +2560,7 @@ func (proc *Handle) markExecuting(jobs []*jobsdb.JobT) error {
 			ErrorCode:     "",
 			ErrorResponse: []byte(`{}`),
 			Parameters:    []byte(`{}`),
+			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 		}
 	}

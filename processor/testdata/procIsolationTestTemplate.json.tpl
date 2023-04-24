@@ -7,7 +7,7 @@
         "sources": [
             {
                 "config": {},
-                "id": "xxxyyyzzEaEurW247ad9WYZLUyk",
+                "id": "{{$workspace}}",
                 "name": "Dev Integration Test 1",
                 "writeKey": "{{$workspace}}",
                 "enabled": true,
