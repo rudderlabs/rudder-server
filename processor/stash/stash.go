@@ -25,7 +25,6 @@ import (
 
 var (
 	errorStashEnabled       bool
-	errReadLoopSleep        time.Duration
 	errDBReadBatchSize      int
 	noOfErrStashWorkers     int
 	maxFailedCountForErrJob int
@@ -40,7 +39,6 @@ func Init() {
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
-	config.RegisterDurationConfigVariable(30, &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
 	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
 	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
 	config.RegisterIntConfigVariable(3, &maxFailedCountForErrJob, true, 1, "Processor.maxFailedCountForErrJob")
@@ -303,15 +301,15 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 
 func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 	st.logger.Info("Processor errors stash loop started")
-
+	var sleepTime time.Duration
 	for {
 		select {
 		case <-ctx.Done():
 			close(st.errProcessQ)
 			return
-		case <-time.After(errReadLoopSleep):
+		case <-time.After(sleepTime):
 			start := time.Now()
-
+			var limitReached bool
 			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
 				CustomValFilters:              []string{""},
@@ -323,11 +321,16 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				return st.errorDB.GetToRetry(ctx, queryParams)
 			}, sendQueryRetryStats)
 			if err != nil {
+				if ctx.Err() != nil { // we are shutting down
+					close(st.errProcessQ)
+					return //nolint:nilerr
+				}
 				st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
 				panic(err)
 			}
 
 			combinedList := toRetry.Jobs
+			limitReached = toRetry.LimitsReached
 			if !toRetry.LimitsReached {
 				queryParams.JobsLimit -= len(toRetry.Jobs)
 				if queryParams.PayloadSizeLimit > 0 {
@@ -337,12 +340,16 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					return st.errorDB.GetUnprocessed(ctx, queryParams)
 				}, sendQueryRetryStats)
 				if err != nil {
+					if ctx.Err() != nil { // we are shutting down
+						close(st.errProcessQ)
+						return
+					}
 					st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
 					panic(err)
 				}
 				combinedList = append(combinedList, unprocessed.Jobs...)
+				limitReached = unprocessed.LimitsReached
 			}
-
 			st.statErrDBR.Since(start)
 
 			if len(combinedList) == 0 {
@@ -393,6 +400,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 			}, sendRetryUpdateStats)
 			if err != nil {
+				if ctx.Err() != nil { // we are shutting down
+					return //nolint:nilerr
+				}
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)
 			}
@@ -400,6 +410,14 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			if canUpload && len(filteredJobList) > 0 {
 				st.errProcessQ <- filteredJobList
 			}
+			sleepTime = st.calculateSleepTime(limitReached)
 		}
 	}
+}
+
+func (*HandleT) calculateSleepTime(limitReached bool) time.Duration {
+	if limitReached {
+		return config.GetDuration("Processor.errReadLoopSleep", 30, time.Second)
+	}
+	return time.Duration(0)
 }

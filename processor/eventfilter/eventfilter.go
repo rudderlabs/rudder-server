@@ -8,7 +8,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 )
 
@@ -137,7 +136,7 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 		return false, resp
 	}
 
-	isSupportedMsgType := lo.Contains(supportedMsgTypes, messageType)
+	isSupportedMsgType := slices.Contains(supportedMsgTypes, messageType)
 	if !isSupportedMsgType {
 		pkgLogger.Debug("event filtered out due to unsupported msg types")
 		// We will not allow the event
