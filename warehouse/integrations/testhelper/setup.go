@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,6 +13,8 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
