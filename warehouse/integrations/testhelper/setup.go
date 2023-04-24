@@ -26,9 +26,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 
 	_ "github.com/lib/pq"
@@ -701,18 +699,9 @@ func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 func PopulateTemplateConfigurations() map[string]any {
 	configurations := map[string]any{
 		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-
-		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-		"snowflakeRBACWriteKey":          "2eSafstqwcFYUILzXv2fcNIrWO7",
-		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
 		"deltalakeNativeWriteKey":        "dasFgoilA0U1WxNeW1gdgUVDfas",
 
-		"bigquerySourcesWriteKey":  "J77aeABtLFJ84qYU6UrN8ctewZt",
-		"redshiftSourcesWriteKey":  "BNAwdCxmM8BIabKERsUhPNmMmdf",
-		"snowflakeSourcesWriteKey": "2eSJyYtqwcFYerwzXv2fcNIrWO7",
 
 		"minioBucketName":      "testbucket",
 		"minioAccesskeyID":     "MYACCESSKEY",
@@ -720,7 +709,6 @@ func PopulateTemplateConfigurations() map[string]any {
 		"minioEndpoint":        "wh-minio:9000",
 	}
 
-	//enhanceWithRedshiftConfigurations(configurations)
 	//enhanceWithSnowflakeConfigurations(configurations)
 	//enhanceWithDeltalakeConfigurations(configurations)
 	//enhanceWithBQConfigurations(configurations)
@@ -749,19 +737,6 @@ func enhanceWithSnowflakeConfigurations(values map[string]string) {
 	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "SOURCES")
 }
 
-func enhanceWithRedshiftConfigurations(values map[string]string) {
-	if _, exists := os.LookupEnv(RedshiftIntegrationTestCredentials); !exists {
-		return
-	}
-
-	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
-		values[fmt.Sprintf("redshift%s", k)] = v
-	}
-
-	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
-	values["redshiftSourcesNamespace"] = fmt.Sprintf("%s_%s", values["redshiftNamespace"], "sources")
-}
-
 func enhanceWithDeltalakeConfigurations(values map[string]string) {
 	if _, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials); !exists {
 		return
@@ -774,28 +749,6 @@ func enhanceWithDeltalakeConfigurations(values map[string]string) {
 
 	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
 	values["deltalakeNativeNamespace"] = fmt.Sprintf("%s_%s", values["deltalakeNamespace"], "native")
-}
-
-func enhanceWithBQConfigurations(values map[string]string) {
-	if _, exists := os.LookupEnv(BigqueryIntegrationTestCredentials); !exists {
-		return
-	}
-
-	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
-		values[fmt.Sprintf("bigquery%s", k)] = v
-	}
-
-	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
-	values["bigquerySourcesNamespace"] = fmt.Sprintf("%s_%s", values["bigqueryNamespace"], "sources")
-
-	key := "bigqueryCredentials"
-	if credentials, exists := values[key]; exists {
-		escapedCredentials, err := json.Marshal(credentials)
-		if err != nil {
-			log.Panicf("error escaping big query JSON credentials while setting up the workspace config with error: %s", err.Error())
-		}
-		values[key] = strings.Trim(string(escapedCredentials), `"`)
-	}
 }
 
 func Schema(provider, schemaKey string) string {
@@ -837,35 +790,6 @@ func SnowflakeCredentials(env string) (credentials snowflake.Credentials, err er
 	err = json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		err = fmt.Errorf("error occurred while unmarshalling snowflake test credentials with err: %s", err.Error())
-		return
-	}
-	return
-}
-
-func RedshiftCredentials() (credentials redshift.RedshiftCredentials, err error) {
-	cred, exists := os.LookupEnv(RedshiftIntegrationTestCredentials)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Redshift test", RedshiftIntegrationTestCredentials)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling redshift test credentials with err: %s", err.Error())
-	}
-	return
-}
-
-func BigqueryCredentials() (credentials bigquery.BQCredentials, err error) {
-	cred, exists := os.LookupEnv(BigqueryIntegrationTestCredentials)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Bigquery test", BigqueryIntegrationTestCredentials)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling bigquery test credentials with err: %s", err.Error())
 		return
 	}
 	return

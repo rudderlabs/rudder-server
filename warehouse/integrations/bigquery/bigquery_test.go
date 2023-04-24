@@ -83,7 +83,6 @@ func TestIntegration(t *testing.T) {
 	encoding.Init()
 
 	jobsDBPort := c.Port("wh-jobsDb", 5432)
-	minioPort := c.Port("wh-minio", 9000)
 	transformerPort := c.Port("wh-transformer", 9090)
 
 	httpPort, err := kitHelper.GetFreePort()
@@ -112,10 +111,6 @@ func TestIntegration(t *testing.T) {
 		"bigqueryCredentials":      escapedCredentialsTrimmedStr,
 		"bigquerySourcesNamespace": sourcesSchema,
 		"bigquerySourcesWriteKey":  "J77aeABtLFJ84qYU6UrN8ctewZt",
-		"minioBucketName":          "testbucket",
-		"minioAccesskeyID":         "MYACCESSKEY",
-		"minioSecretAccessKey":     "MYSECRETKEY",
-		"minioEndpoint":            fmt.Sprintf("localhost:%d", minioPort),
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -126,9 +121,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("JOBS_DB_PASSWORD", "password")
 	t.Setenv("JOBS_DB_SSL_MODE", "disable")
 	t.Setenv("JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
-	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
-	t.Setenv("JOBS_BACKUP_BUCKET", "devintegrationtest")
-	t.Setenv("JOBS_BACKUP_PREFIX", "test")
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	t.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
 	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
@@ -136,10 +128,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
-	t.Setenv("MINIO_ACCESS_KEY_ID", "MYACCESSKEY")
-	t.Setenv("MINIO_SECRET_ACCESS_KEY", "MYSECRETKEY")
-	t.Setenv("MINIO_MINIO_ENDPOINT", fmt.Sprintf("localhost:%d", minioPort))
-	t.Setenv("MINIO_SSL", "false")
 	t.Setenv("GO_ENV", "production")
 	t.Setenv("LOG_LEVEL", "INFO")
 	t.Setenv("INSTANCE_ID", "1")
