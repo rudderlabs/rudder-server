@@ -40,6 +40,7 @@ type SourceDefinitionT struct {
 	ID       string
 	Name     string
 	Category string
+	Type     string // // Indicates whether source is one of {cloud, web, flutter, android, ios, warehouse, cordova, amp, reactnative, unity}. This field is not present in sources table
 }
 
 type DestinationT struct {
