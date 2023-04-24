@@ -50,6 +50,11 @@ type LoadTable struct {
 	LoadFileDownloader downloader.Downloader
 }
 
+type loadTableResponse struct {
+	stagingTableName string
+	txn              *sql.Tx
+}
+
 type LoadUsersTable struct {
 	Logger             logger.Logger
 	DB                 *sql.DB
@@ -60,7 +65,7 @@ type LoadUsersTable struct {
 	LoadFileDownloader downloader.Downloader
 }
 
-func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (string, error) {
+func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (loadTableResponse, error) {
 	var (
 		err                     error
 		query                   string
@@ -91,7 +96,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 	query = fmt.Sprintf(`SET search_path TO %q`, lt.Namespace)
 	if _, err = lt.DB.ExecContext(ctx, query); err != nil {
-		return "", fmt.Errorf("setting search path: %w", err)
+		return loadTableResponse{}, fmt.Errorf("setting search path: %w", err)
 	}
 
 	lt.Logger.Infow("started loading",
@@ -107,12 +112,12 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	loadFiles, err = lt.LoadFileDownloader.Download(ctx, tableName)
 	defer misc.RemoveFilePaths(loadFiles...)
 	if err != nil {
-		return "", fmt.Errorf("downloading load files: %w", err)
+		return loadTableResponse{}, fmt.Errorf("downloading load files: %w", err)
 	}
 
 	txn, err = lt.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return "", fmt.Errorf("beginning transaction: %w", err)
+		return loadTableResponse{}, fmt.Errorf("beginning transaction: %w", err)
 	}
 
 	defer func() {
@@ -146,20 +151,20 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 	if _, err = txn.ExecContext(ctx, query); err != nil {
 		stage = createStagingTable
-		return "", fmt.Errorf("creating temporary table: %w", err)
+		return loadTableResponse{}, fmt.Errorf("creating temporary table: %w", err)
 	}
 
 	stmt, err = txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		stage = copyInSchemaStagingTable
-		return "", fmt.Errorf("preparing statement for copy in: %w", err)
+		return loadTableResponse{}, fmt.Errorf("preparing statement for copy in: %w", err)
 	}
 
 	for _, objectFileName := range loadFiles {
 		gzFile, err = os.Open(objectFileName)
 		if err != nil {
 			stage = openLoadFiles
-			return "", fmt.Errorf("opening load file: %w", err)
+			return loadTableResponse{}, fmt.Errorf("opening load file: %w", err)
 		}
 
 		gzReader, err = gzip.NewReader(gzFile)
@@ -167,7 +172,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 			_ = gzFile.Close()
 
 			stage = readGzipLoadFiles
-			return "", fmt.Errorf("reading gzip load file: %w", err)
+			return loadTableResponse{}, fmt.Errorf("reading gzip load file: %w", err)
 		}
 
 		csvReader = csv.NewReader(gzReader)
@@ -185,7 +190,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 				}
 
 				stage = readCsvLoadFiles
-				return "", fmt.Errorf("reading csv file: %w", err)
+				return loadTableResponse{}, fmt.Errorf("reading csv file: %w", err)
 			}
 
 			if len(sortedColumnKeys) != len(record) {
@@ -203,7 +208,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 					logfield.LoadFile, objectFileName,
 					logfield.Error, err.Error(),
 				)
-				return "", fmt.Errorf("missing columns in csv file: %w", err)
+				return loadTableResponse{}, fmt.Errorf("missing columns in csv file: %w", err)
 			}
 
 			for _, value := range record {
@@ -217,7 +222,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 			_, err = stmt.ExecContext(ctx, recordInterface...)
 			if err != nil {
 				stage = loadStagingTable
-				return "", fmt.Errorf("exec statement: %w", err)
+				return loadTableResponse{}, fmt.Errorf("exec statement: %w", err)
 			}
 
 			csvRowsProcessedCount++
@@ -229,7 +234,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 	if _, err = stmt.ExecContext(ctx); err != nil {
 		stage = stagingTableLoadStage
-		return "", fmt.Errorf("exec statement: %w", err)
+		return loadTableResponse{}, fmt.Errorf("exec statement: %w", err)
 	}
 
 	var (
@@ -286,11 +291,11 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 		if result, err = txn.Exec(query); err != nil {
 			stage = deleteDedup
-			return "", fmt.Errorf("deleting from original table for dedup: %w", err)
+			return loadTableResponse{}, fmt.Errorf("deleting from original table for dedup: %w", err)
 		}
 		if rowsAffected, err = result.RowsAffected(); err != nil {
 			stage = deleteDedup
-			return "", fmt.Errorf("getting rows affected for dedup: %w", err)
+			return loadTableResponse{}, fmt.Errorf("getting rows affected for dedup: %w", err)
 		}
 
 		lt.Stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
@@ -347,11 +352,11 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	err = diagnostic.TxnExecute(ctx, txn, tableName, query)
 	if err != nil {
 		stage = insertDedup
-		return "", fmt.Errorf("inserting into original table: %w", err)
+		return loadTableResponse{}, fmt.Errorf("inserting into original table: %w", err)
 	}
 	if err = txn.Commit(); err != nil {
 		stage = dedupStage
-		return "", fmt.Errorf("commit transaction: %w", err)
+		return loadTableResponse{}, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	lt.Logger.Infow("completed loading",
@@ -364,23 +369,21 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
 	)
-	return stagingTableName, nil
+
+	response := loadTableResponse{
+		stagingTableName: stagingTableName,
+		txn:              txn,
+	}
+	return response, nil
 }
 
 func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse model.TableSchema) map[string]error {
 	var (
-		err                        error
-		query                      string
-		identifiesStagingTableName string
-		txn                        *sql.Tx
+		err                     error
+		query                   string
+		identifiesTableResponse loadTableResponse
+		txn                     *sql.Tx
 	)
-
-	query = fmt.Sprintf(`SET search_path TO %q`, lut.Namespace)
-	if _, err = lut.DB.ExecContext(ctx, query); err != nil {
-		return map[string]error{
-			warehouseutils.IdentifiesTable: fmt.Errorf("setting search path: %w", err),
-		}
-	}
 
 	lut.Logger.Infow("started loading for identifies and users tables",
 		logfield.SourceID, lut.Warehouse.Source.ID,
@@ -408,11 +411,14 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		Warehouse: lut.Warehouse,
 	}
 
-	if identifiesStagingTableName, err = lt.Load(ctx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload); err != nil {
+	if identifiesTableResponse, err = lt.Load(ctx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload); err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err),
 		}
 	}
+
+	identifiesStagingTableName := identifiesTableResponse.stagingTableName
+	txn = identifiesTableResponse.txn
 
 	if len(usersSchemaInUpload) == 0 {
 		return map[string]error{
@@ -448,14 +454,6 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 
 		userColNames, firstValProps []string
 	)
-
-	txn, err = lut.DB.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return map[string]error{
-			warehouseutils.IdentifiesTable: nil,
-			warehouseutils.UsersTable:      fmt.Errorf("beginning transaction: %w", err),
-		}
-	}
 
 	defer func() {
 		if err != nil {
