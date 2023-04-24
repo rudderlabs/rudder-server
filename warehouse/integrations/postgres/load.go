@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
@@ -42,7 +43,7 @@ const (
 
 type LoadTable struct {
 	Logger             logger.Logger
-	DB                 *sql.DB
+	DB                 *sqlmiddleware.DB
 	Namespace          string
 	Warehouse          *model.Warehouse
 	Stats              stats.Stats
@@ -52,7 +53,7 @@ type LoadTable struct {
 
 type LoadUsersTable struct {
 	Logger             logger.Logger
-	DB                 *sql.DB
+	DB                 *sqlmiddleware.DB
 	Namespace          string
 	Warehouse          *model.Warehouse
 	Stats              stats.Stats
