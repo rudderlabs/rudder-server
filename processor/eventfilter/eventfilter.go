@@ -195,9 +195,14 @@ Example:
 */
 func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterParams) (bool, *transformer.TransformerResponseT) {
 	destination := connectionModeFilterParams.Destination
-	srcType := connectionModeFilterParams.SrcType
+	srcType := strings.TrimSpace(connectionModeFilterParams.SrcType)
 	messageType := connectionModeFilterParams.Event.MessageType
 	evaluatedDefaultBehaviour := connectionModeFilterParams.DefaultBehaviour
+
+	if srcType == "" {
+		pkgLogger.Debug("sourceType is empty string, filtering event based on default behaviour")
+		return evaluatedDefaultBehaviour, nil
+	}
 
 	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
 	if destConnModeI == nil {
@@ -217,7 +222,7 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 	}
 	eventProperties, isOk := sourceEventPropertiesI.(map[string]interface{})
 
-	if len(eventProperties) == 0 || !isOk {
+	if !isOk || len(eventProperties) == 0 {
 		pkgLogger.Debugf("'%v.%v' is not correctly defined", hybridModeEventsFilterKey, srcType)
 		return evaluatedDefaultBehaviour, nil
 	}
