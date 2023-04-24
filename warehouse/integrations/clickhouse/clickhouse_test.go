@@ -266,7 +266,12 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Setenv("RUDDER_WAREHOUSE_CLICKHOUSE_S3_ENGINE_ENABLED_WORKSPACE_IDS", tc.s3EngineEnabledWorkspaceIDs)
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
+					{
+						Key:   "Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs",
+						Value: tc.s3EngineEnabledWorkspaceIDs,
+					},
+				})
 
 				ts := testhelper.WareHouseTest{
 					Schema:             "rudderdb",

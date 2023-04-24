@@ -202,24 +202,22 @@ func TestIntegration(t *testing.T) {
 		})
 
 		testcase := []struct {
-			name                                string
-			schema                              string
-			writeKey                            string
-			sourceID                            string
-			destinationID                       string
-			messageID                           string
-			eventsMap                           testhelper.EventsCountMap
-			stagingFilesEventsMap               testhelper.EventsCountMap
-			stagingFilesModifiedEventsMap       testhelper.EventsCountMap
-			loadFilesEventsMap                  testhelper.EventsCountMap
-			tableUploadsEventsMap               testhelper.EventsCountMap
-			warehouseEventsMap                  testhelper.EventsCountMap
-			asyncJob                            bool
-			skipModifiedEvents                  bool
-			prerequisite                        func(t testing.TB)
-			tables                              []string
-			isDedupEnabled                      bool
-			customPartitionsEnabledWorkspaceIDs string
+			name                          string
+			schema                        string
+			writeKey                      string
+			sourceID                      string
+			destinationID                 string
+			messageID                     string
+			eventsMap                     testhelper.EventsCountMap
+			stagingFilesEventsMap         testhelper.EventsCountMap
+			stagingFilesModifiedEventsMap testhelper.EventsCountMap
+			loadFilesEventsMap            testhelper.EventsCountMap
+			tableUploadsEventsMap         testhelper.EventsCountMap
+			warehouseEventsMap            testhelper.EventsCountMap
+			asyncJob                      bool
+			skipModifiedEvents            bool
+			prerequisite                  func(t testing.TB)
+			tables                        []string
 		}{
 			{
 				name:                          "Merge mode",
@@ -234,11 +232,17 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:            loadFilesEventsMap(),
 				tableUploadsEventsMap:         tableUploadsEventsMap(),
 				warehouseEventsMap:            mergeEventsMap(),
-				isDedupEnabled:                true,
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
 					_ = db.Dataset(schema).DeleteWithContents(context.TODO())
+
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.bigquery.isDedupEnabled",
+							Value: true,
+						},
+					})
 				},
 			},
 			{
@@ -259,11 +263,17 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				asyncJob:              true,
-				isDedupEnabled:        false,
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
 					_ = db.Dataset(schema).DeleteWithContents(context.TODO())
+
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.bigquery.isDedupEnabled",
+							Value: false,
+						},
+					})
 				},
 			},
 			{
@@ -280,29 +290,33 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap:         tableUploadsEventsMap(),
 				warehouseEventsMap:            appendEventsMap(),
 				skipModifiedEvents:            true,
-				isDedupEnabled:                false,
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
 					_ = db.Dataset(schema).DeleteWithContents(context.TODO())
+
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.bigquery.isDedupEnabled",
+							Value: false,
+						},
+					})
 				},
 			},
 			{
-				name:                                "Append mode with custom partition",
-				schema:                              schema,
-				tables:                              []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:                            "J77aX7tLFJ84qYU6UrN8ctecwZt",
-				sourceID:                            "24p1HhPk09FW25Kuzxv7GshCLKR",
-				destinationID:                       "26Bgm9FrQDZjvadSwAlpd35atwn",
-				messageID:                           misc.FastUUID().String(),
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				isDedupEnabled:                      false,
-				customPartitionsEnabledWorkspaceIDs: "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+				name:                          "Append mode with custom partition",
+				schema:                        schema,
+				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				writeKey:                      "J77aX7tLFJ84qYU6UrN8ctecwZt",
+				sourceID:                      "24p1HhPk09FW25Kuzxv7GshCLKR",
+				destinationID:                 "26Bgm9FrQDZjvadSwAlpd35atwn",
+				messageID:                     misc.FastUUID().String(),
+				stagingFilesEventsMap:         stagingFilesEventsMap(),
+				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
+				loadFilesEventsMap:            loadFilesEventsMap(),
+				tableUploadsEventsMap:         tableUploadsEventsMap(),
+				warehouseEventsMap:            appendEventsMap(),
+				skipModifiedEvents:            true,
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
@@ -326,6 +340,17 @@ func TestIntegration(t *testing.T) {
 						},
 					)
 					require.NoError(t, err)
+
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.bigquery.isDedupEnabled",
+							Value: false,
+						},
+						{
+							Key:   "Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs",
+							Value: []string{"BpLnfgDsc2WD8F2qNfHK5a84jjJ"},
+						},
+					})
 				},
 			},
 		}
@@ -334,9 +359,6 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Setenv("RUDDER_WAREHOUSE_BIGQUERY_IS_DEDUP_ENABLED", strconv.FormatBool(tc.isDedupEnabled))
-				t.Setenv("RUDDER_WAREHOUSE_BIGQUERY_CUSTOM_PARTITIONS_ENABLED_WORKSPACE_IDS", tc.customPartitionsEnabledWorkspaceIDs)
-
 				ts := testhelper.WareHouseTest{
 					Schema:                tc.schema,
 					WriteKey:              tc.writeKey,
