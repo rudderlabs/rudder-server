@@ -25,7 +25,6 @@ import (
 
 var (
 	errorStashEnabled       bool
-	errReadLoopSleep        time.Duration
 	errDBReadBatchSize      int
 	noOfErrStashWorkers     int
 	maxFailedCountForErrJob int
@@ -40,8 +39,7 @@ func Init() {
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
-	config.RegisterDurationConfigVariable(5, &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
-	config.RegisterIntConfigVariable(10000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
+	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
 	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
 	config.RegisterIntConfigVariable(3, &maxFailedCountForErrJob, true, 1, "Processor.maxFailedCountForErrJob")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &payloadLimit, true, 1, "Processor.payloadLimit")
@@ -305,11 +303,13 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 	st.logger.Info("Processor errors stash loop started")
 
 	for {
+		var sleepTime time.Duration
+		var limitReached bool
 		select {
 		case <-ctx.Done():
 			close(st.errProcessQ)
 			return
-		case <-time.After(errReadLoopSleep):
+		case <-time.After(sleepTime):
 			start := time.Now()
 
 			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
@@ -328,6 +328,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			}
 
 			combinedList := toRetry.Jobs
+			limitReached = toRetry.LimitsReached
 			if !toRetry.LimitsReached {
 				queryParams.JobsLimit -= len(toRetry.Jobs)
 				if queryParams.PayloadSizeLimit > 0 {
@@ -341,6 +342,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					panic(err)
 				}
 				combinedList = append(combinedList, unprocessed.Jobs...)
+				limitReached = unprocessed.LimitsReached
 			}
 
 			st.statErrDBR.Since(start)
@@ -401,5 +403,13 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				st.errProcessQ <- filteredJobList
 			}
 		}
+		sleepTime = st.calculateSleepTime(limitReached)
 	}
+}
+
+func (st *HandleT) calculateSleepTime(limitReached bool) time.Duration {
+	if limitReached {
+		return config.GetDuration("Processor.errReadLoopSleep", 30, time.Second)
+	}
+	return time.Duration(0)
 }
