@@ -116,7 +116,7 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 	var statuses []*jobsdb.JobStatusT
 	for _, job := range jobs {
 		statuses = append(statuses, &jobsdb.JobStatusT{
-			JobID:         job.JobID,
+			Job:           job,
 			JobState:      jobsdb.Succeeded.State,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),

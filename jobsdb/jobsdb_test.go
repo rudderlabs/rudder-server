@@ -1386,7 +1386,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.NoError(t, err)
 	statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
 		return &JobStatusT{
-			JobID:       job.JobID,
+			Job:         job,
 			JobState:    Succeeded.State,
 			AttemptNum:  1,
 			WorkspaceId: "workspace",

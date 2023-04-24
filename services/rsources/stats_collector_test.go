@@ -303,7 +303,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 								}).
 							Times(1)
 
-						failedRecords := []json.RawMessage{}
+						var failedRecords []json.RawMessage
 						for i := 0; i < len(jobs)/2; i++ {
 							failedRecords = append(failedRecords, []byte(`"recordId"`))
 						}
@@ -361,7 +361,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						}).
 					Times(1)
 
-				failedRecords := []json.RawMessage{}
+				var failedRecords []json.RawMessage
 				for i := 0; i < len(jobs); i++ {
 					failedRecords = append(failedRecords, []byte(`"recordId"`))
 				}

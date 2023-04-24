@@ -116,7 +116,7 @@ func (jf *JobsForwarder) Start() error {
 							mu.Lock()
 							jobDone(job)
 							statuses = append(statuses, &jobsdb.JobStatusT{
-								JobID:         job.JobID,
+								Job:           job,
 								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 								JobState:      jobsdb.Aborted.State,
 								ExecTime:      time.Now(),
@@ -142,7 +142,7 @@ func (jf *JobsForwarder) Start() error {
 									defer mu.Unlock()
 									jobDone(job)
 									statuses = append(statuses, &jobsdb.JobStatusT{
-										JobID:         job.JobID,
+										Job:           job,
 										AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 										JobState:      jobsdb.Succeeded.State,
 										ExecTime:      time.Now(),
@@ -172,7 +172,7 @@ func (jf *JobsForwarder) Start() error {
 				if err = backoff.Retry(tryForwardJobs, backoff.WithContext(expB, ctx)); err != nil {
 					for _, job := range toRetry { // mark all to retry jobs as aborted
 						statuses = append(statuses, &jobsdb.JobStatusT{
-							JobID:         job.JobID,
+							Job:           job,
 							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 							JobState:      jobsdb.Aborted.State,
 							ExecTime:      time.Now(),

@@ -49,7 +49,7 @@ func (nf *AbortingForwarder) Start() error {
 				var statusList []*jobsdb.JobStatusT
 				for _, job := range jobList {
 					statusList = append(statusList, &jobsdb.JobStatusT{
-						JobID:         job.JobID,
+						Job:           job,
 						JobState:      jobsdb.Aborted.State,
 						AttemptNum:    0,
 						ExecTime:      time.Now(),

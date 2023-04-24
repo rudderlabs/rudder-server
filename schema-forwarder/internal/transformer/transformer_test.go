@@ -151,7 +151,7 @@ func generateTestJob(t *testing.T, time time.Time) *jobsdb.JobT {
 		CustomVal:     "event-schema",
 		EventCount:    1,
 		PayloadSize:   100,
-		LastJobStatus: jobsdb.JobStatusT{},
+		LastJobStatus: jobsdb.LastStateT{},
 		WorkspaceId:   testdata.SampleWorkspaceID,
 		Parameters:    []byte(`{"source_id": "enabled-source"}`),
 	}

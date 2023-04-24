@@ -13,28 +13,32 @@ func main() {
 
 	pool, err := pgxpool.New(context.Background(), misc.GetConnectionString())
 	if err != nil {
-		log.Fatal("Unable to connect to database:", err)
+		log.Error("Unable to connect to database:", err)
+		return
 	}
 	defer pool.Close()
 	log.Info("acquired connection pool")
 
 	conn, err := pool.Acquire(context.Background())
 	if err != nil {
-		log.Fatal("Error acquiring connection:", err)
+		log.Error("Error acquiring connection:", err)
+		return
 	}
 	defer conn.Release()
 	log.Info("acquired connection")
 
 	_, err = conn.Exec(context.Background(), "listen counts")
 	if err != nil {
-		log.Fatal("Error listening to counts channel:", err)
+		log.Error("Error listening to counts channel:", err)
+		return
 	}
 	log.Info("listening on counts channel...")
 
 	for {
 		notification, err := conn.Conn().WaitForNotification(context.Background())
 		if err != nil {
-			log.Fatal("Error waiting for notification:", err)
+			log.Error("Error waiting for notification:", err)
+			return
 		}
 
 		log.Info("PID:", notification.PID, "Channel:", notification.Channel, "Payload:", notification.Payload)

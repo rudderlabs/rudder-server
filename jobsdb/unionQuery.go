@@ -13,6 +13,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
+	"github.com/samber/lo"
 )
 
 type MultiTenantHandleT struct {
@@ -283,15 +284,44 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(pickup map[string]*workspacePi
 	queryInitial := mj.getInitialSingleWorkspaceQueryString(ds, conditions, pickup)
 
 	for workspace, wp := range pickup {
-		count := wp.Limit
-		if mj.noResultsCache.Get(ds.Index, workspace, conditions.CustomValFilters, conditions.StateFilters, conditions.ParameterFilters) {
-			continue
-		}
-		if count <= 0 {
+		if wp.Limit <= 0 {
 			mj.logger.Errorf("workspaceCount <= 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", wp, workspace)
 			continue
 		}
-		queries = append(queries, mj.getSingleWorkspaceQueryString(workspace, wp.Limit, wp.PayloadLimit, wp.AfterJobID))
+		if !checkIfJobsExist(
+			mj.tablePrefix,
+			ds.Index,
+			workspace,
+			conditions.CustomValFilters,
+			lo.FilterMap(
+				conditions.ParameterFilters,
+				func(param ParameterFilterT, _ int) (string, bool) {
+					if param.Name == "source_id" {
+						return param.Value, true
+					}
+					return "", false
+				}),
+			lo.FilterMap(
+				conditions.ParameterFilters,
+				func(param ParameterFilterT, _ int) (string, bool) {
+					if param.Name == "destination_id" {
+						return param.Value, true
+					}
+					return "", false
+				}),
+			conditions.StateFilters,
+		) {
+			continue
+		}
+		queries = append(
+			queries,
+			mj.getSingleWorkspaceQueryString(
+				workspace,
+				wp.Limit,
+				wp.PayloadLimit,
+				wp.AfterJobID,
+			),
+		)
 		workspacesToQuery = append(workspacesToQuery, workspace)
 	}
 

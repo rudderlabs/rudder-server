@@ -322,7 +322,15 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 				return false
 			}
 			return true
-		}, 30*time.Second, 1*time.Second, fmt.Errorf("less than 3 backup files found in backup store for workspace:%s. Error: %w ", workspace, err))
+		},
+			30*time.Second,
+			1*time.Second,
+			fmt.Errorf(
+				"less than 3 backup files found in backup store for workspace:%s. Error: %w ",
+				workspace,
+				err,
+			),
+		)
 		t.Log("file list: ", file, " err: ", err)
 
 		var jobStatusBackupFilename, jobsBackupFilename, abortedJobsBackupFilename string
@@ -348,8 +356,18 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		abortedJobs, abortedStatus := tc.getJobsFromAbortedJobs(t, f)
 		require.NotZero(t, len(abortedJobs))
 		require.NotZero(t, len(abortedStatus))
-		require.Equal(t, jobsByWorkspace[workspace], abortedJobs, "expected jobs to be same in case of only aborted backup")
-		require.Equal(t, jobStatusByWorkspace[workspace], abortedStatus, "expected status to be same in case of only aborted backup")
+		require.Equal(
+			t,
+			jobsByWorkspace[workspace],
+			abortedJobs,
+			"expected jobs to be same in case of only aborted backup",
+		)
+		require.Equal(
+			t,
+			jobStatusByWorkspace[workspace],
+			abortedStatus,
+			"expected status to be same in case of only aborted backup",
+		)
 
 		// Verify full backup of job statuses
 		f = tc.downloadFile(t, fm, jobStatusBackupFilename, cleanup)
@@ -502,7 +520,13 @@ func (*backupTestCase) getJobsFromAbortedJobs(t *testing.T, file *os.File) ([]*J
 		jobs = append(jobs, job)
 
 		jobStatus := &JobStatusT{
-			Job:           &JobT{JobID: gjson.GetBytes(lineByte, "job_id").Int()},
+			Job: &JobT{
+				JobID: gjson.GetBytes(lineByte, "job_id").Int(),
+				LastJobStatus: LastStateT{
+					JobState:   gjson.GetBytes(lineByte, "job_state").String(),
+					AttemptNum: int(gjson.GetBytes(lineByte, "attempt").Int()),
+				},
+			},
 			JobState:      gjson.GetBytes(lineByte, "job_state").String(),
 			AttemptNum:    int(gjson.GetBytes(lineByte, "attempt").Int()),
 			ErrorCode:     gjson.GetBytes(lineByte, "error_code").String(),
@@ -568,6 +592,10 @@ func (*backupTestCase) readGzipJobFile(filename string) ([]*JobT, error) {
 			EventCount:   int(gjson.GetBytes(lineByte, "event_count").Int()),
 			WorkspaceId:  gjson.GetBytes(lineByte, "workspace_id").String(),
 			EventPayload: []byte(gjson.GetBytes(lineByte, "event_payload").String()),
+			LastJobStatus: LastStateT{
+				JobState:   gjson.GetBytes(lineByte, "job_state").String(),
+				AttemptNum: int(gjson.GetBytes(lineByte, "attempt").Int()),
+			},
 		}
 		jobs = append(jobs, job)
 	}
@@ -598,7 +626,13 @@ func (*backupTestCase) readGzipStatusFile(fileName string) ([]*JobStatusT, error
 	for sc.Scan() {
 		lineByte := sc.Bytes()
 		jobStatus := &JobStatusT{
-			Job:           &JobT{JobID: gjson.GetBytes(lineByte, "job_id").Int()},
+			Job: &JobT{
+				JobID: gjson.GetBytes(lineByte, "job_id").Int(),
+				LastJobStatus: LastStateT{
+					JobState:   gjson.GetBytes(lineByte, "job_state").String(),
+					AttemptNum: int(gjson.GetBytes(lineByte, "attempt").Int()),
+				},
+			},
 			JobState:      gjson.GetBytes(lineByte, "job_state").String(),
 			AttemptNum:    int(gjson.GetBytes(lineByte, "attempt").Int()),
 			ErrorCode:     gjson.GetBytes(lineByte, "error_code").String(),
@@ -639,7 +673,7 @@ func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *Tx, ds dataSetT, sta
 		return nil
 	}
 	tags := statTags{CustomValFilters: customValFilters, ParameterFilters: nil}
-	_, err = jd.updateJobStatusDSInTx(ctx, tx, ds, statusList, tags)
+	err = jd.updateJobStatusDSInTx(ctx, tx, ds, statusList, tags)
 	if err != nil {
 		return err
 	}
@@ -663,6 +697,20 @@ func (jd *HandleT) copyJobsDS(tx *Tx, ds dataSetT, jobList []*JobT) error { // W
 
 	tx.AddSuccessListener(func() {
 		jd.invalidateCacheForJobs(ds, jobList)
+		for _, job := range jobList {
+			increaseCount(
+				cacheSubject{
+					tablePrefix:   jd.tablePrefix,
+					dsIndex:       ds.Index,
+					workspaceID:   job.WorkspaceId,
+					customVal:     job.CustomVal,
+					sourceID:      job.SourceID,
+					destinationID: job.DestinationID,
+					jobState:      NotProcessed.State,
+				},
+				1,
+			)
+		}
 	})
 	return jd.copyJobsDSInTx(tx, ds, jobList)
 }

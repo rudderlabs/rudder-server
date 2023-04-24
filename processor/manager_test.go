@@ -143,6 +143,7 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 			UUID:         uuid.New(),
 			CustomVal:    customVal,
 			EventCount:   eventsPerJob,
+			SourceID:     "sourceID",
 		}
 	}
 	return js

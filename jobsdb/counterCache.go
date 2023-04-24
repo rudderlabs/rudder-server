@@ -297,7 +297,7 @@ func postMigrationCounterUpdate(oldDSIndex, newDSIndex, tablePrefix string) {
 			instance.MustGetGauge(sub).Sub(float64(count))
 		}
 	}
-	for _, state := range validNonTerminalStates {
+	for _, state := range append(validNonTerminalStates, NotProcessed.State) {
 		clearedNonTerminalCountsMap := removeState(oldDSIndex, tablePrefix, state)
 		for sub, count := range clearedNonTerminalCountsMap {
 			// clear Old DS wildcard state
@@ -339,22 +339,22 @@ func removeState(dsIndex, tablePrefix, jobState string) map[cacheSubject]int {
 // TODO
 //
 // ignore MinDSRetentionPeriod, MaxDSRetentionPeriod?
-func checkIfMigrateDS(dsIndex, tablePrefix string) bool {
-	allJobsCount := getJobCount(cacheSubject{
-		tablePrefix: tablePrefix,
-		dsIndex:     dsIndex,
-	})
-	if allJobsCount == 0 {
-		return false
-	}
-	var terminalJobsCount int
-	for _, state := range validTerminalStates {
-		terminalJobsCount += getJobCount(cacheSubject{
-			tablePrefix: tablePrefix,
-			dsIndex:     dsIndex,
-			jobState:    state,
-		})
-	}
-	// TODO
-	return false
-}
+// func checkIfMigrateDS(dsIndex, tablePrefix string) bool {
+// 	allJobsCount := getJobCount(cacheSubject{
+// 		tablePrefix: tablePrefix,
+// 		dsIndex:     dsIndex,
+// 	})
+// 	if allJobsCount == 0 {
+// 		return false
+// 	}
+// 	var terminalJobsCount int
+// 	for _, state := range validTerminalStates {
+// 		terminalJobsCount += getJobCount(cacheSubject{
+// 			tablePrefix: tablePrefix,
+// 			dsIndex:     dsIndex,
+// 			jobState:    state,
+// 		})
+// 	}
+// 	// TODO
+// 	return false
+// }
