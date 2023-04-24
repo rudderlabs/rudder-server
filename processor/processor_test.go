@@ -2719,7 +2719,8 @@ var _ = Describe("Static Function Tests", func() {
 			Expect(response).To(Equal(expectedResponse))
 		})
 
-		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web.messageType is a string, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
+		// source-type(in sourceDefinition) is empty string
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web.messageType supports track only but sourceType is coming up as empty string, should filter out all the events with event.type not in supportedMessageTypes", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				Config: map[string]interface{}{
@@ -2746,7 +2747,7 @@ var _ = Describe("Static Function Tests", func() {
 						},
 						"hybridModeCloudEventsFilter": map[string]interface{}{
 							"web": map[string]interface{}{
-								"messageType": "someString",
+								"messageType": []interface{}{"track"},
 							},
 						},
 					},
@@ -2757,7 +2758,7 @@ var _ = Describe("Static Function Tests", func() {
 				{
 					Metadata: transformer.MetadataT{
 						MessageID:            "message-1",
-						SourceDefinitionType: "web",
+						SourceDefinitionType: "",
 					},
 					Message: map[string]interface{}{
 						"type":  "track",
@@ -2768,10 +2769,10 @@ var _ = Describe("Static Function Tests", func() {
 				{
 					Metadata: transformer.MetadataT{
 						MessageID:            "message-2",
-						SourceDefinitionType: "web",
+						SourceDefinitionType: "",
 					},
 					Message: map[string]interface{}{
-						"type":  "track",
+						"type":  "group",
 						"event": "Credit Card Added",
 					},
 					Destination: destinationConfig,
@@ -2779,7 +2780,7 @@ var _ = Describe("Static Function Tests", func() {
 				{
 					Metadata: transformer.MetadataT{
 						MessageID:            "message-2",
-						SourceDefinitionType: "web",
+						SourceDefinitionType: "",
 					},
 					Message: map[string]interface{}{
 						"type":  "screen",
