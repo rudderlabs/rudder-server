@@ -67,7 +67,7 @@ type componentSchema struct {
 	Features []string `json:"features"`
 }
 
-type SSHKey struct {
+type SSHKeyPair struct {
 	PublicKey  string
 	PrivateKey string
 }
@@ -111,40 +111,37 @@ func (c *Client) retry(ctx context.Context, fn func() error) error {
 	return backoff.Retry(fn, opts)
 }
 
-func (c *Client) GetDestinationSSHKeys(ctx context.Context, destinationID string) (SSHKey, error) {
-	url := fmt.Sprintf("%s/destinations/%s/sshKeys", c.url, destinationID)
+func (c *Client) GetDestinationSSHKeyPair(ctx context.Context, destID string) (kp SSHKeyPair, err error) {
+	endpoint := fmt.Sprintf("%s/destinations/%s/sshKeys", c.url, destID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		return kp, fmt.Errorf("cannot create request to get ssh key pair: %w", err)
+	}
 
-	var sshKey SSHKey
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", c.ua)
+	req.SetBasicAuth(c.identity.BasicAuth())
 
-	err := c.retry(ctx, func() error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
-		if err != nil {
-			return fmt.Errorf("creating new request with ctx: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", c.ua)
-		req.SetBasicAuth(c.identity.BasicAuth())
-
+	err = c.retry(ctx, func() error {
 		resp, err := c.client.Do(req)
 		if err != nil {
-			return fmt.Errorf("making request: %w", err)
+			return fmt.Errorf("cannot make request to get ssh key pair: %w", err)
 		}
 
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			return fmt.Errorf("unexpected status code while getting ssh key pair: %d", resp.StatusCode)
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&sshKey); err != nil {
-			return fmt.Errorf("decoding response: %w", err)
+		if err := json.NewDecoder(resp.Body).Decode(&kp); err != nil {
+			return fmt.Errorf("cannot decode ssh key pair response: %w", err)
 		}
 
 		return nil
 	})
 
-	return sshKey, err
+	return
 }
 
 func (c *Client) SendFeatures(ctx context.Context, component string, features []string) error {
