@@ -301,17 +301,15 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 
 func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 	st.logger.Info("Processor errors stash loop started")
-
+	var sleepTime time.Duration
 	for {
-		var limitReached bool
-		sleepTime := st.calculateSleepTime(limitReached)
 		select {
 		case <-ctx.Done():
 			close(st.errProcessQ)
 			return
 		case <-time.After(sleepTime):
 			start := time.Now()
-
+			var limitReached bool
 			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
 				CustomValFilters:              []string{""},
@@ -344,7 +342,6 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				combinedList = append(combinedList, unprocessed.Jobs...)
 				limitReached = unprocessed.LimitsReached
 			}
-
 			st.statErrDBR.Since(start)
 
 			if len(combinedList) == 0 {
@@ -402,6 +399,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			if canUpload && len(filteredJobList) > 0 {
 				st.errProcessQ <- filteredJobList
 			}
+			sleepTime = st.calculateSleepTime(limitReached)
 		}
 	}
 }
