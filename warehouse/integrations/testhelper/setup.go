@@ -23,7 +23,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	_ "github.com/lib/pq"
-	"github.com/rudderlabs/rudder-go-kit/config"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/stretchr/testify/require"
@@ -42,13 +41,6 @@ const (
 	RedshiftIntegrationTestCredentials      = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
 	DeltalakeIntegrationTestCredentials     = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
 	BigqueryIntegrationTestCredentials      = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
-)
-
-const (
-	SnowflakeIntegrationTestSchema = "SNOWFLAKE_INTEGRATION_TEST_SCHEMA"
-	RedshiftIntegrationTestSchema  = "REDSHIFT_INTEGRATION_TEST_SCHEMA"
-	DeltalakeIntegrationTestSchema = "DATABRICKS_INTEGRATION_TEST_SCHEMA"
-	BigqueryIntegrationTestSchema  = "BIGQUERY_INTEGRATION_TEST_SCHEMA"
 )
 
 type EventsCountMap map[string]int
@@ -686,14 +678,12 @@ func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 	require.NoError(t, err)
 }
 
-func Schema(provider, schemaKey string) string {
-	return warehouseutils.ToProviderCase(
-		provider,
-		warehouseutils.ToSafeNamespace(
-			provider,
-			config.MustGetString(schemaKey),
-		),
-	)
+func RandSchema(provider string) string {
+	hex := warehouseutils.RandHex()
+	namespace := fmt.Sprintf("test_%s_%d", hex, time.Now().Unix())
+	return warehouseutils.ToProviderCase(provider, warehouseutils.ToSafeNamespace(provider,
+		namespace,
+	))
 }
 
 func CreateTempFile(t testing.TB, templatePath string, values map[string]string) string {

@@ -90,7 +90,7 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	schema := testhelper.Schema(warehouseutils.BQ, testhelper.BigqueryIntegrationTestSchema)
+	schema := testhelper.RandSchema(warehouseutils.BQ)
 	sourcesSchema := fmt.Sprintf("%s_%s", schema, "sources")
 
 	bqTestCredentials, err := getBQTestCredentials()

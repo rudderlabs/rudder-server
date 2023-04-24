@@ -100,7 +100,7 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	schema := testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema)
+	schema := testhelper.RandSchema(warehouseutils.SNOWFLAKE)
 	roleSchema := fmt.Sprintf("%s_%s", schema, "ROLE")
 	sourcesSchema := fmt.Sprintf("%s_%s", schema, "SOURCES")
 	caseSensitiveSchema := fmt.Sprintf("%s_%s", schema, "CS")

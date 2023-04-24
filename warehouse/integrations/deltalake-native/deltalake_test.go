@@ -91,7 +91,7 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	schema := testhelper.Schema(warehouseutils.BQ, testhelper.DeltalakeIntegrationTestSchema)
+	schema := testhelper.RandSchema(warehouseutils.DELTALAKE)
 	nativeSchema := fmt.Sprintf("%s_%s", schema, "native")
 
 	deltaLakeCredentials, err := getDeltaLakeTestCredentials()

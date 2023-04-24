@@ -96,7 +96,7 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	schema := testhelper.Schema(warehouseutils.BQ, testhelper.RedshiftIntegrationTestSchema)
+	schema := testhelper.RandSchema(warehouseutils.RS)
 	sourcesSchema := fmt.Sprintf("%s_%s", schema, "sources")
 
 	rsTestCredentials, err := getRSTestCredentials()
