@@ -53,10 +53,7 @@ const (
 	partitionField = "received_at"
 )
 
-var (
-	pkgLogger                    logger.Logger
-	clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
-)
+var clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 // clickhouse doesn't support bool, they recommend to use Uint8 and set 1,0
 var rudderDataTypesMapToClickHouse = map[string]string{
@@ -216,10 +213,6 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 	}
 }
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
-}
-
 // ConnectToClickhouse connects to clickhouse with provided credentials
 func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
 	dsn := url.URL{
@@ -261,9 +254,9 @@ func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool
 	return db, nil
 }
 
-func NewClickhouse() *Clickhouse {
+func New() *Clickhouse {
 	return &Clickhouse{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("clickhouse"),
 	}
 }
 
@@ -287,7 +280,7 @@ registerTLSConfig will create a global map, use different names for the differen
 clickhouse will access the config by mentioning the key in connection string
 */
 func registerTLSConfig(key, certificate string) {
-	tlsConfig := &tls.Config{}
+	tlsConfig := &tls.Config{} // skipcq: GO-S1020
 	caCert := []byte(certificate)
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
@@ -323,7 +316,7 @@ func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns model.Table
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := ch.getClickHouseCodecForColumnType(dataType, tableName)
-		columnType := ch.getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.Contains(notNullableColumns, columnName))
+		columnType := ch.getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], slices.Contains(notNullableColumns, columnName))
 		arr = append(arr, fmt.Sprintf(`%q %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr, ",")
@@ -925,23 +918,13 @@ func (*Clickhouse) AlterColumn(_, _, _ string) (model.AlterTableResponse, error)
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection
-func (ch *Clickhouse) TestConnection(warehouse model.Warehouse) (err error) {
-	ch.Warehouse = warehouse
-	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
-	if err != nil {
-		return
-	}
-	defer ch.DB.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), ch.ConnectTimeout)
-	defer cancel()
-
-	err = ch.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", ch.ConnectTimeout/time.Second)
+func (ch *Clickhouse) TestConnection(ctx context.Context, _ model.Warehouse) error {
+	err := ch.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
@@ -959,9 +942,7 @@ func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.U
 	return err
 }
 
-func (*Clickhouse) CrashRecover(_ model.Warehouse) (err error) {
-	return
-}
+func (*Clickhouse) CrashRecover() {}
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
 func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
@@ -1155,6 +1136,6 @@ func (ch *Clickhouse) SetConnectionTimeout(timeout time.Duration) {
 	ch.ConnectTimeout = timeout
 }
 
-func (ch *Clickhouse) ErrorMappings() []model.JobError {
+func (*Clickhouse) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

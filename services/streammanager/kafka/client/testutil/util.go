@@ -97,7 +97,7 @@ func (c *Client) CreateTopic(ctx context.Context, topic string, numPartitions, r
 	}()
 
 	go func() { // doing it asynchronously because controllerConn.CreateTopics() does not honour the context
-		errors <- conn.CreateTopics(kafka.TopicConfig{
+		errors <- controllerConn.CreateTopics(kafka.TopicConfig{
 			Topic:             topic,
 			NumPartitions:     numPartitions,
 			ReplicationFactor: replicationFactor,

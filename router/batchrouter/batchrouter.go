@@ -16,22 +16,21 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
+	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
-	"github.com/thoas/go-funk"
-	"golang.org/x/sync/errgroup"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
-	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/warehouse"
-
-	"github.com/google/uuid"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -192,7 +191,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 							brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
-							if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
+							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
 								connIdentifier := connectionIdentifier(DestinationT{Destination: destination, Source: source})
 								warehouseConnIdentifier := brt.warehouseConnectionIdentifier(connIdentifier, source, destination)
 								brt.connectionWHNamespaceMap[connIdentifier] = warehouseConnIdentifier
@@ -202,14 +201,6 @@ func (brt *HandleT) backendConfigSubscriber() {
 									brt.encounteredMergeRuleMap[warehouseConnIdentifier] = make(map[string]bool)
 								}
 								brt.encounteredMergeRuleMapLock.Unlock()
-							}
-
-							if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) {
-								destination := destination
-								rruntime.Go(func() {
-									testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
-									destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-								})
 							}
 						}
 					}
@@ -252,6 +243,7 @@ type AsyncStatusResponse struct {
 	FailedJobsURL  string
 	WarningJobsURL string
 }
+
 type ErrorResponseT struct {
 	Error string
 }
@@ -312,14 +304,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 			for key := range destinationsMap {
 				if IsAsyncDestination(brt.destType) {
 					pkgLogger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
-					parameterFilters := make([]jobsdb.ParameterFilterT, 0)
-					for _, param := range jobsdb.CacheKeyParameterFilters {
-						parameterFilter := jobsdb.ParameterFilterT{
-							Name:  param,
-							Value: key,
-						}
-						parameterFilters = append(parameterFilters, parameterFilter)
-					}
+					parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: key}}
 					job, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 						return brt.jobsDB.GetImporting(
 							ctx,
@@ -400,6 +385,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
+											JobParameters: job.Parameters,
 											WorkspaceId:   job.WorkspaceId,
 										}
 										statusList = append(statusList, &status)
@@ -447,6 +433,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     strconv.Itoa(statusCode),
 												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
+												JobParameters: job.Parameters,
 												WorkspaceId:   job.WorkspaceId,
 											}
 											statusList = append(statusList, status)
@@ -470,7 +457,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									}
 									for _, job := range importingList {
 										jobID := job.JobID
-										if misc.Contains(append(succeededKeys, warningKeys...), jobID) {
+										if slices.Contains(append(succeededKeys, warningKeys...), jobID) {
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
 												JobState:      jobsdb.Succeeded.State,
@@ -479,9 +466,10 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     "200",
 												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
+												JobParameters: job.Parameters,
 												WorkspaceId:   job.WorkspaceId,
 											}
-										} else if misc.Contains(failedKeys, job.JobID) {
+										} else if slices.Contains(failedKeys, job.JobID) {
 											errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
@@ -491,6 +479,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     "",
 												ErrorResponse: errorResp,
 												Parameters:    []byte(`{}`),
+												JobParameters: job.Parameters,
 												WorkspaceId:   job.WorkspaceId,
 											}
 											abortedJobs = append(abortedJobs, job)
@@ -552,6 +541,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
+											JobParameters: job.Parameters,
 											WorkspaceId:   job.WorkspaceId,
 										}
 										statusList = append(statusList, &status)
@@ -568,6 +558,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
+											JobParameters: job.Parameters,
 											WorkspaceId:   job.WorkspaceId,
 										}
 										statusList = append(statusList, &status)
@@ -1120,7 +1111,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		DestinationRevisionID: batchJobs.BatchDestination.Destination.RevisionID,
 	}
 
-	if misc.Contains(warehouseutils.TimeWindowDestinations, brt.destType) {
+	if slices.Contains(warehouseutils.TimeWindowDestinations, brt.destType) {
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
@@ -1249,6 +1240,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			ErrorCode:     "",
 			ErrorResponse: errorResp,
 			Parameters:    []byte(`{}`),
+			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 		}
 		statusList = append(statusList, &status)
@@ -1265,7 +1257,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			workspaceID := job.WorkspaceId
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			if _, ok := connectionDetailsMap[key]; !ok {
-				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory, "", "", "", 0)
 				connectionDetailsMap[key] = cd
 				transformedAtMap[key] = parameters.TransformAt
 			}
@@ -1275,7 +1267,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				if brt.transientSources.Apply(parameters.SourceID) {
 					sampleEvent = []byte(`{}`)
 				}
-				sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), sampleEvent, parameters.EventName, parameters.EventType)
+				sd = types.CreateStatusDetail(jobState, 0, 0, errorCode, string(errorResp), sampleEvent, parameters.EventName, parameters.EventType, "")
 				statusDetailsMap[key] = sd
 			}
 			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
@@ -1396,6 +1388,7 @@ func (brt *HandleT) GetWorkspaceIDForDestID(destID string) string {
 }
 
 func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.AsyncUploadOutput, rsourcesStats rsources.StatsCollector) {
+	jobParameters := []byte(fmt.Sprintf(`{"destination_id": %q}`, asyncOutput.DestinationID)) // TODO: there should be a consistent way of finding the actual job parameters
 	workspace := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var statusList []*jobsdb.JobStatusT
 	if len(asyncOutput.ImportingJobIDs) > 0 {
@@ -1408,6 +1401,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "200",
 				ErrorResponse: []byte(`{}`),
 				Parameters:    asyncOutput.ImportingParameters,
+				JobParameters: jobParameters,
 				WorkspaceId:   workspace,
 			}
 			statusList = append(statusList, &status)
@@ -1423,6 +1417,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "200",
 				ErrorResponse: stdjson.RawMessage(asyncOutput.SuccessResponse),
 				Parameters:    []byte(`{}`),
+				JobParameters: jobParameters,
 				WorkspaceId:   workspace,
 			}
 			statusList = append(statusList, &status)
@@ -1438,6 +1433,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "500",
 				ErrorResponse: stdjson.RawMessage(asyncOutput.FailedReason),
 				Parameters:    []byte(`{}`),
+				JobParameters: jobParameters,
 				WorkspaceId:   workspace,
 			}
 			statusList = append(statusList, &status)
@@ -1453,6 +1449,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "400",
 				ErrorResponse: stdjson.RawMessage(asyncOutput.AbortReason),
 				Parameters:    []byte(`{}`),
+				JobParameters: jobParameters,
 				WorkspaceId:   workspace,
 			}
 			statusList = append(statusList, &status)
@@ -1577,33 +1574,11 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 	}
 }
 
-func (worker *workerT) getValueForParameter(batchDest router_utils.BatchDestinationT, parameter string) string {
-	switch {
-	case parameter == "destination_id":
-		return batchDest.Destination.ID
-	default:
-		panic(fmt.Errorf("BRT: %s: Unknown parameter(%s) to find value from batchDest %+v", worker.brt.destType, parameter, batchDest))
-	}
-}
-
-func (worker *workerT) constructParameterFilters(batchDest router_utils.BatchDestinationT) []jobsdb.ParameterFilterT {
-	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
-	for _, key := range jobsdb.CacheKeyParameterFilters {
-		parameterFilter := jobsdb.ParameterFilterT{
-			Name:  key,
-			Value: worker.getValueForParameter(batchDest, key),
-		}
-		parameterFilters = append(parameterFilters, parameterFilter)
-	}
-
-	return parameterFilters
-}
-
 func (worker *workerT) workerProcess() {
 	brt := worker.brt
 	for batchDestData := range brt.processQ {
 		batchDest := batchDestData.batchDestination
-		parameterFilters := worker.constructParameterFilters(batchDest)
+		parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: batchDest.Destination.ID}}
 		var combinedList []*jobsdb.JobT
 		if readPerDestination {
 			toQuery := worker.brt.jobQueryBatchSize
@@ -1679,6 +1654,7 @@ func (worker *workerT) workerProcess() {
 					ErrorCode:     "",
 					ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 					Parameters:    []byte(`{}`), // check
+					JobParameters: job.Parameters,
 					WorkspaceId:   job.WorkspaceId,
 				}
 				// Enhancing job parameter with the drain reason.
@@ -1694,7 +1670,7 @@ func (worker *workerT) workerProcess() {
 					}
 				}
 				drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
-				if !misc.Contains(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason) {
+				if !slices.Contains(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason) {
 					drainStatsbyDest[batchDest.Destination.ID].Reasons = append(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason)
 				}
 			} else {
@@ -1713,6 +1689,7 @@ func (worker *workerT) workerProcess() {
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{}`), // check
 					Parameters:    []byte(`{}`), // check
+					JobParameters: job.Parameters,
 					WorkspaceId:   job.WorkspaceId,
 				}
 				statusList = append(statusList, &status)
@@ -1771,9 +1748,9 @@ func (worker *workerT) workerProcess() {
 		wg.Add(len(jobsBySource))
 
 		for sourceID, jobs := range jobsBySource {
-			source, ok := funk.Find(batchDest.Sources, func(s backendconfig.SourceT) bool {
+			source, found := lo.Find(batchDest.Sources, func(s backendconfig.SourceT) bool {
 				return s.ID == sourceID
-			}).(backendconfig.SourceT)
+			})
 			batchJobs := BatchJobsT{
 				Jobs: jobs,
 				BatchDestination: &DestinationT{
@@ -1781,7 +1758,7 @@ func (worker *workerT) workerProcess() {
 					Source:      source,
 				},
 			}
-			if !ok {
+			if !found {
 				// TODO: Should not happen. Handle this
 				err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
 				brt.setJobStatus(&batchJobs, false, err, false)
@@ -1790,7 +1767,7 @@ func (worker *workerT) workerProcess() {
 			}
 			rruntime.Go(func() {
 				switch {
-				case misc.Contains(objectStorageDestinations, brt.destType):
+				case slices.Contains(objectStorageDestinations, brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStart := time.Now()
 					output := brt.copyJobsToStorage(brt.destType, &batchJobs, false)
@@ -1805,7 +1782,7 @@ func (worker *workerT) workerProcess() {
 					}
 
 					destUploadStat.Since(destUploadStart)
-				case misc.Contains(warehouseutils.WarehouseDestinations, brt.destType):
+				case slices.Contains(warehouseutils.WarehouseDestinations, brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
@@ -1827,7 +1804,7 @@ func (worker *workerT) workerProcess() {
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 					}
 					destUploadStat.Since(destUploadStart)
-				case misc.Contains(asyncDestinations, brt.destType):
+				case slices.Contains(asyncDestinations, brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStart := time.Now()
 					brt.sendJobsToStorage(batchJobs)
@@ -2150,26 +2127,26 @@ func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT)
 }
 
 func IsAsyncDestination(destType string) bool {
-	return misc.Contains(asyncDestinations, destType)
+	return slices.Contains(asyncDestinations, destType)
 }
 
 func (brt *HandleT) crashRecover() {
-	if misc.Contains(objectStorageDestinations, brt.destType) {
+	if slices.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
 	}
 }
 
 func IsObjectStorageDestination(destType string) bool {
-	return misc.Contains(objectStorageDestinations, destType)
+	return slices.Contains(objectStorageDestinations, destType)
 }
 
 func IsWarehouseDestination(destType string) bool {
-	return misc.Contains(warehouseutils.WarehouseDestinations, destType)
+	return slices.Contains(warehouseutils.WarehouseDestinations, destType)
 }
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	splitBatches := map[time.Time]*BatchJobsT{}
-	if !misc.Contains(warehouseutils.TimeWindowDestinations, brt.destType) {
+	if !slices.Contains(warehouseutils.TimeWindowDestinations, brt.destType) {
 		// return only one batchJob if the destination type is not time window destinations
 		splitBatches[time.Time{}] = &batchJobs
 		return splitBatches
@@ -2387,7 +2364,6 @@ func (brt *HandleT) Setup(
 	rruntime.Go(func() {
 		brt.backendConfigSubscriber()
 	})
-	adminInstance.registerBatchRouter(destType, brt)
 }
 
 func (brt *HandleT) Start() {

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.3](https://github.com/rudderlabs/rudder-server/compare/v1.7.2...v1.7.3) (2023-04-04)
+
+
+### Bug Fixes
+
+* add externalID to S3 file uploader config ([#3153](https://github.com/rudderlabs/rudder-server/issues/3153)) ([355dda2](https://github.com/rudderlabs/rudder-server/commit/355dda276470721c39b9a729f4ae019db9c64135))
+
+## [1.7.2](https://github.com/rudderlabs/rudder-server/compare/v1.7.1...v1.7.2) (2023-03-30)
+
+
+### Bug Fixes
+
+* identity tables load files are not generated ([be569c1](https://github.com/rudderlabs/rudder-server/commit/be569c13db4f34286c05295dfffdfcc95c9d3863))
+
 ## [1.7.1](https://github.com/rudderlabs/rudder-server/compare/v1.7.0...v1.7.1) (2023-03-24)
 
 

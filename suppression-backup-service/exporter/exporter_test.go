@@ -4,17 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -36,47 +33,53 @@ const (
 // test export function
 func TestExport(t *testing.T) {
 	misc.Init()
-	basePath := path.Join(t.TempDir(), strings.ReplaceAll(uuid.New().String(), "-", ""))
-	token := []byte("token")
-	repo, err := suppression.NewBadgerRepository(basePath, logger.NOP)
-	require.NoError(t, err)
-	require.NoError(t, repo.Add([]suppressModel.Suppression{
-		{
-			WorkspaceID: "workspace1",
-			UserID:      "user1",
-			SourceIDs:   []string{"source1"},
-		},
-		{
-			WorkspaceID: "workspace2",
-			UserID:      "user2",
-			SourceIDs:   []string{"source1"},
-		},
-	}, token), "could not add data to badgerdb")
 
-	isSuppressed, err := repo.Suppressed("workspace1", "user1", "source1")
+	repo, err := suppression.NewBadgerRepository(t.TempDir(), logger.NOP)
 	require.NoError(t, err)
-	require.Equal(t, true, isSuppressed)
 
-	file, err := os.CreateTemp("", "export")
+	seed := func(repo suppression.Repository) {
+		token := []byte("token")
+		require.NoError(t, repo.Add([]suppressModel.Suppression{
+			{
+				WorkspaceID: "workspace1",
+				UserID:      "user1",
+				SourceIDs:   []string{"source1"},
+			},
+			{
+				WorkspaceID: "workspace2",
+				UserID:      "user2",
+				SourceIDs:   []string{"source1"},
+			},
+		}, token), "could not add data to badgerdb")
+	}
+	verify := func(repo suppression.Repository) {
+		isSuppressed, err := repo.Suppressed("workspace1", "user1", "source1")
+		require.NoError(t, err)
+		require.Equal(t, true, isSuppressed)
+		isSuppressed, err = repo.Suppressed("workspace2", "user2", "source1")
+		require.NoError(t, err)
+		require.Equal(t, true, isSuppressed)
+	}
+
+	seed(repo)
+	verify(repo)
+
+	file, err := os.CreateTemp(t.TempDir(), "export")
 	require.NoError(t, err)
+	require.NoError(t, file.Close())
 	require.NoError(t, exporter.Export(repo, model.File{Path: file.Name(), Mu: &sync.RWMutex{}}), "could not export data")
-	file.Close()
-
+	require.NoError(t, repo.Stop())
 	file, err = os.Open(file.Name())
 	require.NoError(t, err)
-	originalBackup, err := io.ReadAll(file)
-	require.NoError(t, err)
 
-	// reading golden file
-	goldenFile, err := os.OpenFile("testdata/goldenFile.txt", os.O_RDONLY, 0o400)
+	repo, err = suppression.NewBadgerRepository(t.TempDir(), logger.NOP)
 	require.NoError(t, err)
-	expectedBackup, err := io.ReadAll(goldenFile)
-	require.NoError(t, err)
-
-	require.Equal(t, expectedBackup, originalBackup)
+	require.NoError(t, repo.Restore(file))
 	require.NoError(t, file.Close())
-	require.NoError(t, os.Remove(file.Name()))
-	require.NoError(t, os.RemoveAll(basePath))
+
+	verify(repo)
+
+	require.NoError(t, repo.Stop())
 }
 
 func TestExportLoop(t *testing.T) {

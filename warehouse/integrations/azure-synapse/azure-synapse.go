@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -27,8 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var pkgLogger logger.Logger
 
 const (
 	host     = "host"
@@ -115,9 +115,9 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewAzureSynapse() *AzureSynapse {
+func New() *AzureSynapse {
 	return &AzureSynapse{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("synapse"),
 	}
 }
 
@@ -142,8 +142,7 @@ func connect(cred credentials) (*sql.DB, error) {
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.port)
 	if err != nil {
-		pkgLogger.Errorf("Error parsing synapse connection port : %v", err)
-		return nil, err
+		return nil, fmt.Errorf("invalid port: %w", err)
 	}
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
@@ -157,10 +156,6 @@ func connect(cred credentials) (*sql.DB, error) {
 		return nil, fmt.Errorf("synapse connection error : (%v)", err)
 	}
 	return db, nil
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("synapse")
 }
 
 func (as *AzureSynapse) getConnectionCredentials() credentials {
@@ -197,7 +192,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 
 	var extraColumns []string
 	for _, column := range previousColumnKeys {
-		if !misc.Contains(sortedColumnKeys, column) {
+		if !slices.Contains(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
 		}
 	}
@@ -559,7 +554,7 @@ func (as *AzureSynapse) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');
 `, as.Namespace, as.Namespace)
-	pkgLogger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	as.Logger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
 	_, err = as.DB.Exec(sqlStatement)
 	if err == io.EOF {
 		return nil
@@ -645,23 +640,13 @@ func (*AzureSynapse) AlterColumn(_, _, _ string) (model.AlterTableResponse, erro
 	return model.AlterTableResponse{}, nil
 }
 
-func (as *AzureSynapse) TestConnection(warehouse model.Warehouse) (err error) {
-	as.Warehouse = warehouse
-	as.DB, err = connect(as.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer as.DB.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), as.ConnectTimeout)
-	defer cancel()
-
-	err = as.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", as.ConnectTimeout/time.Second)
+func (as *AzureSynapse) TestConnection(ctx context.Context, _ model.Warehouse) error {
+	err := as.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
@@ -678,16 +663,8 @@ func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader warehouseutils
 	return err
 }
 
-func (as *AzureSynapse) CrashRecover(warehouse model.Warehouse) (err error) {
-	as.Warehouse = warehouse
-	as.Namespace = warehouse.Namespace
-	as.DB, err = connect(as.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer as.DB.Close()
+func (as *AzureSynapse) CrashRecover() {
 	as.dropDanglingStagingTables()
-	return
 }
 
 func (as *AzureSynapse) dropDanglingStagingTables() bool {
@@ -864,6 +841,6 @@ func (as *AzureSynapse) SetConnectionTimeout(timeout time.Duration) {
 	as.ConnectTimeout = timeout
 }
 
-func (as *AzureSynapse) ErrorMappings() []model.JobError {
+func (*AzureSynapse) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

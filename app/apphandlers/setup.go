@@ -4,22 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
+	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor"
-	"github.com/rudderlabs/rudder-server/router"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"golang.org/x/sync/errgroup"
 )
 
 // AppHandler starts the app
@@ -54,35 +51,6 @@ func rudderCoreNodeSetup() error {
 
 func rudderCoreWorkSpaceTableSetup() error {
 	return validators.CheckAndValidateWorkspaceToken()
-}
-
-func setupReadonlyDBs() (gw *jobsdb.ReadonlyHandleT, err error) {
-	if diagnostics.EnableServerStartMetric {
-		diagnostics.Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
-			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
-		})
-	}
-	var gwDB, rtDB, batchrtDB, procerrDB jobsdb.ReadonlyHandleT
-
-	if err := gwDB.Setup("gw"); err != nil {
-		return nil, fmt.Errorf("setting up gw readonly db: %w", err)
-	}
-	gw = &gwDB
-
-	if err := rtDB.Setup("rt"); err != nil {
-		return nil, fmt.Errorf("setting up gw readonly db: %w", err)
-	}
-	if err := batchrtDB.Setup("batch_rt"); err != nil {
-		return nil, fmt.Errorf("setting up batch_rt readonly db: %w", err)
-	}
-	router.RegisterAdminHandlers(&rtDB, &batchrtDB)
-
-	if err := procerrDB.Setup("proc_error"); err != nil {
-		return nil, fmt.Errorf("setting up proc_error readonly db: %w", err)
-	}
-	processor.RegisterAdminHandlers(&procerrDB)
-
-	return
 }
 
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
@@ -136,4 +104,25 @@ func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (clu
 		}
 	}
 	return modeProvider, nil
+}
+
+// terminalErrorFunction returns a function that cancels the errgroup g with an error when the returned function is called.
+func terminalErrorFunction(ctx context.Context, g *errgroup.Group) func(error) {
+	cancelChannel := make(chan error)
+	var cancelOnce sync.Once
+	cancel := func(err error) {
+		cancelOnce.Do(func() {
+			cancelChannel <- err
+			close(cancelChannel)
+		})
+	}
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-cancelChannel:
+			return err
+		}
+	})
+	return cancel
 }

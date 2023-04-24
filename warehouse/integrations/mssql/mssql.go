@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -29,8 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var pkgLogger logger.Logger
 
 const (
 	host     = "host"
@@ -124,9 +123,9 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-func NewMSSQL() *MSSQL {
+func New() *MSSQL {
 	return &MSSQL{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("mssql"),
 	}
 }
 
@@ -154,8 +153,7 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
-		pkgLogger.Errorf("Error parsing mssql connection port : %v", err)
-		return nil, err
+		return nil, fmt.Errorf("invalid port: %w", err)
 	}
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
@@ -171,10 +169,6 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	}
 
 	return db, nil
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("mssql")
 }
 
 func (ms *MSSQL) getConnectionCredentials() Credentials {
@@ -687,29 +681,13 @@ func (*MSSQL) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (ms *MSSQL) TestConnection(warehouse model.Warehouse) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.ObjectStorage = warehouseutils.ObjectStorageType(
-		warehouseutils.MSSQL,
-		warehouse.Destination.Config,
-		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
-	)
-	ms.DB, err = Connect(ms.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer ms.DB.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), ms.ConnectTimeout)
-	defer cancel()
-
-	err = ms.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", ms.ConnectTimeout/time.Second)
+func (ms *MSSQL) TestConnection(ctx context.Context, _ model.Warehouse) error {
+	err := ms.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
@@ -726,16 +704,8 @@ func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader warehouseutils.Upload
 	return err
 }
 
-func (ms *MSSQL) CrashRecover(warehouse model.Warehouse) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.DB, err = Connect(ms.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer ms.DB.Close()
+func (ms *MSSQL) CrashRecover() {
 	ms.dropDanglingStagingTables()
-	return
 }
 
 func (ms *MSSQL) dropDanglingStagingTables() bool {

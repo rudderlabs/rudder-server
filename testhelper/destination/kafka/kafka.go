@@ -51,6 +51,7 @@ type config struct {
 	saslConfig                 *SASLConfig
 	network                    *dc.Network
 	dontUseDockerHostListeners bool
+	customAdvertisedListener   string
 	useSchemaRegistry          bool
 }
 
@@ -113,6 +114,13 @@ func WithoutDockerHostListeners() Option {
 	}}
 }
 
+// WithCustomAdvertisedListener allows to set a custom advertised listener
+func WithCustomAdvertisedListener(listener string) Option {
+	return withOption{setup: func(c *config) {
+		c.customAdvertisedListener = listener
+	}}
+}
+
 // WithSchemaRegistry allows to use the schema registry
 func WithSchemaRegistry() Option {
 	return withOption{setup: func(c *config) {
@@ -168,7 +176,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 	zookeeperPort := fmt.Sprintf("%d/tcp", zookeeperPortInt)
 	zookeeperContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "bitnami/zookeeper",
-		Tag:        "latest",
+		Tag:        "3.8.1-debian-11-r23",
 		NetworkID:  network.ID,
 		Hostname:   "zookeeper",
 		PortBindings: map[dc.Port][]dc.PortBinding{
@@ -201,7 +209,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 		}
 		src, err := pool.RunWithOptions(&dockertest.RunOptions{
 			Repository:   "bitnami/schema-registry",
-			Tag:          "latest",
+			Tag:          "7.3.3-debian-11-r2",
 			NetworkID:    network.ID,
 			Hostname:     "schemaregistry",
 			ExposedPorts: []string{"8081"},
@@ -330,6 +338,10 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 			nodeEnvVars = append(nodeEnvVars, "KAFKA_CFG_ADVERTISED_LISTENERS="+fmt.Sprintf(
 				"INTERNAL://%s:9090,CLIENT://%s:%s", hostname, hostname, kafkaClientPort,
 			))
+		} else if c.customAdvertisedListener != "" {
+			nodeEnvVars = append(nodeEnvVars, "KAFKA_CFG_ADVERTISED_LISTENERS="+fmt.Sprintf(
+				"INTERNAL://%s:9090,CLIENT://%s", hostname, c.customAdvertisedListener,
+			))
 		} else {
 			nodeEnvVars = append(nodeEnvVars, "KAFKA_CFG_ADVERTISED_LISTENERS="+fmt.Sprintf(
 				"INTERNAL://%s:9090,CLIENT://localhost:%d", hostname, localhostPortInt,
@@ -337,7 +349,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 		}
 		containers[i], err = pool.RunWithOptions(&dockertest.RunOptions{
 			Repository: "bitnami/kafka",
-			Tag:        "latest",
+			Tag:        "3.4.0-debian-11-r20",
 			NetworkID:  network.ID,
 			Hostname:   hostname,
 			PortBindings: map[dc.Port][]dc.PortBinding{

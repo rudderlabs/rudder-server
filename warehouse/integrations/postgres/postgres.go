@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -23,8 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var pkgLogger logger.Logger
 
 const (
 	host     = "host"
@@ -147,9 +146,9 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewPostgres() *Postgres {
+func New() *Postgres {
 	return &Postgres{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("postgres"),
 	}
 }
 
@@ -200,10 +199,6 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	}
 
 	return db, nil
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
 }
 
 func (pg *Postgres) getConnectionCredentials() Credentials {
@@ -352,30 +347,19 @@ func (*Postgres) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (pg *Postgres) TestConnection(warehouse model.Warehouse) (err error) {
-	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+func (pg *Postgres) TestConnection(ctx context.Context, warehouse model.Warehouse) error {
+	if warehouse.Destination.Config["sslMode"] == verifyCA {
 		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
-			pg.Logger.Error(sslKeyError.Error())
-			err = fmt.Errorf(sslKeyError.Error())
-			return
+			return fmt.Errorf("writing ssl keys: %s", sslKeyError.Error())
 		}
 	}
-	pg.Warehouse = warehouse
-	pg.DB, err = Connect(pg.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer pg.DB.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), pg.ConnectTimeout)
-	defer cancel()
-
-	err = pg.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", pg.ConnectTimeout/time.Second)
+	err := pg.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
@@ -395,9 +379,7 @@ func (pg *Postgres) Setup(
 	return err
 }
 
-func (pg *Postgres) CrashRecover(model.Warehouse) error {
-	return nil
-}
+func (pg *Postgres) CrashRecover() {}
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {

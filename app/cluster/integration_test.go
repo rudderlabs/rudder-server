@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -165,12 +166,9 @@ func initJobsDB() {
 	admin.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
-	jobsdb.Init3()
 	archiver.Init()
 	router.Init()
-	router.InitRouterAdmin()
 	batchrouter.Init()
-	batchrouter.Init2()
 	Init()
 }
 
@@ -185,6 +183,8 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	gwDB := jobsdb.NewForReadWrite("gw")
 	defer gwDB.TearDown()
+	eschDB := jobsdb.NewForReadWrite("esch")
+	defer eschDB.TearDown()
 	rtDB := jobsdb.NewForReadWrite("rt")
 	defer rtDB.TearDown()
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
@@ -199,7 +199,23 @@ func TestDynamicClusterManager(t *testing.T) {
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService(),
+	schemaForwarder := mock_jobs_forwarder.NewMockForwarder(gomock.NewController(t))
+
+	processor := processor.New(
+		ctx,
+		&clearDb,
+		gwDB,
+		rtDB,
+		brtDB,
+		errDB,
+		eschDB,
+		mockMTI,
+		&reporting.NOOP{},
+		transientsource.NewEmptyService(),
+		fileuploader.NewDefaultProvider(),
+		rsources.NewNoOpService(),
+		destinationdebugger.NewNoOpService(),
+		transformationdebugger.NewNoOpService(),
 		processor.WithFeaturesRetryMaxAttempts(0))
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
@@ -242,13 +258,17 @@ func TestDynamicClusterManager(t *testing.T) {
 	}).AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	schemaForwarder.EXPECT().Start().Return(nil).AnyTimes()
+	schemaForwarder.EXPECT().Stop().AnyTimes()
 
 	provider := &mockModeProvider{modeCh: make(chan servermode.ChangeEvent)}
 	dCM := &cluster.Dynamic{
-		GatewayDB:     gwDB,
-		RouterDB:      rtDB,
-		BatchRouterDB: brtDB,
-		ErrorDB:       errDB,
+		GatewayDB:       gwDB,
+		RouterDB:        rtDB,
+		BatchRouterDB:   brtDB,
+		ErrorDB:         errDB,
+		EventSchemaDB:   eschDB,
+		SchemaForwarder: schemaForwarder,
 
 		Processor:       processor,
 		Router:          router,

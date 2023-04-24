@@ -1,0 +1,19 @@
+syntax = "proto3";
+package proto;
+import "google/protobuf/timestamp.proto";
+
+option go_package = ".;proto";
+
+message EventSchemaKey {
+  string writeKey = 1;
+  string eventType = 2;
+  string eventIdentifier = 3;
+}
+message EventSchemaMessage {
+  string workspaceID = 1;
+  EventSchemaKey key = 2;
+  map<string, string> schema = 3;
+  google.protobuf.Timestamp observedAt = 4;
+  bytes sample = 5;
+  bytes correlationID = 6;
+}

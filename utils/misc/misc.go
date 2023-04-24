@@ -44,8 +44,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
-	"github.com/thoas/go-funk"
-
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -55,6 +53,9 @@ var (
 	reservedFolderPaths []*RFP
 	jsonfast            = jsoniter.ConfigCompatibleWithStandardLibrary
 	notifyOnce          sync.Once
+
+	regexGwHa               = regexp.MustCompile(`^.*-gw-ha-\d+-\w+-\w+$`)
+	regexGwNonHaOrProcessor = regexp.MustCompile(`^.*-\d+$`)
 )
 
 const (
@@ -211,7 +212,7 @@ func GetHash(s string) int {
 
 // GetMD5Hash returns EncodeToString(md5 hash of the input string)
 func GetMD5Hash(input string) string {
-	hash := md5.Sum([]byte(input))
+	hash := md5.Sum([]byte(input)) // skipcq: GO-S1023
 	return hex.EncodeToString(hash[:])
 }
 
@@ -469,15 +470,6 @@ func GetIPFromReq(req *http.Request) string {
 	return strings.ReplaceAll(addresses[0], " ", "")
 }
 
-func Contains[K comparable](slice []K, item K) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
 // IncrementMapByKey starts with 1 and increments the counter of a key
 func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]
@@ -492,12 +484,6 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 //  timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
-}
-
-func StringKeys(input interface{}) []string {
-	keys := funk.Keys(input)
-	stringKeys := keys.([]string)
-	return stringKeys
 }
 
 func MapStringKeys(input map[string]interface{}) []string {
@@ -940,7 +926,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 }
 
 func GetSpacesLocation(location string) (region string) {
-	r, _ := regexp.Compile(`\.*.*\.digitaloceanspaces\.com`)
+	r, _ := regexp.Compile(`\.*.*\.digitaloceanspaces\.com`) // skipcq: GO-S1009
 	subLocation := r.FindString(location)
 	regionTokens := strings.Split(subLocation, ".")
 	if len(regionTokens) == 3 {
@@ -988,7 +974,7 @@ func GetMD5UUID(str string) (uuid.UUID, error) {
 
 	// google/uuid doesn't allow us to modify the version and variant
 	// so we are doing it manually, using gofrs/uuid library implementation.
-	md5Sum := md5.Sum([]byte(str))
+	md5Sum := md5.Sum([]byte(str)) // skipcq: GO-S1023
 	// SetVariant: VariantRFC4122
 	md5Sum[8] = md5Sum[8]&(0xff>>2) | (0x02 << 6)
 	// SetVersion: Version 4
@@ -1211,6 +1197,16 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 	return result
 }
 
+type MapLookupError struct {
+	SearchKey string // indicates the searchkey which is not present in the map
+	Err       error  // contains the error occurred string while looking up the key in the map
+	Level     int    // indicates the nesting level at which error has occurred
+}
+
+func (e *MapLookupError) Error() string {
+	return e.Err.Error()
+}
+
 // NestedMapLookup
 // m:  a map from strings to other maps or values, of arbitrary depth
 // ks: successive keys to reach an internal or leaf node (variadic)
@@ -1219,21 +1215,26 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 // Returns: (Exactly one of these will be nil)
 // rval: the target node (if found)
 // err:  an error created by fmt.Errorf
-func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, err error) {
-	var ok bool
+func NestedMapLookup(m map[string]interface{}, ks ...string) (interface{}, *MapLookupError) {
+	var lookupWithLevel func(map[string]interface{}, int, ...string) (interface{}, *MapLookupError)
 
-	if len(ks) == 0 { // degenerate input
-		return nil, fmt.Errorf("NestedMapLookup needs at least one key")
+	lookupWithLevel = func(searchMap map[string]interface{}, level int, keys ...string) (rval interface{}, err *MapLookupError) {
+		var ok bool
+		if len(keys) == 0 { // degenerate input
+			return nil, &MapLookupError{Err: fmt.Errorf("NestedMapLookup needs at least one key"), Level: level}
+		}
+		if rval, ok = searchMap[keys[0]]; !ok {
+			return nil, &MapLookupError{Err: fmt.Errorf("key: %v not found", keys[0]), SearchKey: keys[0], Level: level}
+		} else if len(keys) == 1 { // we've reached the final key
+			return rval, nil
+		} else if searchMap, ok = rval.(map[string]interface{}); !ok {
+			return nil, &MapLookupError{Err: fmt.Errorf("malformed structure at %#v", rval), SearchKey: keys[0], Level: level}
+		}
+		// 1+ more keys
+		level += 1
+		return lookupWithLevel(searchMap, level, keys[1:]...)
 	}
-	if rval, ok = m[ks[0]]; !ok {
-		return nil, fmt.Errorf("key not found; remaining keys: %v", ks)
-	} else if len(ks) == 1 { // we've reached the final key
-		return rval, nil
-	} else if m, ok = rval.(map[string]interface{}); !ok {
-		return nil, fmt.Errorf("malformed structure at %#v", rval)
-	} else { // 1+ more keys
-		return NestedMapLookup(m, ks[1:]...)
-	}
+	return lookupWithLevel(m, 0, ks...)
 }
 
 // GetJsonSchemaDTFromGoDT returns the json schema supported data types from go lang supported data types.
@@ -1382,4 +1383,19 @@ func GetBadgerDBUsage(dir string) (int64, int64, int64, error) {
 		return 0, 0, 0, err
 	}
 	return lsmSize, vlogSize, totSize, nil
+}
+
+func GetInstanceID() string {
+	instance := config.GetString("INSTANCE_ID", "")
+	instanceArr := strings.Split(instance, "-")
+	length := len(instanceArr)
+	// This handles 2 kinds of server instances
+	// a) Processor OR Gateway running in non HA mod where the instance name ends with the index
+	// b) Gateway running in HA mode, where the instance name is of the form *-gw-ha-<index>-<statefulset-id>-<pod-id>
+	if (regexGwHa.MatchString(instance)) && (length > 3) {
+		return instanceArr[length-3]
+	} else if (regexGwNonHaOrProcessor.MatchString(instance)) && (length > 1) {
+		return instanceArr[length-1]
+	}
+	return ""
 }

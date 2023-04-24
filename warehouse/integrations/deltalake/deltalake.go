@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -45,8 +46,6 @@ const (
 	databaseNotFound    = "42000"
 	partitionNotFound   = "42000"
 )
-
-var pkgLogger logger.Logger
 
 // Rudder data type mapping with Delta lake mappings.
 var dataTypesMap = map[string]string{
@@ -133,14 +132,9 @@ type Deltalake struct {
 	ConnectorURL           string
 }
 
-// Init initializes the delta lake warehouse
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake")
-}
-
-func NewDeltalake() *Deltalake {
+func New() *Deltalake {
 	return &Deltalake{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("deltalake"),
 		Stats:  stats.Default,
 	}
 }
@@ -327,7 +321,7 @@ func (dl *Deltalake) fetchPartitionColumns(dbT *client.Client, tableName string)
 }
 
 func isPartitionedByEventDate(partitionedColumns []string) bool {
-	return misc.Contains(partitionedColumns, "event_date")
+	return slices.Contains(partitionedColumns, "event_date")
 }
 
 // partitionQuery
@@ -959,10 +953,8 @@ func (dl *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Up
 }
 
 // TestConnection test the connection for the warehouse
-func (dl *Deltalake) TestConnection(warehouse model.Warehouse) (err error) {
-	dl.Warehouse = warehouse
-	dl.Client, err = dl.connectToWarehouse()
-	return
+func (*Deltalake) TestConnection(context.Context, model.Warehouse) error {
+	return nil
 }
 
 // Cleanup cleanup when upload is done.
@@ -974,16 +966,8 @@ func (dl *Deltalake) Cleanup() {
 }
 
 // CrashRecover crash recover scenarios
-func (dl *Deltalake) CrashRecover(warehouse model.Warehouse) (err error) {
-	dl.Warehouse = warehouse
-	dl.Namespace = warehouse.Namespace
-	dl.Client, err = dl.connectToWarehouse()
-	if err != nil {
-		return err
-	}
-	defer dl.Client.Close()
+func (dl *Deltalake) CrashRecover() {
 	dl.dropDanglingStagingTables()
-	return
 }
 
 // IsEmpty checks if the warehouse is empty or not
@@ -1075,7 +1059,6 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 
 	conn, err := grpc.DialContext(ctx, connectorURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		pkgLogger.Errorf("Error while creating grpc connection to databricks with error: %s", err.Error())
 		databricksBuildVersion = "Unable to create grpc connection to databricks."
 		return
 	}
@@ -1083,7 +1066,6 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 	versionClient := proto.NewVersionClient(conn)
 	versionResponse, err := versionClient.GetVersion(ctx, &proto.VersionRequest{})
 	if err != nil {
-		pkgLogger.Errorf("Error while getting version response from databricks with error : %s", err.Error())
 		databricksBuildVersion = "Unable to read response from databricks."
 		return
 	}
@@ -1230,6 +1212,6 @@ func appendableLTSQLStatement(namespace, tableName, stagingTableName string, col
 	return sqlStatement
 }
 
-func (dl *Deltalake) ErrorMappings() []model.JobError {
+func (*Deltalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

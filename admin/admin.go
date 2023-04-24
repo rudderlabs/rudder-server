@@ -40,17 +40,12 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
-	"runtime"
-	"runtime/pprof"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/viper"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -67,17 +62,8 @@ func RegisterAdminHandler(name string, handler interface{}) {
 	_ = instance.rpcServer.RegisterName(name, handler) // @TODO fix ignored error
 }
 
-// RegisterStatusHandler expects object implementing PackageStatusHandler interface
-func RegisterStatusHandler(name string, handler PackageStatusHandler) {
-	instance.statusHandlersMutex.Lock()
-	instance.statusHandlers[strings.ToLower(name)] = handler
-	instance.statusHandlersMutex.Unlock()
-}
-
 type Admin struct {
-	statusHandlersMutex sync.RWMutex
-	statusHandlers      map[string]PackageStatusHandler
-	rpcServer           *rpc.Server
+	rpcServer *rpc.Server
 }
 
 var (
@@ -87,101 +73,10 @@ var (
 
 func Init() {
 	instance = &Admin{
-		statusHandlers: make(map[string]PackageStatusHandler),
-		rpcServer:      rpc.NewServer(),
+		rpcServer: rpc.NewServer(),
 	}
 	_ = instance.rpcServer.Register(instance) // @TODO fix ignored error
 	pkgLogger = logger.NewLogger().Child("admin")
-}
-
-// Status reports overall server status by fetching status of all registered admin handlers
-func (a *Admin) Status(_ struct{}, reply *string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			err = fmt.Errorf("internal Rudder server error: %v", r)
-		}
-	}()
-	statusObj := make(map[string]interface{})
-	statusObj["server-mode"] = db.CurrentMode
-
-	a.statusHandlersMutex.RLock()
-	for moduleName, handler := range a.statusHandlers {
-		statusObj[moduleName] = handler.Status()
-	}
-	a.statusHandlersMutex.RUnlock()
-	formattedOutput, err := json.MarshalIndent(statusObj, "", "  ")
-	*reply = string(formattedOutput)
-	return err
-}
-
-// PrintStack fetches stack traces of all running goroutines
-func (*Admin) PrintStack(_ struct{}, reply *string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			err = fmt.Errorf("internal Rudder server error: %v", r)
-		}
-	}()
-	byteArr := make([]byte, 2048*1024)
-	n := runtime.Stack(byteArr, true)
-	*reply = string(byteArr[:n])
-	return nil
-}
-
-// HeapDump creates heap profile at given path using pprof
-func (*Admin) HeapDump(path, reply *string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			err = fmt.Errorf("internal Rudder server error: %v", r)
-		}
-	}()
-	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0o755)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	_ = pprof.Lookup("heap").WriteTo(f, 1)
-	*reply = "Heap profile written to " + *path
-	return nil
-}
-
-// StartCpuProfile starts writing cpu profile at given path using pprof
-func (*Admin) StartCpuProfile(path, reply *string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			err = fmt.Errorf("internal Rudder server error: %v", r)
-		}
-	}()
-	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0o755)
-	if err != nil {
-		return err
-	}
-	pkgLogger.Info("Starting cpu profile. Writing to ", *path)
-	err = pprof.StartCPUProfile(f)
-	if err != nil {
-		pkgLogger.Info("StartCPUProfile threw error. Cpu profiling may already be running or some other error occurred.")
-		*reply = err.Error()
-	} else {
-		*reply = "Cpu profile is being written to " + *path
-	}
-	return nil
-}
-
-// StopCpuProfile stops writing already cpu profile
-func (*Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			err = fmt.Errorf("internal Rudder server error: %v", r)
-		}
-	}()
-	pkgLogger.Info("Stopping cpu profile")
-	pprof.StopCPUProfile()
-	*reply = "Cpu profile stopped."
-	return nil
 }
 
 // ServerConfig fetches current configuration as set in viper

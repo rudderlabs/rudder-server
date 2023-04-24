@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
+
 	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -27,7 +29,7 @@ import (
 
 type Manager interface {
 	Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) error
-	CrashRecover(warehouse model.Warehouse) (err error)
+	CrashRecover()
 	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap model.TableSchema) (err error)
@@ -39,7 +41,7 @@ type Manager interface {
 	LoadIdentityMappingsTable() error
 	Cleanup()
 	IsEmpty(warehouse model.Warehouse) (bool, error)
-	TestConnection(warehouse model.Warehouse) error
+	TestConnection(ctx context.Context, warehouse model.Warehouse) error
 	DownloadIdentityRules(*misc.GZipWriter) error
 	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
 	Connect(warehouse model.Warehouse) (client.Client, error)
@@ -63,43 +65,50 @@ type WarehouseOperations interface {
 func New(destType string) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.NewRedshift()
+		rs := redshift.New()
 		redshift.WithConfig(rs, config.Default)
 		return rs, nil
 	case warehouseutils.BQ:
-		var bq bigquery.HandleT
-		return &bq, nil
+		bq := bigquery.New()
+		bigquery.WithConfig(bq, config.Default)
+		return bq, nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.NewSnowflake()
+		sf := snowflake.New()
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
 		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.NewHandle()
+			pg := postgreslegacy.New()
 			postgreslegacy.WithConfig(pg, config.Default)
 			return pg, nil
 		}
 
-		pg := postgres.NewPostgres()
+		pg := postgres.New()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.NewClickhouse()
+		ch := clickhouse.New()
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		ms := mssql.NewMSSQL()
+		ms := mssql.New()
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		az := azuresynapse.NewAzureSynapse()
+		az := azuresynapse.New()
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		var dl datalake.HandleT
-		return &dl, nil
+		dl := datalake.New()
+		return dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.NewDeltalake()
+		if config.Default.GetBool("Warehouse.deltalake.useNative", false) {
+			dl := deltalake_native.New()
+			deltalake_native.WithConfig(dl, config.Default)
+			return dl, nil
+		}
+
+		dl := deltalake.New()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}
@@ -111,43 +120,50 @@ func New(destType string) (Manager, error) {
 func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.NewRedshift()
+		rs := redshift.New()
 		redshift.WithConfig(rs, config.Default)
 		return rs, nil
 	case warehouseutils.BQ:
-		var bq bigquery.HandleT
-		return &bq, nil
+		bq := bigquery.New()
+		bigquery.WithConfig(bq, config.Default)
+		return bq, nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.NewSnowflake()
+		sf := snowflake.New()
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
 		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.NewHandle()
+			pg := postgreslegacy.New()
 			postgreslegacy.WithConfig(pg, config.Default)
 			return pg, nil
 		}
 
-		pg := postgres.NewPostgres()
+		pg := postgres.New()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.NewClickhouse()
+		ch := clickhouse.New()
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		ms := mssql.NewMSSQL()
+		ms := mssql.New()
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		az := azuresynapse.NewAzureSynapse()
+		az := azuresynapse.New()
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		var dl datalake.HandleT
-		return &dl, nil
+		dl := datalake.New()
+		return dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.NewDeltalake()
+		if config.Default.GetBool("Warehouse.deltalake.useNative", false) {
+			dl := deltalake_native.New()
+			deltalake_native.WithConfig(dl, config.Default)
+			return dl, nil
+		}
+
+		dl := deltalake.New()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}

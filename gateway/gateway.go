@@ -32,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/gorillaware"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
@@ -86,7 +85,6 @@ var (
 	writeKeysSourceMap                                                                map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                         map[string]string
 	enabledWriteKeyWorkspaceMap                                                       map[string]string
-	sourceIDToNameMap                                                                 map[string]string
 	configSubscriberLock                                                              sync.RWMutex
 	maxReqSize                                                                        int
 	enableRateLimit                                                                   bool
@@ -188,7 +186,6 @@ type HandleT struct {
 	logger                logger.Logger
 	rrh                   *RegularRequestHandler
 	irh                   *ImportRequestHandler
-	readonlyGatewayDB     jobsdb.ReadonlyJobsDB
 	netHandle             *http.Client
 	httpTimeout           time.Duration
 	httpWebServer         *http.Server
@@ -300,7 +297,7 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		var (
 			jobList          = make([]*jobsdb.JobT, 0)
-			errorMessagesMap = map[uuid.UUID]string{}
+			errorMessagesMap map[uuid.UUID]string
 		)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
@@ -333,6 +330,9 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 			errorMessage := err.Error()
 			if ctx.Err() != nil {
 				errorMessage = ctx.Err().Error()
+			}
+			if errorMessagesMap == nil {
+				errorMessagesMap = make(map[uuid.UUID]string, len(jobList))
 			}
 			for _, job := range jobList {
 				errorMessagesMap[job.UUID] = errorMessage
@@ -1370,7 +1370,6 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		writeKeysSourceMap = newWriteKeysSourceMap
 		enabledWriteKeyWebhookMap = newEnabledWriteKeyWebhookMap
 		enabledWriteKeyWorkspaceMap = newEnabledWriteKeyWorkspaceMap
-		sourceIDToNameMap = newSourceIDToNameMap
 		configSubscriberLock.Unlock()
 	}
 }
@@ -1419,10 +1418,6 @@ func (*HandleT) GetWebhookSourceDefName(writeKey string) (name string, ok bool) 
 	defer configSubscriberLock.RUnlock()
 	name, ok = enabledWriteKeyWebhookMap[writeKey]
 	return
-}
-
-func (gateway *HandleT) SetReadonlyDB(readonlyGatewayDB jobsdb.ReadonlyJobsDB) {
-	gateway.readonlyGatewayDB = readonlyGatewayDB
 }
 
 /*
@@ -1483,12 +1478,6 @@ func (gateway *HandleT) Setup(
 	}
 	whProxy := httputil.NewSingleHostReverseProxy(whURL)
 	gateway.whProxy = whProxy
-
-	gatewayAdmin := GatewayAdmin{handle: gateway}
-	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB, readOnlyJobsDB: gateway.readonlyGatewayDB}
-
-	admin.RegisterStatusHandler("Gateway", &gatewayAdmin)
-	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)
 
 	if enableSuppressUserFeature && gateway.application.Features().SuppressUser != nil {
 		var err error

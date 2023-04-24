@@ -49,11 +49,6 @@ func main() {
 func Run(ctx context.Context) error {
 	config.Set("Diagnostics.enableDiagnostics", false)
 
-	admin.Init()
-	misc.Init()
-	diagnostics.Init()
-	backendconfig.Init()
-
 	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
 		stats.WithServiceName("regulation-worker"),
 	)
@@ -61,6 +56,11 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("failed to start stats: %w", err)
 	}
 	defer stats.Default.Stop()
+
+	admin.Init()
+	misc.Init()
+	diagnostics.Init()
+	backendconfig.Init()
 
 	if err := backendconfig.Setup(nil); err != nil {
 		return fmt.Errorf("setting up backend config: %w", err)

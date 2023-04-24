@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -529,7 +530,7 @@ func (uploadReq *UploadReq) authorizeSource(sourceID string) bool {
 		return false
 	}
 	pkgLogger.Debugf(`Authorized sourceId's for workspace:%s - %v`, uploadReq.WorkspaceID, authorizedSourceIDs)
-	return misc.Contains(authorizedSourceIDs, sourceID)
+	return slices.Contains(authorizedSourceIDs, sourceID)
 }
 
 func (uploadsReq *UploadsReq) authorizedSources() (sourceIDs []string) {
@@ -692,7 +693,7 @@ func (uploadsReq *UploadsReq) warehouseUploadsForHosted(authorizedSourceIDs []st
 	)
 	if uploadsReq.SourceID == "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
-	} else if misc.Contains(authorizedSourceIDs, uploadsReq.SourceID) {
+	} else if slices.Contains(authorizedSourceIDs, uploadsReq.SourceID) {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
 	}
 	if uploadsReq.DestinationID != "" {
@@ -894,7 +895,7 @@ func overrideWithEnv(settings *filemanager.SettingsT) {
 		ifNotExistThenSet("accessKey", envConfig["accessKey"], settings.Config)
 		ifNotExistThenSet("enableSSE", envConfig["enableSSE"], settings.Config)
 		ifNotExistThenSet("iamRoleARN", envConfig["iamRoleArn"], settings.Config)
-		ifNotExistThenSet("externalID", envConfig["externalId"], settings.Config)
+		ifNotExistThenSet("externalID", envConfig["externalID"], settings.Config)
 		ifNotExistThenSet("regionHint", envConfig["regionHint"], settings.Config)
 	}
 }

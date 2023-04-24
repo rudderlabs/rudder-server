@@ -15,6 +15,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
+	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -22,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
 	rtThrottler "github.com/rudderlabs/rudder-server/router/throttler"
+	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -83,13 +85,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
 	}
 	a.log.Info("Embedded mode: Starting Rudder Core")
-
-	readonlyGatewayDB, err := setupReadonlyDBs()
-	if err != nil {
-		return err
-	}
-
 	g, ctx := errgroup.WithContext(ctx)
+	terminalErrFn := terminalErrorFunction(ctx, g)
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
@@ -140,7 +137,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -149,7 +145,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.routerDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -158,7 +153,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.batchRouterDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -167,10 +161,14 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
+	)
+	schemaDB := jobsdb.NewForReadWrite(
+		"esch",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
@@ -188,6 +186,17 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
+	var schemaForwarder schema_forwarder.Forwarder
+	if config.GetBool("EventSchemas2.enabled", false) {
+		client, err := pulsar.NewClient(config.Default)
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+	} else {
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
@@ -203,6 +212,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		routerDB,
 		batchRouterDB,
 		errDB,
+		schemaDB,
 		multitenantStats,
 		reportingI,
 		transientSources,
@@ -247,8 +257,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		RouterDB:        routerDB,
 		BatchRouterDB:   batchRouterDB,
 		ErrorDB:         errDB,
+		EventSchemaDB:   schemaDB,
 		Processor:       proc,
 		Router:          rt,
+		SchemaForwarder: schemaForwarder,
 		MultiTenantStat: multitenantStats,
 	}
 
@@ -263,7 +275,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 	)
 	defer gwDBForProcessor.Close()
 	if err = gatewayDB.Start(); err != nil {
@@ -271,7 +282,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	defer gatewayDB.Stop()
 
-	gw.SetReadonlyDB(readonlyGatewayDB)
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
@@ -296,7 +306,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
-			true, prebackupHandlers, fileUploaderProvider,
+			prebackupHandlers, fileUploaderProvider,
 		)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)

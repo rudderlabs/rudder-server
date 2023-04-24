@@ -21,9 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"golang.org/x/sync/errgroup"
 
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
@@ -31,18 +29,20 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/runner"
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -59,7 +59,7 @@ var (
 	writeKey                     string
 	workspaceID                  string
 	kafkaContainer               *kafka.Resource
-	redisContainer               *destination.RedisResource
+	redisContainer               *resource.RedisResource
 	postgresContainer            *resource.PostgresResource
 	transformerContainer         *destination.TransformerResource
 	minioContainer               *destination.MINIOResource
@@ -400,7 +400,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return waitForKafka(kafkaCtx, t, kafkaContainer.Ports[0])
 	})
 	containersGroup.Go(func() (err error) {
-		redisContainer, err = destination.SetupRedis(containersCtx, pool, t)
+		redisContainer, err = resource.SetupRedis(containersCtx, pool, t)
 		return err
 	})
 	containersGroup.Go(func() (err error) {

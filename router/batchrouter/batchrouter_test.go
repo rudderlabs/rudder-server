@@ -141,7 +141,6 @@ func initBatchRouter() {
 	logger.Reset()
 	misc.Init()
 	Init()
-	Init2()
 }
 
 var _ = Describe("BatchRouter", func() {

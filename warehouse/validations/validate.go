@@ -283,7 +283,10 @@ func (os *objectStorage) Validate() error {
 func (c *connections) Validate() error {
 	defer c.manager.Cleanup()
 
-	return c.manager.TestConnection(createDummyWarehouse(c.destination))
+	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
+	defer cancel()
+
+	return c.manager.TestConnection(ctx, createDummyWarehouse(c.destination))
 }
 
 func (cs *createSchema) Validate() error {
@@ -325,6 +328,7 @@ func (fs *fetchSchema) Validate() error {
 func (lt *loadTable) Validate() error {
 	var (
 		destinationType = lt.destination.DestinationDefinition.Name
+		loadFileType    = warehouseutils.GetLoadFileType(destinationType)
 
 		tempPath     string
 		uploadOutput filemanager.UploadOutput
@@ -351,7 +355,7 @@ func (lt *loadTable) Validate() error {
 		uploadOutput.Location,
 		lt.table,
 		PayloadMap,
-		warehouseutils.GetLoadFileFormat(destinationType),
+		loadFileType,
 	); err != nil {
 		return fmt.Errorf("load test table: %w", err)
 	}
@@ -368,6 +372,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		writer     encoding.LoadFileWriter
 
 		destinationType = dest.DestinationDefinition.Name
+		loadFileType    = warehouseutils.GetLoadFileType(destinationType)
 	)
 
 	if tmpDirPath, err = misc.CreateTMPDIR(); err != nil {
@@ -380,13 +385,13 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		destinationType,
 		warehouseutils.RandHex(),
 		time.Now().Unix(),
-		warehouseutils.GetLoadFileFormat(destinationType),
+		warehouseutils.GetLoadFileFormat(loadFileType),
 	)
 	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
 		return "", fmt.Errorf("create directory: %w", err)
 	}
 
-	if warehouseutils.GetLoadFileType(destinationType) == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+	if loadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		writer, err = encoding.CreateParquetWriter(TableSchemaMap, filePath, destinationType)
 	} else {
 		writer, err = misc.CreateGZ(filePath)
@@ -395,7 +400,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
 
-	eventLoader := encoding.GetNewEventLoader(destinationType, warehouseutils.GetLoadFileType(destinationType), writer)
+	eventLoader := encoding.GetNewEventLoader(destinationType, loadFileType, writer)
 	for _, column := range []string{"id", "val"} {
 		eventLoader.AddColumn(column, TableSchemaMap[column], PayloadMap[column])
 	}
@@ -450,6 +455,7 @@ func downloadFile(dest *backendconfig.DestinationT, location string) error {
 		filePath     string
 
 		destinationType = dest.DestinationDefinition.Name
+		loadFileType    = warehouseutils.GetLoadFileType(destinationType)
 	)
 
 	if fm, err = createFileManager(dest); err != nil {
@@ -466,7 +472,7 @@ func downloadFile(dest *backendconfig.DestinationT, location string) error {
 		destinationType,
 		warehouseutils.RandHex(),
 		time.Now().Unix(),
-		warehouseutils.GetLoadFileFormat(destinationType),
+		warehouseutils.GetLoadFileFormat(loadFileType),
 	)
 	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
 		return fmt.Errorf("create directory: %w", err)
