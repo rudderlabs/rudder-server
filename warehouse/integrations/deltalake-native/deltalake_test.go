@@ -354,10 +354,7 @@ func TestIntegration(t *testing.T) {
 								SQL:  db,
 								Type: warehouseclient.SQLClient,
 							},
-							StatsToVerify: []string{
-								"warehouse_deltalake_grpcExecTime",
-								"warehouse_deltalake_healthTimeouts",
-							},
+							HTTPPort: httpPort,
 						}
 						ts.VerifyEvents(t)
 

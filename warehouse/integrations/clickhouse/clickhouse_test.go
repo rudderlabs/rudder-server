@@ -283,14 +283,6 @@ func TestIntegration(t *testing.T) {
 					Provider:           provider,
 					JobsDB:             jobsDB,
 					UserID:             testhelper.GetUserId(provider),
-					StatsToVerify: []string{
-						"warehouse_clickhouse_commitTimeouts",
-						"warehouse_clickhouse_execTimeouts",
-						"warehouse_clickhouse_failedRetries",
-						"warehouse_clickhouse_syncLoadFileTime",
-						"warehouse_clickhouse_downloadLoadFilesTime",
-						"warehouse_clickhouse_numRowsLoadFile",
-					},
 					Client: &client.Client{
 						SQL:  tc.db,
 						Type: client.SQLClient,

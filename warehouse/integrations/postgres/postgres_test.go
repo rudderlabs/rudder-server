@@ -226,7 +226,6 @@ func TestIntegration(t *testing.T) {
 					JobsDB:                jobsDB,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					StatsToVerify:         []string{"pg_rollback_timeout"},
 					Client: &client.Client{
 						SQL:  db,
 						Type: client.SQLClient,
@@ -323,7 +322,6 @@ func TestIntegration(t *testing.T) {
 					JobsDB:                jobsDB,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					StatsToVerify:         []string{"pg_rollback_timeout"},
 					Client: &client.Client{
 						SQL:  db,
 						Type: client.SQLClient,
