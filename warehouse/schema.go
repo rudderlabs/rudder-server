@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -236,7 +237,7 @@ func (sh *SchemaHandle) getIdentitiesMappingsSchema() model.TableSchema {
 }
 
 func (sh *SchemaHandle) isIDResolutionEnabled() bool {
-	return warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+	return warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
 func (sh *SchemaHandle) consolidateStagingFilesSchemaUsingWarehouseSchema() model.Schema {

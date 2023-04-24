@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -15,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
+	"golang.org/x/sync/errgroup"
 )
 
 // AppHandler starts the app
@@ -102,4 +104,25 @@ func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (clu
 		}
 	}
 	return modeProvider, nil
+}
+
+// terminalErrorFunction returns a function that cancels the errgroup g with an error when the returned function is called.
+func terminalErrorFunction(ctx context.Context, g *errgroup.Group) func(error) {
+	cancelChannel := make(chan error)
+	var cancelOnce sync.Once
+	cancel := func(err error) {
+		cancelOnce.Do(func() {
+			cancelChannel <- err
+			close(cancelChannel)
+		})
+	}
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-cancelChannel:
+			return err
+		}
+	})
+	return cancel
 }

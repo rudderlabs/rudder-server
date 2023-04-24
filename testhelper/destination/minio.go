@@ -28,6 +28,11 @@ type MINIOResource struct {
 }
 
 func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
+	region := "us-east-1"
+	accessKey := "MYACCESSKEY"
+	secretKey := "MYSECRETKEY"
+	bucketName := "testbucket"
+
 	minioPortInt, err := kitHelper.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
@@ -46,9 +51,9 @@ func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
 			"9000/tcp": {{HostPort: strconv.Itoa(minioPortInt)}},
 		},
 		Env: []string{
-			"MINIO_ACCESS_KEY=MYACCESSKEY",
-			"MINIO_SECRET_KEY=MYSECRETKEY",
-			"MINIO_SITE_REGION=us-east-1",
+			"MINIO_ACCESS_KEY=" + accessKey,
+			"MINIO_SECRET_KEY=" + secretKey,
+			"MINIO_SITE_REGION=" + region,
 		},
 	}
 
@@ -81,24 +86,20 @@ func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
 		return nil, err
 	}
 	// now we can instantiate minio client
-	minioClient, err = minio.New(minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
+	minioClient, err = minio.New(minioEndpoint, accessKey, secretKey, false)
 	if err != nil {
 		return nil, err
 	}
-	// Create bucket for MINIO
-	// Create a bucket at region 'us-east-1' with object locking enabled.
-	minioBucketName := "devintegrationtest"
-	err = minioClient.MakeBucket(minioBucketName, "us-east-1")
-	if err != nil {
+	if err = minioClient.MakeBucket(bucketName, region); err != nil {
 		return nil, err
 	}
 	return &MINIOResource{
 		Endpoint:     minioEndpoint,
-		BucketName:   minioBucketName,
+		BucketName:   bucketName,
 		Port:         minioContainer.GetPort("9000/tcp"),
-		AccessKey:    "MYACCESSKEY",
-		SecretKey:    "MYSECRETKEY",
-		SiteRegion:   "us-east-1",
+		AccessKey:    accessKey,
+		SecretKey:    secretKey,
+		SiteRegion:   region,
 		Client:       minioClient,
 		ResourceName: minioContainer.Container.Name,
 	}, nil

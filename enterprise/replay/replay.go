@@ -110,6 +110,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 				Parameters:    []byte(`{}`), // check
+				JobParameters: job.Parameters,
 			}
 			statusList = append(statusList, &status)
 			toProcess = append(toProcess, workerJobT{worker: w, job: job})

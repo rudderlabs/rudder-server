@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"golang.org/x/exp/slices"
 )
 
 var (
@@ -78,7 +79,7 @@ func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destina
 
 	if toAbortDestinationIDs != "" {
 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-		if misc.Contains(abortIDs, destID) {
+		if slices.Contains(abortIDs, destID) {
 			return true, "destination configured to abort"
 		}
 	}

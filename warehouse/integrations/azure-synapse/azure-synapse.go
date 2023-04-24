@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -190,7 +192,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 
 	var extraColumns []string
 	for _, column := range previousColumnKeys {
-		if !misc.Contains(sortedColumnKeys, column) {
+		if !slices.Contains(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
 		}
 	}
@@ -638,23 +640,13 @@ func (*AzureSynapse) AlterColumn(_, _, _ string) (model.AlterTableResponse, erro
 	return model.AlterTableResponse{}, nil
 }
 
-func (as *AzureSynapse) TestConnection(warehouse model.Warehouse) (err error) {
-	as.Warehouse = warehouse
-	as.DB, err = connect(as.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer as.DB.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), as.ConnectTimeout)
-	defer cancel()
-
-	err = as.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", as.ConnectTimeout/time.Second)
+func (as *AzureSynapse) TestConnection(ctx context.Context, _ model.Warehouse) error {
+	err := as.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
@@ -849,6 +841,6 @@ func (as *AzureSynapse) SetConnectionTimeout(timeout time.Duration) {
 	as.ConnectTimeout = timeout
 }
 
-func (as *AzureSynapse) ErrorMappings() []model.JobError {
+func (*AzureSynapse) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

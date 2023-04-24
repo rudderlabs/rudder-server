@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -205,7 +206,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 
 func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
-	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
+	if slices.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
 		job.counterStat(`event_delivery`, Tag{
 			Name:  "tableName",
@@ -216,7 +217,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
 	if skipMetricTagForEachEventTable {
 		standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-		if !misc.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
+		if !slices.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
 			// club all event table metric tags under one tag to avoid too many tags
 			tableName = "others"
 		}
