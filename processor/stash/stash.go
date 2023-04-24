@@ -415,7 +415,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 	}
 }
 
-func (st *HandleT) calculateSleepTime(limitReached bool) time.Duration {
+func (*HandleT) calculateSleepTime(limitReached bool) time.Duration {
 	if limitReached {
 		return config.GetDuration("Processor.errReadLoopSleep", 30, time.Second)
 	}
