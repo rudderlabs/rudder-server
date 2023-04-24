@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -658,7 +659,7 @@ func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 }
 
 func RandSchema(provider string) string {
-	hex := warehouseutils.RandHex()
+	hex := strings.ToLower(rand.String(12))
 	namespace := fmt.Sprintf("test_%s_%d", hex, time.Now().Unix())
 	return warehouseutils.ToProviderCase(provider, warehouseutils.ToSafeNamespace(provider,
 		namespace,
