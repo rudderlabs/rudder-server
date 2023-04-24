@@ -303,8 +303,8 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 	st.logger.Info("Processor errors stash loop started")
 
 	for {
-		var sleepTime time.Duration
 		var limitReached bool
+		sleepTime := st.calculateSleepTime(limitReached)
 		select {
 		case <-ctx.Done():
 			close(st.errProcessQ)
@@ -403,7 +403,6 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				st.errProcessQ <- filteredJobList
 			}
 		}
-		sleepTime = st.calculateSleepTime(limitReached)
 	}
 }
 
