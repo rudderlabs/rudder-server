@@ -20,11 +20,17 @@ func WithMetadata(metadata map[string]string) OptFn {
 	}
 }
 
-// WithConcurrencyLimit sets the maximum number of concurrent jobs for
-// a given key when the limiter is enabled
-func WithConcurrencyLimit(abortConcurrencyLimit int) OptFn {
+// WithConcurrencyLimit sets the maximum number of concurrent jobs for a given key
+func WithConcurrencyLimit(concurrencyLimit int) OptFn {
 	return func(b *Barrier) {
-		b.concurrencyLimit = abortConcurrencyLimit
+		b.concurrencyLimit = concurrencyLimit
+	}
+}
+
+// WithDrainConcurrencyLimit sets the maximum number of concurrent jobs for a given key when the limiter is enabled (after a failed job has been drained, i.e. aborted)
+func WithDrainConcurrencyLimit(drainLimit int) OptFn {
+	return func(b *Barrier) {
+		b.drainLimit = drainLimit
 	}
 }
 
@@ -32,6 +38,7 @@ func WithConcurrencyLimit(abortConcurrencyLimit int) OptFn {
 func NewBarrier(fns ...OptFn) *Barrier {
 	b := &Barrier{
 		barriers: make(map[string]*barrierInfo),
+		metadata: make(map[string]string),
 	}
 	for _, fn := range fns {
 		fn(b)
@@ -52,11 +59,13 @@ func NewBarrier(fns ...OptFn) *Barrier {
 // 2. Before actually trying to send the event, since events after being accepted by the router, they are
 // processed asynchronously through buffered channels by separate goroutine(s) aka workers.
 type Barrier struct {
-	concurrencyLimit int
-	mu               sync.RWMutex // mutex to synchronize concurrent access to the barrier's methods
-	queue            []command
-	barriers         map[string]*barrierInfo
-	metadata         map[string]string
+	mu       sync.RWMutex // mutex to synchronize concurrent access to the barrier's methods
+	queue    []command
+	barriers map[string]*barrierInfo
+	metadata map[string]string
+
+	concurrencyLimit int // maximum number of concurrent jobs for a given key (0 means no limit)
+	drainLimit       int // maximum number of concurrent jobs to accept after a previously failed job has been aborted
 }
 
 // Enter the barrier for this key and jobID. If there is not already a barrier for this key
@@ -67,35 +76,40 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 	defer b.mu.RUnlock()
 	barrier, ok := b.barriers[key]
 	if !ok {
-		return true, nil // no barrier, accept
+		if b.concurrencyLimit == 0 { // if not concurrency limit is set accept the job
+			return true, nil
+		}
+		// create a new barrier with the concurrency limiter enabled
+		barrier = &barrierInfo{
+			concurrencyLimiter: make(map[int64]struct{}),
+		}
+		b.barriers[key] = barrier
+	}
+
+	// if any of our limits is reached, don't accept the job
+	if barrier.ConcurrencyLimitReached(jobID, b.concurrencyLimit) {
+		return false, nil
+	}
+	if barrier.DrainLimitReached(jobID, b.drainLimit) {
+		return false, nil
 	}
 
 	// if there is a failed job in the barrier, only this job can enter the barrier
 	if barrier.failedJobID != nil {
 		failedJob := *barrier.failedJobID
+		previousFailedJobID = &failedJob
 		if failedJob > jobID {
 			panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: key %q, previousFailedJob:%d > jobID:%d", b.metadata, key, failedJob, jobID))
 		}
-		return jobID == failedJob, &failedJob
+		accepted = jobID == failedJob
+	} else {
+		accepted = true
 	}
 
-	// if the concurrency limiter is enabled, only the configured number of concurrent jobs can enter the barrier
-	if barrier.concurrencyLimiter != nil {
-		barrier.mu.Lock()
-		defer barrier.mu.Unlock()
-		if _, ok := barrier.concurrencyLimiter[jobID]; ok {
-			return true, nil // if the job is already in the concurrent jobs map, accept it (poor job... it forgot to notify the barrier before leaving!)
-		}
-		if len(barrier.concurrencyLimiter) >= b.concurrencyLimit {
-			return false, nil // if the concurrent jobs map is full, reject it
-		}
-
-		// add the job to the concurrent jobs map and accept it
-		barrier.concurrencyLimiter[jobID] = struct{}{}
-		return true, nil
+	if accepted { // if the job is finally accepted, add it to the active limiters
+		barrier.Enter(jobID)
 	}
-
-	return true, nil
+	return
 }
 
 // Leave the barrier for this key and jobID. Leave acts as an undo operation for Enter, i.e.
@@ -104,13 +118,13 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 func (b *Barrier) Leave(key string, jobID int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	barrier, ok := b.barriers[key]
-	if !ok {
-		return
+	// remove the job from the active limiters
+	if barrier, ok := b.barriers[key]; ok {
+		barrier.Leave(jobID)
+		if barrier.Inactive() {
+			delete(b.barriers, key)
+		}
 	}
-	barrier.mu.Lock()
-	delete(barrier.concurrencyLimiter, jobID)
-	barrier.mu.Unlock()
 }
 
 // Peek returns the previously failed jobID for the given key, if any
@@ -211,9 +225,52 @@ func (b *Barrier) String() string {
 }
 
 type barrierInfo struct {
-	failedJobID        *int64             // nil if no failed job
-	mu                 sync.RWMutex       // protects concurrentJobs
-	concurrencyLimiter map[int64]struct{} // nil if concurrency limiter is off
+	failedJobID        *int64 // nil if no failed job
+	concurrencyLimiter map[int64]struct{}
+	drainLimiter       map[int64]struct{} // nil if limiter is off
+}
+
+// Enter adds the jobID to the barrier's active limiter(s)
+func (bi *barrierInfo) Enter(jobID int64) {
+	if bi.concurrencyLimiter != nil {
+		bi.concurrencyLimiter[jobID] = struct{}{}
+	}
+	if bi.drainLimiter != nil {
+		bi.drainLimiter[jobID] = struct{}{}
+	}
+}
+
+// Leave removes the jobID from the barrier's limiter(s)
+func (bi *barrierInfo) Leave(jobID int64) {
+	delete(bi.concurrencyLimiter, jobID)
+	delete(bi.drainLimiter, jobID)
+}
+
+// ConcurrencyLimitReached returns true if the barrier's concurrency limit has been reached
+func (bi *barrierInfo) ConcurrencyLimitReached(jobID int64, limit int) bool {
+	if bi.concurrencyLimiter != nil {
+		if _, ok := bi.concurrencyLimiter[jobID]; !ok {
+			return len(bi.concurrencyLimiter) >= limit
+		}
+	}
+	return false
+}
+
+// DrainLimitReached returns true if the barrier's drain limit has been reached
+func (bi *barrierInfo) DrainLimitReached(jobID int64, limit int) bool {
+	if bi.drainLimiter != nil {
+		if _, ok := bi.drainLimiter[jobID]; !ok {
+			return len(bi.drainLimiter) >= limit
+		}
+	}
+	return false
+}
+
+// Inactive returns true if there isn't a failed job and both limiters are inactive
+func (bi *barrierInfo) Inactive() bool {
+	return bi.failedJobID == nil && // no failed job
+		len(bi.concurrencyLimiter) == 0 && // no concurrent jobs
+		bi.drainLimiter == nil // drain limiter is off
 }
 
 type command interface {
@@ -229,9 +286,10 @@ type cmd struct {
 // default behaviour is to try and remove the jobID from the concurrent jobs map
 func (c *cmd) execute(b *Barrier) {
 	if barrier, ok := b.barriers[c.key]; ok {
-		barrier.mu.Lock()
-		defer barrier.mu.Unlock()
-		delete(barrier.concurrencyLimiter, c.jobID)
+		barrier.Leave(c.jobID)
+		if barrier.Inactive() {
+			delete(b.barriers, c.key)
+		}
 	}
 }
 
@@ -253,17 +311,13 @@ func (c *jobFailedCommand) execute(b *Barrier) {
 		barrier = &barrierInfo{}
 		b.barriers[c.key] = barrier
 	}
-	barrier.mu.Lock()
-	defer barrier.mu.Unlock()
-
-	// it is unfortunately possible within a single batch for events to be processed out-of-order
+	barrier.Leave(c.jobID)
 	if barrier.failedJobID == nil {
 		barrier.failedJobID = &c.jobID
 	} else if *barrier.failedJobID > c.jobID {
 		panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: key %q, previousFailedJob:%d > jobID:%d", b.metadata, c.key, *barrier.failedJobID, c.jobID))
 	}
-	// reset concurrency limiter
-	barrier.concurrencyLimiter = nil
+	barrier.drainLimiter = nil // turn off drain limiter
 }
 
 // a failed command never gets enqueued
@@ -279,11 +333,16 @@ type jobSucceededCmd struct {
 // removes the barrier for this key, if it exists
 func (c *jobSucceededCmd) execute(b *Barrier) {
 	if barrier, ok := b.barriers[c.key]; ok {
+		barrier.Leave(c.jobID)
 		if barrier.failedJobID != nil && *barrier.failedJobID != c.jobID { // out-of-sync command (failed commands get executed immediately)
 			return
 		}
+		barrier.failedJobID = nil
+		barrier.drainLimiter = nil
+		if barrier.Inactive() {
+			delete(b.barriers, c.key)
+		}
 	}
-	delete(b.barriers, c.key)
 }
 
 // jobAbortedCommand is a command that is executed when a job has aborted.
@@ -294,19 +353,19 @@ type jobAbortedCommand struct {
 // Creates a concurrent jobs map if none exists. Also removes the jobID from the concurrent jobs map if it exists there
 func (c *jobAbortedCommand) execute(b *Barrier) {
 	if barrier, ok := b.barriers[c.key]; ok {
-		if barrier.failedJobID == nil {
-			// no previously failed job, simply remove the barrier
+		barrier.Leave(c.jobID)
+		if barrier.failedJobID != nil && *barrier.failedJobID != c.jobID { // out-of-sync command (failed commands get executed immediately)
+			return
+		}
+		// previouslyFailed indicates whether the job that was aborted was previouly a failed job, which is the condition for enabling the drain limiter
+		previouslyFailed := barrier.failedJobID != nil && *barrier.failedJobID == c.jobID
+		barrier.failedJobID = nil                 // remove the failed job
+		barrier.drainLimiter = nil                // turn off drain limiter
+		if b.drainLimit > 0 && previouslyFailed { // enable the drain limiter only if a previously failed job has been aborted
+			barrier.drainLimiter = make(map[int64]struct{})
+		}
+		if barrier.Inactive() {
 			delete(b.barriers, c.key)
-			return
 		}
-		if *barrier.failedJobID != c.jobID {
-			// out-of-sync command (failed commands get executed immediately)
-			return
-		}
-		// remove the failed jobID and enable the concurrency limiter
-		barrier.failedJobID = nil
-		barrier.mu.Lock()
-		barrier.concurrencyLimiter = make(map[int64]struct{})
-		barrier.mu.Unlock()
 	}
 }
