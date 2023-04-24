@@ -20,8 +20,6 @@ func TestQueryWrapper(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
 	}
 
-	t.Parallel()
-
 	credentials, err := testhelper.BigqueryCredentials()
 	require.NoError(t, err)
 
@@ -55,6 +53,8 @@ func TestQueryWrapper(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
@@ -72,17 +72,15 @@ func TestQueryWrapper(t *testing.T) {
 
 			queryStatement := "SELECT 1;"
 			query := db.Query(queryStatement)
-			_, err = qw.Run(ctx, query)
-			require.NoError(t, err)
 
 			kvs := []any{
-				logfield.Query, query,
+				logfield.Query, queryStatement,
 				logfield.QueryExecutionTime, tc.executionTimeInSec,
 			}
 			kvs = append(kvs, keysAndValues...)
 
 			if tc.wantLog {
-				mockLogger.EXPECT().Infow("executing query", kvs).Times(1)
+				mockLogger.EXPECT().Infow("executing query", kvs).Times(2)
 			} else {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
 			}
