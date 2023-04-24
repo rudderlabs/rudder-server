@@ -163,7 +163,7 @@ func TestIntegration(t *testing.T) {
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	go func() {
 		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
-		_ = r.Run(ctx, []string{"bigquery-integration-test"})
+		_ = r.Run(ctx, []string{"redshift-integration-test"})
 
 		close(svcDone)
 	}()

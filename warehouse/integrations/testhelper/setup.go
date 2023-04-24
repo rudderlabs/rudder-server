@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,8 +15,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -25,12 +22,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-
 	_ "github.com/lib/pq"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,11 +49,6 @@ const (
 	RedshiftIntegrationTestSchema  = "REDSHIFT_INTEGRATION_TEST_SCHEMA"
 	DeltalakeIntegrationTestSchema = "DATABRICKS_INTEGRATION_TEST_SCHEMA"
 	BigqueryIntegrationTestSchema  = "BIGQUERY_INTEGRATION_TEST_SCHEMA"
-)
-
-const (
-	WorkspaceConfigPath   = "/etc/rudderstack/workspaceConfig.json"
-	WorkspaceTemplatePath = "warehouse/integrations/testdata/workspaceConfig/template.json"
 )
 
 type EventsCountMap map[string]int
@@ -696,61 +686,6 @@ func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 	require.NoError(t, err)
 }
 
-func PopulateTemplateConfigurations() map[string]any {
-	configurations := map[string]any{
-		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
-		"deltalakeNativeWriteKey":        "dasFgoilA0U1WxNeW1gdgUVDfas",
-
-
-		"minioBucketName":      "testbucket",
-		"minioAccesskeyID":     "MYACCESSKEY",
-		"minioSecretAccessKey": "MYSECRETKEY",
-		"minioEndpoint":        "wh-minio:9000",
-	}
-
-	//enhanceWithSnowflakeConfigurations(configurations)
-	//enhanceWithDeltalakeConfigurations(configurations)
-	//enhanceWithBQConfigurations(configurations)
-	return configurations
-}
-
-func enhanceWithSnowflakeConfigurations(values map[string]string) {
-	if _, exists := os.LookupEnv(SnowflakeIntegrationTestCredentials); !exists {
-		return
-	}
-	if _, exists := os.LookupEnv(SnowflakeRBACIntegrationTestCredentials); !exists {
-		return
-	}
-
-	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
-		values[fmt.Sprintf("snowflake%s", k)] = v
-	}
-	for k, v := range credentialsFromKey(SnowflakeRBACIntegrationTestCredentials) {
-		values[fmt.Sprintf("snowflakeRBAC%s", k)] = v
-	}
-
-	values["snowflakeCaseSensitiveDatabase"] = strings.ToLower(values["snowflakeDatabase"])
-	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
-	values["snowflakeRBACNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "ROLE")
-	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
-	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "SOURCES")
-}
-
-func enhanceWithDeltalakeConfigurations(values map[string]string) {
-	if _, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials); !exists {
-		return
-	}
-
-	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
-		values[fmt.Sprintf("deltalake%s", k)] = v
-		values[fmt.Sprintf("deltalakeNative%s", k)] = v
-	}
-
-	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
-	values["deltalakeNativeNamespace"] = fmt.Sprintf("%s_%s", values["deltalakeNamespace"], "native")
-}
-
 func Schema(provider, schemaKey string) string {
 	return warehouseutils.ToProviderCase(
 		provider,
@@ -759,55 +694,6 @@ func Schema(provider, schemaKey string) string {
 			config.MustGetString(schemaKey),
 		),
 	)
-}
-
-func credentialsFromKey(key string) (credentials map[string]string) {
-	cred, exists := os.LookupEnv(key)
-	if !exists {
-		log.Print(fmt.Errorf("while setting up the workspace config: env %s does not exists", key))
-		return
-	}
-	if cred == "" {
-		log.Print(fmt.Errorf("while setting up the workspace config: env %s is empty", key))
-		return
-	}
-
-	err := json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		log.Panicf("error occurred while unmarshalling %s for setting up the workspace config", key)
-		return
-	}
-	return
-}
-
-func SnowflakeCredentials(env string) (credentials snowflake.Credentials, err error) {
-	cred, exists := os.LookupEnv(env)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Snowflake test", env)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling snowflake test credentials with err: %s", err.Error())
-		return
-	}
-	return
-}
-
-func DatabricksCredentials() (credentials client.Credentials, err error) {
-	cred, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Deltalake test", DeltalakeIntegrationTestCredentials)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling databricks test credentials with err: %s", err.Error())
-		return
-	}
-	return
 }
 
 func CreateTempFile(t testing.TB, templatePath string, values map[string]string) string {
