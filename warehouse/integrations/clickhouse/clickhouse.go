@@ -280,7 +280,7 @@ registerTLSConfig will create a global map, use different names for the differen
 clickhouse will access the config by mentioning the key in connection string
 */
 func registerTLSConfig(key, certificate string) {
-	tlsConfig := &tls.Config{}
+	tlsConfig := &tls.Config{} // skipcq: GO-S1020
 	caCert := []byte(certificate)
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
@@ -316,7 +316,7 @@ func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns model.Table
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := ch.getClickHouseCodecForColumnType(dataType, tableName)
-		columnType := ch.getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.Contains(notNullableColumns, columnName))
+		columnType := ch.getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], slices.Contains(notNullableColumns, columnName))
 		arr = append(arr, fmt.Sprintf(`%q %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr, ",")
@@ -1136,6 +1136,6 @@ func (ch *Clickhouse) SetConnectionTimeout(timeout time.Duration) {
 	ch.ConnectTimeout = timeout
 }
 
-func (ch *Clickhouse) ErrorMappings() []model.JobError {
+func (*Clickhouse) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

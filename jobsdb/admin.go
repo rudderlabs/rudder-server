@@ -33,11 +33,7 @@ func (jd *HandleT) DeleteExecuting() {
 	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
 }
 
-/*
-deleteJobStatus deletes the latest status of a batch of jobs
-This is only done during recovery, which happens during the server start.
-So, we don't have to worry about dsEmptyResultCache
-*/
+// deleteJobStatus deletes the latest status of a batch of jobs
 func (jd *HandleT) deleteJobStatus() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
 		defer jd.getTimerStat(
@@ -54,7 +50,7 @@ func (jd *HandleT) deleteJobStatus() {
 				return err
 			}
 			tx.Tx().AddSuccessListener(func() {
-				jd.dropDSFromCache(ds)
+				jd.noResultsCache.InvalidateDataset(ds.Index)
 			})
 		}
 
@@ -98,11 +94,7 @@ func (jd *HandleT) FailExecuting() {
 	_ = jd.executeDbRequest(newWriteDbRequest("fail_executing", &tags, command))
 }
 
-/*
-failExecuting sets the state of the executing jobs to failed
-This is only done during recovery, which happens during the server start.
-So, we don't have to worry about dsEmptyResultCache
-*/
+// failExecuting sets the state of the executing jobs to failed
 func (jd *HandleT) failExecuting() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
 		defer jd.getTimerStat(
@@ -119,7 +111,7 @@ func (jd *HandleT) failExecuting() {
 				return err
 			}
 			tx.Tx().AddSuccessListener(func() {
-				jd.dropDSFromCache(ds)
+				jd.noResultsCache.InvalidateDataset(ds.Index)
 			})
 		}
 		return nil

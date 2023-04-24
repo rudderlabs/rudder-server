@@ -123,6 +123,7 @@ func (jf *JobsForwarder) Start() error {
 								RetryTime:     time.Now(),
 								ErrorCode:     "400",
 								Parameters:    []byte{},
+								JobParameters: job.Parameters,
 								ErrorResponse: json.RawMessage(fmt.Sprintf(`{"transform_error": %q}`, err.Error())),
 							})
 							jf.stat.NewTaggedStat("schema_forwarder_jobs", stats.CountType, stats.Tags{"state": "invalid"}).Increment()
@@ -141,10 +142,11 @@ func (jf *JobsForwarder) Start() error {
 									defer mu.Unlock()
 									jobDone(job)
 									statuses = append(statuses, &jobsdb.JobStatusT{
-										JobID:      job.JobID,
-										AttemptNum: job.LastJobStatus.AttemptNum + 1,
-										JobState:   jobsdb.Succeeded.State,
-										ExecTime:   time.Now(),
+										JobID:         job.JobID,
+										AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+										JobState:      jobsdb.Succeeded.State,
+										ExecTime:      time.Now(),
+										JobParameters: job.Parameters,
 									})
 									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Increment()
 								} else {
@@ -177,6 +179,7 @@ func (jf *JobsForwarder) Start() error {
 							RetryTime:     time.Now(),
 							ErrorCode:     "400",
 							Parameters:    []byte{},
+							JobParameters: job.Parameters,
 							ErrorResponse: json.RawMessage(fmt.Sprintf(`{"error": %q}`, err.Error())),
 						})
 					}

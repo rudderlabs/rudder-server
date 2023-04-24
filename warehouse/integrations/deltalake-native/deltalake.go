@@ -12,6 +12,7 @@ import (
 
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"golang.org/x/exp/slices"
 
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
@@ -918,7 +919,7 @@ func (d *Deltalake) partitionQuery(tableName string) (string, error) {
 
 // partitionedByEventDate returns true if the table is partitioned by event_date
 func partitionedByEventDate(columns []string) bool {
-	return misc.Contains(columns, "event_date")
+	return slices.Contains(columns, "event_date")
 }
 
 // LoadUserTables loads user tables
