@@ -321,6 +321,10 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				return st.errorDB.GetToRetry(ctx, queryParams)
 			}, sendQueryRetryStats)
 			if err != nil {
+				if ctx.Err() != nil { // we are shutting down
+					close(st.errProcessQ)
+					return //nolint:nilerr
+				}
 				st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
 				panic(err)
 			}
@@ -336,6 +340,10 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					return st.errorDB.GetUnprocessed(ctx, queryParams)
 				}, sendQueryRetryStats)
 				if err != nil {
+					if ctx.Err() != nil { // we are shutting down
+						close(st.errProcessQ)
+						return
+					}
 					st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
 					panic(err)
 				}
@@ -392,6 +400,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 			}, sendRetryUpdateStats)
 			if err != nil {
+				if ctx.Err() != nil { // we are shutting down
+					return //nolint:nilerr
+				}
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)
 			}
