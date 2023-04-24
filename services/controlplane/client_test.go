@@ -226,7 +226,7 @@ func TestDestinationHistory(t *testing.T) {
 				require.Equal(t, tc.wantPath, r.URL.String())
 
 				w.WriteHeader(tc.responseStatus)
-				fmt.Fprint(w, tc.responseBody)
+				_, _ = fmt.Fprint(w, tc.responseBody)
 			}))
 			defer s.Close()
 
@@ -344,8 +344,15 @@ func TestRetriesTimeout(t *testing.T) {
 	}
 }
 
-func TestGetDestinationSSHKeys(t *testing.T) {
+func TestGetDestinationSSHKeyPair(t *testing.T) {
+	var count int
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if count == 0 { // failing the first call to test retries
+			count++
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -368,29 +375,29 @@ func TestGetDestinationSSHKeys(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		require.NoError(t, json.NewEncoder(w).Encode(controlplane.SSHKey{PrivateKey: "test-private-key", PublicKey: "test-public-key"}))
+		require.NoError(t, json.NewEncoder(w).Encode(controlplane.SSHKeyPair{
+			PrivateKey: "test-private-key",
+			PublicKey:  "test-public-key",
+		}))
 	}))
+	t.Cleanup(mockServer.Close)
 
-	defer mockServer.Close()
-	validSecret := "valid-secret"
+	client := controlplane.NewClient(
+		mockServer.URL,
+		&identity.Namespace{
+			Namespace:    "valid-namespace",
+			HostedSecret: "valid-secret",
+		},
+		controlplane.WithHTTPClient(mockServer.Client()),
+	)
 
-	identity := &identity.Namespace{
-		Namespace:    "valid-namespace",
-		HostedSecret: validSecret,
-	}
-	client := controlplane.NewClient(mockServer.URL, identity, controlplane.WithHTTPClient(mockServer.Client()))
+	keyPair, err := client.GetDestinationSSHKeyPair(context.Background(), "123")
+	require.NoError(t, err)
+	require.Equal(t, controlplane.SSHKeyPair{
+		PrivateKey: "test-private-key",
+		PublicKey:  "test-public-key",
+	}, keyPair)
 
-	privateKey, err := client.GetDestinationSSHKeys(context.Background(), "123")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if privateKey != "test-private-key" {
-		t.Errorf("unexpected private key: %s", privateKey)
-	}
-
-	_, err = client.GetDestinationSSHKeys(context.Background(), "456")
-	if err == nil {
-		t.Error("expected error, but got nil")
-	}
+	_, err = client.GetDestinationSSHKeyPair(context.Background(), "456")
+	require.Error(t, err)
 }

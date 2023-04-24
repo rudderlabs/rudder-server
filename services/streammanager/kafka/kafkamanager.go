@@ -822,6 +822,6 @@ func getSSHPrivateKey(ctx context.Context, destinationID string) (string, error)
 		config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		backendconfig.DefaultBackendConfig.Identity(),
 	)
-	keyPair, err := c.GetDestinationSSHKeys(ctx, destinationID)
+	keyPair, err := c.GetDestinationSSHKeyPair(ctx, destinationID)
 	return keyPair.PrivateKey, err
 }
