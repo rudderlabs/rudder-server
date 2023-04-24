@@ -24,7 +24,6 @@ import (
 
 	_ "github.com/lib/pq"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/stretchr/testify/require"
 )
 
@@ -151,27 +150,6 @@ func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 	if !w.SkipWarehouse {
 		verifyEventsInWareHouse(t, w)
 	}
-}
-
-func SetUpJobsDB(t testing.TB) *sql.DB {
-	t.Helper()
-
-	pgCredentials := &postgres.Credentials{
-		DBName:   "jobsdb",
-		Password: "password",
-		User:     "rudder",
-		Host:     "wh-jobsDb",
-		SSLMode:  "disable",
-		Port:     "5432",
-	}
-
-	db, err := postgres.Connect(*pgCredentials)
-	require.NoError(t, err)
-
-	err = db.Ping()
-	require.NoError(t, err)
-
-	return db
 }
 
 func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {

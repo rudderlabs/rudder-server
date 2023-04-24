@@ -3,15 +3,16 @@ package postgres_test
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/compose-test/testcompose"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/compose-test/testcompose"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -51,7 +52,7 @@ func TestIntegration(t *testing.T) {
 	minioPort := c.Port("wh-minio", 9000)
 	transformerPort := c.Port("wh-transformer", 9090)
 	postgresPort := c.Port("wh-postgres", 5432)
-	//privatePostgresPort := c.Port("db-private-postgres", 5432)
+	// privatePostgresPort := c.Port("db-private-postgres", 5432)
 	sshPort := c.Port("wh-ssh-server", 2222)
 
 	httpPort, err := kitHelper.GetFreePort()

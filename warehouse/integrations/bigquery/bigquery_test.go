@@ -4,16 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/compose-test/testcompose"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/compose-test/testcompose"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 

@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/lib/pq"

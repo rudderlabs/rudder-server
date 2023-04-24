@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	jsonstd "encoding/json"
 	"fmt"
+
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"

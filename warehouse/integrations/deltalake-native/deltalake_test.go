@@ -6,15 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	"os"
-	"strconv"
-	"testing"
-	"time"
 
 	dbsql "github.com/databricks/databricks-sql-go"
 
@@ -182,7 +183,7 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 
-		provider     := warehouseutils.DELTALAKE
+		provider := warehouseutils.DELTALAKE
 
 		port, err := strconv.Atoi(deltaLakeCredentials.Port)
 		require.NoError(t, err)
