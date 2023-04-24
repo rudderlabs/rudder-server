@@ -124,10 +124,9 @@ func TestIntegrationPostgres(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	configurations := testhelper.PopulateTemplateConfigurations()
 	dsn := fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		configurations["privatePostgresUser"], configurations["privatePostgresPassword"], configurations["privatePostgresHost"], configurations["privatePostgresPort"], configurations["privatePostgresDatabase"],
+		"rudder", "rudder-password", "wh-postgres", "5432", "rudderdb",
 	)
 	db, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)

@@ -2,7 +2,6 @@ package middleware_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -13,14 +12,10 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
 
 func TestQueryWrapper(t *testing.T) {
-	if os.Getenv("SLOW") != "1" {
-		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
-	}
 	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
 	}
@@ -32,20 +27,6 @@ func TestQueryWrapper(t *testing.T) {
 
 	db, err := bigquery.Connect(context.TODO(), &credentials)
 	require.NoError(t, err)
-
-	var (
-		provider      = warehouseutils.BQ
-		schema        = testhelper.Schema(provider, testhelper.BigqueryIntegrationTestSchema)
-		sourcesSchema = fmt.Sprintf("%s_%s", schema, "sources")
-	)
-
-	t.Cleanup(func() {
-		for _, dataset := range []string{schema, sourcesSchema} {
-			require.NoError(t, testhelper.WithConstantRetries(func() error {
-				return db.Dataset(dataset).DeleteWithContents(context.TODO())
-			}))
-		}
-	})
 
 	testCases := []struct {
 		name               string
@@ -91,6 +72,8 @@ func TestQueryWrapper(t *testing.T) {
 
 			queryStatement := "SELECT 1;"
 			query := db.Query(queryStatement)
+			_, err = qw.Run(ctx, query)
+			require.NoError(t, err)
 
 			kvs := []any{
 				logfield.Query, query,
@@ -99,7 +82,7 @@ func TestQueryWrapper(t *testing.T) {
 			kvs = append(kvs, keysAndValues...)
 
 			if tc.wantLog {
-				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
+				mockLogger.EXPECT().Infow("executing query", kvs).Times(1)
 			} else {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
 			}

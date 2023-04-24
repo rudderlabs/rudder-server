@@ -416,7 +416,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		query            string
 		stagingTableName string
 		rowsAffected     int64
-		txn              *sql.Tx
+		txn              *sqlmiddleware.Tx
 		result           sql.Result
 	)
 
@@ -775,7 +775,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 		err                  error
 		query                string
 		identifyStagingTable string
-		txn                  *sql.Tx
+		txn                  *sqlmiddleware.Tx
 		userColNames         []string
 		firstValProps        []string
 	)

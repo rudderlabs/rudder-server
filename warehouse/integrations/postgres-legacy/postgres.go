@@ -1030,8 +1030,8 @@ func (pg *Postgres) SetConnectionTimeout(timeout time.Duration) {
 }
 
 type QueryParams struct {
-	txn                 *sql.Tx
-	db                  *sql.DB
+	txn                 *sqlmiddleware.Tx
+	db                  *sqlmiddleware.DB
 	query               string
 	enableWithQueryPlan bool
 }
