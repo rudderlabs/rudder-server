@@ -384,9 +384,9 @@ func TestIntegration(t *testing.T) {
 			ID: "24qeADObp6eIhjjDnEppO6P1SNc",
 			Config: map[string]interface{}{
 				"account":            templateConfigurations["snowflakeAccount"],
-				"database":           templateConfigurations["snowflakeDBName"],
-				"warehouse":          templateConfigurations["snowflakeWHName"],
-				"user":               templateConfigurations["snowflakeUsername"],
+				"database":           templateConfigurations["snowflakeDatabase"],
+				"warehouse":          templateConfigurations["snowflakeWarehouse"],
+				"user":               templateConfigurations["snowflakeUser"],
 				"password":           templateConfigurations["snowflakePassword"],
 				"cloudProvider":      "AWS",
 				"bucketName":         templateConfigurations["snowflakeBucketName"],
