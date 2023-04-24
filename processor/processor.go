@@ -833,6 +833,8 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
 	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
 
+	commonMetadata.SourceDefinitionType = source.SourceDefinition.Type
+
 	return &commonMetadata
 }
 
@@ -859,6 +861,7 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.DestinationID = destination.ID
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
+	metadata.SourceDefinitionType = commonMetadata.SourceDefinitionType
 	event.Metadata = metadata
 }
 
@@ -1633,6 +1636,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
+			source, _ := proc.getSourceByWriteKey(writeKey)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
@@ -1640,6 +1644,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					singularEvent,
 					proc.getEnabledDestinations(writeKey, *destType),
 				)
+
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range enabledDestinationsList {
 					destination := &enabledDestinationsList[idx]
@@ -1647,6 +1652,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					shallowEventCopy.Message = singularEvent
 					shallowEventCopy.Destination = *destination
 					shallowEventCopy.Libraries = workspaceLibraries
+					// just in-case the source-type value is not set
+					if event.Metadata.SourceDefinitionType == "" {
+						event.Metadata.SourceDefinitionType = source.SourceDefinition.Type
+					}
 					shallowEventCopy.Metadata = event.Metadata
 
 					// At the TP flow we are not having destination information, so adding it here.
@@ -2426,16 +2435,11 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 				supportedMessageTypesCache[event.Destination.ID] = supportedTypes
 			}
 			if supportedTypes.ok {
-				messageType, typOk := event.Message["type"].(string)
-				if !typOk {
-					// add to FailedEvents
-					errMessage = "Invalid message type. Type assertion failed"
-					resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
-					failedEvents = append(failedEvents, resp)
-					continue
-				}
-				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !slices.Contains(supportedTypes.values, messageType) {
+				allow, failedEvent := eventfilter.AllowEventToDestTransformation(event, supportedTypes.values)
+				if !allow {
+					if failedEvent != nil {
+						failedEvents = append(failedEvents, *failedEvent)
+					}
 					continue
 				}
 			}
