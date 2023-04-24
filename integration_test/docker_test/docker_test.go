@@ -405,8 +405,11 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	})
 	containersGroup.Go(func() (err error) {
 		postgresContainer, err = resource.SetupPostgres(pool, t)
+		if err != nil {
+			return err
+		}
 		db = postgresContainer.DB
-		return err
+		return nil
 	})
 	containersGroup.Go(func() (err error) {
 		transformerContainer, err = destination.SetupTransformer(pool, t)
