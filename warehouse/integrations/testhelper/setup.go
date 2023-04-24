@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,6 +13,8 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
