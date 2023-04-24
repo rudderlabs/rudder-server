@@ -3,7 +3,6 @@ package postgres_test
 import (
 	"database/sql"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -126,13 +125,11 @@ func TestIntegrationPostgres(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	configurations := testhelper.PopulateTemplateConfigurations()
-	dsn := url.URL{
-		Scheme: "postgres",
-		User:   url.UserPassword(configurations["privatePostgresUser"], configurations["privatePostgresPassword"]),
-		Host:   fmt.Sprintf("%s:%s", configurations["privatePostgresHost"], configurations["privatePostgresPort"]),
-		Path:   configurations["privatePostgresDatabase"],
-	}
-	db, err := sql.Open("postgres", dsn.String())
+	dsn := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		configurations["privatePostgresUser"], configurations["privatePostgresPassword"], configurations["privatePostgresHost"], configurations["privatePostgresPort"], configurations["privatePostgresDatabase"],
+	)
+	db, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
 
 	err = db.Ping()
