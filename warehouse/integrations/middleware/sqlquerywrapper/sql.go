@@ -25,6 +25,11 @@ type DB struct {
 	secretsRegex       map[string]string
 }
 
+type Tx struct {
+	*sql.Tx
+	db *DB
+}
+
 func WithLogger(logger logger) Opt {
 	return func(s *DB) {
 		s.logger = logger
@@ -117,4 +122,54 @@ func (db *DB) logQuery(query string, elapsed time.Duration) {
 	keysAndValues = append(keysAndValues, db.keysAndValues...)
 
 	db.logger.Infow("executing query", keysAndValues...)
+}
+
+func (db *DB) Begin() (*Tx, error) {
+	if tx, err := db.DB.Begin(); err != nil {
+		return nil, err
+	} else {
+		return &Tx{tx, db}, nil
+	}
+}
+
+func (tx *Tx) Exec(query string, args ...interface{}) (sql.Result, error) {
+	startedAt := time.Now()
+	result, err := tx.Tx.Exec(query, args...)
+	tx.db.logQuery(query, tx.db.since(startedAt))
+	return result, err
+}
+
+func (tx *Tx) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	startedAt := time.Now()
+	result, err := tx.Tx.ExecContext(ctx, query, args...)
+	tx.db.logQuery(query, tx.db.since(startedAt))
+	return result, err
+}
+
+func (tx *Tx) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	startedAt := time.Now()
+	rows, err := tx.Tx.Query(query, args...)
+	tx.db.logQuery(query, tx.db.since(startedAt))
+	return rows, err
+}
+
+func (tx *Tx) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	startedAt := time.Now()
+	rows, err := tx.Tx.QueryContext(ctx, query, args...)
+	tx.db.logQuery(query, tx.db.since(startedAt))
+	return rows, err
+}
+
+func (tx *Tx) QueryRow(query string, args ...interface{}) *sql.Row {
+	startedAt := time.Now()
+	row := tx.Tx.QueryRow(query, args...)
+	tx.db.logQuery(query, tx.db.since(startedAt))
+	return row
+}
+
+func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	startedAt := time.Now()
+	row := tx.Tx.QueryRowContext(ctx, query, args...)
+	tx.db.logQuery(query, tx.db.since(startedAt))
+	return row
 }
