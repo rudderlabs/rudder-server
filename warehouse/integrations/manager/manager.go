@@ -41,7 +41,7 @@ type Manager interface {
 	LoadIdentityMappingsTable() error
 	Cleanup()
 	IsEmpty(warehouse model.Warehouse) (bool, error)
-	TestConnection(warehouse model.Warehouse) error
+	TestConnection(ctx context.Context, warehouse model.Warehouse) error
 	DownloadIdentityRules(*misc.GZipWriter) error
 	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
 	Connect(warehouse model.Warehouse) (client.Client, error)

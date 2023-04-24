@@ -8,13 +8,14 @@ import (
 	"reflect"
 	"regexp"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -311,7 +312,7 @@ func enhanceSchemaWithIDResolution(consolidatedSchema model.Schema, isIDResoluti
 }
 
 func (sh *Schema) isIDResolutionEnabled() bool {
-	return sh.enableIDResolution && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+	return sh.enableIDResolution && slices.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
 // hasLocalSchemaChanged compares the localSchema with the schemaInWarehouse

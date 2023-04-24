@@ -12,6 +12,7 @@ type Mode string
 const (
 	ModeNone      Mode = "none"
 	ModeWorkspace Mode = "workspace"
+	ModeSource    Mode = "source"
 )
 
 // GetStrategy returns the strategy for the given isolation mode. An error is returned if the mode is invalid
@@ -21,6 +22,8 @@ func GetStrategy(mode Mode) (Strategy, error) {
 		return noneStrategy{}, nil
 	case ModeWorkspace:
 		return workspaceStrategy{}, nil
+	case ModeSource:
+		return sourceStrategy{}, nil
 	default:
 		return noneStrategy{}, errors.New("unsupported isolation mode")
 	}
@@ -55,4 +58,17 @@ func (workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB)
 
 func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
 	params.WorkspaceID = partition
+}
+
+// sourceStrategy implements isolation at source level
+type sourceStrategy struct{}
+
+// ActivePartitions returns the list of active sourceIDs in jobsdb
+func (sourceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
+	return db.GetDistinctParameterValues(ctx, "source_id")
+}
+
+// AugmentQueryParams augments the given GetQueryParamsT by adding the partition as sourceID parameter filter
+func (sourceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
+	params.ParameterFilters = append(params.ParameterFilters, jobsdb.ParameterFilterT{Name: "source_id", Value: partition})
 }

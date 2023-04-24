@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -42,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -50,9 +50,6 @@ import (
 )
 
 type testContext struct {
-	dbReadBatchSize  int
-	processEventSize int
-
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
 	mockGatewayJobsDB     *mocksJobsDB.MockJobsDB
@@ -88,8 +85,6 @@ func (c *testContext) Setup() {
 			close(ch)
 			return ch
 		})
-	c.dbReadBatchSize = 10000
-	c.processEventSize = 10000
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
 	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
@@ -403,6 +398,8 @@ func initProcessor() {
 	dedup.Init()
 	misc.Init()
 	integrations.Init()
+	format.MaxLength = 100000
+	format.MaxDepth = 10
 }
 
 var _ = Describe("Processor with event schemas v2", Ordered, func() {
@@ -680,8 +677,14 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			payloadLimit := processor.payloadLimit
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
+				gomock.Any(),
+				jobsdb.GetQueryParamsT{
+					CustomValFilters: gatewayCustomVal,
+					JobsLimit:        processor.config.maxEventsToProcess,
+					EventsLimit:      processor.config.maxEventsToProcess,
+					PayloadSizeLimit: processor.payloadLimit,
+				}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs("")
 			Expect(didWork).To(Equal(false))
@@ -812,14 +815,14 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: gatewayCustomVal,
-					JobsLimit:        c.dbReadBatchSize,
-					EventsLimit:      c.processEventSize,
-					PayloadSizeLimit: payloadLimit,
+					JobsLimit:        processor.config.maxEventsToProcess,
+					EventsLimit:      processor.config.maxEventsToProcess,
+					PayloadSizeLimit: processor.payloadLimit,
 				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
@@ -879,7 +882,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1009,12 +1011,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
+
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        c.dbReadBatchSize,
-				EventsLimit:      c.processEventSize,
-				PayloadSizeLimit: payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess,
+				EventsLimit:      processor.config.maxEventsToProcess,
+				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
@@ -1083,8 +1086,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
-
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1292,12 +1293,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
+
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        c.dbReadBatchSize,
-				EventsLimit:      c.processEventSize,
-				PayloadSizeLimit: payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess,
+				EventsLimit:      processor.config.maxEventsToProcess,
+				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -1330,8 +1332,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertErrStoreJob(job, i)
 					}
 				})
-
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1430,12 +1430,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
+
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        c.dbReadBatchSize,
-				EventsLimit:      c.processEventSize,
-				PayloadSizeLimit: payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess,
+				EventsLimit:      processor.config.maxEventsToProcess,
+				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
@@ -1468,8 +1469,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertErrStoreJob(job)
 					}
 				})
-
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1517,12 +1516,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			payloadLimit := 100 * bytesize.MB
+			processor := prepareHandle(NewHandle(mockTransformer))
+
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobsLimit:        c.dbReadBatchSize,
-				EventsLimit:      c.processEventSize,
-				PayloadSizeLimit: payloadLimit,
+				JobsLimit:        processor.config.maxEventsToProcess,
+				EventsLimit:      processor.config.maxEventsToProcess,
+				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
@@ -1546,8 +1546,6 @@ var _ = Describe("Processor", Ordered, func() {
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
-
-			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1909,6 +1907,7 @@ var _ = Describe("Static Function Tests", func() {
 	Context("ConvertToTransformerResponse Tests", func() {
 		It("Should filter out unsupported message types", func() {
 			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"identify"},
@@ -1975,6 +1974,7 @@ var _ = Describe("Static Function Tests", func() {
 				Config: map[string]interface{}{
 					"enableServerSideIdentify": false,
 				},
+				IsProcessorEnabled: true, // assuming the mode is cloud/hybrid
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"identify", "track"},
@@ -2289,6 +2289,517 @@ var _ = Describe("Static Function Tests", func() {
 						Output:     events[2].Message,
 						StatusCode: 200,
 						Metadata:   events[2].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to cloud-mode destination, should filter out any event types that are not track/group", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "cloud",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "page"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": map[string]interface{}{
+								"messageType": []interface{}{"track", "group"},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "identify",
+						"event": "User Authenticated",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					// {
+					// 	Output:     events[1].Message,
+					// 	StatusCode: 200,
+					// 	Metadata:   events[1].Metadata,
+					// },
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to device-mode destination, should filter out all the events to this destination", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: false,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "device",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": map[string]interface{}{
+								"messageType": []interface{}{"track", "group"},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events:       nil,
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to hybrid-mode destination, should filter out any event types that are not track/group", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": map[string]interface{}{
+								"messageType": []interface{}{"track", "group"},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter is not present, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "group",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web is a string, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": "al",
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "group",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		// source-type(in sourceDefinition) is empty string
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web.messageType supports track only but sourceType is coming up as empty string, should filter out all the events with event.type not in supportedMessageTypes", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": map[string]interface{}{
+								"messageType": []interface{}{"track"},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "",
+					},
+					Message: map[string]interface{}{
+						"type":  "group",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
 					},
 				},
 				FailedEvents: nil,

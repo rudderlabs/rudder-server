@@ -9,7 +9,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/router/throttler"
+	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -39,7 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// processorApp is the type for Processor type implemention
+// processorApp is the type for Processor type implementation
 type processorApp struct {
 	setupDone      bool
 	app            app.App
@@ -99,6 +101,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	a.log.Info("Processor starting")
 
 	g, ctx := errgroup.WithContext(ctx)
+	terminalErrFn := terminalErrorFunction(ctx, g)
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
@@ -170,6 +173,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
+	schemaDB := jobsdb.NewForReadWrite(
+		"esch",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+	)
+
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
 	if misc.UseFairPickup() {
@@ -185,12 +194,17 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
-
-	schemaDB := jobsdb.NewForReadWrite(
-		"esch",
-		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(&a.config.processorDSLimit),
-	)
+	var schemaForwarder schema_forwarder.Forwarder
+	if config.GetBool("EventSchemas2.enabled", false) {
+		client, err := pulsar.NewClient(config.Default)
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+	} else {
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
@@ -252,6 +266,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		RouterDB:         routerDB,
 		BatchRouterDB:    batchRouterDB,
 		ErrorDB:          errDB,
+		SchemaForwarder:  schemaForwarder,
 		EventSchemaDB:    schemaDB,
 		Processor:        p,
 		Router:           rt,

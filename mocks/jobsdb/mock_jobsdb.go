@@ -76,6 +76,21 @@ func (mr *MockJobsDBMockRecorder) GetActiveWorkspaces(arg0 interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActiveWorkspaces", reflect.TypeOf((*MockJobsDB)(nil).GetActiveWorkspaces), arg0)
 }
 
+// GetDistinctParameterValues mocks base method.
+func (m *MockJobsDB) GetDistinctParameterValues(arg0 context.Context, arg1 string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetDistinctParameterValues", arg0, arg1)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetDistinctParameterValues indicates an expected call of GetDistinctParameterValues.
+func (mr *MockJobsDBMockRecorder) GetDistinctParameterValues(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDistinctParameterValues", reflect.TypeOf((*MockJobsDB)(nil).GetDistinctParameterValues), arg0, arg1)
+}
+
 // GetExecuting mocks base method.
 func (m *MockJobsDB) GetExecuting(arg0 context.Context, arg1 jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
 	m.ctrl.T.Helper()

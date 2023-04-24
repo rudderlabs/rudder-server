@@ -19,12 +19,13 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/samber/lo"
 
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/thoas/go-funk"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -337,7 +338,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					connectionsMap[destination.ID][source.ID] = warehouse
 					connectionsMapLock.Unlock()
 
-					if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
+					if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
 						wh.setupIdentityTables(warehouse)
 						if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
 							// non-blocking populate historic identities
@@ -730,14 +731,14 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			}
 		}
 
-		warehouse, ok := funk.Find(wh.warehouses, func(w model.Warehouse) bool {
+		warehouse, found := lo.Find(wh.warehouses, func(w model.Warehouse) bool {
 			return w.Source.ID == upload.SourceID && w.Destination.ID == upload.DestinationID
-		}).(model.Warehouse)
+		})
 		wh.configSubscriberLock.RUnlock()
 
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
 
-		if !ok {
+		if !found {
 			uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
 				Upload: upload,
 			}, nil)
@@ -979,7 +980,7 @@ func minimalConfigSubscriber() {
 				}
 				sourceIDsByWorkspaceTemp[workspaceID] = append(sourceIDsByWorkspaceTemp[workspaceID], source.ID)
 				for _, destination := range source.Destinations {
-					if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+					if slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 						wh := &HandleT{
 							dbHandle: dbHandle,
 							destType: destination.DestinationDefinition.Name,
@@ -1044,7 +1045,7 @@ func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter ma
 		for _, source := range wConfig.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
-				if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+				if slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
@@ -1071,7 +1072,7 @@ func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter ma
 		}
 	}
 
-	keys := misc.StringKeys(dstToWhRouter)
+	keys := lo.Keys(dstToWhRouter)
 	for _, key := range keys {
 		if _, ok := enabledDestinations[key]; !ok {
 			if wh, ok := dstToWhRouter[key]; ok {

@@ -910,10 +910,10 @@ func TestCacheScenarios(t *testing.T) {
 	})
 
 	t.Run("Test cache with two less parameter filters (destination_id & source_id)", func(t *testing.T) {
-		previousParameterFilters := CacheKeyParameterFilters
-		CacheKeyParameterFilters = []string{"destination_id", "source_id"}
+		previousParameterFilters := cacheParameterFilters
+		cacheParameterFilters = []string{"destination_id", "source_id"}
 		defer func() {
-			CacheKeyParameterFilters = previousParameterFilters
+			cacheParameterFilters = previousParameterFilters
 		}()
 		jobsDB := NewForReadWrite("two_params_cache_query_less")
 		require.NoError(t, jobsDB.Start())
@@ -1201,7 +1201,7 @@ func TestFailExecuting(t *testing.T) {
 
 func TestConstructParameterJSONQuery(t *testing.T) {
 	q := constructParameterJSONQuery("alias", []ParameterFilterT{{Name: "name", Value: "value"}})
-	require.Equal(t, `(alias.parameters @> '{"name":"value"}' )`, q)
+	require.Equal(t, `(alias.parameters->>'name'='value')`, q)
 }
 
 func TestGetActiveWorkspaces(t *testing.T) {
@@ -1296,12 +1296,100 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 3)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2", "ws-3"}, activeWorkspaces)
+}
 
-	jobsDB.preciseActiveWsQuery = true
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background())
+func TestGetDistinctParameterValues(t *testing.T) {
+	_ = startPostgres(t)
+	maxDSSize := 1
+	triggerAddNewDS := make(chan time.Time)
+	jobsDB := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+		MaxDSSize: &maxDSSize,
+	}
+	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
-	require.Len(t, activeWorkspaces, 2)
-	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
+	defer jobsDB.TearDown()
+
+	require.Equal(t, 1, len(jobsDB.getDSList()))
+
+	generateJobs := func(paramValue string, numOfJob int) []*JobT {
+		customVal := "MOCKDS"
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				WorkspaceId:  "workspace",
+				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":"", "param":"` + paramValue + `"}`),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	// adding mock jobs to jobsDB
+	jobs := generateJobs("param-1", 2)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+
+	parameterValues, err := jobsDB.GetDistinctParameterValues(context.Background(), "param")
+	require.NoError(t, err)
+	require.Len(t, parameterValues, 1)
+	require.ElementsMatch(t, []string{"param-1"}, parameterValues)
+
+	// triggerAddNewDS to trigger jobsDB to add new DS
+	triggerAddNewDS <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			t.Logf("tables %d", len(jobsDB.getDSList()))
+			return len(jobsDB.getDSList()) == 2
+		},
+		time.Second*5, time.Millisecond,
+		"expected number of tables to be 2")
+
+	jobs = generateJobs("param-2", 2)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+
+	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), "param")
+	require.NoError(t, err)
+	require.Len(t, parameterValues, 2)
+	require.ElementsMatch(t, []string{"param-1", "param-2"}, parameterValues)
+
+	triggerAddNewDS <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB.getDSList()) == 3
+		},
+		time.Second*5, time.Millisecond,
+		"expected number of tables to be 3")
+
+	jobs = generateJobs("param-3", 2)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+
+	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParamsT{ParameterFilters: []ParameterFilterT{{Name: "param", Value: "param-3"}}, JobsLimit: 10})
+	require.NoError(t, err)
+	statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
+		return &JobStatusT{
+			JobID:       job.JobID,
+			JobState:    Succeeded.State,
+			AttemptNum:  1,
+			WorkspaceId: "workspace",
+		}
+	})
+	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{}, []ParameterFilterT{}))
+
+	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), "param")
+	require.NoError(t, err)
+	require.Len(t, parameterValues, 3)
+	require.ElementsMatch(t, []string{"param-1", "param-2", "param-3"}, parameterValues)
 }
 
 type testingT interface {

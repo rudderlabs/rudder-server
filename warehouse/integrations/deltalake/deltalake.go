@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -320,7 +321,7 @@ func (dl *Deltalake) fetchPartitionColumns(dbT *client.Client, tableName string)
 }
 
 func isPartitionedByEventDate(partitionedColumns []string) bool {
-	return misc.Contains(partitionedColumns, "event_date")
+	return slices.Contains(partitionedColumns, "event_date")
 }
 
 // partitionQuery
@@ -952,10 +953,8 @@ func (dl *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Up
 }
 
 // TestConnection test the connection for the warehouse
-func (dl *Deltalake) TestConnection(warehouse model.Warehouse) (err error) {
-	dl.Warehouse = warehouse
-	dl.Client, err = dl.connectToWarehouse()
-	return
+func (*Deltalake) TestConnection(context.Context, model.Warehouse) error {
+	return nil
 }
 
 // Cleanup cleanup when upload is done.
@@ -1213,6 +1212,6 @@ func appendableLTSQLStatement(namespace, tableName, stagingTableName string, col
 	return sqlStatement
 }
 
-func (dl *Deltalake) ErrorMappings() []model.JobError {
+func (*Deltalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

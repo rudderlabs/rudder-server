@@ -95,7 +95,7 @@ func TestDownloader(t *testing.T) {
 			numLoadFiles: 1,
 			loadFiles: []warehouseutils.LoadFile{
 				{
-					Location: "http://localhost:56524/devintegrationtest/cc0e3daa-1356-4781-8ce1-549ff95a8313/random.csv.gz",
+					Location: "http://localhost:56524/testbucket/cc0e3daa-1356-4781-8ce1-549ff95a8313/random.csv.gz",
 				},
 			},
 			wantError: errors.New("downloading batch: downloading object: downloading file from object storage: The specified key does not exist."),

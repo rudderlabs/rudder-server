@@ -7,13 +7,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
@@ -118,9 +118,9 @@ loop:
 					for k := range source.Destinations {
 						destination := &source.Destinations[k]
 						// For batch router destinations
-						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-							misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) ||
-							misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+						if slices.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+							slices.Contains(warehouseDestinations, destination.DestinationDefinition.Name) ||
+							slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 							_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 							if !ok {
 								pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
