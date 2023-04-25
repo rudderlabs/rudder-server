@@ -52,6 +52,17 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewProducer(t *testing.T) {
+	requiredFields := map[string]interface{}{
+		"hostname": "some-hostname",
+		"topic":    "some-topic",
+		"port":     "1234",
+	}
+	withRequired := func(m map[string]interface{}) map[string]interface{} {
+		for k, v := range requiredFields {
+			m[k] = v
+		}
+		return m
+	}
 	buildTest := func(destConfig map[string]interface{}, expectedErr string) func(*testing.T) {
 		return func(t *testing.T) {
 			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
@@ -89,10 +100,7 @@ func TestNewProducer(t *testing.T) {
 			"invalid configuration: invalid port"),
 		)
 		t.Run("invalid schema", buildTest(
-			map[string]interface{}{
-				"topic":         "some-topic",
-				"hostname":      "some-hostname",
-				"port":          "9090",
+			withRequired(map[string]interface{}{
 				"convertToAvro": true,
 				"avroSchemas": []interface{}{
 					map[string]string{"schemaId": "schema001"},
@@ -100,55 +108,43 @@ func TestNewProducer(t *testing.T) {
 						"schema": map[string]string{"name": "MyClass"},
 					},
 				},
-			},
+			}),
 			"Error while unmarshalling destination configuration "+
 				"map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] "+
-				"convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], "+
+				"convertToAvro:true hostname:some-hostname port:1234 topic:some-topic], "+
 				"got error: json: cannot unmarshal object into Go struct field "+
 				"avroSchema.AvroSchemas.Schema of type string"),
 		)
 		t.Run("invalid ssh config", func(t *testing.T) {
 			t.Run("missing ssh host", buildTest(
-				map[string]interface{}{
-					"topic":    "some-topic",
-					"hostname": "localhost",
-					"port":     "1234",
-					"useSSH":   true,
-				},
+				withRequired(map[string]interface{}{
+					"useSSH": true,
+				}),
 				"invalid configuration: ssh host cannot be empty",
 			))
 			t.Run("missing ssh port", buildTest(
-				map[string]interface{}{
-					"topic":    "some-topic",
-					"hostname": "localhost",
-					"port":     "1234",
-					"useSSH":   true,
-					"sshHost":  "random-host",
-					"sshUser":  "johnDoe",
-				},
+				withRequired(map[string]interface{}{
+					"useSSH":  true,
+					"sshHost": "random-host",
+					"sshUser": "johnDoe",
+				}),
 				"invalid configuration: invalid ssh port",
 			))
 			t.Run("invalid ssh port", buildTest(
-				map[string]interface{}{
-					"topic":    "some-topic",
-					"hostname": "localhost",
-					"port":     "1234",
-					"useSSH":   true,
-					"sshHost":  "random-host",
-					"sshUser":  "johnDoe",
-					"sshPort":  "65536",
-				},
+				withRequired(map[string]interface{}{
+					"useSSH":  true,
+					"sshHost": "random-host",
+					"sshUser": "johnDoe",
+					"sshPort": "65536",
+				}),
 				"invalid configuration: invalid ssh port",
 			))
 			t.Run("missing ssh user", buildTest(
-				map[string]interface{}{
-					"topic":    "some-topic",
-					"hostname": "localhost",
-					"port":     "1234",
-					"useSSH":   true,
-					"sshHost":  "random-host",
-					"sshPort":  "1234",
-				},
+				withRequired(map[string]interface{}{
+					"useSSH":  true,
+					"sshHost": "random-host",
+					"sshPort": "1234",
+				}),
 				"invalid configuration: ssh user cannot be empty",
 			))
 		})
