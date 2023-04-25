@@ -52,58 +52,44 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewProducer(t *testing.T) {
-	t.Run("missing configuration data", func(t *testing.T) {
-		t.Run("missing topic", func(t *testing.T) {
+	buildTest := func(destConfig map[string]interface{}, expectedErr string) func(*testing.T) {
+		return func(t *testing.T) {
 			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
-			dest := backendconfig.DestinationT{}
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.ErrorContains(t, err, "invalid configuration: topic cannot be empty")
-		})
-		t.Run("missing hostname", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-			destConfig := map[string]interface{}{
-				"topic": "some-topic",
-			}
 			dest := backendconfig.DestinationT{Config: destConfig}
 
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.ErrorContains(t, err, "invalid configuration: hostname cannot be empty")
-		})
-		t.Run("missing port", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-			destConfig := map[string]interface{}{
+			_, err := NewProducer(&dest, common.Opts{})
+			require.ErrorContains(t, err, expectedErr)
+		}
+	}
+	t.Run("missing configuration data", func(t *testing.T) {
+		t.Run("missing topic", buildTest(
+			map[string]interface{}{},
+			"invalid configuration: topic cannot be empty"),
+		)
+		t.Run("missing hostname", buildTest(
+			map[string]interface{}{
+				"topic": "some-topic",
+			},
+			"invalid configuration: hostname cannot be empty"),
+		)
+		t.Run("missing port", buildTest(
+			map[string]interface{}{
 				"topic":    "some-topic",
 				"hostname": "some-hostname",
-			}
-			dest := backendconfig.DestinationT{Config: destConfig}
-
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.ErrorContains(t, err, `invalid configuration: invalid port: strconv.Atoi: parsing "": invalid syntax`)
-		})
-		t.Run("invalid port", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-			destConfig := map[string]interface{}{
+			},
+			"invalid configuration: invalid port"),
+		)
+		t.Run("invalid port", buildTest(
+			map[string]interface{}{
 				"topic":    "some-topic",
 				"hostname": "some-hostname",
 				"port":     "0",
-			}
-			dest := backendconfig.DestinationT{Config: destConfig}
-
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.ErrorContains(t, err, "invalid port")
-		})
-		t.Run("invalid schema", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-			destConfig := map[string]interface{}{
+			},
+			"invalid configuration: invalid port"),
+		)
+		t.Run("invalid schema", buildTest(
+			map[string]interface{}{
 				"topic":         "some-topic",
 				"hostname":      "some-hostname",
 				"port":          "9090",
@@ -114,51 +100,43 @@ func TestNewProducer(t *testing.T) {
 						"schema": map[string]string{"name": "MyClass"},
 					},
 				},
-			}
-			dest := backendconfig.DestinationT{Config: destConfig}
-
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.EqualError(t, err, `[Kafka] Error while unmarshalling destination configuration map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], got error: json: cannot unmarshal object into Go struct field avroSchema.AvroSchemas.Schema of type string`)
-		})
+			},
+			"Error while unmarshalling destination configuration "+
+				"map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] "+
+				"convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], "+
+				"got error: json: cannot unmarshal object into Go struct field "+
+				"avroSchema.AvroSchemas.Schema of type string"),
+		)
 		t.Run("invalid ssh config", func(t *testing.T) {
-			buildTest := func(conf map[string]interface{}, expectedErr string) func(*testing.T) {
-				return func(t *testing.T) {
-					kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-					destConfig := map[string]interface{}{
-						"topic":    "some-topic",
-						"hostname": "localhost",
-						"port":     "1234",
-					}
-					for k, v := range conf {
-						destConfig[k] = v
-					}
-					dest := backendconfig.DestinationT{Config: destConfig}
-
-					_, err := NewProducer(&dest, common.Opts{})
-					require.ErrorContains(t, err, expectedErr)
-				}
-			}
 			t.Run("missing ssh host", buildTest(
 				map[string]interface{}{
-					"useSSH": true,
+					"topic":    "some-topic",
+					"hostname": "localhost",
+					"port":     "1234",
+					"useSSH":   true,
 				},
 				"invalid configuration: ssh host cannot be empty",
 			))
 			t.Run("missing ssh port", buildTest(
 				map[string]interface{}{
-					"useSSH":  true,
-					"sshHost": "random-host",
-					"sshUser": "johnDoe",
+					"topic":    "some-topic",
+					"hostname": "localhost",
+					"port":     "1234",
+					"useSSH":   true,
+					"sshHost":  "random-host",
+					"sshUser":  "johnDoe",
 				},
 				"invalid configuration: invalid ssh port",
 			))
 			t.Run("invalid ssh port", buildTest(
 				map[string]interface{}{
-					"useSSH":  true,
-					"sshHost": "random-host",
-					"sshUser": "johnDoe",
-					"sshPort": "65536",
+					"topic":    "some-topic",
+					"hostname": "localhost",
+					"port":     "1234",
+					"useSSH":   true,
+					"sshHost":  "random-host",
+					"sshUser":  "johnDoe",
+					"sshPort":  "65536",
 				},
 				"invalid configuration: invalid ssh port",
 			))
