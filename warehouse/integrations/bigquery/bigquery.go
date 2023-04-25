@@ -954,7 +954,6 @@ func (bq *BigQuery) FetchSchema(warehouse model.Warehouse) (model.Schema, model.
 		columnName = strings.ToLower(columnName)
 
 		if datatype, ok := dataTypesMapToRudder[bigquery.FieldType(columnType)]; ok {
-
 			schema[tableName][columnName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tableName]; !ok {
