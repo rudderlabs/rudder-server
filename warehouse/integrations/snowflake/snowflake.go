@@ -1245,7 +1245,7 @@ func (sf *Snowflake) TestConnection(ctx context.Context, _ model.Warehouse) erro
 }
 
 // FetchSchema queries the snowflake database and returns the schema
-func (sf *Snowflake) FetchSchema(model.Warehouse) (model.Schema, model.Schema, error) {
+func (sf *Snowflake) FetchSchema() (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 

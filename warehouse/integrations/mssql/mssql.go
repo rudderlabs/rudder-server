@@ -750,7 +750,7 @@ func (ms *MSSQL) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *MSSQL) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
+func (ms *MSSQL) FetchSchema() (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 

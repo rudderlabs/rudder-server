@@ -897,7 +897,7 @@ func (*BigQuery) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace
-func (bq *BigQuery) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
+func (bq *BigQuery) FetchSchema() (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 

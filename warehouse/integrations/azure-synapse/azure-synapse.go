@@ -709,7 +709,7 @@ func (as *AzureSynapse) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema returns the schema of the warehouse
-func (as *AzureSynapse) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
+func (as *AzureSynapse) FetchSchema() (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 

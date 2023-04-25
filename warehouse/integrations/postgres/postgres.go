@@ -402,7 +402,7 @@ func (pg *Postgres) Setup(
 func (pg *Postgres) CrashRecover() {}
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
+func (pg *Postgres) FetchSchema() (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 
