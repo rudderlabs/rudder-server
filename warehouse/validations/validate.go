@@ -99,7 +99,7 @@ func NewDestinationValidator() DestinationValidator {
 	return &destinationValidationImpl{}
 }
 
-func (v *destinationValidationImpl) Validate(dest *backendconfig.DestinationT) *model.DestinationValidationResponse {
+func (*destinationValidationImpl) Validate(dest *backendconfig.DestinationT) *model.DestinationValidationResponse {
 	return validateDestination(dest, "")
 }
 

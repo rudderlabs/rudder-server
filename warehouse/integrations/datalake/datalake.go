@@ -135,6 +135,6 @@ func (*Datalake) LoadTestTable(_, _ string, _ map[string]interface{}, _ string) 
 func (*Datalake) SetConnectionTimeout(_ time.Duration) {
 }
 
-func (d *Datalake) ErrorMappings() []model.JobError {
+func (*Datalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

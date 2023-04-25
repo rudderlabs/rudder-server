@@ -1209,6 +1209,6 @@ func (bq *BigQuery) LoadTestTable(location, tableName string, _ map[string]inter
 func (*BigQuery) SetConnectionTimeout(_ time.Duration) {
 }
 
-func (bq *BigQuery) ErrorMappings() []model.JobError {
+func (*BigQuery) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

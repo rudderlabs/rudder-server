@@ -1498,7 +1498,7 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 	rs.ConnectTimeout = timeout
 }
 
-func (rs *Redshift) ErrorMappings() []model.JobError {
+func (*Redshift) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
 

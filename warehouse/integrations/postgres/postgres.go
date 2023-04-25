@@ -594,6 +594,6 @@ func (pg *Postgres) SetConnectionTimeout(timeout time.Duration) {
 	pg.ConnectTimeout = timeout
 }
 
-func (pg *Postgres) ErrorMappings() []model.JobError {
+func (*Postgres) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

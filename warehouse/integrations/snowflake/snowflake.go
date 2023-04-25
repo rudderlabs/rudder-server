@@ -1367,6 +1367,6 @@ func (sf *Snowflake) SetConnectionTimeout(timeout time.Duration) {
 	sf.ConnectTimeout = timeout
 }
 
-func (sf *Snowflake) ErrorMappings() []model.JobError {
+func (*Snowflake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
