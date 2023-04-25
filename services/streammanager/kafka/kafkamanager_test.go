@@ -98,7 +98,7 @@ func TestNewProducer(t *testing.T) {
 
 			p, err := NewProducer(&dest, common.Opts{})
 			require.Nil(t, p)
-			require.ErrorContains(t, err, `invalid configuration: invalid port: 0`)
+			require.ErrorContains(t, err, "invalid port")
 		})
 		t.Run("invalid schema", func(t *testing.T) {
 			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
