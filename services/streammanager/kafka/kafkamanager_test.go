@@ -1,10 +1,12 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/linkedin/goavro/v2"
 	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
@@ -27,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	dockerKafka "github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
+	"github.com/rudderlabs/rudder-server/testhelper/destination/sshserver"
 )
 
 var sinceDuration = time.Second
@@ -196,6 +200,93 @@ func TestNewProducer(t *testing.T) {
 			"port":     kafkaContainer.Ports[0],
 		}
 		dest := backendconfig.DestinationT{Config: destConfig}
+
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err = p.p.Publish(ctx, client.Message{
+				Key:   []byte("key-01"),
+				Value: []byte("message-01"),
+				Topic: destConfig["topic"].(string),
+			})
+			cancel()
+			return err == nil
+		}, 60*time.Second, 100*time.Millisecond)
+	})
+
+	t.Run("ok ssh", func(t *testing.T) {
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		// Start shared Docker network
+		network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+				t.Logf("Error while removing Docker network: %v", err)
+			}
+		})
+
+		// Start Kafka cluster with ZooKeeper and one broker
+		_, err = dockerKafka.Setup(pool, &testCleanup{t},
+			dockerKafka.WithBrokers(1),
+			dockerKafka.WithLogger(t),
+			dockerKafka.WithNetwork(network),
+			dockerKafka.WithoutDockerHostListeners(),
+		)
+		require.NoError(t, err)
+
+		// Read key pair
+		publicKeyPath, err := filepath.Abs("./client/testdata/ssh/test_key.pub")
+		require.NoError(t, err)
+		privateKey, err := os.ReadFile("./client/testdata/ssh/test_key")
+		require.NoError(t, err)
+		publicKey, err := os.ReadFile(publicKeyPath)
+		require.NoError(t, err)
+
+		// Setup SSH server
+		sshServer, err := sshserver.Setup(pool, &testCleanup{t},
+			sshserver.WithPublicKeyPath(publicKeyPath),
+			sshserver.WithCredentials("linuxserver.io", ""),
+			sshserver.WithDockerNetwork(network),
+			sshserver.WithLogger(t),
+		)
+		require.NoError(t, err)
+
+		// Setup ControlPlane to return the right SSH key pair
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/destinations/123/sshKeys", r.URL.String())
+			pvtKey := bytes.ReplaceAll(privateKey, []byte("\n"), []byte("\\n"))
+			pubKey := bytes.ReplaceAll(publicKey, []byte("\n"), []byte("\\n"))
+			_, _ = w.Write([]byte(`{
+				"privateKey": "` + string(pvtKey) + `",
+				"publicKey": "` + string(pubKey) + `"
+			}`))
+		}))
+		defer t.Cleanup(srv.Close)
+
+		t.Setenv("WORKSPACE_TOKEN", "someWorkspaceToken")
+		t.Setenv("CONFIG_BACKEND_URL", srv.URL)
+
+		require.NoError(t, backendconfig.Setup(nil))
+		defer backendconfig.DefaultBackendConfig.Stop()
+
+		// Populate destConfig according to the above configuration
+		destConfig := map[string]interface{}{
+			"topic":    "some-topic",
+			"hostname": "kafka1",
+			"port":     "9092",
+			"useSSH":   true,
+			"sshHost":  "localhost",
+			"sshPort":  sshServer.Port,
+			"sshUser":  "linuxserver.io",
+		}
+		dest := backendconfig.DestinationT{ID: "123", Config: destConfig}
 
 		p, err := NewProducer(&dest, common.Opts{})
 		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
@@ -1032,10 +1123,9 @@ func TestSSHConfig(t *testing.T) {
 		conf, err := getSSHConfig("dest1", c)
 		require.NoError(t, err)
 		require.Equal(t, &client.SSHConfig{
-			User:             "some-user",
-			Host:             "1.2.3.4:22",
-			PrivateKey:       "key content",
-			AcceptAnyHostKey: true,
+			User:       "some-user",
+			Host:       "1.2.3.4:22",
+			PrivateKey: "key content",
 		}, conf)
 	})
 }

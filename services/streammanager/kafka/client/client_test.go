@@ -763,10 +763,9 @@ func TestSSH(t *testing.T) {
 	ctx := context.Background()
 	c, err := New("tcp", []string{"kafka1:9092", "kafka2:9092", "kafka3:9092"}, Config{
 		SSHConfig: &SSHConfig{
-			User:             "linuxserver.io",
-			Host:             sshServerHost,
-			PrivateKey:       string(privateKey),
-			AcceptAnyHostKey: true,
+			User:       "linuxserver.io",
+			Host:       sshServerHost,
+			PrivateKey: string(privateKey),
 		},
 	})
 	require.NoError(t, err)

@@ -811,10 +811,9 @@ func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, er
 	}
 
 	return &client.SSHConfig{
-		User:             c.GetString("ROUTER_KAFKA_SSH_USER", ""),
-		Host:             c.GetString("ROUTER_KAFKA_SSH_HOST", ""),
-		PrivateKey:       string(rawPrivateKey),
-		AcceptAnyHostKey: c.GetBool("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", false),
+		User:       c.GetString("ROUTER_KAFKA_SSH_USER", ""),
+		Host:       c.GetString("ROUTER_KAFKA_SSH_HOST", ""),
+		PrivateKey: string(rawPrivateKey),
 	}, nil
 }
 
