@@ -473,6 +473,7 @@ func (pg *Postgres) LoadUserTables() map[string]error {
 
 		lut = LoadUsersTable{
 			Logger:             pg.Logger,
+			DB:                 pg.DB,
 			Namespace:          pg.Namespace,
 			Warehouse:          &pg.Warehouse,
 			Stats:              stats.Default,
