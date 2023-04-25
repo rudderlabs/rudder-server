@@ -118,32 +118,65 @@ func TestNewProducer(t *testing.T) {
 			require.EqualError(t, err, `[Kafka] Error while unmarshalling destination configuration map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], got error: json: cannot unmarshal object into Go struct field avroSchema.AvroSchemas.Schema of type string`)
 		})
 		t.Run("invalid ssh config", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-			destConfig := map[string]interface{}{
-				"topic":    "some-topic",
-				"hostname": "localhost",
-				"port":     "1234",
-				"useSSH":   true,
-			}
-			dest := backendconfig.DestinationT{Config: destConfig}
+			t.Run("missing ssh host", func(t *testing.T) {
+				kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+				destConfig := map[string]interface{}{
+					"topic":    "some-topic",
+					"hostname": "localhost",
+					"port":     "1234",
+					"useSSH":   true,
+				}
+				dest := backendconfig.DestinationT{Config: destConfig}
 
-			_, err := NewProducer(&dest, common.Opts{})
-			require.EqualError(t, err, `[Kafka] invalid configuration: ssh host cannot be empty`)
-		})
-		t.Run("invalid ssh config: missing sshUser", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-			destConfig := map[string]interface{}{
-				"topic":    "some-topic",
-				"hostname": "localhost",
-				"port":     "1234",
-				"useSSH":   true,
-				"sshHost":  "random-host",
-				"sshPort":  "1234",
-			}
-			dest := backendconfig.DestinationT{Config: destConfig}
+				_, err := NewProducer(&dest, common.Opts{})
+				require.EqualError(t, err, `[Kafka] invalid configuration: ssh host cannot be empty`)
+			})
+			t.Run("missing ssh port", func(t *testing.T) {
+				kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+				destConfig := map[string]interface{}{
+					"topic":    "some-topic",
+					"hostname": "localhost",
+					"port":     "1234",
+					"useSSH":   true,
+					"sshHost":  "random-host",
+					"sshUser":  "johnDoe",
+				}
+				dest := backendconfig.DestinationT{Config: destConfig}
 
-			_, err := NewProducer(&dest, common.Opts{})
-			require.EqualError(t, err, `[Kafka] invalid configuration: ssh user cannot be empty`)
+				_, err := NewProducer(&dest, common.Opts{})
+				require.ErrorContains(t, err, `[Kafka] invalid configuration: invalid ssh port`)
+			})
+			t.Run("invalid ssh port", func(t *testing.T) {
+				kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+				destConfig := map[string]interface{}{
+					"topic":    "some-topic",
+					"hostname": "localhost",
+					"port":     "1234",
+					"useSSH":   true,
+					"sshHost":  "random-host",
+					"sshUser":  "johnDoe",
+					"sshPort":  "65536",
+				}
+				dest := backendconfig.DestinationT{Config: destConfig}
+
+				_, err := NewProducer(&dest, common.Opts{})
+				require.ErrorContains(t, err, `[Kafka] invalid configuration: invalid ssh port`)
+			})
+			t.Run("missing ssh user", func(t *testing.T) {
+				kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+				destConfig := map[string]interface{}{
+					"topic":    "some-topic",
+					"hostname": "localhost",
+					"port":     "1234",
+					"useSSH":   true,
+					"sshHost":  "random-host",
+					"sshPort":  "1234",
+				}
+				dest := backendconfig.DestinationT{Config: destConfig}
+
+				_, err := NewProducer(&dest, common.Opts{})
+				require.EqualError(t, err, `[Kafka] invalid configuration: ssh user cannot be empty`)
+			})
 		})
 	})
 
@@ -161,10 +194,6 @@ func TestNewProducer(t *testing.T) {
 			"topic":    "some-topic",
 			"hostname": "localhost",
 			"port":     kafkaContainer.Ports[0],
-			"useSSH":   true,
-			"sshHost":  "localhost",
-			"sshPort":  "22",
-			"sshUser":  "test",
 		}
 		dest := backendconfig.DestinationT{Config: destConfig}
 
@@ -174,7 +203,11 @@ func TestNewProducer(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err = p.p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01"), Topic: destConfig["topic"].(string)})
+			err = p.p.Publish(ctx, client.Message{
+				Key:   []byte("key-01"),
+				Value: []byte("message-01"),
+				Topic: destConfig["topic"].(string),
+			})
 			cancel()
 			return err == nil
 		}, 60*time.Second, 100*time.Millisecond)

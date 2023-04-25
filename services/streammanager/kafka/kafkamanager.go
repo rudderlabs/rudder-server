@@ -62,22 +62,18 @@ func (c *configuration) validate() error {
 	if c.HostName == "" {
 		return fmt.Errorf("hostname cannot be empty")
 	}
-	port, err := strconv.Atoi(c.Port)
-	if err != nil {
+	if err := isValidPort(c.Port); err != nil {
 		return fmt.Errorf("invalid port: %w", err)
-	}
-	if port < 1 {
-		return fmt.Errorf("invalid port: %d", port)
 	}
 	if c.UseSSH {
 		if c.SSHHost == "" {
 			return fmt.Errorf("ssh host cannot be empty")
 		}
-		if c.SSHPort == "" {
-			return fmt.Errorf("ssh port cannot be empty")
-		}
 		if c.SSHUser == "" {
 			return fmt.Errorf("ssh user cannot be empty")
+		}
+		if err := isValidPort(c.SSHPort); err != nil {
+			return fmt.Errorf("invalid ssh port: %w", err)
 		}
 	}
 	return nil
@@ -328,10 +324,23 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 			codecs[avroSchema.SchemaId] = newCodec
 		}
 	}
-	// TODO: once control-plane changes to get this config from it is in production. We can safely remove this.
-	sshConfig, err := getSSHConfig(destination.ID, config.Default)
-	if err != nil {
-		return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
+
+	var sshConfig *client.SSHConfig
+	if destConfig.UseSSH {
+		privateKey, err := getSSHPrivateKey(context.Background(), destination.ID)
+		if err != nil {
+			return nil, fmt.Errorf("[Kafka] invalid SSH private key: %w", err)
+		}
+		sshConfig = &client.SSHConfig{
+			Host:       destConfig.SSHHost + ":" + destConfig.SSHPort,
+			User:       destConfig.SSHUser,
+			PrivateKey: privateKey,
+		}
+	} else { // TODO: once the latest control-plane changes are in production we can safely remove this
+		sshConfig, err = getSSHConfig(destination.ID, config.Default)
+		if err != nil {
+			return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
+		}
 	}
 
 	clientConf := client.Config{
@@ -357,18 +366,6 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 			clientConf.SASL.ScramHashGen, err = client.ScramHashGeneratorFromString(destConfig.SaslType)
 			if err != nil {
 				return nil, fmt.Errorf("[Kafka] invalid SASL type: %w", err)
-			}
-		}
-
-		if destConfig.UseSSH {
-			privateKey, err := getSSHPrivateKey(context.Background(), destination.ID)
-			if err != nil {
-				return nil, fmt.Errorf("[Kafka] invalid SSH private key: %w", err)
-			}
-			clientConf.SSHConfig = &client.SSHConfig{
-				Host:       fmt.Sprintf("%s:%s", destConfig.SSHHost, destConfig.SSHPort),
-				User:       destConfig.SSHUser,
-				PrivateKey: privateKey,
 			}
 		}
 	}
@@ -828,4 +825,15 @@ func getSSHPrivateKey(ctx context.Context, destinationID string) (string, error)
 	)
 	keyPair, err := c.GetDestinationSSHKeyPair(ctx, destinationID)
 	return keyPair.PrivateKey, err
+}
+
+func isValidPort(p string) error {
+	port, err := strconv.Atoi(p)
+	if err != nil {
+		return err
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("port not within valid range 1>=p<=65535: %d", port)
+	}
+	return nil
 }

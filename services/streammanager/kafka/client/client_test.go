@@ -733,7 +733,7 @@ func TestSSH(t *testing.T) {
 		}
 	})
 
-	// Start Kafka cluster with ZooKeeper and one broker
+	// Start Kafka cluster with ZooKeeper and three brokers
 	_, err = dockerKafka.Setup(pool, &testCleanup{t},
 		dockerKafka.WithBrokers(3),
 		dockerKafka.WithLogger(t),
