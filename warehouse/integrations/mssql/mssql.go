@@ -795,7 +795,7 @@ func (ms *MSSQL) FetchSchema() (model.Schema, model.Schema, error) {
 			}
 			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
 
-			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &ms.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
