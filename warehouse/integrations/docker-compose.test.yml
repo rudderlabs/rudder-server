@@ -46,7 +46,7 @@ services:
       retries: 25
   wh-transformer:
     container_name: wh-transformer
-    image: rudderlabs/develop-rudder-transformer:master
+    image: rudderstack/develop-rudder-transformer:latest
     ports:
       - "9090"
   wh-databricks-connector:
@@ -242,6 +242,7 @@ services:
       - BIGQUERY_INTEGRATION_TEST_CREDENTIALS
       - REDSHIFT_INTEGRATION_TEST_CREDENTIALS
       - SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS
+      - SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS
       - DATABRICKS_INTEGRATION_TEST_CREDENTIALS
       - BIGQUERY_INTEGRATION_TEST_SCHEMA
       - REDSHIFT_INTEGRATION_TEST_SCHEMA

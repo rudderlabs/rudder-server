@@ -9,9 +9,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/gorilla/mux"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -62,10 +62,10 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, er
 		return model.StagingFileWithSchema{}, fmt.Errorf("location is required")
 	}
 
-	if len(payload.BatchDestination.Source.ID) == 0 {
+	if payload.BatchDestination.Source.ID == "" {
 		return model.StagingFileWithSchema{}, fmt.Errorf("batchDestination.source.id is required")
 	}
-	if len(payload.BatchDestination.Destination.ID) == 0 {
+	if payload.BatchDestination.Destination.ID == "" {
 		return model.StagingFileWithSchema{}, fmt.Errorf("batchDestination.destination.id is required")
 	}
 
@@ -109,8 +109,6 @@ func (api *WarehouseAPI) Handler() http.Handler {
 }
 
 func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) {
-	api.Logger.LogRequest(r)
-
 	ctx := r.Context()
 	defer r.Body.Close()
 

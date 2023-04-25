@@ -3,28 +3,27 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var pkgLogger logger.Logger
 
 const (
 	host     = "host"
@@ -111,16 +110,17 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type Postgres struct {
-	DB                          *sql.DB
+	DB                          *sqlmiddleware.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.UploaderI
+	Warehouse                   model.Warehouse
+	Uploader                    warehouseutils.Uploader
 	ConnectTimeout              time.Duration
 	Logger                      logger.Logger
 	EnableDeleteByJobs          bool
 	NumWorkersDownloadLoadFiles int
 	LoadFileDownloader          downloader.Downloader
+	SlowQueryThreshold          time.Duration
 }
 
 type Credentials struct {
@@ -147,18 +147,37 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewPostgres() *Postgres {
+func New() *Postgres {
 	return &Postgres{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("postgres"),
 	}
 }
 
 func WithConfig(h *Postgres, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.postgres.slowQueryThreshold", 5, time.Minute)
 }
 
-func Connect(cred Credentials) (*sql.DB, error) {
+func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
+	middleware := sqlmiddleware.New(
+		db,
+		sqlmiddleware.WithLogger(pg.Logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, pg.Warehouse.Source.ID,
+			logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, pg.Warehouse.Destination.ID,
+			logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+			logfield.Schema, pg.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(pg.SlowQueryThreshold),
+	)
+	return middleware
+}
+
+func (pg *Postgres) connect() (*sqlmiddleware.DB, error) {
+	cred := pg.getConnectionCredentials()
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -192,18 +211,14 @@ func Connect(cred Credentials) (*sql.DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
-		return db, nil
+		return pg.getNewMiddleWare(db), nil
 	}
 
 	if db, err = sql.Open("postgres", dsn.String()); err != nil {
 		return nil, fmt.Errorf("opening connection to postgres: %w", err)
 	}
 
-	return db, nil
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
+	return pg.getNewMiddleWare(db), nil
 }
 
 func (pg *Postgres) getConnectionCredentials() Credentials {
@@ -225,7 +240,7 @@ func (pg *Postgres) getConnectionCredentials() Credentials {
 	return creds
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
@@ -233,7 +248,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*Postgres) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*Postgres) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -290,14 +305,14 @@ func (pg *Postgres) CreateSchema() (err error) {
 	return
 }
 
-func (pg *Postgres) createTable(name string, columns map[string]string) (err error) {
+func (pg *Postgres) createTable(name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pg.Logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.DB.Exec(sqlStatement)
 	return
 }
 
-func (pg *Postgres) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (pg *Postgres) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)
@@ -352,38 +367,27 @@ func (*Postgres) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (pg *Postgres) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
-	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+func (pg *Postgres) TestConnection(ctx context.Context, warehouse model.Warehouse) error {
+	if warehouse.Destination.Config["sslMode"] == verifyCA {
 		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
-			pg.Logger.Error(sslKeyError.Error())
-			err = fmt.Errorf(sslKeyError.Error())
-			return
+			return fmt.Errorf("writing ssl keys: %s", sslKeyError.Error())
 		}
 	}
-	pg.Warehouse = warehouse
-	pg.DB, err = Connect(pg.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer pg.DB.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), pg.ConnectTimeout)
-	defer cancel()
-
-	err = pg.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", pg.ConnectTimeout/time.Second)
+	err := pg.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
 }
 
 func (pg *Postgres) Setup(
-	warehouse warehouseutils.Warehouse,
-	uploader warehouseutils.UploaderI,
+	warehouse model.Warehouse,
+	uploader warehouseutils.Uploader,
 ) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
@@ -391,26 +395,24 @@ func (pg *Postgres) Setup(
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	pg.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, pg.NumWorkersDownloadLoadFiles)
 
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = pg.connect()
 	return err
 }
 
-func (pg *Postgres) CrashRecover(warehouseutils.Warehouse) error {
-	return nil
-}
+func (pg *Postgres) CrashRecover() {}
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Postgres) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := pg.connect()
 	if err != nil {
 		return
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := `
 		SELECT
@@ -445,14 +447,14 @@ func (pg *Postgres) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			return
 		}
 		if _, ok := schema[tName.String]; !ok {
-			schema[tName.String] = make(map[string]string)
+			schema[tName.String] = make(model.TableSchema)
 		}
 		if cName.Valid && cType.Valid {
 			if datatype, ok := postgresDataTypesMapToRudder[cType.String]; ok {
 				schema[tName.String][cName.String] = datatype
 			} else {
 				if _, ok := unrecognizedSchema[tName.String]; !ok {
-					unrecognizedSchema[tName.String] = make(map[string]string)
+					unrecognizedSchema[tName.String] = make(model.TableSchema)
 				}
 				unrecognizedSchema[tName.String][cType.String] = warehouseutils.MISSING_DATATYPE
 
@@ -562,7 +564,7 @@ func (pg *Postgres) GetTotalCountInTable(ctx context.Context, tableName string) 
 	return total, err
 }
 
-func (pg *Postgres) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (pg *Postgres) Connect(warehouse model.Warehouse) (client.Client, error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 			pg.Logger.Error(err.Error())
@@ -576,12 +578,12 @@ func (pg *Postgres) Connect(warehouse warehouseutils.Warehouse) (client.Client, 
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := pg.connect()
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
 }
 
 func (pg *Postgres) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {

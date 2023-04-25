@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
@@ -14,19 +16,17 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestIntegrationMSSQL(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
-	}
-
 	t.Parallel()
 
-	mssql.Init()
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
+	}
 
 	db, err := mssql.Connect(mssql.Credentials{
 		DBName:   "master",
@@ -125,8 +125,8 @@ func TestIntegrationMSSQL(t *testing.T) {
 }
 
 func TestConfigurationValidationMSSQL(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
 	t.Parallel()
@@ -134,7 +134,7 @@ func TestConfigurationValidationMSSQL(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	mssql.Init()
+	encoding.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

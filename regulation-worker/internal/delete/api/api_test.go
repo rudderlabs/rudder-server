@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,14 +12,13 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 )
 
 func (d *deleteAPI) handler() http.Handler {

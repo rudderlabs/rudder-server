@@ -4,12 +4,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"golang.org/x/exp/slices"
 )
 
 var (
@@ -78,7 +79,7 @@ func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destina
 
 	if toAbortDestinationIDs != "" {
 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-		if misc.Contains(abortIDs, destID) {
+		if slices.Contains(abortIDs, destID) {
 			return true, "destination configured to abort"
 		}
 	}

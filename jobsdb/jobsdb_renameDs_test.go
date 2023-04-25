@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 )
 
 func Test_mustRenameDS(t *testing.T) {
@@ -38,8 +38,14 @@ func Test_mustRenameDS(t *testing.T) {
 	requireRowsCount(t, dbHandle, jobsTable, 3)
 	requireRowsCount(t, dbHandle, jobStatusTable, 3)
 
+	mustRenameDS := func(ds dataSetT) error {
+		return jobsdb.WithTx(func(tx *Tx) error {
+			return jobsdb.mustRenameDSInTx(tx, ds)
+		})
+	}
+
 	// when I execute the renameDs method
-	err := jobsdb.mustRenameDS(dataSetT{
+	err := mustRenameDS(dataSetT{
 		JobTable:       jobsTable,
 		JobStatusTable: jobStatusTable,
 	})
@@ -77,8 +83,14 @@ func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 	requireRowsCount(t, dbHandle, jobsTable, 2)
 	requireRowsCount(t, dbHandle, jobStatusTable, 2)
 
+	mustRenameDS := func(ds dataSetT) error {
+		return jobsdb.WithTx(func(tx *Tx) error {
+			return jobsdb.mustRenameDSInTx(tx, ds)
+		})
+	}
+
 	// when I execute the renameDs method
-	err := jobsdb.mustRenameDS(dataSetT{
+	err := mustRenameDS(dataSetT{
 		JobTable:       jobsTable,
 		JobStatusTable: jobStatusTable,
 	})

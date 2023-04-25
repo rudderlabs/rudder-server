@@ -7,15 +7,17 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
+	jsoniter "github.com/json-iterator/go"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -70,7 +72,7 @@ type workspacesAckValue struct {
 func EnvETCDConfig() *ETCDConfig {
 	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	releaseName := config.GetReleaseName()
-	serverIndex := config.GetInstanceID()
+	serverIndex := misc.GetInstanceID()
 	var ackTimeout time.Duration
 
 	envConfigOnce.Do(func() {
@@ -309,7 +311,6 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 	}
 
 	etcdWatchChan := manager.Client.Watch(ctx, workspaceRequestKey, clientv3.WithRev(revision))
-
 	go func() {
 		for watchResp := range etcdWatchChan {
 			if watchResp.Err() != nil {

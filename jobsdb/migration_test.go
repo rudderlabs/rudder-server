@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +34,6 @@ func TestMigration(t *testing.T) {
 		ReadWrite,
 		true,
 		tablePrefix,
-		true,
 		[]prebackup.Handler{},
 		fileuploader.NewDefaultProvider(),
 	)

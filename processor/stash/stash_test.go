@@ -11,16 +11,18 @@ import (
 
 	uuid "github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+var prefix = "proc_error_jobs_"
 
 func TestStoreErrorsToObjectStorage(t *testing.T) {
 	tmpDir := t.TempDir()

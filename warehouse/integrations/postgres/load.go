@@ -10,14 +10,17 @@ import (
 	"os"
 	"strings"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/exp/slices"
@@ -40,9 +43,9 @@ const (
 
 type LoadTable struct {
 	Logger             logger.Logger
-	DB                 *sql.DB
+	DB                 *sqlmiddleware.DB
 	Namespace          string
-	Warehouse          *warehouseutils.Warehouse
+	Warehouse          *model.Warehouse
 	Stats              stats.Stats
 	Config             *config.Config
 	LoadFileDownloader downloader.Downloader
@@ -50,15 +53,15 @@ type LoadTable struct {
 
 type LoadUsersTable struct {
 	Logger             logger.Logger
-	DB                 *sql.DB
+	DB                 *sqlmiddleware.DB
 	Namespace          string
-	Warehouse          *warehouseutils.Warehouse
+	Warehouse          *model.Warehouse
 	Stats              stats.Stats
 	Config             *config.Config
 	LoadFileDownloader downloader.Downloader
 }
 
-func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (string, error) {
+func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (string, error) {
 	var (
 		err                     error
 		query                   string
@@ -365,7 +368,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	return stagingTableName, nil
 }
 
-func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse warehouseutils.TableSchemaT) map[string]error {
+func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse model.TableSchema) map[string]error {
 	var (
 		err                        error
 		query                      string

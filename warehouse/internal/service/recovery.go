@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/exp/slices"
 )
@@ -23,12 +25,7 @@ type repo interface {
 }
 
 type destination interface {
-	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
-}
-
-type onceErr struct {
-	sync.Once
-	err error
+	CrashRecover()
 }
 
 type Recovery struct {
@@ -36,14 +33,14 @@ type Recovery struct {
 	detectErr       error
 	destinationType string
 	repo            repo
-	inRecovery      map[string]*onceErr
+	inRecovery      map[string]*sync.Once
 }
 
 func NewRecovery(destinationType string, repo repo) *Recovery {
 	return &Recovery{
 		destinationType: destinationType,
 		repo:            repo,
-		inRecovery:      make(map[string]*onceErr),
+		inRecovery:      make(map[string]*sync.Once),
 	}
 }
 
@@ -59,14 +56,14 @@ func (r *Recovery) detect(ctx context.Context) error {
 	}
 
 	for _, destID := range destIDs {
-		r.inRecovery[destID] = &onceErr{}
+		r.inRecovery[destID] = &sync.Once{}
 	}
 
 	return nil
 }
 
 // Recover recovers a warehouse, for a non-graceful shutdown.
-func (r *Recovery) Recover(ctx context.Context, whManager destination, wh warehouseutils.Warehouse) error {
+func (r *Recovery) Recover(ctx context.Context, whManager destination, wh model.Warehouse) error {
 	r.detectOnce.Do(func() {
 		r.detectErr = r.detect(ctx)
 	})
@@ -80,8 +77,8 @@ func (r *Recovery) Recover(ctx context.Context, whManager destination, wh wareho
 	}
 
 	once.Do(func() {
-		once.err = whManager.CrashRecover(wh)
+		whManager.CrashRecover()
 	})
 
-	return once.err
+	return nil
 }

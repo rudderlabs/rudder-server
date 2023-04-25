@@ -8,7 +8,7 @@ import (
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -27,6 +27,7 @@ type LifecycleManager struct {
 	routerDB         *jobsdb.HandleT
 	batchRouterDB    *jobsdb.HandleT
 	errDB            *jobsdb.HandleT
+	esDB             *jobsdb.HandleT
 	clearDB          *bool
 	MultitenantStats multitenant.MultiTenantI // need not initialize again
 	ReportingI       types.ReportingI         // need not initialize again
@@ -48,7 +49,7 @@ func (proc *LifecycleManager) Start() error {
 	}
 
 	proc.Handle.Setup(
-		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB,
+		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB, proc.esDB,
 		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
 	)
 
@@ -82,7 +83,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 }
 
 // New creates a new Processor instance
-func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
+func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb, esDB *jobsdb.HandleT,
 	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 	opts ...Opts,
@@ -94,6 +95,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		routerDB:         rtDb,
 		batchRouterDB:    brtDb,
 		errDB:            errDb,
+		esDB:             esDB,
 		clearDB:          clearDb,
 		MultitenantStats: tenantDB,
 		BackendConfig:    backendconfig.DefaultBackendConfig,

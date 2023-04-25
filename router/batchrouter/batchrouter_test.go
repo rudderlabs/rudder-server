@@ -19,11 +19,12 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
@@ -31,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -141,7 +141,6 @@ func initBatchRouter() {
 	logger.Reset()
 	misc.Init()
 	Init()
-	Init2()
 }
 
 var _ = Describe("BatchRouter", func() {
@@ -201,7 +200,7 @@ var _ = Describe("BatchRouter", func() {
 				},
 				"timestamp": "2020-02-02T00:23:09.544Z"
 			  }`
-			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "none"}`, SourceIDEnabled, S3DestinationID)
+			parameters := fmt.Sprintf(`{"source_id": %q, "destination_id": %q, "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "none"}`, SourceIDEnabled, S3DestinationID)
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{

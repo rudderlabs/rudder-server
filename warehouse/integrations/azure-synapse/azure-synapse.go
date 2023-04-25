@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,18 +18,17 @@ import (
 	"unicode/utf8"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+	"golang.org/x/exp/slices"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	mssql "github.com/denisenkom/go-mssqldb"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var pkgLogger logger.Logger
 
 const (
 	host     = "host"
@@ -85,8 +85,8 @@ type AzureSynapse struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.UploaderI
+	Warehouse                   model.Warehouse
+	Uploader                    warehouseutils.Uploader
 	NumWorkersDownloadLoadFiles int
 	Logger                      logger.Logger
 	LoadFileDownLoader          downloader.Downloader
@@ -115,9 +115,9 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func NewAzureSynapse() *AzureSynapse {
+func New() *AzureSynapse {
 	return &AzureSynapse{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("synapse"),
 	}
 }
 
@@ -142,8 +142,7 @@ func connect(cred credentials) (*sql.DB, error) {
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.port)
 	if err != nil {
-		pkgLogger.Errorf("Error parsing synapse connection port : %v", err)
-		return nil, err
+		return nil, fmt.Errorf("invalid port: %w", err)
 	}
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
@@ -159,10 +158,6 @@ func connect(cred credentials) (*sql.DB, error) {
 	return db, nil
 }
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("synapse")
-}
-
 func (as *AzureSynapse) getConnectionCredentials() credentials {
 	return credentials{
 		host:     warehouseutils.GetConfigValue(host, as.Warehouse),
@@ -175,7 +170,7 @@ func (as *AzureSynapse) getConnectionCredentials() credentials {
 	}
 }
 
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
@@ -183,11 +178,11 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*AzureSynapse) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*AzureSynapse) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	as.Logger.Infof("AZ: Starting load for table:%s", tableName)
 
 	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(as.Uploader.GetTableSchemaInWarehouse(tableName))
@@ -197,7 +192,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload warehous
 
 	var extraColumns []string
 	for _, column := range previousColumnKeys {
-		if !misc.Contains(sortedColumnKeys, column) {
+		if !slices.Contains(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
 		}
 	}
@@ -559,7 +554,7 @@ func (as *AzureSynapse) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');
 `, as.Namespace, as.Namespace)
-	pkgLogger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	as.Logger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
 	_, err = as.DB.Exec(sqlStatement)
 	if err == io.EOF {
 		return nil
@@ -575,7 +570,7 @@ func (as *AzureSynapse) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (as *AzureSynapse) createTable(name string, columns map[string]string) (err error) {
+func (as *AzureSynapse) createTable(name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, columnsWithDataTypes(columns, ""))
 
@@ -584,7 +579,7 @@ func (as *AzureSynapse) createTable(name string, columns map[string]string) (err
 	return
 }
 
-func (as *AzureSynapse) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (as *AzureSynapse) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = as.createTable(as.Namespace+"."+tableName, columnMap)
 	return err
@@ -645,29 +640,19 @@ func (*AzureSynapse) AlterColumn(_, _, _ string) (model.AlterTableResponse, erro
 	return model.AlterTableResponse{}, nil
 }
 
-func (as *AzureSynapse) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
-	as.Warehouse = warehouse
-	as.DB, err = connect(as.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer as.DB.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), as.ConnectTimeout)
-	defer cancel()
-
-	err = as.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", as.ConnectTimeout/time.Second)
+func (as *AzureSynapse) TestConnection(ctx context.Context, _ model.Warehouse) error {
+	err := as.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
 }
 
-func (as *AzureSynapse) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (as *AzureSynapse) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader
@@ -678,16 +663,8 @@ func (as *AzureSynapse) Setup(warehouse warehouseutils.Warehouse, uploader wareh
 	return err
 }
 
-func (as *AzureSynapse) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
-	as.Warehouse = warehouse
-	as.Namespace = warehouse.Namespace
-	as.DB, err = connect(as.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer as.DB.Close()
+func (as *AzureSynapse) CrashRecover() {
 	as.dropDanglingStagingTables()
-	return
 }
 
 func (as *AzureSynapse) dropDanglingStagingTables() bool {
@@ -732,7 +709,7 @@ func (as *AzureSynapse) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
-func (as *AzureSynapse) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (as *AzureSynapse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())
@@ -741,8 +718,8 @@ func (as *AzureSynapse) FetchSchema(warehouse warehouseutils.Warehouse) (schema,
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
@@ -777,13 +754,13 @@ func (as *AzureSynapse) FetchSchema(warehouse warehouseutils.Warehouse) (schema,
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(model.TableSchema)
 		}
 		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(map[string]string)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
@@ -838,7 +815,7 @@ func (as *AzureSynapse) GetTotalCountInTable(ctx context.Context, tableName stri
 	return total, err
 }
 
-func (as *AzureSynapse) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (as *AzureSynapse) Connect(warehouse model.Warehouse) (client.Client, error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())
@@ -864,6 +841,6 @@ func (as *AzureSynapse) SetConnectionTimeout(timeout time.Duration) {
 	as.ConnectTimeout = timeout
 }
 
-func (as *AzureSynapse) ErrorMappings() []model.JobError {
+func (*AzureSynapse) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

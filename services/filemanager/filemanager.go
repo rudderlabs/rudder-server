@@ -9,10 +9,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/rterror"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
@@ -101,7 +101,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 		providerConfig["iamRoleArn"] = config.GetString("BACKUP_IAM_ROLE_ARN", "")
 		if providerConfig["iamRoleArn"] != "" {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.Identity().ID()
+			providerConfig["externalID"] = backendconfig.DefaultBackendConfig.Identity().ID()
 		}
 
 	case "GCS":

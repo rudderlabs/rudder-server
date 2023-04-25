@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,15 +23,13 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	mssql "github.com/denisenkom/go-mssqldb"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var pkgLogger logger.Logger
 
 const (
 	host     = "host"
@@ -85,8 +84,8 @@ type MSSQL struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
-	Warehouse                   warehouseutils.Warehouse
-	Uploader                    warehouseutils.UploaderI
+	Warehouse                   model.Warehouse
+	Uploader                    warehouseutils.Uploader
 	ConnectTimeout              time.Duration
 	EnableDeleteByJobs          bool
 	Logger                      logger.Logger
@@ -124,9 +123,9 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-func NewMSSQL() *MSSQL {
+func New() *MSSQL {
 	return &MSSQL{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("mssql"),
 	}
 }
 
@@ -154,8 +153,7 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
-		pkgLogger.Errorf("Error parsing mssql connection port : %v", err)
-		return nil, err
+		return nil, fmt.Errorf("invalid port: %w", err)
 	}
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
@@ -173,10 +171,6 @@ func Connect(cred Credentials) (*sql.DB, error) {
 	return db, nil
 }
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("mssql")
-}
-
 func (ms *MSSQL) getConnectionCredentials() Credentials {
 	creds := Credentials{
 		Host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
@@ -191,7 +185,7 @@ func (ms *MSSQL) getConnectionCredentials() Credentials {
 	return creds
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
@@ -199,7 +193,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*MSSQL) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*MSSQL) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -235,7 +229,7 @@ func (ms *MSSQL) DeleteBy(tableNames []string, params warehouseutils.DeleteByPar
 	return nil
 }
 
-func (ms *MSSQL) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (ms *MSSQL) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	ms.Logger.Infof("MS: Starting load for table:%s", tableName)
 
 	// sort column names
@@ -617,7 +611,7 @@ func (ms *MSSQL) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (ms *MSSQL) createTable(name string, columns map[string]string) (err error) {
+func (ms *MSSQL) createTable(name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, ColumnsWithDataTypes(columns, ""))
 
@@ -626,7 +620,7 @@ func (ms *MSSQL) createTable(name string, columns map[string]string) (err error)
 	return
 }
 
-func (ms *MSSQL) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (ms *MSSQL) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
 	return err
@@ -687,35 +681,19 @@ func (*MSSQL) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
-func (ms *MSSQL) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.ObjectStorage = warehouseutils.ObjectStorageType(
-		warehouseutils.MSSQL,
-		warehouse.Destination.Config,
-		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
-	)
-	ms.DB, err = Connect(ms.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer ms.DB.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), ms.ConnectTimeout)
-	defer cancel()
-
-	err = ms.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", ms.ConnectTimeout/time.Second)
+func (ms *MSSQL) TestConnection(ctx context.Context, _ model.Warehouse) error {
+	err := ms.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
 	return nil
 }
 
-func (ms *MSSQL) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader
@@ -726,16 +704,8 @@ func (ms *MSSQL) Setup(warehouse warehouseutils.Warehouse, uploader warehouseuti
 	return err
 }
 
-func (ms *MSSQL) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.DB, err = Connect(ms.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer ms.DB.Close()
+func (ms *MSSQL) CrashRecover() {
 	ms.dropDanglingStagingTables()
-	return
 }
 
 func (ms *MSSQL) dropDanglingStagingTables() bool {
@@ -780,7 +750,7 @@ func (ms *MSSQL) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *MSSQL) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (ms *MSSQL) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ms.getConnectionCredentials())
@@ -789,8 +759,8 @@ func (ms *MSSQL) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unreco
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
@@ -824,13 +794,13 @@ func (ms *MSSQL) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unreco
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(model.TableSchema)
 		}
 		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(map[string]string)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
@@ -885,7 +855,7 @@ func (ms *MSSQL) GetTotalCountInTable(ctx context.Context, tableName string) (in
 	return total, err
 }
 
-func (ms *MSSQL) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (ms *MSSQL) Connect(warehouse model.Warehouse) (client.Client, error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(

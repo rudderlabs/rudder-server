@@ -23,22 +23,22 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -130,7 +130,6 @@ func initJobsDB() {
 	admin.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
-	jobsdb.Init3()
 	archiver.Init()
 }
 
@@ -167,7 +166,7 @@ func TestProcessorManager(t *testing.T) {
 		},
 	}
 
-	err := tempDB.Setup(jobsdb.Write, true, "gw", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+	err := tempDB.Setup(jobsdb.Write, true, "gw", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 
@@ -193,6 +192,8 @@ func TestProcessorManager(t *testing.T) {
 	defer brtDB.Close()
 	errDB := jobsdb.NewForReadWrite("proc_error")
 	defer errDB.Close()
+	eschDB := jobsdb.NewForReadWrite("esch")
+	defer eschDB.Close()
 
 	clearDb := false
 	ctx := context.Background()
@@ -202,7 +203,21 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), mockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService(),
+	processor := New(
+		ctx,
+		&clearDb,
+		gwDB,
+		rtDB,
+		brtDB,
+		errDB,
+		eschDB,
+		mtStat,
+		&reporting.NOOP{},
+		transientsource.NewEmptyService(),
+		fileuploader.NewDefaultProvider(),
+		mockRsourcesService,
+		destinationdebugger.NewNoOpService(),
+		transformationdebugger.NewNoOpService(),
 		func(m *LifecycleManager) {
 			m.Handle.config.enablePipelining = false
 			m.Handle.config.featuresRetryMaxAttempts = 0
@@ -248,6 +263,8 @@ func TestProcessorManager(t *testing.T) {
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {
 		require.NoError(t, gwDB.Start())
 		defer gwDB.Stop()
+		require.NoError(t, eschDB.Start())
+		defer eschDB.Stop()
 		require.NoError(t, rtDB.Start())
 		defer rtDB.Stop()
 		require.NoError(t, brtDB.Start())

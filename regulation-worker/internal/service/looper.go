@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -60,7 +60,7 @@ func (l *Looper) Loop(ctx context.Context) error {
 
 func getenvInt(key string, fallback int) (int, error) {
 	k := os.Getenv(key)
-	if len(k) == 0 {
+	if k == "" {
 		return fallback, nil
 	}
 	return strconv.Atoi(k)

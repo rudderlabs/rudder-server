@@ -5,35 +5,36 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/router/throttler"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/payload"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
+	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
+	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
+	rtThrottler "github.com/rudderlabs/rudder-server/router/throttler"
+	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 // embeddedApp is the type for embedded type implementation
@@ -84,13 +85,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
 	}
 	a.log.Info("Embedded mode: Starting Rudder Core")
-
-	readonlyGatewayDB, err := setupReadonlyDBs()
-	if err != nil {
-		return err
-	}
-
 	g, ctx := errgroup.WithContext(ctx)
+	terminalErrFn := terminalErrorFunction(ctx, g)
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
@@ -141,7 +137,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -150,7 +145,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.routerDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -159,7 +153,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.batchRouterDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
@@ -168,10 +161,14 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
+	)
+	schemaDB := jobsdb.NewForReadWrite(
+		"esch",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
@@ -189,6 +186,17 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
 		}))
 	}
+	var schemaForwarder schema_forwarder.Forwarder
+	if config.GetBool("EventSchemas2.enabled", false) {
+		client, err := pulsar.NewClient(config.Default)
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+	} else {
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
@@ -204,6 +212,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		routerDB,
 		batchRouterDB,
 		errDB,
+		schemaDB,
 		multitenantStats,
 		reportingI,
 		transientSources,
@@ -213,9 +222,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		transformationhandle,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.New(stats.Default)
+	throttlerFactory, err := rtThrottler.New(stats.Default)
 	if err != nil {
-		return fmt.Errorf("failed to create throttler factory: %w", err)
+		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
@@ -248,13 +257,17 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		RouterDB:        routerDB,
 		BatchRouterDB:   batchRouterDB,
 		ErrorDB:         errDB,
+		EventSchemaDB:   schemaDB,
 		Processor:       proc,
 		Router:          rt,
+		SchemaForwarder: schemaForwarder,
 		MultiTenantStat: multitenantStats,
 	}
 
-	rateLimiter := ratelimiter.HandleT{}
-	rateLimiter.SetUp()
+	rateLimiter, err := gwThrottler.New(stats.Default)
+	if err != nil {
+		return fmt.Errorf("failed to create gw rate limiter: %w", err)
+	}
 	gw := gateway.HandleT{}
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
@@ -262,7 +275,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithStatusHandler(),
 	)
 	defer gwDBForProcessor.Close()
 	if err = gatewayDB.Start(); err != nil {
@@ -270,11 +282,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	defer gatewayDB.Stop()
 
-	gw.SetReadonlyDB(readonlyGatewayDB)
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
-		&rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
+		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)
@@ -295,7 +306,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
-			true, prebackupHandlers, fileUploaderProvider,
+			prebackupHandlers, fileUploaderProvider,
 		)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)

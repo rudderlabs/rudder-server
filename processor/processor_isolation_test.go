@@ -18,17 +18,19 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -59,65 +61,73 @@ func TestProcessorIsolation(t *testing.T) {
 // -v \
 // -count=1 |grep BenchmarkProcessorIsolationModes
 // BenchmarkProcessorIsolationModes
-// BenchmarkProcessorIsolationModes/no_isolation_10_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/no_isolation_10_workspaces_200000_total_jobs-10         	       1	59231884750 ns/op	        45.74 overall_duration_sec
-// BenchmarkProcessorIsolationModes/workspace_isolation_10_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/workspace_isolation_10_workspaces_200000_total_jobs-10  	       1	53940493625 ns/op	        42.09 overall_duration_sec
-// BenchmarkProcessorIsolationModes/no_isolation_50_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/no_isolation_50_workspaces_200000_total_jobs-10         	       1	61723605875 ns/op	        48.85 overall_duration_sec
-// BenchmarkProcessorIsolationModes/workspace_isolation_50_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/workspace_isolation_50_workspaces_200000_total_jobs-10  	       1	54179625166 ns/op	        43.46 overall_duration_sec
-// BenchmarkProcessorIsolationModes/no_isolation_100_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/no_isolation_100_workspaces_200000_total_jobs-10        	       1	60094660500 ns/op	        48.34 overall_duration_sec
-// BenchmarkProcessorIsolationModes/workspace_isolation_100_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/workspace_isolation_100_workspaces_200000_total_jobs-10 	       1	58543965292 ns/op	        47.58 overall_duration_sec
-// BenchmarkProcessorIsolationModes/no_isolation_200_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/no_isolation_200_workspaces_200000_total_jobs-10        	       1	59670751833 ns/op	        47.68 overall_duration_sec
-// BenchmarkProcessorIsolationModes/workspace_isolation_200_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/workspace_isolation_200_workspaces_200000_total_jobs-10 	       1	66366145500 ns/op	        51.19 overall_duration_sec
-// BenchmarkProcessorIsolationModes/no_isolation_500_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/no_isolation_500_workspaces_200000_total_jobs-10        	       1	69775513875 ns/op	        48.78 overall_duration_sec
-// BenchmarkProcessorIsolationModes/workspace_isolation_500_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/workspace_isolation_500_workspaces_200000_total_jobs-10 	       1	71046349167 ns/op	        57.88 overall_duration_sec
-// BenchmarkProcessorIsolationModes/no_isolation_1000_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/no_isolation_1000_workspaces_200000_total_jobs-10       	       1	62591102750 ns/op	        48.95 overall_duration_sec
-// BenchmarkProcessorIsolationModes/workspace_isolation_1000_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/workspace_isolation_1000_workspaces_200000_total_jobs-10   	       1	77994220792 ns/op	        64.62 overall_duration_sec
-// BenchmarkProcessorIsolationModes/no_isolation_10000_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/no_isolation_10000_workspaces_200000_total_jobs-10         	       1	66160071708 ns/op	        52.72 overall_duration_sec
-// BenchmarkProcessorIsolationModes/workspace_isolation_10000_workspaces_200000_total_jobs
-// BenchmarkProcessorIsolationModes/workspace_isolation_10000_workspaces_200000_total_jobs-10  	       1	148012983583 ns/op	       127.4 overall_duration_sec
-//
-// https://snapshots.raintank.io/dashboard/snapshot/9643HY7OqrsYae1HuAjAz167953NOCN3
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_10_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_10_total_jobs_200000-10         	       1	73042697042 ns/op	        43.55 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_10_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_10_total_jobs_200000-10    	       1	69209445166 ns/op	        56.55 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_10_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_10_total_jobs_200000-10       	       1	71106239750 ns/op	        56.47 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_50_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_50_total_jobs_200000-10         	       1	82385831083 ns/op	        69.61 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_50_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_50_total_jobs_200000-10    	       1	72104657333 ns/op	        56.94 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_50_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_50_total_jobs_200000-10       	       1	68407738000 ns/op	        54.77 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_100_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_100_total_jobs_200000-10        	       1	77992348375 ns/op	        65.44 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_100_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_100_total_jobs_200000-10   	       1	68580986375 ns/op	        55.83 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_100_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_100_total_jobs_200000-10      	       1	69483415750 ns/op	        55.81 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_200_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_200_total_jobs_200000-10        	       1	83725871750 ns/op	        72.55 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_200_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_200_total_jobs_200000-10   	       1	67370016208 ns/op	        56.02 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_200_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_200_total_jobs_200000-10      	       1	68468731833 ns/op	        57.48 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_500_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_500_total_jobs_200000-10        	       1	112563037291 ns/op	        99.25 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_500_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_500_total_jobs_200000-10   	       1	66369215792 ns/op	        55.00 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_500_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_500_total_jobs_200000-10      	       1	67725539583 ns/op	        56.37 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_1000_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_1000_total_jobs_200000-10       	       1	160692931875 ns/op	       148.7 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_1000_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_1000_total_jobs_200000-10  	       1	73783787083 ns/op	        57.48 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_1000_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_1000_total_jobs_200000-10     	       1	72094473125 ns/op	        57.55 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_10000_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_none_workspaces_10000_total_jobs_200000-10      	       1	264327524125 ns/op	       251.5 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_10000_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_workspace_workspaces_10000_total_jobs_200000-10 	       1	170777786959 ns/op	       145.3 overall_duration_sec
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_10000_total_jobs_200000
+// BenchmarkProcessorIsolationModes/isolation_mode_source_workspaces_10000_total_jobs_200000-10    	       1	167364648542 ns/op	       144.3 overall_duration_sec
+// https://snapshots.raintank.io/dashboard/snapshot/xugaw44VT5dYMQ2ynyBbvM4FZfxFvD5D
 func BenchmarkProcessorIsolationModes(b *testing.B) {
-	benchmarkModes := func(b *testing.B, workspaces, totalJobs int) {
-		title := fmt.Sprintf("no isolation %d workspaces %d total jobs", workspaces, totalJobs)
-
-		b.Run(title, func(b *testing.B) {
-			stats.Default.NewTaggedStat("benchmark", stats.CountType, stats.Tags{"title": title, "action": "start"}).Increment()
-			defer stats.Default.NewTaggedStat("benchmark", stats.CountType, stats.Tags{"title": title, "action": "end"}).Increment()
-			spec := NewProcIsolationScenarioSpec(isolation.ModeNone, workspaces, totalJobs/workspaces)
-			overallDuration := ProcIsolationScenario(b, spec)
-			b.ReportMetric(overallDuration.Seconds(), "overall_duration_sec")
-		})
-
-		title = fmt.Sprintf("workspace isolation %d workspaces %d total jobs", workspaces, totalJobs)
-		b.Run(title, func(b *testing.B) {
-			stats.Default.NewTaggedStat("benchmark", stats.CountType, stats.Tags{"title": title, "action": "start"}).Increment()
-			defer stats.Default.NewTaggedStat("benchmark", stats.CountType, stats.Tags{"title": title, "action": "end"}).Increment()
-			spec := NewProcIsolationScenarioSpec(isolation.ModeWorkspace, workspaces, totalJobs/workspaces)
-			overallDuration := ProcIsolationScenario(b, spec)
-			b.ReportMetric(overallDuration.Seconds(), "overall_duration_sec")
-		})
+	benchModes := func(b *testing.B, workspaces, totalJobs int) {
+		bench := func(mode isolation.Mode) {
+			title := fmt.Sprintf("isolation mode %s workspaces %d total jobs %d", mode, workspaces, totalJobs)
+			b.Run(title, func(b *testing.B) {
+				stats.Default.NewTaggedStat("benchmark", stats.CountType, stats.Tags{"title": title, "action": "start"}).Increment()
+				defer stats.Default.NewTaggedStat("benchmark", stats.CountType, stats.Tags{"title": title, "action": "end"}).Increment()
+				spec := NewProcIsolationScenarioSpec(mode, workspaces, totalJobs/workspaces)
+				overallDuration := ProcIsolationScenario(b, spec)
+				b.ReportMetric(overallDuration.Seconds(), "overall_duration_sec")
+			})
+		}
+		bench(isolation.ModeNone)
+		bench(isolation.ModeWorkspace)
+		bench(isolation.ModeSource)
 	}
 
-	benchmarkModes(b, 10, 200000)
-	benchmarkModes(b, 50, 200000)
-	benchmarkModes(b, 100, 200000)
-	benchmarkModes(b, 200, 200000)
-	benchmarkModes(b, 500, 200000)
-	benchmarkModes(b, 1000, 200000)
-	benchmarkModes(b, 10000, 200000)
+	benchModes(b, 10, 200000)
+	benchModes(b, 50, 200000)
+	benchModes(b, 100, 200000)
+	benchModes(b, 200, 200000)
+	benchModes(b, 500, 200000)
+	benchModes(b, 1000, 200000)
+	benchModes(b, 10000, 200000)
 }
 
 // ProcIsolationScenarioSpec is a specification for a processor isolation scenario.
@@ -164,7 +174,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var (
-		postgresContainer    *destination.PostgresResource
+		postgresContainer    *resource.PostgresResource
 		transformerContainer *destination.TransformerResource
 		gatewayPort          string
 	)
@@ -172,7 +182,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	require.NoError(t, err)
 	containersGroup, _ := errgroup.WithContext(ctx)
 	containersGroup.Go(func() (err error) {
-		postgresContainer, err = destination.SetupPostgres(pool, t, "max_connections=1000")
+		postgresContainer, err = resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"))
 		return err
 	})
 	containersGroup.Go(func() (err error) {
@@ -217,7 +227,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("JobsDB.enableWriterQueue", false)
 
 	// find free port for gateway http server to listen on
-	httpPortInt, err := testhelper.GetFreePort()
+	httpPortInt, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 	gatewayPort = strconv.Itoa(httpPortInt)
 

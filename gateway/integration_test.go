@@ -16,16 +16,19 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/gorilla/mux"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -49,14 +52,13 @@ func testGatewayByAppType(t *testing.T, appType string) {
 
 	var (
 		group                errgroup.Group
-		postgresContainer    *destination.PostgresResource
+		postgresContainer    *resource.PostgresResource
 		transformerContainer *destination.TransformerResource
-		serverInstanceID     = "1"
 		workspaceToken       = "workspace-token"
 	)
 
 	group.Go(func() (err error) {
-		postgresContainer, err = destination.SetupPostgres(pool, t)
+		postgresContainer, err = resource.SetupPostgres(pool, t)
 		if err != nil {
 			return fmt.Errorf("could not start postgres: %v", err)
 		}
@@ -116,11 +118,11 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
 
-	httpPort, err := testhelper.GetFreePort()
+	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := testhelper.GetFreePort()
+	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
-	debugPort, err := testhelper.GetFreePort()
+	debugPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
@@ -130,7 +132,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	releaseName := t.Name() + "_" + appType
 	envArr := []string{
 		fmt.Sprintf("APP_TYPE=%s", appType),
-		fmt.Sprintf("INSTANCE_ID=%s", serverInstanceID),
+		fmt.Sprintf("INSTANCE_ID=%s", "rudderstackmt-v0-rudderstack-0"),
 		fmt.Sprintf("RELEASE_NAME=%s", releaseName),
 		fmt.Sprintf("JOBS_DB_PORT=%s", postgresContainer.Port),
 		fmt.Sprintf("JOBS_DB_USER=%s", postgresContainer.User),

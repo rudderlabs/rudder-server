@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"testing"
 	"time"
 
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
@@ -24,20 +24,22 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
+	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerUtils "github.com/rudderlabs/rudder-server/router/utils"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -158,18 +160,84 @@ func initRouter() {
 	logger.Reset()
 	misc.Init()
 	Init()
-	InitRouterAdmin()
 }
 
 func TestBackoff(t *testing.T) {
 	loadConfig()
-	assert.Equal(t, 10*time.Second, durationBeforeNextAttempt(0))
-	assert.Equal(t, 10*time.Second, durationBeforeNextAttempt(1))
-	assert.Equal(t, 20*time.Second, durationBeforeNextAttempt(2))
-	assert.Equal(t, 40*time.Second, durationBeforeNextAttempt(3))
-	assert.Equal(t, 80*time.Second, durationBeforeNextAttempt(4))
-	assert.Equal(t, 160*time.Second, durationBeforeNextAttempt(5))
-	assert.Equal(t, 300*time.Second, durationBeforeNextAttempt(6))
+
+	t.Run("durationBeforeNextAttempt", func(t *testing.T) {
+		require.Equal(t, 10*time.Second, durationBeforeNextAttempt(0))
+		require.Equal(t, 10*time.Second, durationBeforeNextAttempt(1))
+		require.Equal(t, 20*time.Second, durationBeforeNextAttempt(2))
+		require.Equal(t, 40*time.Second, durationBeforeNextAttempt(3))
+		require.Equal(t, 80*time.Second, durationBeforeNextAttempt(4))
+		require.Equal(t, 160*time.Second, durationBeforeNextAttempt(5))
+		require.Equal(t, 300*time.Second, durationBeforeNextAttempt(6))
+	})
+
+	t.Run("findWorker", func(t *testing.T) {
+		backoffJob := &jobsdb.JobT{
+			JobID:      1,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Failed.State,
+				AttemptNum: 1,
+				RetryTime:  time.Now().Add(1 * time.Hour),
+			},
+		}
+		noBackoffJob1 := &jobsdb.JobT{
+			JobID:      2,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Waiting.State,
+				AttemptNum: 1,
+				RetryTime:  time.Now().Add(1 * time.Hour),
+			},
+		}
+		noBackoffJob2 := &jobsdb.JobT{
+			JobID:      3,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Failed.State,
+				AttemptNum: 0,
+				RetryTime:  time.Now().Add(1 * time.Hour),
+			},
+		}
+		noBackoffJob3 := &jobsdb.JobT{
+			JobID:      4,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Failed.State,
+				AttemptNum: 0,
+				RetryTime:  time.Now().Add(-1 * time.Hour),
+			},
+		}
+
+		r := &HandleT{
+			logger:        logger.NOP,
+			backgroundCtx: context.Background(),
+			noOfWorkers:   1,
+			workers: []*worker{{
+				barrier: eventorder.NewBarrier(),
+			}},
+		}
+
+		t.Run("eventorder disabled", func(t *testing.T) {
+			r.guaranteeUserEventOrder = false
+			require.Nil(t, r.findWorker(backoffJob, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob1, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob2, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob3, map[string]struct{}{}))
+		})
+
+		t.Run("eventorder enabled", func(t *testing.T) {
+			r.guaranteeUserEventOrder = true
+			require.Nil(t, r.findWorker(backoffJob, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob1, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob2, map[string]struct{}{}))
+			require.NotNil(t, r.findWorker(noBackoffJob3, map[string]struct{}{}))
+		})
+	})
 }
 
 var _ = Describe("Router", func() {
@@ -464,6 +532,99 @@ var _ = Describe("Router", func() {
 			count := router.readAndProcess()
 			Expect(count).To(Equal(len(unprocessedJobsList)))
 			Eventually(func() bool { return routerAborted && procErrorStored }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
+		})
+
+		It("aborts events that have reached max retries", func() {
+			routerUtils.JobRetention = time.Duration(24) * time.Hour
+			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
+			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+
+			router := &HandleT{
+				Reporting:    &reporting.NOOP{},
+				MultitenantI: mockMultitenantHandle,
+			}
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			router.netHandle = mockNetHandle
+			router.MultitenantI = mockMultitenantHandle
+
+			firstAttemptedAt := time.Now().Add(-router.retryTimeWindow)
+			jobs := []*jobsdb.JobT{
+				{
+					UUID:         uuid.New(),
+					UserID:       "u1",
+					JobID:        2010,
+					CreatedAt:    firstAttemptedAt.Add(-time.Minute),
+					ExpireAt:     firstAttemptedAt.Add(-time.Minute),
+					CustomVal:    customVal["GA"],
+					EventPayload: []byte(`{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`),
+					LastJobStatus: jobsdb.JobStatusT{
+						AttemptNum:    router.maxFailedCountForJob,
+						JobState:      jobsdb.Failed.State,
+						ErrorCode:     "500",
+						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))),
+					},
+					Parameters: []byte(fmt.Sprintf(`{
+						"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77",
+						"destination_id": "%s", 
+						"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", 
+						"received_at": "%s", 
+						"transform_at": "processor"
+					}`, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+					WorkspaceId: workspaceID,
+				},
+			}
+
+			workspaceCount := map[string]int{}
+			workspaceCount[workspaceID] = len(jobs)
+			workspaceCountOut := workspaceCount
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
+			payloadLimit := router.payloadLimit
+			c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount, jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{customVal["GA"]}, PayloadSizeLimit: payloadLimit, JobsLimit: workspaceCount[workspaceID],
+			}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: jobs}, nil).After(callGetRouterPickupJobs)
+
+			var routerAborted bool
+			var procErrorStored bool
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Times(1)
+
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
+					job := jobList[0]
+					var parameters map[string]interface{}
+					err := json.Unmarshal(job.Parameters, &parameters)
+					if err != nil {
+						panic(err)
+					}
+
+					Expect(job.JobID).To(Equal(jobs[0].JobID))
+					Expect(job.CustomVal).To(Equal(jobs[0].CustomVal))
+					Expect(job.UserID).To(Equal(jobs[0].UserID))
+					procErrorStored = true
+				})
+
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil).Times(1)
+
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
+				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
+					Expect(drainList).To(HaveLen(1))
+					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, strconv.Itoa(routerUtils.DRAIN_ERROR_CODE), `{"reason": "retry limit reached"}`, jobs[0].LastJobStatus.AttemptNum)
+					routerAborted = true
+				})
+
+			<-router.backendConfigInitialized
+			count := router.readAndProcess()
+			Expect(count).To(Equal(len(jobs)))
+			Eventually(func() bool {
+				return routerAborted && procErrorStored
+			}, 60*time.Second, 10*time.Millisecond).
+				Should(Equal(true), fmt.Sprintf("Router should both abort (actual: %t) and store to proc error (actual: %t)", routerAborted, procErrorStored))
 		})
 
 		It("can fail jobs if time is more than router timeout", func() {
@@ -1529,7 +1690,7 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		wrk := &workerT{
+		wrk := &worker{
 			rt: &HandleT{
 				transformerProxy:                  tc.transformerProxy,
 				skipRtAbortAlertForDelivery:       tc.skip.deliveryAlert,

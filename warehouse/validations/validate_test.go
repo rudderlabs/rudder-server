@@ -5,16 +5,15 @@ import (
 	"fmt"
 	"testing"
 
-	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/ory/dockertest/v3"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
@@ -23,19 +22,19 @@ import (
 
 type testResource struct {
 	minioResource *destination.MINIOResource
-	pgResource    *destination.PostgresResource
+	pgResource    *resource.PostgresResource
 }
 
 func setup(t *testing.T, pool *dockertest.Pool) testResource {
 	var (
 		minioResource *destination.MINIOResource
-		pgResource    *destination.PostgresResource
+		pgResource    *resource.PostgresResource
 		err           error
 	)
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		pgResource, err = destination.SetupPostgres(pool, t)
+		pgResource, err = resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		return nil
@@ -57,9 +56,8 @@ func setup(t *testing.T, pool *dockertest.Pool) testResource {
 func TestValidator(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	validations.Init()
-	postgres.Init()
-	postgreslegacy.Init()
 
 	var (
 		provider  = "MINIO"
@@ -152,7 +150,7 @@ func TestValidator(t *testing.T) {
 				config: map[string]interface{}{
 					"database": "invalid_database",
 				},
-				wantError: errors.New("pq: database \"invalid_database\" does not exist"),
+				wantError: errors.New("pinging: pq: database \"invalid_database\" does not exist"),
 			},
 			{
 				name: "valid credentials",
@@ -473,7 +471,7 @@ func TestValidator(t *testing.T) {
 					"accessKeyID":     "temp-access-key",
 					"secretAccessKey": "test-secret-key",
 				},
-				wantError: errors.New("upload file: uploading file: The Access Key Id you provided does not exist in our records."),
+				wantError: errors.New("upload file: uploading file: checking bucket: The Access Key Id you provided does not exist in our records."),
 			},
 			{
 				name: "no privilege",

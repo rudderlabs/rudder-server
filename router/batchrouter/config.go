@@ -1,7 +1,7 @@
 package batchrouter
 
 import (
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
 func getBatchRouterConfigInt(key, destType string, defaultValue int) int {

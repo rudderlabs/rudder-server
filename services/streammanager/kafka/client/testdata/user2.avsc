@@ -1,0 +1,15 @@
+{
+  "namespace": "confluent.io.examples.serialization.avro",
+  "name": "User",
+  "type": "record",
+  "fields": [
+    {
+      "name": "first_name",
+      "type": "string"
+    },
+    {
+      "name": "last_name",
+      "type": "string"
+    }
+  ]
+}

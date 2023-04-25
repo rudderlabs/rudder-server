@@ -1,10 +1,13 @@
 package snowflake_test
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
@@ -15,15 +18,18 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	snowflakedb "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
 )
 
 func TestIntegrationSnowflake(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	t.Parallel()
+
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
@@ -31,10 +37,6 @@ func TestIntegrationSnowflake(t *testing.T) {
 	if _, exists := os.LookupEnv(testhelper.SnowflakeRBACIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeRBACIntegrationTestCredentials)
 	}
-
-	t.Parallel()
-
-	snowflake.Init()
 
 	credentials, err := testhelper.SnowflakeCredentials(testhelper.SnowflakeIntegrationTestCredentials)
 	require.NoError(t, err)
@@ -146,21 +148,30 @@ func TestIntegrationSnowflake(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			credentialsCopy := tc.credentials
-			credentialsCopy.Database = tc.database
+			cred := tc.credentials
+			cred.Database = tc.database
 
-			db, err := snowflake.Connect(credentialsCopy)
+			urlConfig := snowflakedb.Config{
+				Account:     cred.Account,
+				User:        cred.User,
+				Role:        cred.Role,
+				Password:    cred.Password,
+				Database:    cred.Database,
+				Warehouse:   cred.Warehouse,
+				Application: snowflake.Application,
+			}
+
+			dsn, err := snowflakedb.DSN(&urlConfig)
+			require.NoError(t, err)
+
+			db, err := sql.Open("snowflake", dsn)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
-				require.NoError(
-					t,
-					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-						return
-					}),
-					fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema),
-				)
+				require.NoError(t, testhelper.WithConstantRetries(func() error {
+					_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
+					return err
+				}))
 			})
 
 			ts := testhelper.WareHouseTest{
@@ -199,8 +210,8 @@ func TestIntegrationSnowflake(t *testing.T) {
 }
 
 func TestConfigurationValidationSnowflake(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
@@ -211,7 +222,7 @@ func TestConfigurationValidationSnowflake(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	snowflake.Init()
+	encoding.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

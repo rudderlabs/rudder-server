@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/sql/migrations"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ func TestMigrate(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	postgre, err := destination.SetupPostgres(pool, t)
+	postgre, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 
 	for _, dir := range migrationDir {

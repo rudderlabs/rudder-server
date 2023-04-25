@@ -7,16 +7,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
@@ -94,7 +96,7 @@ func TestHandleT_Track(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
 			err = (&migrator.Migrator{
@@ -123,7 +125,7 @@ func TestHandleT_Track(t *testing.T) {
 				conf.Set("Warehouse.uploadBufferTimeInMin", 0)
 			}
 
-			warehouse := warehouseutils.Warehouse{
+			warehouse := model.Warehouse{
 				WorkspaceID: workspaceID,
 				Source: backendconfig.SourceT{
 					ID:      sourceID,
@@ -218,7 +220,7 @@ func TestHandleT_CronTracker(t *testing.T) {
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		pgResource, err := destination.SetupPostgres(pool, t)
+		pgResource, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
 		err = (&migrator.Migrator{
@@ -233,7 +235,7 @@ func TestHandleT_CronTracker(t *testing.T) {
 		_, err = pgResource.DB.Exec(string(sqlStatement))
 		require.NoError(t, err)
 
-		warehouse := warehouseutils.Warehouse{
+		warehouse := model.Warehouse{
 			WorkspaceID: workspaceID,
 			Source: backendconfig.SourceT{
 				ID:      sourceID,

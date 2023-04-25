@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 )
 
 type MultiTenantHandleT struct {
@@ -182,16 +183,17 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, picku
 	if len(workspacesToQuery) == 0 {
 		return jobList, nil
 	}
+	cacheTXs := map[string]*cache.NoResultTx[ParameterFilterT]{}
 	for _, workspace := range workspacesToQuery {
 		if _, ok := skipCache[workspace]; !ok {
-			mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
-				willTryToSet, nil)
+			cacheTx := mj.noResultsCache.StartNoResultTx(ds.Index, workspace, conditions.CustomValFilters, conditions.StateFilters, conditions.ParameterFilters)
+			cacheTXs[workspace] = cacheTx
 		}
 	}
 
-	cacheUpdateByWorkspace := make(map[string]string)
+	cacheNoJobsByWorkspace := make(map[string]bool)
 	for _, workspace := range workspacesToQuery {
-		cacheUpdateByWorkspace[workspace] = string(noJobs)
+		cacheNoJobsByWorkspace[workspace] = true
 	}
 
 	var rows *sql.Rows
@@ -223,7 +225,9 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, picku
 			return jobList, err
 		}
 
-		job.LastJobStatus = JobStatusT{}
+		job.LastJobStatus = JobStatusT{
+			JobParameters: job.Parameters,
+		}
 		if _nullJS.Valid {
 			job.LastJobStatus.JobState = _nullJS.String
 		}
@@ -261,18 +265,15 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, picku
 				}
 			}
 		}
-		cacheUpdateByWorkspace[job.WorkspaceId] = string(hasJobs)
+		cacheNoJobsByWorkspace[job.WorkspaceId] = false
 	}
 	if err = rows.Err(); err != nil {
 		return jobList, err
 	}
 
-	// do cache stuff here
-	_willTryToSet := willTryToSet
-	for workspace, cacheUpdate := range cacheUpdateByWorkspace {
-		if _, ok := skipCache[workspace]; !ok {
-			mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
-				cacheValue(cacheUpdate), &_willTryToSet)
+	for workspace, noJobs := range cacheNoJobsByWorkspace {
+		if _, ok := skipCache[workspace]; !ok && noJobs {
+			cacheTXs[workspace].Commit()
 		}
 	}
 
@@ -285,7 +286,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(pickup map[string]*workspacePi
 
 	for workspace, wp := range pickup {
 		count := wp.Limit
-		if mj.isEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters) {
+		if mj.noResultsCache.Get(ds.Index, workspace, conditions.CustomValFilters, conditions.StateFilters, conditions.ParameterFilters) {
 			continue
 		}
 		if count <= 0 {

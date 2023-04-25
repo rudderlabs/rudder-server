@@ -16,11 +16,12 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	"golang.org/x/exp/slices"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -317,7 +318,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
-			if misc.Contains(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
+			if slices.Contains(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
 				if err != nil {

@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/mitchellh/mapstructure"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 // Some AWS destinations are using SecretAccessKey instead of accessKey
@@ -106,12 +106,12 @@ func NewSimpleSessionConfig(config map[string]interface{}, serviceName string) (
 		return nil, fmt.Errorf("unable to populate session config using destinationConfig: %w", err)
 	}
 
-	if sessionConfig.RoleBasedAuth && sessionConfig.IAMRoleARN == "" {
-		return nil, errors.New("incompatible role configuration")
-	}
-
 	if !isRoleBasedAuthFieldExist(config) {
 		sessionConfig.RoleBasedAuth = sessionConfig.IAMRoleARN != ""
+	}
+
+	if sessionConfig.IAMRoleARN == "" {
+		sessionConfig.RoleBasedAuth = false
 	}
 
 	// Some AWS destinations are using SecretAccessKey instead of accessKey

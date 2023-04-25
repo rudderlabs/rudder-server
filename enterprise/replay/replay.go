@@ -6,11 +6,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type Handler struct {
@@ -110,6 +110,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 				Parameters:    []byte(`{}`), // check
+				JobParameters: job.Parameters,
 			}
 			statusList = append(statusList, &status)
 			toProcess = append(toProcess, workerJobT{worker: w, job: job})

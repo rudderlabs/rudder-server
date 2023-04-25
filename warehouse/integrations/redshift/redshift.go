@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -18,19 +19,18 @@ import (
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var pkgLogger logger.Logger
 
 var errorsMappings = []model.JobError{
 	{
@@ -72,6 +72,10 @@ var errorsMappings = []model.JobError{
 	{
 		Type:   model.ResourceNotFoundError,
 		Format: regexp.MustCompile(`Bucket .* not found`),
+	},
+	{
+		Type:   model.ColumnCountError,
+		Format: regexp.MustCompile(`pq: tables can have at most 1600 columns`),
 	},
 }
 
@@ -140,13 +144,14 @@ var partitionKeyMap = map[string]string{
 }
 
 type Redshift struct {
-	DB             *sql.DB
-	Namespace      string
-	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.UploaderI
-	ConnectTimeout time.Duration
-	Logger         logger.Logger
-	stats          stats.Stats
+	DB                 *sqlmiddleware.DB
+	Namespace          string
+	Warehouse          model.Warehouse
+	Uploader           warehouseutils.Uploader
+	ConnectTimeout     time.Duration
+	Logger             logger.Logger
+	stats              stats.Stats
+	SlowQueryThreshold time.Duration
 
 	DedupWindow                   bool
 	DedupWindowInHours            time.Duration
@@ -179,15 +184,11 @@ type RedshiftCredentials struct {
 	TunnelInfo *tunnelling.TunnelInfo
 }
 
-func NewRedshift() *Redshift {
+func New() *Redshift {
 	return &Redshift{
-		Logger: pkgLogger,
+		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("redshift"),
 		stats:  stats.Default,
 	}
-}
-
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("redshift")
 }
 
 func WithConfig(h *Redshift, config *config.Config) {
@@ -196,6 +197,7 @@ func WithConfig(h *Redshift, config *config.Config) {
 	h.SkipDedupDestinationIDs = config.GetStringSlice("Warehouse.redshift.skipDedupDestinationIDs", nil)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
 }
 
 // getRSDataType gets datatype for rs which is mapped with RudderStack datatype
@@ -203,7 +205,7 @@ func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	// TODO: do we need sorted order here?
 	var keys []string
 	for colName := range columns {
@@ -218,7 +220,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (rs *Redshift) CreateTable(tableName string, columns map[string]string) (err error) {
+func (rs *Redshift) CreateTable(tableName string, columns model.TableSchema) (err error) {
 	name := fmt.Sprintf(`%q.%q`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
@@ -342,8 +344,8 @@ func (rs *Redshift) createSchema() (err error) {
 	return
 }
 
-func (rs *Redshift) generateManifest(tableName string, _ map[string]string) (string, error) {
-	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+func (rs *Redshift) generateManifest(tableName string) (string, error) {
+	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3Manifest
 	for idx, loadFile := range loadFiles {
@@ -408,13 +410,13 @@ func (rs *Redshift) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (string, error) {
+func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
 	var (
 		err              error
 		query            string
 		stagingTableName string
 		rowsAffected     int64
-		txn              *sql.Tx
+		txn              *sqlmiddleware.Tx
 		result           sql.Result
 	)
 
@@ -428,7 +430,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		logfield.TableName, tableName,
 	)
 
-	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload)
+	manifestLocation, err := rs.generateManifest(tableName)
 	if err != nil {
 		return "", fmt.Errorf("generating manifest: %w", err)
 	}
@@ -451,7 +453,12 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	}, ",")
 
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	if err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload); err != nil {
+	_, err = rs.DB.Exec(fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
+		rs.Namespace,
+		stagingTableName,
+		tableName,
+	))
+	if err != nil {
 		return "", fmt.Errorf("creating staging table: %w", err)
 	}
 
@@ -571,7 +578,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			logfield.Error, err.Error(),
 		)
 
-		return "", fmt.Errorf("running copy command: %w", err)
+		return "", fmt.Errorf("running copy command: %w", normalizeError(err))
 	}
 
 	var (
@@ -650,7 +657,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 				logfield.Query, query,
 				logfield.Error, err.Error(),
 			)
-			return "", fmt.Errorf("deleting from original table for dedup: %w", err)
+			return "", fmt.Errorf("deleting from original table for dedup: %w", normalizeError(err))
 		}
 
 		if rowsAffected, err = result.RowsAffected(); err != nil {
@@ -732,7 +739,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			logfield.Error, err.Error(),
 		)
 
-		return "", fmt.Errorf("inserting into original table: %w", err)
+		return "", fmt.Errorf("inserting into original table: %w", normalizeError(err))
 	}
 
 	if err = txn.Commit(); err != nil {
@@ -768,7 +775,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 		err                  error
 		query                string
 		identifyStagingTable string
-		txn                  *sql.Tx
+		txn                  *sqlmiddleware.Tx
 		userColNames         []string
 		firstValProps        []string
 	)
@@ -939,7 +946,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 			logfield.Error, err.Error(),
 		)
 		return map[string]error{
-			warehouseutils.UsersTable: fmt.Errorf("deleting from original table for dedup: %w", err),
+			warehouseutils.UsersTable: fmt.Errorf("deleting from original table for dedup: %w", normalizeError(err)),
 		}
 	}
 
@@ -983,7 +990,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
-			warehouseutils.UsersTable:      fmt.Errorf("inserting into users table from staging table: %w", err),
+			warehouseutils.UsersTable:      fmt.Errorf("inserting into users table from staging table: %w", normalizeError(err)),
 		}
 	}
 
@@ -1022,7 +1029,8 @@ func (rs *Redshift) loadUserTables() map[string]error {
 	}
 }
 
-func Connect(cred RedshiftCredentials) (*sql.DB, error) {
+func (rs *Redshift) connect() (*sqlmiddleware.DB, error) {
+	cred := rs.getConnectionCredentials()
 	dsn := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cred.Username, cred.Password),
@@ -1059,7 +1067,25 @@ func Connect(cred RedshiftCredentials) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("redshift set query_group error : %v", err)
 	}
-	return db, nil
+	middleware := sqlmiddleware.New(
+		db,
+		sqlmiddleware.WithLogger(rs.Logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Schema, rs.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(rs.SlowQueryThreshold),
+		sqlmiddleware.WithSecretsRegex(map[string]string{
+			"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
+			"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+			"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
+		}),
+	)
+	return middleware, nil
 }
 
 func (rs *Redshift) dropDanglingStagingTables() bool {
@@ -1102,10 +1128,6 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 		}
 	}
 	return delSuccess
-}
-
-func (rs *Redshift) connectToWarehouse() (*sql.DB, error) {
-	return Connect(rs.getConnectionCredentials())
 }
 
 func (rs *Redshift) CreateSchema() (err error) {
@@ -1271,17 +1293,17 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace
-func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := rs.connect()
 	if err != nil {
 		return
 	}
 	defer func() { _ = dbHandle.Close() }()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(model.Schema)
+	unrecognizedSchema = make(model.Schema)
 
 	sqlStatement := `
 			SELECT
@@ -1320,7 +1342,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(model.TableSchema)
 		}
 		if datatype, ok := dataTypesMapToRudder[cType]; ok {
 			if datatype == "string" && charLength.Int64 > rudderStringLength {
@@ -1329,7 +1351,7 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(map[string]string)
+				unrecognizedSchema[tName] = make(model.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
@@ -1339,35 +1361,25 @@ func (rs *Redshift) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unr
 	return
 }
 
-func (rs *Redshift) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
 
-	rs.DB, err = rs.connectToWarehouse()
+	rs.DB, err = rs.connect()
 	return err
 }
 
-func (rs *Redshift) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
-	rs.Warehouse = warehouse
-	rs.DB, err = Connect(rs.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer func() { _ = rs.DB.Close() }()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
-	defer cancel()
-
-	err = rs.DB.PingContext(ctx)
-	if err == context.DeadlineExceeded {
-		return fmt.Errorf("connection testing timed out after %d sec", rs.ConnectTimeout/time.Second)
+func (rs *Redshift) TestConnection(ctx context.Context, _ model.Warehouse) error {
+	err := rs.DB.PingContext(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("connection timeout: %w", err)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("pinging: %w", err)
 	}
 
-	return
+	return nil
 }
 
 func (rs *Redshift) Cleanup() {
@@ -1377,19 +1389,11 @@ func (rs *Redshift) Cleanup() {
 	}
 }
 
-func (rs *Redshift) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
-	rs.Warehouse = warehouse
-	rs.Namespace = warehouse.Namespace
-	rs.DB, err = Connect(rs.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = rs.DB.Close() }()
+func (rs *Redshift) CrashRecover() {
 	rs.dropDanglingStagingTables()
-	return
 }
 
-func (*Redshift) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*Redshift) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -1430,15 +1434,15 @@ func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) 
 	return total, err
 }
 
-func (rs *Redshift) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (rs *Redshift) Connect(warehouse model.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := rs.connect()
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
 }
 
 func (rs *Redshift) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {
@@ -1485,7 +1489,8 @@ func (rs *Redshift) LoadTestTable(location, tableName string, _ map[string]inter
 	}
 
 	_, err = rs.DB.Exec(sqlStatement)
-	return
+
+	return normalizeError(err)
 }
 
 func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
@@ -1494,4 +1499,14 @@ func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {
 
 func (rs *Redshift) ErrorMappings() []model.JobError {
 	return errorsMappings
+}
+
+func normalizeError(err error) error {
+	if pqErr, ok := err.(*pq.Error); ok {
+		return fmt.Errorf("pq: message: %s, detail: %s",
+			pqErr.Message,
+			pqErr.Detail,
+		)
+	}
+	return err
 }

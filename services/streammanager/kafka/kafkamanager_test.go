@@ -4,21 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	kafkaConfluent "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
+	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde"
+	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde/avro"
 	"github.com/golang/mock/gomock"
-	"github.com/linkedin/goavro"
+	"github.com/linkedin/goavro/v2"
 	"github.com/ory/dockertest/v3"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	mockStats "github.com/rudderlabs/rudder-server/mocks/services/stats"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
+	dockerKafka "github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
 )
 
 var sinceDuration = time.Second
@@ -42,7 +50,7 @@ func TestMain(m *testing.M) {
 func TestNewProducer(t *testing.T) {
 	t.Run("missing configuration data", func(t *testing.T) {
 		t.Run("missing topic", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
 			dest := backendconfig.DestinationT{}
 			p, err := NewProducer(&dest, common.Opts{})
@@ -50,7 +58,7 @@ func TestNewProducer(t *testing.T) {
 			require.ErrorContains(t, err, "invalid configuration: topic cannot be empty")
 		})
 		t.Run("missing hostname", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic": "some-topic",
@@ -62,7 +70,7 @@ func TestNewProducer(t *testing.T) {
 			require.ErrorContains(t, err, "invalid configuration: hostname cannot be empty")
 		})
 		t.Run("missing port", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic":    "some-topic",
@@ -75,7 +83,7 @@ func TestNewProducer(t *testing.T) {
 			require.ErrorContains(t, err, `invalid configuration: invalid port: strconv.Atoi: parsing "": invalid syntax`)
 		})
 		t.Run("invalid port", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic":    "some-topic",
@@ -89,7 +97,7 @@ func TestNewProducer(t *testing.T) {
 			require.ErrorContains(t, err, `invalid configuration: invalid port: 0`)
 		})
 		t.Run("invalid schema", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic":         "some-topic",
@@ -112,25 +120,25 @@ func TestNewProducer(t *testing.T) {
 	})
 
 	t.Run("ok", func(t *testing.T) {
-		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 
-		kafkaContainer, err := destination.SetupKafka(pool, &testCleanup{t},
-			destination.WithLogger(t),
-			destination.WithBrokers(1))
+		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+			dockerKafka.WithLogger(t),
+			dockerKafka.WithBrokers(1))
 		require.NoError(t, err)
 
 		destConfig := map[string]interface{}{
 			"topic":    "some-topic",
 			"hostname": "localhost",
-			"port":     kafkaContainer.Port,
+			"port":     kafkaContainer.Ports[0],
 		}
 		dest := backendconfig.DestinationT{Config: destConfig}
 
 		p, err := NewProducer(&dest, common.Opts{})
-		require.NotNil(t, p)
+		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
@@ -142,10 +150,84 @@ func TestNewProducer(t *testing.T) {
 	})
 }
 
+func TestIntegration(t *testing.T) {
+	t.Run("batch", func(t *testing.T) {
+		kafkaBatchingEnabled = true
+		t.Cleanup(func() { kafkaBatchingEnabled = false })
+		ctrl := gomock.NewController(t)
+		kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
+		kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
+		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
+		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(3.0).Times(1)
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+			dockerKafka.WithLogger(t),
+			dockerKafka.WithBrokers(1))
+		require.NoError(t, err)
+
+		destConfig := map[string]interface{}{
+			"topic":    "some-topic",
+			"hostname": "localhost",
+			"port":     kafkaContainer.Ports[0],
+		}
+		dest := backendconfig.DestinationT{Config: destConfig}
+
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
+		require.NoError(t, err)
+
+		var statusCode int
+		var returnMessage, errMessage string
+		require.Eventually(t, func() bool {
+			statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`[
+				{"message":"one","topic":"foo-bar","userId":"1234"},
+				{"message":"two","topic":"foo-bar","userId":"1234"},
+				{"message":"three","topic":"foo-bar","userId":"1234"}
+			]`), destConfig)
+			return statusCode == http.StatusOK
+		}, 10*time.Second, 100*time.Millisecond)
+		require.Equal(t, "Kafka: Message delivered in batch", returnMessage)
+		require.Equal(t, "Kafka: Message delivered in batch", errMessage)
+
+		c, err := client.New("tcp", []string{fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0])}, client.Config{})
+		require.NoError(t, err)
+		require.NoError(t, c.Ping(context.Background()))
+
+		var (
+			msgs     []client.Message
+			consumer = c.NewConsumer("foo-bar", client.ConsumerConfig{})
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		for i := 0; i < 3; {
+			var message client.Message
+			message, err = consumer.Receive(ctx)
+			if err == nil {
+				i++
+				msgs = append(msgs, message)
+			} else {
+				break
+			}
+		}
+
+		require.NoError(t, err)
+		require.Len(t, msgs, 3)
+		requireEqualMessage(t, "foo-bar", "1234", `"one"`, msgs[0])
+		requireEqualMessage(t, "foo-bar", "1234", `"two"`, msgs[1])
+		requireEqualMessage(t, "foo-bar", "1234", `"three"`, msgs[2])
+	})
+}
+
 func TestNewProducerForAzureEventHubs(t *testing.T) {
 	t.Run("missing configuration data", func(t *testing.T) {
 		t.Run("missing topic", func(t *testing.T) {
-			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), false)
 
 			dest := backendconfig.DestinationT{}
 			p, err := NewProducerForAzureEventHubs(&dest, common.Opts{})
@@ -153,7 +235,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 			require.ErrorContains(t, err, "invalid configuration: topic cannot be empty")
 		})
 		t.Run("missing bootstrap server", func(t *testing.T) {
-			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic": "some-topic",
@@ -165,7 +247,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 			require.ErrorContains(t, err, "invalid configuration: bootstrap server cannot be empty")
 		})
 		t.Run("missing connection string", func(t *testing.T) {
-			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic":           "some-topic",
@@ -188,7 +270,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 			t.Skip("Skipping because credentials or host are not provided")
 		}
 
-		kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), false)
 
 		destConfig := map[string]interface{}{
 			"topic":                     azureEventHubName,
@@ -213,7 +295,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 func TestProducerForConfluentCloud(t *testing.T) {
 	t.Run("missing configuration data", func(t *testing.T) {
 		t.Run("missing topic", func(t *testing.T) {
-			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
 			dest := backendconfig.DestinationT{}
 			p, err := NewProducerForConfluentCloud(&dest, common.Opts{})
@@ -221,7 +303,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 			require.ErrorContains(t, err, "invalid configuration: topic cannot be empty")
 		})
 		t.Run("missing bootstrap server", func(t *testing.T) {
-			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic": "some-topic",
@@ -233,7 +315,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 			require.ErrorContains(t, err, "invalid configuration: bootstrap server cannot be empty")
 		})
 		t.Run("missing api key", func(t *testing.T) {
-			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic":           "some-topic",
@@ -246,7 +328,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 			require.ErrorContains(t, err, "invalid configuration: API key cannot be empty")
 		})
 		t.Run("missing api secret", func(t *testing.T) {
-			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t))
+			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
 			destConfig := map[string]interface{}{
 				"topic":           "some-topic",
@@ -270,7 +352,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 			t.Skip("Skipping because credentials or host are not provided")
 		}
 
-		kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
 		destConfig := map[string]interface{}{
 			"topic":           "TestProducerForConfluentCloud_OK",
@@ -295,9 +377,9 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 func TestPrepareBatchOfMessages(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockSkippedDueToUserID := mockStats.NewMockMeasurement(ctrl)
-	mockSkippedDueToMessage := mockStats.NewMockMeasurement(ctrl)
-	mockPrepareBatchTime := mockStats.NewMockMeasurement(ctrl)
+	mockSkippedDueToUserID := mock_stats.NewMockMeasurement(ctrl)
+	mockSkippedDueToMessage := mock_stats.NewMockMeasurement(ctrl)
+	mockPrepareBatchTime := mock_stats.NewMockMeasurement(ctrl)
 	kafkaStats = managerStats{
 		missingUserID:    mockSkippedDueToUserID,
 		missingMessage:   mockSkippedDueToMessage,
@@ -388,13 +470,13 @@ func TestClose(t *testing.T) {
 		require.NoError(t, pm.Close())
 	})
 	t.Run("not initialized", func(t *testing.T) {
-		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		pm := &ProducerManager{p: &client.Producer{}}
 		require.NoError(t, pm.Close())
 	})
 	t.Run("correct", func(t *testing.T) {
-		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		c, err := client.New("tcp", []string{"localhost:9092"}, client.Config{})
 		require.NoError(t, err)
@@ -404,7 +486,7 @@ func TestClose(t *testing.T) {
 		require.NoError(t, pm.Close())
 	})
 	t.Run("error", func(t *testing.T) {
-		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		var pm producerManager = &ProducerManager{p: &pMockErr{error: fmt.Errorf("a bad error")}}
 		require.EqualError(t, pm.Close(), "failed to close producer: a bad error")
@@ -421,7 +503,7 @@ func TestProduce(t *testing.T) {
 	})
 
 	t.Run("invalid destination configuration", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		pm := ProducerManager{p: &client.Producer{}}
 		destConfig := make(chan struct{}) // channels cannot be JSON marshalled
@@ -432,7 +514,7 @@ func TestProduce(t *testing.T) {
 	})
 
 	t.Run("empty destination configuration", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		pm := ProducerManager{p: &client.Producer{}}
 		destConfig := map[string]interface{}{"foo": "bar"}
@@ -443,7 +525,7 @@ func TestProduce(t *testing.T) {
 	})
 
 	t.Run("invalid message", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		pm := ProducerManager{p: &client.Producer{}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
@@ -455,8 +537,8 @@ func TestProduce(t *testing.T) {
 
 	t.Run("producer error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
 
 		pm := &ProducerManager{p: &pMockErr{error: fmt.Errorf("super bad")}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
@@ -468,8 +550,8 @@ func TestProduce(t *testing.T) {
 
 	t.Run("producer retryable error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
 
 		pm := &ProducerManager{p: &pMockErr{error: kafka.LeaderNotAvailable}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
@@ -481,8 +563,8 @@ func TestProduce(t *testing.T) {
 
 	t.Run("default-topic-test", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
 
 		pm := &ProducerManager{p: &pMockErr{}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
@@ -494,8 +576,8 @@ func TestProduce(t *testing.T) {
 
 	t.Run("ok", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
 
 		pm := &ProducerManager{p: &pMockErr{}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
@@ -535,8 +617,8 @@ func TestSendBatchedMessage(t *testing.T) {
 
 	t.Run("publisher error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
 
 		p := &pMockErr{error: fmt.Errorf("something bad")}
 		pm := &ProducerManager{p: p}
@@ -559,8 +641,8 @@ func TestSendBatchedMessage(t *testing.T) {
 
 	t.Run("publisher retryable error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
 
 		p := &pMockErr{error: kafka.LeaderNotAvailable}
 		pm := &ProducerManager{p: p}
@@ -583,8 +665,10 @@ func TestSendBatchedMessage(t *testing.T) {
 
 	t.Run("ok", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
+		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(1.0).Times(1)
 
 		p := &pMockErr{error: nil}
 		pm := &ProducerManager{p: p}
@@ -607,8 +691,10 @@ func TestSendBatchedMessage(t *testing.T) {
 
 	t.Run("default topic test", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
+		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(1.0).Times(1)
 
 		p := &pMockErr{error: nil}
 		pm := &ProducerManager{p: p}
@@ -631,8 +717,9 @@ func TestSendBatchedMessage(t *testing.T) {
 
 	t.Run("schemaId not available", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
 		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
+
 		codec, codecErr := goavro.NewCodec(`{
 			"namespace" : "kafkaAvroTest",
 			"name": "myRecord",
@@ -661,7 +748,7 @@ func TestSendBatchedMessage(t *testing.T) {
 
 	t.Run("wrong codec", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
 		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
 		codec, codecErr := goavro.NewCodec(`{
 			"namespace" : "kafkaAvroTest",
@@ -691,7 +778,7 @@ func TestSendBatchedMessage(t *testing.T) {
 
 	t.Run("unavailable schemaId", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
 		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
 		codec, codecErr := goavro.NewCodec(`{
 			"namespace" : "kafkaAvroTest",
@@ -736,7 +823,7 @@ func TestSendMessage(t *testing.T) {
 	})
 
 	t.Run("no userId", func(t *testing.T) {
-		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		p := &pMockErr{error: nil}
 		pm := &ProducerManager{p: p}
@@ -753,7 +840,7 @@ func TestSendMessage(t *testing.T) {
 	})
 
 	t.Run("publisher error", func(t *testing.T) {
-		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		p := &pMockErr{error: fmt.Errorf("something bad")}
 		pm := &ProducerManager{p: p}
@@ -829,7 +916,7 @@ func TestSendMessage(t *testing.T) {
 
 func TestPublish(t *testing.T) {
 	t.Run("no topic", func(t *testing.T) {
-		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t))
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 		p := &client.Producer{}
 		pm := &ProducerManager{p: p}
 		message := prepareMessage("", "userId", []byte(`{"test": "value"}`), time.Now())
@@ -838,18 +925,273 @@ func TestPublish(t *testing.T) {
 	})
 }
 
-func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
+func TestSSHConfig(t *testing.T) {
+	t.Run("not enabled", func(t *testing.T) {
+		c := config.New()
+		conf, err := getSSHConfig("some id", c)
+		require.NoError(t, err)
+		require.Nil(t, conf)
+	})
+
+	t.Run("enabled for another destination", func(t *testing.T) {
+		c := config.New()
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest1,dest3")
+		conf, err := getSSHConfig("dest2", c)
+		require.NoError(t, err)
+		require.Nil(t, conf)
+	})
+
+	t.Run("no private key", func(t *testing.T) {
+		c := config.New()
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest2,dest1,dest5")
+		conf, err := getSSHConfig("dest1", c)
+		require.ErrorContains(t, err, "kafka SSH private key is not set")
+		require.Nil(t, conf)
+	})
+
+	t.Run("no base64 private key", func(t *testing.T) {
+		c := config.New()
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest3,dest1,dest7")
+		c.Set("ROUTER_KAFKA_SSH_PRIVATE_KEY", "not base64 encoded")
+		conf, err := getSSHConfig("dest1", c)
+		require.ErrorContains(t, err, "failed to decode base64 private key")
+		require.Nil(t, conf)
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		c := config.New()
+		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest0,dest1,dest6")
+		c.Set("ROUTER_KAFKA_SSH_PRIVATE_KEY", "a2V5IGNvbnRlbnQ=")
+		c.Set("ROUTER_KAFKA_SSH_USER", "some-user")
+		c.Set("ROUTER_KAFKA_SSH_HOST", "1.2.3.4:22")
+		c.Set("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", "true")
+		conf, err := getSSHConfig("dest1", c)
+		require.NoError(t, err)
+		require.Equal(t, &client.SSHConfig{
+			User:             "some-user",
+			Host:             "1.2.3.4:22",
+			PrivateKey:       "key content",
+			AcceptAnyHostKey: true,
+		}, conf)
+	})
+}
+
+func TestAvroSchemaRegistry(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	t.Log("Creating Kafka cluster")
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
+		dockerKafka.WithLogger(t),
+		dockerKafka.WithBrokers(1),
+		dockerKafka.WithSchemaRegistry())
+	require.NoError(t, err)
+
+	t.Log("Creating topic")
+	var (
+		ctx       = context.Background()
+		topicName = "test-topic"
+		broker    = fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0])
+		tc        = testutil.New("tcp", broker)
+	)
+	require.Eventuallyf(t, func() bool {
+		err = tc.CreateTopic(ctx, topicName, 1, 1) // partitions = 1, replication factor = 1
+		return err == nil
+	}, 30*time.Second, 100*time.Millisecond, "failed to create topic %s: %v", topicName, err)
+
+	t.Logf("Creating schema registry client with %s", kafkaContainer.SchemaRegistryURL)
+	schemaRegistryClient, err := schemaregistry.NewClient(schemaregistry.NewConfig(kafkaContainer.SchemaRegistryURL))
+	require.NoError(t, err)
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	path := func(file string) string { return filepath.Join(cwd, "client", "testdata", file) }
+	_, schemaID1 := registerSchema(t, "user1", path("user1.avsc"), schemaRegistryClient)
+	schema2, schemaID2 := registerSchema(t, "user2", path("user2.avsc"), schemaRegistryClient)
+	t.Logf("Schema IDs: %d, %d", schemaID1, schemaID2)
+
+	t.Log("Creating Kafka consumer")
+	c, err := kafkaConfluent.NewConsumer(&kafkaConfluent.ConfigMap{
+		"bootstrap.servers":  fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0]),
+		"group.id":           "group-1",
+		"session.timeout.ms": 6000,
+		"auto.offset.reset":  "earliest",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+	err = c.SubscribeTopics([]string{topicName}, nil)
+	require.NoError(t, err)
+
+	var (
+		destinationID = "DEST1"
+		destConfig    = map[string]interface{}{
+			"topic":         topicName,
+			"hostname":      "localhost",
+			"port":          kafkaContainer.Ports[0],
+			"convertToAvro": true,
+			"avroSchemas": []map[string]interface{}{
+				{"schemaId": fmt.Sprintf("%d", schemaID2), "schema": schema2},
+			},
+		}
+		dest       = backendconfig.DestinationT{ID: destinationID, Config: destConfig}
+		rawMessage = json.RawMessage(`{
+			"userId": "123",
+			"messageId": "456",
+			"schemaId": "2",
+			"topic": "` + topicName + `",
+			"message": {
+				"first_name": "John",
+				"last_name": "Doe"
+			}
+		}`)
+	)
+
+	t.Run("plain avro", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+
+		// Setting up mocks
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+
+		// Produce message in Avro format with schema 2
+		t.Log("Creating Kafka producer")
+		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, false)
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NoError(t, err)
+		require.NotNil(t, p)
+
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
+
+		// Start consuming
+		t.Log("Consuming messages")
+		timeout := time.After(5 * time.Second)
+		for {
+			select {
+			case <-timeout:
+				t.Fatal("Timed out waiting for expected message")
+			default:
+				ev := c.Poll(100)
+				if ev == nil {
+					continue
+				}
+
+				switch e := ev.(type) {
+				case *kafkaConfluent.Message:
+					codec, err := goavro.NewCodec(schema2)
+					require.NoError(t, err)
+					native, _, err := codec.NativeFromBinary(e.Value)
+					require.NoError(t, err)
+					require.Equal(t, map[string]interface{}{
+						"first_name": "John",
+						"last_name":  "Doe",
+					}, native)
+					return
+				case kafkaConfluent.Error:
+					t.Logf("Kafka Confluent Error: %v: %v", e.Code(), e)
+				default:
+					t.Logf("Ignoring consumer entry: %+v", e)
+				}
+			}
+		}
+	})
+
+	t.Run("avro with schema id embedded", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+
+		// Setting up mocks
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+
+		// Produce message in Avro format with schema 2
+		t.Log("Creating Kafka producer")
+		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, true)
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NoError(t, err)
+		require.NotNil(t, p)
+
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
+
+		// Start consuming
+		t.Log("Consuming messages")
+		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
+		require.NoError(t, err)
+
+		type User struct {
+			FirstName string `json:"first_name"`
+			LastName  string `json:"last_name"`
+		}
+
+		timeout := time.After(5 * time.Second)
+		for {
+			select {
+			case <-timeout:
+				t.Fatal("Timed out waiting for expected message")
+			default:
+				ev := c.Poll(100)
+				if ev == nil {
+					continue
+				}
+
+				switch e := ev.(type) {
+				case *kafkaConfluent.Message:
+					value := User{}
+					err = deser.DeserializeInto(*e.TopicPartition.Topic, e.Value, &value)
+					require.NoErrorf(t, err, "Failed to deserialize payload: %s", err)
+					require.Equal(t, User{FirstName: "John", LastName: "Doe"}, value)
+					return
+				case kafkaConfluent.Error:
+					t.Logf("Kafka Confluent Error: %v: %v", e.Code(), e)
+				default:
+					t.Logf("Ignoring consumer entry: %+v", e)
+				}
+			}
+		}
+	})
+}
+
+func getMockedTimer(t *testing.T, ctrl *gomock.Controller, anyTimes bool) *mock_stats.MockMeasurement {
 	t.Helper()
-	mockedTimer := mockStats.NewMockMeasurement(ctrl)
-	mockedTimer.EXPECT().SendTiming(sinceDuration).Times(1)
+	mockedTimer := mock_stats.NewMockMeasurement(ctrl)
+	call := mockedTimer.EXPECT().SendTiming(sinceDuration)
+	if anyTimes {
+		call.AnyTimes()
+	} else {
+		call.Times(1)
+	}
 	return mockedTimer
 }
 
-func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
+func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMeasurement {
 	t.Helper()
-	mockedCounter := mockStats.NewMockMeasurement(ctrl)
+	mockedCounter := mock_stats.NewMockMeasurement(ctrl)
 	mockedCounter.EXPECT().Increment().Times(1)
 	return mockedCounter
+}
+
+func registerSchema(t *testing.T, schemaName, schemaPath string, c schemaregistry.Client) (schema string, schemaID int) {
+	t.Helper()
+
+	buf, err := os.ReadFile(schemaPath)
+	require.NoError(t, err)
+	si := schemaregistry.SchemaInfo{Schema: string(buf)}
+
+	require.Eventuallyf(t, func() bool {
+		schemaID, err = c.Register(schemaName, si, true)
+		return err == nil
+	}, 30*time.Second, 100*time.Millisecond, "failed to register schema %s: %v", schemaName, err)
+
+	schema = string(buf)
+	return
+}
+
+func requireEqualMessage(t testing.TB, topic, key, value string, actual client.Message) {
+	t.Helper()
+	require.Equal(t, topic, actual.Topic)
+	require.Equal(t, key, string(actual.Key))
+	require.Equal(t, value, string(actual.Value))
 }
 
 // Mocks
@@ -860,6 +1202,7 @@ type pmMockErr struct {
 func (*pmMockErr) Close() error                                         { return nil }
 func (*pmMockErr) Publish(_ context.Context, _ ...client.Message) error { return nil }
 func (*pmMockErr) getTimeout() time.Duration                            { return 0 }
+func (*pmMockErr) getEmbedAvroSchemaID() bool                           { return false }
 func (pm *pmMockErr) getCodecs() map[string]*goavro.Codec {
 	return pm.codecs
 }

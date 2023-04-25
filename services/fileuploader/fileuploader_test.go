@@ -2,13 +2,14 @@ package fileuploader
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -54,6 +55,10 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	ready.Wait()
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 
+	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "S3") // default rudder storage provider
+	t.Setenv("JOBS_BACKUP_DEFAULT_PREFIX", "defaultPrefixWithStorageTTL")
+	t.Setenv("JOBS_BACKUP_PREFIX", "fullStoragePrefixWithNoTTL")
+
 	// When user has not configured any storage
 	configCh <- pubsub.DataEvent{
 		Data: map[string]backendconfig.ConfigT{
@@ -62,11 +67,14 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 				Settings: backendconfig.Settings{
 					DataRetention: backendconfig.DataRetention{
 						UseSelfStorage: false,
-						StorageBucket:  backendconfig.StorageBucket{},
+						StorageBucket: backendconfig.StorageBucket{
+							Type: "S3",
+						},
 						StoragePreferences: backendconfig.StoragePreferences{
 							ProcErrors:   true,
 							GatewayDumps: false,
 						},
+						RetentionPeriod: "full",
 					},
 				},
 			},
@@ -86,9 +94,38 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 					},
 				},
 			},
+			"testWorkspaceId-3": {
+				WorkspaceID: "testWorkspaceId-3",
+				Settings: backendconfig.Settings{
+					DataRetention: backendconfig.DataRetention{
+						UseSelfStorage: false,
+						StorageBucket: backendconfig.StorageBucket{
+							Type:   "S3",
+							Config: map[string]interface{}{},
+						},
+						StoragePreferences: backendconfig.StoragePreferences{
+							ProcErrors:   false,
+							GatewayDumps: false,
+						},
+						RetentionPeriod: "default",
+					},
+				},
+			},
 		},
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
+
+	fm1, err := fileUploaderProvider.GetFileManager("testWorkspaceId-1")
+	Expect(err).To(BeNil())
+	Expect(fm1.GetConfiguredPrefix()).To(Equal("fullStoragePrefixWithNoTTL"))
+
+	fm3, err := fileUploaderProvider.GetFileManager("testWorkspaceId-3")
+	Expect(err).To(BeNil())
+	Expect(fm3.GetConfiguredPrefix()).To(Equal("defaultPrefixWithStorageTTL"))
+
+	fm0, err := fileUploaderProvider.GetFileManager("testWorkspaceId-0")
+	Expect(err).To(Equal(fmt.Errorf(noStorageForWorkspaceErrorString, "testWorkspaceId-0")))
+	Expect(fm0).To(BeNil())
 
 	storageSettings.Wait()
 	Expect(preferences).To(Equal(
@@ -99,7 +136,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	))
 
 	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
-	Expect(err).To(HaveOccurred())
+	Expect(err).To(Equal(fmt.Errorf(noStorageForWorkspaceErrorString, "testWorkspaceId-0")))
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 
 	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-2")
@@ -181,10 +218,9 @@ func TestDefaultProvider(t *testing.T) {
 func TestOverride(t *testing.T) {
 	RegisterTestingT(t)
 	config := map[string]interface{}{
-		"a":          "1",
-		"b":          "2",
-		"c":          "3",
-		"externalId": "externalId",
+		"a": "1",
+		"b": "2",
+		"c": "3",
 	}
 	settings := backendconfig.StorageBucket{
 		Type: "S3",
@@ -195,10 +231,32 @@ func TestOverride(t *testing.T) {
 	}
 	bucket := overrideWithSettings(config, settings, "wrk-1")
 	Expect(bucket.Config).To(Equal(map[string]interface{}{
+		"a": "1",
+		"b": "4",
+		"c": "3",
+		"d": "5",
+	}))
+
+	config = map[string]interface{}{
+		"a":          "1",
+		"b":          "2",
+		"c":          "3",
+		"iamRoleArn": "abc",
+	}
+	settings = backendconfig.StorageBucket{
+		Type: "S3",
+		Config: map[string]interface{}{
+			"b": "4",
+			"d": "5",
+		},
+	}
+	bucket = overrideWithSettings(config, settings, "wrk-1")
+	Expect(bucket.Config).To(Equal(map[string]interface{}{
 		"a":          "1",
 		"b":          "4",
 		"c":          "3",
 		"d":          "5",
-		"externalId": "wrk-1",
+		"iamRoleArn": "abc",
+		"externalID": "wrk-1",
 	}))
 }

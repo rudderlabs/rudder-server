@@ -3,8 +3,8 @@ package suppression
 import (
 	"errors"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // newHandler creates a new handler for the suppression feature

@@ -1,17 +1,21 @@
 package redshift_test
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
@@ -19,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/stretchr/testify/require"
 
@@ -28,16 +32,14 @@ import (
 )
 
 func TestIntegrationRedshift(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	t.Parallel()
+
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
-
-	t.Parallel()
-
-	redshift.Init()
 
 	var (
 		jobsDB        = testhelper.SetUpJobsDB(t)
@@ -93,18 +95,21 @@ func TestIntegrationRedshift(t *testing.T) {
 			credentials, err := testhelper.RedshiftCredentials()
 			require.NoError(t, err)
 
-			db, err := redshift.Connect(credentials)
+			dsn := fmt.Sprintf(
+				"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				credentials.Username, credentials.Password, credentials.Host, credentials.Port, credentials.DbName,
+			)
+
+			db, err := sql.Open("postgres", dsn)
 			require.NoError(t, err)
 
+			sqlmiddleware := sqlmiddleware.New(db)
+
 			t.Cleanup(func() {
-				require.NoError(
-					t,
-					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-						return
-					}),
-					fmt.Sprintf("Failed dropping schema %s for Redshift", tc.schema),
-				)
+				require.NoError(t, testhelper.WithConstantRetries(func() error {
+					_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
+					return err
+				}))
 			})
 
 			ts := testhelper.WareHouseTest{
@@ -125,7 +130,7 @@ func TestIntegrationRedshift(t *testing.T) {
 				TaskRunID:             misc.FastUUID().String(),
 				UserID:                testhelper.GetUserId(provider),
 				Client: &client.Client{
-					SQL:  db,
+					SQL:  sqlmiddleware.DB,
 					Type: client.SQLClient,
 				},
 			}
@@ -142,8 +147,8 @@ func TestIntegrationRedshift(t *testing.T) {
 }
 
 func TestConfigurationValidationRedshift(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	if os.Getenv("SLOW") != "1" {
+		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
@@ -154,7 +159,7 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	redshift.Init()
+	encoding.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
@@ -187,6 +192,8 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 }
 
 func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name     string
 		err      error
@@ -222,6 +229,8 @@ func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
 }
 
 func TestRedshift_AlterColumn(t *testing.T) {
+	t.Parallel()
+
 	var (
 		bigString      = strings.Repeat("a", 1024)
 		smallString    = strings.Repeat("a", 510)
@@ -253,13 +262,15 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			pgResource, err := destination.SetupPostgres(pool, t)
+			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
-			rs := redshift.NewRedshift()
+			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
-			rs.DB = pgResource.DB
+			sqlmiddleware := sqlmiddleware.New(pgResource.DB)
+
+			rs.DB = sqlmiddleware
 			rs.Namespace = testNamespace
 
 			_, err = rs.DB.Exec(

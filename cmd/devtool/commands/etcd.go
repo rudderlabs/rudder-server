@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-
 	"github.com/alexeyco/simpletable"
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v2"
 	etcd "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 var DefaultList []*cli.Command
@@ -83,7 +84,7 @@ func Mode(c *cli.Context) error {
 	}
 
 	releaseName := config.GetReleaseName()
-	serverIndex := config.GetInstanceID()
+	serverIndex := misc.GetInstanceID()
 
 	ackKey := fmt.Sprintf("ack-devtool/%s", uuid.New().String())
 	ackCh := etcdClient.Watch(c.Context, ackKey)
@@ -143,7 +144,7 @@ func Workspace(c *cli.Context) error {
 	}
 
 	releaseName := config.GetReleaseName()
-	serverIndex := config.GetInstanceID()
+	serverIndex := misc.GetInstanceID()
 	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
 
 	ackKey := fmt.Sprintf("ack-devtool/%s", uuid.New().String())

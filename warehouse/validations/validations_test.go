@@ -4,12 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-
 	"github.com/ory/dockertest/v3"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -21,9 +19,8 @@ func TestValidate(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
+	encoding.Init()
 	validations.Init()
-	postgres.Init()
-	postgreslegacy.Init()
 
 	var (
 		provider  = "MINIO"

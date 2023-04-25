@@ -301,7 +301,8 @@ func (repo *TableUploads) Set(ctx context.Context, uploadId int64, tableName str
 	}
 	if options.Error != nil {
 		setQuery.WriteString(fmt.Sprintf(`error = $%d,`, len(queryArgs)+1))
-		queryArgs = append(queryArgs, *options.Error)
+		sanitizedError := warehouseutils.SanitizeString(*options.Error)
+		queryArgs = append(queryArgs, sanitizedError)
 	}
 	if options.LastExecTime != nil {
 		setQuery.WriteString(fmt.Sprintf(`last_exec_time = $%d,`, len(queryArgs)+1))
@@ -319,6 +320,9 @@ func (repo *TableUploads) Set(ctx context.Context, uploadId int64, tableName str
 	if setQuery.Len() == 0 {
 		return fmt.Errorf(`no set options provided`)
 	}
+
+	setQuery.WriteString(fmt.Sprintf(`updated_at = $%d,`, len(queryArgs)+1))
+	queryArgs = append(queryArgs, repo.now())
 
 	// remove trailing comma
 	setQueryString := strings.TrimSuffix(setQuery.String(), ",")

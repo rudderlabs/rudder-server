@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	mockjobsforwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app/cluster"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -75,6 +76,8 @@ func TestDynamicCluster(t *testing.T) {
 	routerDB := &mockLifecycle{status: "", callCount: &callCount}
 	batchRouterDB := &mockLifecycle{status: "", callCount: &callCount}
 	errorDB := &mockLifecycle{status: "", callCount: &callCount}
+	schemaForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
+	eschDB := &mockLifecycle{status: "", callCount: &callCount}
 
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
@@ -92,9 +95,11 @@ func TestDynamicCluster(t *testing.T) {
 		RouterDB:      routerDB,
 		BatchRouterDB: batchRouterDB,
 		ErrorDB:       errorDB,
+		EventSchemaDB: eschDB,
 
-		Processor: processor,
-		Router:    router,
+		Processor:       processor,
+		Router:          router,
+		SchemaForwarder: schemaForwarder,
 
 		MultiTenantStat: mtStat,
 		BackendConfig:   backendConfig,
@@ -102,6 +107,8 @@ func TestDynamicCluster(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	schemaForwarder.EXPECT().Start().Return(nil).AnyTimes()
+	schemaForwarder.EXPECT().Stop().AnyTimes()
 	wait := make(chan struct{})
 	go func() {
 		_ = dc.Run(ctx)
@@ -139,6 +146,32 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, routerDB.callOrder < router.callOrder)
 		require.True(t, batchRouterDB.callOrder < router.callOrder)
 		require.True(t, errorDB.callOrder < router.callOrder)
+	})
+
+	t.Run("server should start in NORMAL mode by default when there is no instruction by scheduler", func(t *testing.T) {
+		require.Eventually(t, func() bool {
+			return gatewayDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return routerDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return errorDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return batchRouterDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return processor.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return router.status == "start"
+		}, time.Second, time.Millisecond)
 	})
 
 	t.Run("NORMAL -> DEGRADED", func(t *testing.T) {

@@ -17,12 +17,12 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -68,6 +68,9 @@ type MetadataT struct {
 	EventType               string   `json:"eventType"`
 	SourceDefinitionID      string   `json:"sourceDefinitionId"`
 	DestinationDefinitionID string   `json:"destinationDefinitionId"`
+	TransformationID        string   `json:"transformationId"`
+	TransformationVersionID string   `json:"transformationVersionId"`
+	SourceDefinitionType    string   `json:"-"`
 }
 
 type TransformerEventT struct {
@@ -104,6 +107,7 @@ func NewTransformer() *HandleT {
 
 var (
 	maxConcurrency, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
+	disableKeepAlives                                                    bool
 	retrySleep                                                           time.Duration
 	timeoutDuration                                                      time.Duration
 	pkgLogger                                                            logger.Logger
@@ -117,7 +121,8 @@ func Init() {
 func loadConfig() {
 	config.RegisterIntConfigVariable(200, &maxConcurrency, false, 1, "Processor.maxConcurrency")
 	config.RegisterIntConfigVariable(100, &maxHTTPConnections, false, 1, "Processor.maxHTTPConnections")
-	config.RegisterIntConfigVariable(50, &maxHTTPIdleConnections, false, 1, "Processor.maxHTTPIdleConnections")
+	config.RegisterIntConfigVariable(5, &maxHTTPIdleConnections, false, 1, "Processor.maxHTTPIdleConnections")
+	config.RegisterBoolConfigVariable(true, &disableKeepAlives, false, "Transformer.Client.disableKeepAlives")
 
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
@@ -151,6 +156,7 @@ func (trans *HandleT) Setup() {
 	if trans.Client == nil {
 		trans.Client = &http.Client{
 			Transport: &http.Transport{
+				DisableKeepAlives:   disableKeepAlives,
 				MaxConnsPerHost:     maxHTTPConnections,
 				MaxIdleConnsPerHost: maxHTTPIdleConnections,
 				IdleConnTimeout:     time.Minute,
@@ -201,7 +207,7 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 		return ResponseT{}
 	}
 
-	sTags := statsTags(clientEvents[0])
+	sTags := statsTags(&clientEvents[0])
 
 	batches := lo.Chunk(clientEvents, batchSize)
 
@@ -268,7 +274,7 @@ func (*HandleT) requestTime(s stats.Tags, d time.Duration) {
 	stats.Default.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
 }
 
-func statsTags(event TransformerEventT) stats.Tags {
+func statsTags(event *TransformerEventT) stats.Tags {
 	return stats.Tags{
 		"dest_type": event.Destination.DestinationDefinition.Name,
 		"dest_id":   event.Destination.ID,
@@ -306,7 +312,7 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 	// endless backoff loop, only nil error or panics inside
 	_ = backoff.RetryNotify(
 		func() error {
-			respData, statusCode = trans.doPost(ctx, rawJSON, url, statsTags(data[0]))
+			respData, statusCode = trans.doPost(ctx, rawJSON, url, statsTags(&data[0]))
 			if statusCode == StatusCPDown {
 				trans.cpDownGauge.Gauge(1)
 				return fmt.Errorf("control plane not reachable")

@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,7 +57,7 @@ func TestAppHandlerStartSequence(t *testing.T) {
 func startJobsDBPostgresql(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	r, err := destination.SetupPostgres(pool, t)
+	r, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 	config.Set("DB.port", r.Port)
 	config.Set("DB.user", r.User)

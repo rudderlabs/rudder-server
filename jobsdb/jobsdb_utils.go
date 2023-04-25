@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/samber/lo"
 )
 
 type sqlDbOrTx interface {
@@ -131,55 +131,11 @@ func constructQueryOR(paramKey string, paramList []string) string {
 // constructParameterJSONQuery construct and return query
 func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilterT) string {
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
-	var allKeyValues, mandatoryKeyValues, opNullConditions []string
-	for _, parameter := range parameterFilters {
-		allKeyValues = append(allKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
-		mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
-	}
-	opQuery := ""
-	if len(opNullConditions) > 0 {
-		opQuery += fmt.Sprintf(` OR (%q.parameters @> '{%s}' AND %s)`, alias, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
-	}
-	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, alias, strings.Join(allKeyValues, ","), opQuery)
-}
+	conditions := lo.Map(parameterFilters, func(parameter ParameterFilterT, _ int) string {
+		return fmt.Sprintf(`%s.parameters->>'%s'='%s'`, alias, parameter.Name, parameter.Value)
+	})
 
-// Admin Handlers
-type JobsdbUtilsHandler struct{}
-
-var jobsdbUtilsHandler *JobsdbUtilsHandler
-
-func Init3() {
-	jobsdbUtilsHandler = &JobsdbUtilsHandler{}
-	admin.RegisterAdminHandler("JobsdbUtilsHandler", jobsdbUtilsHandler)
-}
-
-func (*JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			err = fmt.Errorf("internal Rudder server error: %v", r)
-		}
-	}()
-
-	args := strings.Split(argString, ":")
-	var response string
-	var readOnlyJobsDB ReadonlyHandleT
-	if args[0] == "brt" {
-		args[0] = "batch_rt"
-	}
-
-	if err := readOnlyJobsDB.Setup(args[0]); err != nil {
-		return err
-	}
-
-	switch args[1] {
-	case "Jobs between JobID's of a User":
-		response, err = readOnlyJobsDB.GetJobIDsForUser(args)
-	case "Error Code Count By Destination":
-		response, err = readOnlyJobsDB.GetFailedStatusErrorCodeCountsByDestination(args)
-	}
-	*reply = response
-	return err
+	return "(" + strings.Join(conditions, " OR ") + ")"
 }
 
 // statTags is a struct to hold tags for stats
@@ -214,7 +170,7 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 			statTagsMap["stateFilters"] = stateFiltersTag
 		}
 
-		if tags.WorkspaceID != "" && tags.WorkspaceID != allWorkspaces {
+		if tags.WorkspaceID != "" && tags.WorkspaceID != "*" {
 			statTagsMap["workspaceId"] = tags.WorkspaceID
 		}
 
