@@ -360,6 +360,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 
 		if destConfig.UseSSH {
 			privateKey, err := getSSHPrivateKey(context.Background(), destination.ID)
+
 			if err != nil {
 				return nil, fmt.Errorf("[Kafka] invalid SSH private key: %w", err)
 			}
@@ -823,5 +824,9 @@ func getSSHPrivateKey(ctx context.Context, destinationID string) (string, error)
 		backendconfig.DefaultBackendConfig.Identity(),
 	)
 	keyPair, err := c.GetDestinationSSHKeyPair(ctx, destinationID)
+	pkgLogger.Infof("Got ssh key pair: Private key: %s, Public key: ", keyPair.PrivateKey, keyPair.PublicKey)
+	if err != nil {
+		pkgLogger.Errorf("failed to get ssh key pair for destination %s: %w", destinationID, err)
+	}
 	return keyPair.PrivateKey, err
 }
