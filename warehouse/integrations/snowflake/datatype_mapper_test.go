@@ -2,8 +2,9 @@ package snowflake
 
 import (
 	"database/sql"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCalculateDataType(t *testing.T) {
