@@ -15,7 +15,9 @@ import (
 	"strings"
 	"time"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"golang.org/x/exp/slices"
 
@@ -130,7 +132,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type Postgres struct {
-	DB                                          *sql.DB
+	DB                                          *sqlmiddleware.DB
 	Namespace                                   string
 	ObjectStorage                               string
 	Warehouse                                   model.Warehouse
@@ -143,6 +145,24 @@ type Postgres struct {
 	EnableDeleteByJobs                          bool
 	SkipComputingUserLatestTraitsWorkspaceIDs   []string
 	EnableSQLStatementExecutionPlanWorkspaceIDs []string
+	SlowQueryThreshold                          time.Duration
+}
+
+func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
+	middleware := sqlmiddleware.New(
+		db,
+		sqlmiddleware.WithLogger(pg.logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, pg.Warehouse.Source.ID,
+			logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, pg.Warehouse.Destination.ID,
+			logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+			logfield.Schema, pg.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(pg.SlowQueryThreshold),
+	)
+	return middleware
 }
 
 type Credentials struct {
@@ -182,9 +202,11 @@ func WithConfig(h *Postgres, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
 	h.SkipComputingUserLatestTraitsWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.SkipComputingUserLatestTraitsWorkspaceIDs", nil)
 	h.EnableSQLStatementExecutionPlanWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.postgres.slowQueryThreshold", 5, time.Minute)
 }
 
-func Connect(cred Credentials) (*sql.DB, error) {
+func (pg *Postgres) connect() (*sqlmiddleware.DB, error) {
+	cred := pg.getConnectionCredentials()
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -218,14 +240,14 @@ func Connect(cred Credentials) (*sql.DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
-		return db, nil
+		return pg.getNewMiddleWare(db), nil
 	}
 
 	if db, err = sql.Open("postgres", dsn.String()); err != nil {
 		return nil, fmt.Errorf("opening connection to postgres: %w", err)
 	}
 
-	return db, nil
+	return pg.getNewMiddleWare(db), nil
 }
 
 func (pg *Postgres) getConnectionCredentials() Credentials {
@@ -812,7 +834,7 @@ func (pg *Postgres) Setup(
 	pg.Uploader = uploader
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 
-	pg.DB, err = Connect(pg.getConnectionCredentials())
+	pg.DB, err = pg.connect()
 	return err
 }
 
@@ -866,7 +888,7 @@ func (pg *Postgres) dropDanglingStagingTables() bool {
 func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := pg.connect()
 	if err != nil {
 		return
 	}
@@ -984,12 +1006,12 @@ func (pg *Postgres) Connect(warehouse model.Warehouse) (client.Client, error) {
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(pg.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(pg.getConnectionCredentials())
+	dbHandle, err := pg.connect()
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
 }
 
 func (pg *Postgres) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
@@ -1008,8 +1030,8 @@ func (pg *Postgres) SetConnectionTimeout(timeout time.Duration) {
 }
 
 type QueryParams struct {
-	txn                 *sql.Tx
-	db                  *sql.DB
+	txn                 *sqlmiddleware.Tx
+	db                  *sqlmiddleware.DB
 	query               string
 	enableWithQueryPlan bool
 }

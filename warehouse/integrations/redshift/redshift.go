@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
@@ -143,13 +144,14 @@ var partitionKeyMap = map[string]string{
 }
 
 type Redshift struct {
-	DB             *sql.DB
-	Namespace      string
-	Warehouse      model.Warehouse
-	Uploader       warehouseutils.Uploader
-	ConnectTimeout time.Duration
-	Logger         logger.Logger
-	stats          stats.Stats
+	DB                 *sqlmiddleware.DB
+	Namespace          string
+	Warehouse          model.Warehouse
+	Uploader           warehouseutils.Uploader
+	ConnectTimeout     time.Duration
+	Logger             logger.Logger
+	stats              stats.Stats
+	SlowQueryThreshold time.Duration
 
 	DedupWindow                   bool
 	DedupWindowInHours            time.Duration
@@ -195,6 +197,7 @@ func WithConfig(h *Redshift, config *config.Config) {
 	h.SkipDedupDestinationIDs = config.GetStringSlice("Warehouse.redshift.skipDedupDestinationIDs", nil)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
 }
 
 // getRSDataType gets datatype for rs which is mapped with RudderStack datatype
@@ -413,7 +416,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		query            string
 		stagingTableName string
 		rowsAffected     int64
-		txn              *sql.Tx
+		txn              *sqlmiddleware.Tx
 		result           sql.Result
 	)
 
@@ -772,7 +775,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 		err                  error
 		query                string
 		identifyStagingTable string
-		txn                  *sql.Tx
+		txn                  *sqlmiddleware.Tx
 		userColNames         []string
 		firstValProps        []string
 	)
@@ -1026,7 +1029,8 @@ func (rs *Redshift) loadUserTables() map[string]error {
 	}
 }
 
-func Connect(cred RedshiftCredentials) (*sql.DB, error) {
+func (rs *Redshift) connect() (*sqlmiddleware.DB, error) {
+	cred := rs.getConnectionCredentials()
 	dsn := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cred.Username, cred.Password),
@@ -1063,7 +1067,25 @@ func Connect(cred RedshiftCredentials) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("redshift set query_group error : %v", err)
 	}
-	return db, nil
+	middleware := sqlmiddleware.New(
+		db,
+		sqlmiddleware.WithLogger(rs.Logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Schema, rs.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(rs.SlowQueryThreshold),
+		sqlmiddleware.WithSecretsRegex(map[string]string{
+			"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
+			"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+			"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
+		}),
+	)
+	return middleware, nil
 }
 
 func (rs *Redshift) dropDanglingStagingTables() bool {
@@ -1106,10 +1128,6 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 		}
 	}
 	return delSuccess
-}
-
-func (rs *Redshift) connectToWarehouse() (*sql.DB, error) {
-	return Connect(rs.getConnectionCredentials())
 }
 
 func (rs *Redshift) CreateSchema() (err error) {
@@ -1278,7 +1296,7 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := rs.connect()
 	if err != nil {
 		return
 	}
@@ -1348,7 +1366,7 @@ func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
 
-	rs.DB, err = rs.connectToWarehouse()
+	rs.DB, err = rs.connect()
 	return err
 }
 
@@ -1419,12 +1437,12 @@ func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) 
 func (rs *Redshift) Connect(warehouse model.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := rs.connect()
 	if err != nil {
 		return client.Client{}, err
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
 }
 
 func (rs *Redshift) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {

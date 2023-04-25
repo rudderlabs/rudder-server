@@ -1571,6 +1571,8 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 			c.mockProcErrorsDB.EXPECT().FailExecuting().Times(1)
+			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).AnyTimes()
 
 			var wg sync.WaitGroup
 			wg.Add(1)

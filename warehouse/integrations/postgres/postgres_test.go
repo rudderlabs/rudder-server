@@ -1,6 +1,8 @@
 package postgres_test
 
 import (
+	"database/sql"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -8,8 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 
@@ -36,22 +36,18 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	encoding.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
-	db, err := postgres.Connect(postgres.Credentials{
-		DBName:   configurations["privatePostgresDatabase"],
-		Password: configurations["privatePostgresPassword"],
-		User:     configurations["privatePostgresUser"],
-		Host:     configurations["privatePostgresHost"],
-		Port:     configurations["privatePostgresPort"],
-		SSLMode:  "disable",
-		TunnelInfo: &tunnelling.TunnelInfo{
-			Config: map[string]interface{}{
-				"sshUser":       configurations["sshUser"],
-				"sshPort":       configurations["sshPort"],
-				"sshHost":       configurations["sshHost"],
-				"sshPrivateKey": strings.ReplaceAll(configurations["sshPrivateKey"], "\\n", "\n"),
-			},
-		},
-	})
+	tunnelInfoConfig := map[string]interface{}{
+		"sshUser":       configurations["sshUser"],
+		"sshPort":       configurations["sshPort"],
+		"sshHost":       configurations["sshHost"],
+		"sshPrivateKey": strings.ReplaceAll(configurations["sshPrivateKey"], "\\n", "\n"),
+	}
+
+	dsn := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		configurations["privatePostgresUser"], configurations["privatePostgresPassword"], configurations["privatePostgresHost"], configurations["privatePostgresPort"], configurations["privatePostgresDatabase"],
+	)
+	db, err := tunnelling.SQLConnectThroughTunnel(dsn, tunnelInfoConfig)
 	require.NoError(t, err)
 
 	err = db.Ping()
@@ -128,15 +124,11 @@ func TestIntegrationPostgres(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-
-	db, err := postgres.Connect(postgres.Credentials{
-		DBName:   "rudderdb",
-		Password: "rudder-password",
-		User:     "rudder",
-		Host:     "wh-postgres",
-		SSLMode:  "disable",
-		Port:     "5432",
-	})
+	dsn := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		"rudder", "rudder-password", "wh-postgres", "5432", "rudderdb",
+	)
+	db, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
 
 	err = db.Ping()
