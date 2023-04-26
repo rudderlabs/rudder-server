@@ -89,7 +89,7 @@ func (r *LifecycleManager) monitorDestRouters(
 ) {
 	ch := r.BackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
-	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
+	dstToBatchRouter := make(map[string]*batchrouter.Handle)
 	cleanup := make([]func(), 0)
 
 	// Crash recover routerDB, batchRouterDB

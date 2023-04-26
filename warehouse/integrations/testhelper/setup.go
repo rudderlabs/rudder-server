@@ -255,6 +255,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TimestampBeforeSendingEvents,
 		).Scan(&count)
 		require.NoError(t, err)
+		t.Logf("Got count: %d, expected: %d", count.Int64, stagingFileEvents)
 		return count.Int64 == int64(stagingFileEvents)
 	}
 	require.Eventually(
@@ -322,6 +323,7 @@ func verifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 				warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 			).Scan(&count)
 			require.NoError(t, err)
+			t.Logf("Got count: %d, expected %d", count.Int64, loadFileEvents)
 			return count.Int64 == int64(loadFileEvents)
 		}
 		require.Eventually(
@@ -399,6 +401,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 				warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 			).Scan(&count)
 			require.NoError(t, err)
+			t.Logf("Got count: %d, expected %d", count.Int64, tableUploadEvents)
 			return count.Int64 == int64(tableUploadEvents)
 		}
 		require.Eventually(t,
@@ -467,6 +470,7 @@ func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 			if countErr != nil {
 				return countErr
 			}
+			t.Logf("Got count: %d, expected %d", count, tableCount)
 			if count != int64(tableCount) {
 				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
 					wareHouseTest.Schema,
