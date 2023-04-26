@@ -4,13 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -21,13 +22,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -137,47 +135,47 @@ func TestIntegration(t *testing.T) {
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
-	t.Run("Events flow", func(t *testing.T) {
-		dsn := fmt.Sprintf(
-			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "localhost", fmt.Sprint(postgresPort), "rudderdb",
-		)
-		db, err := sql.Open("postgres", dsn)
-		require.NoError(t, err)
-		require.NoError(t, db.Ping())
+	testCases := []struct {
+		name      string
+		useLegacy bool
+	}{
+		{
+			name:      "Legacy",
+			useLegacy: true,
+		},
+		{
+			name:      "New",
+			useLegacy: false,
+		},
+	}
 
-		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
-		)
-		jobsDB, err := sql.Open("postgres", dsn)
-		require.NoError(t, err)
-		require.NoError(t, jobsDB.Ping())
+	for _, tc := range testCases {
+		tc := tc
 
-		provider := warehouseutils.POSTGRES
-
-		testCases := []struct {
-			name      string
-			useLegacy bool
-		}{
+		testhelper.SetConfig(t, []warehouseutils.KeyValue{
 			{
-				name:      "Legacy",
-				useLegacy: true,
+				Key:   "Warehouse.postgres.useLegacy",
+				Value: strconv.FormatBool(tc.useLegacy),
 			},
-			{
-				name:      "New",
-				useLegacy: false,
-			},
-		}
+		})
 
-		for _, tc := range testCases {
-			tc := tc
+		t.Run(tc.name + "Events flow", func(t *testing.T) {
+			dsn := fmt.Sprintf(
+				"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				"rudder", "rudder-password", "localhost", fmt.Sprint(postgresPort), "rudderdb",
+			)
+			db, err := sql.Open("postgres", dsn)
+			require.NoError(t, err)
+			require.NoError(t, db.Ping())
 
-			testhelper.SetConfig(t, []warehouseutils.KeyValue{
-				{
-					Key:   "Warehouse.postgres.useLegacy",
-					Value: strconv.FormatBool(tc.useLegacy),
-				},
-			})
+			dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+			)
+			jobsDB, err := sql.Open("postgres", dsn)
+			require.NoError(t, err)
+			require.NoError(t, jobsDB.Ping())
+
+			provider := warehouseutils.POSTGRES
 
 			subTestcase := []struct {
 				name                  string
@@ -221,6 +219,8 @@ func TestIntegration(t *testing.T) {
 				stc := stc
 
 				t.Run(tc.name+" "+stc.name, func(t *testing.T) {
+					t.Parallel()
+
 					ts := testhelper.WareHouseTest{
 						Schema:                stc.schema,
 						WriteKey:              stc.writeKey,
@@ -253,62 +253,36 @@ func TestIntegration(t *testing.T) {
 					ts.TaskRunID = misc.FastUUID().String()
 					ts.VerifyModifiedEvents(t)
 				})
-
 			}
-		}
-	})
+		})
 
-	t.Run("Events flow with ssh tunnel", func(t *testing.T) {
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			templateConfigurations["privatePostgresUser"],
-			templateConfigurations["privatePostgresPassword"],
-			templateConfigurations["privatePostgresHost"],
-			templateConfigurations["privatePostgresPort"],
-			templateConfigurations["privatePostgresDatabase"],
-		)
-		tunnelInfo := &tunnelling.TunnelInfo{
-			Config: map[string]interface{}{
-				"sshUser":       templateConfigurations["sshUser"],
-				"sshPort":       templateConfigurations["sshPort"],
-				"sshHost":       templateConfigurations["sshHost"],
-				"sshPrivateKey": strings.ReplaceAll(templateConfigurations["sshPrivateKey"], "\\n", "\n"),
-			},
-		}
-
-		db, err := tunnelling.SQLConnectThroughTunnel(dsn, tunnelInfo.Config)
-		require.NoError(t, err)
-		require.NoError(t, db.Ping())
-
-		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
-		)
-		jobsDB, err := sql.Open("postgres", dsn)
-		require.NoError(t, err)
-		require.NoError(t, jobsDB.Ping())
-
-		testCases := []struct {
-			name      string
-			useLegacy bool
-		}{
-			{
-				name:      "Legacy",
-				useLegacy: true,
-			},
-			{
-				name:      "New",
-				useLegacy: false,
-			},
-		}
-
-		for _, tc := range testCases {
-			tc := tc
-
-			testhelper.SetConfig(t, []warehouseutils.KeyValue{
-				{
-					Key:   "Warehouse.postgres.useLegacy",
-					Value: strconv.FormatBool(tc.useLegacy),
+		t.Run(tc.name + "Events flow with ssh tunnel", func(t *testing.T) {
+			dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				templateConfigurations["privatePostgresUser"],
+				templateConfigurations["privatePostgresPassword"],
+				templateConfigurations["privatePostgresHost"],
+				templateConfigurations["privatePostgresPort"],
+				templateConfigurations["privatePostgresDatabase"],
+			)
+			tunnelInfo := &tunnelling.TunnelInfo{
+				Config: map[string]interface{}{
+					"sshUser":       templateConfigurations["sshUser"],
+					"sshPort":       templateConfigurations["sshPort"],
+					"sshHost":       templateConfigurations["sshHost"],
+					"sshPrivateKey": strings.ReplaceAll(templateConfigurations["sshPrivateKey"], "\\n", "\n"),
 				},
-			})
+			}
+
+			db, err := tunnelling.SQLConnectThroughTunnel(dsn, tunnelInfo.Config)
+			require.NoError(t, err)
+			require.NoError(t, db.Ping())
+
+			dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+			)
+			jobsDB, err := sql.Open("postgres", dsn)
+			require.NoError(t, err)
+			require.NoError(t, jobsDB.Ping())
 
 			subTestcases := []struct {
 				name                  string
@@ -338,6 +312,8 @@ func TestIntegration(t *testing.T) {
 				stc := stc
 
 				t.Run(tc.name+" "+stc.name, func(t *testing.T) {
+					t.Parallel()
+
 					ts := testhelper.WareHouseTest{
 						Schema:                stc.schema,
 						WriteKey:              stc.writeKey,
@@ -368,68 +344,40 @@ func TestIntegration(t *testing.T) {
 					ts.VerifyModifiedEvents(t)
 				})
 			}
-		}
-	})
+		})
 
-	t.Run("Validations", func(t *testing.T) {
-		destination := backendconfig.DestinationT{
-			ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
-			Config: map[string]interface{}{
-				"host":             templateConfigurations["postgresHost"],
-				"database":         templateConfigurations["postgresDatabase"],
-				"user":             templateConfigurations["postgresUser"],
-				"password":         templateConfigurations["postgresPassword"],
-				"port":             templateConfigurations["postgresPort"],
-				"sslMode":          "disable",
-				"namespace":        "",
-				"bucketProvider":   "MINIO",
-				"bucketName":       templateConfigurations["minioBucketName"],
-				"accessKeyID":      templateConfigurations["minioAccesskeyID"],
-				"secretAccessKey":  templateConfigurations["minioSecretAccessKey"],
-				"useSSL":           false,
-				"endPoint":         templateConfigurations["minioEndpoint"],
-				"syncFrequency":    "30",
-				"useRudderStorage": false,
-			},
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				ID:          "1bJ4YC7INdkvBTzotNh0zta5jDm",
-				Name:        "POSTGRES",
-				DisplayName: "Postgres",
-			},
-			Name:       "postgres-demo",
-			Enabled:    true,
-			RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
-		}
-
-		testCases := []struct {
-			name      string
-			useLegacy bool
-		}{
-			{
-				name:      "Legacy",
-				useLegacy: true,
-			},
-			{
-				name:      "New",
-				useLegacy: false,
-			},
-		}
-
-		for _, tc := range testCases {
-			tc := tc
-
-			testhelper.SetConfig(t, []warehouseutils.KeyValue{
-				{
-					Key:   "Warehouse.postgres.useLegacy",
-					Value: strconv.FormatBool(tc.useLegacy),
+		t.Run(tc.name + "Validations", func(t *testing.T) {
+			destination := backendconfig.DestinationT{
+				ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+				Config: map[string]interface{}{
+					"host":             templateConfigurations["postgresHost"],
+					"database":         templateConfigurations["postgresDatabase"],
+					"user":             templateConfigurations["postgresUser"],
+					"password":         templateConfigurations["postgresPassword"],
+					"port":             templateConfigurations["postgresPort"],
+					"sslMode":          "disable",
+					"namespace":        "",
+					"bucketProvider":   "MINIO",
+					"bucketName":       templateConfigurations["minioBucketName"],
+					"accessKeyID":      templateConfigurations["minioAccesskeyID"],
+					"secretAccessKey":  templateConfigurations["minioSecretAccessKey"],
+					"useSSL":           false,
+					"endPoint":         templateConfigurations["minioEndpoint"],
+					"syncFrequency":    "30",
+					"useRudderStorage": false,
 				},
-			})
-
-			t.Run(tc.name, func(t *testing.T) {
-				testhelper.VerifyConfigurationTest(t, destination)
-			})
-		}
-	})
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "1bJ4YC7INdkvBTzotNh0zta5jDm",
+					Name:        "POSTGRES",
+					DisplayName: "Postgres",
+				},
+				Name:       "postgres-demo",
+				Enabled:    true,
+				RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
+			}
+			testhelper.VerifyConfigurationTest(t, destination)
+		})
+	}
 
 	ctxCancel()
 	<-svcDone
