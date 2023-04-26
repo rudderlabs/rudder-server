@@ -41,64 +41,47 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        FEATURES: [ bigquery, clickhouse, datalake, deltalake, mssql, postgres, redshift, snowflake ]
+        destinations: [ bigquery, clickhouse, datalake, deltalake, mssql, postgres, redshift, snowflake ]
+        include:
+          - package: warehouse/integrations/bigquery
+            destination: bigquery
+          - package: warehouse/integrations/clickhouse
+            destination: clickhouse
+          - package: warehouse/integrations/datalake
+            destination: datalake
+          - package: warehouse/integrations/deltalake-native
+            destination: deltalake
+          - package: warehouse/integrations/mssql
+            destination: mssql
+          - package: warehouse/integrations/postgres
+            destination: postgres
+          - package: warehouse/integrations/redshift
+            destination: redshift
+          - package: warehouse/integrations/snowflake
+            destination: snowflake
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - name: Setup Go
+        uses: actions/setup-go@v4
         with:
           go-version: '~1.20.3'
           check-latest: true
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
-
       - name: Login to DockerHub
         uses: docker/login-action@v2
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Warehouse Service Integration For Bigquery
-        if: matrix.FEATURES == 'bigquery'
-        run: SLOW=1 go test -v ./warehouse/integrations/bigquery/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
+      - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
+        run: SLOW=1 go test -v ./${{ matrix.package }}/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
-
-      - name : Warehouse Service Integration For Clickhouse
-        if: matrix.FEATURES == 'clickhouse'
-        run: SLOW=1 go test -v ./warehouse/integrations/clickhouse/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
-
-      - name: Warehouse Service Integration For Datalake
-        if: matrix.FEATURES == 'datalake'
-        run: SLOW=1 go test -v ./warehouse/integrations/datalake/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
-
-      - name: Warehouse Service Integration For Deltalake
-        if: matrix.FEATURES == 'deltalake'
-        run: SLOW=1 go test -v ./warehouse/integrations/deltalake-native/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
-        env:
           DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
-
-      - name: Warehouse Service Integration For Mssql
-        if: matrix.FEATURES == 'mssql'
-        run: SLOW=1 go test -v ./warehouse/integrations/mssql/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
-
-      - name: Warehouse Service Integration For Postgres
-        if: matrix.FEATURES == 'postgres'
-        run: SLOW=1 go test -v ./warehouse/integrations/postgres/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
-
-      - name: Warehouse Service Integration For Redshift
-        if: matrix.FEATURES == 'redshift'
-        run: SLOW=1 go test -v ./warehouse/integrations/redshift/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
-        env:
           REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}
-
-      - name: Warehouse Service Integration For Snowflake
-        if: matrix.FEATURES == 'snowflake'
-        run: SLOW=1 go test -v ./warehouse/integrations/snowflake/... -p 8 -timeout 30m -count 1 -run 'TestIntegration'
-        env:
           SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
-
 
   unit:
     name: Unit
