@@ -1127,6 +1127,15 @@ func (rs *Redshift) connectToWarehouse() (*sql.DB, error) {
 		return nil, err
 	}
 
+	rs.Logger.Infow("[connectToWarehouse] successfully opened redshift connection",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Schema, rs.Namespace,
+	)
+
 	return db, nil
 }
 
@@ -1418,6 +1427,15 @@ func (rs *Redshift) closeDB() {
 				logfield.Error, err,
 			)
 		}
+
+		rs.Logger.Infow("[Cleanup] cleaned up redshift connection",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Schema, rs.Namespace,
+		)
 	}
 }
 
