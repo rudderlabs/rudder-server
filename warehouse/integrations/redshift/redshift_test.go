@@ -172,7 +172,7 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Event flow", func(t *testing.T) {
 		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
 		)
 		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)

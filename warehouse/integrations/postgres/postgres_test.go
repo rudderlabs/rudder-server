@@ -140,14 +140,14 @@ func TestIntegration(t *testing.T) {
 	t.Run("Events flow", func(t *testing.T) {
 		dsn := fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "wh-postgres", "5432", "rudderdb",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(postgresPort), "rudderdb",
 		)
 		db, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, db.Ping())
 
 		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
 		)
 		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
@@ -280,7 +280,7 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, db.Ping())
 
 		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
 		)
 		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
