@@ -43,48 +43,6 @@ const (
 	Application        = "Rudderstack_Warehouse"
 )
 
-var dataTypesMap = map[string]string{
-	"boolean":  "boolean",
-	"int":      "number",
-	"bigint":   "number",
-	"float":    "double precision",
-	"string":   "varchar",
-	"datetime": "timestamp_tz",
-	"json":     "variant",
-}
-
-var dataTypesMapToRudder = map[string]string{
-	"NUMBER":           "int",
-	"DECIMAL":          "int",
-	"NUMERIC":          "int",
-	"INT":              "int",
-	"INTEGER":          "int",
-	"BIGINT":           "int",
-	"SMALLINT":         "int",
-	"FLOAT":            "float",
-	"FLOAT4":           "float",
-	"FLOAT8":           "float",
-	"DOUBLE":           "float",
-	"REAL":             "float",
-	"DOUBLE PRECISION": "float",
-	"BOOLEAN":          "boolean",
-	"TEXT":             "string",
-	"VARCHAR":          "string",
-	"CHAR":             "string",
-	"CHARACTER":        "string",
-	"STRING":           "string",
-	"BINARY":           "string",
-	"VARBINARY":        "string",
-	"TIMESTAMP_NTZ":    "datetime",
-	"DATE":             "datetime",
-	"DATETIME":         "datetime",
-	"TIME":             "datetime",
-	"TIMESTAMP":        "datetime",
-	"TIMESTAMP_LTZ":    "datetime",
-	"TIMESTAMP_TZ":     "datetime",
-	"VARIANT":          "json",
-}
-
 var primaryKeyMap = map[string]string{
 	usersTable:      "ID",
 	identifiesTable: "ID",
@@ -1286,64 +1244,60 @@ func (sf *Snowflake) TestConnection(ctx context.Context, _ model.Warehouse) erro
 	return nil
 }
 
-// FetchSchema queries snowflake and returns the schema associated with provided namespace
-func (sf *Snowflake) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
-	sf.Warehouse = warehouse
-	sf.Namespace = warehouse.Namespace
-	dbHandle, err := sf.connect(optionalCreds{})
-	if err != nil {
-		return
-	}
-	defer dbHandle.Close()
+// FetchSchema queries the snowflake database and returns the schema
+func (sf *Snowflake) FetchSchema(model.Warehouse) (model.Schema, model.Schema, error) {
+	schema := make(model.Schema)
+	unrecognizedSchema := make(model.Schema)
 
-	schema = make(model.Schema)
-	unrecognizedSchema = make(model.Schema)
+	sqlStatement := `
+        SELECT
+            table_name,
+            column_name,
+            data_type,
+            numeric_scale
+        FROM
+            INFORMATION_SCHEMA.COLUMNS
+        WHERE
+            table_schema = ?
+	`
 
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  table_name,
-		  column_name,
-		  data_type
-		FROM
-		  INFORMATION_SCHEMA.COLUMNS
-		WHERE
-		  table_schema = '%s'
-	`,
-		sf.Namespace,
-	)
-
-	rows, err := dbHandle.Query(sqlStatement)
-	if err != nil && err != sql.ErrNoRows {
-		sf.Logger.Errorf("SF: Error in fetching schema from snowflake destination:%v, query: %v", sf.Warehouse.Destination.ID, sqlStatement)
-		return
-	}
-	if err == sql.ErrNoRows {
-		sf.Logger.Infof("SF: No rows, while fetching schema from  destination:%v, query: %v", sf.Warehouse.Identifier, sqlStatement)
+	rows, err := sf.DB.Query(sqlStatement, sf.Namespace)
+	if errors.Is(err, sql.ErrNoRows) {
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var tName, cName, cType string
-		err = rows.Scan(&tName, &cName, &cType)
-		if err != nil {
-			sf.Logger.Errorf("SF: Error in processing fetched schema from snowflake destination:%v", sf.Warehouse.Destination.ID)
-			return
-		}
-		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
-		}
-		if datatype, ok := dataTypesMapToRudder[cType]; ok {
-			schema[tName][cName] = datatype
-		} else {
-			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(map[string]string)
-			}
-			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
 
-			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &sf.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+	for rows.Next() {
+		var tableName, columnName, columnType string
+		var numericScale sql.NullInt64
+
+		if err := rows.Scan(&tableName, &columnName, &columnType, &numericScale); err != nil {
+			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+		}
+
+		if _, ok := schema[tableName]; !ok {
+			schema[tableName] = make(map[string]string)
+		}
+
+		if datatype, ok := calculateDataType(columnType, numericScale); ok {
+			schema[tableName][columnName] = datatype
+		} else {
+			if _, ok := unrecognizedSchema[tableName]; !ok {
+				unrecognizedSchema[tableName] = make(map[string]string)
+			}
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &sf.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
-	return
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return schema, unrecognizedSchema, nil
 }
 
 func (sf *Snowflake) Cleanup() {
