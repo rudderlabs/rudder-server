@@ -24,7 +24,7 @@
             "sshHost": "{{.sshHost}}",
             "sshPort": "{{.sshPort}}",
             "sshPrivateKey": "{{.sshPrivateKey}}",
-            "useSSH": "true",
+            "useSSH": true,
             "host": "{{.privatePostgresHost}}",
             "database": "{{.privatePostgresDatabase}}",
             "user": "{{.privatePostgresUser}}",
