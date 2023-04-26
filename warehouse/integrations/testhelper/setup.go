@@ -69,7 +69,6 @@ type WareHouseTest struct {
 	JobsDB                       *sql.DB
 	AsyncJob                     bool
 	Prerequisite                 func(t testing.TB)
-	StatsToVerify                []string
 	SkipWarehouse                bool
 	HTTPPort                     int
 }

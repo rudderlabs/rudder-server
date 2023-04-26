@@ -653,6 +653,84 @@ func TestMapLookup(t *testing.T) {
 	require.Nil(t, MapLookup(m, "foo"))
 }
 
+func TestNestedMapLookup(t *testing.T) {
+	m1 := map[string]interface{}{
+		"nestedKey1": map[string]interface{}{
+			"nestedKey2": map[string]interface{}{
+				"nestedKey3": "nestedValue2",
+			},
+			"nestedKey4": "nestedValue4",
+		},
+		"key5":      "value5",
+		"arrayKey6": []interface{}{1, "sow"},
+	}
+
+	type testCaseT struct {
+		caseName      string
+		inputKeys     []string
+		expectedValue interface{}
+		expectedError error
+	}
+
+	testCases := []testCaseT{
+		{
+			caseName:  "nested-keys are found",
+			inputKeys: []string{"nestedKey1", "nestedKey2"},
+			expectedValue: map[string]interface{}{
+				"nestedKey3": "nestedValue2",
+			},
+		},
+		{
+			caseName:      "single-key is found",
+			inputKeys:     []string{"key5"},
+			expectedValue: "value5",
+		},
+		{
+			caseName:      "one of the key is not found",
+			inputKeys:     []string{"nestedKey1", "nestedKey3"},
+			expectedError: fmt.Errorf("key: nestedKey3 not found"),
+		},
+		{
+			caseName:      "arrayKey nested lookup not valid",
+			inputKeys:     []string{"arrayKey6", "someInternalKey"},
+			expectedError: fmt.Errorf("malformed structure at %#v", []interface{}{1, "sow"}),
+		},
+		{
+			caseName:      "one of the nestedKeys are not found",
+			inputKeys:     []string{"nestedKey1", "nestedKey2", "nestedKey6", "nestedKey7"},
+			expectedError: fmt.Errorf("key: nestedKey6 not found"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.caseName, func(t *testing.T) {
+			val, err := NestedMapLookup(m1, testCase.inputKeys...)
+			if err != nil {
+				require.EqualError(t, err.Err, testCase.expectedError.Error())
+				return
+			}
+			require.Equal(t, testCase.expectedValue, val)
+		})
+	}
+
+	t.Run("key not found at level-1", func(t *testing.T) {
+		searchMap1 := map[string]interface{}{
+			"key": map[string]interface{}{},
+		}
+		_, searchErr := NestedMapLookup(searchMap1, "key", "key")
+		require.Error(t, searchErr.Err)
+		require.EqualError(t, searchErr.Err, "key: key not found")
+		require.Equal(t, searchErr.Level, 1)
+	})
+	t.Run("key not found at level-0", func(t *testing.T) {
+		searchMap1 := map[string]interface{}{}
+		_, searchErr := NestedMapLookup(searchMap1, "key", "key")
+		require.Error(t, searchErr.Err)
+		require.EqualError(t, searchErr.Err, "key: key not found")
+		require.Equal(t, searchErr.Level, 0)
+	})
+}
+
 func TestGetDiskUsage(t *testing.T) {
 	initMisc()
 	// Create a temp file

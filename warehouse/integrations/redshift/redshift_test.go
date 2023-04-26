@@ -2,6 +2,7 @@ package redshift_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,12 +12,12 @@ import (
 	"testing"
 	"time"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/lib/pq"
@@ -170,14 +171,10 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Event flow", func(t *testing.T) {
-		jobsDB, err := postgres.Connect(postgres.Credentials{
-			DBName:   "jobsdb",
-			Password: "password",
-			User:     "rudder",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(jobsDBPort),
-		})
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 
@@ -227,13 +224,12 @@ func TestIntegration(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				db, err := redshift.Connect(redshift.RedshiftCredentials{
-					Host:     rsTestCredentials.Host,
-					Port:     rsTestCredentials.Port,
-					DbName:   rsTestCredentials.DbName,
-					Username: rsTestCredentials.UserName,
-					Password: rsTestCredentials.Password,
-				})
+				dsn := fmt.Sprintf(
+					"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+					rsTestCredentials.UserName, rsTestCredentials.Password, rsTestCredentials.Host, rsTestCredentials.Port, rsTestCredentials.DbName,
+				)
+
+				db, err := sql.Open("postgres", dsn)
 				require.NoError(t, err)
 				require.NoError(t, db.Ping())
 
@@ -390,7 +386,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
-			rs.DB = pgResource.DB
+			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace
 
 			_, err = rs.DB.Exec(

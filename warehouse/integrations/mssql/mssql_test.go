@@ -2,6 +2,7 @@ package mssql_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
@@ -130,14 +130,10 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, db.Ping())
 
-		jobsDB, err := postgres.Connect(postgres.Credentials{
-			DBName:   "jobsdb",
-			Password: "password",
-			User:     "rudder",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(jobsDBPort),
-		})
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 

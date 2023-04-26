@@ -19,7 +19,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -38,6 +40,8 @@ type BigQuery struct {
 	isDedupEnabled                        bool
 	enableDeleteByJobs                    bool
 	customPartitionsEnabledWorkspaceIDs   []string
+	SlowQueryThreshold                    time.Duration
+	middleware                            *middleware.Client
 }
 
 type StagingLoadTable struct {
@@ -135,6 +139,27 @@ func WithConfig(h *BigQuery, config *config.Config) {
 	h.isDedupEnabled = config.GetBool("Warehouse.bigquery.isDedupEnabled", false)
 	h.enableDeleteByJobs = config.GetBool("Warehouse.bigquery.enableDeleteByJobs", false)
 	h.customPartitionsEnabledWorkspaceIDs = config.GetStringSlice("Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs", nil)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.bigquery.slowQueryThreshold", 5, time.Minute)
+}
+
+func (bq *BigQuery) getMiddleware() *middleware.Client {
+	if bq.middleware != nil {
+		return bq.middleware
+	}
+	middleware := middleware.New(
+		bq.db,
+		middleware.WithLogger(bq.Logger),
+		middleware.WithKeyAndValues(
+			logfield.SourceID, bq.warehouse.Source.ID,
+			logfield.SourceType, bq.warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, bq.warehouse.Destination.ID,
+			logfield.DestinationType, bq.warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, bq.warehouse.WorkspaceID,
+			logfield.Schema, bq.namespace,
+		),
+		middleware.WithSlowQueryThreshold(bq.SlowQueryThreshold),
+	)
+	return middleware
 }
 
 func getTableSchema(columns model.TableSchema) []*bigquery.FieldSchema {
@@ -303,7 +328,7 @@ func (bq *BigQuery) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 			{Name: "starttime", Value: params.StartTime},
 		}
 		if bq.enableDeleteByJobs {
-			job, err := query.Run(bq.backgroundContext)
+			job, err := bq.getMiddleware().Run(bq.backgroundContext, query)
 			if err != nil {
 				bq.Logger.Errorf("BQ: Error initiating load job: %v\n", err)
 				return err
@@ -470,7 +495,7 @@ func (bq *BigQuery) loadTable(tableName string, _, getLoadFileLocFromTableUpload
 		bq.Logger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 
 		q := bq.db.Query(sqlStatement)
-		job, err = q.Run(bq.backgroundContext)
+		job, err = bq.getMiddleware().Run(bq.backgroundContext, q)
 		if err != nil {
 			bq.Logger.Errorf("BQ: Error initiating merge load job: %v\n", err)
 			return
@@ -584,7 +609,7 @@ func (bq *BigQuery) LoadUserTables() (errorMap map[string]error) {
 		query.QueryConfig.Dst = bq.db.Dataset(bq.namespace).Table(partitionedUsersTable)
 		query.WriteDisposition = bigquery.WriteAppend
 
-		job, err := query.Run(bq.backgroundContext)
+		job, err := bq.getMiddleware().Run(bq.backgroundContext, query)
 		if err != nil {
 			bq.Logger.Errorf("BQ: Error initiating load job: %v\n", err)
 			errorMap[warehouseutils.UsersTable] = err
@@ -609,7 +634,7 @@ func (bq *BigQuery) LoadUserTables() (errorMap map[string]error) {
 		query := bq.db.Query(sqlStatement)
 		query.QueryConfig.Dst = bq.db.Dataset(bq.namespace).Table(stagingTableName)
 		query.WriteDisposition = bigquery.WriteAppend
-		job, err := query.Run(bq.backgroundContext)
+		job, err := bq.getMiddleware().Run(bq.backgroundContext, query)
 		if err != nil {
 			bq.Logger.Errorf("BQ: Error initiating staging table for users : %v\n", err)
 			errorMap[warehouseutils.UsersTable] = err
@@ -657,7 +682,7 @@ func (bq *BigQuery) LoadUserTables() (errorMap map[string]error) {
 		bq.Logger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
 		// partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
 		q := bq.db.Query(sqlStatement)
-		job, err = q.Run(bq.backgroundContext)
+		job, err = bq.getMiddleware().Run(bq.backgroundContext, q)
 		if err != nil {
 			bq.Logger.Errorf("BQ: Error initiating merge load job: %v\n", err)
 			errorMap[warehouseutils.UsersTable] = err
@@ -735,7 +760,7 @@ func (bq *BigQuery) dropDanglingStagingTables() bool {
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	query := bq.db.Query(sqlStatement)
-	it, err := query.Read(bq.backgroundContext)
+	it, err := bq.getMiddleware().Read(bq.backgroundContext, query)
 	if err != nil {
 		bq.Logger.Errorf("WH: BQ: Error dropping dangling staging tables in BQ: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -907,7 +932,7 @@ func (bq *BigQuery) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 	)
 	query := dbClient.Query(sqlStatement)
 
-	it, err := query.Read(bq.backgroundContext)
+	it, err := bq.getMiddleware().Read(bq.backgroundContext, query)
 	if err != nil {
 		if e, ok := err.(*googleapi.Error); ok {
 			// if dataset resource is not found, return empty schema
@@ -1049,7 +1074,7 @@ func (bq *BigQuery) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error)
 			bq.Logger.Infof("BQ: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
 			ctx := context.Background()
 			query := bq.db.Query(sqlStatement)
-			job, err := query.Run(ctx)
+			job, err := bq.getMiddleware().Run(ctx, query)
 			if err != nil {
 				break
 			}
@@ -1132,7 +1157,8 @@ func (bq *BigQuery) GetTotalCountInTable(ctx context.Context, tableName string) 
 		tableName,
 	)
 
-	if it, err = bq.db.Query(sqlStatement).Read(ctx); err != nil {
+	query := bq.db.Query(sqlStatement)
+	if it, err = bq.getMiddleware().Read(ctx, query); err != nil {
 		return 0, fmt.Errorf("creating row iterator: %w", err)
 	}
 

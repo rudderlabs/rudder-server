@@ -11,13 +11,11 @@ import (
 	"testing"
 	"time"
 
+	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-
-	dbsql "github.com/databricks/databricks-sql-go"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -168,14 +166,10 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Event flow", func(t *testing.T) {
-		jobsDB, err := postgres.Connect(postgres.Credentials{
-			DBName:   "jobsdb",
-			Password: "password",
-			User:     "rudder",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(jobsDBPort),
-		})
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 

@@ -2,6 +2,7 @@ package snowflake_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +16,7 @@ import (
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	snowflakedb "github.com/snowflakedb/gosnowflake"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -192,14 +193,10 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Event flow", func(t *testing.T) {
-		jobsDB, err := postgres.Connect(postgres.Credentials{
-			DBName:   "jobsdb",
-			Password: "password",
-			User:     "rudder",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(jobsDBPort),
-		})
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 
@@ -328,11 +325,25 @@ func TestIntegration(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				credentialsCopy := tc.credentials
-				credentialsCopy.Database = tc.database
+				cred := tc.credentials
+				cred.Database = tc.database
 
-				db, err := snowflake.Connect(credentialsCopy)
+				urlConfig := snowflakedb.Config{
+					Account:     cred.Account,
+					User:        cred.User,
+					Role:        cred.Role,
+					Password:    cred.Password,
+					Database:    cred.Database,
+					Warehouse:   cred.Warehouse,
+					Application: snowflake.Application,
+				}
+
+				dsn, err := snowflakedb.DSN(&urlConfig)
 				require.NoError(t, err)
+
+				db, err := sql.Open("snowflake", dsn)
+				require.NoError(t, err)
+				require.NoError(t, db.Ping())
 
 				t.Cleanup(func() {
 					require.NoError(t, testhelper.WithConstantRetries(func() error {

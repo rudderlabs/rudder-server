@@ -2,6 +2,7 @@ package datalake_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,8 +16,6 @@ import (
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
@@ -218,14 +217,10 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		jobsDB, err := postgres.Connect(postgres.Credentials{
-			DBName:   "jobsdb",
-			Password: "password",
-			User:     "rudder",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(jobsDBPort),
-		})
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 

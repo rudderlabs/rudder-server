@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
@@ -19,8 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 
@@ -139,197 +138,236 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Events flow", func(t *testing.T) {
-		db, err := postgres.Connect(postgres.Credentials{
-			DBName:   "rudderdb",
-			Password: "rudder-password",
-			User:     "rudder",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(postgresPort),
-		})
+		dsn := fmt.Sprintf(
+			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "wh-postgres", "5432", "rudderdb",
+		)
+		db, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, db.Ping())
 
-		jobsDB, err := postgres.Connect(postgres.Credentials{
-			DBName:   "jobsdb",
-			Password: "password",
-			User:     "rudder",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(jobsDBPort),
-		})
+		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 
 		provider := warehouseutils.POSTGRES
 
-		testcase := []struct {
-			name                  string
-			writeKey              string
-			schema                string
-			sourceID              string
-			destinationID         string
-			eventsMap             testhelper.EventsCountMap
-			stagingFilesEventsMap testhelper.EventsCountMap
-			loadFilesEventsMap    testhelper.EventsCountMap
-			tableUploadsEventsMap testhelper.EventsCountMap
-			warehouseEventsMap    testhelper.EventsCountMap
-			asyncJob              bool
-			tables                []string
+		testCases := []struct {
+			name      string
+			useLegacy bool
 		}{
 			{
-				name:          "Upload Job",
-				writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-				schema:        "postgres_wh_integration",
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
-				destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+				name:      "Legacy",
+				useLegacy: true,
 			},
 			{
-				name:                  "Async Job",
-				writeKey:              "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
-				schema:                "postgres_wh_sources_integration",
-				tables:                []string{"tracks", "google_sheet"},
-				sourceID:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
-				destinationID:         "308ZvbavR21Um6eGKQCagZHqLGZ",
-				eventsMap:             testhelper.SourcesSendEventsMap(),
-				stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
-				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-				asyncJob:              true,
+				name:      "New",
+				useLegacy: false,
 			},
 		}
 
-		for _, tc := range testcase {
+		for _, tc := range testCases {
 			tc := tc
 
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-
-				ts := testhelper.WareHouseTest{
-					Schema:                tc.schema,
-					WriteKey:              tc.writeKey,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					Tables:                tc.tables,
-					EventsMap:             tc.eventsMap,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					AsyncJob:              tc.asyncJob,
-					UserID:                testhelper.GetUserId(provider),
-					Provider:              provider,
-					JobsDB:                jobsDB,
-					JobRunID:              misc.FastUUID().String(),
-					TaskRunID:             misc.FastUUID().String(),
-					Client: &client.Client{
-						SQL:  db,
-						Type: client.SQLClient,
-					},
-					HTTPPort: httpPort,
-				}
-				ts.VerifyEvents(t)
-
-				if !tc.asyncJob {
-					ts.UserID = testhelper.GetUserId(provider)
-				}
-				ts.JobRunID = misc.FastUUID().String()
-				ts.TaskRunID = misc.FastUUID().String()
-				ts.VerifyModifiedEvents(t)
+			testhelper.SetConfig(t, []warehouseutils.KeyValue{
+				{
+					Key:   "Warehouse.postgres.useLegacy",
+					Value: strconv.FormatBool(tc.useLegacy),
+				},
 			})
+
+			subTestcase := []struct {
+				name                  string
+				writeKey              string
+				schema                string
+				sourceID              string
+				destinationID         string
+				eventsMap             testhelper.EventsCountMap
+				stagingFilesEventsMap testhelper.EventsCountMap
+				loadFilesEventsMap    testhelper.EventsCountMap
+				tableUploadsEventsMap testhelper.EventsCountMap
+				warehouseEventsMap    testhelper.EventsCountMap
+				asyncJob              bool
+				tables                []string
+			}{
+				{
+					name:          "Upload Job",
+					writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+					schema:        "postgres_wh_integration",
+					tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+					sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+					destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+				},
+				{
+					name:                  "Async Job",
+					writeKey:              "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+					schema:                "postgres_wh_sources_integration",
+					tables:                []string{"tracks", "google_sheet"},
+					sourceID:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+					destinationID:         "308ZvbavR21Um6eGKQCagZHqLGZ",
+					eventsMap:             testhelper.SourcesSendEventsMap(),
+					stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
+					loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+					tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+					warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+					asyncJob:              true,
+				},
+			}
+
+			for _, stc := range subTestcase {
+				stc := stc
+
+				t.Run(tc.name+" "+stc.name, func(t *testing.T) {
+					ts := testhelper.WareHouseTest{
+						Schema:                stc.schema,
+						WriteKey:              stc.writeKey,
+						SourceID:              stc.sourceID,
+						DestinationID:         stc.destinationID,
+						Tables:                stc.tables,
+						EventsMap:             stc.eventsMap,
+						StagingFilesEventsMap: stc.stagingFilesEventsMap,
+						LoadFilesEventsMap:    stc.loadFilesEventsMap,
+						TableUploadsEventsMap: stc.tableUploadsEventsMap,
+						WarehouseEventsMap:    stc.warehouseEventsMap,
+						AsyncJob:              stc.asyncJob,
+						UserID:                testhelper.GetUserId(provider),
+						Provider:              provider,
+						JobsDB:                jobsDB,
+						JobRunID:              misc.FastUUID().String(),
+						TaskRunID:             misc.FastUUID().String(),
+						Client: &client.Client{
+							SQL:  db,
+							Type: client.SQLClient,
+						},
+						HTTPPort: httpPort,
+					}
+					ts.VerifyEvents(t)
+
+					if !stc.asyncJob {
+						ts.UserID = testhelper.GetUserId(provider)
+					}
+					ts.JobRunID = misc.FastUUID().String()
+					ts.TaskRunID = misc.FastUUID().String()
+					ts.VerifyModifiedEvents(t)
+				})
+
+			}
 		}
 	})
 
 	t.Run("Events flow with ssh tunnel", func(t *testing.T) {
-		db, err := postgres.Connect(postgres.Credentials{
-			DBName:   templateConfigurations["privatePostgresDatabase"],
-			Password: templateConfigurations["privatePostgresPassword"],
-			User:     templateConfigurations["privatePostgresUser"],
-			Host:     templateConfigurations["privatePostgresHost"],
-			Port:     templateConfigurations["privatePostgresPort"],
-			SSLMode:  "disable",
-			TunnelInfo: &tunnelling.TunnelInfo{
-				Config: map[string]interface{}{
-					"sshUser":       templateConfigurations["sshUser"],
-					"sshPort":       templateConfigurations["sshPort"],
-					"sshHost":       templateConfigurations["sshHost"],
-					"sshPrivateKey": strings.ReplaceAll(templateConfigurations["sshPrivateKey"], "\\n", "\n"),
-				},
-			},
-		})
-		require.NoError(t, err)
-		require.NoError(t, db.Ping())
-
-		jobsDB, err := postgres.Connect(postgres.Credentials{
-			DBName:   "jobsdb",
-			Password: "password",
-			User:     "rudder",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(jobsDBPort),
-		})
-		require.NoError(t, err)
-		require.NoError(t, jobsDB.Ping())
-
-		testcases := []struct {
-			name                  string
-			writeKey              string
-			schema                string
-			sourceID              string
-			destinationID         string
-			eventsMap             testhelper.EventsCountMap
-			stagingFilesEventsMap testhelper.EventsCountMap
-			loadFilesEventsMap    testhelper.EventsCountMap
-			tableUploadsEventsMap testhelper.EventsCountMap
-			warehouseEventsMap    testhelper.EventsCountMap
-			asyncJob              bool
-			tables                []string
-		}{
-			{
-				name:          "upload job through ssh tunnelling",
-				writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3w",
-				schema:        "postgres_wh_ssh_tunnelled_integration",
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRF",
-				destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			templateConfigurations["privatePostgresUser"],
+			templateConfigurations["privatePostgresPassword"],
+			templateConfigurations["privatePostgresHost"],
+			templateConfigurations["privatePostgresPort"],
+			templateConfigurations["privatePostgresDatabase"],
+		)
+		tunnelInfo := &tunnelling.TunnelInfo{
+			Config: map[string]interface{}{
+				"sshUser":       templateConfigurations["sshUser"],
+				"sshPort":       templateConfigurations["sshPort"],
+				"sshHost":       templateConfigurations["sshHost"],
+				"sshPrivateKey": strings.ReplaceAll(templateConfigurations["sshPrivateKey"], "\\n", "\n"),
 			},
 		}
 
-		for _, tc := range testcases {
+		db, err := tunnelling.SQLConnectThroughTunnel(dsn, tunnelInfo.Config)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+
+		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
+		require.NoError(t, err)
+		require.NoError(t, jobsDB.Ping())
+
+		testCases := []struct {
+			name      string
+			useLegacy bool
+		}{
+			{
+				name:      "Legacy",
+				useLegacy: true,
+			},
+			{
+				name:      "New",
+				useLegacy: false,
+			},
+		}
+
+		for _, tc := range testCases {
 			tc := tc
 
-			t.Run(tc.name, func(t *testing.T) {
-				ts := testhelper.WareHouseTest{
-					Schema:                tc.schema,
-					WriteKey:              tc.writeKey,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					Tables:                tc.tables,
-					EventsMap:             tc.eventsMap,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					UserID:                testhelper.GetUserId(warehouseutils.POSTGRES),
-					Provider:              warehouseutils.POSTGRES,
-					JobsDB:                jobsDB,
-					JobRunID:              misc.FastUUID().String(),
-					TaskRunID:             misc.FastUUID().String(),
-					Client: &client.Client{
-						SQL:  db,
-						Type: client.SQLClient,
-					},
-					HTTPPort: httpPort,
-				}
-				ts.VerifyEvents(t)
-
-				ts.UserID = testhelper.GetUserId(warehouseutils.POSTGRES)
-				ts.JobRunID = misc.FastUUID().String()
-				ts.TaskRunID = misc.FastUUID().String()
-				ts.VerifyModifiedEvents(t)
+			testhelper.SetConfig(t, []warehouseutils.KeyValue{
+				{
+					Key:   "Warehouse.postgres.useLegacy",
+					Value: strconv.FormatBool(tc.useLegacy),
+				},
 			})
+
+			subTestcases := []struct {
+				name                  string
+				writeKey              string
+				schema                string
+				sourceID              string
+				destinationID         string
+				eventsMap             testhelper.EventsCountMap
+				stagingFilesEventsMap testhelper.EventsCountMap
+				loadFilesEventsMap    testhelper.EventsCountMap
+				tableUploadsEventsMap testhelper.EventsCountMap
+				warehouseEventsMap    testhelper.EventsCountMap
+				asyncJob              bool
+				tables                []string
+			}{
+				{
+					name:          "upload job through ssh tunnelling",
+					writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3w",
+					schema:        "postgres_wh_ssh_tunnelled_integration",
+					tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+					sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRF",
+					destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+				},
+			}
+
+			for _, stc := range subTestcases {
+				stc := stc
+
+				t.Run(tc.name+" "+stc.name, func(t *testing.T) {
+					ts := testhelper.WareHouseTest{
+						Schema:                stc.schema,
+						WriteKey:              stc.writeKey,
+						SourceID:              stc.sourceID,
+						DestinationID:         stc.destinationID,
+						Tables:                stc.tables,
+						EventsMap:             stc.eventsMap,
+						StagingFilesEventsMap: stc.stagingFilesEventsMap,
+						LoadFilesEventsMap:    stc.loadFilesEventsMap,
+						TableUploadsEventsMap: stc.tableUploadsEventsMap,
+						WarehouseEventsMap:    stc.warehouseEventsMap,
+						UserID:                testhelper.GetUserId(warehouseutils.POSTGRES),
+						Provider:              warehouseutils.POSTGRES,
+						JobsDB:                jobsDB,
+						JobRunID:              misc.FastUUID().String(),
+						TaskRunID:             misc.FastUUID().String(),
+						Client: &client.Client{
+							SQL:  db,
+							Type: client.SQLClient,
+						},
+						HTTPPort: httpPort,
+					}
+					ts.VerifyEvents(t)
+
+					ts.UserID = testhelper.GetUserId(warehouseutils.POSTGRES)
+					ts.JobRunID = misc.FastUUID().String()
+					ts.TaskRunID = misc.FastUUID().String()
+					ts.VerifyModifiedEvents(t)
+				})
+			}
 		}
 	})
 
@@ -362,7 +400,35 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
 		}
-		testhelper.VerifyConfigurationTest(t, destination)
+
+		testCases := []struct {
+			name      string
+			useLegacy bool
+		}{
+			{
+				name:      "Legacy",
+				useLegacy: true,
+			},
+			{
+				name:      "New",
+				useLegacy: false,
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			testhelper.SetConfig(t, []warehouseutils.KeyValue{
+				{
+					Key:   "Warehouse.postgres.useLegacy",
+					Value: strconv.FormatBool(tc.useLegacy),
+				},
+			})
+
+			t.Run(tc.name, func(t *testing.T) {
+				testhelper.VerifyConfigurationTest(t, destination)
+			})
+		}
 	})
 
 	ctxCancel()
