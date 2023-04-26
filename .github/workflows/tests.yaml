@@ -39,8 +39,8 @@ jobs:
     name: Warehouse Service Integration
     runs-on: 'ubuntu-20.04'
     strategy:
+      fail-fast: false
       matrix:
-        fail-fast: false
         FEATURES: [ bigquery, clickhouse, datalake, deltalake, mssql, postgres, redshift, snowflake ]
     steps:
       - name: Checkout
