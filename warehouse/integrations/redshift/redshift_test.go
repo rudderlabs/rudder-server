@@ -314,8 +314,6 @@ func TestIntegration(t *testing.T) {
 }
 
 func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
-	t.Parallel()
-
 	testCases := []struct {
 		name     string
 		err      error
@@ -351,8 +349,6 @@ func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
 }
 
 func TestRedshift_AlterColumn(t *testing.T) {
-	t.Parallel()
-
 	var (
 		bigString      = strings.Repeat("a", 1024)
 		smallString    = strings.Repeat("a", 510)

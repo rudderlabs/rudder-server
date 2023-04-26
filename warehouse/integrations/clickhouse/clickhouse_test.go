@@ -430,8 +430,6 @@ func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) 
 }
 
 func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
-	t.Parallel()
-
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
@@ -718,8 +716,6 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 }
 
 func TestClickhouse_TestConnection(t *testing.T) {
-	t.Parallel()
-
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
@@ -818,8 +814,6 @@ func TestClickhouse_TestConnection(t *testing.T) {
 }
 
 func TestClickhouse_LoadTestTable(t *testing.T) {
-	t.Parallel()
-
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
@@ -921,8 +915,6 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 }
 
 func TestClickhouse_FetchSchema(t *testing.T) {
-	t.Parallel()
-
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
