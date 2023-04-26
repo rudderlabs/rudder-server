@@ -15,11 +15,6 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
@@ -46,6 +41,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/workerpool"
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -489,7 +489,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Async init group done")
 
 		h := &workerHandleAdapter{proc}
-		pool := newWorkerPool(ctx, h)
+		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, h) }, proc.logger)
 		defer pool.Shutdown()
 		for {
 			select {

@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
@@ -17,16 +18,15 @@ import (
 
 func Benchmark_GetStorageDateFormat(b *testing.B) {
 	config.Reset()
-	Init()
 
 	mockCtrl := gomock.NewController(b)
 	mockFileManager := mocksFileManager.NewMockFileManager(mockCtrl)
-	destination := &DestinationT{
+	destination := &Connection{
 		Source:      backendconfig.SourceT{},
 		Destination: backendconfig.DestinationT{},
 	}
 	folderName := ""
-
+	dfProvider := &storageDateFormatProvider{dateFormatsCache: map[string]string{}}
 	b.SetParallelism(2)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -35,7 +35,8 @@ func Benchmark_GetStorageDateFormat(b *testing.B) {
 
 			mockFileManager.EXPECT().GetConfiguredPrefix().AnyTimes()
 			mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			_, _ = GetStorageDateFormat(mockFileManager, destination, folderName)
+
+			_, _ = dfProvider.GetFormat(logger.NOP, mockFileManager, destination, folderName)
 		}
 	})
 }
@@ -46,12 +47,10 @@ func randomString() string {
 
 // Benchmark_JSONUnmarshal tries to reproduce a panic encountered with jsoniter
 func Benchmark_JSONUnmarshal(b *testing.B) {
-	Init()
-
 	for i := 0; i < b.N; i++ {
 		var jobs []*jobsdb.JobT
 		for i := 0; i < 100; i++ {
-			params := JobParametersT{
+			params := JobParameters{
 				EventName:  "test",
 				EventType:  "track",
 				MessageID:  uuid.New().String(),
@@ -68,7 +67,7 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 
 		g := errgroup.Group{}
 		g.Go(func() error {
-			params := JobParametersT{
+			params := JobParameters{
 				EventName: "test",
 				EventType: "track",
 				MessageID: uuid.New().String(),
@@ -88,7 +87,7 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 		})
 		g.Go(func() error {
 			for i := range jobs {
-				var params JobParametersT
+				var params JobParameters
 				_ = json.Unmarshal(jobs[i].Parameters, &params)
 			}
 

@@ -5,25 +5,26 @@ import (
 	"errors"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/samber/lo"
 )
 
 type Mode string
 
 const (
-	ModeNone      Mode = "none"
-	ModeWorkspace Mode = "workspace"
-	ModeSource    Mode = "source"
+	ModeNone        Mode = "none"
+	ModeWorkspace   Mode = "workspace"
+	ModeDestination Mode = "destination"
 )
 
 // GetStrategy returns the strategy for the given isolation mode. An error is returned if the mode is invalid
-func GetStrategy(mode Mode) (Strategy, error) {
+func GetStrategy(mode Mode, customVal string, destinationFilter func(destinationID string) bool) (Strategy, error) {
 	switch mode {
 	case ModeNone:
 		return noneStrategy{}, nil
 	case ModeWorkspace:
-		return workspaceStrategy{}, nil
-	case ModeSource:
-		return sourceStrategy{}, nil
+		return workspaceStrategy{customVal: customVal}, nil
+	case ModeDestination:
+		return destinationStrategy{destinationFilter: destinationFilter}, nil
 	default:
 		return noneStrategy{}, errors.New("unsupported isolation mode")
 	}
@@ -49,26 +50,36 @@ func (noneStrategy) AugmentQueryParams(_ string, _ *jobsdb.GetQueryParamsT) {
 }
 
 // workspaceStrategy implements isolation at workspace level
-type workspaceStrategy struct{}
+type workspaceStrategy struct {
+	customVal string
+}
 
 // ActivePartitions returns the list of active workspaceIDs in jobsdb
-func (workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	return db.GetActiveWorkspaces(ctx, "")
+func (ws workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
+	return db.GetActiveWorkspaces(ctx, ws.customVal)
 }
 
 func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
 	params.WorkspaceID = partition
 }
 
-// sourceStrategy implements isolation at source level
-type sourceStrategy struct{}
+// destinationStrategy implements isolation at destination level
+type destinationStrategy struct {
+	destinationFilter func(destinationID string) bool
+}
 
-// ActivePartitions returns the list of active sourceIDs in jobsdb
-func (sourceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	return db.GetDistinctParameterValues(ctx, "source_id")
+// ActivePartitions returns the list of active destinationIDs in jobsdb
+func (ds destinationStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
+	unfiltered, err := db.GetDistinctParameterValues(ctx, "destination_id")
+	if err != nil {
+		return nil, err
+	}
+	return lo.Filter(unfiltered, func(destinationID string, _ int) bool {
+		return ds.destinationFilter(destinationID)
+	}), nil
 }
 
 // AugmentQueryParams augments the given GetQueryParamsT by adding the partition as sourceID parameter filter
-func (sourceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
-	params.ParameterFilters = append(params.ParameterFilters, jobsdb.ParameterFilterT{Name: "source_id", Value: partition})
+func (destinationStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
+	params.ParameterFilters = append(params.ParameterFilters, jobsdb.ParameterFilterT{Name: "destination_id", Value: partition})
 }

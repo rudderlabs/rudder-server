@@ -51,6 +51,11 @@ func TestProcessorIsolation(t *testing.T) {
 		spec := NewProcIsolationScenarioSpec(isolation.ModeWorkspace, workspaces, jobsPerWorkspace)
 		ProcIsolationScenario(t, spec)
 	})
+
+	t.Run("source isolation", func(t *testing.T) {
+		spec := NewProcIsolationScenarioSpec(isolation.ModeSource, workspaces, jobsPerWorkspace)
+		ProcIsolationScenario(t, spec)
+	})
 }
 
 // go test \
@@ -304,22 +309,22 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 
 	require.Eventually(t, func() bool {
 		var processedJobCount int
-		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdb('gw',5) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
+		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',5) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
 		return processedJobCount == len(spec.jobs)/batchSize
 	}, 300*time.Second, 1*time.Second, "all batches should be successfully processed")
 
 	var failedJobs int
-	require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdb('proc_error',5) where parameters->>'stage' != 'router'").Scan(&failedJobs))
+	require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('proc_error',5) where parameters->>'stage' != 'router'").Scan(&failedJobs))
 	require.Equal(t, 0, failedJobs, "should not have any failed jobs")
 
 	// count gw min and max job times
 	var gwMinJobTime, gwMaxJobTime time.Time
-	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(created_at), max(created_at) FROM unionjobsdb('gw',5)").Scan(&gwMinJobTime, &gwMaxJobTime))
+	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(created_at), max(created_at) FROM unionjobsdbmetadata('gw',5)").Scan(&gwMinJobTime, &gwMaxJobTime))
 
 	// count min and max job times
 	var minJobTime, maxJobTime time.Time
 	var totalJobsCount int
-	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(created_at), max(created_at), count(*) FROM unionjobsdb('rt',5)").Scan(&minJobTime, &maxJobTime, &totalJobsCount))
+	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(created_at), max(created_at), count(*) FROM unionjobsdbmetadata('rt',5)").Scan(&minJobTime, &maxJobTime, &totalJobsCount))
 	require.Equal(t, len(spec.jobs), totalJobsCount)
 	overallDuration = maxJobTime.Sub(gwMinJobTime)
 

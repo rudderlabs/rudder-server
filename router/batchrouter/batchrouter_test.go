@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -140,7 +141,6 @@ func initBatchRouter() {
 	admin.Init()
 	logger.Reset()
 	misc.Init()
-	Init()
 }
 
 var _ = Describe("BatchRouter", func() {
@@ -149,36 +149,38 @@ var _ = Describe("BatchRouter", func() {
 	var c *testContext
 
 	BeforeEach(func() {
+		config.Reset()
 		router_utils.JobRetention = time.Duration(175200) * time.Hour // 20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
 	})
 
 	AfterEach(func() {
+		config.Reset()
 		c.Finish()
 	})
 
 	Context("Initialization", func() {
 		It("should initialize and recover after crash", func() {
-			batchrouter := &HandleT{}
+			batchrouter := &Handle{}
 
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 		})
 	})
 
-	Context("normal operation - s3 - do not readPerDestination", func() {
+	Context("normal operation - s3 - isolation mode none", func() {
 		BeforeEach(func() {
+			config.Set("Batchrouter.isolationMode", "none")
 			// crash recovery check
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 		})
 
 		It("should send failed, unprocessed jobs to s3 destination", func() {
-			batchrouter := &HandleT{}
-
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
-			readPerDestination = false
+			batchrouter := &Handle{}
+			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			batchrouter.readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
 			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
@@ -236,8 +238,30 @@ var _ = Describe("BatchRouter", func() {
 			}
 
 			payloadLimit := batchrouter.payloadLimit
-			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: toRetryJobsList}, nil).Times(1)
-			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1).After(callRetry)
+			var toRetryJobsListCalled bool
+			var unprocessedJobsListCalled bool
+			c.mockBatchRouterJobsDB.EXPECT().GetToRetry(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).DoAndReturn(func(ctx context.Context, params jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
+				if !toRetryJobsListCalled {
+					toRetryJobsListCalled = true
+					return jobsdb.JobsResult{Jobs: toRetryJobsList}, nil
+				}
+				return jobsdb.JobsResult{}, nil
+			}).AnyTimes()
+			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).DoAndReturn(func(ctx context.Context, params jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
+				if !unprocessedJobsListCalled {
+					unprocessedJobsListCalled = true
+					return jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil
+				}
+				return jobsdb.JobsResult{}, nil
+			}).Times(1)
+
+			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).DoAndReturn(func(ctx context.Context, params jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
+				if !unprocessedJobsListCalled {
+					unprocessedJobsListCalled = true
+					return jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil
+				}
+				return jobsdb.JobsResult{}, nil
+			}).AnyTimes()
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -250,7 +274,7 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, nil).Times(1).
+			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
@@ -259,7 +283,18 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
 
 			<-batchrouter.backendConfigInitialized
-			batchrouter.readAndProcess()
+			batchrouter.mainLoopSleep = time.Microsecond
+			ctx, cancel := context.WithCancel(context.Background())
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				batchrouter.mainLoop(ctx)
+				GinkgoRecover()
+				wg.Done()
+			}()
+			time.Sleep(1 * time.Second)
+			cancel()
+			wg.Wait()
 		})
 	})
 })
@@ -317,12 +352,12 @@ func TestPostToWarehouse(t *testing.T) {
 			}))
 			t.Cleanup(ts.Close)
 
-			job := HandleT{
+			job := Handle{
 				netHandle:       ts.Client(),
 				logger:          logger.NOP,
 				warehouseClient: client.NewWarehouse(ts.URL),
 			}
-			batchJobs := BatchJobsT{
+			batchJobs := BatchedJobs{
 				Jobs: []*jobsdb.JobT{
 					{
 						EventPayload: jsonb.RawMessage(`
@@ -340,9 +375,9 @@ func TestPostToWarehouse(t *testing.T) {
 						Parameters:  jsonb.RawMessage(`{}`),
 					},
 				},
-				BatchDestination: &DestinationT{},
+				Connection: &Connection{},
 			}
-			err := job.postToWarehouse(&batchJobs, StorageUploadOutput{
+			err := job.pingWarehouse(&batchJobs, UploadResult{
 				TotalEvents: 1,
 				TotalBytes:  200,
 			})
