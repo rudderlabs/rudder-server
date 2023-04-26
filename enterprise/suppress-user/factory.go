@@ -116,8 +116,8 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 					m.Log.Errorf("Could not create sync done marker: %w", err)
 				}
 				repo.Switch(fullRepo)
+				m.Log.Info("Switched to full suppression repository")
 				latestSyncCancel()
-				m.Log.Info("Full sync started")
 				fullSyncer.SyncLoop(ctx)
 				err = fullRepo.Stop()
 				if err != nil {
