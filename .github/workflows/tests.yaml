@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        destinations: [ bigquery, clickhouse, datalake, deltalake, mssql, postgres, redshift, snowflake ]
+        destination: [ bigquery, clickhouse, datalake, deltalake, mssql, postgres, redshift, snowflake ]
         include:
           - package: warehouse/integrations/bigquery
             destination: bigquery
