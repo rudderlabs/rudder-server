@@ -4,14 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -159,7 +160,7 @@ func TestIntegration(t *testing.T) {
 			},
 		})
 
-		t.Run(tc.name + "Events flow", func(t *testing.T) {
+		t.Run(tc.name+"Events flow", func(t *testing.T) {
 			dsn := fmt.Sprintf(
 				"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 				"rudder", "rudder-password", "localhost", fmt.Sprint(postgresPort), "rudderdb",
@@ -256,7 +257,7 @@ func TestIntegration(t *testing.T) {
 			}
 		})
 
-		t.Run(tc.name + "Events flow with ssh tunnel", func(t *testing.T) {
+		t.Run(tc.name+"Events flow with ssh tunnel", func(t *testing.T) {
 			dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 				templateConfigurations["privatePostgresUser"],
 				templateConfigurations["privatePostgresPassword"],
@@ -346,7 +347,7 @@ func TestIntegration(t *testing.T) {
 			}
 		})
 
-		t.Run(tc.name + "Validations", func(t *testing.T) {
+		t.Run(tc.name+"Validations", func(t *testing.T) {
 			destination := backendconfig.DestinationT{
 				ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
 				Config: map[string]interface{}{
