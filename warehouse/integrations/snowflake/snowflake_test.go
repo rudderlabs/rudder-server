@@ -1,6 +1,7 @@
 package snowflake_test
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	snowflakedb "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
 )
 
@@ -146,10 +148,23 @@ func TestIntegrationSnowflake(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			credentialsCopy := tc.credentials
-			credentialsCopy.Database = tc.database
+			cred := tc.credentials
+			cred.Database = tc.database
 
-			db, err := snowflake.Connect(credentialsCopy)
+			urlConfig := snowflakedb.Config{
+				Account:     cred.Account,
+				User:        cred.User,
+				Role:        cred.Role,
+				Password:    cred.Password,
+				Database:    cred.Database,
+				Warehouse:   cred.Warehouse,
+				Application: snowflake.Application,
+			}
+
+			dsn, err := snowflakedb.DSN(&urlConfig)
+			require.NoError(t, err)
+
+			db, err := sql.Open("snowflake", dsn)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {

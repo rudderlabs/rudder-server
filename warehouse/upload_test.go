@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/services/alerta"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -363,11 +364,12 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 					pgResource, err := resource.SetupPostgres(pool, t)
 					require.NoError(t, err)
+					sqlmiddleware := sqlmiddleware.New(pgResource.DB)
 
 					rs := redshift.New()
 					redshift.WithConfig(rs, config.Default)
 
-					rs.DB = pgResource.DB
+					rs.DB = sqlmiddleware
 					rs.Namespace = testNamespace
 
 					job := &UploadJob{
@@ -430,11 +432,12 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
+			sqlmiddleware := sqlmiddleware.New(pgResource.DB)
 
 			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
-			rs.DB = pgResource.DB
+			rs.DB = sqlmiddleware
 			rs.Namespace = testNamespace
 
 			job := &UploadJob{

@@ -1,6 +1,7 @@
 package redshift_test
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
@@ -93,8 +95,15 @@ func TestIntegrationRedshift(t *testing.T) {
 			credentials, err := testhelper.RedshiftCredentials()
 			require.NoError(t, err)
 
-			db, err := redshift.Connect(credentials)
+			dsn := fmt.Sprintf(
+				"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				credentials.Username, credentials.Password, credentials.Host, credentials.Port, credentials.DbName,
+			)
+
+			db, err := sql.Open("postgres", dsn)
 			require.NoError(t, err)
+
+			sqlmiddleware := sqlmiddleware.New(db)
 
 			t.Cleanup(func() {
 				require.NoError(t, testhelper.WithConstantRetries(func() error {
@@ -121,7 +130,7 @@ func TestIntegrationRedshift(t *testing.T) {
 				TaskRunID:             misc.FastUUID().String(),
 				UserID:                testhelper.GetUserId(provider),
 				Client: &client.Client{
-					SQL:  db,
+					SQL:  sqlmiddleware.DB,
 					Type: client.SQLClient,
 				},
 			}
@@ -259,7 +268,9 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
-			rs.DB = pgResource.DB
+			sqlmiddleware := sqlmiddleware.New(pgResource.DB)
+
+			rs.DB = sqlmiddleware
 			rs.Namespace = testNamespace
 
 			_, err = rs.DB.Exec(
