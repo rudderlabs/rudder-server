@@ -82,6 +82,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 
 			subCtx, latestSyncCancel := context.WithCancel(ctx)
 			rruntime.Go(func() {
+				m.Log.Infof("Starting latest sync")
 				latestSyncer.SyncLoop(subCtx)
 				err = latestRepo.Stop()
 				if err != nil {
@@ -91,6 +92,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				if err != nil {
 					m.Log.Errorf("Latest Sync failed: could not remove repo: %w", err)
 				}
+				m.Log.Info("Latest sync stopped")
 			})
 
 			repo := &RepoSwitcher{Repository: latestRepo}
@@ -115,14 +117,17 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				}
 				repo.Switch(fullRepo)
 				latestSyncCancel()
+				m.Log.Info("Full sync started")
 				fullSyncer.SyncLoop(ctx)
 				err = fullRepo.Stop()
 				if err != nil {
 					m.Log.Warnf("Full Sync failed: could not stop repo: %w", err)
 				}
+				m.Log.Info("Full sync stopped")
 			})
 			return newHandler(repo, m.Log), nil
 		} else {
+			m.Log.Info("fullSuppression repo is already synced with backup service, starting syncLoop")
 			syncer, fullRepo, err := m.newSyncerWithBadgerRepo(fullSuppressionPath, nil, 0, identifier, pollInterval)
 			if err != nil {
 				return nil, err
