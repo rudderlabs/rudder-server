@@ -40,6 +40,7 @@ jobs:
     runs-on: 'ubuntu-20.04'
     strategy:
       matrix:
+        fail-fast: false
         FEATURES: [ bigquery, clickhouse, datalake, deltalake, mssql, postgres, redshift, snowflake ]
     steps:
       - name: Checkout
