@@ -37,14 +37,6 @@ const (
 	AsyncJOBQueryFrequency = 1000 * time.Millisecond
 )
 
-const (
-	SnowflakeIntegrationTestCredentials     = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
-	SnowflakeRBACIntegrationTestCredentials = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
-	RedshiftIntegrationTestCredentials      = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
-	DeltalakeIntegrationTestCredentials     = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
-	BigqueryIntegrationTestCredentials      = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
-)
-
 type EventsCountMap map[string]int
 
 type WareHouseTest struct {

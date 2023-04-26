@@ -40,6 +40,10 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const (
+	redshiftTestKey = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
+)
+
 type rsTestCredentials struct {
 	Host        string `json:"host"`
 	Port        string `json:"port"`
@@ -52,7 +56,7 @@ type rsTestCredentials struct {
 }
 
 func getRSTestCredentials() (*rsTestCredentials, error) {
-	cred, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials)
+	cred, exists := os.LookupEnv(redshiftTestKey)
 	if !exists {
 		return nil, errors.New("redshift test credentials not found")
 	}
@@ -75,7 +79,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if !isRSTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), redshiftTestKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")

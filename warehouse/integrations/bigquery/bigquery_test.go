@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	bqHeloer "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
 	"cloud.google.com/go/bigquery"
 
@@ -35,39 +36,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type bqTestCredentials struct {
-	ProjectID   string `json:"projectID"`
-	Location    string `json:"location"`
-	BucketName  string `json:"bucketName"`
-	Credentials string `json:"credentials"`
-}
-
-func getBQTestCredentials() (*bqTestCredentials, error) {
-	cred, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials)
-	if !exists {
-		return nil, fmt.Errorf("bq credentials not found")
-	}
-
-	var credentials bqTestCredentials
-	err := json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal bq credentials: %w", err)
-	}
-
-	return &credentials, nil
-}
-
-func isBQTestCredentialsAvailable() bool {
-	_, err := getBQTestCredentials()
-	return err == nil
-}
-
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	if !isBQTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
+	if !bqHeloer.IsBQTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHeloer.BigQueryTestKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
@@ -93,7 +67,7 @@ func TestIntegration(t *testing.T) {
 	schema := testhelper.RandSchema(warehouseutils.BQ)
 	sourcesSchema := fmt.Sprintf("%s_%s", schema, "sources")
 
-	bqTestCredentials, err := getBQTestCredentials()
+	bqTestCredentials, err := bqHeloer.GetBQTestCredentials()
 	require.NoError(t, err)
 
 	escapedCredentials, err := json.Marshal(bqTestCredentials.Credentials)

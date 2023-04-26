@@ -35,6 +35,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	snowflakeTestKey     = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
+	snowflakeTestRBACKey = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
+)
+
 type snowflakeTestCredentials struct {
 	Account     string `json:"account"`
 	User        string `json:"user"`
@@ -62,12 +67,12 @@ func getSnowflakeTestCredentials(key string) (*snowflakeTestCredentials, error) 
 }
 
 func isSnowflakeTestCredentialsAvailable() bool {
-	_, err := getSnowflakeTestCredentials(testhelper.SnowflakeIntegrationTestCredentials)
+	_, err := getSnowflakeTestCredentials(snowflakeTestKey)
 	return err == nil
 }
 
 func isSnowflakeTestRBACCredentialsAvailable() bool {
-	_, err := getSnowflakeTestCredentials(testhelper.SnowflakeRBACIntegrationTestCredentials)
+	_, err := getSnowflakeTestCredentials(snowflakeTestRBACKey)
 	return err == nil
 }
 
@@ -76,10 +81,10 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if !isSnowflakeTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), snowflakeTestKey)
 	}
 	if !isSnowflakeTestRBACCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeRBACIntegrationTestCredentials)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), snowflakeTestRBACKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
@@ -107,10 +112,10 @@ func TestIntegration(t *testing.T) {
 	sourcesSchema := fmt.Sprintf("%s_%s", schema, "SOURCES")
 	caseSensitiveSchema := fmt.Sprintf("%s_%s", schema, "CS")
 
-	credentials, err := getSnowflakeTestCredentials(testhelper.SnowflakeIntegrationTestCredentials)
+	credentials, err := getSnowflakeTestCredentials(snowflakeTestKey)
 	require.NoError(t, err)
 
-	rbacCrecentials, err := getSnowflakeTestCredentials(testhelper.SnowflakeRBACIntegrationTestCredentials)
+	rbacCrecentials, err := getSnowflakeTestCredentials(snowflakeTestRBACKey)
 	require.NoError(t, err)
 
 	templateConfigurations := map[string]string{

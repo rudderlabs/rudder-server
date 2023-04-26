@@ -29,13 +29,17 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const (
+	datalakeGCSTestKey = "BigqueryIntegrationTestCredentials"
+)
+
 type gcsTestCredentials struct {
 	BucketName  string `json:"bucketName"`
 	Credentials string `json:"credentials"`
 }
 
 func getGCSTestCredentials() (*gcsTestCredentials, error) {
-	cred, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials)
+	cred, exists := os.LookupEnv(datalakeGCSTestKey)
 	if !exists {
 		return nil, fmt.Errorf("gcs credentials not found")
 	}
@@ -204,7 +208,7 @@ func TestIntegration(t *testing.T) {
 					t.Helper()
 
 					if !isGCSTestCredentialsAvailable() {
-						t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
+						t.Skipf("Skipping %s as %s is not set", t.Name(), datalakeGCSTestKey)
 					}
 				},
 			},
@@ -297,7 +301,7 @@ func TestIntegration(t *testing.T) {
 		t.Parallel()
 
 		if !isGCSTestCredentialsAvailable() {
-			t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
+			t.Skipf("Skipping %s as %s is not set", t.Name(), datalakeGCSTestKey)
 		}
 
 		credentials, err := getGCSTestCredentials()

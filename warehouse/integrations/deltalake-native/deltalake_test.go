@@ -32,6 +32,10 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 )
 
+const (
+	databricksTestKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
+)
+
 type deltaLakeTestCredentials struct {
 	Host          string `json:"host"`
 	Port          string `json:"port"`
@@ -43,7 +47,7 @@ type deltaLakeTestCredentials struct {
 }
 
 func getDeltaLakeTestCredentials() (*deltaLakeTestCredentials, error) {
-	cred, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials)
+	cred, exists := os.LookupEnv(databricksTestKey)
 	if !exists {
 		return nil, errors.New("deltaLake test credentials not found")
 	}
@@ -66,7 +70,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if !isDeltaLakeTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.DeltalakeIntegrationTestCredentials)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), databricksTestKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
