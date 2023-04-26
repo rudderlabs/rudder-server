@@ -1105,7 +1105,29 @@ func (rs *Redshift) dropDanglingStagingTables() bool {
 }
 
 func (rs *Redshift) connectToWarehouse() (*sql.DB, error) {
-	return Connect(rs.getConnectionCredentials())
+	rs.Logger.Infow("[connectToWarehouse] opening up redshift connection",
+		logfield.SourceID, rs.Warehouse.Source.ID,
+		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, rs.Warehouse.Destination.ID,
+		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+		logfield.Schema, rs.Namespace,
+	)
+
+	db, err := Connect(rs.getConnectionCredentials())
+	if err != nil {
+		rs.Logger.Warnw("[connectToWarehouse] failed to open redshift connection",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Schema, rs.Namespace,
+		)
+		return nil, err
+	}
+
+	return db, nil
 }
 
 func (rs *Redshift) CreateSchema() (err error) {
@@ -1274,7 +1296,7 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := rs.connectToWarehouse()
 	if err != nil {
 		return
 	}
@@ -1350,11 +1372,11 @@ func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 
 func (rs *Redshift) TestConnection(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
-	rs.DB, err = Connect(rs.getConnectionCredentials())
+	rs.DB, err = rs.connectToWarehouse()
 	if err != nil {
 		return
 	}
-	defer func() { _ = rs.DB.Close() }()
+	defer func() { rs.closeDB() }()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
 	defer cancel()
@@ -1371,20 +1393,42 @@ func (rs *Redshift) TestConnection(warehouse model.Warehouse) (err error) {
 }
 
 func (rs *Redshift) Cleanup() {
+	rs.closeDB()
+}
+
+func (rs *Redshift) closeDB() {
 	if rs.DB != nil {
-		rs.dropDanglingStagingTables()
-		_ = rs.DB.Close()
+		rs.Logger.Infow("[Cleanup] cleaning up redshift connection",
+			logfield.SourceID, rs.Warehouse.Source.ID,
+			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, rs.Warehouse.Destination.ID,
+			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+			logfield.Schema, rs.Namespace,
+		)
+
+		if err := rs.DB.Close(); err != nil {
+			rs.Logger.Errorw("[Cleanup] failed to close redshift connection",
+				logfield.SourceID, rs.Warehouse.Source.ID,
+				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, rs.Warehouse.Destination.ID,
+				logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
+				logfield.Schema, rs.Namespace,
+				logfield.Error, err,
+			)
+		}
 	}
 }
 
 func (rs *Redshift) CrashRecover(warehouse model.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	rs.DB, err = Connect(rs.getConnectionCredentials())
+	rs.DB, err = rs.connectToWarehouse()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rs.DB.Close() }()
+	defer func() { rs.closeDB() }()
 	rs.dropDanglingStagingTables()
 	return
 }
@@ -1433,7 +1477,7 @@ func (rs *Redshift) GetTotalCountInTable(ctx context.Context, tableName string) 
 func (rs *Redshift) Connect(warehouse model.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	dbHandle, err := Connect(rs.getConnectionCredentials())
+	dbHandle, err := rs.connectToWarehouse()
 	if err != nil {
 		return client.Client{}, err
 	}
