@@ -1726,12 +1726,6 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		tags := []Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
 		tags = append(tags, errorTags)
 
-		valid, err := job.validateDestinationCredentials()
-		if err == nil {
-			tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
-			destCredentialsValidations = &valid
-		}
-
 		job.counterStat("upload_aborted", tags...).Count(1)
 	}
 

@@ -1417,7 +1417,7 @@ func (rs *Redshift) closeDB() {
 		)
 
 		if err := rs.DB.Close(); err != nil {
-			rs.Logger.Errorw("[Cleanup] failed to close redshift connection",
+			rs.Logger.Warn("[Cleanup] failed to close redshift connection",
 				logfield.SourceID, rs.Warehouse.Source.ID,
 				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
 				logfield.DestinationID, rs.Warehouse.Destination.ID,
