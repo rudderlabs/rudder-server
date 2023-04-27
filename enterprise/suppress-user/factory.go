@@ -107,9 +107,11 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 						return err
 					}, 5*time.Second)
 
+				m.Log.Info("First full suppression sync started")
 				m.retryIndefinitely(ctx,
 					func() error { return fullSyncer.Sync(ctx) },
 					5*time.Second)
+				m.Log.Info("First full suppression sync done")
 
 				_, err = os.Create(filepath.Join(fullSuppressionPath, model.SyncDoneMarker))
 				if err != nil {
