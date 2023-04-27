@@ -12,7 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -182,7 +181,7 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(key string) bool {
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
 		m.Store(key,
 			m.transformations(key,
-				m.processJobsForDest(key, subJob, nil),
+				m.processJobsForDest(key, subJob),
 			),
 		)
 	}
@@ -241,7 +240,7 @@ func (*mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources
 	}
 }
 
-func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob, _ [][]types.SingularEventT) *transformationMessage {
+func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin(partition)()
 	}

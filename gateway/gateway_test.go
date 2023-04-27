@@ -954,7 +954,7 @@ var _ = Describe("Gateway", func() {
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
 			Expect(errors.New(response.InvalidJSON)).To(Equal(err))
-			Expect(jobData.job).To(BeNil())
+			Expect(jobData.jobs).To(BeNil())
 		})
 
 		It("drops non-identifiable requests if userID and anonID are not present in the request payload", func() {
@@ -967,7 +967,7 @@ var _ = Describe("Gateway", func() {
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
-			Expect(jobData.job).To(BeNil())
+			Expect(jobData.jobs).To(BeNil())
 		})
 
 		It("accepts events with non-string type anonymousId and/or userId", func() {

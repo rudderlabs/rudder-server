@@ -447,10 +447,18 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 				continue
 			}
-			jobList = append(jobList, jobData.job)
-			jobIDReqMap[jobData.job.UUID] = req
-			jobSourceTagMap[jobData.job.UUID] = sourceTag
-			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{data: jobData.job.EventPayload, writeKey: writeKey})
+			jobList = append(jobList, jobData.jobs...)
+			lo.ForEach(jobData.jobs, func(job *jobsdb.JobT, _ int) {
+				jobIDReqMap[job.UUID] = req
+				jobSourceTagMap[job.UUID] = sourceTag
+				eventBatchesToRecord = append(
+					eventBatchesToRecord,
+					sourceDebugger{
+						data:     job.EventPayload,
+						writeKey: writeKey,
+					},
+				)
+			})
 		}
 
 		errorMessagesMap := make(map[uuid.UUID]string)
@@ -492,7 +500,7 @@ var (
 )
 
 type jobFromReq struct {
-	job       *jobsdb.JobT
+	jobs      []*jobsdb.JobT
 	numEvents int
 	version   string
 }
@@ -553,6 +561,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		// map to hold modified/filtered events of the batch
 		out []map[string]interface{}
 
+		marshalledParams []byte
 		// values retrieved from first event in batch
 		firstUserID                                 string
 		firstSourcesJobRunID, firstSourcesTaskRunID string
@@ -630,6 +639,9 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			return
 		}
 		toSet["rudderId"] = rudderId
+		toSet["requestIP"] = ipAddr
+		toSet["writeKey"] = writeKey
+		toSet["receivedAt"] = time.Now().UTC().Format(time.RFC3339Nano)
 		setRandomMessageIDWhenEmpty(toSet)
 		if eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
@@ -648,19 +660,12 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		return
 	}
 
-	body, _ = sjson.SetBytes(body, "batch", out)
-	body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
-	body, _ = sjson.SetBytes(body, "writeKey", writeKey)
-	body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
-
-	id := uuid.New()
-
 	params := map[string]interface{}{
 		"source_id":          sourceID,
 		"source_job_run_id":  firstSourcesJobRunID,
 		"source_task_run_id": firstSourcesTaskRunID,
 	}
-	marshalledParams, err := json.Marshal(params)
+	marshalledParams, err = json.Marshal(params)
 	if err != nil {
 		gateway.logger.Errorf(
 			"[Gateway] Failed to marshal parameters map. Parameters: %+v",
@@ -670,17 +675,25 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			`{"error": "rudder-server gateway failed to marshal params"}`,
 		)
 	}
-	err = nil
-	job := &jobsdb.JobT{
-		UUID:         id,
-		UserID:       firstUserID,
-		Parameters:   marshalledParams,
-		CustomVal:    CustomVal,
-		EventPayload: body,
-		EventCount:   jobData.numEvents,
-		WorkspaceId:  workspaceId,
+	jobs := make([]*jobsdb.JobT, len(out))
+	for idx, event := range out {
+		var singularEvent []byte
+		singularEvent, err = json.Marshal(event)
+		if err != nil {
+			err = errors.New(response.InvalidJSON)
+			return
+		}
+		jobs[idx] = &jobsdb.JobT{
+			UUID:         uuid.New(),
+			UserID:       firstUserID,
+			Parameters:   marshalledParams,
+			CustomVal:    CustomVal,
+			EventPayload: singularEvent,
+			EventCount:   1,
+			WorkspaceId:  workspaceId,
+		}
 	}
-	jobData.job = job
+	jobData.jobs = jobs
 	return
 }
 

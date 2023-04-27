@@ -237,6 +237,17 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT
 	return gatewayBatchEvent.Batch, true
 }
 
+func ParseRudderEvent(eventPayload json.RawMessage) (types.SingularEventT, bool) {
+	var rudderEvent types.SingularEventT
+	err := jsonfast.Unmarshal(eventPayload, &rudderEvent)
+	if err != nil {
+		pkgLogger.Debug("json parsing of event payload failed ", string(eventPayload))
+		return nil, false
+	}
+
+	return rudderEvent, true
+}
+
 // GetRudderID return the UserID from the object
 func GetRudderID(event types.SingularEventT) (string, bool) {
 	userID, ok := GetRudderEventVal("rudderId", event)
