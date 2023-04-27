@@ -212,30 +212,45 @@ func TestBackoff(t *testing.T) {
 				RetryTime:  time.Now().Add(-1 * time.Hour),
 			},
 		}
+		noBackoffJob4 := &jobsdb.JobT{
+			JobID:      5,
+			Parameters: []byte(`{"destination_id": "destination"}`),
+			LastJobStatus: jobsdb.JobStatusT{
+				JobState:   jobsdb.Failed.State,
+				AttemptNum: 0,
+				RetryTime:  time.Now().Add(-1 * time.Hour),
+			},
+		}
 
 		r := &HandleT{
-			logger:        logger.NOP,
-			backgroundCtx: context.Background(),
-			noOfWorkers:   1,
+			logger:                logger.NOP,
+			backgroundCtx:         context.Background(),
+			noOfWorkers:           1,
+			workerInputBufferSize: 3,
 			workers: []*worker{{
+				input:   make(chan workerMessageT, 3),
 				barrier: eventorder.NewBarrier(),
 			}},
 		}
 
 		t.Run("eventorder disabled", func(t *testing.T) {
 			r.guaranteeUserEventOrder = false
-			require.Nil(t, r.findWorker(backoffJob, map[string]struct{}{}))
-			require.NotNil(t, r.findWorker(noBackoffJob1, map[string]struct{}{}))
-			require.NotNil(t, r.findWorker(noBackoffJob2, map[string]struct{}{}))
-			require.NotNil(t, r.findWorker(noBackoffJob3, map[string]struct{}{}))
+			r.workers[0].inputReservations = 0
+			require.Nil(t, r.findWorkerSlot(backoffJob, map[string]struct{}{}))
+			require.NotNil(t, r.findWorkerSlot(noBackoffJob1, map[string]struct{}{}))
+			require.NotNil(t, r.findWorkerSlot(noBackoffJob2, map[string]struct{}{}))
+			require.NotNil(t, r.findWorkerSlot(noBackoffJob3, map[string]struct{}{}))
+			require.Nil(t, r.findWorkerSlot(noBackoffJob4, map[string]struct{}{}), "worker's input channel should be full")
 		})
 
 		t.Run("eventorder enabled", func(t *testing.T) {
 			r.guaranteeUserEventOrder = true
-			require.Nil(t, r.findWorker(backoffJob, map[string]struct{}{}))
-			require.NotNil(t, r.findWorker(noBackoffJob1, map[string]struct{}{}))
-			require.NotNil(t, r.findWorker(noBackoffJob2, map[string]struct{}{}))
-			require.NotNil(t, r.findWorker(noBackoffJob3, map[string]struct{}{}))
+			r.workers[0].inputReservations = 0
+			require.Nil(t, r.findWorkerSlot(backoffJob, map[string]struct{}{}))
+			require.NotNil(t, r.findWorkerSlot(noBackoffJob1, map[string]struct{}{}))
+			require.NotNil(t, r.findWorkerSlot(noBackoffJob2, map[string]struct{}{}))
+			require.NotNil(t, r.findWorkerSlot(noBackoffJob3, map[string]struct{}{}))
+			require.Nil(t, r.findWorkerSlot(noBackoffJob4, map[string]struct{}{}), "worker's input channel should be full")
 		})
 	})
 }
