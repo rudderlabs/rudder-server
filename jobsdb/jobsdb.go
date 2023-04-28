@@ -1938,12 +1938,7 @@ func (jd *HandleT) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, job
 
 		defer func() { _ = stmt.Close() }()
 		for _, job := range jobList {
-			eventCount := 1
-			if job.EventCount > 1 {
-				eventCount = job.EventCount
-			}
-
-			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount, job.WorkspaceId); err != nil {
 				return err
 			}
 		}
@@ -2089,7 +2084,6 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
 									jobs.created_at, jobs.expire_at, jobs.workspace_id,
 									pg_column_size(jobs.event_payload) as payload_size,
-									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
 									sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
 									job_latest_state.job_state, job_latest_state.attempt,
 									job_latest_state.exec_time, job_latest_state.retry_time,
@@ -2105,16 +2099,6 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	var args []interface{}
 
 	var wrapQuery []string
-	if params.EventsLimit > 0 {
-		// If there is a single job in the dataset containing more events than the EventsLimit, we should return it,
-		// otherwise processing will halt.
-		// Therefore, we always retrieve one more job from the database than our limit dictates.
-		// This job will only be returned to the result in case of the aforementioned scenario, otherwise it gets filtered out
-		// later, during row scanning
-		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - t.event_count <= $%d`, len(args)+1))
-		args = append(args, params.EventsLimit)
-	}
-
 	if params.PayloadSizeLimit > 0 {
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - t.payload_size <= $%d`, len(args)+1))
 		args = append(args, params.PayloadSizeLimit)
@@ -2147,7 +2131,7 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 		var job JobT
 
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningPayloadSize,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
@@ -2156,6 +2140,11 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 		}
 		job.LastJobStatus.JobParameters = job.Parameters
 
+		if job.EventCount > 0 {
+			runningEventCount += job.EventCount
+		} else {
+			runningEventCount++
+		}
 		if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
 			// events limit overflow is triggered as long as we have read at least one job
 			limitsReached = true
@@ -2230,7 +2219,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 	sqlStatement := fmt.Sprintf(
 		`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
 			`	pg_column_size(jobs.event_payload) as payload_size, `+
-			`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
 			`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
 			`FROM %[1]q AS jobs `+
 			`LEFT JOIN %[2]q job_status ON jobs.job_id=job_status.job_id `+
@@ -2256,15 +2244,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 	}
 
 	var wrapQuery []string
-	if params.EventsLimit > 0 {
-		// If there is a single job in the dataset containing more events than the EventsLimit, we should return it,
-		// otherwise processing will halt.
-		// Therefore, we always retrieve one more job from the database than our limit dictates.
-		// This job will only be returned in the result in case of the aforementioned scenario, otherwise it gets filtered out
-		// later, during row scanning
-		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - subquery.event_count <= $%d`, len(args)+1))
-		args = append(args, params.EventsLimit)
-	}
 
 	if params.PayloadSizeLimit > 0 {
 		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - subquery.payload_size <= $%d`, len(args)+1))
@@ -2294,9 +2273,15 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 	for rows.Next() {
 		var job JobT
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize)
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningPayloadSize)
 		if err != nil {
 			return JobsResult{}, false, err
+		}
+
+		if job.EventCount > 0 {
+			runningEventCount += job.EventCount
+		} else {
+			runningEventCount++
 		}
 		if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
 			// events limit overflow is triggered as long as we have read at least one job

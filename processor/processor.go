@@ -350,6 +350,36 @@ func (proc *Handle) Setup(
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
 
+	proc.setupStats()
+
+	if proc.config.enableEventSchemasFeature {
+		proc.eventSchemaHandler = eventschema.GetInstance()
+	}
+	if proc.config.enableDedup {
+		proc.dedupHandler = dedup.GetInstance(clearDB)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	proc.backgroundWait = g.Wait
+	proc.backgroundCancel = cancel
+
+	proc.config.asyncInit = misc.NewAsyncInit(2)
+	rruntime.Go(func() {
+		proc.backendConfigSubscriber(ctx)
+	})
+
+	g.Go(misc.WithBugsnag(func() error {
+		proc.syncTransformerFeatureJson(ctx)
+		return nil
+	}))
+
+	proc.transformer.Setup()
+	proc.crashRecover()
+}
+
+func (proc *Handle) setupStats() {
 	// Stats
 	proc.statsFactory = stats.Default
 	proc.stats.statGatewayDBR = proc.statsFactory.NewStat("processor.gateway_db_read", stats.CountType)
@@ -406,31 +436,6 @@ func (proc *Handle) Setup(
 	proc.stats.processJobThroughput = proc.statsFactory.NewStat("processor.processJob_thoughput", stats.CountType)
 	proc.stats.transformationsThroughput = proc.statsFactory.NewStat("processor.transformations_throughput", stats.CountType)
 	proc.stats.DBWriteThroughput = proc.statsFactory.NewStat("processor.db_write_throughput", stats.CountType)
-	if proc.config.enableEventSchemasFeature {
-		proc.eventSchemaHandler = eventschema.GetInstance()
-	}
-	if proc.config.enableDedup {
-		proc.dedupHandler = dedup.GetInstance(clearDB)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := errgroup.WithContext(ctx)
-
-	proc.backgroundWait = g.Wait
-	proc.backgroundCancel = cancel
-
-	proc.config.asyncInit = misc.NewAsyncInit(2)
-	rruntime.Go(func() {
-		proc.backendConfigSubscriber(ctx)
-	})
-
-	g.Go(misc.WithBugsnag(func() error {
-		proc.syncTransformerFeatureJson(ctx)
-		return nil
-	}))
-
-	proc.transformer.Setup()
-	proc.crashRecover()
 }
 
 // Start starts this processor's main loops.
@@ -1389,131 +1394,158 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
 
 	for _, batchEvent := range jobList {
-		singularEvent, ok := misc.ParseRudderEvent(batchEvent.EventPayload)
-		writeKey := gjson.Get(string(batchEvent.EventPayload), "writeKey").Str
-		requestIP := gjson.Get(string(batchEvent.EventPayload), "requestIP").Str
-		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
+		var (
+			singularEvents []types.SingularEventT
+			ok             bool
+			writeKey       string
+			requestIP      string
+			receivedAt     time.Time
+		)
+		// check for batch of events first, should be deprecated soon
+		if batchEvent.EventCount > 0 { // batch of events
+			singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
+			writeKey = gjson.Get(string(batchEvent.EventPayload), "writeKey").Str
+			requestIP = gjson.Get(string(batchEvent.EventPayload), "requestIP").Str
+			receivedAt = gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
+		} else { // singular event
+			se, seOK := misc.ParseRudderEvent(batchEvent.EventPayload)
+			ok = seOK
+			if ok {
+				singularEvents = []types.SingularEventT{se}
+				writeKey, _ = misc.MapLookup(se, "writeKey").(string)
+				requestIP, _ = misc.MapLookup(se, "requestIP").(string)
+				receivedAtString, _ := misc.MapLookup(se, "receivedAt").(string)
+				receivedAt, _ = time.Parse(misc.RFC3339Milli, receivedAtString)
+			}
+		}
 
 		if ok {
 			var duplicateIndexes []int
 			if proc.config.enableDedup {
-				duplicateIndexes = proc.dedupHandler.FindDuplicates(
-					[]string{misc.GetStringifiedData(singularEvent["messageId"])},
-					uniqueMessageIds,
-				)
+				var allMessageIdsInBatch []string
+				for _, singularEvent := range singularEvents {
+					allMessageIdsInBatch = append(allMessageIdsInBatch, misc.GetStringifiedData(singularEvent["messageId"]))
+				}
+				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
 			}
 
 			// Iterate through all the events in the batch
-			messageId := misc.GetStringifiedData(singularEvent["messageId"])
-			source, sourceError := proc.getSourceByWriteKey(writeKey)
-			if sourceError != nil {
-				proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
-				continue
-			}
-
-			if proc.config.enableDedup && len(duplicateIndexes) > 0 && duplicateIndexes[0] == 0 {
-				proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
-				misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
-				continue
-			}
-
-			proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
-
-			uniqueMessageIds[messageId] = struct{}{}
-			// We count this as one, not destination specific ones
-			totalEvents++
-			eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
-				SingularEvent: singularEvent,
-				ReceivedAt:    receivedAt,
-			}
-
-			commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
-				singularEvent,
-				batchEvent,
-				receivedAt,
-				source,
-			)
-
-			payloadFunc := ro.Memoize(func() json.RawMessage {
-				if proc.transientSources.Apply(source.ID) {
-					return nil
+			for eventIndex, singularEvent := range singularEvents {
+				messageId := misc.GetStringifiedData(singularEvent["messageId"])
+				source, sourceError := proc.getSourceByWriteKey(writeKey)
+				if sourceError != nil {
+					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
+					continue
 				}
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
-					return nil
+
+				if proc.config.enableDedup && slices.Contains(duplicateIndexes, eventIndex) {
+					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
+					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
+					continue
 				}
-				return payloadBytes
-			},
-			)
-			if proc.config.eventSchemaV2Enabled && // schemas enabled
-				// source has schemas enabled or if we override schemas for all sources
-				(source.EventSchemasEnabled || proc.config.eventSchemaV2AllSources) &&
-				// TODO: could use source.SourceDefinition.Category instead?
-				commonMetadataFromSingularEvent.SourceJobRunID == "" {
-				if payload := payloadFunc(); payload != nil {
-					eventSchemaJobs = append(eventSchemaJobs,
-						&jobsdb.JobT{
-							UUID:         batchEvent.UUID,
-							UserID:       batchEvent.UserID,
-							Parameters:   batchEvent.Parameters,
-							CustomVal:    batchEvent.CustomVal,
-							EventPayload: payload,
-							CreatedAt:    time.Now(),
-							ExpireAt:     time.Now(),
-							WorkspaceId:  batchEvent.WorkspaceId,
+
+				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
+
+				uniqueMessageIds[messageId] = struct{}{}
+				// We count this as one, not destination specific ones
+				totalEvents++
+				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
+					SingularEvent: singularEvent,
+					ReceivedAt:    receivedAt,
+				}
+
+				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
+					singularEvent,
+					batchEvent,
+					receivedAt,
+					source,
+				)
+
+				payloadFunc := ro.Memoize(func() json.RawMessage {
+					if proc.transientSources.Apply(source.ID) {
+						return nil
+					}
+					payloadBytes, err := jsonfast.Marshal(singularEvent)
+					if err != nil {
+						return nil
+					}
+					return payloadBytes
+				},
+				)
+				if proc.config.eventSchemaV2Enabled && // schemas enabled
+					// source has schemas enabled or if we override schemas for all sources
+					(source.EventSchemasEnabled || proc.config.eventSchemaV2AllSources) &&
+					// TODO: could use source.SourceDefinition.Category instead?
+					commonMetadataFromSingularEvent.SourceJobRunID == "" {
+					if payload := payloadFunc(); payload != nil {
+						eventSchemaJobs = append(eventSchemaJobs,
+							&jobsdb.JobT{
+								UUID:         batchEvent.UUID,
+								UserID:       batchEvent.UserID,
+								Parameters:   batchEvent.Parameters,
+								CustomVal:    batchEvent.CustomVal,
+								EventPayload: payload,
+								CreatedAt:    time.Now(),
+								ExpireAt:     time.Now(),
+								WorkspaceId:  batchEvent.WorkspaceId,
+							},
+						)
+					}
+				}
+
+				// REPORTING - GATEWAY metrics - START
+				// dummy event for metrics purposes only
+				event := &transformer.TransformerResponseT{}
+				if proc.isReportingEnabled() {
+					event.Metadata = *commonMetadataFromSingularEvent
+					proc.updateMetricMaps(
+						inCountMetadataMap,
+						inCountMap,
+						connectionDetailsMap,
+						statusDetailsMap,
+						event,
+						jobsdb.Succeeded.State,
+						types.GATEWAY,
+						func() json.RawMessage {
+							if payload := payloadFunc(); payload != nil {
+								return payload
+							}
+							return []byte("{}")
 						},
 					)
 				}
-			}
+				// REPORTING - GATEWAY metrics - END
 
-			// REPORTING - GATEWAY metrics - START
-			// dummy event for metrics purposes only
-			event := &transformer.TransformerResponseT{}
-			if proc.isReportingEnabled() {
-				event.Metadata = *commonMetadataFromSingularEvent
-				proc.updateMetricMaps(
-					inCountMetadataMap,
-					inCountMap,
-					connectionDetailsMap,
-					statusDetailsMap,
-					event,
-					jobsdb.Succeeded.State,
-					types.GATEWAY,
-					func() json.RawMessage {
-						if payload := payloadFunc(); payload != nil {
-							return payload
-						}
-						return []byte("{}")
-					},
+				// Getting all the destinations which are enabled for this
+				// event
+				if !proc.isDestinationAvailable(singularEvent, writeKey) {
+					continue
+				}
+
+				if _, ok := groupedEventsByWriteKey[WriteKeyT(writeKey)]; !ok {
+					groupedEventsByWriteKey[WriteKeyT(writeKey)] = make([]transformer.TransformerEventT, 0)
+				}
+				shallowEventCopy := transformer.TransformerEventT{}
+				shallowEventCopy.Message = singularEvent
+				shallowEventCopy.Message["request_ip"] = requestIP
+				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
+				enhanceWithMetadata(
+					commonMetadataFromSingularEvent,
+					&shallowEventCopy,
+					&backendconfig.DestinationT{},
 				)
-			}
-			// REPORTING - GATEWAY metrics - END
 
-			// Getting all the destinations which are enabled for this
-			// event
-			if !proc.isDestinationAvailable(singularEvent, writeKey) {
-				continue
-			}
+				// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
+				shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
+				shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
+				shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
+				shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 
-			if _, ok := groupedEventsByWriteKey[WriteKeyT(writeKey)]; !ok {
-				groupedEventsByWriteKey[WriteKeyT(writeKey)] = make([]transformer.TransformerEventT, 0)
-			}
-			shallowEventCopy := transformer.TransformerEventT{}
-			shallowEventCopy.Message = singularEvent
-			shallowEventCopy.Message["request_ip"] = requestIP
-			enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-			enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, &backendconfig.DestinationT{})
+				groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
 
-			// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
-			shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
-			shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
-			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
-			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
-
-			groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
-
-			if proc.isReportingEnabled() {
-				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) })
+				if proc.isReportingEnabled() {
+					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) })
+				}
 			}
 		}
 

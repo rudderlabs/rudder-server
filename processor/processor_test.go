@@ -10,9 +10,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 
@@ -400,6 +403,107 @@ func initProcessor() {
 	integrations.Init()
 	format.MaxLength = 100000
 	format.MaxDepth = 10
+}
+
+func TestBatchOrSingularEventPickup(t *testing.T) {
+	initProcessor()
+
+	processor := &Handle{}
+	processor.config.writeKeySourceMap = map[string]backendconfig.SourceT{
+		WriteKeyEnabledNoUT: lo.Filter(
+			sampleBackendConfig.Sources,
+			func(s backendconfig.SourceT, _ int) bool {
+				return s.WriteKey == WriteKeyEnabledNoUT
+			},
+		)[0],
+	}
+	messages := map[string]mockEventData{
+		"message-1": {
+			id:                 "3",
+			jobid:              2010,
+			originalTimestamp:  "malformed timestamp",
+			sentAt:             "2000-03-02T01:23:15",
+			expectedSentAt:     "2000-03-02T01:23:15.000Z",
+			expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+			integrations:       map[string]bool{"All": true},
+		},
+		// this message should be delivered only to destination A
+		"message-2": {
+			id:                        "1",
+			jobid:                     1010,
+			originalTimestamp:         "2000-01-02T01:23:45",
+			expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+			sentAt:                    "2000-01-02 01:23",
+			expectedSentAt:            "2000-01-02T01:23:00.000Z",
+			expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+			integrations: map[string]bool{
+				"All": false,
+				"enabled-destination-a-definition-display-name": true,
+			},
+		},
+		"message-3": {
+			id:                 "2",
+			jobid:              1012,
+			originalTimestamp:  "malformed timestamp",
+			sentAt:             "2000-03-02T01:23:15",
+			expectedSentAt:     "2000-03-02T01:23:15.000Z",
+			expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+			integrations:       map[string]bool{"All": true},
+		},
+	}
+	noBatchPayload := json.RawMessage(createMessagePayload(messages["message-3"]))
+	noBatchPayload, _ = sjson.SetBytes(noBatchPayload, "writeKey", WriteKeyEnabledNoUT)
+	noBatchPayload, _ = sjson.SetBytes(noBatchPayload, "receivedAt", "2001-01-02T02:23:45.000Z")
+	noBatchPayload, _ = sjson.SetBytes(noBatchPayload, "ipAddr", "127.0.0.1")
+	unProcessedList := []*jobsdb.JobT{
+		{
+			UUID:      uuid.New(),
+			UserID:    "userFromFirstEvent",
+			JobID:     1010,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabledNoUT,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{
+					messages["message-1"],
+					messages["message-2"],
+				},
+				createMessagePayloadWithoutSources,
+			),
+			EventCount:    2,
+			LastJobStatus: jobsdb.JobStatusT{},
+			Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+		},
+		{
+			UUID:         uuid.New(),
+			UserID:       "userFromSecondEvent",
+			JobID:        3002,
+			CreatedAt:    time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+			ExpireAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+			CustomVal:    gatewayCustomVal[0],
+			EventPayload: noBatchPayload,
+			EventCount:   0,
+			Parameters:   createBatchParameters(SourceIDEnabledNoUT),
+		},
+	}
+	processor.setupStats()
+	processor.logger = logger.NewLogger().Child("processorTest")
+
+	tMessage := processor.processJobsForDest("", subJob{
+		subJobs: unProcessedList,
+	})
+	require.Equal(t, 3, tMessage.totalEvents)
+	require.Equal(t, 2, len(tMessage.statusList))
+	require.False(t, tMessage.hasMore)
+	require.Equal(t, map[string]struct{}{
+		"message-1": {},
+		"message-2": {},
+		"message-3": {},
+	},
+		tMessage.uniqueMessageIds,
+	)
 }
 
 var _ = Describe("Processor with event schemas v2", Ordered, func() {

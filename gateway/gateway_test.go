@@ -354,7 +354,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
-		assertJobMetadata := func(job *jobsdb.JobT, batchLength int) {
+		assertJobMetadata := func(job *jobsdb.JobT) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
@@ -375,7 +375,7 @@ var _ = Describe("Gateway", func() {
 			Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 100*time.Millisecond))
 			Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
 			Expect(requestIP.String()).To(Equal(TestRemoteAddress))
-			Expect(batch.Array()).To(HaveLen(batchLength))
+			Expect(batch.Array()).To(HaveLen(0)) // no longer batch of events
 		}
 
 		createValidBody := func(customProperty, customValue string) []byte {
@@ -388,22 +388,29 @@ var _ = Describe("Gateway", func() {
 			return validDataWithProperty
 		}
 
-		assertJobBatchItem := func(payload gjson.Result) {
-			messageID := payload.Get("messageId")
-			messageType := payload.Get("type")
+		assertJobBatchItem := func(payload []byte) {
+			messageID := gjson.GetBytes(payload, "messageId").String()
+			messageType := gjson.GetBytes(payload, "type").String()
 
 			// Assertions regarding batch message
-			Expect(messageID.Exists()).To(BeTrue())
-			Expect(messageID.String()).To(testutils.BeValidUUID())
-			Expect(messageType.Exists()).To(BeTrue())
+			Expect(messageID).To(Not(BeNil()))
+			Expect(messageID).To(testutils.BeValidUUID())
+			Expect(messageType).To(Not(BeNil()))
 		}
 
-		stripJobPayload := func(payload gjson.Result) string {
-			strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
-			strippedPayload, _ = sjson.Delete(strippedPayload, "rudderId")
-			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
+		stripJobPayload := func(bytes []byte) string {
+			var payload map[string]interface{}
+			_ = json.Unmarshal(bytes, &payload)
+			delete(payload, "messageId")
+			delete(payload, "rudderId")
+			delete(payload, "type")
+			delete(payload, "receivedAt")
+			delete(payload, "requestIP")
+			delete(payload, "writeKey")
 
-			return strippedPayload
+			strippedPayload, _ := json.Marshal(payload)
+
+			return string(strippedPayload)
 		}
 
 		// common tests for all web handlers
@@ -436,16 +443,15 @@ var _ = Describe("Gateway", func() {
 							) (map[uuid.UUID]string, error) {
 								for _, job := range jobs {
 									// each call should be included in a separate batch, with a separate batch_id
-									assertJobMetadata(job, 1)
+									assertJobMetadata(job)
 
 									responseData := []byte(job.EventPayload)
-									payload := gjson.GetBytes(responseData, "batch.0")
 
-									assertJobBatchItem(payload)
+									assertJobBatchItem(responseData)
 
-									messageType := payload.Get("type")
-									Expect(messageType.String()).To(Equal(handlerType))
-									Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
+									messageType := gjson.GetBytes(responseData, "type").String()
+									Expect(messageType).To(Equal(handlerType))
+									Expect(stripJobPayload(responseData)).To(MatchJSON(validBody))
 								}
 								c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
 

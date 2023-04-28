@@ -470,6 +470,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			errorMessagesMap = <-userWebRequestWorker.reponseQ
 		}
 
+		reqOKMap := make(map[*webRequestT]string)
 		for _, job := range jobList {
 			err, found := errorMessagesMap[job.UUID]
 			sourceTag := jobSourceTagMap[job.UUID]
@@ -478,7 +479,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			} else {
 				sourceStats[sourceTag].RequestEventsSucceeded(job.EventCount)
 			}
-			jobIDReqMap[job.UUID].done <- err
+			if reqOKMap[jobIDReqMap[job.UUID]] == "" {
+				reqOKMap[jobIDReqMap[job.UUID]] = err
+			}
+		}
+		for req, err := range reqOKMap {
+			req.done <- err
 		}
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
@@ -641,7 +647,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		toSet["rudderId"] = rudderId
 		toSet["requestIP"] = ipAddr
 		toSet["writeKey"] = writeKey
-		toSet["receivedAt"] = time.Now().UTC().Format(time.RFC3339Nano)
+		toSet["receivedAt"] = time.Now().Format(misc.RFC3339Milli)
 		setRandomMessageIDWhenEmpty(toSet)
 		if eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
@@ -689,7 +695,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			Parameters:   marshalledParams,
 			CustomVal:    CustomVal,
 			EventPayload: singularEvent,
-			EventCount:   1,
+			EventCount:   0,
 			WorkspaceId:  workspaceId,
 		}
 	}

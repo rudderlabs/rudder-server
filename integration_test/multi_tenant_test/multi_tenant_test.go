@@ -270,19 +270,13 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		}, time.Minute, 50*time.Millisecond)
 		require.NoError(t, json.Unmarshal([]byte(eventPayload), &message))
 
-		batch, ok := message["batch"].([]interface{})
-		require.True(t, ok)
-		require.Len(t, batch, 1)
 		require.Equal(t, message["writeKey"], writeKey)
-		for _, msg := range batch {
-			m, ok := msg.(map[string]interface{})
-			require.True(t, ok)
-			require.Equal(t, "anonymousId_1", m["anonymousId"])
-			require.Equal(t, "identified_user_id", m["userId"])
-			require.Equal(t, "identify", m["type"])
-			require.Equal(t, "1", m["eventOrderNo"])
-			require.Equal(t, "messageId_1", m["messageId"])
-		}
+		m := message
+		require.Equal(t, "anonymousId_1", m["anonymousId"])
+		require.Equal(t, "identified_user_id", m["userId"])
+		require.Equal(t, "identify", m["type"])
+		require.Equal(t, "1", m["eventOrderNo"])
+		require.Equal(t, "messageId_1", m["messageId"])
 
 		// Only the Gateway is running, so we don't expect any destinations to be hit.
 		require.Empty(t, webhook.Requests(), "webhook should have no requests because there is no processor")
