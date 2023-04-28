@@ -33,10 +33,10 @@ import (
 )
 
 const (
-	databricksTestKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
+	testKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
 )
 
-type deltaLakeTestCredentials struct {
+type testCredentials struct {
 	Host          string `json:"host"`
 	Port          string `json:"port"`
 	Path          string `json:"path"`
@@ -46,13 +46,13 @@ type deltaLakeTestCredentials struct {
 	ContainerName string `json:"containerName"`
 }
 
-func getDeltaLakeTestCredentials() (*deltaLakeTestCredentials, error) {
-	cred, exists := os.LookupEnv(databricksTestKey)
+func deltaLakeTestCredentials() (*testCredentials, error) {
+	cred, exists := os.LookupEnv(testKey)
 	if !exists {
 		return nil, errors.New("deltaLake test credentials not found")
 	}
 
-	var credentials deltaLakeTestCredentials
+	var credentials testCredentials
 	err := json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal deltaLake test credentials: %w", err)
@@ -60,8 +60,8 @@ func getDeltaLakeTestCredentials() (*deltaLakeTestCredentials, error) {
 	return &credentials, nil
 }
 
-func isDeltaLakeTestCredentialsAvailable() bool {
-	_, err := getDeltaLakeTestCredentials()
+func testCredentialsAvailable() bool {
+	_, err := deltaLakeTestCredentials()
 	return err == nil
 }
 
@@ -69,8 +69,8 @@ func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	if !isDeltaLakeTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), databricksTestKey)
+	if !testCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
@@ -95,9 +95,9 @@ func TestIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	schema := testhelper.RandSchema(warehouseutils.DELTALAKE)
-	nativeSchema := fmt.Sprintf("%s_%s", schema, "native")
+	nativeSchema := testhelper.RandSchema(warehouseutils.DELTALAKE)
 
-	deltaLakeCredentials, err := getDeltaLakeTestCredentials()
+	deltaLakeCredentials, err := deltaLakeTestCredentials()
 	require.NoError(t, err)
 
 	templateConfigurations := map[string]string{

@@ -41,10 +41,10 @@ import (
 )
 
 const (
-	redshiftTestKey = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
+	testKey = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
 )
 
-type rsTestCredentials struct {
+type testCredentials struct {
 	Host        string `json:"host"`
 	Port        string `json:"port"`
 	UserName    string `json:"userName"`
@@ -55,13 +55,13 @@ type rsTestCredentials struct {
 	AccessKey   string `json:"accessKey"`
 }
 
-func getRSTestCredentials() (*rsTestCredentials, error) {
-	cred, exists := os.LookupEnv(redshiftTestKey)
+func rsTestCredentials() (*testCredentials, error) {
+	cred, exists := os.LookupEnv(testKey)
 	if !exists {
 		return nil, errors.New("redshift test credentials not found")
 	}
 
-	var credentials rsTestCredentials
+	var credentials testCredentials
 	err := json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal redshift test credentials: %w", err)
@@ -69,8 +69,8 @@ func getRSTestCredentials() (*rsTestCredentials, error) {
 	return &credentials, nil
 }
 
-func isRSTestCredentialsAvailable() bool {
-	_, err := getRSTestCredentials()
+func testCredentialsAvailable() bool {
+	_, err := rsTestCredentials()
 	return err == nil
 }
 
@@ -78,8 +78,8 @@ func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	if !isRSTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), redshiftTestKey)
+	if !testCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
@@ -94,34 +94,48 @@ func TestIntegration(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 
-	jobsDBPort := c.Port("wh-jobsDb", 5432)
-	transformerPort := c.Port("wh-transformer", 9090)
+	jobsDBPort := c.Port("jobsDb", 5432)
+	transformerPort := c.Port("transformer", 9090)
 
 	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	schema := testhelper.RandSchema(warehouseutils.RS)
-	sourcesSchema := fmt.Sprintf("%s_%s", schema, "sources")
+	workspaceID := warehouseutils.RandHex()
+	sourceID := warehouseutils.RandHex()
+	destinationID := warehouseutils.RandHex()
+	writeKey := warehouseutils.RandHex()
+	sourcesSourceID := warehouseutils.RandHex()
+	sourcesDestinationID := warehouseutils.RandHex()
+	sourcesWriteKey := warehouseutils.RandHex()
 
-	rsTestCredentials, err := getRSTestCredentials()
+	provider := warehouseutils.RS
+
+	schema := testhelper.RandSchema(provider)
+	sourcesSchema := testhelper.RandSchema(provider)
+
+	rsTestCredentials, err := rsTestCredentials()
 	require.NoError(t, err)
 
 	templateConfigurations := map[string]string{
-		"workspaceId":              "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"redshiftWriteKey":         "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		"redshiftHost":             rsTestCredentials.Host,
-		"redshiftPort":             rsTestCredentials.Port,
-		"redshiftUsername":         rsTestCredentials.UserName,
-		"redshiftPassword":         rsTestCredentials.Password,
-		"redshiftDbName":           rsTestCredentials.DbName,
-		"redshiftBucketName":       rsTestCredentials.BucketName,
-		"redshiftAccessKeyID":      rsTestCredentials.AccessKeyID,
-		"redshiftAccessKey":        rsTestCredentials.AccessKey,
-		"redshiftNamespace":        schema,
-		"redshiftSourcesNamespace": sourcesSchema,
-		"redshiftSourcesWriteKey":  "BNAwdCxmM8BIabKERsUhPNmMmdf",
+		"workspaceID":          workspaceID,
+		"sourceID":             sourceID,
+		"destinationID":        destinationID,
+		"writeKey":             writeKey,
+		"sourcesSourceID":      sourcesSourceID,
+		"sourcesDestinationID": sourcesDestinationID,
+		"sourcesWriteKey":      sourcesWriteKey,
+		"host":                 rsTestCredentials.Host,
+		"port":                 rsTestCredentials.Port,
+		"user":                 rsTestCredentials.UserName,
+		"password":             rsTestCredentials.Password,
+		"database":             rsTestCredentials.DbName,
+		"bucketName":           rsTestCredentials.BucketName,
+		"accessKeyID":          rsTestCredentials.AccessKeyID,
+		"accessKey":            rsTestCredentials.AccessKey,
+		"namespace":            schema,
+		"sourcesSchema":        sourcesSchema,
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -165,7 +179,7 @@ func TestIntegration(t *testing.T) {
 	svcDone := make(chan struct{})
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	go func() {
-		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
+		r := runner.New(runner.ReleaseInfo{})
 		_ = r.Run(ctx, []string{"redshift-integration-test"})
 
 		close(svcDone)
@@ -181,8 +195,6 @@ func TestIntegration(t *testing.T) {
 		jobsDB, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
-
-		provider := warehouseutils.RS
 
 		testcase := []struct {
 			name                  string
@@ -202,17 +214,17 @@ func TestIntegration(t *testing.T) {
 				name:          "Upload Job",
 				schema:        schema,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:      "JAAwdCxmM8BIabKERsUhPNmMmdf",
-				sourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
-				destinationID: "27SthahyhhqZE74HT4NTtNPl06V",
+				writeKey:      writeKey,
+				sourceID:      sourceID,
+				destinationID: destinationID,
 			},
 			{
 				name:                  "Async Job",
 				schema:                sourcesSchema,
 				tables:                []string{"tracks", "google_sheet"},
-				writeKey:              "BNAwdCxmM8BIabKERsUhPNmMmdf",
-				sourceID:              "2DkCpUr0xgjfsdJxIwqyqfyHdq4",
-				destinationID:         "27Sthahyhhsdas4HT4NTtNPl06V",
+				writeKey:              sourcesWriteKey,
+				sourceID:              sourcesSourceID,
+				destinationID:         sourcesDestinationID,
 				eventsMap:             testhelper.SourcesSendEventsMap(),
 				stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
@@ -228,9 +240,12 @@ func TestIntegration(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				dsn := fmt.Sprintf(
-					"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-					rsTestCredentials.UserName, rsTestCredentials.Password, rsTestCredentials.Host, rsTestCredentials.Port, rsTestCredentials.DbName,
+				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+					rsTestCredentials.UserName,
+					rsTestCredentials.Password,
+					rsTestCredentials.Host,
+					rsTestCredentials.Port,
+					rsTestCredentials.DbName,
 				)
 
 				db, err := sql.Open("postgres", dsn)
@@ -280,19 +295,18 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
-		destination := backendconfig.DestinationT{
-			ID: "27SthahyhhqZE74HT4NTtNPl06V",
+		dest := backendconfig.DestinationT{
+			ID: destinationID,
 			Config: map[string]interface{}{
-				"host":             templateConfigurations["redshiftHost"],
-				"port":             templateConfigurations["redshiftPort"],
-				"database":         templateConfigurations["redshiftDbName"],
-				"user":             templateConfigurations["redshiftUsername"],
-				"password":         templateConfigurations["redshiftPassword"],
-				"bucketName":       templateConfigurations["redshiftBucketName"],
-				"accessKeyID":      templateConfigurations["redshiftAccessKeyID"],
-				"accessKey":        templateConfigurations["redshiftAccessKey"],
-				"prefix":           "",
-				"namespace":        templateConfigurations["redshiftNamespace"],
+				"host":             rsTestCredentials.Host,
+				"port":             rsTestCredentials.Port,
+				"user":             rsTestCredentials.UserName,
+				"password":         rsTestCredentials.Password,
+				"database":         rsTestCredentials.DbName,
+				"bucketName":       rsTestCredentials.BucketName,
+				"accessKeyID":      rsTestCredentials.AccessKeyID,
+				"accessKey":        rsTestCredentials.AccessKey,
+				"namespace":        schema,
 				"syncFrequency":    "30",
 				"enableSSE":        false,
 				"useRudderStorage": false,
@@ -306,7 +320,7 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29HgOWobrn0RYZLpaSwPIbN2987",
 		}
-		testhelper.VerifyConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, dest)
 	})
 
 	ctxCancel()
