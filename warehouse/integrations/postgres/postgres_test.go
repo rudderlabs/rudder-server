@@ -70,9 +70,10 @@ func TestIntegration(t *testing.T) {
 	tunnelledDestinationID := warehouseutils.RandHex()
 
 	provider := warehouseutils.POSTGRES
-	schema := testhelper.RandSchema(provider)
-	sourcesSchema := testhelper.RandSchema(provider)
-	tunnelledSchema := testhelper.RandSchema(provider)
+
+	namespace := testhelper.RandSchema(provider)
+	sourcesNamespace := testhelper.RandSchema(provider)
+	tunnelledNamespace := testhelper.RandSchema(provider)
 
 	host := "localhost"
 	database := "rudderdb"
@@ -110,9 +111,9 @@ func TestIntegration(t *testing.T) {
 		"user":                   user,
 		"password":               password,
 		"port":                   fmt.Sprint(postgresPort),
-		"namespace":              schema,
-		"sourcesNamespace":       sourcesSchema,
-		"tunnelledNamespace":     tunnelledSchema,
+		"namespace":              namespace,
+		"sourcesNamespace":       sourcesNamespace,
+		"tunnelledNamespace":     tunnelledNamespace,
 		"tunnelledSSHUser":       tunnelledSSHUser,
 		"tunnelledSSHPort":       fmt.Sprint(sshPort),
 		"tunnelledSSHHost":       tunnelledSSHHost,
@@ -238,7 +239,7 @@ func TestIntegration(t *testing.T) {
 				{
 					name:          "Upload Job",
 					writeKey:      writeKey,
-					schema:        schema,
+					schema:        namespace,
 					tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 					sourceID:      sourceID,
 					destinationID: destinationID,
@@ -246,7 +247,7 @@ func TestIntegration(t *testing.T) {
 				{
 					name:                  "Async Job",
 					writeKey:              sourcesWriteKey,
-					schema:                sourcesSchema,
+					schema:                sourcesNamespace,
 					tables:                []string{"tracks", "google_sheet"},
 					sourceID:              sourcesSourceID,
 					destinationID:         sourcesDestinationID,
@@ -346,7 +347,7 @@ func TestIntegration(t *testing.T) {
 				{
 					name:          "upload job through ssh tunnelling",
 					writeKey:      tunnelledWriteKey,
-					schema:        tunnelledSchema,
+					schema:        tunnelledNamespace,
 					tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 					sourceID:      tunnelledSourceID,
 					destinationID: tunnelledDestinationID,

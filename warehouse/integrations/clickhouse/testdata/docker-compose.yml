@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  wh-jobsDb:
+  jobsDb:
     image: postgres:15-alpine
     environment:
       - POSTGRES_DB=jobsdb
@@ -13,11 +13,11 @@ services:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 1s
       retries: 25
-  wh-transformer:
+  transformer:
     image: rudderstack/develop-rudder-transformer:latest
     ports:
       - "9090"
-  wh-minio:
+  minio:
     image: minio/minio:latest
     ports:
       - "9000/tcp"
@@ -30,7 +30,7 @@ services:
       test: curl --fail http://localhost:9000/minio/health/live || exit 1
       interval: 1s
       retries: 25
-  wh-clickhouse:
+  clickhouse:
     image: yandex/clickhouse-server:21-alpine
     environment:
       - CLICKHOUSE_DB=rudderdb
@@ -42,56 +42,56 @@ services:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  wh-zookeeper:
+  zookeeper:
     image: zookeeper:3.5
     healthcheck:
       test: nc -z localhost 2181 || exit 1
       interval: 1s
       retries: 25
-  wh-clickhouse01:
+  clickhouse01:
     image: yandex/clickhouse-server:21-alpine
     ports:
       - "9000"
     volumes:
       - ./cluster/clickhouse01:/etc/clickhouse-server
     depends_on:
-      - wh-zookeeper
+      - zookeeper
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  wh-clickhouse02:
+  clickhouse02:
     image: yandex/clickhouse-server:21-alpine
     ports:
       - "9000"
     volumes:
       - ./cluster/clickhouse02:/etc/clickhouse-server
     depends_on:
-      - wh-zookeeper
+      - zookeeper
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  wh-clickhouse03:
+  clickhouse03:
     image: yandex/clickhouse-server:21-alpine
     ports:
       - "9000"
     volumes:
       - ./cluster/clickhouse03:/etc/clickhouse-server
     depends_on:
-      - wh-zookeeper
+      - zookeeper
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  wh-clickhouse04:
+  clickhouse04:
     image: yandex/clickhouse-server:21-alpine
     ports:
       - "9000"
     volumes:
       - ./cluster/clickhouse04:/etc/clickhouse-server
     depends_on:
-      - wh-zookeeper
+      - zookeeper
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s

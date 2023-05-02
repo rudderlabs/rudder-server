@@ -75,10 +75,10 @@ func TestIntegration(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 
-	jobsDBPort := c.Port("wh-jobsDb", 5432)
-	minioPort := c.Port("wh-minio", 9000)
-	transformerPort := c.Port("wh-transformer", 9090)
-	azurePort := c.Port("wh-azure", 10000)
+	jobsDBPort := c.Port("jobsDb", 5432)
+	minioPort := c.Port("minio", 9000)
+	transformerPort := c.Port("transformer", 9090)
+	azurePort := c.Port("azure", 10000)
 
 	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)

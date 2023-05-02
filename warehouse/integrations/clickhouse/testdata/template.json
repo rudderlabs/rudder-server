@@ -1,6 +1,6 @@
 {
   "enableMetrics": false,
-  "workspaceId": "{{.workspaceId}}",
+  "workspaceId": "{{.workspaceID}}",
   "sources": [
     {
       "config": {
@@ -8,12 +8,12 @@
         "eventUploadTS": 1637229453729
       },
       "id": "1wRvLmEnMOOxNM79pwaZhyCqXRE",
-      "name": "clickhouse-wh-integration",
+      "name": "clickhouse-integration",
       "writeKey": "{{.clickHouseWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
       "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
-      "workspaceId": "{{.workspaceId}}",
+      "workspaceId": "{{.workspaceID}}",
       "deleted": false,
       "createdAt": "2021-08-08T14:49:21.580Z",
       "updatedAt": "2021-11-18T09:57:33.742Z",
@@ -41,7 +41,7 @@
           "id": "21Ev6TI6emCFDKph2Zn6XfTP7PI",
           "name": "clickhouse-demo",
           "enabled": true,
-          "workspaceId": "{{.workspaceId}}",
+          "workspaceId": "{{.workspaceID}}",
           "deleted": false,
           "createdAt": "2021-11-21T18:21:25.599Z",
           "updatedAt": "2021-11-21T18:21:25.599Z",
@@ -134,12 +134,12 @@
         "eventUploadTS": 1637229453729
       },
       "id": "1wRvLmEnMOOxNM79ghdZhyCqXRE",
-      "name": "clickhouse-cluster-wh-integration",
+      "name": "clickhouse-cluster-integration",
       "writeKey": "{{.clickhouseClusterWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
       "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
-      "workspaceId": "{{.workspaceId}}",
+      "workspaceId": "{{.workspaceID}}",
       "deleted": false,
       "createdAt": "2021-08-08T14:49:21.580Z",
       "updatedAt": "2021-11-18T09:57:33.742Z",
@@ -167,7 +167,7 @@
           "id": "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
           "name": "clickhouse-demo",
           "enabled": true,
-          "workspaceId": "{{.workspaceId}}",
+          "workspaceId": "{{.workspaceID}}",
           "deleted": false,
           "createdAt": "2021-11-21T18:21:25.599Z",
           "updatedAt": "2021-11-21T18:21:25.599Z",

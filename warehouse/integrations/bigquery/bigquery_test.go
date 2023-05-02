@@ -56,8 +56,8 @@ func TestIntegration(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 
-	jobsDBPort := c.Port("wh-jobsDb", 5432)
-	transformerPort := c.Port("wh-transformer", 9090)
+	jobsDBPort := c.Port("jobsDb", 5432)
+	transformerPort := c.Port("transformer", 9090)
 
 	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
@@ -376,7 +376,7 @@ func TestIntegration(t *testing.T) {
 				Name:        "BQ",
 				DisplayName: "BigQuery",
 			},
-			Name:       "bigquery-wh-integration",
+			Name:       "bigquery-integration",
 			Enabled:    true,
 			RevisionID: "29eejWUH80lK1abiB766fzv5Iba",
 		}

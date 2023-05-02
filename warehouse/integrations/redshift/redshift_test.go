@@ -110,8 +110,8 @@ func TestIntegration(t *testing.T) {
 
 	provider := warehouseutils.RS
 
-	schema := testhelper.RandSchema(provider)
-	sourcesSchema := testhelper.RandSchema(provider)
+	namespace := testhelper.RandSchema(provider)
+	sourcesNamespace := testhelper.RandSchema(provider)
 
 	rsTestCredentials, err := rsTestCredentials()
 	require.NoError(t, err)
@@ -132,8 +132,8 @@ func TestIntegration(t *testing.T) {
 		"bucketName":           rsTestCredentials.BucketName,
 		"accessKeyID":          rsTestCredentials.AccessKeyID,
 		"accessKey":            rsTestCredentials.AccessKey,
-		"namespace":            schema,
-		"sourcesSchema":        sourcesSchema,
+		"namespace":            namespace,
+		"sourcesNamespace":     sourcesNamespace,
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -209,7 +209,7 @@ func TestIntegration(t *testing.T) {
 		}{
 			{
 				name:          "Upload Job",
-				schema:        schema,
+				schema:        namespace,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				writeKey:      writeKey,
 				sourceID:      sourceID,
@@ -217,7 +217,7 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:                  "Async Job",
-				schema:                sourcesSchema,
+				schema:                sourcesNamespace,
 				tables:                []string{"tracks", "google_sheet"},
 				writeKey:              sourcesWriteKey,
 				sourceID:              sourcesSourceID,
@@ -304,7 +304,7 @@ func TestIntegration(t *testing.T) {
 				"bucketName":       rsTestCredentials.BucketName,
 				"accessKeyID":      rsTestCredentials.AccessKeyID,
 				"accessKey":        rsTestCredentials.AccessKey,
-				"namespace":        schema,
+				"namespace":        namespace,
 				"syncFrequency":    "30",
 				"enableSSE":        false,
 				"useRudderStorage": false,

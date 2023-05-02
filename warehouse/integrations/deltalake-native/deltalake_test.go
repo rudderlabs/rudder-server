@@ -85,9 +85,9 @@ func TestIntegration(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 
-	jobsDBPort := c.Port("wh-jobsDb", 5432)
-	transformerPort := c.Port("wh-transformer", 9090)
-	databricksConnectorPort := c.Port("wh-databricks-connector", 50051)
+	jobsDBPort := c.Port("jobsDb", 5432)
+	transformerPort := c.Port("transformer", 9090)
+	databricksConnectorPort := c.Port("databricks-connector", 50051)
 
 	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)

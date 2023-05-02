@@ -123,10 +123,10 @@ func TestIntegration(t *testing.T) {
 
 	provider := warehouseutils.SNOWFLAKE
 
-	schema := testhelper.RandSchema(provider)
-	roleSchema := testhelper.RandSchema(provider)
-	sourcesSchema := testhelper.RandSchema(provider)
-	caseSensitiveSchema := testhelper.RandSchema(provider)
+	namespace := testhelper.RandSchema(provider)
+	rbacNamespace := testhelper.RandSchema(provider)
+	sourcesNamespace := testhelper.RandSchema(provider)
+	caseSensitiveNamespace := testhelper.RandSchema(provider)
 
 	credentials, err := getSnowflakeTestCredentials(testKey)
 	require.NoError(t, err)
@@ -158,10 +158,10 @@ func TestIntegration(t *testing.T) {
 		"bucketName":                 credentials.BucketName,
 		"accessKeyID":                credentials.AccessKeyID,
 		"accessKey":                  credentials.AccessKey,
-		"namespace":                  schema,
-		"sourcesNamespace":           sourcesSchema,
-		"caseSensitiveNamespace":     caseSensitiveSchema,
-		"rbacNamespace":              roleSchema,
+		"namespace":                  namespace,
+		"sourcesNamespace":           sourcesNamespace,
+		"caseSensitiveNamespace":     caseSensitiveNamespace,
+		"rbacNamespace":              rbacNamespace,
 		"rbacAccount":                rbacCredentials.Account,
 		"rbacUser":                   rbacCredentials.User,
 		"rbacPassword":               rbacCredentials.Password,
@@ -259,7 +259,7 @@ func TestIntegration(t *testing.T) {
 					Password:  credentials.Password,
 				},
 				database:      database,
-				schema:        schema,
+				schema:        namespace,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				writeKey:      writeKey,
 				sourceID:      sourceID,
@@ -282,7 +282,7 @@ func TestIntegration(t *testing.T) {
 					Password:  rbacCredentials.Password,
 				},
 				database:      database,
-				schema:        roleSchema,
+				schema:        rbacNamespace,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				writeKey:      rbacWriteKey,
 				sourceID:      rbacSourceID,
@@ -305,7 +305,7 @@ func TestIntegration(t *testing.T) {
 					Password:  credentials.Password,
 				},
 				database:      strings.ToLower(database),
-				schema:        caseSensitiveSchema,
+				schema:        caseSensitiveNamespace,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				writeKey:      caseSensitiveWriteKey,
 				sourceID:      caseSensitiveSourceID,
@@ -328,7 +328,7 @@ func TestIntegration(t *testing.T) {
 					Password:  credentials.Password,
 				},
 				database:      database,
-				schema:        sourcesSchema,
+				schema:        sourcesNamespace,
 				tables:        []string{"tracks", "google_sheet"},
 				writeKey:      sourcesWriteKey,
 				sourceID:      sourcesSourceID,
@@ -431,7 +431,7 @@ func TestIntegration(t *testing.T) {
 				"storageIntegration": "",
 				"accessKeyID":        credentials.AccessKeyID,
 				"accessKey":          credentials.AccessKey,
-				"namespace":          schema,
+				"namespace":          namespace,
 				"prefix":             "snowflake-prefix",
 				"syncFrequency":      "30",
 				"enableSSE":          false,

@@ -176,7 +176,7 @@
             "accessKeyID": "{{.accessKeyID}}",
             "accessKey": "{{.accessKey}}",
             "prefix": "",
-            "namespace": "{{.sourcesSchema}}",
+            "namespace": "{{.sourcesNamespace}}",
             "syncFrequency": "30",
             "enableSSE": false,
             "useRudderStorage": false

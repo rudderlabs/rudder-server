@@ -1,6 +1,6 @@
 {
   "enableMetrics": false,
-  "workspaceId": "{{.workspaceId}}",
+  "workspaceId": "{{.workspaceID}}",
   "sources": [
     {
       "config": {
@@ -12,12 +12,12 @@
         "eventUploadTS": 1648195575635
       },
       "id": "25H5EpYzojqQSepRSaGBrrPx3e4",
-      "name": "deltalake-wh-integration",
+      "name": "deltalake-integration",
       "writeKey": "{{.deltalakeWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW48i2bIzEl1HPf825cEznfIM8",
       "createdBy": "1wDN9v6bW9ymBaR7b7r0EjV3leC",
-      "workspaceId": "{{.workspaceId}}",
+      "workspaceId": "{{.workspaceID}}",
       "deleted": false,
       "createdAt": "2022-02-18T07:57:42.736Z",
       "updatedAt": "2022-03-25T08:06:15.642Z",
@@ -48,7 +48,7 @@
           "id": "25IDjdnoEus6DDNrth3SWO1FOpu",
           "name": "deltalake-demo",
           "enabled": true,
-          "workspaceId": "{{.workspaceId}}",
+          "workspaceId": "{{.workspaceID}}",
           "deleted": false,
           "createdAt": "2022-02-18T17:37:22.146Z",
           "updatedAt": "2022-05-25T07:38:38.033Z",
@@ -142,12 +142,12 @@
         "eventUploadTS": 1648195575635
       },
       "id": "36H5EpYzojqQSepRSaGBrrPx3e4",
-      "name": "deltalake-native-wh-integration",
+      "name": "deltalake-native-integration",
       "writeKey": "{{.deltalakeNativeWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW48i2bIzEl1HPf825cEznfIM8",
       "createdBy": "1wDN9v6bW9ymBaR7b7r0EjV3leC",
-      "workspaceId": "{{.workspaceId}}",
+      "workspaceId": "{{.workspaceID}}",
       "deleted": false,
       "createdAt": "2022-02-18T07:57:42.736Z",
       "updatedAt": "2022-03-25T08:06:15.642Z",
@@ -178,7 +178,7 @@
           "id": "36IDjdnoEus6DDNrth3SWO1FOpu",
           "name": "deltalake-demo",
           "enabled": true,
-          "workspaceId": "{{.workspaceId}}",
+          "workspaceId": "{{.workspaceID}}",
           "deleted": false,
           "createdAt": "2022-02-18T17:37:22.146Z",
           "updatedAt": "2022-05-25T07:38:38.033Z",

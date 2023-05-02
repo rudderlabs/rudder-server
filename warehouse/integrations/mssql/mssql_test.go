@@ -42,29 +42,58 @@ func TestIntegration(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 
-	jobsDBPort := c.Port("wh-jobsDb", 5432)
-	minioPort := c.Port("wh-minio", 9000)
-	transformerPort := c.Port("wh-transformer", 9090)
-	mssqlPort := c.Port("wh-mssql", 1433)
+	jobsDBPort := c.Port("jobsDb", 5432)
+	minioPort := c.Port("minio", 9000)
+	transformerPort := c.Port("transformer", 9090)
+	mssqlPort := c.Port("mssql", 1433)
 
 	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
+	workspaceID := warehouseutils.RandHex()
+	sourceID := warehouseutils.RandHex()
+	destinationID := warehouseutils.RandHex()
+	writeKey := warehouseutils.RandHex()
+	sourcesSourceID := warehouseutils.RandHex()
+	sourcesDestinationID := warehouseutils.RandHex()
+	sourcesWriteKey := warehouseutils.RandHex()
+
+	provider := warehouseutils.MSSQL
+
+	namespace := testhelper.RandSchema(provider)
+	sourcesNamespace := testhelper.RandSchema(provider)
+
+	host := "localhost"
+	database := "master"
+	user := "SA"
+	password := "reallyStrongPwd123"
+
+	bucketName := "testbucket"
+	accessKeyID := "MYACCESSKEY"
+	secretAccessKey := "MYSECRETKEY"
+	endPoint := fmt.Sprintf("localhost:%d", minioPort)
+
 	templateConfigurations := map[string]string{
-		"workspaceId":          "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"mssqlWriteKey":        "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		"mssqlHost":            "localhost",
-		"mssqlDatabase":        "master",
-		"mssqlUser":            "SA",
-		"mssqlPassword":        "reallyStrongPwd123",
-		"mssqlPort":            fmt.Sprint(mssqlPort),
-		"mssqlSourcesWriteKey": "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
-		"minioBucketName":      "testbucket",
-		"minioAccesskeyID":     "MYACCESSKEY",
-		"minioSecretAccessKey": "MYSECRETKEY",
-		"minioEndpoint":        fmt.Sprintf("localhost:%d", minioPort),
+		"workspaceID":          workspaceID,
+		"sourceID":             sourceID,
+		"destinationID":        destinationID,
+		"writeKey":             writeKey,
+		"sourcesSourceID":      sourcesSourceID,
+		"sourcesDestinationID": sourcesDestinationID,
+		"sourcesWriteKey":      sourcesWriteKey,
+		"host":                 host,
+		"database":             database,
+		"user":                 user,
+		"password":             password,
+		"port":                 fmt.Sprint(mssqlPort),
+		"namespace":            namespace,
+		"sourcesNamespace":     sourcesNamespace,
+		"bucketName":           bucketName,
+		"accessKeyID":          accessKeyID,
+		"secretAccessKey":      secretAccessKey,
+		"endPoint":             endPoint,
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -109,7 +138,7 @@ func TestIntegration(t *testing.T) {
 	svcDone := make(chan struct{})
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	go func() {
-		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
+		r := runner.New(runner.ReleaseInfo{})
 		_ = r.Run(ctx, []string{"mssql-integration-test"})
 
 		close(svcDone)
@@ -119,17 +148,6 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Events flow", func(t *testing.T) {
-		db, err := mssql.Connect(mssql.Credentials{
-			DBName:   "master",
-			Password: "reallyStrongPwd123",
-			User:     "SA",
-			Host:     "localhost",
-			SSLMode:  "disable",
-			Port:     fmt.Sprint(mssqlPort),
-		})
-		require.NoError(t, err)
-		require.NoError(t, db.Ping())
-
 		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
 		)
@@ -137,7 +155,16 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 
-		provider := warehouseutils.MSSQL
+		db, err := mssql.Connect(mssql.Credentials{
+			DBName:   database,
+			Password: password,
+			User:     user,
+			Host:     host,
+			Port:     fmt.Sprint(mssqlPort),
+			SSLMode:  "disable",
+		})
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
 
 		testcase := []struct {
 			name                  string
@@ -155,19 +182,19 @@ func TestIntegration(t *testing.T) {
 		}{
 			{
 				name:          "Upload Job",
-				writeKey:      "YSQ3n267l1VQKGNbSuJE9fQbzON",
-				schema:        "mssql_wh_integration",
+				writeKey:      writeKey,
+				schema:        namespace,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
-				destinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+				sourceID:      sourceID,
+				destinationID: destinationID,
 			},
 			{
 				name:                  "Async Job",
-				writeKey:              "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
-				schema:                "mssql_wh_sources_integration",
+				writeKey:              sourcesWriteKey,
+				schema:                sourcesNamespace,
 				tables:                []string{"tracks", "google_sheet"},
-				sourceID:              "2DkCpUr0xfiINRJxIwqyqfyHdq4",
-				destinationID:         "21Ezdq58kMNMj07VJB0VJmxLvgu",
+				sourceID:              sourcesSourceID,
+				destinationID:         sourcesDestinationID,
 				eventsMap:             testhelper.SourcesSendEventsMap(),
 				stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
@@ -204,7 +231,8 @@ func TestIntegration(t *testing.T) {
 						SQL:  db,
 						Type: client.SQLClient,
 					},
-					HTTPPort: httpPort,
+					HTTPPort:    httpPort,
+					WorkspaceID: workspaceID,
 				}
 				ts.VerifyEvents(t)
 
@@ -222,19 +250,19 @@ func TestIntegration(t *testing.T) {
 		destination := backendconfig.DestinationT{
 			ID: "21Ezdq58khNMj07VJB0VJmxLvgu",
 			Config: map[string]interface{}{
-				"host":             templateConfigurations["mssqlHost"],
-				"database":         templateConfigurations["mssqlDatabase"],
-				"user":             templateConfigurations["mssqlUser"],
-				"password":         templateConfigurations["mssqlPassword"],
-				"port":             templateConfigurations["mssqlPort"],
+				"host":             host,
+				"database":         database,
+				"user":             user,
+				"password":         password,
+				"port":             fmt.Sprint(mssqlPort),
 				"sslMode":          "disable",
 				"namespace":        "",
 				"bucketProvider":   "MINIO",
-				"bucketName":       templateConfigurations["minioBucketName"],
-				"accessKeyID":      templateConfigurations["minioAccesskeyID"],
-				"secretAccessKey":  templateConfigurations["minioSecretAccessKey"],
+				"bucketName":       bucketName,
+				"accessKeyID":      accessKeyID,
+				"secretAccessKey":  secretAccessKey,
 				"useSSL":           false,
-				"endPoint":         templateConfigurations["minioEndpoint"],
+				"endPoint":         endPoint,
 				"syncFrequency":    "30",
 				"useRudderStorage": false,
 			},
