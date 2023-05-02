@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"testing"
+
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
