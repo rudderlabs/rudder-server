@@ -72,8 +72,8 @@ type Barrier struct {
 // returns true, otherwise false along with the previous failed jobID if this is the cause of the barrier.
 // Another scenario where a barrier might exist for a key is when the previous job has failed in an unrecoverable manner and the concurrency limiter is enabled.
 func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJobID *int64) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	barrier, ok := b.barriers[key]
 	if !ok {
 		if b.concurrencyLimit == 0 { // if not concurrency limit is set accept the job
