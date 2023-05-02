@@ -4,15 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -182,249 +181,224 @@ func TestIntegration(t *testing.T) {
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
-	testCases := []struct {
-		name      string
-		useLegacy bool
-	}{
-		{
-			name:      "Legacy",
-			useLegacy: true,
-		},
-		{
-			name:      "New",
-			useLegacy: false,
-		},
-	}
+	t.Run("Events flow", func(t *testing.T) {
+		dsn := fmt.Sprintf(
+			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", fmt.Sprint(postgresPort), "rudderdb",
+		)
+		db, err := sql.Open("postgres", dsn)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
 
-	for _, tc := range testCases {
-		tc := tc
+		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
+		require.NoError(t, err)
+		require.NoError(t, jobsDB.Ping())
 
-		testhelper.SetConfig(t, []warehouseutils.KeyValue{
+		testCases := []struct {
+			name                  string
+			writeKey              string
+			schema                string
+			sourceID              string
+			destinationID         string
+			eventsMap             testhelper.EventsCountMap
+			stagingFilesEventsMap testhelper.EventsCountMap
+			loadFilesEventsMap    testhelper.EventsCountMap
+			tableUploadsEventsMap testhelper.EventsCountMap
+			warehouseEventsMap    testhelper.EventsCountMap
+			asyncJob              bool
+			tables                []string
+		}{
 			{
-				Key:   "Warehouse.postgres.useLegacy",
-				Value: strconv.FormatBool(tc.useLegacy),
+				name:          "Upload Job",
+				writeKey:      writeKey,
+				schema:        namespace,
+				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				sourceID:      sourceID,
+				destinationID: destinationID,
 			},
-		})
+			{
+				name:                  "Async Job",
+				writeKey:              sourcesWriteKey,
+				schema:                sourcesNamespace,
+				tables:                []string{"tracks", "google_sheet"},
+				sourceID:              sourcesSourceID,
+				destinationID:         sourcesDestinationID,
+				eventsMap:             testhelper.SourcesSendEventsMap(),
+				stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
+				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+				asyncJob:              true,
+			},
+		}
 
-		t.Run(tc.name+"Events flow", func(t *testing.T) {
-			dsn := fmt.Sprintf(
-				"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-				"rudder", "rudder-password", "localhost", fmt.Sprint(postgresPort), "rudderdb",
-			)
-			db, err := sql.Open("postgres", dsn)
-			require.NoError(t, err)
-			require.NoError(t, db.Ping())
+		for _, tc := range testCases {
+			tc := tc
 
-			dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-				"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
-			)
-			jobsDB, err := sql.Open("postgres", dsn)
-			require.NoError(t, err)
-			require.NoError(t, jobsDB.Ping())
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
 
-			subTestcase := []struct {
-				name                  string
-				writeKey              string
-				schema                string
-				sourceID              string
-				destinationID         string
-				eventsMap             testhelper.EventsCountMap
-				stagingFilesEventsMap testhelper.EventsCountMap
-				loadFilesEventsMap    testhelper.EventsCountMap
-				tableUploadsEventsMap testhelper.EventsCountMap
-				warehouseEventsMap    testhelper.EventsCountMap
-				asyncJob              bool
-				tables                []string
-			}{
-				{
-					name:          "Upload Job",
-					writeKey:      writeKey,
-					schema:        namespace,
-					tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-					sourceID:      sourceID,
-					destinationID: destinationID,
-				},
-				{
-					name:                  "Async Job",
-					writeKey:              sourcesWriteKey,
-					schema:                sourcesNamespace,
-					tables:                []string{"tracks", "google_sheet"},
-					sourceID:              sourcesSourceID,
-					destinationID:         sourcesDestinationID,
-					eventsMap:             testhelper.SourcesSendEventsMap(),
-					stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
-					loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
-					tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
-					warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-					asyncJob:              true,
-				},
-			}
+				ts := testhelper.WareHouseTest{
+					Schema:                tc.schema,
+					WriteKey:              tc.writeKey,
+					SourceID:              tc.sourceID,
+					DestinationID:         tc.destinationID,
+					Tables:                tc.tables,
+					EventsMap:             tc.eventsMap,
+					StagingFilesEventsMap: tc.stagingFilesEventsMap,
+					LoadFilesEventsMap:    tc.loadFilesEventsMap,
+					TableUploadsEventsMap: tc.tableUploadsEventsMap,
+					WarehouseEventsMap:    tc.warehouseEventsMap,
+					AsyncJob:              tc.asyncJob,
+					UserID:                testhelper.GetUserId(provider),
+					Provider:              provider,
+					JobsDB:                jobsDB,
+					JobRunID:              misc.FastUUID().String(),
+					TaskRunID:             misc.FastUUID().String(),
+					WorkspaceID:           workspaceID,
+					Client: &client.Client{
+						SQL:  db,
+						Type: client.SQLClient,
+					},
+					HTTPPort: httpPort,
+				}
+				ts.VerifyEvents(t)
 
-			for _, stc := range subTestcase {
-				stc := stc
+				if !tc.asyncJob {
+					ts.UserID = testhelper.GetUserId(provider)
+				}
+				ts.JobRunID = misc.FastUUID().String()
+				ts.TaskRunID = misc.FastUUID().String()
+				ts.VerifyModifiedEvents(t)
+			})
+		}
+	})
 
-				t.Run(tc.name+" "+stc.name, func(t *testing.T) {
-					t.Parallel()
+	t.Run("Events flow with ssh tunnel", func(t *testing.T) {
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			tunnelledUser,
+			tunnelledPassword,
+			tunnelledHost,
+			tunnelledPort,
+			tunnelledDatabase,
+		)
+		tunnelInfo := &tunnelling.TunnelInfo{
+			Config: map[string]interface{}{
+				"sshUser":       tunnelledSSHUser,
+				"sshPort":       fmt.Sprint(sshPort),
+				"sshHost":       tunnelledSSHHost,
+				"sshPrivateKey": strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
+			},
+		}
 
-					ts := testhelper.WareHouseTest{
-						Schema:                stc.schema,
-						WriteKey:              stc.writeKey,
-						SourceID:              stc.sourceID,
-						DestinationID:         stc.destinationID,
-						Tables:                stc.tables,
-						EventsMap:             stc.eventsMap,
-						StagingFilesEventsMap: stc.stagingFilesEventsMap,
-						LoadFilesEventsMap:    stc.loadFilesEventsMap,
-						TableUploadsEventsMap: stc.tableUploadsEventsMap,
-						WarehouseEventsMap:    stc.warehouseEventsMap,
-						AsyncJob:              stc.asyncJob,
-						UserID:                testhelper.GetUserId(provider),
-						Provider:              provider,
-						JobsDB:                jobsDB,
-						JobRunID:              misc.FastUUID().String(),
-						TaskRunID:             misc.FastUUID().String(),
-						WorkspaceID:           workspaceID,
-						Client: &client.Client{
-							SQL:  db,
-							Type: client.SQLClient,
-						},
-						HTTPPort: httpPort,
-					}
-					ts.VerifyEvents(t)
+		db, err := tunnelling.SQLConnectThroughTunnel(dsn, tunnelInfo.Config)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
 
-					if !stc.asyncJob {
-						ts.UserID = testhelper.GetUserId(provider)
-					}
-					ts.JobRunID = misc.FastUUID().String()
-					ts.TaskRunID = misc.FastUUID().String()
-					ts.VerifyModifiedEvents(t)
-				})
-			}
-		})
+		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
+		)
+		jobsDB, err := sql.Open("postgres", dsn)
+		require.NoError(t, err)
+		require.NoError(t, jobsDB.Ping())
 
-		t.Run(tc.name+"Events flow with ssh tunnel", func(t *testing.T) {
-			dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-				tunnelledUser,
-				tunnelledPassword,
-				tunnelledHost,
-				tunnelledPort,
-				tunnelledDatabase,
-			)
-			tunnelInfo := &tunnelling.TunnelInfo{
-				Config: map[string]interface{}{
-					"sshUser":       tunnelledSSHUser,
-					"sshPort":       fmt.Sprint(sshPort),
-					"sshHost":       tunnelledSSHHost,
-					"sshPrivateKey": strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
-				},
-			}
+		testcases := []struct {
+			name                  string
+			writeKey              string
+			schema                string
+			sourceID              string
+			destinationID         string
+			eventsMap             testhelper.EventsCountMap
+			stagingFilesEventsMap testhelper.EventsCountMap
+			loadFilesEventsMap    testhelper.EventsCountMap
+			tableUploadsEventsMap testhelper.EventsCountMap
+			warehouseEventsMap    testhelper.EventsCountMap
+			asyncJob              bool
+			tables                []string
+		}{
+			{
+				name:          "upload job through ssh tunnelling",
+				writeKey:      tunnelledWriteKey,
+				schema:        tunnelledNamespace,
+				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				sourceID:      tunnelledSourceID,
+				destinationID: tunnelledDestinationID,
+			},
+		}
 
-			db, err := tunnelling.SQLConnectThroughTunnel(dsn, tunnelInfo.Config)
-			require.NoError(t, err)
-			require.NoError(t, db.Ping())
+		for _, tc := range testcases {
+			tc := tc
 
-			dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-				"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
-			)
-			jobsDB, err := sql.Open("postgres", dsn)
-			require.NoError(t, err)
-			require.NoError(t, jobsDB.Ping())
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
 
-			subTestcases := []struct {
-				name                  string
-				writeKey              string
-				schema                string
-				sourceID              string
-				destinationID         string
-				eventsMap             testhelper.EventsCountMap
-				stagingFilesEventsMap testhelper.EventsCountMap
-				loadFilesEventsMap    testhelper.EventsCountMap
-				tableUploadsEventsMap testhelper.EventsCountMap
-				warehouseEventsMap    testhelper.EventsCountMap
-				asyncJob              bool
-				tables                []string
-			}{
-				{
-					name:          "upload job through ssh tunnelling",
-					writeKey:      tunnelledWriteKey,
-					schema:        tunnelledNamespace,
-					tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-					sourceID:      tunnelledSourceID,
-					destinationID: tunnelledDestinationID,
-				},
-			}
+				ts := testhelper.WareHouseTest{
+					Schema:                tc.schema,
+					WriteKey:              tc.writeKey,
+					SourceID:              tc.sourceID,
+					DestinationID:         tc.destinationID,
+					Tables:                tc.tables,
+					EventsMap:             tc.eventsMap,
+					StagingFilesEventsMap: tc.stagingFilesEventsMap,
+					LoadFilesEventsMap:    tc.loadFilesEventsMap,
+					TableUploadsEventsMap: tc.tableUploadsEventsMap,
+					WarehouseEventsMap:    tc.warehouseEventsMap,
+					UserID:                testhelper.GetUserId(warehouseutils.POSTGRES),
+					Provider:              warehouseutils.POSTGRES,
+					JobsDB:                jobsDB,
+					JobRunID:              misc.FastUUID().String(),
+					TaskRunID:             misc.FastUUID().String(),
+					Client: &client.Client{
+						SQL:  db,
+						Type: client.SQLClient,
+					},
+					HTTPPort:    httpPort,
+					WorkspaceID: workspaceID,
+				}
+				ts.VerifyEvents(t)
 
-			for _, stc := range subTestcases {
-				stc := stc
+				ts.UserID = testhelper.GetUserId(warehouseutils.POSTGRES)
+				ts.JobRunID = misc.FastUUID().String()
+				ts.TaskRunID = misc.FastUUID().String()
+				ts.VerifyModifiedEvents(t)
+			})
+		}
+	})
 
-				t.Run(tc.name+" "+stc.name, func(t *testing.T) {
-					t.Parallel()
-
-					ts := testhelper.WareHouseTest{
-						Schema:                stc.schema,
-						WriteKey:              stc.writeKey,
-						SourceID:              stc.sourceID,
-						DestinationID:         stc.destinationID,
-						Tables:                stc.tables,
-						EventsMap:             stc.eventsMap,
-						StagingFilesEventsMap: stc.stagingFilesEventsMap,
-						LoadFilesEventsMap:    stc.loadFilesEventsMap,
-						TableUploadsEventsMap: stc.tableUploadsEventsMap,
-						WarehouseEventsMap:    stc.warehouseEventsMap,
-						UserID:                testhelper.GetUserId(warehouseutils.POSTGRES),
-						Provider:              warehouseutils.POSTGRES,
-						JobsDB:                jobsDB,
-						JobRunID:              misc.FastUUID().String(),
-						TaskRunID:             misc.FastUUID().String(),
-						Client: &client.Client{
-							SQL:  db,
-							Type: client.SQLClient,
-						},
-						HTTPPort:    httpPort,
-						WorkspaceID: workspaceID,
-					}
-					ts.VerifyEvents(t)
-
-					ts.UserID = testhelper.GetUserId(warehouseutils.POSTGRES)
-					ts.JobRunID = misc.FastUUID().String()
-					ts.TaskRunID = misc.FastUUID().String()
-					ts.VerifyModifiedEvents(t)
-				})
-			}
-		})
-
-		t.Run(tc.name+"Validations", func(t *testing.T) {
-			dest := backendconfig.DestinationT{
-				ID: destinationID,
-				Config: map[string]interface{}{
-					"host":             host,
-					"database":         database,
-					"user":             user,
-					"password":         password,
-					"port":             fmt.Sprint(postgresPort),
-					"sslMode":          "disable",
-					"namespace":        "",
-					"bucketProvider":   "MINIO",
-					"bucketName":       bucketName,
-					"accessKeyID":      accessKeyID,
-					"secretAccessKey":  secretAccessKey,
-					"useSSL":           false,
-					"endPoint":         endPoint,
-					"syncFrequency":    "30",
-					"useRudderStorage": false,
-				},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					ID:          "1bJ4YC7INdkvBTzotNh0zta5jDm",
-					Name:        "POSTGRES",
-					DisplayName: "Postgres",
-				},
-				Name:       "postgres-demo",
-				Enabled:    true,
-				RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
-			}
-			testhelper.VerifyConfigurationTest(t, dest)
-		})
-	}
+	t.Run("Validations", func(t *testing.T) {
+		dest := backendconfig.DestinationT{
+			ID: destinationID,
+			Config: map[string]interface{}{
+				"host":             host,
+				"database":         database,
+				"user":             user,
+				"password":         password,
+				"port":             fmt.Sprint(postgresPort),
+				"sslMode":          "disable",
+				"namespace":        "",
+				"bucketProvider":   "MINIO",
+				"bucketName":       bucketName,
+				"accessKeyID":      accessKeyID,
+				"secretAccessKey":  secretAccessKey,
+				"useSSL":           false,
+				"endPoint":         endPoint,
+				"syncFrequency":    "30",
+				"useRudderStorage": false,
+			},
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				ID:          "1bJ4YC7INdkvBTzotNh0zta5jDm",
+				Name:        "POSTGRES",
+				DisplayName: "Postgres",
+			},
+			Name:       "postgres-demo",
+			Enabled:    true,
+			RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
+		}
+		testhelper.VerifyConfigurationTest(t, dest)
+	})
 
 	ctxCancel()
 	<-svcDone
