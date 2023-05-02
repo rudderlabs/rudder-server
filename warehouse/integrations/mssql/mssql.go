@@ -814,7 +814,7 @@ func (ms *MSSQL) LoadUserTables(context.Context) map[string]error {
 	return ms.loadUserTables()
 }
 
-func (ms *MSSQL) LoadTable(ctx context.Context, tableName string) error {
+func (ms *MSSQL) LoadTable(_ context.Context, tableName string) error {
 	_, err := ms.loadTable(tableName, ms.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }

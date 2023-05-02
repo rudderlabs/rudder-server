@@ -1401,7 +1401,7 @@ func (rs *Redshift) LoadUserTables(context.Context) map[string]error {
 	return rs.loadUserTables()
 }
 
-func (rs *Redshift) LoadTable(ctx context.Context, tableName string) error {
+func (rs *Redshift) LoadTable(_ context.Context, tableName string) error {
 	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }

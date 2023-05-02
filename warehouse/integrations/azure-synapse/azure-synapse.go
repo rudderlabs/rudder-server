@@ -774,7 +774,7 @@ func (as *AzureSynapse) LoadUserTables(context.Context) map[string]error {
 	return as.loadUserTables()
 }
 
-func (as *AzureSynapse) LoadTable(ctx context.Context, tableName string) error {
+func (as *AzureSynapse) LoadTable(_ context.Context, tableName string) error {
 	_, err := as.loadTable(tableName, as.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }

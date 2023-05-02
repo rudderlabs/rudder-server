@@ -1028,7 +1028,7 @@ func (ch *Clickhouse) LoadUserTables(context.Context) (errorMap map[string]error
 	return
 }
 
-func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) error {
+func (ch *Clickhouse) LoadTable(_ context.Context, tableName string) error {
 	err := ch.loadTable(tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
 	return err
 }

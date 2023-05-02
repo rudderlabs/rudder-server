@@ -981,7 +981,7 @@ func (dl *Deltalake) LoadUserTables(context.Context) map[string]error {
 }
 
 // LoadTable loads table for table name
-func (dl *Deltalake) LoadTable(ctx context.Context, tableName string) error {
+func (dl *Deltalake) LoadTable(_ context.Context, tableName string) error {
 	_, err := dl.loadTable(tableName, dl.Uploader.GetTableSchemaInUpload(tableName), dl.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }

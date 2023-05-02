@@ -848,7 +848,7 @@ func (bq *BigQuery) TestConnection(context.Context, model.Warehouse) (err error)
 	return nil
 }
 
-func (bq *BigQuery) LoadTable(ctx context.Context, tableName string) error {
+func (bq *BigQuery) LoadTable(_ context.Context, tableName string) error {
 	var getLoadFileLocFromTableUploads bool
 	switch tableName {
 	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:

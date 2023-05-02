@@ -952,7 +952,7 @@ func (pg *Postgres) LoadUserTables(context.Context) map[string]error {
 	return pg.loadUserTables()
 }
 
-func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
+func (pg *Postgres) LoadTable(_ context.Context, tableName string) error {
 	_, err := pg.loadTable(tableName, pg.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }

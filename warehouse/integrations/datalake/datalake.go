@@ -75,7 +75,7 @@ func (d *Datalake) AlterColumn(tableName, columnName, columnType string) (model.
 	return d.SchemaRepository.AlterColumn(tableName, columnName, columnType)
 }
 
-func (d *Datalake) LoadTable(ctx context.Context, tableName string) error {
+func (d *Datalake) LoadTable(_ context.Context, tableName string) error {
 	d.Logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.Warehouse.Destination.ID)
 	return nil
 }

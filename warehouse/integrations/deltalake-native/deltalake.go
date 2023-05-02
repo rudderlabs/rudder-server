@@ -533,7 +533,7 @@ func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) 
 }
 
 // LoadTable loads table for table name
-func (d *Deltalake) LoadTable(ctx context.Context, tableName string) error {
+func (d *Deltalake) LoadTable(_ context.Context, tableName string) error {
 	uploadTableSchema := d.Uploader.GetTableSchemaInUpload(tableName)
 	warehouseTableSchema := d.Uploader.GetTableSchemaInWarehouse(tableName)
 
