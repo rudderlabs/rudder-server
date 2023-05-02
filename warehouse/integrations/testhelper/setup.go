@@ -45,6 +45,7 @@ type WareHouseTest struct {
 	Schema                       string
 	UserID                       string
 	MessageID                    string
+	WorkspaceID                  string
 	JobRunID                     string
 	TaskRunID                    string
 	RecordID                     string
@@ -152,7 +153,6 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 
 	var (
 		tableName         = "wh_staging_files"
-		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		stagingFileEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -182,7 +182,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 		   	created_at > $4;
 	`
 	t.Logf("Checking events in staging files for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
-		workspaceID,
+		wareHouseTest.WorkspaceID,
 		wareHouseTest.SourceID,
 		wareHouseTest.DestinationID,
 		wareHouseTest.TimestampBeforeSendingEvents,
@@ -191,7 +191,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	operation = func() bool {
 		err = db.QueryRow(
 			sqlStatement,
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -287,7 +287,6 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Started verifying events in table uploads")
 
 	var (
-		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		tableUploadEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -324,7 +323,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 			   wh_table_uploads.status = 'exported_data';
 		`
 		t.Logf("Checking events in table uploads for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -334,7 +333,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 		operation = func() bool {
 			err = db.QueryRow(
 				sqlStatement,
-				workspaceID,
+				wareHouseTest.WorkspaceID,
 				wareHouseTest.SourceID,
 				wareHouseTest.DestinationID,
 				wareHouseTest.TimestampBeforeSendingEvents,
@@ -429,7 +428,6 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying async job")
 
-	workspaceID := "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 	asyncPayload := strings.NewReader(
 		fmt.Sprintf(
 			AsyncWhPayload,
@@ -438,7 +436,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TaskRunID,
 			wareHouseTest.DestinationID,
 			time.Now().UTC().Format("2006-01-02 15:04:05"),
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 		),
 	)
 	t.Logf("Run async job for sourceID: %s, DestinationID: %s, jobRunID: %s, taskRunID: %s",
@@ -456,7 +454,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TaskRunID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 		)
 		url        = fmt.Sprintf("http://localhost:%d/v1/%s", wareHouseTest.HTTPPort, path)
 		method     = "GET"

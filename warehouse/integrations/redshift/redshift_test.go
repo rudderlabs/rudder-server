@@ -40,10 +40,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const (
-	testKey = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
-)
-
 type testCredentials struct {
 	Host        string `json:"host"`
 	Port        string `json:"port"`
@@ -54,6 +50,8 @@ type testCredentials struct {
 	AccessKeyID string `json:"accessKeyID"`
 	AccessKey   string `json:"accessKey"`
 }
+
+const testKey = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
 
 func rsTestCredentials() (*testCredentials, error) {
 	cred, exists := os.LookupEnv(testKey)
@@ -166,7 +164,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_MAX_PARALLEL_LOADS_WORKSPACE_IDS", "{\"BpLnfgDsc2WD8F2qNfHK5a84jjJ\":4}")
 	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_ENABLE_DELETE_BY_JOBS", "true")
 	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_DEDUP_WINDOW", "true")
 	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_DEDUP_WINDOW_IN_HOURS", "5")
@@ -276,6 +273,7 @@ func TestIntegration(t *testing.T) {
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
 					UserID:                testhelper.GetUserId(provider),
+					WorkspaceID:           workspaceID,
 					Client: &client.Client{
 						SQL:  db,
 						Type: client.SQLClient,
