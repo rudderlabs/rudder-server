@@ -41,7 +41,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if !bqHeloer.IsBQTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHeloer.BigQueryTestKey)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHeloer.TestKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
@@ -64,8 +64,18 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	schema := testhelper.RandSchema(warehouseutils.BQ)
-	sourcesSchema := fmt.Sprintf("%s_%s", schema, "sources")
+	workspaceID := warehouseutils.RandHex()
+	sourceID := warehouseutils.RandHex()
+	destinationID := warehouseutils.RandHex()
+	writeKey := warehouseutils.RandHex()
+	sourcesSourceID := warehouseutils.RandHex()
+	sourcesDestinationID := warehouseutils.RandHex()
+	sourcesWriteKey := warehouseutils.RandHex()
+
+	provider := warehouseutils.BQ
+
+	namespace := testhelper.RandSchema(provider)
+	sourcesNamespace := testhelper.RandSchema(provider)
 
 	bqTestCredentials, err := bqHeloer.GetBQTestCredentials()
 	require.NoError(t, err)
@@ -76,15 +86,19 @@ func TestIntegration(t *testing.T) {
 	escapedCredentialsTrimmedStr := strings.Trim(string(escapedCredentials), `"`)
 
 	templateConfigurations := map[string]string{
-		"workspaceId":              "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"bigqueryWriteKey":         "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		"bigqueryNamespace":        schema,
-		"bigqueryProjectID":        bqTestCredentials.ProjectID,
-		"bigqueryLocation":         bqTestCredentials.Location,
-		"bigqueryBucketName":       bqTestCredentials.BucketName,
-		"bigqueryCredentials":      escapedCredentialsTrimmedStr,
-		"bigquerySourcesNamespace": sourcesSchema,
-		"bigquerySourcesWriteKey":  "J77aeABtLFJ84qYU6UrN8ctewZt",
+		"workspaceID":          workspaceID,
+		"sourceID":             sourceID,
+		"destinationID":        destinationID,
+		"writeKey":             writeKey,
+		"sourcesSourceID":      sourcesSourceID,
+		"sourcesDestinationID": sourcesDestinationID,
+		"sourcesWriteKey":      sourcesWriteKey,
+		"namespace":            namespace,
+		"project":              bqTestCredentials.ProjectID,
+		"location":             bqTestCredentials.Location,
+		"bucketName":           bqTestCredentials.BucketName,
+		"credentials":          escapedCredentialsTrimmedStr,
+		"sourcesNamespace":     sourcesNamespace,
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -149,10 +163,8 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 
-		provider := warehouseutils.BQ
-
 		t.Cleanup(func() {
-			for _, dataset := range []string{schema, sourcesSchema} {
+			for _, dataset := range []string{namespace, sourcesNamespace} {
 				require.NoError(t, testhelper.WithConstantRetries(func() error {
 					return db.Dataset(dataset).DeleteWithContents(context.TODO())
 				}))
@@ -179,11 +191,11 @@ func TestIntegration(t *testing.T) {
 		}{
 			{
 				name:                          "Merge mode",
-				schema:                        schema,
+				schema:                        namespace,
 				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:                      "J77aX7tLFJ84qYU6UrN8ctecwZt",
-				sourceID:                      "24p1HhPk09FW25Kuzxv7GshCLKR",
-				destinationID:                 "26Bgm9FrQDZjvadSwAlpd35atwn",
+				writeKey:                      writeKey,
+				sourceID:                      sourceID,
+				destinationID:                 destinationID,
 				messageID:                     misc.FastUUID().String(),
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
@@ -193,7 +205,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(schema).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 
 					testhelper.SetConfig(t, []warehouseutils.KeyValue{
 						{
@@ -205,10 +217,10 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:          "Async Job",
-				writeKey:      "J77aeABtLFJ84qYU6UrN8ctewZt",
-				sourceID:      "2DkCpUr0xgjfBNasIwqyqfyHdq4",
-				destinationID: "26Bgm9FrQDZjvadBnalpd35atwn",
-				schema:        sourcesSchema,
+				writeKey:      sourcesWriteKey,
+				sourceID:      sourcesSourceID,
+				destinationID: sourcesDestinationID,
+				schema:        sourcesNamespace,
 				tables:        []string{"tracks", "google_sheet"},
 				eventsMap:     testhelper.SourcesSendEventsMap(),
 				stagingFilesEventsMap: testhelper.EventsCountMap{
@@ -224,7 +236,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(schema).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 
 					testhelper.SetConfig(t, []warehouseutils.KeyValue{
 						{
@@ -236,11 +248,11 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:                          "Append mode",
-				schema:                        schema,
+				schema:                        namespace,
 				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:                      "J77aX7tLFJ84qYU6UrN8ctecwZt",
-				sourceID:                      "24p1HhPk09FW25Kuzxv7GshCLKR",
-				destinationID:                 "26Bgm9FrQDZjvadSwAlpd35atwn",
+				writeKey:                      writeKey,
+				sourceID:                      sourceID,
+				destinationID:                 destinationID,
 				messageID:                     misc.FastUUID().String(),
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
@@ -251,7 +263,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(schema).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 
 					testhelper.SetConfig(t, []warehouseutils.KeyValue{
 						{
@@ -263,11 +275,11 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:                          "Append mode with custom partition",
-				schema:                        schema,
+				schema:                        namespace,
 				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:                      "J77aX7tLFJ84qYU6UrN8ctecwZt",
-				sourceID:                      "24p1HhPk09FW25Kuzxv7GshCLKR",
-				destinationID:                 "26Bgm9FrQDZjvadSwAlpd35atwn",
+				writeKey:                      writeKey,
+				sourceID:                      sourceID,
+				destinationID:                 destinationID,
 				messageID:                     misc.FastUUID().String(),
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
@@ -278,14 +290,14 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(schema).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 
-					err = db.Dataset(schema).Create(context.Background(), &bigquery.DatasetMetadata{
+					err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
 						Location: "US",
 					})
 					require.NoError(t, err)
 
-					err = db.Dataset(schema).Table("tracks").Create(
+					err = db.Dataset(namespace).Table("tracks").Create(
 						context.Background(),
 						&bigquery.TableMetadata{
 							Schema: []*bigquery.FieldSchema{{
@@ -306,7 +318,7 @@ func TestIntegration(t *testing.T) {
 						},
 						{
 							Key:   "Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs",
-							Value: []string{"BpLnfgDsc2WD8F2qNfHK5a84jjJ"},
+							Value: []string{workspaceID},
 						},
 					})
 				},
@@ -340,7 +352,8 @@ func TestIntegration(t *testing.T) {
 						BQ:   db,
 						Type: client.BQClient,
 					},
-					HTTPPort: httpPort,
+					HTTPPort:    httpPort,
+					WorkspaceID: workspaceID,
 				}
 				ts.VerifyEvents(t)
 
@@ -361,14 +374,14 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Validations", func(t *testing.T) {
 		destination := backendconfig.DestinationT{
-			ID: "26Bgm9FrQDZjvadSwAlpd35atwn",
+			ID: destinationID,
 			Config: map[string]interface{}{
-				"project":       templateConfigurations["bigqueryProjectID"],
-				"location":      templateConfigurations["bigqueryLocation"],
-				"bucketName":    templateConfigurations["bigqueryBucketName"],
+				"project":       bqTestCredentials.ProjectID,
+				"location":      bqTestCredentials.Location,
+				"bucketName":    bqTestCredentials.BucketName,
 				"credentials":   bqTestCredentials.Credentials,
 				"prefix":        "",
-				"namespace":     templateConfigurations["bigqueryNamespace"],
+				"namespace":     namespace,
 				"syncFrequency": "30",
 			},
 			DestinationDefinition: backendconfig.DestinationDefinitionT{

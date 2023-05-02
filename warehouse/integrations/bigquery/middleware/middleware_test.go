@@ -17,7 +17,7 @@ import (
 
 func TestQueryWrapper(t *testing.T) {
 	if !bqHeloer.IsBQTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHeloer.BigQueryTestKey)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHeloer.TestKey)
 	}
 
 	bqTestCredentials, err := bqHeloer.GetBQTestCredentials()

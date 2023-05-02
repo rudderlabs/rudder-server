@@ -161,8 +161,8 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS_WORKSPACE_IDS", "BpLnfgDsc2WD8F2qNfHK5a84jjJ")
-	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_SQLSTATEMENT_EXECUTION_PLAN_WORKSPACE_IDS", "BpLnfgDsc2WD8F2qNfHK5a84jjJ")
+	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS_WORKSPACE_IDS", workspaceID)
+	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_SQLSTATEMENT_EXECUTION_PLAN_WORKSPACE_IDS", workspaceID)
 	t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
 	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
@@ -395,7 +395,7 @@ func TestIntegration(t *testing.T) {
 
 		t.Run(tc.name+"Validations", func(t *testing.T) {
 			destination := backendconfig.DestinationT{
-				ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+				ID: destinationID,
 				Config: map[string]interface{}{
 					"host":             host,
 					"database":         database,

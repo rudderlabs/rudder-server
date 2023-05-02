@@ -12,9 +12,9 @@
         "eventUpload": false,
         "eventUploadTS": 1646073666353
       },
-      "id": "24p1HhPk09FW25Kuzxv7GshCLKR",
+      "id": "{{.sourceID}}",
       "name": "bigquery-integration",
-      "writeKey": "{{.bigqueryWriteKey}}",
+      "writeKey": "{{.writeKey}}",
       "enabled": true,
       "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
       "createdBy": "24p1CMAkx18KwNbFDXlR7sUhqaa",
@@ -25,17 +25,17 @@
       "destinations": [
         {
           "config": {
-            "project": "{{.bigqueryProjectID}}",
-            "location": "{{.bigqueryLocation}}",
-            "bucketName": "{{.bigqueryBucketName}}",
-            "credentials": "{{.bigqueryCredentials}}",
+            "project": "{{.project}}",
+            "location": "{{.location}}",
+            "bucketName": "{{.bucketName}}",
+            "credentials": "{{.credentials}}",
             "prefix": "",
-            "namespace": "{{.bigqueryNamespace}}",
+            "namespace": "{{.namespace}}",
             "syncFrequency": "30"
           },
           "liveEventsConfig": {},
           "secretConfig": {},
-          "id": "26Bgm9FrQDZjvadSwAlpd35atwn",
+          "id": "{{.destinationID}}",
           "name": "bigquery-integration",
           "enabled": true,
           "workspaceId": "{{.workspaceID}}",
@@ -106,104 +106,6 @@
     },
     {
       "config": {
-        "isSampleSource": true,
-        "eventUpload": false,
-        "eventUploadTS": 1653346591988
-      },
-      "liveEventsConfig": {
-        "eventUpload": false,
-        "eventUploadTS": 1653346591988
-      },
-      "id": "279L3gEKqwruNoKGZXatSVX7vIy",
-      "name": "gcs-datalake-integration",
-      "writeKey": "{{.gcsDatalakeWriteKey}}",
-      "enabled": true,
-      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
-      "createdBy": "279Kz3NhcXsUAx2KHnx1HKhdtbk",
-      "workspaceId": "{{.workspaceID}}",
-      "deleted": false,
-      "createdAt": "2022-03-31T11:45:57.339Z",
-      "updatedAt": "2022-05-23T22:56:32.000Z",
-      "destinations": [
-        {
-          "config": {
-            "bucketName": "{{.bigqueryBucketName}}",
-            "prefix": "",
-            "credentials": "{{.bigqueryCredentials}}",
-            "syncFrequency": "30"
-          },
-          "liveEventsConfig": {},
-          "secretConfig": {},
-          "id": "27SthahyhhqEZGHaT4NTtNPl06V",
-          "name": "gcs-datalake-demo",
-          "enabled": true,
-          "workspaceId": "{{.workspaceID}}",
-          "deleted": false,
-          "createdAt": "2022-04-07T09:57:14.783Z",
-          "updatedAt": "2022-05-17T08:16:32.613Z",
-          "revisionId": "29HgOWobnr0RYZpLASwPINb2987",
-          "transformations": [],
-          "destinationDefinition": {
-            "config": {
-              "destConfig": {
-                "defaultConfig": [
-                  "bucketName",
-                  "prefix",
-                  "namespace",
-                  "tableSuffix",
-                  "timeWindowLayout",
-                  "credentials",
-                  "syncFrequency",
-                  "syncStartAt"
-                ]
-              },
-              "secretKeys": [],
-              "excludeKeys": [],
-              "includeKeys": [],
-              "transformAt": "processor",
-              "transformAtV1": "processor",
-              "supportedSourceTypes": [
-                "android",
-                "ios",
-                "web",
-                "unity",
-                "amp",
-                "cloud",
-                "warehouse",
-                "reactnative",
-                "cloudSource",
-                "flutter",
-                "cordova"
-              ],
-              "saveDestinationResponse": true
-            },
-            "responseRules": {},
-            "options": null,
-            "uiConfig": null,
-            "id": "20lzWVRwzEimkq87sNQuz1or2GA",
-            "name": "GCS_DATALAKE",
-            "displayName": "Google Cloud Storage Datalake",
-            "category": "warehouse",
-            "createdAt": "2021-11-11T12:33:13.960Z",
-            "updatedAt": "2022-07-20T17:05:23.745Z"
-          },
-          "isConnectionEnabled": true,
-          "isProcessorEnabled": true
-        }
-      ],
-      "sourceDefinition": {
-        "options": null,
-        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
-        "name": "HTTP",
-        "displayName": "HTTP",
-        "category": "",
-        "createdAt": "2020-06-12T06:35:35.962Z",
-        "updatedAt": "2020-06-12T06:35:35.962Z"
-      },
-      "dgSourceTrackingPlanConfig": null
-    },
-    {
-      "config": {
         "config": {
           "row_batch_size": 200,
           "credentials": {
@@ -220,9 +122,9 @@
         "prefix": "SGS5"
       },
       "liveEventsConfig": {},
-      "id": "2DkCpUr0xgjfBNasIwqyqfyHdq4",
+      "id": "{{.sourcesSourceID}}",
       "name": "bigquery-sources-integration",
-      "writeKey": "{{.bigquerySourcesWriteKey}}",
+      "writeKey": "{{.sourcesWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
       "createdBy": "279BPpjT6BGqKKhT5qAZuUVZa1h",
@@ -251,17 +153,17 @@
       "destinations": [
         {
           "config": {
-            "project": "{{.bigqueryProjectID}}",
-            "location": "{{.bigqueryLocation}}",
-            "bucketName": "{{.bigqueryBucketName}}",
-            "credentials": "{{.bigqueryCredentials}}",
+            "project": "{{.project}}",
+            "location": "{{.location}}",
+            "bucketName": "{{.bucketName}}",
+            "credentials": "{{.credentials}}",
             "prefix": "",
-            "namespace": "{{.bigquerySourcesNamespace}}",
+            "namespace": "{{.sourcesNamespace}}",
             "syncFrequency": "30"
           },
           "liveEventsConfig": {},
           "secretConfig": {},
-          "id": "26Bgm9FrQDZjvadBnalpd35atwn",
+          "id": "{{.sourcesDestinationID}}",
           "name": "bigquery-sources-integration",
           "enabled": true,
           "workspaceId": "{{.workspaceID}}",
