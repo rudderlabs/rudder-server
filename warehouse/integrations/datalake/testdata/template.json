@@ -12,9 +12,9 @@
         "eventUpload": false,
         "eventUploadTS": 1653346591988
       },
-      "id": "279L3gEKqwruGoKGsXZtSVX7vIy",
+      "id": "{{.azSourceID}}",
       "name": "azure-datalake-integration",
-      "writeKey": "{{.azureDatalakeWriteKey}}",
+      "writeKey": "{{.azWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
       "createdBy": "279Kz3NhcXsUAx2KHnx1HKhdtbk",
@@ -25,18 +25,18 @@
       "destinations": [
         {
           "config": {
-            "containerName": "{{.azureDatalakeContainerName}}",
+            "containerName": "{{.azContainerName}}",
             "prefix": "",
-            "accountName": "{{.azureDatalakeAccountName}}",
-            "accountKey": "{{.azureDatalakeAccountKey}}",
-            "endPoint": "{{.azureDatalakeEndPoint}}",
+            "accountName": "{{.azAccountName}}",
+            "accountKey": "{{.azAccountKey}}",
+            "endPoint": "{{.azEndpoint}}",
             "syncFrequency": "30",
             "forcePathStyle": true,
             "disableSSL": true
           },
           "liveEventsConfig": {},
           "secretConfig": {},
-          "id": "27SthahyhhqZE7H4T4NTtNPl06V",
+          "id": "{{.azDestinationID}}",
           "name": "azure-datalake-demo",
           "enabled": true,
           "workspaceId": "{{.workspaceID}}",
@@ -118,9 +118,9 @@
         "eventUpload": false,
         "eventUploadTS": 1653346591988
       },
-      "id": "279L3gEKqwruNoKGsXZtSVX7vIy",
+      "id": "{{.s3DestinationID}}",
       "name": "s3-datalake-integration",
-      "writeKey": "{{.s3DatalakeWriteKey}}",
+      "writeKey": "{{.s3WriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
       "createdBy": "279Kz3NhcXsUAx2KHnx1HKhdtbk",
@@ -131,11 +131,11 @@
       "destinations": [
         {
           "config": {
-            "region": "{{.s3DatalakeRegion}}",
-            "bucketName": "{{.s3DatalakeBucketName}}",
-            "accessKeyID": "{{.minioAccesskeyID}}",
-            "accessKey": "{{.minioSecretAccessKey}}",
-            "endPoint": "{{.minioEndpoint}}",
+            "region": "{{.s3Region}}",
+            "bucketName": "{{.s3BucketName}}",
+            "accessKeyID": "{{.s3AccessKeyID}}",
+            "accessKey": "{{.s3AccessKey}}",
+            "endPoint": "{{.s3EndPoint}}",
             "enableSSE": false,
             "s3ForcePathStyle": true,
             "disableSSL": true,
@@ -144,7 +144,7 @@
           },
           "liveEventsConfig": {},
           "secretConfig": {},
-          "id": "27SthahyhhqEZ7H4T4NTtNPl06V",
+          "id": "{{.s3DestinationID}}",
           "name": "s3-datalake-demo",
           "enabled": true,
           "workspaceId": "{{.workspaceID}}",
@@ -228,9 +228,9 @@
         "eventUpload": false,
         "eventUploadTS": 1653346591988
       },
-      "id": "279L3gEKqwruNoKGZXatSVX7vIy",
+      "id": "{{.gcsDestinationID}}",
       "name": "gcs-datalake-integration",
-      "writeKey": "{{.gcsDataLakeWriteKey}}",
+      "writeKey": "{{.gcsWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
       "createdBy": "279Kz3NhcXsUAx2KHnx1HKhdtbk",
@@ -241,14 +241,14 @@
       "destinations": [
         {
           "config": {
-            "bucketName": "{{.gcsDataLakeBucketName}}",
+            "bucketName": "{{.gcsBucketName}}",
             "prefix": "",
-            "credentials": "{{.gcsDataLakeCredentials}}",
+            "credentials": "{{.gcsCredentials}}",
             "syncFrequency": "30"
           },
           "liveEventsConfig": {},
           "secretConfig": {},
-          "id": "27SthahyhhqEZGHaT4NTtNPl06V",
+          "id": "{{.gcsDestinationID}}",
           "name": "gcs-datalake-demo",
           "enabled": true,
           "workspaceId": "{{.workspaceID}}",

@@ -29,17 +29,15 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const (
-	datalakeGCSTestKey = "BigqueryIntegrationTestCredentials"
-)
-
 type gcsTestCredentials struct {
 	BucketName  string `json:"bucketName"`
 	Credentials string `json:"credentials"`
 }
 
+const gcsTestKey = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
+
 func getGCSTestCredentials() (*gcsTestCredentials, error) {
-	cred, exists := os.LookupEnv(datalakeGCSTestKey)
+	cred, exists := os.LookupEnv(gcsTestKey)
 	if !exists {
 		return nil, fmt.Errorf("gcs credentials not found")
 	}
@@ -85,21 +83,47 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
+	workspaceID := warehouseutils.RandHex()
+	azWritekey := warehouseutils.RandHex()
+	azDestinationID := warehouseutils.RandHex()
+	azSourceID := warehouseutils.RandHex()
+	s3Writekey := warehouseutils.RandHex()
+	s3DestinationID := warehouseutils.RandHex()
+	s3SourceID := warehouseutils.RandHex()
+	gcsWritekey := warehouseutils.RandHex()
+	gcsDestinationID := warehouseutils.RandHex()
+	gcsSourceID := warehouseutils.RandHex()
+
+	azContainerName := "azure-datalake-test"
+	s3BucketName := "s3-datalake-test"
+	azAccountName := "MYACCESSKEY"
+	azAccountKey := "TVlTRUNSRVRLRVk="
+	azEndPoint := fmt.Sprintf("localhost:%d", azurePort)
+	s3Region := "us-east-1"
+	s3AccessKeyID := "MYACCESSKEY"
+	s3AccessKey := "MYSECRETKEY"
+	s3EndPoint := fmt.Sprintf("localhost:%d", minioPort)
+
 	templateConfigurations := map[string]string{
-		"workspaceId":                "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"azureDatalakeWriteKey":      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
-		"azureDatalakeContainerName": "azure-datalake-test",
-		"azureDatalakeAccountName":   "MYACCESSKEY",
-		"azureDatalakeAccountKey":    "TVlTRUNSRVRLRVk=",
-		"azureDatalakeEndPoint":      fmt.Sprintf("localhost:%d", azurePort),
-		"s3DatalakeWriteKey":         "ZapZJHfSxUN96GTIuShnz6bv0zi",
-		"s3DatalakeBucketName":       "s3-datalake-test",
-		"s3DatalakeRegion":           "us-east-1",
-		"gcsDataLakeWriteKey":        "9zZFfcRqr2LpwerxICilhQmMybn",
-		"minioBucketName":            "testbucket",
-		"minioAccesskeyID":           "MYACCESSKEY",
-		"minioSecretAccessKey":       "MYSECRETKEY",
-		"minioEndpoint":              fmt.Sprintf("localhost:%d", minioPort),
+		"workspaceID":      workspaceID,
+		"azWriteKey":       azWritekey,
+		"azDestinationID":  azDestinationID,
+		"azSourceID":       azSourceID,
+		"s3WriteKey":       s3Writekey,
+		"s3DestinationID":  s3DestinationID,
+		"s3SourceID":       s3SourceID,
+		"gcsWriteKey":      gcsWritekey,
+		"gcsDestinationID": gcsDestinationID,
+		"gcsSourceID":      gcsSourceID,
+		"azContainerName":  azContainerName,
+		"azAccountName":    azAccountName,
+		"azAccountKey":     azAccountKey,
+		"azEndpoint":       azEndPoint,
+		"s3BucketName":     s3BucketName,
+		"s3Region":         s3Region,
+		"s3AccessKeyID":    s3AccessKeyID,
+		"s3AccessKey":      s3AccessKey,
+		"s3EndPoint":       s3EndPoint,
 	}
 	if isGCSTestCredentialsAvailable() {
 		credentials, err := getGCSTestCredentials()
@@ -110,8 +134,8 @@ func TestIntegration(t *testing.T) {
 
 		escapedCredentialsTrimmedStr := strings.Trim(string(escapedCredentials), `"`)
 
-		templateConfigurations["gcsDataLakeBucketName"] = credentials.BucketName
-		templateConfigurations["gcsDataLakeCredentials"] = escapedCredentialsTrimmedStr
+		templateConfigurations["gcsBucketName"] = credentials.BucketName
+		templateConfigurations["gcsCredentials"] = escapedCredentialsTrimmedStr
 	}
 
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
@@ -155,7 +179,7 @@ func TestIntegration(t *testing.T) {
 	svcDone := make(chan struct{})
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	go func() {
-		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
+		r := runner.New(runner.ReleaseInfo{})
 		_ = r.Run(ctx, []string{"dataLake-integration-test"})
 
 		close(svcDone)
@@ -175,9 +199,9 @@ func TestIntegration(t *testing.T) {
 		}{
 			{
 				name:          "S3Datalake",
-				writeKey:      "ZapZJHfSxUN96GTIuShnz6bv0zi",
-				sourceID:      "279L3gEKqwruNoKGsXZtSVX7vIy",
-				destinationID: "27SthahyhhqEZ7H4T4NTtNPl06V",
+				writeKey:      s3Writekey,
+				sourceID:      s3SourceID,
+				destinationID: s3DestinationID,
 				provider:      warehouseutils.S3_DATALAKE,
 				prerequisite: func(t testing.TB) {
 					t.Helper()
@@ -187,36 +211,31 @@ func TestIntegration(t *testing.T) {
 						region = "us-east-1"
 					)
 
-					minioClient, err := minio.New(
-						templateConfigurations["minioEndpoint"],
-						templateConfigurations["minioAccesskeyID"],
-						templateConfigurations["minioSecretAccessKey"],
-						secure,
-					)
+					minioClient, err := minio.New(s3EndPoint, s3AccessKeyID, s3AccessKey, secure)
 					require.NoError(t, err)
 
-					_ = minioClient.MakeBucket(templateConfigurations["s3DatalakeBucketName"], region)
+					_ = minioClient.MakeBucket(s3BucketName, region)
 				},
 			},
 			{
 				name:          "GCSDatalake",
-				writeKey:      "9zZFfcRqr2LpwerxICilhQmMybn",
-				sourceID:      "279L3gEKqwruNoKGZXatSVX7vIy",
-				destinationID: "27SthahyhhqEZGHaT4NTtNPl06V",
+				writeKey:      gcsWritekey,
+				sourceID:      gcsSourceID,
+				destinationID: gcsDestinationID,
 				provider:      warehouseutils.GCS_DATALAKE,
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
 					if !isGCSTestCredentialsAvailable() {
-						t.Skipf("Skipping %s as %s is not set", t.Name(), datalakeGCSTestKey)
+						t.Skipf("Skipping %s as %s is not set", t.Name(), gcsTestKey)
 					}
 				},
 			},
 			{
 				name:          "AzureDatalake",
-				writeKey:      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
-				sourceID:      "279L3gEKqwruGoKGsXZtSVX7vIy",
-				destinationID: "27SthahyhhqZE7H4T4NTtNPl06V",
+				writeKey:      azWritekey,
+				sourceID:      azSourceID,
+				destinationID: azDestinationID,
 				provider:      warehouseutils.AZURE_DATALAKE,
 			},
 		}
@@ -244,6 +263,7 @@ func TestIntegration(t *testing.T) {
 					UserID:        testhelper.GetUserId(tc.provider),
 					SkipWarehouse: true,
 					HTTPPort:      httpPort,
+					WorkspaceID:   workspaceID,
 				}
 				ts.VerifyEvents(t)
 
@@ -261,24 +281,19 @@ func TestIntegration(t *testing.T) {
 			region = "us-east-1"
 		)
 
-		minioClient, err := minio.New(
-			templateConfigurations["minioEndpoint"],
-			templateConfigurations["minioAccesskeyID"],
-			templateConfigurations["minioSecretAccessKey"],
-			secure,
-		)
+		minioClient, err := minio.New(s3EndPoint, s3AccessKeyID, s3AccessKey, secure)
 		require.NoError(t, err)
 
-		_ = minioClient.MakeBucket(templateConfigurations["s3DatalakeBucketName"], region)
+		_ = minioClient.MakeBucket(s3BucketName, region)
 
 		destination := backendconfig.DestinationT{
-			ID: "27SthahyhhqEZ7H4T4NTtNPl06V",
+			ID: s3DestinationID,
 			Config: map[string]interface{}{
-				"region":           templateConfigurations["s3DatalakeRegion"],
-				"bucketName":       templateConfigurations["s3DatalakeBucketName"],
-				"accessKeyID":      templateConfigurations["minioAccesskeyID"],
-				"accessKey":        templateConfigurations["minioSecretAccessKey"],
-				"endPoint":         templateConfigurations["minioEndpoint"],
+				"region":           s3Region,
+				"bucketName":       s3BucketName,
+				"accessKeyID":      s3AccessKeyID,
+				"accessKey":        s3AccessKey,
+				"endPoint":         s3EndPoint,
 				"enableSSE":        false,
 				"s3ForcePathStyle": true,
 				"disableSSL":       true,
@@ -301,14 +316,14 @@ func TestIntegration(t *testing.T) {
 		t.Parallel()
 
 		if !isGCSTestCredentialsAvailable() {
-			t.Skipf("Skipping %s as %s is not set", t.Name(), datalakeGCSTestKey)
+			t.Skipf("Skipping %s as %s is not set", t.Name(), gcsTestKey)
 		}
 
 		credentials, err := getGCSTestCredentials()
 		require.NoError(t, err)
 
 		destination := backendconfig.DestinationT{
-			ID: "27SthahyhhqEZGHaT4NTtNPl06V",
+			ID: gcsDestinationID,
 			Config: map[string]interface{}{
 				"bucketName":    credentials.BucketName,
 				"prefix":        "",
@@ -331,13 +346,13 @@ func TestIntegration(t *testing.T) {
 		t.Parallel()
 
 		destination := backendconfig.DestinationT{
-			ID: "27SthahyhhqZE7H4T4NTtNPl06V",
+			ID: azDestinationID,
 			Config: map[string]interface{}{
-				"containerName":  templateConfigurations["azureDatalakeContainerName"],
+				"containerName":  azContainerName,
 				"prefix":         "",
-				"accountName":    templateConfigurations["azureDatalakeAccountName"],
-				"accountKey":     templateConfigurations["azureDatalakeAccountKey"],
-				"endPoint":       templateConfigurations["azureDatalakeEndPoint"],
+				"accountName":    azAccountName,
+				"accountKey":     azAccountKey,
+				"endPoint":       azEndPoint,
 				"syncFrequency":  "30",
 				"forcePathStyle": true,
 				"disableSSL":     true,
