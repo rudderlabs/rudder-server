@@ -32,10 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 )
 
-const (
-	testKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
-)
-
 type testCredentials struct {
 	Host          string `json:"host"`
 	Port          string `json:"port"`
@@ -45,6 +41,8 @@ type testCredentials struct {
 	AccountKey    string `json:"accountKey"`
 	ContainerName string `json:"containerName"`
 }
+
+const testKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
 
 func deltaLakeTestCredentials() (*testCredentials, error) {
 	cred, exists := os.LookupEnv(testKey)
@@ -94,32 +92,39 @@ func TestIntegration(t *testing.T) {
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	schema := testhelper.RandSchema(warehouseutils.DELTALAKE)
-	nativeSchema := testhelper.RandSchema(warehouseutils.DELTALAKE)
+	workspaceID := warehouseutils.RandHex()
+	sourceID := warehouseutils.RandHex()
+	destinationID := warehouseutils.RandHex()
+	writeKey := warehouseutils.RandHex()
+	nativeSourceID := warehouseutils.RandHex()
+	nativeDestinationID := warehouseutils.RandHex()
+	nativeWriteKey := warehouseutils.RandHex()
+
+	provider := warehouseutils.DELTALAKE
+
+	namespace := testhelper.RandSchema(provider)
+	nativeNamespace := testhelper.RandSchema(provider)
 
 	deltaLakeCredentials, err := deltaLakeTestCredentials()
 	require.NoError(t, err)
 
 	templateConfigurations := map[string]string{
-		"workspaceId":                  "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"deltalakeWriteKey":            "sToFgoilA0U1WxNeW1gdgUVDsEW",
-		"deltalakeNativeWriteKey":      "dasFgoilA0U1WxNeW1gdgUVDfas",
-		"deltalakeHost":                deltaLakeCredentials.Host,
-		"deltalakePort":                deltaLakeCredentials.Port,
-		"deltalakePath":                deltaLakeCredentials.Path,
-		"deltalakeToken":               deltaLakeCredentials.Token,
-		"deltalakeNamespace":           schema,
-		"deltalakeNativeNamespace":     nativeSchema,
-		"deltalakeContainerName":       deltaLakeCredentials.ContainerName,
-		"deltalakeAccountName":         deltaLakeCredentials.AccountName,
-		"deltalakeAccountKey":          deltaLakeCredentials.AccountKey,
-		"deltalakeNativeHost":          deltaLakeCredentials.Host,
-		"deltalakeNativePort":          deltaLakeCredentials.Port,
-		"deltalakeNativePath":          deltaLakeCredentials.Path,
-		"deltalakeNativeToken":         deltaLakeCredentials.Token,
-		"deltalakeNativeContainerName": deltaLakeCredentials.ContainerName,
-		"deltalakeNativeAccountName":   deltaLakeCredentials.AccountName,
-		"deltalakeNativeAccountKey":    deltaLakeCredentials.AccountKey,
+		"workspaceID":         workspaceID,
+		"sourceID":            sourceID,
+		"destinationID":       destinationID,
+		"writeKey":            writeKey,
+		"nativeSourceID":      nativeSourceID,
+		"nativeDestinationID": nativeDestinationID,
+		"nativeWriteKey":      nativeWriteKey,
+		"host":                deltaLakeCredentials.Host,
+		"port":                deltaLakeCredentials.Port,
+		"path":                deltaLakeCredentials.Path,
+		"token":               deltaLakeCredentials.Token,
+		"namespace":           namespace,
+		"nativeNamespace":     nativeNamespace,
+		"containerName":       deltaLakeCredentials.ContainerName,
+		"accountName":         deltaLakeCredentials.AccountName,
+		"accountKey":          deltaLakeCredentials.AccountKey,
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -206,18 +211,18 @@ func TestIntegration(t *testing.T) {
 		}{
 			{
 				name:          "Native",
-				writeKey:      "dasFgoilA0U1WxNeW1gdgUVDfas",
-				sourceID:      "36H5EpYzojqQSepRSaGBrrPx3e4",
-				destinationID: "36IDjdnoEus6DDNrth3SWO1FOpu",
-				schema:        nativeSchema,
+				writeKey:      nativeWriteKey,
+				sourceID:      nativeSourceID,
+				destinationID: nativeDestinationID,
+				schema:        nativeNamespace,
 				useNative:     true,
 			},
 			{
 				name:          "Legacy",
-				writeKey:      "sToFgoilA0U1WxNeW1gdgUVDsEW",
-				sourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
-				destinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
-				schema:        schema,
+				writeKey:      writeKey,
+				sourceID:      sourceID,
+				destinationID: destinationID,
+				schema:        namespace,
 				useNative:     false,
 			},
 		}
@@ -350,6 +355,7 @@ func TestIntegration(t *testing.T) {
 								Type: warehouseclient.SQLClient,
 							},
 							HTTPPort: httpPort,
+							WorkspaceID: workspaceID,
 						}
 						ts.VerifyEvents(t)
 
@@ -370,20 +376,20 @@ func TestIntegration(t *testing.T) {
 			{
 				name: "Native",
 				destination: backendconfig.DestinationT{
-					ID: "36H5EpYzojqQSepRSaGBrrPx3e4",
+					ID: destinationID,
 					Config: map[string]interface{}{
-						"host":            templateConfigurations["deltalakeNativeHost"],
-						"port":            templateConfigurations["deltalakeNativePort"],
-						"path":            templateConfigurations["deltalakeNativePath"],
-						"token":           templateConfigurations["deltalakeNativeToken"],
-						"namespace":       templateConfigurations["deltalakeNativeNamespace"],
+						"host":            deltaLakeCredentials.Host,
+						"port":            deltaLakeCredentials.Port,
+						"path":            deltaLakeCredentials.Path,
+						"token":           deltaLakeCredentials.Token,
+						"namespace":       namespace,
 						"bucketProvider":  "AZURE_BLOB",
-						"containerName":   templateConfigurations["deltalakeNativeContainerName"],
+						"containerName":   deltaLakeCredentials.ContainerName,
 						"prefix":          "",
 						"useSTSTokens":    false,
 						"enableSSE":       false,
-						"accountName":     templateConfigurations["deltalakeNativeAccountName"],
-						"accountKey":      templateConfigurations["deltalakeNativeAccountKey"],
+						"accountName":     deltaLakeCredentials.AccountName,
+						"accountKey":      deltaLakeCredentials.AccountKey,
 						"syncFrequency":   "30",
 						"eventDelivery":   false,
 						"eventDeliveryTS": 1648195480174,
@@ -402,20 +408,20 @@ func TestIntegration(t *testing.T) {
 			{
 				name: "Legacy",
 				destination: backendconfig.DestinationT{
-					ID: "25IDjdnoEus6DDNrth3SWO1FOpu",
+					ID: nativeDestinationID,
 					Config: map[string]interface{}{
-						"host":            templateConfigurations["deltalakeHost"],
-						"port":            templateConfigurations["deltalakePort"],
-						"path":            templateConfigurations["deltalakePath"],
-						"token":           templateConfigurations["deltalakeToken"],
-						"namespace":       templateConfigurations["deltalakeNamespace"],
+						"host":            deltaLakeCredentials.Host,
+						"port":            deltaLakeCredentials.Port,
+						"path":            deltaLakeCredentials.Path,
+						"token":           deltaLakeCredentials.Token,
+						"namespace":       namespace,
 						"bucketProvider":  "AZURE_BLOB",
-						"containerName":   templateConfigurations["deltalakeContainerName"],
+						"containerName":   deltaLakeCredentials.ContainerName,
 						"prefix":          "",
 						"useSTSTokens":    false,
 						"enableSSE":       false,
-						"accountName":     templateConfigurations["deltalakeAccountName"],
-						"accountKey":      templateConfigurations["deltalakeAccountKey"],
+						"accountName":     deltaLakeCredentials.AccountName,
+						"accountKey":      deltaLakeCredentials.AccountKey,
 						"syncFrequency":   "30",
 						"eventDelivery":   false,
 						"eventDeliveryTS": 1648195480174,
