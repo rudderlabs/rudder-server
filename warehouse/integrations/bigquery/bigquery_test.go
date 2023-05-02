@@ -373,7 +373,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validations", func(t *testing.T) {
-		destination := backendconfig.DestinationT{
+		dest := backendconfig.DestinationT{
 			ID: destinationID,
 			Config: map[string]interface{}{
 				"project":       bqTestCredentials.ProjectID,
@@ -393,7 +393,7 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29eejWUH80lK1abiB766fzv5Iba",
 		}
-		testhelper.VerifyConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, dest)
 	})
 
 	ctxCancel()

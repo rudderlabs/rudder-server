@@ -282,7 +282,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validations", func(t *testing.T) {
-		destination := backendconfig.DestinationT{
+		dest := backendconfig.DestinationT{
 			ID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
 			Config: map[string]any{
 				"host":             host,
@@ -311,7 +311,7 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
 		}
-		testhelper.VerifyConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, dest)
 	})
 
 	ctxCancel()

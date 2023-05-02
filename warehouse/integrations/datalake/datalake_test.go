@@ -286,7 +286,7 @@ func TestIntegration(t *testing.T) {
 
 		_ = minioClient.MakeBucket(s3BucketName, region)
 
-		destination := backendconfig.DestinationT{
+		dest := backendconfig.DestinationT{
 			ID: s3DestinationID,
 			Config: map[string]interface{}{
 				"region":           s3Region,
@@ -309,7 +309,7 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29HgOWobnr0RYZLpaSwPINb2987",
 		}
-		testhelper.VerifyConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, dest)
 	})
 
 	t.Run("GCS DataLake Validation", func(t *testing.T) {
@@ -322,7 +322,7 @@ func TestIntegration(t *testing.T) {
 		credentials, err := getGCSTestCredentials()
 		require.NoError(t, err)
 
-		destination := backendconfig.DestinationT{
+		dest := backendconfig.DestinationT{
 			ID: gcsDestinationID,
 			Config: map[string]interface{}{
 				"bucketName":    credentials.BucketName,
@@ -339,13 +339,13 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29HgOWobnr0RYZpLASwPINb2987",
 		}
-		testhelper.VerifyConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, dest)
 	})
 
 	t.Run("Azure DataLake Validation", func(t *testing.T) {
 		t.Parallel()
 
-		destination := backendconfig.DestinationT{
+		dest := backendconfig.DestinationT{
 			ID: azDestinationID,
 			Config: map[string]interface{}{
 				"containerName":  azContainerName,
@@ -366,7 +366,7 @@ func TestIntegration(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29HgOWobnr0RYZLpaSwPIbN2987",
 		}
-		testhelper.VerifyConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, dest)
 	})
 
 	ctxCancel()

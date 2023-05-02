@@ -96,35 +96,27 @@ func TestIntegration(t *testing.T) {
 	sourceID := warehouseutils.RandHex()
 	destinationID := warehouseutils.RandHex()
 	writeKey := warehouseutils.RandHex()
-	nativeSourceID := warehouseutils.RandHex()
-	nativeDestinationID := warehouseutils.RandHex()
-	nativeWriteKey := warehouseutils.RandHex()
 
 	provider := warehouseutils.DELTALAKE
 
 	namespace := testhelper.RandSchema(provider)
-	nativeNamespace := testhelper.RandSchema(provider)
 
 	deltaLakeCredentials, err := deltaLakeTestCredentials()
 	require.NoError(t, err)
 
 	templateConfigurations := map[string]string{
-		"workspaceID":         workspaceID,
-		"sourceID":            sourceID,
-		"destinationID":       destinationID,
-		"writeKey":            writeKey,
-		"nativeSourceID":      nativeSourceID,
-		"nativeDestinationID": nativeDestinationID,
-		"nativeWriteKey":      nativeWriteKey,
-		"host":                deltaLakeCredentials.Host,
-		"port":                deltaLakeCredentials.Port,
-		"path":                deltaLakeCredentials.Path,
-		"token":               deltaLakeCredentials.Token,
-		"namespace":           namespace,
-		"nativeNamespace":     nativeNamespace,
-		"containerName":       deltaLakeCredentials.ContainerName,
-		"accountName":         deltaLakeCredentials.AccountName,
-		"accountKey":          deltaLakeCredentials.AccountKey,
+		"workspaceID":   workspaceID,
+		"sourceID":      sourceID,
+		"destinationID": destinationID,
+		"writeKey":      writeKey,
+		"host":          deltaLakeCredentials.Host,
+		"port":          deltaLakeCredentials.Port,
+		"path":          deltaLakeCredentials.Path,
+		"token":         deltaLakeCredentials.Token,
+		"namespace":     namespace,
+		"containerName": deltaLakeCredentials.ContainerName,
+		"accountName":   deltaLakeCredentials.AccountName,
+		"accountKey":    deltaLakeCredentials.AccountKey,
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -201,29 +193,85 @@ func TestIntegration(t *testing.T) {
 		db := sql.OpenDB(connector)
 		require.NoError(t, db.Ping())
 
+		t.Cleanup(func() {
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace))
+				return err
+			}))
+		})
+
 		testCases := []struct {
-			name          string
-			writeKey      string
-			sourceID      string
-			destinationID string
-			schema        string
-			useNative     bool
+			name               string
+			schema             string
+			writeKey           string
+			sourceID           string
+			destinationID      string
+			messageID          string
+			warehouseEventsMap testhelper.EventsCountMap
+			prerequisite       func(t testing.TB)
 		}{
 			{
-				name:          "Native",
-				writeKey:      nativeWriteKey,
-				sourceID:      nativeSourceID,
-				destinationID: nativeDestinationID,
-				schema:        nativeNamespace,
-				useNative:     true,
+				name:               "Merge Mode",
+				writeKey:           writeKey,
+				schema:             namespace,
+				sourceID:           sourceID,
+				destinationID:      destinationID,
+				warehouseEventsMap: mergeEventsMap(),
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.loadTableStrategy",
+							Value: "MERGE",
+						},
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: "false",
+						},
+					})
+				},
 			},
 			{
-				name:          "Legacy",
-				writeKey:      writeKey,
-				sourceID:      sourceID,
-				destinationID: destinationID,
-				schema:        namespace,
-				useNative:     false,
+				name:               "Append Mode",
+				writeKey:           writeKey,
+				schema:             namespace,
+				sourceID:           sourceID,
+				destinationID:      destinationID,
+				warehouseEventsMap: appendEventsMap(),
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.loadTableStrategy",
+							Value: "APPEND",
+						},
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: "false",
+						},
+					})
+				},
+			},
+			{
+				name:               "Parquet load files",
+				writeKey:           writeKey,
+				schema:             namespace,
+				sourceID:           sourceID,
+				destinationID:      destinationID,
+				warehouseEventsMap: mergeEventsMap(),
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+					testhelper.SetConfig(t, []warehouseutils.KeyValue{
+						{
+							Key:   "Warehouse.deltalake.loadTableStrategy",
+							Value: "MERGE",
+						},
+						{
+							Key:   "Warehouse.deltalake.useParquetLoadFiles",
+							Value: "true",
+						},
+					})
+				},
 			},
 		}
 
@@ -231,211 +279,83 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Cleanup(func() {
-					require.NoError(t, testhelper.WithConstantRetries(func() error {
-						_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, tc.schema))
-						return err
-					}))
-				})
-
-				subTestCases := []struct {
-					name               string
-					schema             string
-					writeKey           string
-					sourceID           string
-					destinationID      string
-					messageID          string
-					warehouseEventsMap testhelper.EventsCountMap
-					prerequisite       func(t testing.TB)
-				}{
-					{
-						name:               "Merge Mode",
-						writeKey:           tc.writeKey,
-						schema:             tc.schema,
-						sourceID:           tc.sourceID,
-						destinationID:      tc.destinationID,
-						warehouseEventsMap: mergeEventsMap(),
-						prerequisite: func(t testing.TB) {
-							t.Helper()
-							testhelper.SetConfig(t, []warehouseutils.KeyValue{
-								{
-									Key:   "Warehouse.deltalake.loadTableStrategy",
-									Value: "MERGE",
-								},
-								{
-									Key:   "Warehouse.deltalake.useParquetLoadFiles",
-									Value: "false",
-								},
-								{
-									Key:   "Warehouse.deltalake.useNative",
-									Value: strconv.FormatBool(tc.useNative),
-								},
-							})
-						},
+				ts := testhelper.WareHouseTest{
+					Schema:        tc.schema,
+					WriteKey:      tc.writeKey,
+					SourceID:      tc.sourceID,
+					DestinationID: tc.destinationID,
+					Prerequisite:  tc.prerequisite,
+					JobsDB:        jobsDB,
+					Provider:      provider,
+					UserID:        testhelper.GetUserId(provider),
+					MessageID:     misc.FastUUID().String(),
+					Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+					WarehouseEventsMap: testhelper.EventsCountMap{
+						"identifies":    1,
+						"users":         1,
+						"tracks":        1,
+						"product_track": 1,
+						"pages":         1,
+						"screens":       1,
+						"aliases":       1,
+						"groups":        1,
 					},
-					{
-						name:               "Append Mode",
-						writeKey:           tc.writeKey,
-						schema:             tc.schema,
-						sourceID:           tc.sourceID,
-						destinationID:      tc.destinationID,
-						warehouseEventsMap: appendEventsMap(),
-						prerequisite: func(t testing.TB) {
-							t.Helper()
-							testhelper.SetConfig(t, []warehouseutils.KeyValue{
-								{
-									Key:   "Warehouse.deltalake.loadTableStrategy",
-									Value: "APPEND",
-								},
-								{
-									Key:   "Warehouse.deltalake.useParquetLoadFiles",
-									Value: "false",
-								},
-								{
-									Key:   "Warehouse.deltalake.useNative",
-									Value: strconv.FormatBool(tc.useNative),
-								},
-							})
-						},
+					Client: &warehouseclient.Client{
+						SQL:  db,
+						Type: warehouseclient.SQLClient,
 					},
-					{
-						name:               "Parquet load files",
-						writeKey:           tc.writeKey,
-						schema:             tc.schema,
-						sourceID:           tc.sourceID,
-						destinationID:      tc.destinationID,
-						warehouseEventsMap: mergeEventsMap(),
-						prerequisite: func(t testing.TB) {
-							t.Helper()
-							testhelper.SetConfig(t, []warehouseutils.KeyValue{
-								{
-									Key:   "Warehouse.deltalake.loadTableStrategy",
-									Value: "MERGE",
-								},
-								{
-									Key:   "Warehouse.deltalake.useParquetLoadFiles",
-									Value: "true",
-								},
-								{
-									Key:   "Warehouse.deltalake.useNative",
-									Value: strconv.FormatBool(tc.useNative),
-								},
-							})
-						},
-					},
+					HTTPPort:    httpPort,
+					WorkspaceID: workspaceID,
 				}
+				ts.VerifyEvents(t)
 
-				for _, stc := range subTestCases {
-					stc := stc
-
-					t.Run(tc.name+" "+stc.name, func(t *testing.T) {
-						ts := testhelper.WareHouseTest{
-							Schema:        stc.schema,
-							WriteKey:      stc.writeKey,
-							SourceID:      stc.sourceID,
-							DestinationID: stc.destinationID,
-							Prerequisite:  stc.prerequisite,
-							JobsDB:        jobsDB,
-							Provider:      provider,
-							UserID:        testhelper.GetUserId(provider),
-							MessageID:     misc.FastUUID().String(),
-							Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-							WarehouseEventsMap: testhelper.EventsCountMap{
-								"identifies":    1,
-								"users":         1,
-								"tracks":        1,
-								"product_track": 1,
-								"pages":         1,
-								"screens":       1,
-								"aliases":       1,
-								"groups":        1,
-							},
-							Client: &warehouseclient.Client{
-								SQL:  db,
-								Type: warehouseclient.SQLClient,
-							},
-							HTTPPort:    httpPort,
-							WorkspaceID: workspaceID,
-						}
-						ts.VerifyEvents(t)
-
-						ts.WarehouseEventsMap = stc.warehouseEventsMap
-						ts.VerifyModifiedEvents(t)
-					})
-				}
+				ts.WarehouseEventsMap = tc.warehouseEventsMap
+				ts.VerifyModifiedEvents(t)
 			})
 		}
 	})
 
 	t.Run("Validation", func(t *testing.T) {
+		dest := backendconfig.DestinationT{
+			ID: destinationID,
+			Config: map[string]interface{}{
+				"host":            deltaLakeCredentials.Host,
+				"port":            deltaLakeCredentials.Port,
+				"path":            deltaLakeCredentials.Path,
+				"token":           deltaLakeCredentials.Token,
+				"namespace":       namespace,
+				"bucketProvider":  "AZURE_BLOB",
+				"containerName":   deltaLakeCredentials.ContainerName,
+				"prefix":          "",
+				"useSTSTokens":    false,
+				"enableSSE":       false,
+				"accountName":     deltaLakeCredentials.AccountName,
+				"accountKey":      deltaLakeCredentials.AccountKey,
+				"syncFrequency":   "30",
+				"eventDelivery":   false,
+				"eventDeliveryTS": 1648195480174,
+			},
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				ID:          "23HLpnDJnIg7DsBvDWGU6DQzFEo",
+				Name:        "DELTALAKE",
+				DisplayName: "Databricks (Delta Lake)",
+			},
+			Name:       "deltalake-native-demo",
+			Enabled:    true,
+			RevisionID: "39eClxJQQlaWzMWyqnQctFDP5T2",
+		}
+
 		testCases := []struct {
-			name        string
-			useLegacy   bool
-			destination backendconfig.DestinationT
+			name                string
+			useParquetLoadFiles bool
 		}{
 			{
-				name: "Native",
-				destination: backendconfig.DestinationT{
-					ID: destinationID,
-					Config: map[string]interface{}{
-						"host":            deltaLakeCredentials.Host,
-						"port":            deltaLakeCredentials.Port,
-						"path":            deltaLakeCredentials.Path,
-						"token":           deltaLakeCredentials.Token,
-						"namespace":       namespace,
-						"bucketProvider":  "AZURE_BLOB",
-						"containerName":   deltaLakeCredentials.ContainerName,
-						"prefix":          "",
-						"useSTSTokens":    false,
-						"enableSSE":       false,
-						"accountName":     deltaLakeCredentials.AccountName,
-						"accountKey":      deltaLakeCredentials.AccountKey,
-						"syncFrequency":   "30",
-						"eventDelivery":   false,
-						"eventDeliveryTS": 1648195480174,
-					},
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						ID:          "23HLpnDJnIg7DsBvDWGU6DQzFEo",
-						Name:        "DELTALAKE",
-						DisplayName: "Databricks (Delta Lake)",
-					},
-					Name:       "deltalake-native-demo",
-					Enabled:    true,
-					RevisionID: "39eClxJQQlaWzMWyqnQctFDP5T2",
-				},
-				useLegacy: false,
+				name:                "Parquet load files",
+				useParquetLoadFiles: true,
 			},
 			{
-				name: "Legacy",
-				destination: backendconfig.DestinationT{
-					ID: nativeDestinationID,
-					Config: map[string]interface{}{
-						"host":            deltaLakeCredentials.Host,
-						"port":            deltaLakeCredentials.Port,
-						"path":            deltaLakeCredentials.Path,
-						"token":           deltaLakeCredentials.Token,
-						"namespace":       namespace,
-						"bucketProvider":  "AZURE_BLOB",
-						"containerName":   deltaLakeCredentials.ContainerName,
-						"prefix":          "",
-						"useSTSTokens":    false,
-						"enableSSE":       false,
-						"accountName":     deltaLakeCredentials.AccountName,
-						"accountKey":      deltaLakeCredentials.AccountKey,
-						"syncFrequency":   "30",
-						"eventDelivery":   false,
-						"eventDeliveryTS": 1648195480174,
-					},
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						ID:          "23HLpnDJnIg7DsBvDWGU6DQzFEo",
-						Name:        "DELTALAKE",
-						DisplayName: "Databricks (Delta Lake)",
-					},
-					Name:       "deltalake-demo",
-					Enabled:    true,
-					RevisionID: "29eClxJQQlaWzMWyqnQctFDP5T2",
-				},
-				useLegacy: true,
+				name:                "CSV load files",
+				useParquetLoadFiles: false,
 			},
 		}
 
@@ -443,37 +363,14 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				subTestCases := []struct {
-					name                string
-					useParquetLoadFiles bool
-				}{
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
 					{
-						name:                "Parquet load files",
-						useParquetLoadFiles: true,
+						Key:   "Warehouse.deltalake.useParquetLoadFiles",
+						Value: strconv.FormatBool(tc.useParquetLoadFiles),
 					},
-					{
-						name:                "CSV load files",
-						useParquetLoadFiles: false,
-					},
-				}
-				for _, stc := range subTestCases {
-					stc := stc
+				})
 
-					t.Run(tc.name+" "+stc.name, func(t *testing.T) {
-						testhelper.SetConfig(t, []warehouseutils.KeyValue{
-							{
-								Key:   "Warehouse.deltalake.useParquetLoadFiles",
-								Value: strconv.FormatBool(stc.useParquetLoadFiles),
-							},
-							{
-								Key:   "Warehouse.deltalake.useNative",
-								Value: strconv.FormatBool(tc.useLegacy),
-							},
-						})
-
-						testhelper.VerifyConfigurationTest(t, tc.destination)
-					})
-				}
+				testhelper.VerifyConfigurationTest(t, dest)
 			})
 		}
 	})
