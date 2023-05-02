@@ -34,7 +34,7 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.10.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.44.246
+	github.com/aws/aws-sdk-go v1.44.252
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -60,7 +60,7 @@ require (
 	github.com/jeremywohl/flatten v1.0.1
 	github.com/joho/godotenv v1.5.1
 	github.com/json-iterator/go v1.1.12
-	github.com/lib/pq v1.10.8
+	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/minio/minio-go v6.0.14+incompatible
 	github.com/minio/minio-go/v6 v6.0.57
@@ -99,7 +99,7 @@ require (
 	golang.org/x/exp v0.0.0-20230418202329-0354be287a23
 	golang.org/x/oauth2 v0.7.0
 	golang.org/x/sync v0.1.0
-	google.golang.org/api v0.118.0
+	google.golang.org/api v0.120.0
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 	google.golang.org/grpc v1.54.0
 	google.golang.org/protobuf v1.30.0
@@ -186,7 +186,7 @@ require (
 	github.com/google/flatbuffers v2.0.8+incompatible // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/pprof v0.0.0-20211008130755-947d60d73cc0 // indirect
-	github.com/google/s2a-go v0.1.0 // indirect
+	github.com/google/s2a-go v0.1.2 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
 	github.com/googleapis/gax-go/v2 v2.8.0 // indirect
