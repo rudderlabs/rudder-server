@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -259,7 +260,12 @@ func TestDiagnostic_Execute(t *testing.T) {
 				Warehouse: &warehouse,
 			}
 
-			txn, err := pgResource.DB.Begin()
+			db := sqlmiddleware.New(
+				pgResource.DB,
+				sqlmiddleware.WithLogger(logger.NOP),
+			)
+
+			txn, err := db.Begin()
 			require.NoError(t, err)
 
 			err = d.TxnExecute(ctx, txn, tableName, query)
