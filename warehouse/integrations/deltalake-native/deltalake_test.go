@@ -354,7 +354,7 @@ func TestIntegration(t *testing.T) {
 								SQL:  db,
 								Type: warehouseclient.SQLClient,
 							},
-							HTTPPort: httpPort,
+							HTTPPort:    httpPort,
 							WorkspaceID: workspaceID,
 						}
 						ts.VerifyEvents(t)
