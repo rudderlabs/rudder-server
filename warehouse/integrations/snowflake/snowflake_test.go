@@ -35,12 +35,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	snowflakeTestKey     = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
-	snowflakeTestRBACKey = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
-)
-
-type snowflakeTestCredentials struct {
+type testCredentials struct {
 	Account     string `json:"account"`
 	User        string `json:"user"`
 	Password    string `json:"password"`
@@ -52,13 +47,18 @@ type snowflakeTestCredentials struct {
 	AccessKey   string `json:"accessKey"`
 }
 
-func getSnowflakeTestCredentials(key string) (*snowflakeTestCredentials, error) {
+const (
+	testKey     = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
+	testRBACKey = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
+)
+
+func getSnowflakeTestCredentials(key string) (*testCredentials, error) {
 	cred, exists := os.LookupEnv(key)
 	if !exists {
 		return nil, errors.New("snowflake test credentials not found")
 	}
 
-	var credentials snowflakeTestCredentials
+	var credentials testCredentials
 	err := json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		return nil, fmt.Errorf("failed to snowflake redshift test credentials: %w", err)
@@ -67,12 +67,12 @@ func getSnowflakeTestCredentials(key string) (*snowflakeTestCredentials, error) 
 }
 
 func isSnowflakeTestCredentialsAvailable() bool {
-	_, err := getSnowflakeTestCredentials(snowflakeTestKey)
+	_, err := getSnowflakeTestCredentials(testKey)
 	return err == nil
 }
 
 func isSnowflakeTestRBACCredentialsAvailable() bool {
-	_, err := getSnowflakeTestCredentials(snowflakeTestRBACKey)
+	_, err := getSnowflakeTestCredentials(testRBACKey)
 	return err == nil
 }
 
@@ -81,10 +81,10 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if !isSnowflakeTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), snowflakeTestKey)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 	if !isSnowflakeTestRBACCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), snowflakeTestRBACKey)
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testRBACKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
@@ -99,54 +99,78 @@ func TestIntegration(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 
-	jobsDBPort := c.Port("wh-jobsDb", 5432)
-	transformerPort := c.Port("wh-transformer", 9090)
+	jobsDBPort := c.Port("jobsDb", 5432)
+	transformerPort := c.Port("transformer", 9090)
 
 	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
-	schema := testhelper.RandSchema(warehouseutils.SNOWFLAKE)
-	roleSchema := fmt.Sprintf("%s_%s", schema, "ROLE")
-	sourcesSchema := fmt.Sprintf("%s_%s", schema, "SOURCES")
-	caseSensitiveSchema := fmt.Sprintf("%s_%s", schema, "CS")
+	workspaceID := warehouseutils.RandHex()
+	sourceID := warehouseutils.RandHex()
+	destinationID := warehouseutils.RandHex()
+	writeKey := warehouseutils.RandHex()
+	caseSensitiveSourceID := warehouseutils.RandHex()
+	caseSensitiveDestinationID := warehouseutils.RandHex()
+	caseSensitiveWriteKey := warehouseutils.RandHex()
+	rbacSourceID := warehouseutils.RandHex()
+	rbacDestinationID := warehouseutils.RandHex()
+	rbacWriteKey := warehouseutils.RandHex()
+	sourcesSourceID := warehouseutils.RandHex()
+	sourcesDestinationID := warehouseutils.RandHex()
+	sourcesWriteKey := warehouseutils.RandHex()
 
-	credentials, err := getSnowflakeTestCredentials(snowflakeTestKey)
+	provider := warehouseutils.SNOWFLAKE
+
+	schema := testhelper.RandSchema(provider)
+	roleSchema := testhelper.RandSchema(provider)
+	sourcesSchema := testhelper.RandSchema(provider)
+	caseSensitiveSchema := testhelper.RandSchema(provider)
+
+	credentials, err := getSnowflakeTestCredentials(testKey)
 	require.NoError(t, err)
 
-	rbacCrecentials, err := getSnowflakeTestCredentials(snowflakeTestRBACKey)
+	rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
 	require.NoError(t, err)
 
 	templateConfigurations := map[string]string{
-		"workspaceId":                     "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"snowflakeWriteKey":               "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		"snowflakeCaseSensitiveWriteKey":  "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-		"snowflakeRBACWriteKey":           "2eSafstqwcFYUILzXv2fcNIrWO7",
-		"snowflakeSourcesWriteKey":        "2eSJyYtqwcFYerwzXv2fcNIrWO7",
-		"snowflakeAccount":                credentials.Account,
-		"snowflakeUser":                   credentials.User,
-		"snowflakePassword":               credentials.Password,
-		"snowflakeRole":                   credentials.Role,
-		"snowflakeDatabase":               credentials.Database,
-		"snowflakeCaseSensitiveDatabase":  strings.ToLower(credentials.Database),
-		"snowflakeWarehouse":              credentials.Warehouse,
-		"snowflakeBucketName":             credentials.BucketName,
-		"snowflakeAccessKeyID":            credentials.AccessKeyID,
-		"snowflakeAccessKey":              credentials.AccessKey,
-		"snowflakeNamespace":              schema,
-		"snowflakeSourcesNamespace":       sourcesSchema,
-		"snowflakeCaseSensitiveNamespace": caseSensitiveSchema,
-		"snowflakeRBACNamespace":          roleSchema,
-		"snowflakeRBACAccount":            rbacCrecentials.Account,
-		"snowflakeRBACUser":               rbacCrecentials.User,
-		"snowflakeRBACPassword":           rbacCrecentials.Password,
-		"snowflakeRBACRole":               rbacCrecentials.Role,
-		"snowflakeRBACDatabase":           rbacCrecentials.Database,
-		"snowflakeRBACWarehouse":          rbacCrecentials.Warehouse,
-		"snowflakeRBACBucketName":         rbacCrecentials.BucketName,
-		"snowflakeRBACAccessKeyID":        rbacCrecentials.AccessKeyID,
-		"snowflakeRBACAccessKey":          rbacCrecentials.AccessKey,
+		"workspaceID":                workspaceID,
+		"sourceID":                   sourceID,
+		"destinationID":              destinationID,
+		"writeKey":                   writeKey,
+		"caseSensitiveSourceID":      caseSensitiveSourceID,
+		"caseSensitiveDestinationID": caseSensitiveDestinationID,
+		"caseSensitiveWriteKey":      caseSensitiveWriteKey,
+		"rbacSourceID":               rbacSourceID,
+		"rbacDestinationID":          rbacDestinationID,
+		"rbacWriteKey":               rbacWriteKey,
+		"sourcesSourceID":            sourcesSourceID,
+		"sourcesDestinationID":       sourcesDestinationID,
+		"sourcesWriteKey":            sourcesWriteKey,
+		"account":                    credentials.Account,
+		"user":                       credentials.User,
+		"password":                   credentials.Password,
+		"role":                       credentials.Role,
+		"database":                   credentials.Database,
+		"caseSensitiveDatabase":      strings.ToLower(credentials.Database),
+		"warehouse":                  credentials.Warehouse,
+		"bucketName":                 credentials.BucketName,
+		"accessKeyID":                credentials.AccessKeyID,
+		"accessKey":                  credentials.AccessKey,
+		"namespace":                  schema,
+		"sourcesNamespace":           sourcesSchema,
+		"caseSensitiveNamespace":     caseSensitiveSchema,
+		"rbacNamespace":              roleSchema,
+		"rbacAccount":                rbacCredentials.Account,
+		"rbacUser":                   rbacCredentials.User,
+		"rbacPassword":               rbacCredentials.Password,
+		"rbacRole":                   rbacCredentials.Role,
+		"rbacDatabase":               rbacCredentials.Database,
+		"rbacWarehouse":              rbacCredentials.Warehouse,
+		"rbacBucketName":             rbacCredentials.BucketName,
+		"rbacAccessKeyID":            rbacCredentials.AccessKeyID,
+		"rbacAccessKey":              rbacCredentials.AccessKey,
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -188,7 +212,7 @@ func TestIntegration(t *testing.T) {
 	svcDone := make(chan struct{})
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	go func() {
-		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
+		r := runner.New(runner.ReleaseInfo{})
 		_ = r.Run(ctx, []string{"snowflake-integration-test"})
 
 		close(svcDone)
@@ -205,7 +229,6 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, jobsDB.Ping())
 
-		provider := warehouseutils.SNOWFLAKE
 		database := credentials.Database
 
 		testcase := []struct {
@@ -238,9 +261,9 @@ func TestIntegration(t *testing.T) {
 				database:      database,
 				schema:        schema,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-				sourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
-				destinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
+				writeKey:      writeKey,
+				sourceID:      sourceID,
+				destinationID: destinationID,
 				stagingFilesEventsMap: testhelper.EventsCountMap{
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
@@ -251,19 +274,19 @@ func TestIntegration(t *testing.T) {
 			{
 				name: "Upload Job with Role",
 				credentials: snowflake.Credentials{
-					Account:   rbacCrecentials.Account,
-					Warehouse: rbacCrecentials.Warehouse,
-					Database:  rbacCrecentials.Database,
-					User:      rbacCrecentials.User,
-					Role:      rbacCrecentials.Role,
-					Password:  rbacCrecentials.Password,
+					Account:   rbacCredentials.Account,
+					Warehouse: rbacCredentials.Warehouse,
+					Database:  rbacCredentials.Database,
+					User:      rbacCredentials.User,
+					Role:      rbacCredentials.Role,
+					Password:  rbacCredentials.Password,
 				},
 				database:      database,
 				schema:        roleSchema,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:      "2eSafstqwcFYUILzXv2fcNIrWO7",
-				sourceID:      "24p1HhPsafaFBMKuzvx7GshCLKR",
-				destinationID: "24qeADObsdsJhijDnEppO6P1SNc",
+				writeKey:      rbacWriteKey,
+				sourceID:      rbacSourceID,
+				destinationID: rbacDestinationID,
 				stagingFilesEventsMap: testhelper.EventsCountMap{
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
@@ -284,9 +307,9 @@ func TestIntegration(t *testing.T) {
 				database:      strings.ToLower(database),
 				schema:        caseSensitiveSchema,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-				sourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
-				destinationID: "24qeADObp6eJhijDnEppO6P1SNc",
+				writeKey:      caseSensitiveWriteKey,
+				sourceID:      caseSensitiveSourceID,
+				destinationID: caseSensitiveDestinationID,
 				stagingFilesEventsMap: testhelper.EventsCountMap{
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
@@ -307,9 +330,9 @@ func TestIntegration(t *testing.T) {
 				database:      database,
 				schema:        sourcesSchema,
 				tables:        []string{"tracks", "google_sheet"},
-				writeKey:      "2eSJyYtqwcFYerwzXv2fcNIrWO7",
-				sourceID:      "2DkCpUr0xgjaNRJxIwqyqfyHdq4",
-				destinationID: "24qeADObp6eIsfjDnEppO6P1SNc",
+				writeKey:      sourcesWriteKey,
+				sourceID:      sourcesSourceID,
+				destinationID: sourcesDestinationID,
 				eventsMap:     testhelper.SourcesSendEventsMap(),
 				stagingFilesEventsMap: testhelper.EventsCountMap{
 					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
@@ -374,6 +397,7 @@ func TestIntegration(t *testing.T) {
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
 					UserID:                testhelper.GetUserId(provider),
+					WorkspaceID:           workspaceID,
 					Client: &client.Client{
 						SQL:  db,
 						Type: client.SQLClient,
@@ -397,17 +421,17 @@ func TestIntegration(t *testing.T) {
 		destination := backendconfig.DestinationT{
 			ID: "24qeADObp6eIhjjDnEppO6P1SNc",
 			Config: map[string]interface{}{
-				"account":            templateConfigurations["snowflakeAccount"],
-				"database":           templateConfigurations["snowflakeDatabase"],
-				"warehouse":          templateConfigurations["snowflakeWarehouse"],
-				"user":               templateConfigurations["snowflakeUser"],
-				"password":           templateConfigurations["snowflakePassword"],
+				"account":            credentials.Account,
+				"database":           credentials.Database,
+				"warehouse":          credentials.Warehouse,
+				"user":               credentials.User,
+				"password":           credentials.Password,
 				"cloudProvider":      "AWS",
-				"bucketName":         templateConfigurations["snowflakeBucketName"],
+				"bucketName":         credentials.BucketName,
 				"storageIntegration": "",
-				"accessKeyID":        templateConfigurations["snowflakeAccessKeyID"],
-				"accessKey":          templateConfigurations["snowflakeAccessKey"],
-				"namespace":          templateConfigurations["snowflakeNamespace"],
+				"accessKeyID":        credentials.AccessKeyID,
+				"accessKey":          credentials.AccessKey,
+				"namespace":          schema,
 				"prefix":             "snowflake-prefix",
 				"syncFrequency":      "30",
 				"enableSSE":          false,
