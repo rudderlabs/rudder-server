@@ -84,13 +84,13 @@ func TestIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
-	azWritekey := warehouseutils.RandHex()
+	azWriteKey := warehouseutils.RandHex()
 	azDestinationID := warehouseutils.RandHex()
 	azSourceID := warehouseutils.RandHex()
-	s3Writekey := warehouseutils.RandHex()
+	s3WriteKey := warehouseutils.RandHex()
 	s3DestinationID := warehouseutils.RandHex()
 	s3SourceID := warehouseutils.RandHex()
-	gcsWritekey := warehouseutils.RandHex()
+	gcsWriteKey := warehouseutils.RandHex()
 	gcsDestinationID := warehouseutils.RandHex()
 	gcsSourceID := warehouseutils.RandHex()
 
@@ -106,13 +106,13 @@ func TestIntegration(t *testing.T) {
 
 	templateConfigurations := map[string]string{
 		"workspaceID":      workspaceID,
-		"azWriteKey":       azWritekey,
+		"azWriteKey":       azWriteKey,
 		"azDestinationID":  azDestinationID,
 		"azSourceID":       azSourceID,
-		"s3WriteKey":       s3Writekey,
+		"s3WriteKey":       s3WriteKey,
 		"s3DestinationID":  s3DestinationID,
 		"s3SourceID":       s3SourceID,
-		"gcsWriteKey":      gcsWritekey,
+		"gcsWriteKey":      gcsWriteKey,
 		"gcsDestinationID": gcsDestinationID,
 		"gcsSourceID":      gcsSourceID,
 		"azContainerName":  azContainerName,
@@ -199,7 +199,7 @@ func TestIntegration(t *testing.T) {
 		}{
 			{
 				name:          "S3Datalake",
-				writeKey:      s3Writekey,
+				writeKey:      s3WriteKey,
 				sourceID:      s3SourceID,
 				destinationID: s3DestinationID,
 				provider:      warehouseutils.S3_DATALAKE,
@@ -219,7 +219,7 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:          "GCSDatalake",
-				writeKey:      gcsWritekey,
+				writeKey:      gcsWriteKey,
 				sourceID:      gcsSourceID,
 				destinationID: gcsDestinationID,
 				provider:      warehouseutils.GCS_DATALAKE,
@@ -233,7 +233,7 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:          "AzureDatalake",
-				writeKey:      azWritekey,
+				writeKey:      azWriteKey,
 				sourceID:      azSourceID,
 				destinationID: azDestinationID,
 				provider:      warehouseutils.AZURE_DATALAKE,

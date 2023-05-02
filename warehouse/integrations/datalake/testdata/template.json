@@ -118,7 +118,7 @@
         "eventUpload": false,
         "eventUploadTS": 1653346591988
       },
-      "id": "{{.s3DestinationID}}",
+      "id": "{{.s3SourceID}}",
       "name": "s3-datalake-integration",
       "writeKey": "{{.s3WriteKey}}",
       "enabled": true,
@@ -228,7 +228,7 @@
         "eventUpload": false,
         "eventUploadTS": 1653346591988
       },
-      "id": "{{.gcsDestinationID}}",
+      "id": "{{.gcsSourceID}}",
       "name": "gcs-datalake-integration",
       "writeKey": "{{.gcsWriteKey}}",
       "enabled": true,
