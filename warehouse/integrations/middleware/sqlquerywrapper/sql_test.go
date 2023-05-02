@@ -18,6 +18,8 @@ import (
 )
 
 func TestQueryWrapper(t *testing.T) {
+	t.Parallel()
+
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
