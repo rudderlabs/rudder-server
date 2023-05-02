@@ -948,11 +948,11 @@ func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 	return
 }
 
-func (pg *Postgres) LoadUserTables() map[string]error {
+func (pg *Postgres) LoadUserTables(context.Context) map[string]error {
 	return pg.loadUserTables()
 }
 
-func (pg *Postgres) LoadTable(tableName string) error {
+func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 	_, err := pg.loadTable(tableName, pg.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }

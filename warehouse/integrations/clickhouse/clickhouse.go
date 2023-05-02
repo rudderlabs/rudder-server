@@ -1008,7 +1008,7 @@ func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecogniz
 	return
 }
 
-func (ch *Clickhouse) LoadUserTables() (errorMap map[string]error) {
+func (ch *Clickhouse) LoadUserTables(context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	err := ch.loadTable(warehouseutils.IdentifiesTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
 	if err != nil {
@@ -1028,7 +1028,7 @@ func (ch *Clickhouse) LoadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (ch *Clickhouse) LoadTable(tableName string) error {
+func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) error {
 	err := ch.loadTable(tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
 	return err
 }

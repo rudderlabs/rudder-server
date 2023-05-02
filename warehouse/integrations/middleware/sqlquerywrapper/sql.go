@@ -3,6 +3,7 @@ package sqlquerywrapper
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -106,6 +107,28 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interfa
 	row := db.DB.QueryRowContext(ctx, query, args...)
 	db.logQuery(query, db.since(startedAt))
 	return row
+}
+
+func (db *DB) WithTx(fn func(*Tx) error, timeout time.Duration) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	txt := txWithTimeout{
+		Tx:      tx,
+		timeout: timeout,
+	}
+
+	defer func() {
+		_ = txt.Rollback()
+	}()
+
+	if err := fn(tx); err != nil {
+		return fmt.Errorf("executing transaction: %w", err)
+	}
+
+	return txt.Commit()
 }
 
 func (db *DB) logQuery(query string, elapsed time.Duration) {

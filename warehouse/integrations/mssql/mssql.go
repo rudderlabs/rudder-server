@@ -810,11 +810,11 @@ func (ms *MSSQL) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSch
 	return
 }
 
-func (ms *MSSQL) LoadUserTables() map[string]error {
+func (ms *MSSQL) LoadUserTables(context.Context) map[string]error {
 	return ms.loadUserTables()
 }
 
-func (ms *MSSQL) LoadTable(tableName string) error {
+func (ms *MSSQL) LoadTable(ctx context.Context, tableName string) error {
 	_, err := ms.loadTable(tableName, ms.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }

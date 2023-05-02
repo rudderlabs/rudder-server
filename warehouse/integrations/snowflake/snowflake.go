@@ -1306,11 +1306,11 @@ func (sf *Snowflake) Cleanup() {
 	}
 }
 
-func (sf *Snowflake) LoadUserTables() map[string]error {
+func (sf *Snowflake) LoadUserTables(context.Context) map[string]error {
 	return sf.loadUserTables()
 }
 
-func (sf *Snowflake) LoadTable(tableName string) error {
+func (sf *Snowflake) LoadTable(ctx context.Context, tableName string) error {
 	_, err := sf.loadTable(tableName, sf.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }

@@ -521,7 +521,7 @@ func (bq *BigQuery) loadTable(tableName string, _, getLoadFileLocFromTableUpload
 	return
 }
 
-func (bq *BigQuery) LoadUserTables() (errorMap map[string]error) {
+func (bq *BigQuery) LoadUserTables(context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	bq.Logger.Infof("BQ: Starting load for identifies and users tables\n")
 	identifyLoadTable, err := bq.loadTable(warehouseutils.IdentifiesTable, true, false, true)
@@ -848,7 +848,7 @@ func (bq *BigQuery) TestConnection(context.Context, model.Warehouse) (err error)
 	return nil
 }
 
-func (bq *BigQuery) LoadTable(tableName string) error {
+func (bq *BigQuery) LoadTable(ctx context.Context, tableName string) error {
 	var getLoadFileLocFromTableUploads bool
 	switch tableName {
 	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
@@ -988,12 +988,12 @@ func (bq *BigQuery) Cleanup() {
 
 func (bq *BigQuery) LoadIdentityMergeRulesTable() (err error) {
 	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(warehouseutils.BQ)
-	return bq.LoadTable(identityMergeRulesTable)
+	return bq.LoadTable(context.TODO(), identityMergeRulesTable)
 }
 
 func (bq *BigQuery) LoadIdentityMappingsTable() (err error) {
 	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(warehouseutils.BQ)
-	return bq.LoadTable(identityMappingsTable)
+	return bq.LoadTable(context.TODO(), identityMappingsTable)
 }
 
 func (bq *BigQuery) tableExists(tableName string) (exists bool, err error) {

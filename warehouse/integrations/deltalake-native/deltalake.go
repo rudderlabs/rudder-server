@@ -533,7 +533,7 @@ func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) 
 }
 
 // LoadTable loads table for table name
-func (d *Deltalake) LoadTable(tableName string) error {
+func (d *Deltalake) LoadTable(ctx context.Context, tableName string) error {
 	uploadTableSchema := d.Uploader.GetTableSchemaInUpload(tableName)
 	warehouseTableSchema := d.Uploader.GetTableSchemaInWarehouse(tableName)
 
@@ -923,7 +923,7 @@ func partitionedByEventDate(columns []string) bool {
 }
 
 // LoadUserTables loads user tables
-func (d *Deltalake) LoadUserTables() map[string]error {
+func (d *Deltalake) LoadUserTables(context.Context) map[string]error {
 	var (
 		identifiesSchemaInUpload    = d.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
 		identifiesSchemaInWarehouse = d.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable)

@@ -1049,7 +1049,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		}
 	}
 
-	err = job.whManager.LoadTable(tName)
+	err = job.whManager.LoadTable(context.TODO(), tName)
 	if err != nil {
 		status := model.TableUploadExportingFailed
 		errorsString := misc.QuoteLiteral(err.Error())
@@ -1207,7 +1207,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 		return []error{}, nil
 	}
 
-	errorMap := job.whManager.LoadUserTables()
+	errorMap := job.whManager.LoadUserTables(context.TODO())
 
 	if alteredIdentitySchema || alteredUserSchema {
 		pkgLogger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)

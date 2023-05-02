@@ -770,11 +770,11 @@ func (as *AzureSynapse) FetchSchema(warehouse model.Warehouse) (schema, unrecogn
 	return
 }
 
-func (as *AzureSynapse) LoadUserTables() map[string]error {
+func (as *AzureSynapse) LoadUserTables(context.Context) map[string]error {
 	return as.loadUserTables()
 }
 
-func (as *AzureSynapse) LoadTable(tableName string) error {
+func (as *AzureSynapse) LoadTable(ctx context.Context, tableName string) error {
 	_, err := as.loadTable(tableName, as.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }

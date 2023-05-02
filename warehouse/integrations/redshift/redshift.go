@@ -1397,11 +1397,11 @@ func (*Redshift) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (rs *Redshift) LoadUserTables() map[string]error {
+func (rs *Redshift) LoadUserTables(context.Context) map[string]error {
 	return rs.loadUserTables()
 }
 
-func (rs *Redshift) LoadTable(tableName string) error {
+func (rs *Redshift) LoadTable(ctx context.Context, tableName string) error {
 	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }

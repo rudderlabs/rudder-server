@@ -75,7 +75,7 @@ func (d *Datalake) AlterColumn(tableName, columnName, columnType string) (model.
 	return d.SchemaRepository.AlterColumn(tableName, columnName, columnType)
 }
 
-func (d *Datalake) LoadTable(tableName string) error {
+func (d *Datalake) LoadTable(ctx context.Context, tableName string) error {
 	d.Logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.Warehouse.Destination.ID)
 	return nil
 }
@@ -84,7 +84,7 @@ func (*Datalake) DeleteBy([]string, warehouseutils.DeleteByParams) (err error) {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
-func (d *Datalake) LoadUserTables() map[string]error {
+func (d *Datalake) LoadUserTables(context.Context) map[string]error {
 	d.Logger.Infof("Skipping load for user tables : %s is a datalake destination", d.Warehouse.Destination.ID)
 	// return map with nil error entries for identifies and users(if any) tables
 	// this is so that they are marked as succeeded

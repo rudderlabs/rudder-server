@@ -976,12 +976,12 @@ func (*Deltalake) IsEmpty(model.Warehouse) (empty bool, err error) {
 }
 
 // LoadUserTables loads user tables
-func (dl *Deltalake) LoadUserTables() map[string]error {
+func (dl *Deltalake) LoadUserTables(context.Context) map[string]error {
 	return dl.loadUserTables()
 }
 
 // LoadTable loads table for table name
-func (dl *Deltalake) LoadTable(tableName string) error {
+func (dl *Deltalake) LoadTable(ctx context.Context, tableName string) error {
 	_, err := dl.loadTable(tableName, dl.Uploader.GetTableSchemaInUpload(tableName), dl.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }

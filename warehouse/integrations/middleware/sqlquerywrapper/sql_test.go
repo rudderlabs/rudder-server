@@ -76,7 +76,7 @@ func TestQueryWrapper(t *testing.T) {
 			kvs = append(kvs, keysAndValues...)
 
 			if tc.wantLog {
-				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
+				mockLogger.EXPECT().Infow("executing query", kvs).Times(7)
 			} else {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
 			}
@@ -98,6 +98,13 @@ func TestQueryWrapper(t *testing.T) {
 
 			_ = qw.QueryRowContext(ctx, query)
 			require.NoError(t, err)
+
+			_ = qw.WithTx(func(tx *Tx) error {
+				_, err := tx.Exec(query)
+				return err
+			},
+				1*time.Second,
+			)
 		})
 
 		t.Run(tc.name+" with secrets", func(t *testing.T) {
