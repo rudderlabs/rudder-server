@@ -2,12 +2,13 @@ package sqlquerywrapper
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	"github.com/ory/dockertest/v3"
 	rsLogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 func TestTxWithTimeout_Rollback(t *testing.T) {

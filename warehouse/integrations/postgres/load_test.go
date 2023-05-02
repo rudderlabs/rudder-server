@@ -50,15 +50,19 @@ func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Ti
 func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
+
 func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFile, error) {
 	return warehouseutils.LoadFile{}, nil
 }
+
 func (*mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	return "", nil
 }
+
 func (m *mockUploader) GetTableSchemaInUpload(tableName string) model.TableSchema {
 	return m.schema[tableName]
 }
+
 func (m *mockUploader) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
 	return m.schema[tableName]
 }

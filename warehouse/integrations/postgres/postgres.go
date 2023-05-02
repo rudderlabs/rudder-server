@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
