@@ -66,7 +66,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		err                     error
 		query                   string
 		stagingTableName        string
-		txn                     *sql.Tx
+		txn                     *sqlmiddleware.Tx
 		result                  sql.Result
 		stmt                    *sql.Stmt
 		gzFile                  *os.File
@@ -373,7 +373,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchemaInUpload, u
 		err                        error
 		query                      string
 		identifiesStagingTableName string
-		txn                        *sql.Tx
+		txn                        *sqlmiddleware.Tx
 	)
 
 	query = fmt.Sprintf(`SET search_path TO %q`, lut.Namespace)

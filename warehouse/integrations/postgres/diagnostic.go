@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"strings"
 	"time"
 
@@ -72,7 +73,7 @@ func (d *Diagnostic) TxnRollback(txn Tx, tableName, stage string) {
 // Print execution plan if enableWithQueryPlan is set to true else return result set.
 // Currently, these statements are supported by EXPLAIN
 // Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
-func (d *Diagnostic) TxnExecute(ctx context.Context, txn *sql.Tx, tableName, query string) error {
+func (d *Diagnostic) TxnExecute(ctx context.Context, txn *sqlmiddleware.Tx, tableName, query string) error {
 	var (
 		enableSQLStatementExecutionPlanWorkspaceIDs = d.Config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
 		enableSQLStatementExecutionPlan             = d.Config.GetBool("Warehouse.postgres.enableSQLStatementExecutionPlan", false)
