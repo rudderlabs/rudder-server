@@ -47,40 +47,85 @@ func TestIntegration(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 
-	jobsDBPort := c.Port("wh-jobsDb", 5432)
-	minioPort := c.Port("wh-minio", 9000)
-	transformerPort := c.Port("wh-transformer", 9090)
-	postgresPort := c.Port("wh-postgres", 5432)
-	sshPort := c.Port("wh-ssh-server", 2222)
+	jobsDBPort := c.Port("jobsDb", 5432)
+	minioPort := c.Port("minio", 9000)
+	transformerPort := c.Port("transformer", 9090)
+	postgresPort := c.Port("postgres", 5432)
+	sshPort := c.Port("ssh-server", 2222)
 
 	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
+	workspaceID := warehouseutils.RandHex()
+	sourceID := warehouseutils.RandHex()
+	destinationID := warehouseutils.RandHex()
+	writeKey := warehouseutils.RandHex()
+	sourcesSourceID := warehouseutils.RandHex()
+	sourcesDestinationID := warehouseutils.RandHex()
+	sourcesWriteKey := warehouseutils.RandHex()
+	tunnelledWriteKey := warehouseutils.RandHex()
+	tunnelledSourceID := warehouseutils.RandHex()
+	tunnelledDestinationID := warehouseutils.RandHex()
+
+	provider := warehouseutils.POSTGRES
+	schema := testhelper.RandSchema(provider)
+	sourcesSchema := testhelper.RandSchema(provider)
+	tunnelledSchema := testhelper.RandSchema(provider)
+
+	host := "localhost"
+	database := "rudderdb"
+	user := "rudder"
+	password := "rudder-password"
+
+	tunnelledHost := "db-private-postgres"
+	tunnelledDatabase := "postgres"
+	tunnelledPassword := "postgres"
+	tunnelledUser := "postgres"
+	tunnelledPort := "5432"
+
+	tunnelledSSHUser := "rudderstack"
+	tunnelledSSHHost := "localhost"
+	tunnelledPrivateKey := "-----BEGIN OPENSSH PRIVATE KEY-----\\n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\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----"
+
+	bucketName := "testbucket"
+	accessKeyID := "MYACCESSKEY"
+	secretAccessKey := "MYSECRETKEY"
+	endPoint := fmt.Sprintf("localhost:%d", minioPort)
+
 	templateConfigurations := map[string]string{
-		"workspaceId":               "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"postgresWriteKey":          "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-		"postgresHost":              "localhost",
-		"postgresDatabase":          "rudderdb",
-		"postgresUser":              "rudder",
-		"postgresPassword":          "rudder-password",
-		"postgresPort":              fmt.Sprint(postgresPort),
-		"postgresSourcesWriteKey":   "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
-		"postgresTunnelledWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3w",
-		"sshUser":                   "rudderstack",
-		"sshPort":                   fmt.Sprint(sshPort),
-		"sshHost":                   "localhost",
-		"sshPrivateKey":             "-----BEGIN OPENSSH PRIVATE KEY-----\\n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\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----",
-		"privatePostgresHost":       "db-private-postgres",
-		"privatePostgresDatabase":   "postgres",
-		"privatePostgresPort":       "5432",
-		"privatePostgresUser":       "postgres",
-		"privatePostgresPassword":   "postgres",
-		"minioBucketName":           "testbucket",
-		"minioAccesskeyID":          "MYACCESSKEY",
-		"minioSecretAccessKey":      "MYSECRETKEY",
-		"minioEndpoint":             fmt.Sprintf("localhost:%d", minioPort),
+		"workspaceID":            workspaceID,
+		"sourceID":               sourceID,
+		"destinationID":          destinationID,
+		"writeKey":               writeKey,
+		"sourcesSourceID":        sourcesSourceID,
+		"sourcesDestinationID":   sourcesDestinationID,
+		"sourcesWriteKey":        sourcesWriteKey,
+		"tunnelledWriteKey":      tunnelledWriteKey,
+		"tunnelledSourceID":      tunnelledSourceID,
+		"tunnelledDestinationID": tunnelledDestinationID,
+		"host":                   host,
+		"database":               database,
+		"user":                   user,
+		"password":               password,
+		"port":                   fmt.Sprint(postgresPort),
+		"namespace":              schema,
+		"sourcesNamespace":       sourcesSchema,
+		"tunnelledNamespace":     tunnelledSchema,
+		"tunnelledSSHUser":       tunnelledSSHUser,
+		"tunnelledSSHPort":       fmt.Sprint(sshPort),
+		"tunnelledSSHHost":       tunnelledSSHHost,
+		"tunnelledPrivateKey":    tunnelledPrivateKey,
+		"tunnelledHost":          tunnelledHost,
+		"tunnelledDatabase":      tunnelledDatabase,
+		"tunnelledPort":          tunnelledPort,
+		"tunnelledUser":          tunnelledUser,
+		"tunnelledPassword":      tunnelledPassword,
+		"bucketName":             bucketName,
+		"accessKeyID":            accessKeyID,
+		"secretAccessKey":        secretAccessKey,
+		"endPoint":               endPoint,
 	}
 	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -127,7 +172,7 @@ func TestIntegration(t *testing.T) {
 	svcDone := make(chan struct{})
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	go func() {
-		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
+		r := runner.New(runner.ReleaseInfo{})
 		_ = r.Run(ctx, []string{"postgres-integration-test"})
 
 		close(svcDone)
@@ -176,8 +221,6 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, jobsDB.Ping())
 
-			provider := warehouseutils.POSTGRES
-
 			subTestcase := []struct {
 				name                  string
 				writeKey              string
@@ -194,19 +237,19 @@ func TestIntegration(t *testing.T) {
 			}{
 				{
 					name:          "Upload Job",
-					writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-					schema:        "postgres_wh_integration",
+					writeKey:      writeKey,
+					schema:        schema,
 					tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-					sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
-					destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+					sourceID:      sourceID,
+					destinationID: destinationID,
 				},
 				{
 					name:                  "Async Job",
-					writeKey:              "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
-					schema:                "postgres_wh_sources_integration",
+					writeKey:              sourcesWriteKey,
+					schema:                sourcesSchema,
 					tables:                []string{"tracks", "google_sheet"},
-					sourceID:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
-					destinationID:         "308ZvbavR21Um6eGKQCagZHqLGZ",
+					sourceID:              sourcesSourceID,
+					destinationID:         sourcesDestinationID,
 					eventsMap:             testhelper.SourcesSendEventsMap(),
 					stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 					loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
@@ -239,6 +282,7 @@ func TestIntegration(t *testing.T) {
 						JobsDB:                jobsDB,
 						JobRunID:              misc.FastUUID().String(),
 						TaskRunID:             misc.FastUUID().String(),
+						WorkspaceID:           workspaceID,
 						Client: &client.Client{
 							SQL:  db,
 							Type: client.SQLClient,
@@ -259,18 +303,18 @@ func TestIntegration(t *testing.T) {
 
 		t.Run(tc.name+"Events flow with ssh tunnel", func(t *testing.T) {
 			dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-				templateConfigurations["privatePostgresUser"],
-				templateConfigurations["privatePostgresPassword"],
-				templateConfigurations["privatePostgresHost"],
-				templateConfigurations["privatePostgresPort"],
-				templateConfigurations["privatePostgresDatabase"],
+				tunnelledUser,
+				tunnelledPassword,
+				tunnelledHost,
+				tunnelledPort,
+				tunnelledDatabase,
 			)
 			tunnelInfo := &tunnelling.TunnelInfo{
 				Config: map[string]interface{}{
-					"sshUser":       templateConfigurations["sshUser"],
-					"sshPort":       templateConfigurations["sshPort"],
-					"sshHost":       templateConfigurations["sshHost"],
-					"sshPrivateKey": strings.ReplaceAll(templateConfigurations["sshPrivateKey"], "\\n", "\n"),
+					"sshUser":       tunnelledSSHUser,
+					"sshPort":       fmt.Sprint(sshPort),
+					"sshHost":       tunnelledSSHHost,
+					"sshPrivateKey": strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
 				},
 			}
 
@@ -301,11 +345,11 @@ func TestIntegration(t *testing.T) {
 			}{
 				{
 					name:          "upload job through ssh tunnelling",
-					writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3w",
-					schema:        "postgres_wh_ssh_tunnelled_integration",
+					writeKey:      tunnelledWriteKey,
+					schema:        tunnelledSchema,
 					tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-					sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRF",
-					destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+					sourceID:      tunnelledSourceID,
+					destinationID: tunnelledDestinationID,
 				},
 			}
 
@@ -351,19 +395,19 @@ func TestIntegration(t *testing.T) {
 			destination := backendconfig.DestinationT{
 				ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
 				Config: map[string]interface{}{
-					"host":             templateConfigurations["postgresHost"],
-					"database":         templateConfigurations["postgresDatabase"],
-					"user":             templateConfigurations["postgresUser"],
-					"password":         templateConfigurations["postgresPassword"],
-					"port":             templateConfigurations["postgresPort"],
+					"host":             host,
+					"database":         database,
+					"user":             user,
+					"password":         password,
+					"port":             fmt.Sprint(postgresPort),
 					"sslMode":          "disable",
 					"namespace":        "",
 					"bucketProvider":   "MINIO",
-					"bucketName":       templateConfigurations["minioBucketName"],
-					"accessKeyID":      templateConfigurations["minioAccesskeyID"],
-					"secretAccessKey":  templateConfigurations["minioSecretAccessKey"],
+					"bucketName":       bucketName,
+					"accessKeyID":      accessKeyID,
+					"secretAccessKey":  secretAccessKey,
 					"useSSL":           false,
-					"endPoint":         templateConfigurations["minioEndpoint"],
+					"endPoint":         endPoint,
 					"syncFrequency":    "30",
 					"useRudderStorage": false,
 				},
