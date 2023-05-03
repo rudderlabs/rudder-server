@@ -456,7 +456,7 @@ func (as *AzureSynapse) loadUserTables() (errorMap map[string]error) {
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
+		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
 		caseSubQuery := fmt.Sprintf(`case
 						  when (exists(select 1)) then (
 						  	select top 1 %[1]q from %[2]s
