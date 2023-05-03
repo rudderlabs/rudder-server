@@ -216,6 +216,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		rsources.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
+		&reporting.NOOP{},
 		processor.WithFeaturesRetryMaxAttempts(0))
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
@@ -225,6 +226,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
 		Reporting:        &reporting.NOOP{},
+		EdReporting:      &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         tDb,
