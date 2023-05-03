@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 

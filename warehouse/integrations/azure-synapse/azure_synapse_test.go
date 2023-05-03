@@ -4,11 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"

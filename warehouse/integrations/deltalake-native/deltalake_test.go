@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/rudderlabs/compose-test/testcompose"

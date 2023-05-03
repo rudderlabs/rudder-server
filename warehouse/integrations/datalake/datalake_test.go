@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	"github.com/minio/minio-go/v6"
 	"github.com/rudderlabs/compose-test/testcompose"

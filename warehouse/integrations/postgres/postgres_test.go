@@ -4,12 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -186,7 +187,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("Events flow", func(t *testing.T) {
 		dsn := fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "localhost", fmt.Sprint(postgresPort), "rudderdb",
+			"rudder", "rudder-password", "localhost", strconv.Itoa(postgresPort), "rudderdb",
 		)
 		db, err := sql.Open("postgres", dsn)
 		require.NoError(t, err)
