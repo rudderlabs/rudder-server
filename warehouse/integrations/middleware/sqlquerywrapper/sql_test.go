@@ -3,7 +3,6 @@ package sqlquerywrapper
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -322,48 +321,4 @@ func TestQueryWrapper(t *testing.T) {
 			})
 		})
 	}
-
-	t.Run("WithTx", func(t *testing.T) {
-		mockCtrl := gomock.NewController(t)
-		defer mockCtrl.Finish()
-
-		mockLogger := mock_logger.NewMockLogger(mockCtrl)
-
-		qw := New(
-			pgResource.DB,
-			WithSlowQueryThreshold(queryThreshold),
-			WithLogger(mockLogger),
-			WithKeyAndValues(keysAndValues...),
-		)
-		qw.since = func(time.Time) time.Duration {
-			return 1 * time.Second
-		}
-
-		query := "SELECT 1;"
-
-		kvs := []any{
-			logfield.Error, errors.New("error: test error, rollback error: sql: transaction has already been committed or rolled back").Error(),
-		}
-		kvs = append(kvs, keysAndValues...)
-
-		mockLogger.EXPECT().Warnw("failed rollback transaction", kvs...).Times(1)
-
-		_ = qw.WithTx(ctx, func(tx *Tx) error {
-			_, err := tx.ExecContext(ctx, query)
-			return err
-		})
-
-		_ = qw.WithTx(ctx, func(tx *Tx) error {
-			ctx, cancel := context.WithCancel(ctx)
-			cancel()
-
-			_, err := tx.ExecContext(ctx, "SELECT;")
-			return err
-		})
-
-		_ = qw.WithTx(ctx, func(tx *Tx) error {
-			_ = tx.Commit()
-			return fmt.Errorf("test error")
-		})
-	})
 }

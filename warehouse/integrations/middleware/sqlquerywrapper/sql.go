@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
@@ -64,6 +66,7 @@ func New(db *sql.DB, opts ...Opt) *DB {
 		since:              time.Since,
 		slowQueryThreshold: 300 * time.Second,
 		rollbackThreshold:  30 * time.Second,
+		logger:             rslogger.NOP,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -119,17 +122,13 @@ func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
-	defer func() {
-		if err != nil {
-			if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(err, sql.ErrTxDone) {
-				keysAndValues := []any{logfield.Error, fmt.Errorf("error: %s, rollback error: %s", err.Error(), rollbackErr.Error()).Error()}
-				keysAndValues = append(keysAndValues, db.keysAndValues...)
-				db.logger.Warnw("failed rollback transaction", keysAndValues...)
-			}
-		}
-	}()
-
 	if err = fn(tx); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			keysAndValues := []any{logfield.Error, fmt.Errorf("executing transaction: %s, rollback: %s", err.Error(), rollbackErr.Error()).Error()}
+			keysAndValues = append(keysAndValues, db.keysAndValues...)
+
+			db.logger.Warnw("failed rollback transaction", keysAndValues...)
+		}
 		return fmt.Errorf("executing transaction: %w", err)
 	}
 

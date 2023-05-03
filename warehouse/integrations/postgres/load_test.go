@@ -180,7 +180,7 @@ func TestLoadTable(t *testing.T) {
 			{
 				name:          "context cancelled",
 				mockFiles:     []string{"load.csv.gz"},
-				wantError:     errors.New("loading table: executing transaction: setting search path: context canceled"),
+				wantError:     errors.New("loading table: begin transaction: context canceled"),
 				cancelContext: true,
 			},
 		}
