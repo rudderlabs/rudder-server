@@ -1587,10 +1587,6 @@ func isStandAloneSlave() bool {
 }
 
 func setupDB(ctx context.Context, connInfo string) error {
-	if isStandAloneSlave() {
-		return nil
-	}
-
 	var err error
 	dbHandle, err = sql.Open("postgres", connInfo)
 	if err != nil {
@@ -1608,6 +1604,10 @@ func setupDB(ctx context.Context, connInfo string) error {
 		return err
 	}
 
+	if isStandAloneSlave() {
+		dbHandle.SetMaxOpenConns(1)
+	}
+
 	if err = dbHandle.PingContext(ctx); err != nil {
 		return fmt.Errorf("could not ping WH db: %w", err)
 	}
@@ -1617,7 +1617,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 
 // Setup prepares the database connection for warehouse service, verifies database compatibility and creates the required tables
 func Setup(ctx context.Context) error {
-	if !isStandAlone() && !db.IsNormalMode() {
+	if !db.IsNormalMode() {
 		return nil
 	}
 	psqlInfo := getConnectionString()
