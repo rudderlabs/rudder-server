@@ -533,11 +533,11 @@ func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) 
 }
 
 // LoadTable loads table for table name
-func (d *Deltalake) LoadTable(_ context.Context, tableName string) error {
+func (d *Deltalake) LoadTable(ctx context.Context, tableName string) error {
 	uploadTableSchema := d.Uploader.GetTableSchemaInUpload(tableName)
 	warehouseTableSchema := d.Uploader.GetTableSchemaInWarehouse(tableName)
 
-	_, err := d.loadTable(tableName, uploadTableSchema, warehouseTableSchema, false)
+	_, err := d.loadTable(ctx, tableName, uploadTableSchema, warehouseTableSchema, false)
 	if err != nil {
 		return fmt.Errorf("loading table: %w", err)
 	}
@@ -545,7 +545,7 @@ func (d *Deltalake) LoadTable(_ context.Context, tableName string) error {
 	return nil
 }
 
-func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
+func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
 	var (
 		sortedColumnKeys = warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 		stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
@@ -638,7 +638,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 	}
 
-	if _, err = d.DB.Exec(query); err != nil {
+	if _, err = d.DB.ExecContext(ctx, query); err != nil {
 		return "", fmt.Errorf("running COPY command: %w", err)
 	}
 
@@ -674,7 +674,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			primaryKey(tableName),
 		)
 	} else {
-		if partitionQuery, err = d.partitionQuery(tableName); err != nil {
+		if partitionQuery, err = d.partitionQuery(ctx, tableName); err != nil {
 			return "", fmt.Errorf("getting partition query: %w", err)
 		}
 
@@ -720,7 +720,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 	}
 
-	row = d.DB.QueryRow(query)
+	row = d.DB.QueryRowContext(ctx, query)
 
 	var (
 		affected int64
@@ -879,13 +879,13 @@ func (d *Deltalake) hasAWSCredentials() bool {
 }
 
 // partitionQuery returns a query to fetch partitions for a table
-func (d *Deltalake) partitionQuery(tableName string) (string, error) {
+func (d *Deltalake) partitionQuery(ctx context.Context, tableName string) (string, error) {
 	if !d.EnablePartitionPruning {
 		return "", nil
 	}
 
 	query := fmt.Sprintf(`SHOW PARTITIONS %s.%s;`, d.Namespace, tableName)
-	rows, err := d.DB.Query(query)
+	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
 		if strings.Contains(err.Error(), partitionNotFound) {
 			return "", nil
@@ -923,7 +923,7 @@ func partitionedByEventDate(columns []string) bool {
 }
 
 // LoadUserTables loads user tables
-func (d *Deltalake) LoadUserTables(context.Context) map[string]error {
+func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	var (
 		identifiesSchemaInUpload    = d.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
 		identifiesSchemaInWarehouse = d.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable)
@@ -940,7 +940,7 @@ func (d *Deltalake) LoadUserTables(context.Context) map[string]error {
 		logfield.Namespace, d.Namespace,
 	)
 
-	identifyStagingTable, err := d.loadTable(warehouseutils.IdentifiesTable, identifiesSchemaInUpload, identifiesSchemaInWarehouse, true)
+	identifyStagingTable, err := d.loadTable(ctx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload, identifiesSchemaInWarehouse, true)
 	if err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("loading table %s: %w", warehouseutils.IdentifiesTable, err),
@@ -1014,7 +1014,7 @@ func (d *Deltalake) LoadUserTables(context.Context) map[string]error {
 		tableLocationSql,
 	)
 
-	_, err = d.DB.Exec(query)
+	_, err = d.DB.ExecContext(ctx, query)
 
 	if err != nil {
 		return map[string]error{
@@ -1046,7 +1046,7 @@ func (d *Deltalake) LoadUserTables(context.Context) map[string]error {
 			columnNames(columnKeys),
 		)
 	} else {
-		if partitionQuery, err = d.partitionQuery(warehouseutils.UsersTable); err != nil {
+		if partitionQuery, err = d.partitionQuery(nil, warehouseutils.UsersTable); err != nil {
 			return map[string]error{
 				warehouseutils.IdentifiesTable: nil,
 				warehouseutils.UsersTable:      fmt.Errorf("getting partition query: %w", err),
@@ -1081,7 +1081,7 @@ func (d *Deltalake) LoadUserTables(context.Context) map[string]error {
 		)
 	}
 
-	row = d.DB.QueryRow(query)
+	row = d.DB.QueryRowContext(ctx, query)
 
 	var (
 		affected int64

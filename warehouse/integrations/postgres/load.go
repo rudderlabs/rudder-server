@@ -104,7 +104,7 @@ func (pg *Postgres) loadTable(
 		return loadTableResponse{}, fmt.Errorf("creating temporary table: %w", err)
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
+	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		return loadTableResponse{}, fmt.Errorf("preparing statement for copy in: %w", err)
 	}

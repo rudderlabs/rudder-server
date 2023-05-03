@@ -410,7 +410,7 @@ func (rs *Redshift) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
+func (rs *Redshift) loadTable(ctx context.Context, tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
 	var (
 		err              error
 		query            string
@@ -453,7 +453,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	}, ",")
 
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	_, err = rs.DB.Exec(fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
+	_, err = rs.DB.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
 		rs.Namespace,
 		stagingTableName,
 		tableName,
@@ -487,7 +487,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		return "", fmt.Errorf("getting temporary s3 credentials: %w", err)
 	}
 
-	if txn, err = rs.DB.Begin(); err != nil {
+	if txn, err = rs.DB.BeginTx(ctx, &sql.TxOptions{}); err != nil {
 		return "", fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() {
@@ -565,7 +565,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		logfield.Query, sanitisedQuery,
 	)
 
-	if _, err := txn.Exec(query); err != nil {
+	if _, err := txn.ExecContext(ctx, query); err != nil {
 		rs.Logger.Warnw("failure running copy command",
 			logfield.SourceID, rs.Warehouse.Source.ID,
 			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
@@ -645,7 +645,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			logfield.Query, query,
 		)
 
-		if result, err = txn.Exec(query); err != nil {
+		if result, err = txn.ExecContext(ctx, query); err != nil {
 			rs.Logger.Warnw("deleting from original table for dedup",
 				logfield.SourceID, rs.Warehouse.Source.ID,
 				logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
@@ -727,7 +727,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		logfield.Query, query,
 	)
 
-	if _, err = txn.Exec(query); err != nil {
+	if _, err = txn.ExecContext(ctx, query); err != nil {
 		rs.Logger.Warnw("failed inserting into original table",
 			logfield.SourceID, rs.Warehouse.Source.ID,
 			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
@@ -770,7 +770,7 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	return stagingTableName, nil
 }
 
-func (rs *Redshift) loadUserTables() map[string]error {
+func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	var (
 		err                  error
 		query                string
@@ -789,12 +789,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 		logfield.Namespace, rs.Namespace,
 	)
 
-	identifyStagingTable, err = rs.loadTable(
-		warehouseutils.IdentifiesTable,
-		rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable),
-		rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable),
-		true,
-	)
+	identifyStagingTable, err = rs.loadTable(ctx, warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err),
@@ -810,12 +805,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 	}
 
 	if rs.SkipComputingUserLatestTraits {
-		_, err := rs.loadTable(
-			warehouseutils.UsersTable,
-			rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
-			rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable),
-			false,
-		)
+		_, err := rs.loadTable(ctx, warehouseutils.UsersTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable), false)
 		if err != nil {
 			return map[string]error{
 				warehouseutils.IdentifiesTable: nil,
@@ -890,13 +880,13 @@ func (rs *Redshift) loadUserTables() map[string]error {
 		quotedUserColNames,
 	)
 
-	if txn, err = rs.DB.Begin(); err != nil {
+	if txn, err = rs.DB.BeginTx(ctx, &sql.TxOptions{}); err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("beginning transaction: %w", err),
 		}
 	}
 
-	if _, err = txn.Exec(query); err != nil {
+	if _, err = txn.ExecContext(ctx, query); err != nil {
 		_ = txn.Rollback()
 
 		rs.Logger.Warnw("creating staging table for users",
@@ -931,7 +921,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 		primaryKey,
 	)
 
-	if _, err = txn.Exec(query); err != nil {
+	if _, err = txn.ExecContext(ctx, query); err != nil {
 		_ = txn.Rollback()
 
 		rs.Logger.Warnw("deleting from users table for dedup",
@@ -974,7 +964,7 @@ func (rs *Redshift) loadUserTables() map[string]error {
 		logfield.Query, query,
 	)
 
-	if _, err = txn.Exec(query); err != nil {
+	if _, err = txn.ExecContext(ctx, query); err != nil {
 		_ = txn.Rollback()
 
 		rs.Logger.Warnw("failed inserting into users table",
@@ -1397,12 +1387,12 @@ func (*Redshift) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (rs *Redshift) LoadUserTables(context.Context) map[string]error {
-	return rs.loadUserTables()
+func (rs *Redshift) LoadUserTables(ctx context.Context) map[string]error {
+	return rs.loadUserTables(ctx)
 }
 
-func (rs *Redshift) LoadTable(_ context.Context, tableName string) error {
-	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaInWarehouse(tableName), false)
+func (rs *Redshift) LoadTable(ctx context.Context, tableName string) error {
+	_, err := rs.loadTable(ctx, tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }
 
