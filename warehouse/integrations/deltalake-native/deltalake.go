@@ -1046,7 +1046,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 			columnNames(columnKeys),
 		)
 	} else {
-		if partitionQuery, err = d.partitionQuery(nil, warehouseutils.UsersTable); err != nil {
+		if partitionQuery, err = d.partitionQuery(ctx, warehouseutils.UsersTable); err != nil {
 			return map[string]error{
 				warehouseutils.IdentifiesTable: nil,
 				warehouseutils.UsersTable:      fmt.Errorf("getting partition query: %w", err),
