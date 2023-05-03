@@ -26,9 +26,9 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
 		return
 	}
-	a.logger.LogRequest(r)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		a.logger.LogRequest(r)
 		a.logger.Errorf("[WH-Jobs]: Error reading body: %v", err)
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
@@ -37,17 +37,20 @@ func (a *AsyncJobWh) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Reque
 	var startJobPayload StartJobReqPayload
 	err = json.Unmarshal(body, &startJobPayload)
 	if err != nil {
+		a.logger.LogRequest(r)
 		a.logger.Errorf("[WH-Jobs]: Error unmarshalling body: %v", err)
 		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
 		return
 	}
 	if !validatePayload(startJobPayload) {
+		a.logger.LogRequest(r)
 		a.logger.Errorf("[WH-Jobs]: Invalid Payload")
 		http.Error(w, "invalid Payload", http.StatusBadRequest)
 		return
 	}
 	tableNames, err := a.getTableNamesBy(startJobPayload.SourceID, startJobPayload.DestinationID, startJobPayload.JobRunID, startJobPayload.TaskRunID)
 	if err != nil {
+		a.logger.LogRequest(r)
 		a.logger.Errorf("[WH-Jobs]: Error extracting tableNames for the job run id: %v", err)
 		http.Error(w, "Error extracting tableNames", http.StatusBadRequest)
 		return
@@ -107,7 +110,6 @@ func (a *AsyncJobWh) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Re
 		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
 		return
 	}
-	a.logger.LogRequest(r)
 	jobRunId := r.URL.Query().Get("job_run_id")
 	taskRunId := r.URL.Query().Get("task_run_id")
 
@@ -122,7 +124,8 @@ func (a *AsyncJobWh) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Re
 		WorkspaceID:   workspaceId,
 	}
 	if !validatePayload(payload) {
-		a.logger.Errorf("[WH]: Error Invalid Status Parameters")
+		a.logger.LogRequest(r)
+		a.logger.Errorf("[WH]: Error Invalid Payload")
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -132,6 +135,7 @@ func (a *AsyncJobWh) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Re
 
 	writeResponse, err := json.Marshal(response)
 	if err != nil {
+		a.logger.LogRequest(r)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

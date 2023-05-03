@@ -57,7 +57,7 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
 	rows, err := a.dbHandle.QueryContext(a.context, query, jobRunID, taskRunID, sourceID, destinationID)
 	if err != nil {
-		a.logger.Errorf("[WH-Jobs]: Error executing the query %s with error %s", query, err.Error())
+		a.logger.Errorf("[WH-Jobs]: Error executing the query %s with error %v", query, err)
 		return tableNames, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -74,7 +74,7 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 		a.logger.Errorf("[WH-Jobs]: Error iterating the rows %s", err.Error())
 		return tableNames, err
 	}
-	a.logger.Infof("Got the TableNames as %s\n", tableNames)
+	a.logger.Infof("Got the TableNames as %s", tableNames)
 	return lo.Uniq(tableNames), nil
 }
 

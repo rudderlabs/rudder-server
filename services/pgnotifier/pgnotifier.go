@@ -321,7 +321,7 @@ func (notifier *PGNotifier) trackAsyncBatch(ctx context.Context, batchID string,
 				}
 				if err := rows.Err(); err != nil {
 					*ch <- responses
-					pkgLogger.Errorf("PgNotifier: Failed to query for getting jobs for payload, status & error: %s, connInfo: %s, error : %s", stmt, notifier.URI, err.Error())
+					pkgLogger.Errorf("PgNotifier: Failed to query for getting jobs for payload with rows error, status & error: %s, connInfo: %s, error : %v", stmt, notifier.URI, err)
 					break
 				}
 				_ = rows.Close()
