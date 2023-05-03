@@ -97,7 +97,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	reporting := a.app.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 	g.Go(func() error {
-		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
+		reporting.ReportingInstance.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
+		return nil
+	})
+
+	// Error detail reporting thread
+	g.Go(func() error {
+		reporting.EdReportingInstance.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
 		return nil
 	})
 
@@ -120,6 +126,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	defer sourceHandle.Stop()
 
 	reportingI := a.app.Features().Reporting.GetReportingInstance()
+	edReportingI := a.app.Features().Reporting.GetReportingInstance(string(types.ErrorDetailReport))
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
@@ -220,6 +227,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		rsourcesService,
 		destinationHandle,
 		transformationhandle,
+		edReportingI,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := rtThrottler.New(stats.Default)
@@ -228,6 +236,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
+		EdReporting:      edReportingI,
 		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         tenantRouterDB,

@@ -79,6 +79,7 @@ type Handle struct {
 	eventSchemaHandler        types.EventSchemasI
 	dedupHandler              dedup.DedupI
 	reporting                 types.ReportingI
+	edReporting               types.ReportingI
 	reportingEnabled          bool
 	multitenantI              multitenant.MultiTenantI
 	backgroundWait            func() error
@@ -322,10 +323,12 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
 	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
+	edReporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
 	proc.reporting = reporting
+	proc.edReporting = edReporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -1978,6 +1981,10 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				proc.reporting.Report(in.reportMetrics, tx.SqlTx())
 			}
 
+			if proc.isEdReportingEnabled() {
+				proc.edReporting.Report(in.reportMetrics, tx.SqlTx())
+			}
+
 			if proc.config.enableDedup {
 				proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
 				if len(in.uniqueMessageIds) > 0 {
@@ -2667,6 +2674,10 @@ func (proc *Handle) updateSourceStats(sourceStats map[string]int, bucket string)
 
 func (proc *Handle) isReportingEnabled() bool {
 	return proc.reporting != nil && proc.reportingEnabled
+}
+
+func (proc *Handle) isEdReportingEnabled() bool {
+	return proc.edReporting != nil && proc.reportingEnabled
 }
 
 func (proc *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {

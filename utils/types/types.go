@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+type ReporterType string
+
+const (
+	ErrorDetailReport ReporterType = "error_detail_report"
+	Report            ReporterType = "report" // normal report
+)
+
+type ReportingInstances struct {
+	ReportingInstance   ReportingI
+	EdReportingInstance ReportingI
+}
+
 // SingularEventT single event structrue
 type SingularEventT map[string]interface{}
 

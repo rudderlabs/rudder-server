@@ -84,6 +84,53 @@ type Metric struct {
 	StatusDetails []*StatusDetail `json:"reports"`
 }
 
+// EDMetric => ErrorDetailMetric
+type EDConnectionDetails struct {
+	SourceID                string `json:"sourceId"`
+	DestinationID           string `json:"destinationId"`
+	SourceDefinitionId      string `json:"sourceDefinitionId"`
+	DestinationDefinitionId string `json:"destinationDefinitionId"`
+}
+
+type EDInstanceDetails struct {
+	WorkspaceID string `json:"workspaceId"`
+	Namespace   string `json:"namespace"`
+	InstanceID  string `json:"-"`
+}
+
+type EDErrorDetails struct {
+	StatusCode   int    `json:"statusCode"`
+	ErrorCode    string `json:"errorCode"`
+	ErrorMessage string `json:"errorMessage"`
+	// TODO: need to check with team if this makes sense ?
+	EventType string `json:"-"`
+}
+
+type EDReportsDB struct {
+	EDErrorDetails
+	EDInstanceDetails
+	EDConnectionDetails
+	ReportMetadata
+
+	PU    string `json:"reportedBy"`
+	Count int64  `json:"-"`
+}
+
+// The structure in which the error detail data is being sent to reporting service
+type EDMetric struct {
+	EDInstanceDetails
+	PU string `json:"reportedBy"`
+
+	ReportMetadata
+
+	EDConnectionDetails
+
+	Errors []EDErrorDetails `json:"errors"`
+
+	// TODO: need to check with team if this makes sense ?
+	Count int64 `json:"-"`
+}
+
 type ConnectionDetails struct {
 	SourceID                string `json:"sourceId"`
 	DestinationID           string `json:"destinationId"`

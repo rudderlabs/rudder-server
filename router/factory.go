@@ -11,6 +11,7 @@ import (
 
 type Factory struct {
 	Reporting        reporter
+	EdReporting      reporter
 	Multitenant      tenantStats
 	BackendConfig    backendconfig.BackendConfig
 	RouterDB         jobsdb.MultiTenantJobsDB
@@ -25,6 +26,7 @@ type Factory struct {
 func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
 	r := &HandleT{
 		Reporting:        f.Reporting,
+		EdReporting:      f.EdReporting,
 		MultitenantI:     f.Multitenant,
 		throttlerFactory: f.ThrottlerFactory,
 		adaptiveLimit:    f.AdaptiveLimit,

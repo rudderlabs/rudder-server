@@ -242,7 +242,7 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 	config.EXPECT().Subscribe(
 		gomock.Any(),
 		gomock.Eq(backendconfig.TopicBackendConfig),
-	).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+	).MaxTimes(2).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 		ready.Done()
 		go func() {
 			<-ctx.Done()

@@ -260,6 +260,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -278,6 +279,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -368,6 +370,7 @@ var _ = Describe("Router", func() {
 
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -454,6 +457,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -543,6 +547,7 @@ var _ = Describe("Router", func() {
 
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
@@ -633,6 +638,7 @@ var _ = Describe("Router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -759,6 +765,7 @@ var _ = Describe("Router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -867,6 +874,7 @@ var _ = Describe("Router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -1011,6 +1019,7 @@ var _ = Describe("Router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -1183,6 +1192,7 @@ var _ = Describe("Router", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -1398,6 +1408,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router := &HandleT{
 				Reporting:    &reporting.NOOP{},
+				EdReporting:  &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}

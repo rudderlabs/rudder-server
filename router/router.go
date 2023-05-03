@@ -121,6 +121,7 @@ type HandleT struct {
 	destinationResponseHandler              ResponseHandlerI
 	saveDestinationResponse                 bool
 	Reporting                               reporter
+	EdReporting                             reporter
 	savePayloadOnError                      bool
 	oauth                                   oauth.Authorizer
 	transformerProxy                        bool
@@ -1426,6 +1427,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 					return err
 				}
 				rt.Reporting.Report(reportMetrics, tx.SqlTx())
+				// Error detail reporting
+				rt.EdReporting.Report(reportMetrics, tx.SqlTx())
 				return nil
 			})
 		}, sendRetryStoreStats)
@@ -1778,6 +1781,12 @@ func (rt *HandleT) Setup(
 
 	// waiting for reporting client setup
 	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CoreReportingClient)
+	if err != nil {
+		return
+	}
+
+	// waiting for ed-reporting client setup
+	err = rt.EdReporting.WaitForSetup(context.TODO(), utilTypes.CoreReportingClient)
 	if err != nil {
 		return
 	}

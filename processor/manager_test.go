@@ -218,6 +218,7 @@ func TestProcessorManager(t *testing.T) {
 		mockRsourcesService,
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
+		&reporting.NOOP{},
 		func(m *LifecycleManager) {
 			m.Handle.config.enablePipelining = false
 			m.Handle.config.featuresRetryMaxAttempts = 0
