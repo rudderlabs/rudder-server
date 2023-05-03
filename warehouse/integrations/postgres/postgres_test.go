@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"strings"
@@ -95,7 +96,7 @@ func TestIntegration(t *testing.T) {
 	secretAccessKey := "MYSECRETKEY"
 	endPoint := fmt.Sprintf("localhost:%d", minioPort)
 
-	templateConfigurations := map[string]string{
+	templateConfigurations := map[string]any{
 		"workspaceID":            workspaceID,
 		"sourceID":               sourceID,
 		"destinationID":          destinationID,
@@ -128,7 +129,7 @@ func TestIntegration(t *testing.T) {
 		"secretAccessKey":        secretAccessKey,
 		"endPoint":               endPoint,
 	}
-	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 	t.Setenv("JOBS_DB_HOST", "localhost")
 	t.Setenv("JOBS_DB_NAME", "jobsdb")

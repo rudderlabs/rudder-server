@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"strings"
@@ -104,7 +105,7 @@ func TestIntegration(t *testing.T) {
 	s3AccessKey := "MYSECRETKEY"
 	s3EndPoint := fmt.Sprintf("localhost:%d", minioPort)
 
-	templateConfigurations := map[string]string{
+	templateConfigurations := map[string]any{
 		"workspaceID":      workspaceID,
 		"azWriteKey":       azWriteKey,
 		"azDestinationID":  azDestinationID,
@@ -138,7 +139,7 @@ func TestIntegration(t *testing.T) {
 		templateConfigurations["gcsCredentials"] = escapedCredentialsTrimmedStr
 	}
 
-	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 	t.Setenv("JOBS_DB_HOST", "localhost")
 	t.Setenv("JOBS_DB_NAME", "jobsdb")

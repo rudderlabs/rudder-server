@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"strings"
@@ -85,7 +86,7 @@ func TestIntegration(t *testing.T) {
 
 	escapedCredentialsTrimmedStr := strings.Trim(string(escapedCredentials), `"`)
 
-	templateConfigurations := map[string]string{
+	templateConfigurations := map[string]any{
 		"workspaceID":          workspaceID,
 		"sourceID":             sourceID,
 		"destinationID":        destinationID,
@@ -100,7 +101,7 @@ func TestIntegration(t *testing.T) {
 		"credentials":          escapedCredentialsTrimmedStr,
 		"sourcesNamespace":     sourcesNamespace,
 	}
-	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 	t.Setenv("JOBS_DB_HOST", "localhost")
 	t.Setenv("JOBS_DB_NAME", "jobsdb")

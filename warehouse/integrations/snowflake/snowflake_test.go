@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"os"
 	"strconv"
 	"strings"
@@ -134,7 +135,7 @@ func TestIntegration(t *testing.T) {
 	rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
 	require.NoError(t, err)
 
-	templateConfigurations := map[string]string{
+	templateConfigurations := map[string]any{
 		"workspaceID":                workspaceID,
 		"sourceID":                   sourceID,
 		"destinationID":              destinationID,
@@ -172,7 +173,7 @@ func TestIntegration(t *testing.T) {
 		"rbacAccessKeyID":            rbacCredentials.AccessKeyID,
 		"rbacAccessKey":              rbacCredentials.AccessKey,
 	}
-	workspaceConfigPath := testhelper.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 	t.Setenv("JOBS_DB_HOST", "localhost")
 	t.Setenv("JOBS_DB_NAME", "jobsdb")

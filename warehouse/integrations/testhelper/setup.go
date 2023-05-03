@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"text/template"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
