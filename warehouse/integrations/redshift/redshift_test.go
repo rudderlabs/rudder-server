@@ -174,15 +174,22 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+	if testing.Verbose() {
+		t.Setenv("LOG_LEVEL", "DEBUG")
+	}
 
 	svcDone := make(chan struct{})
-	ctx, ctxCancel := context.WithCancel(context.Background())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
 		r := runner.New(runner.ReleaseInfo{})
 		_ = r.Run(ctx, []string{"redshift-integration-test"})
 
 		close(svcDone)
 	}()
+	t.Cleanup(func() { <-svcDone })
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
@@ -317,9 +324,6 @@ func TestIntegration(t *testing.T) {
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
 	})
-
-	ctxCancel()
-	<-svcDone
 }
 
 func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
