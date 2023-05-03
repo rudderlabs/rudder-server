@@ -1090,6 +1090,6 @@ func (pg *Postgres) handleExec(e *QueryParams) (err error) {
 	return
 }
 
-func (pq *Postgres) ErrorMappings() []model.JobError {
+func (*Postgres) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

@@ -34,7 +34,7 @@ const (
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
 type Notifier interface {
-	Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (ch chan []pgnotifier.Response, err error)
+	Publish(ctx context.Context, payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (ch chan []pgnotifier.Response, err error)
 }
 
 type StageFileRepo interface {
@@ -226,7 +226,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			JobType: "upload",
 		}
 
-		ch, err := lf.Notifier.Publish(messagePayload, (*warehouseutils.Schema)(schema), job.Upload.Priority)
+		ch, err := lf.Notifier.Publish(ctx, messagePayload, (*warehouseutils.Schema)(schema), job.Upload.Priority)
 		if err != nil {
 			return 0, 0, fmt.Errorf("error publishing to PgNotifier: %w", err)
 		}
