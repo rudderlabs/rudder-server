@@ -341,7 +341,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
 	)
-	if _, err = db.Exec(sqlStatement); err != nil {
+	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.Logger.Warnw("failure creating temporary table",
 			logfield.SourceID, sf.Warehouse.Source.ID,
 			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
@@ -399,7 +399,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		logfield.Query, sanitisedQuery,
 	)
 
-	if _, err = db.Exec(sqlStatement); err != nil {
+	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.Logger.Warnw("failure running COPY command",
 			logfield.SourceID, sf.Warehouse.Source.ID,
 			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
@@ -532,7 +532,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		logfield.Query, sqlStatement,
 	)
 
-	row := db.QueryRow(sqlStatement)
+	row := db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
 		sf.Logger.Warnw("failure running deduplication",
 			logfield.SourceID, sf.Warehouse.Source.ID,

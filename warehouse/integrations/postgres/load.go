@@ -47,9 +47,7 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 
 		_, err := pg.loadTable(ctx, tx, tableName, tableSchemaInUpload)
 		return err
-	},
-		pg.txnRollbackTimeout,
-	)
+	})
 	if err != nil {
 		return fmt.Errorf("loading table: %w", err)
 	}
@@ -318,7 +316,7 @@ func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
 		}
 
 		return nil
-	}, pg.txnRollbackTimeout)
+	})
 	if loadingError.identifiesError != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: loadingError.identifiesError,

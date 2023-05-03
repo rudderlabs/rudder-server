@@ -3,6 +3,7 @@ package sqlquerywrapper
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -79,7 +80,7 @@ func TestQueryWrapper(t *testing.T) {
 			kvs = append(kvs, keysAndValues...)
 
 			if tc.wantLog {
-				mockLogger.EXPECT().Infow("executing query", kvs).Times(7)
+				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
 			} else {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
 			}
@@ -101,11 +102,6 @@ func TestQueryWrapper(t *testing.T) {
 
 			_ = qw.QueryRowContext(ctx, query)
 			require.NoError(t, err)
-
-			_ = qw.WithTx(ctx, func(tx *Tx) error {
-				_, err := tx.Exec(query)
-				return err
-			}, 1*time.Second)
 		})
 
 		t.Run(tc.name+" with secrets", func(t *testing.T) {
@@ -245,8 +241,10 @@ func TestQueryWrapper(t *testing.T) {
 
 			if tc.wantLog {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
+				mockLogger.EXPECT().Warnw("rollback threshold exceeded", keysAndValues...).Times(1)
 			} else {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
+				mockLogger.EXPECT().Warnw("rollback threshold exceeded", keysAndValues...).Times(0)
 			}
 
 			t.Run("Exec", func(t *testing.T) {
@@ -314,6 +312,58 @@ func TestQueryWrapper(t *testing.T) {
 				err = tx.Commit()
 				require.NoError(t, err)
 			})
+
+			t.Run("Rollback", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_ = tx.Rollback()
+				require.NoError(t, err)
+			})
 		})
 	}
+
+	t.Run("WithTx", func(t *testing.T) {
+		mockCtrl := gomock.NewController(t)
+		defer mockCtrl.Finish()
+
+		mockLogger := mock_logger.NewMockLogger(mockCtrl)
+
+		qw := New(
+			pgResource.DB,
+			WithSlowQueryThreshold(queryThreshold),
+			WithLogger(mockLogger),
+			WithKeyAndValues(keysAndValues...),
+		)
+		qw.since = func(time.Time) time.Duration {
+			return 1 * time.Second
+		}
+
+		query := "SELECT 1;"
+
+		kvs := []any{
+			logfield.Error, errors.New("error: test error, rollback error: sql: transaction has already been committed or rolled back").Error(),
+		}
+		kvs = append(kvs, keysAndValues...)
+
+		mockLogger.EXPECT().Warnw("failed rollback transaction", kvs...).Times(1)
+
+		_ = qw.WithTx(ctx, func(tx *Tx) error {
+			_, err := tx.ExecContext(ctx, query)
+			return err
+		})
+
+		_ = qw.WithTx(ctx, func(tx *Tx) error {
+			ctx, cancel := context.WithCancel(ctx)
+			cancel()
+
+			_, err := tx.ExecContext(ctx, "SELECT;")
+			return err
+		})
+
+		_ = qw.WithTx(ctx, func(tx *Tx) error {
+			_ = tx.Commit()
+			return fmt.Errorf("test error")
+		})
+	})
 }

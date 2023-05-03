@@ -3,6 +3,7 @@ package sqlquerywrapper
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,6 +15,7 @@ type Opt func(*DB)
 
 type logger interface {
 	Infow(msg string, keysAndValues ...interface{})
+	Warnw(msg string, keysAndValues ...interface{})
 }
 
 type DB struct {
@@ -23,6 +25,7 @@ type DB struct {
 	logger             logger
 	keysAndValues      []any
 	slowQueryThreshold time.Duration
+	rollbackThreshold  time.Duration
 	secretsRegex       map[string]string
 }
 
@@ -60,6 +63,7 @@ func New(db *sql.DB, opts ...Opt) *DB {
 		DB:                 db,
 		since:              time.Since,
 		slowQueryThreshold: 300 * time.Second,
+		rollbackThreshold:  30 * time.Second,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -109,26 +113,27 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interfa
 	return row
 }
 
-func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error, timeout time.Duration) error {
+func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
-	txt := txWithTimeout{
-		Tx:      tx,
-		timeout: timeout,
-	}
-
 	defer func() {
-		_ = txt.Rollback()
+		if err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(err, sql.ErrTxDone) {
+				keysAndValues := []any{logfield.Error, fmt.Errorf("error: %s, rollback error: %s", err.Error(), rollbackErr.Error()).Error()}
+				keysAndValues = append(keysAndValues, db.keysAndValues...)
+				db.logger.Warnw("failed rollback transaction", keysAndValues...)
+			}
+		}
 	}()
 
-	if err := fn(tx); err != nil {
+	if err = fn(tx); err != nil {
 		return fmt.Errorf("executing transaction: %w", err)
 	}
 
-	return txt.Commit()
+	return tx.Commit()
 }
 
 func (db *DB) logQuery(query string, elapsed time.Duration) {
@@ -203,4 +208,13 @@ func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...interfa
 	row := tx.Tx.QueryRowContext(ctx, query, args...)
 	tx.db.logQuery(query, tx.db.since(startedAt))
 	return row
+}
+
+func (tx *Tx) Rollback() error {
+	startedAt := time.Now()
+	err := tx.Tx.Rollback()
+	if elapsed := tx.db.since(startedAt); elapsed > tx.db.rollbackThreshold {
+		tx.db.logger.Warnw("rollback threshold exceeded", tx.db.keysAndValues...)
+	}
+	return err
 }
