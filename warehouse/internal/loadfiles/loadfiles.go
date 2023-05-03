@@ -107,7 +107,12 @@ func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 
 	ld.publishBatchSizePerWorkspace = make(map[string]int, len(mapConfig))
 	for k, v := range mapConfig {
-		ld.publishBatchSizePerWorkspace[k] = int(v.(float64))
+		val, ok := v.(float64)
+		if !ok {
+			ld.publishBatchSizePerWorkspace[k] = defaultPublishBatchSize
+			continue
+		}
+		ld.publishBatchSizePerWorkspace[k] = int(val)
 	}
 }
 
