@@ -1151,7 +1151,7 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 		stagingColumnType    string
 		deprecatedColumnName string
 		isDependent          bool
-		tx                   *sql.Tx
+		tx                   *sqlmiddleware.Tx
 		err                  error
 		ctx                  = context.TODO()
 	)
