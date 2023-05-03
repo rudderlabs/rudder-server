@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -66,25 +68,15 @@ type ErrorDetailReporter struct {
 	srcWspMutex               sync.RWMutex
 	httpClient                *http.Client
 	clientsMapLock            sync.RWMutex
+
+	minReportedAtQueryTime      stats.Measurement
+	errorDetailReportsQueryTime stats.Measurement
+	edReportingRequestLatency   stats.Measurement
 }
 
-func (edRep *ErrorDetailReporter) migrate(c types.Config) (*sql.DB, error) {
-	dbHandle, err := sql.Open("postgres", c.ConnInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	m := &migrator.Migrator{
-		Handle:          dbHandle,
-		MigrationsTable: fmt.Sprintf("%v_migrations", ErrorDetailReportsTable),
-		// TODO: shall we use separate env ?
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
-	}
-	err = m.Migrate(ErrorDetailReportsTable)
-	if err != nil {
-		return nil, fmt.Errorf("could not run %v migrations: %w", ErrorDetailReportsTable, err)
-	}
-	return dbHandle, nil
+type errorDetails struct {
+	ErrorCode    string
+	ErrorMessage string
 }
 
 func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
@@ -148,11 +140,6 @@ func (edRep *ErrorDetailReporter) GetClient(clientName string) *types.Client {
 	return nil
 }
 
-type errorDetails struct {
-	ErrorCode    string
-	ErrorMessage string
-}
-
 func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConfig) {
 	edRep.log.Info("[[ Error Detail Reporting ]] Setting up reporting handler")
 
@@ -187,32 +174,6 @@ func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConf
 	edRep.onceInit.Do(func() {
 		close(edRep.init)
 	})
-}
-
-func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
-	edRep.srcWspMutex.RLock()
-	defer func() { edRep.srcWspMutex.RUnlock() }()
-	return edRep.workspaceIDForSourceIDMap[sourceID]
-}
-
-func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
-	// TODO: to extract information
-	// Transformer throws structured error -- tf <--> srv --- easy
-	// Transformer throws error -- but I only get strings in sampleResponse -- easy
-	// Router delivery -- destination schema(very random) -- hard
-	if !gjson.Valid(sampleResponse) {
-		return errorDetails{ErrorMessage: sampleResponse}
-	}
-	// Preliminary checks for error responses from transformer(tf proxy, router tf, process tf, batch tf)
-	prelimResults := gjson.GetMany(sampleResponse, []string{"response.error", "response.message"}...)
-	for _, prelimResult := range prelimResults {
-		if prelimResult.Exists() && prelimResult.Type == gjson.String {
-			return errorDetails{ErrorMessage: prelimResult.String()}
-		}
-	}
-	// TODO: Incorportate iterative exhaustive search algo for possible message fields
-
-	return errorDetails{}
 }
 
 func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
@@ -267,15 +228,6 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 	}
 }
 
-func (edRep *ErrorDetailReporter) getDBHandle(clientName string) (*sql.DB, error) {
-	client := edRep.GetClient(clientName)
-	if client != nil {
-		return client.DbHandle, nil
-	}
-
-	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
-}
-
 func (edRep *ErrorDetailReporter) WaitForSetup(ctx context.Context, clientName string) error {
 	for {
 		if edRep.GetClient(clientName) != nil {
@@ -289,8 +241,88 @@ func (edRep *ErrorDetailReporter) WaitForSetup(ctx context.Context, clientName s
 	return nil
 }
 
+func (*ErrorDetailReporter) IsPIIReportingDisabled(_ string) bool {
+	// Since we don't see the necessity for error detail reporting, we are implementing a kind of NOOP method
+	return false
+}
+
+func (edRep *ErrorDetailReporter) migrate(c types.Config) (*sql.DB, error) {
+	dbHandle, err := sql.Open("postgres", c.ConnInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	m := &migrator.Migrator{
+		Handle:          dbHandle,
+		MigrationsTable: fmt.Sprintf("%v_migrations", ErrorDetailReportsTable),
+		// TODO: shall we use separate env ?
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+	}
+	err = m.Migrate(ErrorDetailReportsTable)
+	if err != nil {
+		return nil, fmt.Errorf("could not run %v migrations: %w", ErrorDetailReportsTable, err)
+	}
+	return dbHandle, nil
+}
+
+func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
+	edRep.srcWspMutex.RLock()
+	defer func() { edRep.srcWspMutex.RUnlock() }()
+	return edRep.workspaceIDForSourceIDMap[sourceID]
+}
+
+func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
+	// TODO: to extract information
+	// Transformer throws structured error -- tf <--> srv --- easy
+	// Transformer throws error -- but I only get strings in sampleResponse -- easy
+	// Router delivery -- destination schema(very random) -- hard
+	if !gjson.Valid(sampleResponse) {
+		return errorDetails{ErrorMessage: sampleResponse}
+	}
+	// Preliminary checks for error responses from transformer(tf proxy, router tf, process tf, batch tf)
+	prelimResults := gjson.GetMany(sampleResponse, []string{"response.error", "response.message"}...)
+	for _, prelimResult := range prelimResults {
+		if prelimResult.Exists() && prelimResult.Type == gjson.String {
+			return errorDetails{ErrorMessage: prelimResult.String()}
+		}
+	}
+	// TODO: Incorportate iterative exhaustive search algo for possible message fields
+
+	return errorDetails{}
+}
+
+func (edRep *ErrorDetailReporter) getDBHandle(clientName string) (*sql.DB, error) {
+	client := edRep.GetClient(clientName)
+	if client != nil {
+		return client.DbHandle, nil
+	}
+
+	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
+}
+
+func (edRep *ErrorDetailReporter) getTags(clientName string) stats.Tags {
+	return stats.Tags{
+		"workspaceID": edRep.workspaceID,
+		"namespace":   edRep.namespace,
+		"clientName":  clientName,
+		"instanceId":  edRep.instanceID,
+	}
+}
+
 // Sending metrics to Reporting service --- STARTS
 func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName string) {
+	tags := edRep.getTags(clientName)
+
+	mainLoopTimer := stats.Default.NewTaggedStat("ed_main_loop_time", stats.TimerType, tags)
+	getReportsTimer := stats.Default.NewTaggedStat("ed_get_reports_time", stats.TimerType, tags)
+	aggregateTimer := stats.Default.NewTaggedStat("ed_aggregate_time", stats.TimerType, tags)
+
+	errorDetailReportsDeleteQueryTimer := stats.Default.NewTaggedStat("error_detail_reports_delete_query_time", stats.TimerType, tags)
+
+	edRep.minReportedAtQueryTime = stats.Default.NewTaggedStat("error_detail_reports_min_reported_at_query_time", stats.TimerType, tags)
+	edRep.errorDetailReportsQueryTime = stats.Default.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
+	edRep.edReportingRequestLatency = stats.Default.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
+
 	// In infinite loop
 	// Get Reports
 	// Aggregate
@@ -302,12 +334,12 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 			return
 		}
 		requestChan := make(chan struct{}, maxConcurrentRequests)
-		// loopStart := time.Now()
+		loopStart := time.Now()
 		currentMs := time.Now().UTC().Unix() / 60
 
-		// getReportsStart := time.Now()
+		getReportsStart := time.Now()
 		reports, reportedAt := edRep.getReports(currentMs, clientName)
-		// getReportsTimer.Since(getReportsStart)
+		getReportsTimer.Since(getReportsStart)
 		// getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
 			select {
@@ -319,9 +351,9 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 			continue
 		}
 
-		// getAggregatedReportsStart := time.Now()
+		aggregationStart := time.Now()
 		metrics := edRep.aggregate(reports)
-		// getAggregatedReportsTimer.Since(getAggregatedReportsStart)
+		aggregateTimer.Since(aggregationStart)
 		// getAggregatedReportsCount.Observe(float64(len(metrics)))
 
 		errGroup, errCtx := errgroup.WithContext(ctx)
@@ -346,13 +378,15 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 			if err != nil {
 				panic(err)
 			}
+			deleteReportsStart := time.Now()
 			_, err = dbHandle.Exec(sqlStatement)
+			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
 				edRep.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
 			}
 		}
 
-		// mainLoopTimer.Since(loopStart)
+		mainLoopTimer.Since(loopStart)
 		select {
 		case <-ctx.Done():
 			return
@@ -497,17 +531,17 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 			req.URL.RawQuery = q.Encode()
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		// httpRequestStart := time.Now()
+		httpRequestStart := time.Now()
 		resp, err := edRep.httpClient.Do(req)
 		if err != nil {
 			edRep.log.Error(err.Error())
 			return err
 		}
 
-		// edRep.requestLatency.Since(httpRequestStart)
-		// httpStatTags := r.getTags(clientName)
-		// httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		// stats.Default.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
+		edRep.edReportingRequestLatency.Since(httpRequestStart)
+		httpStatTags := edRep.getTags(clientName)
+		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
+		stats.Default.NewTaggedStat("error_detail_reporting_http_request", stats.CountType, httpStatTags).Increment()
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
@@ -533,8 +567,3 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 }
 
 // Sending metrics to Reporting service --- ENDS
-
-func (*ErrorDetailReporter) IsPIIReportingDisabled(workspaceID string) bool {
-	// Since we don't see the necessity for error detail reporting, we are implementing a kind of NOOP method
-	return false
-}
