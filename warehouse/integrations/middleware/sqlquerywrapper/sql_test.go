@@ -102,12 +102,10 @@ func TestQueryWrapper(t *testing.T) {
 			_ = qw.QueryRowContext(ctx, query)
 			require.NoError(t, err)
 
-			_ = qw.WithTx(func(tx *Tx) error {
+			_ = qw.WithTx(ctx, func(tx *Tx) error {
 				_, err := tx.Exec(query)
 				return err
-			},
-				1*time.Second,
-			)
+			}, 1*time.Second)
 		})
 
 		t.Run(tc.name+" with secrets", func(t *testing.T) {

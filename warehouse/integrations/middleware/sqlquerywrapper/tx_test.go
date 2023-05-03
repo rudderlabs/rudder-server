@@ -21,9 +21,7 @@ func TestTxWithTimeout_Rollback(t *testing.T) {
 	t.Run("rollback success", func(t *testing.T) {
 		ctx := context.Background()
 
-		db := New(pgResource.DB)
-		db.since = time.Since
-		db.logger = rsLogger.NOP
+		db := New(pgResource.DB, WithLogger(rsLogger.NOP))
 
 		tx, err := db.Begin()
 		require.NoError(t, err)
@@ -52,9 +50,7 @@ func TestTxWithTimeout_Rollback(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 
-		db := New(pgResource.DB)
-		db.since = time.Since
-		db.logger = rsLogger.NOP
+		db := New(pgResource.DB, WithLogger(rsLogger.NOP))
 
 		tx, err := db.Begin()
 		require.NoError(t, err)

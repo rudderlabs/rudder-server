@@ -42,7 +42,7 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 		logfield.TableName, tableName,
 	)
 
-	err := pg.DB.WithTx(func(tx *sqlmiddleware.Tx) error {
+	err := pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		tableSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(tableName)
 
 		_, err := pg.loadTable(ctx, tx, tableName, tableSchemaInUpload)
@@ -311,16 +311,14 @@ func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
 	usersSchemaInWarehouse := pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 
 	var loadingError loadUsersTableResponse
-	_ = pg.DB.WithTx(func(tx *sqlmiddleware.Tx) error {
+	_ = pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		loadingError = pg.loadUsersTable(ctx, tx, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse)
 		if loadingError.identifiesError != nil || loadingError.usersError != nil {
 			return errors.New("loading users and identifies table")
 		}
 
 		return nil
-	},
-		pg.txnRollbackTimeout,
-	)
+	}, pg.txnRollbackTimeout)
 	if loadingError.identifiesError != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: loadingError.identifiesError,

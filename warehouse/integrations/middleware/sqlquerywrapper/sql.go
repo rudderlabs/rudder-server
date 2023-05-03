@@ -109,8 +109,8 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interfa
 	return row
 }
 
-func (db *DB) WithTx(fn func(*Tx) error, timeout time.Duration) error {
-	tx, err := db.Begin()
+func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error, timeout time.Duration) error {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}

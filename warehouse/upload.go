@@ -564,7 +564,7 @@ func (job *UploadJob) run() (err error) {
 			})
 
 			rruntime.GoForWarehouse(func() {
-				var specialTables []string
+				specialTables := make([]string, 0, len(userTables)+len(identityTables))
 				specialTables = append(specialTables, userTables...)
 				specialTables = append(specialTables, identityTables...)
 
@@ -1407,7 +1407,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	job.upload.Status = statusOpts.Status
 	job.upload.Timings = timings
 
-	var additionalFields []UploadColumn
+	additionalFields := make([]UploadColumn, 0, len(statusOpts.AdditionalFields)+len(opts))
 	additionalFields = append(additionalFields, statusOpts.AdditionalFields...)
 	additionalFields = append(additionalFields, opts...)
 
