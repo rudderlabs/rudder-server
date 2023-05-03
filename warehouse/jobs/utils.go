@@ -38,15 +38,6 @@ func validatePayload(payload StartJobReqPayload) bool {
 	return true
 }
 
-func contains(sArray []string, s string) bool {
-	for _, s1 := range sArray {
-		if s1 == s {
-			return true
-		}
-	}
-	return false
-}
-
 func getAsyncStatusMapFromAsyncPayloads(payloads []AsyncJobPayload) map[string]AsyncJobStatus {
 	asyncJobStatusMap := make(map[string]AsyncJobStatus)
 	for _, payload := range payloads {

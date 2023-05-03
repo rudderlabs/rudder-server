@@ -302,15 +302,15 @@ func (bq *BigQuery) dropStagingTable(stagingTableName string) {
 }
 
 func (bq *BigQuery) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
-	bq.Logger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s : %v", tableNames)
-
 	for _, tb := range tableNames {
+		bq.Logger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s", tb)
 		tableName := fmt.Sprintf("`%s`.`%s`", bq.namespace, tb)
 		sqlStatement := fmt.Sprintf(`
 			DELETE FROM
 				%[1]s
 			WHERE
-				context_sources_job_run_id <> @jobrunid AND
+				context_sources_job_run_id <>
+			@jobrunid AND
 				context_sources_task_run_id <> @taskrunid AND
 				context_source_id = @sourceid AND
 				received_at < @starttime;
@@ -844,7 +844,7 @@ func (bq *BigQuery) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	return err
 }
 
-func (bq *BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
+func (*BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
 	return nil
 }
 
@@ -1221,6 +1221,6 @@ func (bq *BigQuery) LoadTestTable(location, tableName string, _ map[string]inter
 func (*BigQuery) SetConnectionTimeout(_ time.Duration) {
 }
 
-func (bq *BigQuery) ErrorMappings() []model.JobError {
+func (*BigQuery) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

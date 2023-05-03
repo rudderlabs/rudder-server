@@ -1,6 +1,7 @@
 package loadfiles_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -17,7 +18,7 @@ type mockNotifier struct {
 	tables   []string
 }
 
-func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (chan []pgnotifier.Response, error) {
+func (n *mockNotifier) Publish(_ context.Context, payload pgnotifier.MessagePayload, _ *warehouseutils.Schema, _ int) (chan []pgnotifier.Response, error) {
 	var responses []pgnotifier.Response
 	for _, p := range payload.Jobs {
 		var req loadfiles.WorkerJobRequest
@@ -55,7 +56,7 @@ func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *wareho
 
 		responses = append(responses, pgnotifier.Response{
 			JobID:  req.StagingFileID,
-			Output: json.RawMessage(out),
+			Output: out,
 			Error:  errString,
 			Status: status,
 		})
