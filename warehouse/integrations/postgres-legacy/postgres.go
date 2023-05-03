@@ -568,17 +568,17 @@ func (pg *Postgres) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 	return nil
 }
 
-func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
+func (pg *Postgres) loadUserTables(ctx context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
-	_, err := pg.DB.Exec(sqlStatement)
+	_, err := pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
 	}
 	pg.logger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
 	pg.logger.Infof("PG: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := pg.loadTable(nil, warehouseutils.IdentifiesTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
+	identifyStagingTable, err := pg.loadTable(ctx, warehouseutils.IdentifiesTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
 	defer pg.dropStagingTable(identifyStagingTable)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
@@ -591,7 +591,7 @@ func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
 	errorMap[warehouseutils.UsersTable] = nil
 
 	if pg.SkipComputingUserLatestTraits || slices.Contains(pg.SkipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID) {
-		_, err := pg.loadTable(nil, warehouseutils.UsersTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), false)
+		_, err := pg.loadTable(ctx, warehouseutils.UsersTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), false)
 		if err != nil {
 			errorMap[warehouseutils.UsersTable] = err
 		}
@@ -631,7 +631,7 @@ func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
 											)`, pg.Namespace, warehouseutils.UsersTable, identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
 
 	pg.logger.Infof("PG: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -651,14 +651,14 @@ func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
 	)
 
 	pg.logger.Debugf("PG: Creating staging table for users: %s\n", sqlStatement)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
 	// BEGIN TRANSACTION
-	tx, err := pg.DB.Begin()
+	tx, err := pg.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -948,8 +948,8 @@ func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 	return
 }
 
-func (pg *Postgres) LoadUserTables(context.Context) map[string]error {
-	return pg.loadUserTables()
+func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
+	return pg.loadUserTables(ctx)
 }
 
 func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
