@@ -79,7 +79,7 @@ func TestIntegration(t *testing.T) {
 		"database":        database,
 		"user":            user,
 		"password":        password,
-		"port":            fmt.Sprint(azureSynapsePort),
+		"port":            strconv.Itoa(azureSynapsePort),
 		"namespace":       namespace,
 		"bucketName":      bucketName,
 		"accessKeyID":     accessKeyID,
@@ -94,14 +94,14 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("JOBS_DB_USER", "rudder")
 	t.Setenv("JOBS_DB_PASSWORD", "password")
 	t.Setenv("JOBS_DB_SSL_MODE", "disable")
-	t.Setenv("JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
+	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	t.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
 	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
 	t.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
 	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	t.Setenv("WAREHOUSE_JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("MINIO_ACCESS_KEY_ID", "MYACCESSKEY")
 	t.Setenv("MINIO_SECRET_ACCESS_KEY", "MYSECRETKEY")
 	t.Setenv("MINIO_MINIO_ENDPOINT", fmt.Sprintf("localhost:%d", minioPort))
@@ -138,14 +138,9 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Events flow", func(t *testing.T) {
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
-		)
-		jobsDB, err := sql.Open("postgres", dsn)
-		require.NoError(t, err)
-		require.NoError(t, jobsDB.Ping())
+		jobsDB := testhelper.JobsDB(t, jobsDBPort)
 
-		dsn = fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
 			user,
 			password,
 			host,
@@ -230,7 +225,7 @@ func TestIntegration(t *testing.T) {
 				"database":         database,
 				"user":             user,
 				"password":         password,
-				"port":             fmt.Sprint(azureSynapsePort),
+				"port":             strconv.Itoa(azureSynapsePort),
 				"sslMode":          "disable",
 				"namespace":        "",
 				"bucketProvider":   "MINIO",

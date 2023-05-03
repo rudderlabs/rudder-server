@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,6 +33,13 @@ const (
 	WaitFor10Minute        = 10 * time.Minute
 	DefaultQueryFrequency  = 100 * time.Millisecond
 	AsyncJOBQueryFrequency = 1000 * time.Millisecond
+)
+
+const (
+	jobsDBHost     = "localhost"
+	jobsDBDatabase = "jobsdb"
+	jobsDBUser     = "rudder"
+	jobsDBPassword = "password"
 )
 
 type EventsCountMap map[string]int
@@ -655,22 +661,19 @@ func RandSchema(provider string) string {
 	))
 }
 
-func CreateTempFile(t testing.TB, templatePath string, values map[string]string) string {
+func JobsDB(t testing.TB, port int) *sql.DB {
 	t.Helper()
 
-	tpl, err := template.ParseFiles(templatePath)
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		jobsDBUser,
+		jobsDBPassword,
+		jobsDBHost,
+		strconv.Itoa(port),
+		jobsDBDatabase,
+	)
+	jobsDB, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
+	require.NoError(t, jobsDB.Ping())
 
-	tmpFile, err := os.CreateTemp("", "workspaceConfig.*.json")
-	require.NoError(t, err)
-	defer func() { _ = tmpFile.Close() }()
-
-	require.NoError(t, tpl.Execute(tmpFile, values))
-	t.Cleanup(func() {
-		if err := os.Remove(tmpFile.Name()); err != nil {
-			t.Logf("Error while removing workspace config: %v", err)
-		}
-	})
-
-	return tmpFile.Name()
+	return jobsDB
 }

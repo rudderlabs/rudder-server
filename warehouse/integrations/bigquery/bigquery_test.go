@@ -2,7 +2,6 @@ package bigquery_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -109,14 +108,14 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("JOBS_DB_USER", "rudder")
 	t.Setenv("JOBS_DB_PASSWORD", "password")
 	t.Setenv("JOBS_DB_SSL_MODE", "disable")
-	t.Setenv("JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
+	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	t.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
 	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
 	t.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
 	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	t.Setenv("WAREHOUSE_JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("GO_ENV", "production")
 	t.Setenv("LOG_LEVEL", "INFO")
 	t.Setenv("INSTANCE_ID", "1")
@@ -157,12 +156,7 @@ func TestIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
-		)
-		jobsDB, err := sql.Open("postgres", dsn)
-		require.NoError(t, err)
-		require.NoError(t, jobsDB.Ping())
+		jobsDB := testhelper.JobsDB(t, jobsDBPort)
 
 		t.Cleanup(func() {
 			for _, dataset := range []string{namespace, sourcesNamespace} {

@@ -106,14 +106,14 @@ func TestIntegration(t *testing.T) {
 		"database":             database,
 		"user":                 user,
 		"password":             password,
-		"port":                 fmt.Sprint(port),
+		"port":                 strconv.Itoa(port),
 		"cluster":              cluster,
 		"clusterHost":          host,
 		"clusterDatabase":      database,
 		"clusterCluster":       cluster,
 		"clusterUser":          user,
 		"clusterPassword":      password,
-		"clusterPort":          fmt.Sprint(clusterPort1),
+		"clusterPort":          strconv.Itoa(clusterPort1),
 		"bucketName":           bucketName,
 		"accessKeyID":          accessKeyID,
 		"secretAccessKey":      secretAccessKey,
@@ -127,14 +127,14 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("JOBS_DB_USER", "rudder")
 	t.Setenv("JOBS_DB_PASSWORD", "password")
 	t.Setenv("JOBS_DB_SSL_MODE", "disable")
-	t.Setenv("JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
+	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	t.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
 	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
 	t.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
 	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	t.Setenv("WAREHOUSE_JOBS_DB_PORT", fmt.Sprint(jobsDBPort))
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("MINIO_ACCESS_KEY_ID", "MYACCESSKEY")
 	t.Setenv("MINIO_SECRET_ACCESS_KEY", "MYSECRETKEY")
 	t.Setenv("MINIO_MINIO_ENDPOINT", endPoint)
@@ -183,7 +183,7 @@ func TestIntegration(t *testing.T) {
 				Secure:        "false",
 				SkipVerify:    "true",
 				TLSConfigName: "",
-				Port:          fmt.Sprint(port),
+				Port:          strconv.Itoa(port),
 			}, true)
 			require.NoError(t, err)
 			require.NoError(t, db.Ping())
@@ -191,12 +191,7 @@ func TestIntegration(t *testing.T) {
 			dbs = append(dbs, db)
 		}
 
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "password", "localhost", fmt.Sprint(jobsDBPort), "jobsdb",
-		)
-		jobsDB, err := sql.Open("postgres", dsn)
-		require.NoError(t, err)
-		require.NoError(t, jobsDB.Ping())
+		jobsDB := testhelper.JobsDB(t, jobsDBPort)
 
 		tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
@@ -291,7 +286,7 @@ func TestIntegration(t *testing.T) {
 				"cluster":          "",
 				"user":             user,
 				"password":         password,
-				"port":             fmt.Sprint(port),
+				"port":             strconv.Itoa(port),
 				"secure":           false,
 				"namespace":        "",
 				"bucketProvider":   "MINIO",
