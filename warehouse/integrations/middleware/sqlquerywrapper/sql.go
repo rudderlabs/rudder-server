@@ -155,6 +155,14 @@ func (db *DB) Begin() (*Tx, error) {
 	}
 }
 
+func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
+	if tx, err := db.DB.BeginTx(ctx, opts); err != nil {
+		return nil, err
+	} else {
+		return &Tx{tx, db}, nil
+	}
+}
+
 func (tx *Tx) Exec(query string, args ...interface{}) (sql.Result, error) {
 	startedAt := time.Now()
 	result, err := tx.Tx.Exec(query, args...)

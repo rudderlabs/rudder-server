@@ -281,7 +281,7 @@ func (*Postgres) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (pg *Postgres) DownloadLoadFiles(tableName string) ([]string, error) {
+func (pg *Postgres) DownloadLoadFiles(ctx context.Context, tableName string) ([]string, error) {
 	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
@@ -321,7 +321,7 @@ func (pg *Postgres) DownloadLoadFiles(tableName string) ([]string, error) {
 			pg.logger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		err = downloader.Download(context.TODO(), objectFile, objectName)
+		err = downloader.Download(ctx, objectFile, objectName)
 		if err != nil {
 			pg.logger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
@@ -377,7 +377,7 @@ func (pg *Postgres) loadTable(ctx context.Context, tableName string, tableSchema
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
-	fileNames, err := pg.DownloadLoadFiles(tableName)
+	fileNames, err := pg.DownloadLoadFiles(ctx, tableName)
 	defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		return

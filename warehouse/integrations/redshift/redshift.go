@@ -344,7 +344,7 @@ func (rs *Redshift) createSchema() (err error) {
 	return
 }
 
-func (rs *Redshift) generateManifest(tableName string) (string, error) {
+func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (string, error) {
 	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3Manifest
@@ -392,7 +392,7 @@ func (rs *Redshift) generateManifest(tableName string) (string, error) {
 		return "", err
 	}
 
-	uploadOutput, err := uploader.Upload(context.TODO(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, misc.FastUUID().String())
+	uploadOutput, err := uploader.Upload(ctx, file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, misc.FastUUID().String())
 	if err != nil {
 		return "", err
 	}
@@ -430,7 +430,7 @@ func (rs *Redshift) loadTable(ctx context.Context, tableName string, tableSchema
 		logfield.TableName, tableName,
 	)
 
-	manifestLocation, err := rs.generateManifest(tableName)
+	manifestLocation, err := rs.generateManifest(ctx, tableName)
 	if err != nil {
 		return "", fmt.Errorf("generating manifest: %w", err)
 	}
@@ -1141,7 +1141,7 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 		stagingColumnType    string
 		deprecatedColumnName string
 		isDependent          bool
-		tx                   *sql.Tx
+		tx                   *sqlmiddleware.Tx
 		err                  error
 		ctx                  = context.TODO()
 	)
