@@ -58,7 +58,7 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 	rows, err := a.dbHandle.QueryContext(a.context, query, jobRunID, taskRunID, sourceID, destinationID)
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error executing the query %s with error %v", query, err)
-		return tableNames, err
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
@@ -66,7 +66,7 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 		err = rows.Scan(&tableName)
 		if err != nil {
 			a.logger.Errorf("[WH-Jobs]: Error scanning the rows %s", err.Error())
-			return tableNames, err
+			return nil, err
 		}
 		tableNames = append(tableNames, tableName)
 	}
@@ -142,14 +142,14 @@ func (a *AsyncJobWh) cleanUpAsyncTable(ctx context.Context) error {
 	a.logger.Info("[WH-Jobs]: Cleaning up the zombie asyncjobs")
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE status=$2 or status=$3`, warehouseutils.WarehouseAsyncJobTable)
 	a.logger.Debugf("[WH-Jobs]: resetting up async jobs table query %s", sqlStatement)
-	row, err := a.dbHandle.QueryContext(ctx, sqlStatement, WhJobWaiting, WhJobExecuting, WhJobFailed)
+	rows, err := a.dbHandle.QueryContext(ctx, sqlStatement, WhJobWaiting, WhJobExecuting, WhJobFailed)
 	if err != nil {
 		return err
 	}
-	if row.Err() != nil {
-		return row.Err()
+	if rows.Err() != nil {
+		return rows.Err()
 	}
-	return row.Close()
+	return rows.Close()
 }
 
 /*
@@ -205,8 +205,6 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 			_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
 			wg.Add(1)
 			go func() {
-				ticker := time.NewTicker(a.asyncJobTimeOut)
-				defer ticker.Stop()
 				select {
 				case responses := <-ch:
 					a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
@@ -214,7 +212,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 					a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
 					_ = a.updateAsyncJobs(ctx, asyncJobsStatusMap)
 					wg.Done()
-				case <-ticker.C:
+				case <-time.After(a.asyncJobTimeOut):
 					a.logger.Errorf("Go Routine timed out waiting for a response from PgNotifier", pendingAsyncJobs[0].Id)
 					asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
 					_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
