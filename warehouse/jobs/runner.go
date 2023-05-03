@@ -72,7 +72,7 @@ func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunI
 	}
 	if err = rows.Err(); err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error iterating the rows %s", err.Error())
-		return tableNames, err
+		return nil, err
 	}
 	a.logger.Infof("Got the TableNames as %s", tableNames)
 	return lo.Uniq(tableNames), nil
