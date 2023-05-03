@@ -57,7 +57,7 @@ jobs:
             useNative: true
           - package: warehouse/integrations/mssql
             destination: mssql
-          - package: warehouse/integrations/azuresynapse
+          - package: warehouse/integrations/azure-synapse
             destination: azure-synapse
           - package: warehouse/integrations/postgres
             destination: postgres
