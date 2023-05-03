@@ -4,6 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -16,10 +21,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
-	"os"
-	"strconv"
-	"testing"
-	"time"
 )
 
 func TestIntegration(t *testing.T) {
