@@ -234,7 +234,7 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 	configCh := make(chan pubsub.DataEvent)
 
 	var ready sync.WaitGroup
-	ready.Add(2)
+	ready.Add(3)
 
 	var reportingSettings sync.WaitGroup
 	reportingSettings.Add(1)

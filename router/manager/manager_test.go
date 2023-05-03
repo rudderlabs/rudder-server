@@ -216,6 +216,7 @@ func TestRouterManager(t *testing.T) {
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
 		Reporting:        &reporting.NOOP{},
+		EdReporting:      &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         tDb,
