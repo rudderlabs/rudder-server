@@ -318,7 +318,7 @@ func (rs *Redshift) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 		)
 
 		rs.Logger.Infof("RS: Deleting rows in table in redshift for RS:%s", rs.Warehouse.Destination.ID)
-		rs.Logger.Debugf("RS: Executing the query %v", sqlStatement)
+		rs.Logger.Infof("RS: Executing the query %v", sqlStatement)
 
 		if rs.EnableDeleteByJobs {
 			_, err = rs.DB.Exec(sqlStatement,
@@ -328,7 +328,7 @@ func (rs *Redshift) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 				params.StartTime,
 			)
 			if err != nil {
-				rs.Logger.Errorf("Error in executing the query %s", err.Error)
+				rs.Logger.Errorf("Error in executing the query %s", err.Error())
 				return err
 			}
 		}
@@ -378,7 +378,7 @@ func (rs *Redshift) generateManifest(tableName string) (string, error) {
 	if err != nil {
 		panic(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: warehouseutils.S3,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
@@ -1151,7 +1151,7 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 		stagingColumnType    string
 		deprecatedColumnName string
 		isDependent          bool
-		tx                   *sql.Tx
+		tx                   *sqlmiddleware.Tx
 		err                  error
 		ctx                  = context.TODO()
 	)

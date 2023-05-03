@@ -257,8 +257,8 @@ func (sf *Snowflake) authString() string {
 }
 
 func (sf *Snowflake) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	sf.Logger.Infof("SF: Cleaning up the following tables in snowflake for SF:%s : %v", tableNames)
 	for _, tb := range tableNames {
+		sf.Logger.Infof("SF: Cleaning up the following tables in snowflake for SF:%s", tb)
 		sqlStatement := fmt.Sprintf(`
 			DELETE FROM
 				%[1]q.%[2]q
