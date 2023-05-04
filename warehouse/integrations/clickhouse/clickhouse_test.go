@@ -182,7 +182,7 @@ func TestIntegration(t *testing.T) {
 		var dbs []*sql.DB
 
 		for _, port := range []int{port, clusterPort1, clusterPort2, clusterPort3, clusterPort4} {
-			dsn := fmt.Sprintf("tcp://%s:%d?block_size=&compress=false&database=%s&debug=&password=%s&pool_size=&read_timeout=&secure=false&skip_verify=true&tls_config=&username=%s&write_timeout=",
+			dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
 				"localhost", port, "rudderdb", "rudder-password", "rudder",
 			)
 
@@ -1118,13 +1118,12 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	})
 	require.NoError(t, err)
 
-	dsn := fmt.Sprintf("tcp://%s:%s?block_size=&compress=false&database=%s&debug=&password=%s&pool_size=&read_timeout=&secure=false&skip_verify=true&tls_config=&username=%s&write_timeout=",
-		"localhost", resource.GetPort("9000/tcp"), databaseName, user, password,
+	dsn := fmt.Sprintf("tcp://%s:%s?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+		"localhost", resource.GetPort("9000/tcp"), databaseName, password, user,
 	)
 
 	db, err := sql.Open("clickhouse", dsn)
 	require.NoError(t, err)
-	require.NoError(t, db.Ping())
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
