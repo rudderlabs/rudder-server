@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"google.golang.org/api/option"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 

@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
@@ -182,8 +183,8 @@ func TestIntegration(t *testing.T) {
 
 		for _, port := range []int{port, clusterPort1, clusterPort2, clusterPort3, clusterPort4} {
 			dsn := fmt.Sprintf("tcp://%s:%d?block_size=&compress=false&database=%s&debug=&password=%s&pool_size=&read_timeout=&secure=false&skip_verify=true&tls_config=&username=%s&write_timeout=",
-				"localhost",port, "rudderdb", "rudder-password", "rudder",
-				)
+				"localhost", port, "rudderdb", "rudder-password", "rudder",
+			)
 
 			db, err := sql.Open("clickhouse", dsn)
 			require.NoError(t, err)
@@ -1118,7 +1119,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	require.NoError(t, err)
 
 	dsn := fmt.Sprintf("tcp://%s:%s?block_size=&compress=false&database=%s&debug=&password=%s&pool_size=&read_timeout=&secure=false&skip_verify=true&tls_config=&username=%s&write_timeout=",
-		"localhost",resource.GetPort("9000/tcp"), databaseName, user, password,
+		"localhost", resource.GetPort("9000/tcp"), databaseName, user, password,
 	)
 
 	db, err := sql.Open("clickhouse", dsn)
