@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -18,7 +20,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
@@ -110,17 +111,22 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type Postgres struct {
-	DB                          *sqlmiddleware.DB
-	Namespace                   string
-	ObjectStorage               string
-	Warehouse                   model.Warehouse
-	Uploader                    warehouseutils.Uploader
-	ConnectTimeout              time.Duration
-	Logger                      logger.Logger
-	EnableDeleteByJobs          bool
-	NumWorkersDownloadLoadFiles int
-	LoadFileDownloader          downloader.Downloader
-	SlowQueryThreshold          time.Duration
+	DB                                        *sqlmiddleware.DB
+	Namespace                                 string
+	ObjectStorage                             string
+	Warehouse                                 model.Warehouse
+	Uploader                                  warehouseutils.Uploader
+	ConnectTimeout                            time.Duration
+	Logger                                    logger.Logger
+	EnableDeleteByJobs                        bool
+	NumWorkersDownloadLoadFiles               int
+	LoadFileDownloader                        downloader.Downloader
+	SlowQueryThreshold                        time.Duration
+	txnRollbackTimeout                        time.Duration
+	skipDedupDestinationIDs                   []string
+	skipComputingUserLatestTraits             bool
+	skipComputingUserLatestTraitsWorkspaceIDs []string
+	stats                                     stats.Stats
 }
 
 type Credentials struct {
@@ -150,6 +156,7 @@ var partitionKeyMap = map[string]string{
 func New() *Postgres {
 	return &Postgres{
 		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("postgres"),
+		stats:  stats.Default,
 	}
 }
 
@@ -157,6 +164,10 @@ func WithConfig(h *Postgres, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
 	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
 	h.SlowQueryThreshold = config.GetDuration("Warehouse.postgres.slowQueryThreshold", 5, time.Minute)
+	h.txnRollbackTimeout = config.GetDuration("Warehouse.postgres.txnRollbackTimeout", 30, time.Second)
+	h.skipDedupDestinationIDs = config.GetStringSlice("Warehouse.postgres.skipDedupDestinationIDs", nil)
+	h.skipComputingUserLatestTraits = config.GetBool("Warehouse.postgres.skipComputingUserLatestTraits", false)
+	h.skipComputingUserLatestTraitsWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.skipComputingUserLatestTraitsWorkspaceIDs", nil)
 }
 
 func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
@@ -456,71 +467,6 @@ func (pg *Postgres) FetchSchema() (model.Schema, model.Schema, error) {
 	}
 
 	return schema, unrecognizedSchema, nil
-}
-
-func (pg *Postgres) LoadUserTables() map[string]error {
-	var (
-		identifiesSchemaInUpload = pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
-		usersSchemaInUpload      = pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
-		usersSchemaInwarehouse   = pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
-
-		lut = LoadUsersTable{
-			Logger:             pg.Logger,
-			DB:                 pg.DB,
-			Namespace:          pg.Namespace,
-			Warehouse:          &pg.Warehouse,
-			Stats:              stats.Default,
-			Config:             config.Default,
-			LoadFileDownloader: pg.LoadFileDownloader,
-		}
-	)
-
-	errorMap := lut.Load(context.TODO(), identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInwarehouse)
-	for tableName, err := range errorMap {
-		if err != nil {
-			lut.Logger.Warnw("loading users table",
-				logfield.SourceID, lut.Warehouse.Source.ID,
-				logfield.SourceType, lut.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, lut.Warehouse.Destination.ID,
-				logfield.DestinationType, lut.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, lut.Warehouse.WorkspaceID,
-				logfield.TableName, tableName,
-				logfield.Namespace, pg.Namespace,
-				logfield.Error, err.Error(),
-			)
-		}
-	}
-	return errorMap
-}
-
-func (pg *Postgres) LoadTable(tableName string) error {
-	lt := LoadTable{
-		Logger:             pg.Logger,
-		DB:                 pg.DB,
-		Namespace:          pg.Namespace,
-		Warehouse:          &pg.Warehouse,
-		Stats:              stats.Default,
-		Config:             config.Default,
-		LoadFileDownloader: pg.LoadFileDownloader,
-	}
-	tableSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(tableName)
-	_, err := lt.Load(context.TODO(), tableName, tableSchemaInUpload)
-	if err != nil {
-		lt.Logger.Warnw("loading table",
-			logfield.SourceID, lt.Warehouse.Source.ID,
-			logfield.SourceType, lt.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, lt.Warehouse.Destination.ID,
-			logfield.DestinationType, lt.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, lt.Warehouse.WorkspaceID,
-			logfield.TableName, tableName,
-			logfield.Namespace, pg.Namespace,
-			logfield.Error, err.Error(),
-		)
-
-		return fmt.Errorf("loading table: %w", err)
-	}
-
-	return nil
 }
 
 func (pg *Postgres) Cleanup() {

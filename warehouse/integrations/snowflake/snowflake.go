@@ -290,7 +290,7 @@ func (sf *Snowflake) DeleteBy(tableNames []string, params warehouseutils.DeleteB
 	return nil
 }
 
-func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipClosingDBSession bool) (tableLoadResp, error) {
+func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, skipClosingDBSession bool) (tableLoadResp, error) {
 	var (
 		csvObjectLocation string
 		db                *sqlmiddleware.DB
@@ -341,7 +341,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
 	)
-	if _, err = db.Exec(sqlStatement); err != nil {
+	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.Logger.Warnw("failure creating temporary table",
 			logfield.SourceID, sf.Warehouse.Source.ID,
 			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
@@ -399,7 +399,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		logfield.Query, sanitisedQuery,
 	)
 
-	if _, err = db.Exec(sqlStatement); err != nil {
+	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.Logger.Warnw("failure running COPY command",
 			logfield.SourceID, sf.Warehouse.Source.ID,
 			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
@@ -532,7 +532,7 @@ func (sf *Snowflake) loadTable(tableName string, tableSchemaInUpload model.Table
 		logfield.Query, sqlStatement,
 	)
 
-	row := db.QueryRow(sqlStatement)
+	row := db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
 		sf.Logger.Warnw("failure running deduplication",
 			logfield.SourceID, sf.Warehouse.Source.ID,
@@ -698,7 +698,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (sf *Snowflake) loadUserTables() map[string]error {
+func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	var (
 		identifiesSchema = sf.Uploader.GetTableSchemaInUpload(identifiesTable)
 		usersSchema      = sf.Uploader.GetTableSchemaInUpload(usersTable)
@@ -721,7 +721,7 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 		logfield.Namespace, sf.Namespace,
 	)
 
-	resp, err := sf.loadTable(identifiesTable, identifiesSchema, true)
+	resp, err := sf.loadTable(ctx, identifiesTable, identifiesSchema, true)
 	if err != nil {
 		return map[string]error{
 			identifiesTable: fmt.Errorf("loading table %s: %w", identifiesTable, err),
@@ -823,7 +823,7 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 		logfield.StagingTableName, stagingTableName,
 		logfield.Query, sqlStatement,
 	)
-	if _, err = resp.db.Exec(sqlStatement); err != nil {
+	if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.Logger.Warnw("failure creating staging table for users",
 			logfield.SourceID, sf.Warehouse.Source.ID,
 			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
@@ -889,7 +889,7 @@ func (sf *Snowflake) loadUserTables() map[string]error {
 		logfield.Query, sqlStatement,
 	)
 
-	row := resp.db.QueryRow(sqlStatement)
+	row := resp.db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
 		sf.Logger.Warnw("failure running deduplication",
 			logfield.SourceID, sf.Warehouse.Source.ID,
@@ -1306,12 +1306,12 @@ func (sf *Snowflake) Cleanup() {
 	}
 }
 
-func (sf *Snowflake) LoadUserTables() map[string]error {
-	return sf.loadUserTables()
+func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
+	return sf.loadUserTables(ctx)
 }
 
-func (sf *Snowflake) LoadTable(tableName string) error {
-	_, err := sf.loadTable(tableName, sf.Uploader.GetTableSchemaInUpload(tableName), false)
+func (sf *Snowflake) LoadTable(ctx context.Context, tableName string) error {
+	_, err := sf.loadTable(ctx, tableName, sf.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }
 

@@ -240,8 +240,10 @@ func TestQueryWrapper(t *testing.T) {
 
 			if tc.wantLog {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
+				mockLogger.EXPECT().Warnw("rollback threshold exceeded", keysAndValues...).Times(1)
 			} else {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
+				mockLogger.EXPECT().Warnw("rollback threshold exceeded", keysAndValues...).Times(0)
 			}
 
 			t.Run("Exec", func(t *testing.T) {
@@ -307,6 +309,14 @@ func TestQueryWrapper(t *testing.T) {
 				require.NoError(t, err)
 
 				err = tx.Commit()
+				require.NoError(t, err)
+			})
+
+			t.Run("Rollback", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_ = tx.Rollback()
 				require.NoError(t, err)
 			})
 		})
