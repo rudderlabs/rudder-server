@@ -222,7 +222,7 @@ func (tx *Tx) Rollback() error {
 
 func (tx *Tx) Commit() error {
 	startedAt := time.Now()
-	err := tx.Tx.Rollback()
+	err := tx.Tx.Commit()
 	if elapsed := tx.db.since(startedAt); elapsed > tx.db.commitThreshold {
 		tx.db.logger.Warnw("commit threshold exceeded", tx.db.keysAndValues...)
 	}

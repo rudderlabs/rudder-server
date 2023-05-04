@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"testing"
 	"time"
 
@@ -322,6 +323,72 @@ func TestQueryWrapper(t *testing.T) {
 
 				_ = tx.Rollback()
 				require.NoError(t, err)
+			})
+		})
+
+		t.Run("Round trip", func(t *testing.T) {
+			qw := New(
+				pgResource.DB,
+				WithSlowQueryThreshold(queryThreshold),
+				WithLogger(rslogger.NOP),
+			)
+			qw.since = func(time.Time) time.Duration {
+				return tc.executionTimeInSec
+			}
+
+			table := fmt.Sprintf("test_table_%d", uuid.New().ID())
+
+			t.Run("Normal operations", func(t *testing.T) {
+				_, err := qw.ExecContext(ctx, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id INT);", table))
+				require.NoError(t, err)
+
+				_, err = qw.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (id) VALUES (1);", table))
+				require.NoError(t, err)
+
+				var count int
+				err = qw.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s;", table)).Scan(&count)
+				require.NoError(t, err)
+				require.Equal(t, 1, count)
+			})
+
+			t.Run("On Rollback", func(t *testing.T) {
+				tx, err := qw.BeginTx(ctx, &sql.TxOptions{})
+				require.NoError(t, err)
+
+				_, err = tx.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (id) VALUES (2);", table))
+				require.NoError(t, err)
+
+				var count int
+				err = tx.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s;", table)).Scan(&count)
+				require.NoError(t, err)
+				require.Equal(t, 2, count)
+
+				err = tx.Rollback()
+				require.NoError(t, err)
+
+				err = qw.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s;", table)).Scan(&count)
+				require.NoError(t, err)
+				require.Equal(t, 1, count)
+			})
+
+			t.Run("On Commit", func(t *testing.T) {
+				tx, err := qw.BeginTx(ctx, &sql.TxOptions{})
+				require.NoError(t, err)
+
+				_, err = tx.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (id) VALUES (2);", table))
+				require.NoError(t, err)
+
+				var count int
+				err = tx.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s;", table)).Scan(&count)
+				require.NoError(t, err)
+				require.Equal(t, 2, count)
+
+				err = tx.Commit()
+				require.NoError(t, err)
+
+				err = qw.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s;", table)).Scan(&count)
+				require.NoError(t, err)
+				require.Equal(t, 2, count)
 			})
 		})
 	}
