@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"testing"
 	"time"
+
+	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/google/uuid"
 
