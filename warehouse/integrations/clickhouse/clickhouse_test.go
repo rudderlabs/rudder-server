@@ -198,14 +198,14 @@ func TestIntegration(t *testing.T) {
 		tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
 		testCases := []struct {
-			name                        string
-			sourceID                    string
-			destinationID               string
-			writeKey                    string
-			warehouseEvents             testhelper.EventsCountMap
-			warehouseModifiedEvents     testhelper.EventsCountMap
-			clusterSetup                func(t testing.TB)
-			db                          *sql.DB
+			name                    string
+			sourceID                string
+			destinationID           string
+			writeKey                string
+			warehouseEvents         testhelper.EventsCountMap
+			warehouseModifiedEvents testhelper.EventsCountMap
+			clusterSetup            func(t testing.TB)
+			db                      *sql.DB
 		}{
 			{
 				name:          "Single Setup",
