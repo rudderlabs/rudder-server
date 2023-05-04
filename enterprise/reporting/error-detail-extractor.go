@@ -14,8 +14,10 @@ const (
 	destinationResponse = "destinationResponse"
 )
 
-var WildcardKeys []string = []string{}
-var defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "Error", "error", "error_message"}
+var (
+	WildcardKeys            []string = []string{}
+	defaultErrorMessageKeys          = []string{"message", "description", "detail", "title", "Error", "error", "error_message"}
+)
 
 type ExtractorT struct {
 	WildcardKeys     []string
@@ -35,7 +37,7 @@ func NewErrorDetailExtractor() *ExtractorT {
 	return extractor
 }
 
-func generateCombinations(symbols []string, res []string, prefix string, level int) []string {
+func generateCombinations(symbols, res []string, prefix string, level int) []string {
 	if level <= 0 {
 		// fmt.Printf("Prefix:%s\n", prefix)
 		res = append(res, prefix)
@@ -55,7 +57,6 @@ func generateCombinations(symbols []string, res []string, prefix string, level i
 // This function is to be executed only once
 // as these keys will be same across destinations
 func (t *ExtractorT) BuildMessageKeysPermutations() {
-
 	var level int
 	// sts := []string{"", objectKeyWildcard, arrayWildcard}
 
@@ -113,7 +114,6 @@ func (t *ExtractorT) GetErrorMessageFromResponse(response string) string {
 	prelimResults := gjson.GetMany(response, probableKeyList...)
 	for _, prelimResult := range prelimResults {
 		if prelimResult.Exists() {
-
 			switch prelimResult.Type {
 			case gjson.String:
 				return prelimResult.String()
@@ -131,7 +131,6 @@ func (t *ExtractorT) GetErrorMessageFromResponse(response string) string {
 					return t.GetErrorMessageFromResponse(prelimResult.String())
 				}
 			}
-
 		}
 	}
 
