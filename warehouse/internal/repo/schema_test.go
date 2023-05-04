@@ -3,6 +3,7 @@ package repo_test
 import (
 	"context"
 	"errors"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"testing"
 	"time"
 
@@ -111,5 +112,27 @@ func TestWHSchemasRepo(t *testing.T) {
 		expectedNamespace, err = r.GetNamespace(ctx, notFound, notFound)
 		require.NoError(t, err)
 		require.Empty(t, expectedNamespace, expectedNamespace)
+	})
+
+	t.Run("GetTablesForConnection", func(t *testing.T) {
+		t.Log("existing")
+		connection := warehouseutils.Connection{SourceId: sourceID, DestinationId: destinationID}
+		expectedTableNames, err := r.GetTablesForConnection(ctx, []warehouseutils.Connection{connection})
+		require.NoError(t, err)
+		require.Equal(t, len(expectedTableNames), 1)
+		require.Equal(t, expectedTableNames[0].SourceId, sourceID)
+		require.Equal(t, expectedTableNames[0].DestinationId, destinationID)
+		require.Equal(t, expectedTableNames[0].Tables[0], "table_name_1")
+		require.Equal(t, expectedTableNames[0].Tables[1], "table_name_2")
+
+		t.Log("cancelled context")
+		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.Connection{connection})
+		require.EqualError(t, err, errors.New("querying schema: context canceled").Error())
+
+		t.Log("not found")
+		expectedTableNames, err = r.GetTablesForConnection(ctx,
+			[]warehouseutils.Connection{{SourceId: notFound, DestinationId: notFound}})
+		require.NoError(t, err)
+		require.Empty(t, expectedTableNames, expectedTableNames)
 	})
 }

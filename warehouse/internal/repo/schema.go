@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -191,4 +192,57 @@ func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string)
 	}
 
 	return namespace, nil
+}
+
+func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []warehouseutils.Connection) ([]warehouseutils.Connection, error) {
+	if len(connections) == 0 {
+		return nil, fmt.Errorf("no source id and destination id pairs provided")
+	}
+
+	// select max id for each source id and destination id pair
+	innerQueryTemplate := `SELECT max(id) FROM ` + whSchemaTableName + `
+		WHERE
+			namespace <> ''
+		AND
+			(source_id, destination_id) IN (%s)
+		GROUP BY id
+	`
+	sourceIdDestinationIdArr := make([]string, len(connections))
+	for idx, connection := range connections {
+		pair := fmt.Sprintf("'%s','%s'", connection.SourceId, connection.DestinationId)
+		sourceIdDestinationIdArr[idx] = fmt.Sprintf("(%s)", pair)
+	}
+	sourceIdDestinationIdStr := strings.Join(sourceIdDestinationIdArr, ", ")
+	innerQuery := fmt.Sprintf(innerQueryTemplate, sourceIdDestinationIdStr)
+
+	// select all rows with max id for each source id and destination id pair
+	query := `SELECT` + whSchemaTableColumns + `FROM ` + whSchemaTableName + `
+		WHERE id IN (` + innerQuery + `)
+	`
+	rows, err := repo.db.QueryContext(
+		ctx,
+		query)
+	if err != nil {
+		return nil, fmt.Errorf("querying schema: %w", err)
+	}
+
+	entries, err := repo.parseRows(rows)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rows: %w", err)
+	}
+
+	var tables []warehouseutils.Connection
+	for _, entry := range entries {
+		var allTablesOfConnections []string
+		for tableName := range entry.Schema {
+			allTablesOfConnections = append(allTablesOfConnections, tableName)
+		}
+		tables = append(tables, warehouseutils.Connection{
+			SourceId:      entry.SourceID,
+			DestinationId: entry.DestinationID,
+			Tables:        allTablesOfConnections,
+		})
+	}
+
+	return tables, nil
 }
