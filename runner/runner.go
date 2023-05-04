@@ -11,9 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -195,14 +196,11 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
 
-	// Start backend config
-	if r.canStartBackendConfig() {
-		if err := backendconfig.Setup(configEnvHandler); err != nil {
-			r.logger.Errorf("Unable to setup backend config: %s", err)
-			return 1
-		}
-		backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
+	if err := backendconfig.Setup(configEnvHandler); err != nil {
+		r.logger.Errorf("Unable to setup backend config: %s", err)
+		return 1
 	}
+	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
 
 	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
 	if r.canStartServer() {
@@ -398,8 +396,4 @@ func (r *Runner) canStartServer() bool {
 
 func (r *Runner) canStartWarehouse() bool {
 	return r.appType != app.GATEWAY && r.warehouseMode != config.OffMode
-}
-
-func (r *Runner) canStartBackendConfig() bool {
-	return r.warehouseMode != config.SlaveMode
 }

@@ -29,12 +29,12 @@ type AsyncJobWh struct {
 	pgnotifier            *pgnotifier.PGNotifier
 	context               context.Context
 	logger                logger.Logger
-	MaxBatchSizeToProcess int
-	MaxCleanUpRetries     int
-	MaxQueryRetries       int
-	RetryTimeInterval     time.Duration
-	MaxAttemptsPerJob     int
-	AsyncJobTimeOut       time.Duration
+	maxBatchSizeToProcess int
+	maxCleanUpRetries     int
+	maxQueryRetries       int
+	retryTimeInterval     time.Duration
+	maxAttemptsPerJob     int
+	asyncJobTimeOut       time.Duration
 }
 
 type WhJobsMetaData struct {
