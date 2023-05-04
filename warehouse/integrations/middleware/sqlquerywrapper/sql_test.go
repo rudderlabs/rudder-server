@@ -195,8 +195,10 @@ func TestQueryWrapper(t *testing.T) {
 						if tc.wantLog {
 							mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
 							mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
+							mockLogger.EXPECT().Warnw("commit threshold exceeded", keysAndValues...).Times(1)
 						} else {
 							mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
+							mockLogger.EXPECT().Warnw("commit threshold exceeded", keysAndValues...).Times(0)
 						}
 
 						_, err = stc.tx.Exec(fmt.Sprintf("CREATE USER %s;", user))
@@ -241,9 +243,11 @@ func TestQueryWrapper(t *testing.T) {
 			if tc.wantLog {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
 				mockLogger.EXPECT().Warnw("rollback threshold exceeded", keysAndValues...).Times(1)
+				mockLogger.EXPECT().Warnw("commit threshold exceeded", keysAndValues...).Times(6)
 			} else {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
 				mockLogger.EXPECT().Warnw("rollback threshold exceeded", keysAndValues...).Times(0)
+				mockLogger.EXPECT().Warnw("commit threshold exceeded", keysAndValues...).Times(0)
 			}
 
 			t.Run("Exec", func(t *testing.T) {

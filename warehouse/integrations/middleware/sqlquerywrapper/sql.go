@@ -28,6 +28,7 @@ type DB struct {
 	keysAndValues      []any
 	slowQueryThreshold time.Duration
 	rollbackThreshold  time.Duration
+	commitThreshold    time.Duration
 	secretsRegex       map[string]string
 }
 
@@ -66,6 +67,7 @@ func New(db *sql.DB, opts ...Opt) *DB {
 		since:              time.Since,
 		slowQueryThreshold: 300 * time.Second,
 		rollbackThreshold:  30 * time.Second,
+		commitThreshold:    30 * time.Second,
 		logger:             rslogger.NOP,
 	}
 	for _, opt := range opts {
@@ -214,6 +216,15 @@ func (tx *Tx) Rollback() error {
 	err := tx.Tx.Rollback()
 	if elapsed := tx.db.since(startedAt); elapsed > tx.db.rollbackThreshold {
 		tx.db.logger.Warnw("rollback threshold exceeded", tx.db.keysAndValues...)
+	}
+	return err
+}
+
+func (tx *Tx) Commit() error {
+	startedAt := time.Now()
+	err := tx.Tx.Rollback()
+	if elapsed := tx.db.since(startedAt); elapsed > tx.db.commitThreshold {
+		tx.db.logger.Warnw("commit threshold exceeded", tx.db.keysAndValues...)
 	}
 	return err
 }
