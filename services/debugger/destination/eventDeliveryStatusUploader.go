@@ -124,6 +124,8 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	}
 	<-h.initialized
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
+	h.uploadEnabledDestinationIDsMu.RLock()
+	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	if !h.HasUploadEnabled(destinationID) {
 		err := h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
 		if err != nil {
