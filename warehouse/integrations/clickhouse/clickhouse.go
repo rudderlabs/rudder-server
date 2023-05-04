@@ -468,11 +468,11 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
 }
 
 // loadTable loads table to clickhouse from the load files
-func (ch *Clickhouse) loadTable(tableName string, tableSchemaInUpload model.TableSchema) (err error) {
+func (ch *Clickhouse) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
 	if ch.UseS3CopyEngineForLoading() {
-		return ch.loadByCopyCommand(tableName, tableSchemaInUpload)
+		return ch.loadByCopyCommand(ctx, tableName, tableSchemaInUpload)
 	}
-	return ch.loadByDownloadingLoadFiles(tableName, tableSchemaInUpload)
+	return ch.loadByDownloadingLoadFiles(ctx, tableName, tableSchemaInUpload)
 }
 
 func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
@@ -482,7 +482,7 @@ func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
 	return ch.ObjectStorage == warehouseutils.S3 || ch.ObjectStorage == warehouseutils.MINIO
 }
 
-func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpload model.TableSchema) (err error) {
+func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
 	ch.Logger.Infof("%s LoadTable Started", ch.GetLogIdentifier(tableName))
 	defer ch.Logger.Infof("%s LoadTable Completed", ch.GetLogIdentifier(tableName))
 
@@ -490,7 +490,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaIn
 	chStats := ch.newClickHouseStat(tableName)
 
 	downloadStart := time.Now()
-	fileNames, err := ch.LoadFileDownloader.Download(context.TODO(), tableName)
+	fileNames, err := ch.LoadFileDownloader.Download(ctx, tableName)
 	chStats.downloadLoadFilesTime.Since(downloadStart)
 	if err != nil {
 		return
@@ -498,7 +498,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaIn
 	defer misc.RemoveFilePaths(fileNames...)
 
 	operation := func() error {
-		tableError := ch.loadTablesFromFilesNamesWithRetry(tableName, tableSchemaInUpload, fileNames, chStats)
+		tableError := ch.loadTablesFromFilesNamesWithRetry(ctx, tableName, tableSchemaInUpload, fileNames, chStats)
 		err = tableError.err
 		if !tableError.enableRetry {
 			return nil
@@ -528,7 +528,7 @@ func (ch *Clickhouse) credentials() (accessKeyID, secretAccessKey string, err er
 	return "", "", errors.New("objectStorage not supported for loading using S3 engine")
 }
 
-func (ch *Clickhouse) loadByCopyCommand(tableName string, tableSchemaInUpload model.TableSchema) error {
+func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) error {
 	ch.Logger.Infof("LoadTable By COPY command Started for table: %s", tableName)
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
@@ -577,7 +577,7 @@ func (ch *Clickhouse) loadByCopyCommand(tableName string, tableSchemaInUpload mo
 		secretAccessKey,                // 6
 		sortedColumnNamesWithDataTypes, // 7
 	)
-	_, err = ch.DB.Exec(sqlStatement)
+	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		return fmt.Errorf("executing insert query for load table with error: %w", err)
 	}
@@ -591,7 +591,7 @@ type tableError struct {
 	err         error
 }
 
-func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload model.TableSchema, fileNames []string, chStats *clickHouseStat) (terr tableError) {
+func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, fileNames []string, chStats *clickHouseStat) (terr tableError) {
 	ch.Logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Started", ch.GetLogIdentifier(tableName))
 	defer ch.Logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Completed", ch.GetLogIdentifier(tableName))
 
@@ -611,7 +611,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableS
 	}
 
 	ch.Logger.Debugf("%s Beginning a transaction in db for loading in table", ch.GetLogIdentifier(tableName))
-	txn, err = ch.DB.Begin()
+	txn, err = ch.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		err = fmt.Errorf("%s Error while beginning a transaction in db for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
 		onError(err)
@@ -625,7 +625,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableS
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString(len(sortedColumnKeys)))
 	ch.Logger.Debugf("%s Preparing statement exec in db for loading in table for query:%s", ch.GetLogIdentifier(tableName), sqlStatement)
-	stmt, err := txn.Prepare(sqlStatement)
+	stmt, err := txn.PrepareContext(ctx, sqlStatement)
 	if err != nil {
 		err = fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s error:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
 		onError(err)
@@ -683,7 +683,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableS
 				recordInterface = append(recordInterface, data)
 			}
 
-			stmtCtx, stmtCancel := context.WithCancel(context.Background())
+			stmtCtx, stmtCancel := context.WithCancel(ctx)
 			misc.RunWithTimeout(func() {
 				ch.Logger.Debugf("%s Starting Prepared statement exec", ch.GetLogIdentifier(tableName))
 				_, err = stmt.ExecContext(stmtCtx, recordInterface...)
@@ -1008,9 +1008,9 @@ func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecogniz
 	return
 }
 
-func (ch *Clickhouse) LoadUserTables() (errorMap map[string]error) {
+func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
-	err := ch.loadTable(warehouseutils.IdentifiesTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
+	err := ch.loadTable(ctx, warehouseutils.IdentifiesTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -1020,7 +1020,7 @@ func (ch *Clickhouse) LoadUserTables() (errorMap map[string]error) {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
-	err = ch.loadTable(warehouseutils.UsersTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable))
+	err = ch.loadTable(ctx, warehouseutils.UsersTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable))
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -1028,8 +1028,8 @@ func (ch *Clickhouse) LoadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (ch *Clickhouse) LoadTable(tableName string) error {
-	err := ch.loadTable(tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
+func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) error {
+	err := ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
 	return err
 }
 

@@ -573,7 +573,10 @@ func (job *UploadJob) run() (err error) {
 			})
 
 			rruntime.GoForWarehouse(func() {
-				specialTables := append(userTables, identityTables...)
+				specialTables := make([]string, 0, len(userTables)+len(identityTables))
+				specialTables = append(specialTables, userTables...)
+				specialTables = append(specialTables, identityTables...)
+
 				err = job.exportRegularTables(specialTables, loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
@@ -1058,7 +1061,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		}
 	}
 
-	err = job.whManager.LoadTable(tName)
+	err = job.whManager.LoadTable(context.TODO(), tName)
 	if err != nil {
 		status := model.TableUploadExportingFailed
 		errorsString := misc.QuoteLiteral(err.Error())
@@ -1216,7 +1219,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 		return []error{}, nil
 	}
 
-	errorMap := job.whManager.LoadUserTables()
+	errorMap := job.whManager.LoadUserTables(context.TODO())
 
 	if alteredIdentitySchema || alteredUserSchema {
 		pkgLogger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
@@ -1412,7 +1415,10 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 
 	job.upload.Status = statusOpts.Status
 	job.upload.Timings = timings
-	additionalFields := append(statusOpts.AdditionalFields, opts...)
+
+	additionalFields := make([]UploadColumn, 0, len(statusOpts.AdditionalFields)+len(opts))
+	additionalFields = append(additionalFields, statusOpts.AdditionalFields...)
+	additionalFields = append(additionalFields, opts...)
 
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 

@@ -2,6 +2,7 @@ package sqlquerywrapper
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -17,6 +18,8 @@ import (
 )
 
 func TestQueryWrapper(t *testing.T) {
+	t.Parallel()
+
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -151,38 +154,61 @@ func TestQueryWrapper(t *testing.T) {
 			})
 
 			t.Run("Tx", func(t *testing.T) {
-				user := fmt.Sprintf("test_user_%d", uuid.New().ID())
-
-				createKvs := []any{
-					logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-					logfield.QueryExecutionTime, tc.executionTimeInSec,
-				}
-				alterKvs := []any{
-					logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-					logfield.QueryExecutionTime, tc.executionTimeInSec,
-				}
-
-				createKvs = append(createKvs, keysAndValues...)
-				alterKvs = append(alterKvs, keysAndValues...)
-
-				if tc.wantLog {
-					mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
-					mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
-				} else {
-					mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
-				}
-
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_, err = tx.Exec(fmt.Sprintf("CREATE USER %s;", user))
+				txWithOptions, err := qw.BeginTx(ctx, &sql.TxOptions{})
 				require.NoError(t, err)
 
-				_, err = tx.Exec(fmt.Sprintf("ALTER USER %s WITH PASSWORD 'test_password';", user))
-				require.NoError(t, err)
+				subTestCases := []struct {
+					name string
+					tx   *Tx
+				}{
+					{
+						name: "Without options",
+						tx:   tx,
+					},
+					{
+						name: "With options",
+						tx:   txWithOptions,
+					},
+				}
 
-				err = tx.Commit()
-				require.NoError(t, err)
+				for _, stc := range subTestCases {
+					stc := stc
+
+					t.Run(stc.name, func(t *testing.T) {
+						user := fmt.Sprintf("test_user_%d", uuid.New().ID())
+
+						createKvs := []any{
+							logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
+							logfield.QueryExecutionTime, tc.executionTimeInSec,
+						}
+						alterKvs := []any{
+							logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
+							logfield.QueryExecutionTime, tc.executionTimeInSec,
+						}
+
+						createKvs = append(createKvs, keysAndValues...)
+						alterKvs = append(alterKvs, keysAndValues...)
+
+						if tc.wantLog {
+							mockLogger.EXPECT().Infow("executing query", createKvs).Times(1)
+							mockLogger.EXPECT().Infow("executing query", alterKvs).Times(1)
+						} else {
+							mockLogger.EXPECT().Infow("executing query", []any{}).Times(0)
+						}
+
+						_, err = stc.tx.Exec(fmt.Sprintf("CREATE USER %s;", user))
+						require.NoError(t, err)
+
+						_, err = stc.tx.Exec(fmt.Sprintf("ALTER USER %s WITH PASSWORD 'test_password';", user))
+						require.NoError(t, err)
+
+						err = stc.tx.Commit()
+						require.NoError(t, err)
+					})
+				}
 			})
 		})
 
@@ -214,8 +240,10 @@ func TestQueryWrapper(t *testing.T) {
 
 			if tc.wantLog {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(6)
+				mockLogger.EXPECT().Warnw("rollback threshold exceeded", keysAndValues...).Times(1)
 			} else {
 				mockLogger.EXPECT().Infow("executing query", kvs).Times(0)
+				mockLogger.EXPECT().Warnw("rollback threshold exceeded", keysAndValues...).Times(0)
 			}
 
 			t.Run("Exec", func(t *testing.T) {
@@ -281,6 +309,14 @@ func TestQueryWrapper(t *testing.T) {
 				require.NoError(t, err)
 
 				err = tx.Commit()
+				require.NoError(t, err)
+			})
+
+			t.Run("Rollback", func(t *testing.T) {
+				tx, err := qw.Begin()
+				require.NoError(t, err)
+
+				_ = tx.Rollback()
 				require.NoError(t, err)
 			})
 		})

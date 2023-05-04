@@ -45,7 +45,7 @@ func (nf *AbortingForwarder) Start() error {
 					nf.terminalErrFn(err) // we are signaling to shutdown the app
 					return err
 				}
-				nf.log.Infof("NoopForwarder: Got %d jobs", len(jobList))
+				nf.log.Debugf("NoopForwarder: Got %d jobs", len(jobList))
 				var statusList []*jobsdb.JobStatusT
 				for _, job := range jobList {
 					statusList = append(statusList, &jobsdb.JobStatusT{
