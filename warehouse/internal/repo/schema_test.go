@@ -3,9 +3,10 @@ package repo_test
 import (
 	"context"
 	"errors"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"testing"
 	"time"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
