@@ -24,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -69,6 +68,8 @@ type ErrorDetailReporter struct {
 	httpClient                *http.Client
 	clientsMapLock            sync.RWMutex
 
+	errorDetailExtractor *ExtractorT
+
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
 	edReportingRequestLatency   stats.Measurement
@@ -91,6 +92,8 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
 
+	extractor := NewErrorDetailExtractor()
+
 	return &ErrorDetailReporter{
 		reportingServiceURL:   reportingServiceURL,
 		Table:                 ErrorDetailReportsTable,
@@ -107,6 +110,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 		init:                      make(chan struct{}),
 		workspaceIDForSourceIDMap: make(map[string]string),
 		clients:                   make(map[string]*types.Client),
+		errorDetailExtractor:      extractor,
 	}
 }
 
@@ -273,22 +277,9 @@ func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
 
 func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
 	// TODO: to extract information
-	// Transformer throws structured error -- tf <--> srv --- easy
-	// Transformer throws error -- but I only get strings in sampleResponse -- easy
-	// Router delivery -- destination schema(very random) -- hard
-	if !gjson.Valid(sampleResponse) {
-		return errorDetails{ErrorMessage: sampleResponse}
+	return errorDetails{
+		ErrorMessage: edRep.errorDetailExtractor.GetErrorMessageFromResponse(sampleResponse),
 	}
-	// Preliminary checks for error responses from transformer(tf proxy, router tf, process tf, batch tf)
-	prelimResults := gjson.GetMany(sampleResponse, []string{"response.error", "response.message"}...)
-	for _, prelimResult := range prelimResults {
-		if prelimResult.Exists() && prelimResult.Type == gjson.String {
-			return errorDetails{ErrorMessage: prelimResult.String()}
-		}
-	}
-	// TODO: Incorportate iterative exhaustive search algo for possible message fields
-
-	return errorDetails{}
 }
 
 func (edRep *ErrorDetailReporter) getDBHandle(clientName string) (*sql.DB, error) {
