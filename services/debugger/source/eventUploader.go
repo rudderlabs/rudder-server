@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -14,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/exp/slices"
 )
 
 // GatewayEventBatchT is a structure to hold batch of events
@@ -148,7 +149,7 @@ func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 	h.uploadEnabledWriteKeysMu.Lock()
 	h.uploadEnabledWriteKeys = uploadEnabledWriteKeys
 	h.uploadEnabledWriteKeysMu.Unlock()
-	h.recordHistoricEvents()
+	h.recordHistoricEvents(uploadEnabledWriteKeys)
 }
 
 func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
@@ -167,10 +168,8 @@ func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConf
 // recordHistoricEvents sends the events collected in cache as live events.
 // This is called on config update.
 // IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
-func (h *Handle) recordHistoricEvents() {
-	h.uploadEnabledWriteKeysMu.RLock()
-	defer h.uploadEnabledWriteKeysMu.RUnlock()
-	for _, writeKey := range h.uploadEnabledWriteKeys {
+func (h *Handle) recordHistoricEvents(uploadEnabledWriteKeys []string) {
+	for _, writeKey := range uploadEnabledWriteKeys {
 		historicEvents, err := h.eventsCache.Read(writeKey)
 		if err != nil {
 			continue
