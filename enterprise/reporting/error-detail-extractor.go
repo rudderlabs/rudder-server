@@ -2,6 +2,8 @@ package reporting
 
 import (
 	"encoding/json"
+	"regexp"
+	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -12,7 +14,15 @@ const (
 	errorsKey              = "errors"
 )
 
-var defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "Error", "error", "error_message"}
+var (
+	urlRegex   = regexp.MustCompile(`\b((?:https?://|www\.)\S+)\b`)
+	ipRegex    = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	emailRegex = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
+	numRegex   = regexp.MustCompile(`\d+`)
+	// notWordRegex = regexp.MustCompile(`\W+`)
+	// idRegex                 = regexp.MustCompile(`\b(?\=\w*\d)[\w-]+\b`)
+	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "Error", "error", "error_message"}
+)
 
 type ExtractorT struct {
 	log              logger.Logger
@@ -136,4 +146,15 @@ func (ext *ExtractorT) GetErrorMessage(jsonObject string) string {
 		return jsonObject
 	}
 	return ext.getErrorMessageFromResponse(m)
+}
+
+func (ext *ExtractorT) CleanUpErrorMessage(errMsg string) string {
+	replacedStr := urlRegex.ReplaceAllString(errMsg, "")
+	replacedStr = ipRegex.ReplaceAllString(replacedStr, "")
+	replacedStr = emailRegex.ReplaceAllString(replacedStr, "")
+	replacedStr = numRegex.ReplaceAllString(replacedStr, "")
+	// replacedStr = notWordRegex.ReplaceAllString(replacedStr, "")
+	// replacedStr = idRegex.ReplaceAllString(replacedStr, "")
+
+	return strings.TrimSpace(replacedStr)
 }

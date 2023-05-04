@@ -313,6 +313,29 @@ func TestGetErrorMessageFromResponse(t *testing.T) {
 	}
 }
 
+func TestCleanUpErrorMessage(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+	type testCase struct {
+		inputStr string
+		expected string
+	}
+
+	testCases := []testCase{
+		{inputStr: "Object with ID '123983489734' is not a valid object", expected: "Object with ID '' is not a valid object"},
+		{inputStr: "http://xyz-rudder.com/v1/endpoint not reachable: context deadline exceeded", expected: "not reachable: context deadline exceeded"},
+		{inputStr: "http://xyz-rudder.com/v1/endpoint not reachable 172.22.22.10: EOF", expected: "not reachable : EOF"},
+		{inputStr: "Request failed to process from 16-12-2022:19:30:23T+05:30 due to internal server error", expected: "Request failed to process from --:::T+: due to internal server error"},
+		{inputStr: "User with email 'vagor12@bing.com' is not valid", expected: "User with email '' is not valid"},
+		{inputStr: "Allowed timestamp is [15 minutes] into the future", expected: "Allowed timestamp is [ minutes] into the future"},
+	}
+	for i, tCase := range testCases {
+		t.Run(fmt.Sprintf("Case-%d", i), func(t *testing.T) {
+			actual := ext.CleanUpErrorMessage(tCase.inputStr)
+			require.Equal(t, tCase.expected, actual)
+		})
+	}
+}
+
 func BenchmarkJsonNestedSearch(b *testing.B) {
 	extractor := NewErrorDetailExtractor(logger.NOP)
 

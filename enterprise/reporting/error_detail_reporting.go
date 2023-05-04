@@ -278,8 +278,10 @@ func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
 
 func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
 	// TODO: to extract information
+	errMsg := edRep.errorDetailExtractor.GetErrorMessage(sampleResponse)
+	cleanedErrMsg := edRep.errorDetailExtractor.CleanUpErrorMessage(errMsg)
 	return errorDetails{
-		ErrorMessage: edRep.errorDetailExtractor.GetErrorMessage(sampleResponse),
+		ErrorMessage: cleanedErrMsg,
 	}
 }
 
