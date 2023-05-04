@@ -206,7 +206,6 @@ func TestIntegration(t *testing.T) {
 			warehouseModifiedEvents     testhelper.EventsCountMap
 			clusterSetup                func(t testing.TB)
 			db                          *sql.DB
-			s3EngineEnabledWorkspaceIDs string
 		}{
 			{
 				name:          "Single Setup",
@@ -242,13 +241,6 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				testhelper.SetConfig(t, []warehouseutils.KeyValue{
-					{
-						Key:   "Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs",
-						Value: tc.s3EngineEnabledWorkspaceIDs,
-					},
-				})
-
 				ts := testhelper.WareHouseTest{
 					Schema:             database,
 					WriteKey:           tc.writeKey,
