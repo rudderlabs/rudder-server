@@ -328,8 +328,6 @@ func getEventsAfterTransform(singularEvent types.SingularEventT, receivedAt time
 }
 
 func (h *Handle) recordHistoricTransformations(tIDs []string) {
-	h.uploadEnabledTransformationsMu.RLock()
-	defer h.uploadEnabledTransformationsMu.RUnlock()
 	for _, tID := range tIDs {
 		tStatuses, err := h.transformationCacheMap.Read(tID)
 		if err != nil {
