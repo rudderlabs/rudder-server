@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"log"
 	"os"
 	"strconv"
@@ -23,8 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
@@ -182,17 +181,11 @@ func TestIntegration(t *testing.T) {
 		var dbs []*sql.DB
 
 		for _, port := range []int{port, clusterPort1, clusterPort2, clusterPort3, clusterPort4} {
-			ch := clickhouse.New()
-			db, err := ch.ConnectToClickhouse(clickhouse.Credentials{
-				Host:          "localhost",
-				User:          "rudder",
-				Password:      "rudder-password",
-				DBName:        "rudderdb",
-				Secure:        "false",
-				SkipVerify:    "true",
-				TLSConfigName: "",
-				Port:          strconv.Itoa(port),
-			}, true)
+			dsn := fmt.Sprintf("tcp://%s:%d?block_size=&compress=false&database=%s&debug=&password=%s&pool_size=&read_timeout=&secure=false&skip_verify=true&tls_config=&username=%s&write_timeout=",
+				"localhost",port, "rudderdb", "rudder-password", "rudder",
+				)
+
+			db, err := sql.Open("clickhouse", dsn)
 			require.NoError(t, err)
 			require.NoError(t, db.Ping())
 
@@ -1124,14 +1117,13 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	})
 	require.NoError(t, err)
 
-	db, err := clickhouse.New().ConnectToClickhouse(clickhouse.Credentials{
-		Host:     "localhost",
-		Port:     resource.GetPort("9000/tcp"),
-		DBName:   databaseName,
-		User:     user,
-		Password: password,
-	}, false)
+	dsn := fmt.Sprintf("tcp://%s:%s?block_size=&compress=false&database=%s&debug=&password=%s&pool_size=&read_timeout=&secure=false&skip_verify=true&tls_config=&username=%s&write_timeout=",
+		"localhost",resource.GetPort("9000/tcp"), databaseName, user, password,
+	)
+
+	db, err := sql.Open("clickhouse", dsn)
 	require.NoError(t, err)
+	require.NoError(t, db.Ping())
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

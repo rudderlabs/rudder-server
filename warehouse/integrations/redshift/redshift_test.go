@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"os"
 	"strconv"
 	"strings"
@@ -28,8 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"google.golang.org/api/option"
 	"os"
 	"strconv"
 	"strings"
@@ -158,10 +159,10 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Event flow", func(t *testing.T) {
-		db, err := bigquery2.Connect(context.TODO(), &bigquery2.BQCredentials{
-			ProjectID:   bqTestCredentials.ProjectID,
-			Credentials: bqTestCredentials.Credentials,
-		})
+		db, err := bigquery.NewClient(
+			context.TODO(),
+			bqTestCredentials.ProjectID, option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
+		)
 		require.NoError(t, err)
 
 		jobsDB := testhelper.JobsDB(t, jobsDBPort)

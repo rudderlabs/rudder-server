@@ -24,8 +24,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -237,7 +235,7 @@ func TestIntegration(t *testing.T) {
 
 		testcase := []struct {
 			name                          string
-			credentials                   snowflake.Credentials
+			cred                          *testCredentials
 			database                      string
 			schema                        string
 			writeKey                      string
@@ -253,15 +251,8 @@ func TestIntegration(t *testing.T) {
 			tables                        []string
 		}{
 			{
-				name: "Upload Job with Normal Database",
-				credentials: snowflake.Credentials{
-					Account:   credentials.Account,
-					Warehouse: credentials.Warehouse,
-					Database:  credentials.Database,
-					User:      credentials.User,
-					Role:      credentials.Role,
-					Password:  credentials.Password,
-				},
+				name:          "Upload Job with Normal Database",
+				cred:          credentials,
 				database:      database,
 				schema:        namespace,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
@@ -276,15 +267,8 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
-				name: "Upload Job with Role",
-				credentials: snowflake.Credentials{
-					Account:   rbacCredentials.Account,
-					Warehouse: rbacCredentials.Warehouse,
-					Database:  rbacCredentials.Database,
-					User:      rbacCredentials.User,
-					Role:      rbacCredentials.Role,
-					Password:  rbacCredentials.Password,
-				},
+				name:          "Upload Job with Role",
+				cred:          rbacCredentials,
 				database:      database,
 				schema:        rbacNamespace,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
@@ -299,15 +283,8 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
-				name: "Upload Job with Case Sensitive Database",
-				credentials: snowflake.Credentials{
-					Account:   credentials.Account,
-					Warehouse: credentials.Warehouse,
-					Database:  credentials.Database,
-					User:      credentials.User,
-					Role:      credentials.Role,
-					Password:  credentials.Password,
-				},
+				name:          "Upload Job with Case Sensitive Database",
+				cred:          credentials,
 				database:      strings.ToLower(database),
 				schema:        caseSensitiveNamespace,
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
@@ -322,15 +299,8 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
-				name: "Async Job with Sources",
-				credentials: snowflake.Credentials{
-					Account:   credentials.Account,
-					Warehouse: credentials.Warehouse,
-					Database:  credentials.Database,
-					User:      credentials.User,
-					Role:      credentials.Role,
-					Password:  credentials.Password,
-				},
+				name:          "Async Job with Sources",
+				cred:          credentials,
 				database:      database,
 				schema:        sourcesNamespace,
 				tables:        []string{"tracks", "google_sheet"},
@@ -357,17 +327,16 @@ func TestIntegration(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				cred := tc.credentials
+				cred := tc.cred
 				cred.Database = tc.database
 
 				urlConfig := snowflakedb.Config{
-					Account:     cred.Account,
-					User:        cred.User,
-					Role:        cred.Role,
-					Password:    cred.Password,
-					Database:    cred.Database,
-					Warehouse:   cred.Warehouse,
-					Application: snowflake.Application,
+					Account:   cred.Account,
+					User:      cred.User,
+					Role:      cred.Role,
+					Password:  cred.Password,
+					Database:  cred.Database,
+					Warehouse: cred.Warehouse,
 				}
 
 				dsn, err := snowflakedb.DSN(&urlConfig)
