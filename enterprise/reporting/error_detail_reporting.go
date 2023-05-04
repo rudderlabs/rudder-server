@@ -92,12 +92,13 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
 
-	extractor := NewErrorDetailExtractor()
+	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
+	extractor := NewErrorDetailExtractor(log)
 
 	return &ErrorDetailReporter{
 		reportingServiceURL:   reportingServiceURL,
 		Table:                 ErrorDetailReportsTable,
-		log:                   logger.NewLogger().Child("enterprise").Child("error-detail-reporting"),
+		log:                   log,
 		sleepInterval:         sleepInterval,
 		mainLoopSleepInterval: mainLoopSleepInterval,
 		maxConcurrentRequests: maxConcurrentRequests,
@@ -278,7 +279,7 @@ func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
 func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
 	// TODO: to extract information
 	return errorDetails{
-		ErrorMessage: edRep.errorDetailExtractor.GetErrorMessageFromResponse(sampleResponse),
+		ErrorMessage: edRep.errorDetailExtractor.GetErrorMessage(sampleResponse),
 	}
 }
 

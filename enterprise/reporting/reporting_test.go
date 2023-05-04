@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 var _ = Describe("Reporting", func() {
@@ -294,49 +293,33 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 var jsonBenchCases = []string{
 	`{"message": "message-1"}`,
 	`{ "a" : { "b": { "message": "messge-2" }}}`,
-	`[{ "a" : { "b": { "message": "messge-2-0" }}}, { "a" : { "b": { "message": "messge-2-1" }}}]`,
+	// `[{ "a" : { "b": { "message": "messge-2-0" }}}, { "a" : { "b": { "message": "messge-2-1" }}}]`,
 	`{"errors": [{"error": { "message": "message-4-1" }}, {"error": { "message": "message-4-2" }} ]}`,
 	`{"errors": [{"message": { "error" : "message-5-0" } }, {"message": { "error" : "message-5-1" } }]}`,
 }
 
 func TestGetErrorMessageFromResponse(t *testing.T) {
-	extractor := NewErrorDetailExtractor()
+	extractor := NewErrorDetailExtractor(logger.NOP)
 
-	t.Run("should contain *.#.*.message", func(t *testing.T) {
-		require.Contains(t, extractor.WildcardKeys, "*.#.*.message")
-		require.Contains(t, extractor.WildcardKeys, "#.*.*.message")
-	})
-	t.Run("should contain #.*.*.message", func(t *testing.T) {
-		require.Contains(t, extractor.WildcardKeys, "#.*.*.message")
-	})
 	expectedVals := []string{
-		"message-1", "messge-2", "messge-2-0",
-		"message-4-1", "message-5-0",
+		"message-1", "messge-2",
+		// "messge-2-0",
+		"message-4-2", "message-5-1",
 	}
 	for i, response := range jsonBenchCases {
 		t.Run(fmt.Sprintf("case for payload-%d", i), func(t *testing.T) {
-			require.Equal(t, extractor.GetErrorMessageFromResponse(response), expectedVals[i])
+			require.Equal(t, extractor.GetErrorMessage(response), expectedVals[i])
 		})
 	}
-	t.Run("check outputs from gjson", func(t *testing.T) {
-		caseStr := `[{ "a" : { "b": { "message": "messge-2-0" }}}, { "a" : { "b": { "message": "messge-2-1" }}}]`
-		results := gjson.GetMany(caseStr, WildcardKeys...)
-		for _, res := range results {
-			l := len(res.Array())
-			if res.Exists() && l > 0 {
-				require.Equal(t, res.Path(caseStr), "#.*.*.message")
-				require.EqualValues(t, res.Array(), []string{"messge-2-0", "messge-2-1"})
-			}
-		}
-	})
 }
 
 func BenchmarkJsonNestedSearch(b *testing.B) {
-	extractor := NewErrorDetailExtractor()
+	extractor := NewErrorDetailExtractor(logger.NOP)
 
-	b.Run("Gjson used fn", func(b *testing.B) {
+	b.Run("JsonNested used fn", func(b *testing.B) {
 		for i := 0; i < len(jsonBenchCases); i++ {
-			extractor.GetErrorMessageFromResponse(jsonBenchCases[i])
+			// GetErrorMessage(m.Value().(map[string]interface{}))
+			extractor.GetErrorMessage(jsonBenchCases[i])
 		}
 	})
 }

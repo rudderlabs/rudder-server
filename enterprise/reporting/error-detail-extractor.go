@@ -1,138 +1,139 @@
 package reporting
 
 import (
-	"fmt"
-	"strings"
+	"encoding/json"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/tidwall/gjson"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 const (
-	objectKeyWildcard   = "*"
-	arrayWildcard       = "#"
-	destinationResponse = "destinationResponse"
+	destinationResponseKey = "destinationResponse"
+	errorsKey              = "errors"
 )
 
-var (
-	WildcardKeys            []string = []string{}
-	defaultErrorMessageKeys          = []string{"message", "description", "detail", "title", "Error", "error", "error_message"}
-)
+var defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "Error", "error", "error_message"}
 
 type ExtractorT struct {
-	WildcardKeys     []string
-	MaxLevel         int      // Max level of wild-card search
+	log              logger.Logger
 	ErrorMessageKeys []string // the keys where in we may have error message
 }
 
-func NewErrorDetailExtractor() *ExtractorT {
+func NewErrorDetailExtractor(log logger.Logger) *ExtractorT {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
-	maxLevel := config.GetInt("Reporting.ErrorDetail.MaxLevel", 2)
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
 	extractor := &ExtractorT{
 		ErrorMessageKeys: defaultErrorMessageKeys,
-		MaxLevel:         maxLevel,
+		log:              log.Child("ErrorDetailExtractor"),
 	}
-	extractor.BuildMessageKeysPermutations()
 	return extractor
 }
 
-func generateCombinations(symbols, res []string, prefix string, level int) []string {
-	if level <= 0 {
-		// fmt.Printf("Prefix:%s\n", prefix)
-		res = append(res, prefix)
-		return res
+// Functions used for error message extraction -- STARTS
+func isMapOrArray(value interface{}) bool {
+	switch value.(type) {
+	case map[string]interface{}, []interface{}:
+		return true
 	}
-	// var combinedStr string
-	for _, sym := range symbols {
-		newPrefix := fmt.Sprintf("%s%s", prefix, sym)
-		// fmt.Printf("NewPrefix:%s\n", newPrefix)
-		res = generateCombinations(symbols, res, newPrefix, level-1)
-	}
-
-	// return strings.Join(strings.Split(combinedStr, ""), ".")
-	return res
+	return false
 }
 
-// This function is to be executed only once
-// as these keys will be same across destinations
-func (t *ExtractorT) BuildMessageKeysPermutations() {
-	var level int
-	// sts := []string{"", objectKeyWildcard, arrayWildcard}
-
-	results := []string{}
-	for level <= t.MaxLevel {
-		results = append(results, generateCombinations([]string{objectKeyWildcard, arrayWildcard}, []string{}, "", level)...)
-		// sts = append(sts, combinations)
-		level++
+func findKeys(keys []string, jsonObj interface{}) map[string]interface{} {
+	values := make(map[string]interface{})
+	if len(keys) == 0 {
+		return values
 	}
-
-	correctedCombinations := []string{}
-	for _, comb := range results {
-		correctedCombinations = append(correctedCombinations, strings.Join(strings.Split(comb, ""), "."))
-	}
-
-	wildcardKeys := []string{}
-
-	for _, probableKey := range t.ErrorMessageKeys {
-		for _, comb := range correctedCombinations {
-			if len(comb) == 0 {
-				wildcardKeys = append(wildcardKeys, probableKey)
-				continue
+	// recursively search for keys in nested JSON objects
+	switch jsonObject := jsonObj.(type) {
+	case map[string]interface{}: // if jsonObj is a map
+		for _, key := range keys {
+			if value, ok := jsonObject[key]; ok && value != nil {
+				values[key] = value
 			}
-			wildcardKeys = append(wildcardKeys, fmt.Sprintf("%s.%s", comb, probableKey))
 		}
-	}
-
-	// We want to check the same combinations in transformer proxy destination's response
-	// proxy return `{message: "", destinationResponse: "{}", ...}`
-	// destinationResponse in returned response, contains the raw destination response
-	// Preference given destinationResponse.* than any other probable error message keys
-	destRespIncludedWildcardKeys := []string{}
-	for _, wildCardKey := range wildcardKeys {
-		destRespWildcardKey := fmt.Sprintf("%s.%s", destinationResponse, wildCardKey)
-		destRespIncludedWildcardKeys = append(destRespIncludedWildcardKeys, destRespWildcardKey)
-	}
-	destRespIncludedWildcardKeys = append(destRespIncludedWildcardKeys, wildcardKeys...)
-
-	t.WildcardKeys = destRespIncludedWildcardKeys
-}
-
-func (t *ExtractorT) GetErrorMessageFromResponse(response string) string {
-	if len(t.WildcardKeys) == 0 {
-		panic(fmt.Errorf("BuildMessageKeysPermutations method has to be executed before we can execute any methods"))
-	}
-	// For now we will be getting error message
-
-	// invalid json string case
-	if !gjson.Valid(response) {
-		return response
-	}
-	probableKeyList := []string{"response", "response.error", "response.message"}
-	probableKeyList = append(probableKeyList, t.WildcardKeys...)
-
-	prelimResults := gjson.GetMany(response, probableKeyList...)
-	for _, prelimResult := range prelimResults {
-		if prelimResult.Exists() {
-			switch prelimResult.Type {
-			case gjson.String:
-				return prelimResult.String()
-			case gjson.JSON:
-				if prelimResult.IsArray() {
-					// returning the first result
-					arr := prelimResult.Array()
-					if len(arr) == 0 {
-						continue
-					}
-					// if there are multiple error strings inside
-					return t.GetErrorMessageFromResponse(prelimResult.Array()[0].String())
-				}
-				if prelimResult.IsObject() {
-					return t.GetErrorMessageFromResponse(prelimResult.String())
-				}
+		for _, value := range jsonObject {
+			subResults := findKeys(keys, value)
+			for k, v := range subResults {
+				values[k] = v
+			}
+		}
+	case []interface{}: // if jsonObj is a slice
+		for _, item := range jsonObject {
+			subResults := findKeys(keys, item)
+			for k, v := range subResults {
+				values[k] = v
 			}
 		}
 	}
+	// if jsonObj is not a map or slice, return an empty map
+	return values // return the map of keys and values
+}
+
+// This function takes a list of keys and a JSON object as input, and returns the value of the first key that exists in the JSON object.
+func findFirstExistingKey(keys []string, jsonObj interface{}) interface{} {
+	keyValues := findKeys(keys, jsonObj)
+	result := getValue(keys, keyValues)
+	if isMapOrArray(result) {
+		return findFirstExistingKey(keys, result)
+	}
+	return result
+}
+
+// get value
+func getValue(keys []string, jsonObj map[string]interface{}) interface{} {
+	for _, key := range keys {
+		if value, ok := jsonObj[key]; ok && value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+// Functions used for error message extraction -- ENDS
+
+func (ext *ExtractorT) getErrorMessageFromResponse(resp map[string]interface{}) string {
+	if _, ok := resp["msg"]; ok {
+		return resp["msg"].(string)
+	}
+
+	// warehouseKeys := []string{"internal_processing_failed", "fetching_remote_schema_failed", "exporting_data_failed"}
+
+	if destinationResponse, ok := resp[destinationResponseKey].(map[string]interface{}); ok {
+		if result := findFirstExistingKey(ext.ErrorMessageKeys, destinationResponse); result != nil {
+			return result.(string)
+		}
+	}
+	if message := findFirstExistingKey(ext.ErrorMessageKeys, resp); message != nil {
+		if s, ok := message.(string); ok {
+			return s
+		}
+	}
+
+	if errors, ok := getValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{}); ok && len(errors) > 0 {
+		if message := findFirstExistingKey(ext.ErrorMessageKeys, resp); message != nil {
+			if s, ok := message.(string); ok {
+				return s
+			}
+		}
+	}
+	// split the error message by newline and take the first entry
+
+	// for _, whKey := range warehouseKeys {
+	//  if val, ok := row["json"].(map[string]interface{})[whKey]; ok {
+	//      return getErrorFromWarehouse(val)
+	//  }
+	// }
 
 	return ""
+}
+
+func (ext *ExtractorT) GetErrorMessage(jsonObject string) string {
+	var m map[string]interface{}
+	e := json.Unmarshal([]byte(jsonObject), &m)
+	if e != nil {
+		ext.log.Errorf("Problem in unmarshalling: %v", e)
+		// TODO: Check with team if this is desirable
+		return jsonObject
+	}
+	return ext.getErrorMessageFromResponse(m)
 }
