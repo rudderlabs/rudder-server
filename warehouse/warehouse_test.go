@@ -342,7 +342,7 @@ func Test_GetNamespace(t *testing.T) {
 			_, err = pgResource.DB.Exec(string(sqlStatement))
 			require.NoError(t, err)
 
-			namespace := wh.getNamespace(tc.source, tc.destination)
+			namespace := wh.getNamespace(context.Background(), tc.source, tc.destination)
 			require.Equal(t, tc.result, namespace)
 			config.Reset()
 		})

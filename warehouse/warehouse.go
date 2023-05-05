@@ -310,7 +310,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 						destination = wh.attachSSHTunnellingInfo(ctx, destination)
 					}
 
-					namespace := wh.getNamespace(source, destination)
+					namespace := wh.getNamespace(ctx, source, destination)
 					warehouse := model.Warehouse{
 						WorkspaceID: workspaceID,
 						Source:      source,
@@ -411,7 +411,7 @@ func deepCopy(src, dest interface{}) error {
 //  1. user set name from destinationConfig
 //  2. from existing record in wh_schemas with same source + dest combo
 //  3. convert source name
-func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT) string {
+func (wh *HandleT) getNamespace(ctx context.Context, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
 	configMap := destination.Config
 	if wh.destType == warehouseutils.CLICKHOUSE {
 		if _, ok := configMap["database"].(string); ok {
@@ -431,7 +431,7 @@ func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backen
 		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
 
-	namespace, err := wh.whSchemaRepo.GetNamespace(context.TODO(), source.ID, destination.ID)
+	namespace, err := wh.whSchemaRepo.GetNamespace(ctx, source.ID, destination.ID)
 	if err != nil {
 		pkgLogger.Errorw("getting namespace",
 			logfield.SourceID, source.ID,
@@ -574,9 +574,9 @@ func getUploadStartAfterTime() time.Time {
 	return time.Now()
 }
 
-func (wh *HandleT) getLatestUploadStatus(warehouse *model.Warehouse) (int64, string, int) {
+func (wh *HandleT) getLatestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
 	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
-		context.TODO(),
+		ctx,
 		warehouse.Type,
 		warehouse.Source.ID,
 		warehouse.Destination.ID)
@@ -600,7 +600,7 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse model.Warehouse) (e
 	}
 
 	priority := defaultUploadPriority
-	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
+	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(ctx, &warehouse)
 	if uploadStatus == model.Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgress := wh.isUploadJobInProgress(warehouse, uploadID); !inProgress {
@@ -1000,7 +1000,7 @@ func minimalConfigSubscriber(ctx context.Context) {
 							destType:     destination.DestinationDefinition.Name,
 							whSchemaRepo: repo.NewWHSchemas(dbHandle),
 						}
-						namespace := wh.getNamespace(source, destination)
+						namespace := wh.getNamespace(ctx, source, destination)
 
 						connectionsMapLock.Lock()
 						if _, ok := slaveConnectionsMap[destination.ID]; !ok {
