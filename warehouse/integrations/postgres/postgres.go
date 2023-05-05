@@ -259,12 +259,12 @@ func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*Postgres) IsEmpty(_ model.Warehouse) (empty bool, err error) {
+func (*Postgres) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
 	return
 }
 
 // DeleteBy Need to create a structure with delete parameters instead of simply adding a long list of params
-func (pg *Postgres) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+func (pg *Postgres) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pg.Logger.Infof("PG: Cleaning up the following tables in postgres for PG:%s : %+v", tableNames, params)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
@@ -278,7 +278,7 @@ func (pg *Postgres) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 		pg.Logger.Infof("PG: Deleting rows in table in postgres for PG:%s", pg.Warehouse.Destination.ID)
 		pg.Logger.Debugf("PG: Executing the statement  %v", sqlStatement)
 		if pg.EnableDeleteByJobs {
-			_, err = pg.DB.Exec(sqlStatement,
+			_, err = pg.DB.ExecContext(ctx, sqlStatement,
 				params.JobRunId,
 				params.TaskRunId,
 				params.SourceId,
@@ -293,15 +293,15 @@ func (pg *Postgres) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 	return nil
 }
 
-func (pg *Postgres) schemaExists(_ string) (exists bool, err error) {
+func (pg *Postgres) schemaExists(ctx context.Context, _ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
-	err = pg.DB.QueryRow(sqlStatement).Scan(&exists)
+	err = pg.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
 	return
 }
 
-func (pg *Postgres) CreateSchema() (err error) {
+func (pg *Postgres) CreateSchema(ctx context.Context) (err error) {
 	var schemaExists bool
-	schemaExists, err = pg.schemaExists(pg.Namespace)
+	schemaExists, err = pg.schemaExists(ctx, pg.Namespace)
 	if err != nil {
 		pg.Logger.Errorf("PG: Error checking if schema: %s exists: %v", pg.Namespace, err)
 		return err
@@ -312,37 +312,37 @@ func (pg *Postgres) CreateSchema() (err error) {
 	}
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, pg.Namespace)
 	pg.Logger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
-func (pg *Postgres) createTable(name string, columns model.TableSchema) (err error) {
+func (pg *Postgres) createTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pg.Logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
-func (pg *Postgres) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
+func (pg *Postgres) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		return err
 	}
 	pg.Logger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
-	err = pg.createTable(tableName, columnMap)
+	err = pg.createTable(ctx, tableName, columnMap)
 	return err
 }
 
-func (pg *Postgres) DropTable(tableName string) (err error) {
+func (pg *Postgres) DropTable(ctx context.Context, tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
 	pg.Logger.Infof("PG: Dropping table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pg.DB.Exec(fmt.Sprintf(sqlStatement, pg.Namespace, tableName))
+	_, err = pg.DB.ExecContext(ctx, fmt.Sprintf(sqlStatement, pg.Namespace, tableName))
 	return
 }
 
-func (pg *Postgres) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query        string
 		queryBuilder strings.Builder
@@ -350,7 +350,7 @@ func (pg *Postgres) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	query = fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
-	if _, err = pg.DB.Exec(query); err != nil {
+	if _, err = pg.DB.ExecContext(ctx, query); err != nil {
 		return
 	}
 	pg.Logger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, query)
@@ -370,11 +370,11 @@ func (pg *Postgres) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 	query += ";"
 
 	pg.Logger.Infof("PG: Adding columns for destinationID: %s, tableName: %s with query: %v", pg.Warehouse.Destination.ID, tableName, query)
-	_, err = pg.DB.Exec(query)
+	_, err = pg.DB.ExecContext(ctx, query)
 	return
 }
 
-func (*Postgres) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+func (*Postgres) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
@@ -396,10 +396,7 @@ func (pg *Postgres) TestConnection(ctx context.Context, warehouse model.Warehous
 	return nil
 }
 
-func (pg *Postgres) Setup(
-	warehouse model.Warehouse,
-	uploader warehouseutils.Uploader,
-) (err error) {
+func (pg *Postgres) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	pg.Uploader = uploader
@@ -410,17 +407,17 @@ func (pg *Postgres) Setup(
 	return err
 }
 
-func (pg *Postgres) CrashRecover() {}
+func (pg *Postgres) CrashRecover(context.Context) {}
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
+func (pg *Postgres) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	dbHandle, err := pg.connect()
 	if err != nil {
 		return
 	}
-	defer dbHandle.Close()
+	defer func() {_ = dbHandle.Close()}()
 
 	schema = make(model.Schema)
 	unrecognizedSchema = make(model.Schema)
@@ -436,7 +433,7 @@ func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 		  table_schema = $1
 		  AND table_name NOT LIKE $2;
 	`
-	rows, err := dbHandle.Query(
+	rows, err := dbHandle.QueryContext(ctx,
 		sqlStatement,
 		pg.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
@@ -449,7 +446,7 @@ func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 		pg.Logger.Infof("PG: No rows, while fetching schema from  destination:%v, query: %v", pg.Warehouse.Identifier, sqlStatement)
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var tName, cName, cType sql.NullString
 		err = rows.Scan(&tName, &cName, &cType)
@@ -476,21 +473,21 @@ func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 	return
 }
 
-func (pg *Postgres) Cleanup() {
+func (pg *Postgres) Cleanup(context.Context) {
 	if pg.DB != nil {
-		pg.DB.Close()
+		_ = pg.DB.Close()
 	}
 }
 
-func (*Postgres) LoadIdentityMergeRulesTable() (err error) {
+func (*Postgres) LoadIdentityMergeRulesTable(context.Context) (err error) {
 	return
 }
 
-func (*Postgres) LoadIdentityMappingsTable() (err error) {
+func (*Postgres) LoadIdentityMappingsTable(context.Context) (err error) {
 	return
 }
 
-func (*Postgres) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*Postgres) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err error) {
 	return
 }
 
@@ -510,7 +507,7 @@ func (pg *Postgres) GetTotalCountInTable(ctx context.Context, tableName string) 
 	return total, err
 }
 
-func (pg *Postgres) Connect(warehouse model.Warehouse) (client.Client, error) {
+func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 			pg.Logger.Error(err.Error())
@@ -532,14 +529,14 @@ func (pg *Postgres) Connect(warehouse model.Warehouse) (client.Client, error) {
 	return client.Client{Type: client.SQLClient, SQL: dbHandle.DB}, err
 }
 
-func (pg *Postgres) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (pg *Postgres) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,
 		fmt.Sprintf(`%q, %q`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 

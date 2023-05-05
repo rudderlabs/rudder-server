@@ -32,11 +32,12 @@ func init() {
 }
 
 type WarehouseManager interface {
-	DownloadIdentityRules(*misc.GZipWriter) error
+	DownloadIdentityRules(context.Context, *misc.GZipWriter) error
 }
 
 type HandleT struct {
-	Warehouse          model.Warehouse
+	Ctx       context.Context
+	Warehouse model.Warehouse
 	DB                 *sql.DB
 	Uploader           warehouseutils.Uploader
 	UploadID           int64
@@ -64,7 +65,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	sqlStatement := fmt.Sprintf(`SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM %s WHERE id=%v`, idr.mergeRulesTable(), ruleID)
 
 	var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
-	err = txn.QueryRow(sqlStatement).Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
+	err = txn.QueryRowContext(idr.Ctx, sqlStatement).Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
 	if err != nil {
 		return
 	}
@@ -76,7 +77,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	}
 	sqlStatement = fmt.Sprintf(`SELECT ARRAY_AGG(DISTINCT(rudder_id)) FROM %s WHERE (merge_property_type='%s' AND merge_property_value=%s) %s`, idr.mappingsTable(), prop1Type.String, misc.QuoteLiteral(prop1Val.String), additionalClause)
 	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
-	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
+	err = txn.QueryRowContext(idr.Ctx, sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
 		pkgLogger.Errorf("IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v\nwith Error: %v", sqlStatement, err)
 		return
@@ -312,7 +313,7 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 	batchSize := int64(500)
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)
 	var totalRows int64
-	err = txn.QueryRow(sqlStatement).Scan(&totalRows)
+	err = txn.QueryRowContext(idr.Ctx, sqlStatement).Scan(&totalRows)
 	if err != nil {
 		return
 	}
@@ -375,7 +376,7 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)
 		return err
 	}
-	output, err := uploader.Upload(context.TODO(), outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.Warehouse.Source.ID, tableName)
+	output, err := uploader.Upload(idr.Ctx, outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.Warehouse.Source.ID, tableName)
 	if err != nil {
 		return
 	}
@@ -475,7 +476,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 func (idr *HandleT) Resolve() (err error) {
 	var loadFileNames []string
 	defer misc.RemoveFilePaths(loadFileNames...)
-	loadFileNames, err = idr.LoadFileDownloader.Download(context.TODO(), idr.whMergeRulesTable())
+	loadFileNames, err = idr.LoadFileDownloader.Download(idr.Ctx, idr.whMergeRulesTable())
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Failed to download load files for %s with error: %v`, idr.mergeRulesTable(), err)
 		return
@@ -488,7 +489,7 @@ func (idr *HandleT) ResolveHistoricIdentities() (err error) {
 	var loadFileNames []string
 	defer misc.RemoveFilePaths(loadFileNames...)
 	gzWriter, path := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMergeRulesTmp))
-	err = idr.WarehouseManager.DownloadIdentityRules(&gzWriter)
+	err = idr.WarehouseManager.DownloadIdentityRules(idr.Ctx, &gzWriter)
 	gzWriter.CloseGZ()
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)

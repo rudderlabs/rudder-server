@@ -1,6 +1,7 @@
 package schemarepository
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -22,8 +23,8 @@ func NewLocalSchemaRepository(wh model.Warehouse, uploader warehouseutils.Upload
 	return &ls, nil
 }
 
-func (ls *LocalSchemaRepository) FetchSchema(_ model.Warehouse) (model.Schema, model.Schema, error) {
-	schema, err := ls.uploader.GetLocalSchema()
+func (ls *LocalSchemaRepository) FetchSchema(ctx context.Context, _ model.Warehouse) (model.Schema, model.Schema, error) {
+	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
 		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching local schema: %w", err)
 	}
@@ -31,13 +32,13 @@ func (ls *LocalSchemaRepository) FetchSchema(_ model.Warehouse) (model.Schema, m
 	return schema, model.Schema{}, nil
 }
 
-func (*LocalSchemaRepository) CreateSchema() (err error) {
+func (*LocalSchemaRepository) CreateSchema(context.Context) (err error) {
 	return nil
 }
 
-func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
+func (ls *LocalSchemaRepository) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
 	// fetch schema from local db
-	schema, err := ls.uploader.GetLocalSchema()
+	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching local schema: %w", err)
 	}
@@ -50,12 +51,12 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap model.T
 	schema[tableName] = columnMap
 
 	// update schema
-	return ls.uploader.UpdateLocalSchema(schema)
+	return ls.uploader.UpdateLocalSchema(ctx, schema)
 }
 
-func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (ls *LocalSchemaRepository) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	// fetch schema from local db
-	schema, err := ls.uploader.GetLocalSchema()
+	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching local schema: %w", err)
 	}
@@ -70,12 +71,12 @@ func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []ware
 	}
 
 	// update schema
-	return ls.uploader.UpdateLocalSchema(schema)
+	return ls.uploader.UpdateLocalSchema(ctx, schema)
 }
 
-func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
+func (ls *LocalSchemaRepository) AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error) {
 	// fetch schema from local db
-	schema, err := ls.uploader.GetLocalSchema()
+	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
 		return model.AlterTableResponse{}, fmt.Errorf("fetching local schema: %w", err)
 	}
@@ -93,9 +94,9 @@ func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType s
 	schema[tableName][columnName] = columnType
 
 	// update schema
-	return model.AlterTableResponse{}, ls.uploader.UpdateLocalSchema(schema)
+	return model.AlterTableResponse{}, ls.uploader.UpdateLocalSchema(ctx, schema)
 }
 
-func (*LocalSchemaRepository) RefreshPartitions(_ string, _ []warehouseutils.LoadFile) error {
+func (*LocalSchemaRepository) RefreshPartitions(context.Context, string, []warehouseutils.LoadFile) error {
 	return nil
 }

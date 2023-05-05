@@ -22,7 +22,7 @@ import (
 )
 
 type Validator interface {
-	Validate() error
+	Validate(ctx context.Context) error
 }
 
 type objectStorage struct {
@@ -59,18 +59,18 @@ type dummyUploader struct {
 }
 
 type DestinationValidator interface {
-	Validate(dest *backendconfig.DestinationT) *model.DestinationValidationResponse
+	Validate(ctx context.Context, dest *backendconfig.DestinationT) *model.DestinationValidationResponse
 }
 
 type destinationValidationImpl struct{}
 
 func (*dummyUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
-func (*dummyUploader) GetLocalSchema() (model.Schema, error)            { return model.Schema{}, nil }
-func (*dummyUploader) UpdateLocalSchema(_ model.Schema) error           { return nil }
-func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
+func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error) { return model.Schema{}, nil }
+func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
+func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
 func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
 func (*dummyUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
-func (*dummyUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
+func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) { return "", nil }
 func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
 	return model.TableSchema{}
 }
@@ -79,11 +79,11 @@ func (*dummyUploader) GetTableSchemaInUpload(string) model.TableSchema {
 	return model.TableSchema{}
 }
 
-func (*dummyUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+func (*dummyUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
 
-func (*dummyUploader) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) {
+func (*dummyUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
 	return warehouseutils.LoadFile{}, nil
 }
 
@@ -99,15 +99,15 @@ func NewDestinationValidator() DestinationValidator {
 	return &destinationValidationImpl{}
 }
 
-func (v *destinationValidationImpl) Validate(dest *backendconfig.DestinationT) *model.DestinationValidationResponse {
-	return validateDestination(dest, "")
+func (v *destinationValidationImpl) Validate(ctx context.Context, dest *backendconfig.DestinationT) *model.DestinationValidationResponse {
+	return validateDestination(ctx, dest, "")
 }
 
-func validateDestinationFunc(dest *backendconfig.DestinationT, stepToValidate string) (json.RawMessage, error) {
-	return json.Marshal(validateDestination(dest, stepToValidate))
+func validateDestinationFunc(ctx context.Context, dest *backendconfig.DestinationT, stepToValidate string) (json.RawMessage, error) {
+	return json.Marshal(validateDestination(ctx, dest, stepToValidate))
 }
 
-func validateDestination(dest *backendconfig.DestinationT, stepToValidate string) *model.DestinationValidationResponse {
+func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, stepToValidate string) *model.DestinationValidationResponse {
 	var (
 		destID          = dest.ID
 		destType        = dest.DestinationDefinition.Name
@@ -155,7 +155,7 @@ func validateDestination(dest *backendconfig.DestinationT, stepToValidate string
 
 	// Iterate over all selected steps and validate
 	for _, step := range stepsToValidate {
-		if validator, err = NewValidator(step.Name, dest); err != nil {
+		if validator, err = NewValidator(ctx, step.Name, dest); err != nil {
 			err = fmt.Errorf("creating validator: %v", err)
 			step.Error = err.Error()
 
@@ -170,7 +170,7 @@ func validateDestination(dest *backendconfig.DestinationT, stepToValidate string
 			break
 		}
 
-		if stepError := validator.Validate(); stepError != nil {
+		if stepError := validator.Validate(ctx); stepError != nil {
 			err = stepError
 			step.Error = stepError.Error()
 		} else {
@@ -202,7 +202,7 @@ func validateDestination(dest *backendconfig.DestinationT, stepToValidate string
 	return res
 }
 
-func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, error) {
+func NewValidator(ctx context.Context, step string, dest *backendconfig.DestinationT) (Validator, error) {
 	var (
 		operations manager.WarehouseOperations
 		err        error
@@ -214,7 +214,7 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 			destination: dest,
 		}, nil
 	case model.VerifyingConnections:
-		if operations, err = createManager(dest); err != nil {
+		if operations, err = createManager(ctx, dest); err != nil {
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &connections{
@@ -222,14 +222,14 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 			manager:     operations,
 		}, nil
 	case model.VerifyingCreateSchema:
-		if operations, err = createManager(dest); err != nil {
+		if operations, err = createManager(ctx, dest); err != nil {
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &createSchema{
 			manager: operations,
 		}, nil
 	case model.VerifyingCreateAndAlterTable:
-		if operations, err = createManager(dest); err != nil {
+		if operations, err = createManager(ctx, dest); err != nil {
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &createAlterTable{
@@ -237,7 +237,7 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 			manager: operations,
 		}, nil
 	case model.VerifyingFetchSchema:
-		if operations, err = createManager(dest); err != nil {
+		if operations, err = createManager(ctx, dest); err != nil {
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &fetchSchema{
@@ -245,7 +245,7 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 			manager:     operations,
 		}, nil
 	case model.VerifyingLoadTable:
-		if operations, err = createManager(dest); err != nil {
+		if operations, err = createManager(ctx, dest); err != nil {
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &loadTable{
@@ -258,7 +258,7 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 	return nil, fmt.Errorf("invalid step: %s", step)
 }
 
-func (os *objectStorage) Validate() error {
+func (os *objectStorage) Validate(ctx context.Context) error {
 	var (
 		tempPath     string
 		err          error
@@ -269,46 +269,43 @@ func (os *objectStorage) Validate() error {
 		return fmt.Errorf("creating temp load file: %w", err)
 	}
 
-	if uploadObject, err = uploadFile(os.destination, tempPath); err != nil {
+	if uploadObject, err = uploadFile(ctx, os.destination, tempPath); err != nil {
 		return fmt.Errorf("upload file: %w", err)
 	}
 
-	if err = downloadFile(os.destination, uploadObject.ObjectName); err != nil {
+	if err = downloadFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
 		return fmt.Errorf("download file: %w", err)
 	}
 
 	return nil
 }
 
-func (c *connections) Validate() error {
-	defer c.manager.Cleanup()
+func (c *connections) Validate(ctx context.Context) error {
+	defer c.manager.Cleanup(ctx)
 
-	ctx, cancel := context.WithTimeout(context.TODO(), warehouseutils.TestConnectionTimeout)
+	ctx, cancel := context.WithTimeout(ctx, warehouseutils.TestConnectionTimeout)
 	defer cancel()
 
 	return c.manager.TestConnection(ctx, createDummyWarehouse(c.destination))
 }
 
-func (cs *createSchema) Validate() error {
-	defer cs.manager.Cleanup()
+func (cs *createSchema) Validate(ctx context.Context) error {
+	defer cs.manager.Cleanup(ctx)
 
-	return cs.manager.CreateSchema()
+	return cs.manager.CreateSchema(ctx)
 }
 
-func (cat *createAlterTable) Validate() error {
-	defer cat.manager.Cleanup()
+func (cat *createAlterTable) Validate(ctx context.Context) error {
+	defer cat.manager.Cleanup(ctx)
 
-	if err := cat.manager.CreateTable(cat.table, TableSchemaMap); err != nil {
+	if err := cat.manager.CreateTable(ctx, cat.table, TableSchemaMap); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
-	defer func() { _ = cat.manager.DropTable(cat.table) }()
+	defer func() { _ = cat.manager.DropTable(ctx, cat.table) }()
 
 	for columnName, columnType := range AlterColumnMap {
-		if err := cat.manager.AddColumns(
-			cat.table,
-			[]warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}},
-		); err != nil {
+		if err := cat.manager.AddColumns(ctx, cat.table, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}}); err != nil {
 			return fmt.Errorf("alter table: %w", err)
 		}
 	}
@@ -316,16 +313,16 @@ func (cat *createAlterTable) Validate() error {
 	return nil
 }
 
-func (fs *fetchSchema) Validate() error {
-	defer fs.manager.Cleanup()
+func (fs *fetchSchema) Validate(ctx context.Context) error {
+	defer fs.manager.Cleanup(ctx)
 
-	if _, _, err := fs.manager.FetchSchema(createDummyWarehouse(fs.destination)); err != nil {
+	if _, _, err := fs.manager.FetchSchema(ctx, createDummyWarehouse(fs.destination)); err != nil {
 		return fmt.Errorf("fetch schema: %w", err)
 	}
 	return nil
 }
 
-func (lt *loadTable) Validate() error {
+func (lt *loadTable) Validate(ctx context.Context) error {
 	var (
 		destinationType = lt.destination.DestinationDefinition.Name
 		loadFileType    = warehouseutils.GetLoadFileType(destinationType)
@@ -335,28 +332,23 @@ func (lt *loadTable) Validate() error {
 		err          error
 	)
 
-	defer lt.manager.Cleanup()
+	defer lt.manager.Cleanup(ctx)
 
 	if tempPath, err = CreateTempLoadFile(lt.destination); err != nil {
 		return fmt.Errorf("create temp load file: %w", err)
 	}
 
-	if uploadOutput, err = uploadFile(lt.destination, tempPath); err != nil {
+	if uploadOutput, err = uploadFile(ctx, lt.destination, tempPath); err != nil {
 		return fmt.Errorf("upload file: %w", err)
 	}
 
-	if err = lt.manager.CreateTable(lt.table, TableSchemaMap); err != nil {
+	if err = lt.manager.CreateTable(ctx, lt.table, TableSchemaMap); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
-	defer func() { _ = lt.manager.DropTable(lt.table) }()
+	defer func() { _ = lt.manager.DropTable(ctx, lt.table) }()
 
-	if err = lt.manager.LoadTestTable(
-		uploadOutput.Location,
-		lt.table,
-		PayloadMap,
-		loadFileType,
-	); err != nil {
+	if err = lt.manager.LoadTestTable(ctx, uploadOutput.Location, lt.table, PayloadMap, loadFileType); err != nil {
 		return fmt.Errorf("load test table: %w", err)
 	}
 
@@ -416,7 +408,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	return filePath, nil
 }
 
-func uploadFile(dest *backendconfig.DestinationT, filePath string) (filemanager.UploadOutput, error) {
+func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath string) (filemanager.UploadOutput, error) {
 	var (
 		err        error
 		output     filemanager.UploadOutput
@@ -439,14 +431,14 @@ func uploadFile(dest *backendconfig.DestinationT, filePath string) (filemanager.
 	defer misc.RemoveFilePaths(filePath)
 	defer func() { _ = uploadFile.Close() }()
 
-	if output, err = fm.Upload(context.TODO(), uploadFile, prefixes...); err != nil {
+	if output, err = fm.Upload(ctx, uploadFile, prefixes...); err != nil {
 		return filemanager.UploadOutput{}, fmt.Errorf("uploading file: %w", err)
 	}
 
 	return output, nil
 }
 
-func downloadFile(dest *backendconfig.DestinationT, location string) error {
+func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, location string) error {
 	var (
 		err          error
 		fm           filemanager.FileManager
@@ -486,7 +478,7 @@ func downloadFile(dest *backendconfig.DestinationT, location string) error {
 	defer misc.RemoveFilePaths(filePath)
 	defer func() { _ = downloadFile.Close() }()
 
-	if err = fm.Download(context.TODO(), downloadFile, location); err != nil {
+	if err = fm.Download(ctx, downloadFile, location); err != nil {
 		return fmt.Errorf("downloading file: %w", err)
 	}
 	return nil
@@ -517,7 +509,7 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 	return fileManager, nil
 }
 
-func createManager(dest *backendconfig.DestinationT) (manager.WarehouseOperations, error) {
+func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manager.WarehouseOperations, error) {
 	var (
 		destType  = dest.DestinationDefinition.Name
 		warehouse = createDummyWarehouse(dest)
@@ -532,7 +524,7 @@ func createManager(dest *backendconfig.DestinationT) (manager.WarehouseOperation
 
 	operations.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
 
-	if err = operations.Setup(warehouse, &dummyUploader{
+	if err = operations.Setup(ctx, warehouse, &dummyUploader{
 		dest: dest,
 	}); err != nil {
 		return nil, fmt.Errorf("setting up manager: %w", err)

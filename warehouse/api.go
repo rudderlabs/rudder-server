@@ -45,9 +45,11 @@ type UploadsReq struct {
 	Limit           int32
 	Offset          int32
 	API             UploadAPIT
+	Ctx             context.Context
 }
 
 type UploadReq struct {
+	Ctx         context.Context
 	WorkspaceID string
 	UploadId    int64
 	API         UploadAPIT
@@ -245,7 +247,7 @@ func (uploadsReq *UploadsReq) TriggerWhUploads() (response *proto.TriggerWhUploa
 		return
 	}
 	if pendingUploadCount == int64(0) {
-		pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForDestination(context.TODO(), uploadsReq.DestinationID)
+		pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForDestination(uploadsReq.Ctx, uploadsReq.DestinationID)
 		if err != nil {
 			return
 		}
@@ -287,7 +289,7 @@ func (uploadReq *UploadReq) GetWHUpload() (*proto.WHUploadResponse, error) {
 		isUploadArchived                                            sql.NullBool
 	)
 
-	row := uploadReq.API.dbHandle.QueryRow(query)
+	row := uploadReq.API.dbHandle.QueryRowContext(uploadReq.Ctx, query)
 	err = row.Scan(
 		&upload.Id,
 		&upload.SourceId,
@@ -380,7 +382,7 @@ func (uploadReq *UploadReq) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		return
 	}
 
-	upload, err := repo.NewUploads(uploadReq.API.dbHandle).Get(context.TODO(), uploadReq.UploadId)
+	upload, err := repo.NewUploads(uploadReq.API.dbHandle).Get(uploadReq.Ctx, uploadReq.UploadId)
 	if err == model.ErrUploadNotFound {
 		return &proto.TriggerWhUploadsResponse{
 			Message:    NoSuchSync,
@@ -826,7 +828,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
 
 	factory := &filemanager.FileManagerFactoryT{}
-	fileManager, err := factory.New(getFileManagerSettings(request.Type, request.Config))
+	fileManager, err := factory.New(getFileManagerSettings(ctx, request.Type, request.Config))
 	if err != nil {
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}
@@ -874,20 +876,20 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	return nil
 }
 
-func getFileManagerSettings(provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
+func getFileManagerSettings(ctx context.Context, provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
 	settings := &filemanager.SettingsT{
 		Provider: provider,
 		Config:   inputConfig,
 	}
 
-	overrideWithEnv(settings)
+	overrideWithEnv(ctx, settings)
 	return settings
 }
 
 // overrideWithEnv overrides the config keys in the fileManager settings
 // with fallback values pulled from env. Only supported for S3 for now.
-func overrideWithEnv(settings *filemanager.SettingsT) {
-	envConfig := filemanager.GetProviderConfigFromEnv(context.TODO(), settings.Provider)
+func overrideWithEnv(ctx context.Context, settings *filemanager.SettingsT) {
+	envConfig := filemanager.GetProviderConfigFromEnv(ctx, settings.Provider)
 
 	if settings.Provider == "S3" {
 		ifNotExistThenSet("prefix", envConfig["prefix"], settings.Config)

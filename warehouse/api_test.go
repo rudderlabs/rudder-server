@@ -13,11 +13,11 @@ var _ = Describe("warehouse_api", func() {
 				Provider: "AZURE_BLOB",
 				Config:   map[string]interface{}{"containerName": "containerName1", "prefix": "prefix1", "accountKey": "accountKey1"},
 			}
-			overrideWithEnv(fm)
+			overrideWithEnv(ctx, fm)
 			Expect(fm.Config["accountName"]).To(BeNil())
 			fm.Provider = "S3"
 			fm.Config = map[string]interface{}{"bucketName": "bucket1", "prefix": "prefix1", "accessKeyID": "KeyID1"}
-			overrideWithEnv(fm)
+			overrideWithEnv(ctx, fm)
 			Expect(fm.Config["accessKey"]).ToNot(BeNil())
 		})
 		It("Should set value for key when key not present", func() {

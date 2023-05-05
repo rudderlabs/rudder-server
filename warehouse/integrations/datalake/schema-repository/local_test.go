@@ -1,6 +1,7 @@
 package schemarepository_test
 
 import (
+	context2 "context"
 	"fmt"
 	"testing"
 	"time"
@@ -24,8 +25,8 @@ func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return 
 func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
 func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
 func (*mockUploader) GetTableSchemaInUpload(string) model.TableSchema  { return nil }
-func (*mockUploader) GetSampleLoadFileLocation(string) (string, error) { return "", nil }
-func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+func (*mockUploader) GetSampleLoadFileLocation(context2.Context, string) (string, error) { return "", nil }
+func (*mockUploader) GetLoadFilesMetadata(context2.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return nil
 }
 
@@ -33,15 +34,15 @@ func (*mockUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
 	return model.TableSchema{}
 }
 
-func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) {
+func (*mockUploader) GetSingleLoadFile(context2.Context, string) (warehouseutils.LoadFile, error) {
 	return warehouseutils.LoadFile{}, nil
 }
 
-func (m *mockUploader) GetLocalSchema() (model.Schema, error) {
+func (m *mockUploader) GetLocalSchema(context2.Context) (model.Schema, error) {
 	return m.localSchema, nil
 }
 
-func (m *mockUploader) UpdateLocalSchema(model.Schema) error {
+func (m *mockUploader) UpdateLocalSchema(context2.Context, model.Schema) error {
 	return m.mockError
 }
 
@@ -88,7 +89,7 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
 
-			err = s.CreateTable("test_table", model.TableSchema{
+			err = s.CreateTable(context2.TODO(), "test_table", model.TableSchema{
 				"test_column_2": "test_type_2",
 			})
 			if tc.wantError != nil {
@@ -146,7 +147,7 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
 
-			err = s.AddColumns("test_table", []warehouseutils.ColumnInfo{
+			err = s.AddColumns(context2.TODO(), "test_table", []warehouseutils.ColumnInfo{
 				{
 					Name: "test_column_2",
 					Type: "test_type_2",
@@ -216,7 +217,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
 
-			_, err = s.AlterColumn("test_table", "test_column_1", "test_type_2")
+			_, err = s.AlterColumn(context2.TODO(), "test_table", "test_column_1", "test_type_2")
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {

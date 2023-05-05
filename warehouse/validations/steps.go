@@ -1,6 +1,7 @@
 package validations
 
 import (
+	"context"
 	"encoding/json"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -9,7 +10,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func validateStepFunc(destination *backendconfig.DestinationT, _ string) (json.RawMessage, error) {
+func validateStepFunc(_ context.Context, destination *backendconfig.DestinationT, _ string) (json.RawMessage, error) {
 	return json.Marshal(StepsToValidate(destination))
 }
 

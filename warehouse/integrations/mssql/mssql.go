@@ -193,11 +193,11 @@ func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*MSSQL) IsEmpty(_ model.Warehouse) (empty bool, err error) {
+func (*MSSQL) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (ms *MSSQL) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+func (ms *MSSQL) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	for _, tb := range tableNames {
 		ms.Logger.Infof("MSSQL: Cleaning up the table %q ", tb)
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
@@ -213,7 +213,7 @@ func (ms *MSSQL) DeleteBy(tableNames []string, params warehouseutils.DeleteByPar
 		ms.Logger.Infof("MSSQL: Executing the statement %v", sqlStatement)
 
 		if ms.EnableDeleteByJobs {
-			_, err = ms.DB.Exec(sqlStatement,
+			_, err = ms.DB.ExecContext(ctx, sqlStatement,
 				sql.Named("jobrunid", params.JobRunId),
 				sql.Named("taskrunid", params.TaskRunId),
 				sql.Named("sourceid", params.SourceId),
@@ -258,17 +258,17 @@ func (ms *MSSQL) loadTable(ctx context.Context, tableName string, tableSchemaInU
 	_, err = txn.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		ms.Logger.Errorf("MSSQL: Error creating temporary table for table:%s: %v\n", tableName, err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 	if !skipTempTableDelete {
-		defer ms.dropStagingTable(stagingTableName)
+		defer ms.dropStagingTable(ctx, stagingTableName)
 	}
 
 	stmt, err := txn.PrepareContext(ctx, mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
 	if err != nil {
 		ms.Logger.Errorf("MSSQL: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 	for _, objectFileName := range fileNames {
@@ -276,7 +276,7 @@ func (ms *MSSQL) loadTable(ctx context.Context, tableName string, tableSchemaInU
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			ms.Logger.Errorf("MSSQL: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
-			txn.Rollback()
+			_ = txn.Rollback()
 			return
 		}
 
@@ -285,7 +285,7 @@ func (ms *MSSQL) loadTable(ctx context.Context, tableName string, tableSchemaInU
 		if err != nil {
 			ms.Logger.Errorf("MSSQL: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			gzipFile.Close()
-			txn.Rollback()
+			_ = txn.Rollback()
 			return
 
 		}
@@ -300,13 +300,13 @@ func (ms *MSSQL) loadTable(ctx context.Context, tableName string, tableSchemaInU
 					break
 				}
 				ms.Logger.Errorf("MSSQL: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				ms.Logger.Error(err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			var recordInterface []interface{}
@@ -389,18 +389,18 @@ func (ms *MSSQL) loadTable(ctx context.Context, tableName string, tableSchemaInU
 			_, err = stmt.ExecContext(ctx, finalColumnValues...)
 			if err != nil {
 				ms.Logger.Errorf("MSSQL: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			csvRowsProcessedCount++
 		}
-		gzipReader.Close()
+		_ = gzipReader.Close()
 		gzipFile.Close()
 	}
 
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {
-		txn.Rollback()
+		_ = txn.Rollback()
 		ms.Logger.Errorf("MSSQL: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		return
 
@@ -423,7 +423,7 @@ func (ms *MSSQL) loadTable(ctx context.Context, tableName string, tableSchemaInU
 	_, err = txn.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		ms.Logger.Errorf("MSSQL: Error deleting from original table for dedup: %v\n", err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 
@@ -438,13 +438,13 @@ func (ms *MSSQL) loadTable(ctx context.Context, tableName string, tableSchemaInU
 
 	if err != nil {
 		ms.Logger.Errorf("MSSQL: Error inserting into original table: %v\n", err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 
 	if err = txn.Commit(); err != nil {
 		ms.Logger.Errorf("MSSQL: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 
@@ -488,9 +488,9 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 
 	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
 	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
-	defer ms.dropStagingTable(stagingTableName)
-	defer ms.dropStagingTable(unionStagingTableName)
-	defer ms.dropStagingTable(identifyStagingTable)
+	defer ms.dropStagingTable(ctx, stagingTableName)
+	defer ms.dropStagingTable(ctx, unionStagingTableName)
+	defer ms.dropStagingTable(ctx, identifyStagingTable)
 
 	userColMap := ms.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
@@ -565,7 +565,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		ms.Logger.Errorf("MSSQL: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -576,7 +576,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 
 	if err != nil {
 		ms.Logger.Errorf("MSSQL: Error inserting into users table from staging table: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -584,56 +584,56 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	err = tx.Commit()
 	if err != nil {
 		ms.Logger.Errorf("MSSQL: Error in transaction commit for users table: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 	return
 }
 
-func (ms *MSSQL) CreateSchema() (err error) {
+func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
-    EXEC('CREATE SCHEMA [%s]');
+    ExecContext(ctx,'CREATE SCHEMA [%s]');
 `, ms.Namespace, ms.Namespace)
 	ms.Logger.Infof("MSSQL: Creating schema name in mssql for MSSQL:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.DB.Exec(sqlStatement)
+	_, err = ms.DB.ExecContext(ctx, sqlStatement)
 	if err == io.EOF {
 		return nil
 	}
 	return
 }
 
-func (ms *MSSQL) dropStagingTable(stagingTableName string) {
+func (ms *MSSQL) dropStagingTable(ctx context.Context, stagingTableName string) {
 	ms.Logger.Infof("MSSQL: dropping table %+v\n", stagingTableName)
-	_, err := ms.DB.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
+	_, err := ms.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
 	if err != nil {
 		ms.Logger.Errorf("MSSQL:  Error dropping staging table %s in mssql: %v", ms.Namespace+"."+stagingTableName, err)
 	}
 }
 
-func (ms *MSSQL) createTable(name string, columns model.TableSchema) (err error) {
+func (ms *MSSQL) createTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, ColumnsWithDataTypes(columns, ""))
 
 	ms.Logger.Infof("MSSQL: Creating table in mssql for MSSQL:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.DB.Exec(sqlStatement)
+	_, err = ms.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
-func (ms *MSSQL) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
+func (ms *MSSQL) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
-	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
+	err = ms.createTable(ctx, ms.Namespace+"."+tableName, columnMap)
 	return err
 }
 
-func (ms *MSSQL) DropTable(tableName string) (err error) {
+func (ms *MSSQL) DropTable(ctx context.Context, tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
 	ms.Logger.Infof("AZ: Dropping table in synapse for AZ:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.DB.Exec(fmt.Sprintf(sqlStatement, ms.Namespace, tableName))
+	_, err = ms.DB.ExecContext(ctx, fmt.Sprintf(sqlStatement, ms.Namespace, tableName))
 	return
 }
 
-func (ms *MSSQL) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query        string
 		queryBuilder strings.Builder
@@ -673,11 +673,11 @@ func (ms *MSSQL) AddColumns(tableName string, columnsInfo []warehouseutils.Colum
 	query += ";"
 
 	ms.Logger.Infof("MSSQL: Adding columns for destinationID: %s, tableName: %s with query: %v", ms.Warehouse.Destination.ID, tableName, query)
-	_, err = ms.DB.Exec(query)
+	_, err = ms.DB.ExecContext(ctx, query)
 	return
 }
 
-func (*MSSQL) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+func (*MSSQL) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
@@ -693,7 +693,7 @@ func (ms *MSSQL) TestConnection(ctx context.Context, _ model.Warehouse) error {
 	return nil
 }
 
-func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (ms *MSSQL) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader
@@ -704,11 +704,11 @@ func (ms *MSSQL) Setup(warehouse model.Warehouse, uploader warehouseutils.Upload
 	return err
 }
 
-func (ms *MSSQL) CrashRecover() {
-	ms.dropDanglingStagingTables()
+func (ms *MSSQL) CrashRecover(ctx context.Context) {
+	ms.dropDanglingStagingTables(ctx)
 }
 
-func (ms *MSSQL) dropDanglingStagingTables() bool {
+func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) bool {
 	sqlStatement := fmt.Sprintf(`
 		select
 		  table_name
@@ -721,12 +721,12 @@ func (ms *MSSQL) dropDanglingStagingTables() bool {
 		ms.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
-	rows, err := ms.DB.Query(sqlStatement)
+	rows, err := ms.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		ms.Logger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
 		return false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -740,7 +740,7 @@ func (ms *MSSQL) dropDanglingStagingTables() bool {
 	ms.Logger.Infof("WH: MSSQL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
-		_, err := ms.DB.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
+		_, err := ms.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
 		if err != nil {
 			ms.Logger.Errorf("WH: MSSQL:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
 			delSuccess = false
@@ -750,14 +750,14 @@ func (ms *MSSQL) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *MSSQL) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
+func (ms *MSSQL) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ms.getConnectionCredentials())
 	if err != nil {
 		return
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 
 	schema = make(model.Schema)
 	unrecognizedSchema = make(model.Schema)
@@ -776,7 +776,7 @@ func (ms *MSSQL) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSch
 		ms.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
-	rows, err := dbHandle.Query(sqlStatement)
+	rows, err := dbHandle.QueryContext(ctx, sqlStatement)
 	if err != nil && err != io.EOF {
 		ms.Logger.Errorf("MSSQL: Error in fetching schema from mssql destination:%v, query: %v", ms.Warehouse.Destination.ID, sqlStatement)
 		return
@@ -785,7 +785,7 @@ func (ms *MSSQL) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSch
 		ms.Logger.Infof("MSSQL: No rows, while fetching schema from  destination:%v, query: %v", ms.Warehouse.Identifier, sqlStatement)
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)
@@ -819,23 +819,23 @@ func (ms *MSSQL) LoadTable(ctx context.Context, tableName string) error {
 	return err
 }
 
-func (ms *MSSQL) Cleanup() {
+func (ms *MSSQL) Cleanup(ctx context.Context) {
 	if ms.DB != nil {
 		// extra check aside dropStagingTable(table)
-		ms.dropDanglingStagingTables()
-		ms.DB.Close()
+		ms.dropDanglingStagingTables(ctx)
+		_ = ms.DB.Close()
 	}
 }
 
-func (*MSSQL) LoadIdentityMergeRulesTable() (err error) {
+func (*MSSQL) LoadIdentityMergeRulesTable(context.Context) (err error) {
 	return
 }
 
-func (*MSSQL) LoadIdentityMappingsTable() (err error) {
+func (*MSSQL) LoadIdentityMappingsTable(context.Context) (err error) {
 	return
 }
 
-func (*MSSQL) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*MSSQL) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err error) {
 	return
 }
 
@@ -855,7 +855,7 @@ func (ms *MSSQL) GetTotalCountInTable(ctx context.Context, tableName string) (in
 	return total, err
 }
 
-func (ms *MSSQL) Connect(warehouse model.Warehouse) (client.Client, error) {
+func (ms *MSSQL) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -871,14 +871,14 @@ func (ms *MSSQL) Connect(warehouse model.Warehouse) (client.Client, error) {
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (ms *MSSQL) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (ms *MSSQL) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		ms.Namespace,
 		tableName,
 		fmt.Sprintf(`%q, %q`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
-	_, err = ms.DB.Exec(sqlStatement)
+	_, err = ms.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 

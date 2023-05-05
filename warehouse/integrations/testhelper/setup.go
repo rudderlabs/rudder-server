@@ -521,7 +521,7 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 
 	require.NoError(t, WithConstantRetries(func() error {
 		destinationValidator := validations.NewDestinationValidator()
-		response := destinationValidator.Validate(&destination)
+		response := destinationValidator.Validate(context.TODO(), &destination)
 		if !response.Success {
 			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
 		}

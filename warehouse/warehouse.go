@@ -1454,9 +1454,9 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
+func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion()))
+	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion(r.Context())))
 }
 
 func isUploadTriggered(wh model.Warehouse) bool {

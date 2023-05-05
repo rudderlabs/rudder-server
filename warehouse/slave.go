@@ -653,11 +653,11 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
-	err = whManager.Setup(warehouse, whasyncjob)
+	err = whManager.Setup(context.TODO(), warehouse, whasyncjob)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
-	defer whManager.Cleanup()
+	defer whManager.Cleanup(context.TODO())
 	tableNames := []string{asyncjob.TableName}
 	if asyncjob.AsyncJobType == "deletebyjobrunid" {
 		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
@@ -668,7 +668,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 			JobRunId:  metadata.JobRunId,
 			StartTime: metadata.StartTime,
 		}
-		err = whManager.DeleteBy(tableNames, params)
+		err = whManager.DeleteBy(context.TODO(), tableNames, params)
 	}
 	asyncJobRunResult := AsyncJobRunResult{
 		Result: err == nil,

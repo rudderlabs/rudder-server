@@ -168,7 +168,7 @@ func (wh *HandleT) hasWarehouseData(warehouse model.Warehouse) (bool, error) {
 		panic(err)
 	}
 
-	empty, err := whManager.IsEmpty(warehouse)
+	empty, err := whManager.IsEmpty(context.TODO(), warehouse)
 	if err != nil {
 		return false, err
 	}
@@ -435,12 +435,12 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 			}
 		}
 
-		err = whManager.Setup(job.warehouse, job)
+		err = whManager.Setup(context.TODO(), job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)
 			return
 		}
-		defer whManager.Cleanup()
+		defer whManager.Cleanup(context.TODO())
 
 		schemaHandle := SchemaHandle{
 			warehouse:    job.warehouse,
@@ -450,7 +450,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 		}
 		job.schemaHandle = &schemaHandle
 
-		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(context.TODO(), job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)

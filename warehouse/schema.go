@@ -71,9 +71,9 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 	return newColumnVal, err
 }
 
-func (sh *SchemaHandle) getLocalSchema() (model.Schema, error) {
+func (sh *SchemaHandle) getLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.whSchemaRepo.GetForNamespace(
-		context.TODO(),
+		ctx,
 		sh.warehouse.Source.ID,
 		sh.warehouse.Destination.ID,
 		sh.warehouse.Namespace,
@@ -87,8 +87,8 @@ func (sh *SchemaHandle) getLocalSchema() (model.Schema, error) {
 	return whSchema.Schema, nil
 }
 
-func (sh *SchemaHandle) updateLocalSchema(uploadId int64, updatedSchema model.Schema) error {
-	_, err := sh.whSchemaRepo.Insert(context.TODO(), &model.WHSchema{
+func (sh *SchemaHandle) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
+	_, err := sh.whSchemaRepo.Insert(ctx, &model.WHSchema{
 		UploadID:        uploadId,
 		SourceID:        sh.warehouse.Source.ID,
 		Namespace:       sh.warehouse.Namespace,
@@ -99,8 +99,8 @@ func (sh *SchemaHandle) updateLocalSchema(uploadId int64, updatedSchema model.Sc
 	return err
 }
 
-func (sh *SchemaHandle) fetchSchemaFromWarehouse(whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse model.Schema, err error) {
-	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
+func (sh *SchemaHandle) fetchSchemaFromWarehouse(ctx context.Context, whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse model.Schema, err error) {
+	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx, sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return model.Schema{}, model.Schema{}, err

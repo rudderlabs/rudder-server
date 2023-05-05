@@ -245,13 +245,13 @@ type KeyValue struct {
 
 type Uploader interface {
 	GetSchemaInWarehouse() model.Schema
-	GetLocalSchema() (model.Schema, error)
-	UpdateLocalSchema(schema model.Schema) error
+	GetLocalSchema(ctx context.Context) (model.Schema, error)
+	UpdateLocalSchema(ctx context.Context, schema model.Schema) error
 	GetTableSchemaInWarehouse(tableName string) model.TableSchema
 	GetTableSchemaInUpload(tableName string) model.TableSchema
-	GetLoadFilesMetadata(options GetLoadFilesOptions) []LoadFile
-	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetSingleLoadFile(tableName string) (LoadFile, error)
+	GetLoadFilesMetadata(ctx context.Context, options GetLoadFilesOptions) []LoadFile
+	GetSampleLoadFileLocation(ctx context.Context, tableName string) (string, error)
+	GetSingleLoadFile(ctx context.Context, tableName string) (LoadFile, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time

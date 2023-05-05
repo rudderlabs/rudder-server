@@ -1,6 +1,7 @@
 package validations_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -66,6 +67,8 @@ func TestValidator(t *testing.T) {
 		sslmode   = "disable"
 	)
 
+	ctx := context.TODO()
+
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -78,7 +81,7 @@ func TestValidator(t *testing.T) {
 		t.Run("Non Datalakes", func(t *testing.T) {
 			t.Parallel()
 
-			v, err := validations.NewValidator(model.VerifyingObjectStorage, &backendconfig.DestinationT{
+			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.POSTGRES,
 				},
@@ -96,7 +99,7 @@ func TestValidator(t *testing.T) {
 				},
 			})
 			require.NoError(t, err)
-			require.NoError(t, v.Validate())
+			require.NoError(t, v.Validate(ctx))
 		})
 
 		t.Run("Datalakes", func(t *testing.T) {
@@ -112,7 +115,7 @@ func TestValidator(t *testing.T) {
 
 			_ = minioResource.Client.MakeBucket(bucket, "us-east-1")
 
-			v, err := validations.NewValidator(model.VerifyingObjectStorage, &backendconfig.DestinationT{
+			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.S3_DATALAKE,
 				},
@@ -130,7 +133,7 @@ func TestValidator(t *testing.T) {
 				},
 			})
 			require.NoError(t, err)
-			require.NoError(t, v.Validate())
+			require.NoError(t, v.Validate(ctx))
 		})
 	})
 
@@ -181,7 +184,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(model.VerifyingConnections, &backendconfig.DestinationT{
+				v, err := validations.NewValidator(ctx, model.VerifyingConnections, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -190,9 +193,9 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(), tc.wantError.Error())
+					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
-					require.NoError(t, v.Validate())
+					require.NoError(t, v.Validate(ctx))
 				}
 			})
 		}
@@ -259,7 +262,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(model.VerifyingCreateSchema, &backendconfig.DestinationT{
+				v, err := validations.NewValidator(ctx, model.VerifyingCreateSchema, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -268,9 +271,9 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(), tc.wantError.Error())
+					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
-					require.NoError(t, v.Validate())
+					require.NoError(t, v.Validate(ctx))
 				}
 			})
 		}
@@ -366,7 +369,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
+				v, err := validations.NewValidator(ctx, model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -375,9 +378,9 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(), tc.wantError.Error())
+					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
-					require.NoError(t, v.Validate())
+					require.NoError(t, v.Validate(ctx))
 				}
 
 				_, err = pgResource.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
@@ -392,7 +395,7 @@ func TestValidator(t *testing.T) {
 		tr := setup(t, pool)
 		pgResource, minioResource := tr.pgResource, tr.minioResource
 
-		v, err := validations.NewValidator(model.VerifyingFetchSchema, &backendconfig.DestinationT{
+		v, err := validations.NewValidator(ctx, model.VerifyingFetchSchema, &backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				Name: warehouseutils.POSTGRES,
 			},
@@ -419,7 +422,7 @@ func TestValidator(t *testing.T) {
 		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s(id int, val varchar)", namespace, table))
 		require.NoError(t, err)
 
-		require.NoError(t, v.Validate())
+		require.NoError(t, v.Validate(ctx))
 	})
 
 	t.Run("Load table", func(t *testing.T) {
@@ -524,7 +527,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(model.VerifyingLoadTable, &backendconfig.DestinationT{
+				v, err := validations.NewValidator(ctx, model.VerifyingLoadTable, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -533,9 +536,9 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(), tc.wantError.Error())
+					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
-					require.NoError(t, v.Validate())
+					require.NoError(t, v.Validate(ctx))
 				}
 
 				_, err = pgResource.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
