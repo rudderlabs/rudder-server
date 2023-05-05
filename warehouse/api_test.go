@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -8,6 +9,8 @@ import (
 
 var _ = Describe("warehouse_api", func() {
 	Context("Testing objectStorageValidation ", func() {
+		ctx := context.Background()
+
 		It("Should fallback to backup credentials when fields missing(as of now backup only supported for s3)", func() {
 			fm := &filemanager.SettingsT{
 				Provider: "AZURE_BLOB",

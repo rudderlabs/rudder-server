@@ -402,6 +402,7 @@ func (uploadReq *UploadReq) TriggerWHUpload(ctx context.Context) (response *prot
 		upload:   upload,
 		dbHandle: uploadReq.API.dbHandle,
 		Now:      timeutil.Now,
+		ctx:      ctx,
 	}
 
 	err = uploadJobT.triggerUploadNow()

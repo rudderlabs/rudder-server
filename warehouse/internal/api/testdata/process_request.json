@@ -1,67 +1,67 @@
 {
-    "WorkspaceID": "279L3V7FSpx43LaNJ0nIs9KRaNC",
-    "Schema": {
-        "product_track": {
-            "context_destination_id": "string",
-            "context_destination_type": "string",
-            "context_ip": "string",
-            "context_library_name": "string",
-            "context_passed_ip": "string",
-            "context_request_ip": "string",
-            "context_source_id": "string",
-            "context_source_type": "string",
-            "event": "string",
-            "event_text": "string",
-            "id": "string",
-            "original_timestamp": "datetime",
-            "product_id": "string",
-            "rating": "int",
-            "received_at": "datetime",
-            "revenue": "float",
-            "review_body": "string",
-            "review_id": "string",
-            "sent_at": "datetime",
-            "timestamp": "datetime",
-            "user_id": "string",
-            "uuid_ts": "datetime"
-        },
-        "tracks": {
-            "context_destination_id": "string",
-            "context_destination_type": "string",
-            "context_ip": "string",
-            "context_library_name": "string",
-            "context_passed_ip": "string",
-            "context_request_ip": "string",
-            "context_source_id": "string",
-            "context_source_type": "string",
-            "event": "string",
-            "event_text": "string",
-            "id": "string",
-            "original_timestamp": "datetime",
-            "received_at": "datetime",
-            "sent_at": "datetime",
-            "timestamp": "datetime",
-            "user_id": "string",
-            "uuid_ts": "datetime"
-        }
+  "WorkspaceID": "279L3V7FSpx43LaNJ0nIs9KRaNC",
+  "Schema": {
+    "product_track": {
+      "context_destination_id": "string",
+      "context_destination_type": "string",
+      "context_ip": "string",
+      "context_library_name": "string",
+      "context_passed_ip": "string",
+      "context_request_ip": "string",
+      "context_source_id": "string",
+      "context_source_type": "string",
+      "event": "string",
+      "event_text": "string",
+      "id": "string",
+      "original_timestamp": "datetime",
+      "product_id": "string",
+      "rating": "int",
+      "received_at": "datetime",
+      "revenue": "float",
+      "review_body": "string",
+      "review_id": "string",
+      "sent_at": "datetime",
+      "timestamp": "datetime",
+      "user_id": "string",
+      "uuid_ts": "datetime"
     },
-    "BatchDestination": {
-        "Source": {
-            "ID": "279L3gEKqwruBoKGsXZtSVX7vIy"
-        },
-        "Destination": {
-            "ID": "27CHciD6leAhurSyFAeN4dp14qZ"
-        }
+    "tracks": {
+      "context_destination_id": "string",
+      "context_destination_type": "string",
+      "context_ip": "string",
+      "context_library_name": "string",
+      "context_passed_ip": "string",
+      "context_request_ip": "string",
+      "context_source_id": "string",
+      "context_source_type": "string",
+      "event": "string",
+      "event_text": "string",
+      "id": "string",
+      "original_timestamp": "datetime",
+      "received_at": "datetime",
+      "sent_at": "datetime",
+      "timestamp": "datetime",
+      "user_id": "string",
+      "uuid_ts": "datetime"
+    }
+  },
+  "BatchDestination": {
+    "Source": {
+      "ID": "279L3gEKqwruBoKGsXZtSVX7vIy"
     },
-    "Location": "rudder-warehouse-staging-logs/279L3gEKqwruBoKGsXZtSVX7vIy/2022-11-08/1667913810.279L3gEKqwruBoKGsXZtSVX7vIy.7a6e7785-7a75-4345-8d3c-d7a1ce49a43f.json.gz",
-    "FirstEventAt": "2022-11-08T13:23:07Z",
-    "LastEventAt": "2022-11-08T13:23:07Z",
-    "TotalEvents": 2,
-    "TotalBytes": 2000,
-    "UseRudderStorage": false,
-    "DestinationRevisionID": "2H1cLBvL3v0prRBNzpe8D34XTzU",
-    "SourceTaskRunID": "<source-task-run-id>",
-    "SourceJobID": "<source-job-id>",
-    "SourceJobRunID": "<source-job-run-id>",
-    "TimeWindow": "0001-01-01T00:40:00Z"
+    "Destination": {
+      "ID": "27CHciD6leAhurSyFAeN4dp14qZ"
+    }
+  },
+  "Location": "rudder-warehouse-staging-logs/279L3gEKqwruBoKGsXZtSVX7vIy/2022-11-08/1667913810.279L3gEKqwruBoKGsXZtSVX7vIy.7a6e7785-7a75-4345-8d3c-d7a1ce49a43f.json.gz",
+  "FirstEventAt": "2022-11-08T13:23:07Z",
+  "LastEventAt": "2022-11-08T13:23:07Z",
+  "TotalEvents": 2,
+  "TotalBytes": 2000,
+  "UseRudderStorage": false,
+  "DestinationRevisionID": "2H1cLBvL3v0prRBNzpe8D34XTzU",
+  "SourceTaskRunID": "<source-task-run-id>",
+  "SourceJobID": "<source-job-id>",
+  "SourceJobRunID": "<source-job-run-id>",
+  "TimeWindow": "0001-01-01T00:40:00Z"
 }

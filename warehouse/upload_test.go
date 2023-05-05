@@ -250,6 +250,7 @@ var _ = Describe("Upload", Ordered, func() {
 			},
 			stagingFileIDs: []int64{1, 2, 3, 4, 5},
 			dbHandle:       pgResource.DB,
+			ctx:            context.Background(),
 		}
 	})
 
@@ -364,12 +365,13 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 					pgResource, err := resource.SetupPostgres(pool, t)
 					require.NoError(t, err)
-					sqlmiddleware := sqlmiddleware.New(pgResource.DB)
+
+					db := sqlmiddleware.New(pgResource.DB)
 
 					rs := redshift.New()
 					redshift.WithConfig(rs, config.Default)
 
-					rs.DB = sqlmiddleware
+					rs.DB = db
 					rs.Namespace = testNamespace
 
 					job := &UploadJob{
@@ -378,9 +380,10 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 							DestinationID:   testDestinationID,
 							DestinationType: testDestinationType,
 						},
-						AlertSender: &mockAlertSender{
+						alertSender: &mockAlertSender{
 							mockError: tc.mockAlertError,
 						},
+						ctx: context.Background(),
 					}
 
 					_, err = rs.DB.Exec(
@@ -432,12 +435,13 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			sqlmiddleware := sqlmiddleware.New(pgResource.DB)
+
+			db := sqlmiddleware.New(pgResource.DB)
 
 			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
-			rs.DB = sqlmiddleware
+			rs.DB = db
 			rs.Namespace = testNamespace
 
 			job := &UploadJob{
@@ -446,7 +450,8 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					DestinationID:   testDestinationID,
 					DestinationType: testDestinationType,
 				},
-				AlertSender: &mockAlertSender{},
+				alertSender: &mockAlertSender{},
+				ctx:         context.Background(),
 			}
 
 			_, err = rs.DB.Exec(
@@ -558,9 +563,10 @@ func TestUploadJobT_Aborted(t *testing.T) {
 			t.Parallel()
 
 			job := &UploadJob{
-				MinRetryAttempts: minAttempts,
-				RetryTimeWindow:  minRetryWindow,
+				minRetryAttempts: minAttempts,
+				retryTimeWindow:  minRetryWindow,
 				Now:              func() time.Time { return now },
+				ctx:              context.Background(),
 			}
 
 			require.Equal(t, tc.expected, job.Aborted(tc.attempts, tc.startTime))
@@ -590,6 +596,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 			pendingTableUploadsRepo: &mockPendingTablesRepo{
 				err: errors.New("some error"),
 			},
+			ctx: context.Background(),
 		}
 
 		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
@@ -608,6 +615,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				ID: 1,
 			},
 			pendingTableUploadsRepo: ptRepo,
+			ctx:                     context.Background(),
 		}
 
 		for i := 0; i < 5; i++ {
@@ -674,6 +682,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 			pendingTableUploadsRepo: &mockPendingTablesRepo{
 				pendingTables: pendingTables,
 			},
+			ctx: context.Background(),
 		}
 
 		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()

@@ -95,18 +95,18 @@ type UploadJob struct {
 	stagingFileIDs []int64
 	schemaLock     sync.Mutex
 	uploadLock     sync.Mutex
-	AlertSender    alerta.AlertSender
+	alertSender    alerta.AlertSender
 	Now            func() time.Time
 
 	pendingTableUploads       []model.PendingTableUpload
 	pendingTableUploadsRepo   pendingTableUploadsRepo
 	pendingTableUploadsOnce   sync.Once
 	pendingTableUploadsError  error
-	RefreshPartitionBatchSize int
-	RetryTimeWindow           time.Duration
-	MinRetryAttempts          int
+	refreshPartitionBatchSize int
+	retryTimeWindow           time.Duration
+	minRetryAttempts          int
 
-	ErrorHandler ErrorHandler
+	errorHandler ErrorHandler
 }
 
 type UploadColumn struct {
@@ -192,16 +192,16 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		pendingTableUploadsRepo: repo.NewUploads(f.dbHandle),
 		pendingTableUploads:     []model.PendingTableUpload{},
 
-		RefreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
-		RetryTimeWindow:           retryTimeWindow,
-		MinRetryAttempts:          minRetryAttempts,
+		refreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
+		retryTimeWindow:           retryTimeWindow,
+		minRetryAttempts:          minRetryAttempts,
 
-		AlertSender: alerta.NewClient(
+		alertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
 		),
 		Now: timeutil.Now,
 
-		ErrorHandler: ErrorHandler{whManager},
+		errorHandler: ErrorHandler{whManager},
 	}
 }
 
@@ -820,7 +820,7 @@ func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap model.Tab
 		query := strings.Join(queries, "\n")
 		pkgLogger.Infof("altering dependent columns: %s", query)
 
-		err := job.AlertSender.SendAlert(job.ctx, "warehouse-column-changes",
+		err := job.alertSender.SendAlert(job.ctx, "warehouse-column-changes",
 			alerta.SendAlertOpts{
 				Severity:    alerta.SeverityCritical,
 				Priority:    alerta.PriorityP1,
@@ -1589,12 +1589,12 @@ func (job *UploadJob) Aborted(attempts int, startTime time.Time) bool {
 		return false
 	}
 
-	return attempts > job.MinRetryAttempts && job.Now().Sub(startTime) > job.RetryTimeWindow
+	return attempts > job.minRetryAttempts && job.Now().Sub(startTime) > job.retryTimeWindow
 }
 
 func (job *UploadJob) setUploadError(statusError error, state string) (string, error) {
 	var (
-		errorTags                  = job.ErrorHandler.MatchErrorMappings(statusError)
+		errorTags                  = job.errorHandler.MatchErrorMappings(statusError)
 		destCredentialsValidations *bool
 	)
 
@@ -2100,7 +2100,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 			StartID: loadFileStartID,
 			EndID:   loadFileEndID,
 		})
-		batches := schemarepository.LoadFileBatching(loadFiles, job.RefreshPartitionBatchSize)
+		batches := schemarepository.LoadFileBatching(loadFiles, job.refreshPartitionBatchSize)
 
 		for _, batch := range batches {
 			if err = repository.RefreshPartitions(job.ctx, tableName, batch); err != nil {
