@@ -1096,6 +1096,39 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		}
 	})
 
+	type User struct {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	}
+
+	consumeUserMsg := func(t *testing.T, deser *avro.GenericDeserializer) {
+		timeout := time.After(5 * time.Second)
+		for {
+			select {
+			case <-timeout:
+				t.Fatal("Timed out waiting for expected message")
+			default:
+				ev := c.Poll(100)
+				if ev == nil {
+					continue
+				}
+
+				switch e := ev.(type) {
+				case *kafkaConfluent.Message:
+					value := User{}
+					err = deser.DeserializeInto(*e.TopicPartition.Topic, e.Value, &value)
+					require.NoErrorf(t, err, "Failed to deserialize payload: %s", err)
+					require.Equal(t, User{FirstName: "John", LastName: "Doe"}, value)
+					return
+				case kafkaConfluent.Error:
+					t.Logf("Kafka Confluent Error: %v: %v", e.Code(), e)
+				default:
+					t.Logf("Ignoring consumer entry: %+v", e)
+				}
+			}
+		}
+	}
+
 	t.Run("avro with schema id embedded", func(t *testing.T) {
 		t.Cleanup(config.Reset)
 
@@ -1119,37 +1152,9 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
 		require.NoError(t, err)
 
-		type User struct {
-			FirstName string `json:"first_name"`
-			LastName  string `json:"last_name"`
-		}
-
-		timeout := time.After(5 * time.Second)
-		for {
-			select {
-			case <-timeout:
-				t.Fatal("Timed out waiting for expected message")
-			default:
-				ev := c.Poll(100)
-				if ev == nil {
-					continue
-				}
-
-				switch e := ev.(type) {
-				case *kafkaConfluent.Message:
-					value := User{}
-					err = deser.DeserializeInto(*e.TopicPartition.Topic, e.Value, &value)
-					require.NoErrorf(t, err, "Failed to deserialize payload: %s", err)
-					require.Equal(t, User{FirstName: "John", LastName: "Doe"}, value)
-					return
-				case kafkaConfluent.Error:
-					t.Logf("Kafka Confluent Error: %v: %v", e.Code(), e)
-				default:
-					t.Logf("Ignoring consumer entry: %+v", e)
-				}
-			}
-		}
+		consumeUserMsg(t, deser)
 	})
+
 	t.Run("avro with schema id embedding enabled via config", func(t *testing.T) {
 		t.Cleanup(config.Reset)
 
@@ -1173,36 +1178,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
 		require.NoError(t, err)
 
-		type User struct {
-			FirstName string `json:"first_name"`
-			LastName  string `json:"last_name"`
-		}
-
-		timeout := time.After(5 * time.Second)
-		for {
-			select {
-			case <-timeout:
-				t.Fatal("Timed out waiting for expected message")
-			default:
-				ev := c.Poll(100)
-				if ev == nil {
-					continue
-				}
-
-				switch e := ev.(type) {
-				case *kafkaConfluent.Message:
-					value := User{}
-					err = deser.DeserializeInto(*e.TopicPartition.Topic, e.Value, &value)
-					require.NoErrorf(t, err, "Failed to deserialize payload: %s", err)
-					require.Equal(t, User{FirstName: "John", LastName: "Doe"}, value)
-					return
-				case kafkaConfluent.Error:
-					t.Logf("Kafka Confluent Error: %v: %v", e.Code(), e)
-				default:
-					t.Logf("Ignoring consumer entry: %+v", e)
-				}
-			}
-		}
+		consumeUserMsg(t, deser)
 	})
 }
 
