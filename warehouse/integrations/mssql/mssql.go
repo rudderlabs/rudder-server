@@ -593,7 +593,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 
 func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
-    ExecContext(ctx,'CREATE SCHEMA [%s]');
+    EXEC('CREATE SCHEMA [%s]');
 `, ms.Namespace, ms.Namespace)
 	ms.Logger.Infof("MSSQL: Creating schema name in mssql for MSSQL:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 	_, err = ms.DB.ExecContext(ctx, sqlStatement)
