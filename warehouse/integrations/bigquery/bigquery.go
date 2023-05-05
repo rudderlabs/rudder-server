@@ -1188,7 +1188,7 @@ func (bq *BigQuery) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
 
-func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName string, payloadMap map[string]interface{}, loadFileFormat string) (err error) {
+func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, _ string) (err error) {
 	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptions{})
 	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
 	gcsRef.SourceFormat = bigquery.JSON

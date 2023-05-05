@@ -366,7 +366,7 @@ func (uploadReq *UploadReq) GetWHUpload(ctx context.Context) (*proto.WHUploadRes
 	return &upload, nil
 }
 
-func (uploadReq *UploadReq) TriggerWHUpload(context.Context) (response *proto.TriggerWhUploadsResponse, err error) {
+func (uploadReq *UploadReq) TriggerWHUpload(ctx context.Context) (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadReq.validateReq()
 	defer func() {
 		if err != nil {

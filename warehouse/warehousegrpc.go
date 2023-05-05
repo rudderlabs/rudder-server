@@ -35,7 +35,6 @@ func (*warehouseGRPC) GetWHUploads(ctx context.Context, request *proto.WHUploads
 		Limit:           request.Limit,
 		Offset:          request.Offset,
 		API:             UploadAPI,
-		Ctx:             ctx,
 	}
 	uploadsReq.API.log.Infof(
 		"[GetWHUploads] Fetching warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
