@@ -75,7 +75,7 @@ require (
 	github.com/prometheus/common v0.42.0
 	github.com/rs/cors v1.9.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
-	github.com/rudderlabs/rudder-go-kit v0.13.0
+	github.com/rudderlabs/rudder-go-kit v0.13.1
 	github.com/rudderlabs/sql-tunnels v0.1.3
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.39
