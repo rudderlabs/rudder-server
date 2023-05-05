@@ -73,12 +73,10 @@ func New(network string, addresses []string, conf Config) (*Client, error) {
 		}
 
 		sshConfig := &ssh.ClientConfig{
-			User:    conf.SSHConfig.User,
-			Auth:    []ssh.AuthMethod{ssh.PublicKeys(signer)},
-			Timeout: conf.DialTimeout,
-		}
-		if conf.SSHConfig.AcceptAnyHostKey {
-			sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey() // skipcq: GSC-G106
+			User:            conf.SSHConfig.User,
+			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+			Timeout:         conf.DialTimeout,
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(), // skipcq: GSC-G106
 		}
 
 		dialer.DialFunc = func(ctx context.Context, network, address string) (net.Conn, error) {
