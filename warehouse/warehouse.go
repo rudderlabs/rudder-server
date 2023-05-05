@@ -350,7 +350,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					connectionsMapLock.Unlock()
 
 					if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
-						wh.setupIdentityTables(warehouse)
+						wh.setupIdentityTables(ctx, warehouse)
 						if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
 							// non-blocking populate historic identities
 							wh.populateHistoricIdentities(ctx, warehouse)
@@ -750,7 +750,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
 
 		if !found {
-			uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+			uploadJob := wh.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 				Upload: upload,
 			}, nil)
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
@@ -768,7 +768,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		if err != nil {
 			return nil, err
 		}
-		uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+		uploadJob := wh.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 			Warehouse:    warehouse,
 			Upload:       upload,
 			StagingFiles: stagingFilesList,

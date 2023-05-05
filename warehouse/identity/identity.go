@@ -145,7 +145,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 		sqlStatement := fmt.Sprintf(`SELECT merge_property_type, merge_property_value FROM %s WHERE rudder_id IN (%v)`, idr.mappingsTable(), quotedRudderIDs)
 		pkgLogger.Debugf(`IDR: Get all merge properties from mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
 		var tableRows *sql.Rows
-		tableRows, err = txn.Query(sqlStatement)
+		tableRows, err = txn.QueryContext(idr.ctx, sqlStatement)
 		if err != nil {
 			return
 		}
@@ -303,7 +303,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 						) t
 		 				ORDER BY id ASC RETURNING id`, idr.mergeRulesTable(), mergeRulesStagingTable)
 	pkgLogger.Infof(`IDR: Inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, sqlStatement)
-	rows, err := txn.Query(sqlStatement)
+	rows, err := txn.QueryContext(idr.ctx, sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
 		return
@@ -335,7 +335,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *m
 		sqlStatement = fmt.Sprintf(`SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM %s LIMIT %d OFFSET %d`, tableName, batchSize, offset)
 
 		var rows *sql.Rows
-		rows, err = txn.Query(sqlStatement)
+		rows, err = txn.QueryContext(idr.ctx, sqlStatement)
 		if err != nil {
 			return
 		}

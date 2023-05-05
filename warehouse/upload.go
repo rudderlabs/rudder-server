@@ -172,9 +172,9 @@ func setMaxParallelLoads() {
 	}
 }
 
-func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.Manager) *UploadJob {
+func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
 	return &UploadJob{
-		ctx:                  context.TODO(),
+		ctx:                  ctx,
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
 		recovery:             f.recovery,
@@ -1417,7 +1417,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
-		txn, err := dbHandle.Begin()
+		txn, err := dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
 		if err != nil {
 			return err
 		}
@@ -1532,7 +1532,7 @@ func (job *UploadJob) triggerUploadNow() (err error) {
 		{Column: "updated_at", Value: job.Now()},
 	}
 
-	txn, err := job.dbHandle.Begin()
+	txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
 	if err != nil {
 		panic(err)
 	}
@@ -1660,7 +1660,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		{Column: "updated_at", Value: job.Now()},
 	}
 
-	txn, err := job.dbHandle.Begin()
+	txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
 	if err != nil {
 		return "", fmt.Errorf("unable to start transaction: %w", err)
 	}
