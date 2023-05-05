@@ -42,7 +42,7 @@ func (*warehouseGRPC) GetWHUploads(ctx context.Context, request *proto.WHUploads
 		uploadsReq.SourceID,
 		uploadsReq.DestinationID,
 	)
-	res, err := uploadsReq.GetWhUploads()
+	res, err := uploadsReq.GetWhUploads(ctx)
 	return res, err
 }
 

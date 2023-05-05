@@ -184,7 +184,7 @@ var statusMap = map[string]string{
 	"failed":  "%failed%",
 }
 
-func (uploadsReq *UploadsReq) GetWhUploads() (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReq) GetWhUploads(ctx context.Context) (uploadsRes *proto.WHUploadsResponse, err error) {
 	uploadsRes = &proto.WHUploadsResponse{
 		Uploads: make([]*proto.WHUploadResponse, 0),
 	}
@@ -206,11 +206,11 @@ func (uploadsReq *UploadsReq) GetWhUploads() (uploadsRes *proto.WHUploadsRespons
 	}
 
 	if UploadAPI.isMultiWorkspace {
-		uploadsRes, err = uploadsReq.warehouseUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+		uploadsRes, err = uploadsReq.warehouseUploadsForHosted(ctx, authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 		return
 	}
 
-	uploadsRes, err = uploadsReq.warehouseUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+	uploadsRes, err = uploadsReq.warehouseUploads(ctx, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	return
 }
 
@@ -358,7 +358,7 @@ func (uploadReq *UploadReq) GetWHUpload(ctx context.Context) (*proto.WHUploadRes
 		Name:     "",
 		API:      uploadReq.API,
 	}
-	upload.Tables, err = tableUploadReq.GetWhTableUploads()
+	upload.Tables, err = tableUploadReq.GetWhTableUploads(ctx)
 	if err != nil {
 		return &proto.WHUploadResponse{}, status.Errorf(codes.Code(code.Code_INTERNAL), err.Error())
 	}
@@ -415,14 +415,14 @@ func (uploadReq *UploadReq) TriggerWHUpload(ctx context.Context) (response *prot
 	return
 }
 
-func (tableUploadReq TableUploadReq) GetWhTableUploads() ([]*proto.WHTable, error) {
+func (tableUploadReq TableUploadReq) GetWhTableUploads(ctx context.Context) ([]*proto.WHTable, error) {
 	err := tableUploadReq.validateReq()
 	if err != nil {
 		return []*proto.WHTable{}, err
 	}
 	query := tableUploadReq.generateQuery(`id, wh_upload_id, table_name, total_events, status, error, last_exec_time, updated_at`)
 	tableUploadReq.API.log.Debug(query)
-	rows, err := tableUploadReq.API.dbHandle.Query(query)
+	rows, err := tableUploadReq.API.dbHandle.QueryContext(ctx, query)
 	if err != nil {
 		tableUploadReq.API.log.Errorf(err.Error())
 		return []*proto.WHTable{}, err
@@ -544,12 +544,12 @@ func (uploadsReq *UploadsReq) authorizedSources() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (uploadsReq *UploadsReq) getUploadsFromDB(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
+func (uploadsReq *UploadsReq) getUploadsFromDB(ctx context.Context, isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
 	var totalUploadCount int32
 	var err error
 	uploads := make([]*proto.WHUploadResponse, 0)
 
-	rows, err := uploadsReq.API.dbHandle.Query(query)
+	rows, err := uploadsReq.API.dbHandle.QueryContext(ctx, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return nil, 0, err
@@ -651,7 +651,7 @@ func (uploadsReq *UploadsReq) getUploadsFromDB(isMultiWorkspace bool, query stri
 	return uploads, totalUploadCount, err
 }
 
-func (uploadsReq *UploadsReq) getTotalUploadCount(whereClause string) (int32, error) {
+func (uploadsReq *UploadsReq) getTotalUploadCount(ctx context.Context, whereClause string) (int32, error) {
 	var totalUploadCount int32
 	query := fmt.Sprintf(`
 	select
@@ -665,12 +665,12 @@ func (uploadsReq *UploadsReq) getTotalUploadCount(whereClause string) (int32, er
 		query += fmt.Sprintf(` %s`, whereClause)
 	}
 	uploadsReq.API.log.Info(query)
-	err := uploadsReq.API.dbHandle.QueryRow(query).Scan(&totalUploadCount)
+	err := uploadsReq.API.dbHandle.QueryRowContext(ctx, query).Scan(&totalUploadCount)
 	return totalUploadCount, err
 }
 
 // for hosted workspaces - we get the uploads and the total upload count using the same query
-func (uploadsReq *UploadsReq) warehouseUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReq) warehouseUploadsForHosted(ctx context.Context, authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var (
 		uploads          []*proto.WHUploadResponse
 		totalUploadCount int32
@@ -724,7 +724,7 @@ func (uploadsReq *UploadsReq) warehouseUploadsForHosted(authorizedSourceIDs []st
 	uploadsReq.API.log.Info(query)
 
 	// get uploads from db
-	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDB(true, query)
+	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDB(ctx, true, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
@@ -743,7 +743,7 @@ func (uploadsReq *UploadsReq) warehouseUploadsForHosted(authorizedSourceIDs []st
 }
 
 // for non hosted workspaces - we get the uploads and the total upload count using separate queries
-func (uploadsReq *UploadsReq) warehouseUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReq) warehouseUploads(ctx context.Context, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var (
 		uploads          []*proto.WHUploadResponse
 		totalUploadCount int32
@@ -784,13 +784,13 @@ func (uploadsReq *UploadsReq) warehouseUploads(selectFields string) (uploadsRes 
 	// we get uploads for non hosted workspaces in two steps
 	// this is because getting this info via 2 queries is faster than getting it via one query(using the 'count(*) OVER()' clause)
 	// step1 - get all uploads
-	uploads, _, err = uploadsReq.getUploadsFromDB(false, query)
+	uploads, _, err = uploadsReq.getUploadsFromDB(ctx, false, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
 	}
 	// step2 - get total upload count
-	totalUploadCount, err = uploadsReq.getTotalUploadCount(whereClause)
+	totalUploadCount, err = uploadsReq.getTotalUploadCount(ctx, whereClause)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
