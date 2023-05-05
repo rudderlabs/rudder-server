@@ -32,17 +32,18 @@ type avroSchema struct {
 
 // configuration is the config that is required to send data to Kafka
 type configuration struct {
-	Topic         string
-	HostName      string
-	Port          string
-	SslEnabled    bool
-	CACertificate string
-	UseSASL       bool
-	SaslType      string
-	Username      string
-	Password      string
-	ConvertToAvro bool
-	AvroSchemas   []avroSchema
+	Topic             string
+	HostName          string
+	Port              string
+	SslEnabled        bool
+	CACertificate     string
+	UseSASL           bool
+	SaslType          string
+	Username          string
+	Password          string
+	ConvertToAvro     bool
+	EmbedAvroSchemaID bool
+	AvroSchemas       []avroSchema
 }
 
 func (c *configuration) validate() error {
@@ -362,8 +363,10 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		return nil, err
 	}
 
-	// @TODO embedAvroSchemaID should come from control plane (i.e. destination config)
 	embedAvroSchemaID := config.GetBool("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+strings.ToUpper(destination.ID), false)
+	if !embedAvroSchemaID {
+		embedAvroSchemaID = destConfig.EmbedAvroSchemaID
+	}
 	return &ProducerManager{
 		p:                 p,
 		timeout:           o.Timeout,

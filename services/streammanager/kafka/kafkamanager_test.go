@@ -1096,34 +1096,12 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		}
 	})
 
-	t.Run("avro with schema id embedded", func(t *testing.T) {
-		t.Cleanup(config.Reset)
+	type User struct {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	}
 
-		// Setting up mocks
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
-		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
-		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-		// Produce message in Avro format with schema 2
-		t.Log("Creating Kafka producer")
-		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, true)
-		p, err := NewProducer(&dest, common.Opts{})
-		require.NoError(t, err)
-		require.NotNil(t, p)
-
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
-		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
-
-		// Start consuming
-		t.Log("Consuming messages")
-		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
-		require.NoError(t, err)
-
-		type User struct {
-			FirstName string `json:"first_name"`
-			LastName  string `json:"last_name"`
-		}
-
+	consumeUserMsg := func(t *testing.T, deser *avro.GenericDeserializer) {
 		timeout := time.After(5 * time.Second)
 		for {
 			select {
@@ -1149,6 +1127,58 @@ func TestAvroSchemaRegistry(t *testing.T) {
 				}
 			}
 		}
+	}
+
+	t.Run("avro with schema id embedded", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+
+		// Setting up mocks
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+
+		// Produce message in Avro format with schema 2
+		t.Log("Creating Kafka producer")
+		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, true)
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NoError(t, err)
+		require.NotNil(t, p)
+
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
+
+		// Start consuming
+		t.Log("Consuming messages")
+		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
+		require.NoError(t, err)
+
+		consumeUserMsg(t, deser)
+	})
+
+	t.Run("avro with schema id embedding enabled via config", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+
+		// Setting up mocks
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+
+		// Produce message in Avro format with schema 2
+		t.Log("Creating Kafka producer")
+		destConfig["embedAvroSchemaID"] = true
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NoError(t, err)
+		require.NotNil(t, p)
+
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
+
+		// Start consuming
+		t.Log("Consuming messages")
+		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
+		require.NoError(t, err)
+
+		consumeUserMsg(t, deser)
 	})
 }
 
