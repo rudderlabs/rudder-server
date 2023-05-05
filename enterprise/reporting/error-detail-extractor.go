@@ -2,11 +2,15 @@ package reporting
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -21,7 +25,7 @@ var (
 	numRegex   = regexp.MustCompile(`\d+`)
 	// notWordRegex = regexp.MustCompile(`\W+`)
 	// idRegex                 = regexp.MustCompile(`\b(?\=\w*\d)[\w-]+\b`)
-	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "Error", "error", "error_message"}
+	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "Error", "error", "error_message", "errors", "response"}
 )
 
 type ExtractorT struct {
@@ -157,4 +161,98 @@ func (ext *ExtractorT) CleanUpErrorMessage(errMsg string) string {
 	// replacedStr = idRegex.ReplaceAllString(replacedStr, "")
 
 	return strings.TrimSpace(replacedStr)
+}
+
+func IsJSON(s string) bool {
+	parsedBytes := gjson.ParseBytes([]byte(s))
+
+	s = strings.TrimSpace(s)
+	var isEndingFlowerBrace, isEndingArrBrace bool
+	if len(s) > 0 {
+		isEndingFlowerBrace = s[len(s)-1] == '}'
+		isEndingArrBrace = s[len(s)-1] == ']'
+	}
+	return ((parsedBytes.IsObject() && isEndingFlowerBrace) || (parsedBytes.IsArray() && isEndingArrBrace))
+}
+
+// New Logic introduced as previous logic had problems
+// Still in testing phase
+func GetValFromJSON(errorMsgKeys []string, jsonStr, parentKey string) (string, string) {
+	parsedResult := gjson.ParseBytes([]byte(jsonStr))
+	var resStr string = jsonStr
+
+	if strings.TrimSpace(resStr) != "" && !IsJSON(resStr) {
+		return resStr, parentKey
+	}
+
+	if parsedResult.IsObject() {
+		// Transformer proxy case
+		// "destinationResponse" is always included in "response" object itself
+		// Example: { "response": "{\"destinationResponse\": \"...\"}"}
+		destRespResult := parsedResult.Get("destinationResponse")
+		if destRespResult.Exists() {
+			parsedResult = destRespResult
+		}
+		// Traverse through the map
+		for k, parsedRes := range parsedResult.Map() {
+			r := parsedRes.String()
+
+			computedErrMsgKey := k
+			if strings.TrimSpace(parentKey) != "" {
+				computedErrMsgKey = fmt.Sprintf("%s.%v", parentKey, k)
+			}
+
+			if IsJSON(r) {
+				r, computedErrMsgKey = GetValFromJSON(errorMsgKeys, r, computedErrMsgKey)
+			}
+			// verify whether evaluated is from right set of probable error message keys
+			keyArr := strings.Split(computedErrMsgKey, ".")
+			// fmt.Printf("Object keyArr:%#v\n", keyArr)
+			isValidErrMsgKey := lo.Contains(errorMsgKeys, keyArr[len(keyArr)-1])
+			if isValidErrMsgKey {
+				return r, keyArr[len(keyArr)-1]
+			}
+		}
+	}
+
+	if parsedResult.IsArray() {
+		for i, res := range parsedResult.Array() {
+			arrElStr := res.String()
+			computedErrMsgKey := strconv.Itoa(i)
+			if strings.TrimSpace(parentKey) != "" {
+				computedErrMsgKey = fmt.Sprintf("%s.%v", parentKey, i)
+			}
+			if !IsJSON(arrElStr) {
+				if strings.TrimSpace(arrElStr) != "" {
+					// fmt.Println("computedErrMsgKey: ", computedErrMsgKey)
+					// fmt.Println("parentKey: ", parentKey)
+					return arrElStr, parentKey
+				}
+			}
+
+			var r string
+			r, computedErrMsgKey = GetValFromJSON(errorMsgKeys, res.String(), computedErrMsgKey)
+
+			// verify whether evaluated is from right set of probable error message keys
+			keyArr := strings.Split(computedErrMsgKey, ".")
+			fmt.Printf("Array keyArr:%#v\n", keyArr)
+			isValidErrMsgKey := lo.Contains(errorMsgKeys, keyArr[len(keyArr)-1])
+			if isValidErrMsgKey {
+				return r, keyArr[len(keyArr)-1]
+			}
+		}
+	}
+
+	// if code reaches here, it means resStr is JSON string
+	return "", parentKey
+}
+
+func (ext *ExtractorT) GetErrorMessageFromResponse(jsonStr string) string {
+	responseJson := gjson.Get(jsonStr, "response")
+	var jsonString string = jsonStr
+	if responseJson.Exists() {
+		jsonString = responseJson.String()
+	}
+	errMsg, _ := GetValFromJSON(ext.ErrorMessageKeys, jsonString, "")
+	return errMsg
 }
