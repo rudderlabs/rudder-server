@@ -378,10 +378,10 @@ func (*mockUploader) GetLocalSchema(context.Context) (model.Schema, error) {
 }
 func (*mockUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
-func (*mockUploader) UseRudderStorage() bool                                           { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time                               { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                                          { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)                        { return time.Time{}, time.Time{} }
+func (*mockUploader) UseRudderStorage() bool                                { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                               { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
 func (*mockUploader) GetTableSchemaInWarehouse(_ string) model.TableSchema {
 	return model.TableSchema{}
 }
