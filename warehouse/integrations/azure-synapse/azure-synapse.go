@@ -686,7 +686,7 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) bool {
 		as.Logger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
 		return false
 	}
-	defer func() {_ = rows.Close()}()
+	defer func() { _ = rows.Close() }()
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -710,14 +710,14 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) bool {
 }
 
 // FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
-func (as *AzureSynapse) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
+func (as *AzureSynapse) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())
 	if err != nil {
 		return
 	}
-	defer func() {_ = dbHandle.Close()}()
+	defer func() { _ = dbHandle.Close() }()
 
 	schema = make(model.Schema)
 	unrecognizedSchema = make(model.Schema)

@@ -53,7 +53,6 @@ func (*warehouseGRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUpl
 		SourceID:      request.SourceId,
 		DestinationID: request.DestinationId,
 		API:           UploadAPI,
-		Ctx:           ctx,
 	}
 	uploadsReq.API.log.Infof(
 		"[TriggerWHUploads] Triggering warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
@@ -61,13 +60,12 @@ func (*warehouseGRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUpl
 		uploadsReq.SourceID,
 		uploadsReq.DestinationID,
 	)
-	res, err := uploadsReq.TriggerWhUploads()
+	res, err := uploadsReq.TriggerWhUploads(ctx)
 	return res, err
 }
 
 func (*warehouseGRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
 	uploadReq := UploadReq{
-		Ctx:         ctx,
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
@@ -77,7 +75,7 @@ func (*warehouseGRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRe
 		uploadReq.WorkspaceID,
 		uploadReq.UploadId,
 	)
-	res, err := uploadReq.GetWHUpload()
+	res, err := uploadReq.GetWHUpload(ctx)
 	return res, err
 }
 
@@ -87,7 +85,6 @@ func (*warehouseGRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.Bo
 
 func (*warehouseGRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
 	uploadReq := UploadReq{
-		Ctx:         ctx,
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
@@ -97,7 +94,7 @@ func (*warehouseGRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUplo
 		uploadReq.WorkspaceID,
 		uploadReq.UploadId,
 	)
-	res, err := uploadReq.TriggerWHUpload()
+	res, err := uploadReq.TriggerWHUpload(ctx)
 	return res, err
 }
 

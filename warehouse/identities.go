@@ -162,13 +162,13 @@ func (wh *HandleT) hasLocalIdentityData(warehouse model.Warehouse) (exists bool)
 	return
 }
 
-func (wh *HandleT) hasWarehouseData(warehouse model.Warehouse) (bool, error) {
+func (wh *HandleT) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
 		panic(err)
 	}
 
-	empty, err := whManager.IsEmpty(context.TODO(), warehouse)
+	empty, err := whManager.IsEmpty(ctx, warehouse)
 	if err != nil {
 		return false, err
 	}
@@ -361,7 +361,7 @@ func (*HandleT) setFailedStat(warehouse model.Warehouse, err error) {
 	}
 }
 
-func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
+func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse model.Warehouse) {
 	if isDestHistoricIdentitiesPopulated(warehouse) || isDestHistoricIdentitiesPopulateInProgress(warehouse) {
 		return
 	}
@@ -391,7 +391,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 				return
 			}
 			var hasData bool
-			hasData, err = wh.hasWarehouseData(warehouse)
+			hasData, err = wh.hasWarehouseData(ctx, warehouse)
 			if err != nil {
 				pkgLogger.Errorf(`[WH]: Error checking for data in %s:%s:%s, err: %s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name, err.Error())
 				return
@@ -415,7 +415,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 			Warehouse: warehouse,
 		}, whManager)
 
-		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(context.TODO(), job.upload.ID)
+		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(ctx, job.upload.ID)
 		if tableUploadsErr != nil {
 			pkgLogger.Warnw("table uploads exists",
 				logfield.UploadJobID, job.upload.ID,
@@ -435,7 +435,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 			}
 		}
 
-		err = whManager.Setup(context.TODO(), job.warehouse, job)
+		err = whManager.Setup(ctx, job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)
 			return
@@ -450,7 +450,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 		}
 		job.schemaHandle = &schemaHandle
 
-		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(context.TODO(), job.warehouse)
+		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx, job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)

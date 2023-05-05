@@ -235,20 +235,20 @@ func (rs *Redshift) CreateTable(ctx context.Context, tableName string, columns m
 	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY(%q) `, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
 	rs.Logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.DB.ExecContext(ctx,sqlStatement)
+	_, err = rs.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
 func (rs *Redshift) DropTable(ctx context.Context, tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
 	rs.Logger.Infof("RS: Dropping table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.DB.ExecContext(ctx,fmt.Sprintf(sqlStatement, rs.Namespace, tableName))
+	_, err = rs.DB.ExecContext(ctx, fmt.Sprintf(sqlStatement, rs.Namespace, tableName))
 	return
 }
 
 func (rs *Redshift) schemaExists(ctx context.Context) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
-	err = rs.DB.QueryRowContext(ctx,sqlStatement).Scan(&exists)
+	err = rs.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
 	return
 }
 
@@ -268,7 +268,7 @@ func (rs *Redshift) AddColumns(ctx context.Context, tableName string, columnsInf
 		)
 		rs.Logger.Infof("RS: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
 
-		if _, err := rs.DB.ExecContext(ctx,query); err != nil {
+		if _, err := rs.DB.ExecContext(ctx, query); err != nil {
 			if CheckAndIgnoreColumnAlreadyExistError(err) {
 				rs.Logger.Infow("column already exists",
 					logfield.SourceID, rs.Warehouse.Source.ID,
@@ -321,7 +321,7 @@ func (rs *Redshift) DeleteBy(ctx context.Context, tableNames []string, params wa
 		rs.Logger.Infof("RS: Executing the query %v", sqlStatement)
 
 		if rs.EnableDeleteByJobs {
-			_, err = rs.DB.ExecContext(ctx,sqlStatement,
+			_, err = rs.DB.ExecContext(ctx, sqlStatement,
 				params.JobRunId,
 				params.TaskRunId,
 				params.SourceId,
@@ -340,7 +340,7 @@ func (rs *Redshift) DeleteBy(ctx context.Context, tableNames []string, params wa
 func (rs *Redshift) createSchema(ctx context.Context) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, rs.Namespace)
 	rs.Logger.Infof("Creating schema name in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.DB.ExecContext(ctx,sqlStatement)
+	_, err = rs.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
@@ -403,7 +403,7 @@ func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (str
 func (rs *Redshift) dropStagingTables(ctx context.Context, stagingTableNames []string) {
 	for _, stagingTableName := range stagingTableNames {
 		rs.Logger.Infof("WH: dropping table %+v\n", stagingTableName)
-		_, err := rs.DB.ExecContext(ctx,fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
+		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
 			rs.Logger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v", err)
 		}
@@ -1053,7 +1053,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	}
 
 	stmt := `SET query_group to 'RudderStack'`
-	_, err = db.ExecContext(ctx,stmt)
+	_, err = db.ExecContext(ctx, stmt)
 	if err != nil {
 		return nil, fmt.Errorf("redshift set query_group error : %v", err)
 	}
@@ -1111,7 +1111,7 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) bool {
 	rs.Logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
-		_, err := rs.DB.ExecContext(ctx,fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
+		_, err := rs.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
 			rs.Logger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
 			delSuccess = false
@@ -1282,7 +1282,7 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace
-func (rs *Redshift) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
+func (rs *Redshift) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := rs.connect(ctx)
@@ -1477,7 +1477,7 @@ func (rs *Redshift) LoadTestTable(ctx context.Context, location, tableName strin
 		rs.Logger.Infof("RS: Running COPY command for load test table: %s with sqlStatement: %s", tableName, sanitisedSQLStmt)
 	}
 
-	_, err = rs.DB.ExecContext(ctx,sqlStatement)
+	_, err = rs.DB.ExecContext(ctx, sqlStatement)
 
 	return normalizeError(err)
 }

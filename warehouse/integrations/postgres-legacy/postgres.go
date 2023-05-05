@@ -858,7 +858,7 @@ func (pg *Postgres) dropDanglingStagingTables(ctx context.Context) bool {
 		pg.logger.Errorf("WH: PG: Error dropping dangling staging tables in PG: %v\nQuery: %s\n", err, sqlStatement)
 		return false
 	}
-	defer func() {_ = rows.Close()}()
+	defer func() { _ = rows.Close() }()
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -882,14 +882,14 @@ func (pg *Postgres) dropDanglingStagingTables(ctx context.Context) bool {
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Postgres) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
+func (pg *Postgres) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	dbHandle, err := pg.connect()
 	if err != nil {
 		return
 	}
-	defer func() {_ = dbHandle.Close()}()
+	defer func() { _ = dbHandle.Close() }()
 
 	schema = make(model.Schema)
 	unrecognizedSchema = make(model.Schema)
@@ -918,7 +918,7 @@ func (pg *Postgres) FetchSchema(ctx context.Context, warehouse model.Warehouse) 
 		pg.logger.Infof("PG: No rows, while fetching schema from  destination:%v, query: %v", pg.Warehouse.Identifier, sqlStatement)
 		return schema, unrecognizedSchema, nil
 	}
-	defer func() {_ = rows.Close()}()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var tName, cName, cType sql.NullString
 		err = rows.Scan(&tName, &cName, &cType)

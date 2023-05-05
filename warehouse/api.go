@@ -45,11 +45,9 @@ type UploadsReq struct {
 	Limit           int32
 	Offset          int32
 	API             UploadAPIT
-	Ctx             context.Context
 }
 
 type UploadReq struct {
-	Ctx         context.Context
 	WorkspaceID string
 	UploadId    int64
 	API         UploadAPIT
@@ -216,7 +214,7 @@ func (uploadsReq *UploadsReq) GetWhUploads() (uploadsRes *proto.WHUploadsRespons
 	return
 }
 
-func (uploadsReq *UploadsReq) TriggerWhUploads() (response *proto.TriggerWhUploadsResponse, err error) {
+func (uploadsReq *UploadsReq) TriggerWhUploads(ctx context.Context) (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadsReq.validateReq()
 	defer func() {
 		if err != nil {
@@ -247,7 +245,7 @@ func (uploadsReq *UploadsReq) TriggerWhUploads() (response *proto.TriggerWhUploa
 		return
 	}
 	if pendingUploadCount == int64(0) {
-		pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForDestination(uploadsReq.Ctx, uploadsReq.DestinationID)
+		pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForDestination(ctx, uploadsReq.DestinationID)
 		if err != nil {
 			return
 		}
@@ -271,7 +269,7 @@ func (uploadsReq *UploadsReq) TriggerWhUploads() (response *proto.TriggerWhUploa
 	return
 }
 
-func (uploadReq *UploadReq) GetWHUpload() (*proto.WHUploadResponse, error) {
+func (uploadReq *UploadReq) GetWHUpload(ctx context.Context) (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
 	if err != nil {
 		return &proto.WHUploadResponse{}, status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), err.Error())
@@ -289,7 +287,7 @@ func (uploadReq *UploadReq) GetWHUpload() (*proto.WHUploadResponse, error) {
 		isUploadArchived                                            sql.NullBool
 	)
 
-	row := uploadReq.API.dbHandle.QueryRowContext(uploadReq.Ctx, query)
+	row := uploadReq.API.dbHandle.QueryRowContext(ctx, query)
 	err = row.Scan(
 		&upload.Id,
 		&upload.SourceId,
@@ -368,7 +366,7 @@ func (uploadReq *UploadReq) GetWHUpload() (*proto.WHUploadResponse, error) {
 	return &upload, nil
 }
 
-func (uploadReq *UploadReq) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
+func (uploadReq *UploadReq) TriggerWHUpload(context.Context) (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadReq.validateReq()
 	defer func() {
 		if err != nil {
@@ -382,7 +380,7 @@ func (uploadReq *UploadReq) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		return
 	}
 
-	upload, err := repo.NewUploads(uploadReq.API.dbHandle).Get(uploadReq.Ctx, uploadReq.UploadId)
+	upload, err := repo.NewUploads(uploadReq.API.dbHandle).Get(ctx, uploadReq.UploadId)
 	if err == model.ErrUploadNotFound {
 		return &proto.TriggerWhUploadsResponse{
 			Message:    NoSuchSync,

@@ -1,10 +1,9 @@
 package warehouse
 
 import (
-	context2 "context"
+	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/net/context"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -80,7 +79,7 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 	if err != nil {
 		return err
 	}
-	client, err := whManager.Connect(context2.TODO(), warehouse)
+	client, err := whManager.Connect(context.TODO(), warehouse)
 	if err != nil {
 		return err
 	}

@@ -223,7 +223,7 @@ func (pg *Postgres) loadTable(
 			logfield.Query, query,
 		)
 
-		result, err := txn.ExecContext(ctx,query)
+		result, err := txn.ExecContext(ctx, query)
 		if err != nil {
 			return loadTableResponse{}, fmt.Errorf("deleting from original table for dedup: %w", err)
 		}

@@ -353,7 +353,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 						wh.setupIdentityTables(warehouse)
 						if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
 							// non-blocking populate historic identities
-							wh.populateHistoricIdentities(warehouse)
+							wh.populateHistoricIdentities(ctx, warehouse)
 						}
 					}
 				}

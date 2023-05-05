@@ -26,12 +26,12 @@ import (
 )
 
 type BigQuery struct {
-	db                *bigquery.Client
-	namespace         string
-	warehouse         model.Warehouse
-	projectID         string
-	uploader          warehouseutils.Uploader
-	Logger            logger.Logger
+	db        *bigquery.Client
+	namespace string
+	warehouse model.Warehouse
+	projectID string
+	uploader  warehouseutils.Uploader
+	Logger    logger.Logger
 
 	setUsersLoadPartitionFirstEventFilter bool
 	customPartitionsEnabled               bool
@@ -894,7 +894,7 @@ func (*BigQuery) AlterColumn(context.Context, string, string, string) (model.Alt
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace
-func (bq *BigQuery) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
+func (bq *BigQuery) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 	"google.golang.org/grpc"

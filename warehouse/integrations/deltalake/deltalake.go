@@ -871,7 +871,7 @@ func (*Deltalake) AlterColumn(context.Context, string, string, string) (model.Al
 }
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
-func (dl *Deltalake) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
+func (dl *Deltalake) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	Client, err := dl.connectToWarehouse(ctx)

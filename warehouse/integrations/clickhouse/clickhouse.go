@@ -945,7 +945,7 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 func (*Clickhouse) CrashRecover(context.Context) {}
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *Clickhouse) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
+func (ch *Clickhouse) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	dbHandle, err := ch.connectToClickhouse(ch.getConnectionCredentials(), true)

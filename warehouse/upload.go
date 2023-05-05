@@ -744,15 +744,15 @@ func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[s
 }
 
 func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err error) {
-	idr := identity.HandleT{
-		Ctx:                job.ctx,
-		Warehouse:          job.warehouse,
-		DB:                 job.dbHandle,
-		UploadID:           job.upload.ID,
-		Uploader:           job,
-		WarehouseManager:   job.whManager,
-		LoadFileDownloader: downloader.NewDownloader(&job.warehouse, job, 8),
-	}
+	idr := identity.New(
+		job.ctx,
+		job.warehouse,
+		job.dbHandle,
+		job,
+		job.upload.ID,
+		job.whManager,
+		downloader.NewDownloader(&job.warehouse, job, 8),
+	)
 	if populateHistoricIdentities {
 		return idr.ResolveHistoricIdentities()
 	}

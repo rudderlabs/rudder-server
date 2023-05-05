@@ -64,13 +64,17 @@ type DestinationValidator interface {
 
 type destinationValidationImpl struct{}
 
-func (*dummyUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
-func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error) { return model.Schema{}, nil }
+func (*dummyUploader) GetSchemaInWarehouse() model.Schema { return model.Schema{} }
+func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error) {
+	return model.Schema{}, nil
+}
 func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
-func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
-func (*dummyUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
-func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) { return "", nil }
+func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
+func (*dummyUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
+func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
+	return "", nil
+}
 func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
 	return model.TableSchema{}
 }

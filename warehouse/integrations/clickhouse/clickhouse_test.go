@@ -372,14 +372,16 @@ type mockUploader struct {
 	metadata    []warehouseutils.LoadFile
 }
 
-func (*mockUploader) GetSchemaInWarehouse() model.Schema        { return model.Schema{} }
-func (*mockUploader) GetLocalSchema(context.Context) (model.Schema, error)             { return model.Schema{}, nil }
+func (*mockUploader) GetSchemaInWarehouse() model.Schema { return model.Schema{} }
+func (*mockUploader) GetLocalSchema(context.Context) (model.Schema, error) {
+	return model.Schema{}, nil
+}
 func (*mockUploader) UpdateLocalSchema(ctx context.Context, schema model.Schema) error { return nil }
 func (*mockUploader) ShouldOnDedupUseNewRecord() bool                                  { return false }
-func (*mockUploader) UseRudderStorage() bool                    { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time        { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                   { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Time{}, time.Time{} }
+func (*mockUploader) UseRudderStorage() bool                                           { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time                               { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                                          { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)                        { return time.Time{}, time.Time{} }
 func (*mockUploader) GetTableSchemaInWarehouse(_ string) model.TableSchema {
 	return model.TableSchema{}
 }

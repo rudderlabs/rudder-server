@@ -18,14 +18,16 @@ type mockUploader struct {
 	localSchema model.Schema
 }
 
-func (*mockUploader) GetSchemaInWarehouse() model.Schema               { return model.Schema{} }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
-func (*mockUploader) UseRudderStorage() bool                           { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInUpload(string) model.TableSchema  { return nil }
-func (*mockUploader) GetSampleLoadFileLocation(context2.Context, string) (string, error) { return "", nil }
+func (*mockUploader) GetSchemaInWarehouse() model.Schema              { return model.Schema{} }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
+func (*mockUploader) UseRudderStorage() bool                          { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                         { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)       { return time.Time{}, time.Time{} }
+func (*mockUploader) GetTableSchemaInUpload(string) model.TableSchema { return nil }
+func (*mockUploader) GetSampleLoadFileLocation(context2.Context, string) (string, error) {
+	return "", nil
+}
 func (*mockUploader) GetLoadFilesMetadata(context2.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return nil
 }

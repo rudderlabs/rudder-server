@@ -750,7 +750,7 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) bool {
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *MSSQL) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema model.Schema, unrecognizedSchema model.Schema, err error) {
+func (ms *MSSQL) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ms.getConnectionCredentials())
