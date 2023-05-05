@@ -28,6 +28,7 @@ func (*mockUploader) GetTableSchemaInUpload(string) model.TableSchema { return n
 func (*mockUploader) GetSampleLoadFileLocation(context2.Context, string) (string, error) {
 	return "", nil
 }
+
 func (*mockUploader) GetLoadFilesMetadata(context2.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return nil
 }

@@ -1114,7 +1114,7 @@ func (ch *Clickhouse) LoadTestTable(ctx context.Context, _, tableName string, pa
 		return
 	}
 
-	stmt, err := txn.Prepare(sqlStatement)
+	stmt, err := txn.PrepareContext(ctx, sqlStatement)
 	if err != nil {
 		return
 	}

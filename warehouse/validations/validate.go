@@ -75,6 +75,7 @@ func (*dummyUploader) GetLoadFileGenStartTIme() time.Time                    { r
 func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
 	return "", nil
 }
+
 func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
 	return model.TableSchema{}
 }
