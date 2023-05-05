@@ -23,7 +23,7 @@ func TestQueryWrapper(t *testing.T) {
 	bqTestCredentials, err := bqHeloer.GetBQTestCredentials()
 	require.NoError(t, err)
 
-	db, err := bigquery.Connect(context.TODO(), &bigquery.BQCredentials{
+	db, err := bigquery.Connect(context.Background(), &bigquery.BQCredentials{
 		ProjectID:   bqTestCredentials.ProjectID,
 		Credentials: bqTestCredentials.Credentials,
 	})

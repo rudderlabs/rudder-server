@@ -35,7 +35,7 @@ var _ = Describe("Stats", Ordered, func() {
 
 		initWarehouse()
 
-		err = setupDB(context.TODO(), getConnectionString())
+		err = setupDB(context.Background(), getConnectionString())
 		Expect(err).To(BeNil())
 
 		sqlStatement, err := os.ReadFile("testdata/sql/stats_test.sql")

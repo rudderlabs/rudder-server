@@ -190,7 +190,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 	t.Run("GetForUploadID", func(t *testing.T) {
 		t.Parallel()
 		u := repo.NewUploads(db)
-		uploadId, err := u.CreateWithStagingFiles(context.TODO(), model.Upload{}, stagingFiles)
+		uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
 		require.NoError(t, err)
 		testcases := []struct {
 			name          string

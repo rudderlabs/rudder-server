@@ -161,7 +161,7 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Event flow", func(t *testing.T) {
 		db, err := bigquery.NewClient(
-			context.TODO(),
+			ctx,
 			bqTestCredentials.ProjectID, option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
 		)
 		require.NoError(t, err)
@@ -171,7 +171,7 @@ func TestIntegration(t *testing.T) {
 		t.Cleanup(func() {
 			for _, dataset := range []string{namespace, sourcesNamespace} {
 				require.NoError(t, testhelper.WithConstantRetries(func() error {
-					return db.Dataset(dataset).DeleteWithContents(context.TODO())
+					return db.Dataset(dataset).DeleteWithContents(ctx)
 				}))
 			}
 		})
@@ -210,7 +210,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
 
 					testhelper.SetConfig(t, []warehouseutils.KeyValue{
 						{
@@ -241,7 +241,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
 
 					testhelper.SetConfig(t, []warehouseutils.KeyValue{
 						{
@@ -268,7 +268,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
 
 					testhelper.SetConfig(t, []warehouseutils.KeyValue{
 						{
@@ -295,15 +295,15 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
 
-					err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
+					err = db.Dataset(namespace).Create(ctx, &bigquery.DatasetMetadata{
 						Location: "US",
 					})
 					require.NoError(t, err)
 
 					err = db.Dataset(namespace).Table("tracks").Create(
-						context.Background(),
+						ctx,
 						&bigquery.TableMetadata{
 							Schema: []*bigquery.FieldSchema{{
 								Name: "timestamp",

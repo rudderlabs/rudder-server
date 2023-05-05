@@ -73,7 +73,7 @@ func TestFetchSSHKeys(t *testing.T) {
 				Password: "password",
 			})
 
-			keys, err := client.GetDestinationSSHKeys(context.TODO(), tc.destinationID)
+			keys, err := client.GetDestinationSSHKeys(context.Background(), tc.destinationID)
 			require.Equal(t, tc.expectedError, err)
 			require.Equal(t, tc.expectedKeyPair, keys)
 		})

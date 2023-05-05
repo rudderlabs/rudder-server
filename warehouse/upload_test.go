@@ -215,7 +215,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 		initWarehouse()
 
-		err = setupDB(context.TODO(), getConnectionString())
+		err = setupDB(context.Background(), getConnectionString())
 		Expect(err).To(BeNil())
 
 		sqlStatement, err := os.ReadFile("testdata/sql/upload_test.sql")
@@ -259,7 +259,7 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Total rows in staging files", func() {
-		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.TODO(), job.upload)
+		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.Background(), job.upload)
 		Expect(err).To(BeNil())
 		Expect(count).To(BeEquivalentTo(5))
 	})
@@ -269,7 +269,7 @@ var _ = Describe("Upload", Ordered, func() {
 		Expect(err).To(BeNil())
 		exportingData, err := time.Parse(time.RFC3339, "2020-04-21T15:16:19.687716Z")
 		Expect(err).To(BeNil())
-		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.TODO(), job.upload.ID)).
+		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.Background(), job.upload.ID)).
 			To(BeEquivalentTo(model.Timings{
 				{
 					"exported_data":  exportedData,
@@ -281,7 +281,7 @@ var _ = Describe("Upload", Ordered, func() {
 	Describe("Staging files and load files events match", func() {
 		When("Matched", func() {
 			It("Should not send stats", func() {
-				job.matchRowsInStagingAndLoadFiles(context.TODO())
+				job.matchRowsInStagingAndLoadFiles(context.Background())
 			})
 		})
 
@@ -293,7 +293,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 				job.stats = mockStats
 				job.stagingFileIDs = []int64{1, 2}
-				job.matchRowsInStagingAndLoadFiles(context.TODO())
+				job.matchRowsInStagingAndLoadFiles(context.Background())
 			})
 		})
 	})

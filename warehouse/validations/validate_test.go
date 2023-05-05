@@ -67,7 +67,7 @@ func TestValidator(t *testing.T) {
 		sslmode   = "disable"
 	)
 
-	ctx := context.TODO()
+	ctx := context.Background()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
