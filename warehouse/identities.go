@@ -440,7 +440,7 @@ func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse mod
 			job.setUploadError(err, model.Aborted)
 			return
 		}
-		defer whManager.Cleanup(context.TODO())
+		defer whManager.Cleanup(ctx)
 
 		schemaHandle := SchemaHandle{
 			warehouse:    job.warehouse,

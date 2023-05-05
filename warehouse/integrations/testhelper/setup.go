@@ -521,7 +521,7 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 
 	require.NoError(t, WithConstantRetries(func() error {
 		destinationValidator := validations.NewDestinationValidator()
-		response := destinationValidator.Validate(context.TODO(), &destination)
+		response := destinationValidator.Validate(context.Background(), &destination)
 		if !response.Success {
 			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
 		}
@@ -649,7 +649,7 @@ func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 	require.NoError(t, err)
 
 	url := fmt.Sprintf(`%s/v1/setConfig`, misc.GetWarehouseURL())
-	_, err = warehouseutils.PostRequestWithTimeout(context.TODO(), url, payload, time.Second*60)
+	_, err = warehouseutils.PostRequestWithTimeout(context.Background(), url, payload, time.Second*60)
 	require.NoError(t, err)
 }
 

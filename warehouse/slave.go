@@ -130,7 +130,7 @@ func (job *Payload) getFileManager(config interface{}, useRudderStorage bool) (f
  * If error occurs with the current config and current revision is different from staging revision
  * We retry with the staging revision config if it is present
  */
-func (jobRun *JobRun) downloadStagingFile() error {
+func (jobRun *JobRun) downloadStagingFile(ctx context.Context) error {
 	job := jobRun.job
 	downloadTask := func(config interface{}, useRudderStorage bool) (err error) {
 		filePath := jobRun.stagingFilePath
@@ -147,7 +147,7 @@ func (jobRun *JobRun) downloadStagingFile() error {
 
 		downloadStart := time.Now()
 
-		err = downloader.Download(context.TODO(), file, job.StagingFileLocation)
+		err = downloader.Download(ctx, file, job.StagingFileLocation)
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to download file")
 			return err
@@ -214,7 +214,7 @@ type loadFileUploadOutput struct {
 	UseRudderStorage      bool
 }
 
-func (jobRun *JobRun) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutput, error) {
+func (jobRun *JobRun) uploadLoadFilesToObjectStorage(ctx context.Context) ([]loadFileUploadOutput, error) {
 	job := jobRun.job
 	uploader, err := job.getFileManager(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
@@ -233,7 +233,7 @@ func (jobRun *JobRun) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutput, 
 	// close chan to avoid memory leak ranging over it
 	defer close(uploadJobChan)
 	uploadErrorChan := make(chan error, numLoadFileUploadWorkers)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	for i := 0; i < numLoadFileUploadWorkers; i++ {
 		go func(ctx context.Context) {
@@ -245,7 +245,7 @@ func (jobRun *JobRun) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutput, 
 				default:
 					tableName := uploadJob.tableName
 					loadFileUploadStart := time.Now()
-					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, uploadJob.outputFile, tableName)
+					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(ctx, uploader, uploadJob.outputFile, tableName)
 					if err != nil {
 						uploadErrorChan <- err
 						return
@@ -293,7 +293,7 @@ func (jobRun *JobRun) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutput, 
 	}
 }
 
-func (jobRun *JobRun) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile encoding.LoadFileWriter, tableName string) (filemanager.UploadOutput, error) {
+func (jobRun *JobRun) uploadLoadFileToObjectStorage(ctx context.Context, uploader filemanager.FileManager, uploadFile encoding.LoadFileWriter, tableName string) (filemanager.UploadOutput, error) {
 	job := jobRun.job
 	file, err := os.Open(uploadFile.GetLoadFile().Name()) // opens file in read mode
 	if err != nil {
@@ -304,9 +304,9 @@ func (jobRun *JobRun) uploadLoadFileToObjectStorage(uploader filemanager.FileMan
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
 	if slices.Contains(warehouseutils.TimeWindowDestinations, job.DestinationType) {
-		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
+		uploadLocation, err = uploader.Upload(ctx, file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
-		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
+		uploadLocation, err = uploader.Upload(ctx, file, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}
 	return uploadLocation, err
 }
@@ -385,7 +385,7 @@ func (event *BatchRouterEvent) GetColumnInfo(columnName string) (columnInfo ware
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutput, err error) {
+func processStagingFile(ctx context.Context, job Payload, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutput, err error) {
 	processStartTime := time.Now()
 	jobRun := JobRun{
 		job:          job,
@@ -404,7 +404,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	jobRun.setStagingFileDownloadPath(workerIndex)
 
 	// This creates the file, so on successful creation remove it
-	err = jobRun.downloadStagingFile()
+	err = jobRun.downloadStagingFile(ctx)
 	if err != nil {
 		return loadFileUploadOutputs, err
 	}
@@ -586,11 +586,11 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			pkgLogger.Errorf("Error while closing load file %s : %v", loadFile.GetLoadFile().Name(), err)
 		}
 	}
-	loadFileUploadOutputs, err = jobRun.uploadLoadFilesToObjectStorage()
+	loadFileUploadOutputs, err = jobRun.uploadLoadFilesToObjectStorage(ctx)
 	return loadFileUploadOutputs, err
 }
 
-func processClaimedUploadJob(claimedJob pgnotifier.Claim, workerIndex int) {
+func processClaimedUploadJob(ctx context.Context, claimedJob pgnotifier.Claim, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
 		warehouseutils.NewTimerStat(statsWorkerClaimProcessingTime, warehouseutils.Tag{Name: tagWorkerid, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
@@ -612,7 +612,7 @@ func processClaimedUploadJob(claimedJob pgnotifier.Claim, workerIndex int) {
 	}
 	job.BatchID = claimedJob.BatchID
 	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
-	loadFileOutputs, err := processStagingFile(job, workerIndex)
+	loadFileOutputs, err := processStagingFile(ctx, job, workerIndex)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -636,7 +636,7 @@ type AsyncJobRunResult struct {
 	Id     string
 }
 
-func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
+func runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 	warehouse, err := getDestinationFromSlaveConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
@@ -653,11 +653,11 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
-	err = whManager.Setup(context.TODO(), warehouse, whasyncjob)
+	err = whManager.Setup(ctx, warehouse, whasyncjob)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
-	defer whManager.Cleanup(context.TODO())
+	defer whManager.Cleanup(ctx)
 	tableNames := []string{asyncjob.TableName}
 	if asyncjob.AsyncJobType == "deletebyjobrunid" {
 		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
@@ -668,7 +668,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 			JobRunId:  metadata.JobRunId,
 			StartTime: metadata.StartTime,
 		}
-		err = whManager.DeleteBy(context.TODO(), tableNames, params)
+		err = whManager.DeleteBy(ctx, tableNames, params)
 	}
 	asyncJobRunResult := AsyncJobRunResult{
 		Result: err == nil,
@@ -677,7 +677,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 	return asyncJobRunResult, err
 }
 
-func processClaimedAsyncJob(claimedJob pgnotifier.Claim) {
+func processClaimedAsyncJob(ctx context.Context, claimedJob pgnotifier.Claim) {
 	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
 	handleErr := func(err error, claim pgnotifier.Claim) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
@@ -692,7 +692,7 @@ func processClaimedAsyncJob(claimedJob pgnotifier.Claim) {
 		handleErr(err, claimedJob)
 		return
 	}
-	result, err := runAsyncJob(job)
+	result, err := runAsyncJob(ctx, job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -726,9 +726,9 @@ func setupSlave(ctx context.Context) error {
 				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s", claimedJob.ID, idx, slaveID, claimedJob.JobType)
 
 				if claimedJob.JobType == jobs.AsyncJobType {
-					processClaimedAsyncJob(claimedJob)
+					processClaimedAsyncJob(ctx, claimedJob)
 				} else {
-					processClaimedUploadJob(claimedJob, idx)
+					processClaimedUploadJob(ctx, claimedJob, idx)
 				}
 
 				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)

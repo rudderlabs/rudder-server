@@ -46,7 +46,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		fileNamesLock sync.RWMutex
 	)
 
-	objects := l.uploader.GetLoadFilesMetadata(context.TODO(), warehouseutils.GetLoadFilesOptions{Table: tableName})
+	objects := l.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(
 		l.warehouse.Destination.DestinationDefinition.Name,
 		l.warehouse.Destination.Config,
