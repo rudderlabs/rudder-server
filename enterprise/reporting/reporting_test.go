@@ -407,11 +407,9 @@ func TestGetErrorMessageFromResponse(t *testing.T) {
 
 	for i, tc := range tcs {
 		t.Run(fmt.Sprintf("payload-%v", i), func(t *testing.T) {
-
 			msg := ext.GetErrorMessage(tc.inputStr)
 			require.Equal(t, tc.expected, msg)
 		})
-
 	}
 }
 
