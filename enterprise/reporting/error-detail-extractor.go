@@ -14,6 +14,8 @@ import (
 )
 
 const (
+	responseKey = "response"
+
 	destinationResponseKey = "destinationResponse"
 	errorsKey              = "errors"
 )
@@ -86,7 +88,7 @@ func (ext *ExtractorT) getJsonResponse(sampleResponse string) string {
 	}
 	// if sampleResponse is indeed json
 	sampleResp := gjson.Parse(sampleResponse)
-	respRes := gjson.GetBytes([]byte(sampleResp.String()), "response")
+	respRes := gjson.GetBytes([]byte(sampleResp.String()), responseKey)
 	if respRes.Exists() && IsJSON(respRes.Str) {
 		var j json.RawMessage
 		e := json.Unmarshal([]byte(respRes.String()), &j)
@@ -95,7 +97,7 @@ func (ext *ExtractorT) getJsonResponse(sampleResponse string) string {
 			ext.log.Errorf("(GetJsonResponse)UnmarshalErr: %v\tResponse:%v\n", e, respRes.String())
 			return respRes.String()
 		}
-		byteArr, setErr := sjson.SetBytes([]byte(sampleResp.String()), "response", string(j))
+		byteArr, setErr := sjson.SetBytes([]byte(sampleResp.String()), responseKey, string(j))
 		if setErr != nil {
 			ext.log.Errorf("SetBytesError: %v\tWill return empty string as error response\n", setErr)
 			return ""
@@ -110,7 +112,7 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 	if !IsJSON(jsonStr) {
 		return jsonStr
 	}
-	error_reason_result := gjson.GetMany(jsonStr, "reason", "Error", "response")
+	error_reason_result := gjson.GetMany(jsonStr, "reason", "Error", responseKey)
 	for _, erRes := range error_reason_result {
 		if erRes.Exists() {
 			erResStr := erRes.String()
@@ -122,7 +124,7 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 					return strings.Split(erResStr, "\n")[0]
 				}
 				return ""
-			case "response":
+			case responseKey:
 				if len(erResStr) == 0 {
 					return "EMPTY"
 				}
@@ -232,7 +234,7 @@ func getErrorMessageFromResponse(resp map[string]interface{}, messageKeys []stri
 		}
 	}
 
-	if errors, ok := getValue([]string{"errors"}, findKeys([]string{"errors"}, resp)).([]interface{}); ok && len(errors) > 0 {
+	if errors, ok := getValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{}); ok && len(errors) > 0 {
 		s := make([]string, len(errors))
 		for i, v := range errors {
 			s[i] = fmt.Sprint(v)
@@ -245,7 +247,7 @@ func getErrorMessageFromResponse(resp map[string]interface{}, messageKeys []stri
 }
 
 func getErrorFromWarehouse(resp map[string]interface{}) string {
-	errorsI, ok := resp["errors"]
+	errorsI, ok := resp[errorsKey]
 	if !ok {
 		return ""
 	}
