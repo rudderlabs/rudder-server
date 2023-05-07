@@ -15,18 +15,20 @@ import (
 
 const (
 	responseKey = "response"
+	spaceStr    = " "
 
 	destinationResponseKey = "destinationResponse"
 	errorsKey              = "errors"
 )
 
 var (
-	urlRegex   = regexp.MustCompile(`\b((?:https?://|www\.)\S+)\b`)
-	ipRegex    = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	emailRegex = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
-	numRegex   = regexp.MustCompile(`\d+`)
-	// notWordRegex = regexp.MustCompile(`\W+`)
-	// idRegex                 = regexp.MustCompile(`\b(?\=\w*\d)[\w-]+\b`)
+	urlRegex     = regexp.MustCompile(`\b((?:https?://|www\.)\S+)\b`)
+	ipRegex      = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	emailRegex   = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
+	notWordRegex = regexp.MustCompile(`\W+`)
+	// idRegex      = regexp.MustCompile(`\b(?=\w*\d)[\w-]+\b`)
+	idRegex = regexp.MustCompile(`\b([a-zA-Z0-9-]*\d[a-zA-Z0-9-]*)\b`)
+	sRegex  = regexp.MustCompile(`\s+`)
 
 	WhitespacesRegex          = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 	defaultErrorMessageKeys   = []string{"message", "description", "detail", "title", "error", "error_message"}
@@ -276,12 +278,13 @@ func IsJSON(s string) bool {
 }
 
 func (ext *ExtractorT) CleanUpErrorMessage(errMsg string) string {
-	replacedStr := urlRegex.ReplaceAllString(errMsg, "")
-	replacedStr = ipRegex.ReplaceAllString(replacedStr, "")
-	replacedStr = emailRegex.ReplaceAllString(replacedStr, "")
-	replacedStr = numRegex.ReplaceAllString(replacedStr, "")
-	// replacedStr = notWordRegex.ReplaceAllString(replacedStr, "")
-	// replacedStr = idRegex.ReplaceAllString(replacedStr, "")
+	var regexdMsg string
+	regexdMsg = urlRegex.ReplaceAllLiteralString(errMsg, spaceStr)
+	regexdMsg = ipRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
+	regexdMsg = emailRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
+	regexdMsg = notWordRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
+	regexdMsg = idRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
+	regexdMsg = sRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
 
-	return strings.TrimSpace(replacedStr)
+	return regexdMsg
 }
