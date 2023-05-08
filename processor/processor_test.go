@@ -1167,7 +1167,7 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().Get(gomock.Any()).Return(0, false).After(callUnprocessed).Times(3)
+			c.MockDedup.EXPECT().Get(gomock.Any()).Return(int64(0), false).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.

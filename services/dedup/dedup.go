@@ -213,7 +213,7 @@ func (d *dedup) MarkProcessed(messages []Message) error {
 }
 
 func (d *dedup) Get(messageID string) (int64, bool) {
-	var value int64
+	var payloadSize int64
 	var found bool
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(messageID))
@@ -221,7 +221,7 @@ func (d *dedup) Get(messageID string) (int64, bool) {
 			return err
 		}
 		if itemValue, err := item.ValueCopy(nil); err == nil {
-			value, err = strconv.ParseInt(string(itemValue), 10, 64)
+			payloadSize, _ = strconv.ParseInt(string(itemValue), 10, 64)
 			found = true
 		}
 		return nil
@@ -229,7 +229,7 @@ func (d *dedup) Get(messageID string) (int64, bool) {
 	if err != nil && err != badger.ErrKeyNotFound {
 		panic(err)
 	}
-	return value, found
+	return payloadSize, found
 }
 
 func (d *dedup) Close() {
