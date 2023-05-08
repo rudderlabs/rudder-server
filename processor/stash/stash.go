@@ -420,5 +420,4 @@ func (*HandleT) calculateSleepTime(limitReached bool) time.Duration {
 		return time.Duration(0)
 	}
 	return config.GetDuration("Processor.errReadLoopSleep", 30, time.Second)
-
 }
