@@ -205,77 +205,45 @@ func TestIntegration(t *testing.T) {
 		})
 
 		testCases := []struct {
-			name               string
-			schema             string
-			writeKey           string
-			sourceID           string
-			destinationID      string
-			messageID          string
-			warehouseEventsMap testhelper.EventsCountMap
-			prerequisite       func(t testing.TB)
+			name                string
+			schema              string
+			writeKey            string
+			sourceID            string
+			destinationID       string
+			messageID           string
+			warehouseEventsMap  testhelper.EventsCountMap
+			loadTableStrategy   string
+			useParquetLoadFiles bool
 		}{
 			{
-				name:               "Merge Mode",
-				writeKey:           writeKey,
-				schema:             namespace,
-				sourceID:           sourceID,
-				destinationID:      destinationID,
-				warehouseEventsMap: mergeEventsMap(),
-				prerequisite: func(t testing.TB) {
-					t.Helper()
-					testhelper.SetConfig(t, []warehouseutils.KeyValue{
-						{
-							Key:   "Warehouse.deltalake.loadTableStrategy",
-							Value: "MERGE",
-						},
-						{
-							Key:   "Warehouse.deltalake.useParquetLoadFiles",
-							Value: "false",
-						},
-					})
-				},
+				name:                "Merge Mode",
+				writeKey:            writeKey,
+				schema:              namespace,
+				sourceID:            sourceID,
+				destinationID:       destinationID,
+				warehouseEventsMap:  mergeEventsMap(),
+				loadTableStrategy:   "MERGE",
+				useParquetLoadFiles: false,
 			},
 			{
-				name:               "Append Mode",
-				writeKey:           writeKey,
-				schema:             namespace,
-				sourceID:           sourceID,
-				destinationID:      destinationID,
-				warehouseEventsMap: appendEventsMap(),
-				prerequisite: func(t testing.TB) {
-					t.Helper()
-					testhelper.SetConfig(t, []warehouseutils.KeyValue{
-						{
-							Key:   "Warehouse.deltalake.loadTableStrategy",
-							Value: "APPEND",
-						},
-						{
-							Key:   "Warehouse.deltalake.useParquetLoadFiles",
-							Value: "false",
-						},
-					})
-				},
+				name:                "Append Mode",
+				writeKey:            writeKey,
+				schema:              namespace,
+				sourceID:            sourceID,
+				destinationID:       destinationID,
+				warehouseEventsMap:  appendEventsMap(),
+				loadTableStrategy:   "APPEND",
+				useParquetLoadFiles: false,
 			},
 			{
-				name:               "Parquet load files",
-				writeKey:           writeKey,
-				schema:             namespace,
-				sourceID:           sourceID,
-				destinationID:      destinationID,
-				warehouseEventsMap: mergeEventsMap(),
-				prerequisite: func(t testing.TB) {
-					t.Helper()
-					testhelper.SetConfig(t, []warehouseutils.KeyValue{
-						{
-							Key:   "Warehouse.deltalake.loadTableStrategy",
-							Value: "MERGE",
-						},
-						{
-							Key:   "Warehouse.deltalake.useParquetLoadFiles",
-							Value: "true",
-						},
-					})
-				},
+				name:                "Parquet load files",
+				writeKey:            writeKey,
+				schema:              namespace,
+				sourceID:            sourceID,
+				destinationID:       destinationID,
+				warehouseEventsMap:  mergeEventsMap(),
+				loadTableStrategy:   "MERGE",
+				useParquetLoadFiles: true,
 			},
 		}
 
@@ -283,12 +251,14 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
+				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_LOAD_TABLE_STRATEGY", tc.loadTableStrategy)
+				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
+
 				ts := testhelper.WareHouseTest{
 					Schema:        tc.schema,
 					WriteKey:      tc.writeKey,
 					SourceID:      tc.sourceID,
 					DestinationID: tc.destinationID,
-					Prerequisite:  tc.prerequisite,
 					JobsDB:        jobsDB,
 					Provider:      provider,
 					UserID:        testhelper.GetUserId(provider),
@@ -367,13 +337,7 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				testhelper.SetConfig(t, []warehouseutils.KeyValue{
-					{
-						Key:   "Warehouse.deltalake.useParquetLoadFiles",
-						Value: strconv.FormatBool(tc.useParquetLoadFiles),
-					},
-				})
-
+				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 				testhelper.VerifyConfigurationTest(t, dest)
 			})
 		}

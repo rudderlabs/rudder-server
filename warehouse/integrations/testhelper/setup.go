@@ -1,7 +1,6 @@
 package testhelper
 
 import (
-	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -641,17 +640,6 @@ func SourcesWarehouseEventsMap() EventsCountMap {
 
 func GetUserId(provider string) string {
 	return fmt.Sprintf("userId_%s_%s", strings.ToLower(provider), warehouseutils.RandHex())
-}
-
-func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
-	t.Helper()
-
-	payload, err := json.Marshal(&kvs)
-	require.NoError(t, err)
-
-	url := fmt.Sprintf(`%s/v1/setConfig`, misc.GetWarehouseURL())
-	_, err = warehouseutils.PostRequestWithTimeout(context.TODO(), url, payload, time.Second*60)
-	require.NoError(t, err)
 }
 
 func RandSchema(provider string) string {
