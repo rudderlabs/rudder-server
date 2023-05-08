@@ -94,7 +94,7 @@ type dedup struct {
 	clearDB  bool
 }
 
-func New(path string, fns ...OptFn) *dedup {
+func New(path string, fns ...OptFn) Dedup {
 	d := &dedup{
 		path:   path,
 		logger: loggerForBadger{logger.NewLogger().Child("dedup")},
