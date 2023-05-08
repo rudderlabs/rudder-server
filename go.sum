@@ -1839,8 +1839,8 @@ github.com/rs/zerolog v1.28.0/go.mod h1:NILgTygv/Uej1ra5XxGf82ZFSLk58MFGAUS2o6us
 github.com/rudderlabs/analytics-go v3.3.3+incompatible h1:OG0XlKoXfr539e2t1dXtTB+Gr89uFW+OUNQBVhHIIBY=
 github.com/rudderlabs/analytics-go v3.3.3+incompatible/go.mod h1:LF8/ty9kUX4PTY3l5c97K3nZZaX5Hwsvt+NBaRL/f30=
 github.com/rudderlabs/compose-test v0.0.0-20221205185752-1290775b38f6 h1:sBa1HsUybK7bFJ6J86wsCyEoQhUfrowP4MMrwmjzuWE=
-github.com/rudderlabs/rudder-go-kit v0.13.1 h1:Mfb9aWb7IRgBEXHieOv3FTAkGPk1mY5zjzLl0PQfOCs=
-github.com/rudderlabs/rudder-go-kit v0.13.1/go.mod h1:3P7g4yt8TxiN6zSGvl2h/9dh1ae6GQi5zRP02rva+28=
+github.com/rudderlabs/rudder-go-kit v0.13.3 h1:Tl1yN7TZXjVXYe7TBkMYV2yv6tfdOZpDvRxUrH74C/0=
+github.com/rudderlabs/rudder-go-kit v0.13.3/go.mod h1:3P7g4yt8TxiN6zSGvl2h/9dh1ae6GQi5zRP02rva+28=
 github.com/rudderlabs/sql-tunnels v0.1.3 h1:o7/MX4Yj0WpAaw0uxkRmkagtzedGxUPRwyho4SMbWMQ=
 github.com/rudderlabs/sql-tunnels v0.1.3/go.mod h1:1TolUkSsrQxdXS0iyGlbLADsgkebmPcz1MxU5xBl6dE=
 github.com/russross/blackfriday v1.5.2/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
