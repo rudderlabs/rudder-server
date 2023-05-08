@@ -1167,7 +1167,7 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().Get(gomock.Any()).Return(int64(0), false).After(callUnprocessed).Times(3)
+			c.MockDedup.EXPECT().Get(gomock.Any()).Return(int64(0), false).After(callUnprocessed).Times(5)
 			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
@@ -1176,7 +1176,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil).Times(1)
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(2)).Times(1)
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(1)).Times(1)
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
@@ -1195,6 +1195,20 @@ var _ = Describe("Processor", Ordered, func() {
 			processor.dedupHandler = c.MockDedup
 			processor.multitenantI = c.MockMultitenantHandle
 			handlePendingGatewayJobs(processor)
+
+			duplicateIdx := processor.getDuplicateMessageIndexes([]types.SingularEventT{
+				{
+					"messageId": "message-some-id-1",
+				},
+				{
+					"messageId": "message-some-id-4",
+				},
+			}, map[string]int64{
+				"message-some-id-1": 10,
+			})
+			Expect(duplicateIdx).To(Equal(map[int]int64{
+				0: 0,
+			}))
 		})
 	})
 
