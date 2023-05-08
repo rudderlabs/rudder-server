@@ -3,6 +3,7 @@ package repo_test
 import (
 	"context"
 	"errors"
+	"golang.org/x/exp/slices"
 	"testing"
 	"time"
 
@@ -123,8 +124,8 @@ func TestWHSchemasRepo(t *testing.T) {
 		require.Equal(t, len(expectedTableNames), 1)
 		require.Equal(t, expectedTableNames[0].SourceId, sourceID)
 		require.Equal(t, expectedTableNames[0].DestinationId, destinationID)
-		require.Equal(t, expectedTableNames[0].Tables[0], "table_name_1")
-		require.Equal(t, expectedTableNames[0].Tables[1], "table_name_2")
+		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_1"))
+		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_2"))
 
 		t.Log("cancelled context")
 		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.Connection{connection})
@@ -135,5 +136,9 @@ func TestWHSchemasRepo(t *testing.T) {
 			[]warehouseutils.Connection{{SourceId: notFound, DestinationId: notFound}})
 		require.NoError(t, err)
 		require.Empty(t, expectedTableNames, expectedTableNames)
+
+		t.Log("empty")
+		_, err = r.GetTablesForConnection(ctx, []warehouseutils.Connection{})
+		require.EqualError(t, err, errors.New("no source id and destination id pairs provided").Error())
 	})
 }

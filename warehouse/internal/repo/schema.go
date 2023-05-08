@@ -202,9 +202,9 @@ func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []
 	// select max id for each source id and destination id pair
 	innerQueryTemplate := `SELECT max(id) FROM ` + whSchemaTableName + `
 		WHERE
-			namespace <> ''
-		AND
 			(source_id, destination_id) IN (%s)
+		AND
+			namespace <> ''
 		GROUP BY id
 	`
 	sourceIdDestinationIdArr := make([]string, len(connections))
