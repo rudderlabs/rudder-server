@@ -20,6 +20,7 @@ import (
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 )
@@ -32,17 +33,26 @@ type avroSchema struct {
 
 // configuration is the config that is required to send data to Kafka
 type configuration struct {
-	Topic         string
-	HostName      string
-	Port          string
+	Topic    string
+	HostName string
+	Port     string
+
 	SslEnabled    bool
 	CACertificate string
 	UseSASL       bool
 	SaslType      string
 	Username      string
 	Password      string
-	ConvertToAvro bool
-	AvroSchemas   []avroSchema
+
+	ConvertToAvro     bool
+	EmbedAvroSchemaID bool
+	AvroSchemas       []avroSchema
+
+	UseSSH        bool
+	SSHHost       string
+	SSHPort       string
+	SSHUser       string
+	SSHPrivateKey string
 }
 
 func (c *configuration) validate() error {
@@ -52,12 +62,19 @@ func (c *configuration) validate() error {
 	if c.HostName == "" {
 		return fmt.Errorf("hostname cannot be empty")
 	}
-	port, err := strconv.Atoi(c.Port)
-	if err != nil {
+	if err := isValidPort(c.Port); err != nil {
 		return fmt.Errorf("invalid port: %w", err)
 	}
-	if port < 1 {
-		return fmt.Errorf("invalid port: %d", port)
+	if c.UseSSH {
+		if c.SSHHost == "" {
+			return fmt.Errorf("ssh host cannot be empty")
+		}
+		if c.SSHUser == "" {
+			return fmt.Errorf("ssh user cannot be empty")
+		}
+		if err := isValidPort(c.SSHPort); err != nil {
+			return fmt.Errorf("invalid ssh port: %w", err)
+		}
 	}
 	return nil
 }
@@ -308,9 +325,22 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		}
 	}
 
-	sshConfig, err := getSSHConfig(destination.ID, config.Default)
-	if err != nil {
-		return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
+	var sshConfig *client.SSHConfig
+	if destConfig.UseSSH {
+		privateKey, err := getSSHPrivateKey(context.Background(), destination.ID)
+		if err != nil {
+			return nil, fmt.Errorf("[Kafka] invalid SSH private key: %w", err)
+		}
+		sshConfig = &client.SSHConfig{
+			Host:       destConfig.SSHHost + ":" + destConfig.SSHPort,
+			User:       destConfig.SSHUser,
+			PrivateKey: privateKey,
+		}
+	} else { // TODO: once the latest control-plane changes are in production we can safely remove this
+		sshConfig, err = getSSHConfig(destination.ID, config.Default)
+		if err != nil {
+			return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
+		}
 	}
 
 	clientConf := client.Config{
@@ -362,8 +392,10 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		return nil, err
 	}
 
-	// @TODO embedAvroSchemaID should come from control plane (i.e. destination config)
 	embedAvroSchemaID := config.GetBool("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+strings.ToUpper(destination.ID), false)
+	if !embedAvroSchemaID {
+		embedAvroSchemaID = destConfig.EmbedAvroSchemaID
+	}
 	return &ProducerManager{
 		p:                 p,
 		timeout:           o.Timeout,
@@ -779,9 +811,28 @@ func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, er
 	}
 
 	return &client.SSHConfig{
-		User:             c.GetString("ROUTER_KAFKA_SSH_USER", ""),
-		Host:             c.GetString("ROUTER_KAFKA_SSH_HOST", ""),
-		PrivateKey:       string(rawPrivateKey),
-		AcceptAnyHostKey: c.GetBool("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", false),
+		User:       c.GetString("ROUTER_KAFKA_SSH_USER", ""),
+		Host:       c.GetString("ROUTER_KAFKA_SSH_HOST", ""),
+		PrivateKey: string(rawPrivateKey),
 	}, nil
+}
+
+func getSSHPrivateKey(ctx context.Context, destinationID string) (string, error) {
+	c := controlplane.NewClient(
+		config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		backendconfig.DefaultBackendConfig.Identity(),
+	)
+	keyPair, err := c.GetDestinationSSHKeyPair(ctx, destinationID)
+	return keyPair.PrivateKey, err
+}
+
+func isValidPort(p string) error {
+	port, err := strconv.Atoi(p)
+	if err != nil {
+		return err
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("port not within valid range 1>=p<=65535: %d", port)
+	}
+	return nil
 }
