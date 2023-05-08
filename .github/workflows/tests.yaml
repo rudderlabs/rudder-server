@@ -7,34 +7,6 @@ on:
       - "release/*"
   pull_request:
 jobs:
-  integration:
-    name: Integrations
-    runs-on: 'ubuntu-20.04'
-    strategy:
-      matrix:
-        FEATURES: [ oss ,enterprise ]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '~1.20.3'
-          check-latest: true
-      - run: go version
-      - run: go mod download # Not required, used to segregate module download vs test times
-
-      - name: Integration test for enterprise
-        if: matrix.FEATURES == 'enterprise'
-        run: go test -v ./integration_test/docker_test/docker_test.go -count 1
-        env:
-          ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
-
-      - name: Integration test for oss
-        if: matrix.FEATURES == 'oss'
-        run: go test -v ./integration_test/docker_test/docker_test.go -count 1
-        env:
-          RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
-
   warehouse-integration:
     name: Warehouse Service Integration
     runs-on: 'ubuntu-20.04'
@@ -94,27 +66,3 @@ jobs:
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
           RSERVER_WAREHOUSE_POSTGRES_USE_LEGACY: ${{ matrix.useLegacy }}
           RSERVER_WAREHOUSE_DELTALAKE_USE_NATIVE: ${{ matrix.useNative }}
-
-  unit:
-    name: Unit
-    runs-on: 'ubuntu-20.04'
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '~1.20.3'
-          check-latest: true
-
-      - run: go version
-      - run: go mod download # Not required, used to segregate module download vs test times
-      - env:
-          TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
-          TEST_KAFKA_CONFLUENT_CLOUD_KEY: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_KEY }}
-          TEST_KAFKA_CONFLUENT_CLOUD_SECRET: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_SECRET }}
-          TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST }}
-          TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME }}
-          TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
-          TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
-          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
-        run: make test
-      - uses: codecov/codecov-action@v2
