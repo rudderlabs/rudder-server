@@ -29,7 +29,7 @@ import (
 
 const (
 	ErrorDetailReportsTable = "error_detail_reports"
-	MutexMapDelimitter      = "::"
+	groupKeyDelimitter      = "::"
 )
 
 var ErrorDetailReportsColumns = []string{
@@ -397,12 +397,12 @@ func (edRep *ErrorDetailReporter) getReports(currentMs int64, clientName string)
 		panic(err)
 	}
 
-	// queryStart := time.Now()
+	queryStart := time.Now()
 	err = dbHandle.QueryRow(sqlStatement).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
-	// edRep.getMinReportedAtQueryTime.Since(queryStart)
+	edRep.minReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
 		return nil, 0
 	}
@@ -410,12 +410,12 @@ func (edRep *ErrorDetailReporter) getReports(currentMs int64, clientName string)
 	sqlStatement = fmt.Sprintf(`SELECT %s FROM %s WHERE reported_at = %d`, edSelColumns, ErrorDetailReportsTable, queryMin.Int64)
 	edRep.log.Infof("[EdRep] sql statement: %s\n", sqlStatement)
 	var rows *sql.Rows
-	// queryStart = time.Now()
+	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
-	// r.getReportsQueryTime.Since(queryStart)
+	edRep.errorDetailReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
 	var metrics []*types.EDReportsDB
 	for rows.Next() {
@@ -474,24 +474,24 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 			report.DestinationDefinitionId,
 			report.PU,
 		}
-		return strings.Join(keys, "::")
+		return strings.Join(keys, groupKeyDelimitter)
 	})
 	var edReportingMetrics []*types.EDMetric
 	for _, reports := range groupedReports {
-		fstRep := reports[0]
+		firstReport := reports[0]
 		edRepSchema := types.EDMetric{
 			EDInstanceDetails: types.EDInstanceDetails{
-				WorkspaceID: fstRep.WorkspaceID,
-				Namespace:   fstRep.Namespace,
-				InstanceID:  fstRep.InstanceID,
+				WorkspaceID: firstReport.WorkspaceID,
+				Namespace:   firstReport.Namespace,
+				InstanceID:  firstReport.InstanceID,
 			},
 			EDConnectionDetails: types.EDConnectionDetails{
-				DestinationID:           fstRep.DestinationID,
-				DestinationDefinitionId: fstRep.DestinationDefinitionId,
-				SourceID:                fstRep.SourceID,
-				SourceDefinitionId:      fstRep.SourceDefinitionId,
+				DestinationID:           firstReport.DestinationID,
+				DestinationDefinitionId: firstReport.DestinationDefinitionId,
+				SourceID:                firstReport.SourceID,
+				SourceDefinitionId:      firstReport.SourceDefinitionId,
 			},
-			PU: fstRep.PU,
+			PU: firstReport.PU,
 		}
 		errs := lo.Map(reports, func(rep *types.EDReportsDB, _ int) types.EDErrorDetails {
 			return types.EDErrorDetails{
@@ -501,7 +501,6 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 				EventType:    rep.EventType,
 			}
 		})
-		// edRepSchema.errors = errs
 		edRepSchema.Errors = errs
 		edReportingMetrics = append(edReportingMetrics, &edRepSchema)
 	}
@@ -515,7 +514,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 	}
 	operation := func() error {
 		uri := fmt.Sprintf("%s/recordErrors", edRep.reportingServiceURL)
-		req, err := http.NewRequestWithContext(ctx, "POST", uri, bytes.NewBuffer(payload))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, uri, bytes.NewBuffer(payload))
 		if err != nil {
 			return err
 		}

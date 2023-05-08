@@ -22,15 +22,14 @@ const (
 )
 
 var (
-	urlRegex     = regexp.MustCompile(`\b((?:https?://|www\.)\S+)\b`)
-	ipRegex      = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	emailRegex   = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
-	notWordRegex = regexp.MustCompile(`\W+`)
-	// idRegex      = regexp.MustCompile(`\b(?=\w*\d)[\w-]+\b`)
-	idRegex = regexp.MustCompile(`\b([a-zA-Z0-9-]*\d[a-zA-Z0-9-]*)\b`)
-	sRegex  = regexp.MustCompile(`\s+`)
+	urlRegex         = regexp.MustCompile(`\b((?:https?://|www\.)\S+)\b`)
+	ipRegex          = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	emailRegex       = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
+	notWordRegex     = regexp.MustCompile(`\W+`)
+	idRegex          = regexp.MustCompile(`\b([a-zA-Z0-9-]*\d[a-zA-Z0-9-]*)\b`)
+	sRegex           = regexp.MustCompile(`\s+`)
+	WhitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
-	WhitespacesRegex          = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 	defaultErrorMessageKeys   = []string{"message", "description", "detail", "title", "error", "error_message"}
 	defaultWhErrorMessageKeys = []string{"internal_processing_failed", "fetching_remote_schema_failed", "exporting_data_failed"}
 )
@@ -83,19 +82,15 @@ func unmarshalJsonToMap(jsonStr string, logger *logger.Logger) map[string]interf
 }
 
 func (ext *ExtractorT) getJsonResponse(sampleResponse string) string {
-	// json_response
-	// parses the []byte json
 	if !IsJSON(sampleResponse) {
 		return sampleResponse
 	}
-	// if sampleResponse is indeed json
 	sampleResp := gjson.Parse(sampleResponse)
 	respRes := gjson.GetBytes([]byte(sampleResp.String()), responseKey)
 	if respRes.Exists() && IsJSON(respRes.Str) {
 		var j json.RawMessage
 		e := json.Unmarshal([]byte(respRes.String()), &j)
 		if e != nil {
-			// panic(e)
 			ext.log.Errorf("(GetJsonResponse)UnmarshalErr: %v\tResponse:%v\n", e, respRes.String())
 			return respRes.String()
 		}
@@ -243,7 +238,6 @@ func getErrorMessageFromResponse(resp map[string]interface{}, messageKeys []stri
 		}
 		return strings.Join(s, ".")
 	}
-	// split the error message by newline and take the first entry
 
 	return ""
 }
