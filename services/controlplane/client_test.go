@@ -368,8 +368,14 @@ func TestGetDestinationSSHKeyPair(t *testing.T) {
 			return
 		}
 
-		if r.URL.Path != "/destinations/123/sshKeys" {
+		if r.URL.Path != "/dataplane/admin/destinations/123/sshKeys" {
 			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		username, password, ok := r.BasicAuth()
+		if !ok || username != "johnDoe" || password != "so-secret" {
+			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 
@@ -382,11 +388,11 @@ func TestGetDestinationSSHKeyPair(t *testing.T) {
 	}))
 	t.Cleanup(mockServer.Close)
 
-	client := controlplane.NewClient(
+	client := controlplane.NewAdminClient(
 		mockServer.URL,
-		&identity.Namespace{
-			Namespace:    "valid-namespace",
-			HostedSecret: "valid-secret",
+		&identity.Admin{
+			Username: "johnDoe",
+			Password: "so-secret",
 		},
 		controlplane.WithHTTPClient(mockServer.Client()),
 	)
