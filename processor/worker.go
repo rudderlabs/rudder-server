@@ -129,9 +129,9 @@ func (w *worker) start() {
 			if firstSubJob {
 				mergedJob = &storeMessage{
 					rsourcesStats:         subJob.rsourcesStats,
-					uniqueMessageIds:      make(map[string]struct{}),
+					uniqueMessageIds:      make(map[string]int64),
 					procErrorJobsByDestID: make(map[string][]*jobsdb.JobT),
-					sourceDupStats:        make(map[string]int),
+					sourceDupStats:        make(map[string]DupStat),
 					start:                 subJob.start,
 				}
 				firstSubJob = false

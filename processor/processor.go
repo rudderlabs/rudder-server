@@ -77,7 +77,7 @@ type Handle struct {
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
-	dedupHandler              dedup.DedupI
+	dedupHandler              dedup.Dedup
 	reporting                 types.ReportingI
 	reportingEnabled          bool
 	multitenantI              multitenant.MultiTenantI
@@ -1345,6 +1345,53 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
+func (proc *Handle) getDuplicateMessageIndexes(singularEvents []types.SingularEventT, uniqueMessageIds map[string]int64) map[int]int64 {
+	duplicateMessageIndexes := make(map[int]int64, 0)
+	var messageIDs []string
+	messageIDFound := make(map[string]bool, 0)
+
+	// Get all the message IDs in the batch
+	for idx, singularEvent := range singularEvents {
+		value := misc.GetStringifiedData(singularEvent["messageId"])
+		if _, ok := messageIDFound[value]; ok {
+			duplicateMessageIndexes[idx] = 0
+		}
+		messageIDs = append(messageIDs, value)
+		messageIDFound[value] = true
+	}
+
+	for idx, messageID := range messageIDs {
+		if _, ok := uniqueMessageIds[messageID]; ok {
+			duplicateMessageIndexes[idx] = 0
+		}
+	}
+
+	for idx, messageID := range messageIDs {
+		if payloadSize, found := proc.dedupHandler.Get(messageID); found {
+			duplicateMessageIndexes[idx] = payloadSize
+		}
+	}
+	return duplicateMessageIndexes
+}
+
+type DupStat struct {
+	Count int
+	Cmp   bool
+}
+
+func IncrementDupStatsMapByKey(m map[string]DupStat, key string, cmp bool, increment int) {
+	_, found := m[key]
+	if found {
+		dupStat := m[key]
+		dupStat.Count = dupStat.Count + increment
+	} else {
+		m[key] = DupStat{
+			Count: increment,
+			Cmp:   cmp,
+		}
+	}
+}
+
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedEventList [][]types.SingularEventT) *transformationMessage {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
@@ -1378,9 +1425,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	marshalStart := time.Now()
-	uniqueMessageIds := make(map[string]struct{})
+	uniqueMessageIds := make(map[string]int64)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
-	sourceDupStats := make(map[string]int)
+	sourceDupStats := make(map[string]DupStat)
 
 	reportMetrics := make([]*types.PUReportedMetric, 0)
 	inCountMap := make(map[string]int64)
@@ -1406,13 +1453,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
 
 		if ok {
-			var duplicateIndexes []int
+			var duplicateMessageIndexes map[int]int64
 			if proc.config.enableDedup {
-				var allMessageIdsInBatch []string
-				for _, singularEvent := range singularEvents {
-					allMessageIdsInBatch = append(allMessageIdsInBatch, misc.GetStringifiedData(singularEvent["messageId"]))
-				}
-				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
+				duplicateMessageIndexes = proc.getDuplicateMessageIndexes(singularEvents, uniqueMessageIds)
 			}
 
 			// Iterate through all the events in the batch
@@ -1424,15 +1467,23 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					continue
 				}
 
-				if proc.config.enableDedup && slices.Contains(duplicateIndexes, eventIndex) {
-					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
-					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
-					continue
+				if proc.config.enableDedup {
+					if messageIdxPayloadSize, ok := duplicateMessageIndexes[eventIndex]; ok {
+						proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
+						if eventPayload, err := jsonfast.Marshal(singularEvent); err == nil {
+							IncrementDupStatsMapByKey(sourceDupStats, source.ID, int64(len(eventPayload)) == messageIdxPayloadSize, 1)
+						}
+						continue
+					}
 				}
 
 				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
 
-				uniqueMessageIds[messageId] = struct{}{}
+				if proc.config.enableDedup {
+					if payload, err := jsonfast.Marshal(singularEvent); err == nil {
+						uniqueMessageIds[messageId] = int64(len(payload))
+					}
+				}
 				// We count this as one, not destination specific ones
 				totalEvents++
 				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
@@ -1720,8 +1771,8 @@ type transformationMessage struct {
 	reportMetrics                []*types.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
 	procErrorJobs                []*jobsdb.JobT
-	sourceDupStats               map[string]int
-	uniqueMessageIds             map[string]struct{}
+	sourceDupStats               map[string]DupStat
+	uniqueMessageIds             map[string]int64
 
 	totalEvents int
 	start       time.Time
@@ -1813,8 +1864,8 @@ type storeMessage struct {
 	procErrorJobs         []*jobsdb.JobT
 
 	reportMetrics    []*types.PUReportedMetric
-	sourceDupStats   map[string]int
-	uniqueMessageIds map[string]struct{}
+	sourceDupStats   map[string]DupStat
+	uniqueMessageIds map[string]int64
 
 	totalEvents int
 	start       time.Time
@@ -1834,11 +1885,11 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	}
 
 	sm.reportMetrics = append(sm.reportMetrics, subJob.reportMetrics...)
-	for tag, count := range subJob.sourceDupStats {
-		sm.sourceDupStats[tag] += count
+	for id, dupStat := range subJob.sourceDupStats {
+		IncrementDupStatsMapByKey(sm.sourceDupStats, id, dupStat.Cmp, dupStat.Count)
 	}
-	for id := range subJob.uniqueMessageIds {
-		sm.uniqueMessageIds[id] = struct{}{}
+	for id, v := range subJob.uniqueMessageIds {
+		sm.uniqueMessageIds[id] = v
 	}
 	sm.totalEvents += subJob.totalEvents
 }
@@ -1981,11 +2032,14 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			if proc.config.enableDedup {
 				proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
 				if len(in.uniqueMessageIds) > 0 {
-					var dedupedMessageIdsAcrossJobs []string
-					for k := range in.uniqueMessageIds {
-						dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
+					var dedupedMessagesAcrossJobs []dedup.Message
+					for k, v := range in.uniqueMessageIds {
+						dedupedMessagesAcrossJobs = append(dedupedMessagesAcrossJobs, dedup.Message{
+							ID:   k,
+							Size: v,
+						})
 					}
-					err = proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+					err = proc.dedupHandler.MarkProcessed(dedupedMessagesAcrossJobs)
 					if err != nil {
 						return err
 					}
@@ -2635,11 +2689,11 @@ func subJobMerger(mergedJob, subJob *storeMessage) *storeMessage {
 	}
 
 	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
-	for tag, count := range subJob.sourceDupStats {
-		mergedJob.sourceDupStats[tag] += count
+	for id, dupStat := range subJob.sourceDupStats {
+		IncrementDupStatsMapByKey(mergedJob.sourceDupStats, id, dupStat.Cmp, dupStat.Count)
 	}
-	for id := range subJob.uniqueMessageIds {
-		mergedJob.uniqueMessageIds[id] = struct{}{}
+	for id, v := range subJob.uniqueMessageIds {
+		mergedJob.uniqueMessageIds[id] = v
 	}
 	mergedJob.totalEvents += subJob.totalEvents
 
@@ -2655,13 +2709,14 @@ func (proc *Handle) crashRecover() {
 	proc.gatewayDB.DeleteExecuting()
 }
 
-func (proc *Handle) updateSourceStats(sourceStats map[string]int, bucket string) {
-	for sourceTag, count := range sourceStats {
+func (proc *Handle) updateSourceStats(sourceStats map[string]DupStat, bucket string) {
+	for sourceTag, dupStat := range sourceStats {
 		tags := map[string]string{
-			"source": sourceTag,
+			"source":  sourceTag,
+			"sizeCmp": strconv.FormatBool(dupStat.Cmp),
 		}
 		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
-		sourceStatsD.Count(count)
+		sourceStatsD.Count(dupStat.Count)
 	}
 }
 

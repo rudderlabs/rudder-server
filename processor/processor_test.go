@@ -58,7 +58,7 @@ type testContext struct {
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB    *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReportingI
-	MockDedup             *mockDedup.MockDedupI
+	MockDedup             *mockDedup.MockDedup
 	MockMultitenantHandle *mocksMultitenant.MockMultiTenantI
 	MockRsourcesService   *rsources.MockJobService
 }
@@ -86,7 +86,7 @@ func (c *testContext) Setup() {
 			return ch
 		})
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
-	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
+	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 }
 
@@ -1167,7 +1167,7 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return([]int{1}).After(callUnprocessed).Times(2)
+			c.MockDedup.EXPECT().Get(gomock.Any()).Return(0, false).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
@@ -3243,13 +3243,17 @@ var _ = Describe("TestSubJobMerger", func() {
 		},
 
 		reportMetrics: []*types.PUReportedMetric{{}, {}},
-		sourceDupStats: map[string]int{
-			"stat-1": 1,
-			"stat-2": 2,
+		sourceDupStats: map[string]DupStat{
+			"stat-1": {
+				Count: 1,
+			},
+			"stat-2": {
+				Count: 2,
+			},
 		},
-		uniqueMessageIds: map[string]struct{}{
-			"messageId-1": {},
-			"messageId-2": {},
+		uniqueMessageIds: map[string]int64{
+			"messageId-1": 0,
+			"messageId-2": 0,
 		},
 
 		totalEvents: 2,
@@ -3258,9 +3262,9 @@ var _ = Describe("TestSubJobMerger", func() {
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 1", func() {
 			mergedJob := storeMessage{}
-			mergedJob.uniqueMessageIds = make(map[string]struct{})
+			mergedJob.uniqueMessageIds = make(map[string]int64)
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]int)
+			mergedJob.sourceDupStats = make(map[string]DupStat)
 
 			subJobs := []storeMessage{
 				{
@@ -3293,11 +3297,13 @@ var _ = Describe("TestSubJobMerger", func() {
 					reportMetrics: []*types.PUReportedMetric{
 						{},
 					},
-					sourceDupStats: map[string]int{
-						"stat-1": 1,
+					sourceDupStats: map[string]DupStat{
+						"stat-1": {
+							Count: 1,
+						},
 					},
-					uniqueMessageIds: map[string]struct{}{
-						"messageId-1": {},
+					uniqueMessageIds: map[string]int64{
+						"messageId-1": 0,
 					},
 
 					totalEvents: 1,
@@ -3332,11 +3338,13 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}},
-					sourceDupStats: map[string]int{
-						"stat-2": 2,
+					sourceDupStats: map[string]DupStat{
+						"stat-2": {
+							Count: 2,
+						},
 					},
-					uniqueMessageIds: map[string]struct{}{
-						"messageId-2": {},
+					uniqueMessageIds: map[string]int64{
+						"messageId-2": 0,
 					},
 					totalEvents: 1,
 					start:       time.Date(2022, time.March, 10, 10, 10, 10, 12, time.UTC),
@@ -3360,9 +3368,9 @@ var _ = Describe("TestSubJobMerger", func() {
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 2", func() {
 			mergedJob := storeMessage{}
-			mergedJob.uniqueMessageIds = make(map[string]struct{})
+			mergedJob.uniqueMessageIds = make(map[string]int64)
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]int)
+			mergedJob.sourceDupStats = make(map[string]DupStat)
 
 			subJobs := []storeMessage{
 				{
@@ -3405,13 +3413,17 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}, {}},
-					sourceDupStats: map[string]int{
-						"stat-1": 1,
-						"stat-2": 2,
+					sourceDupStats: map[string]DupStat{
+						"stat-1": {
+							Count: 1,
+						},
+						"stat-2": {
+							Count: 2,
+						},
 					},
-					uniqueMessageIds: map[string]struct{}{
-						"messageId-1": {},
-						"messageId-2": {},
+					uniqueMessageIds: map[string]int64{
+						"messageId-1": 0,
+						"messageId-2": 0,
 					},
 
 					totalEvents: 2,

@@ -28,29 +28,38 @@ func Test_Dedup(t *testing.T) {
 	defer d.Close()
 
 	t.Run("no duplicate if not marked as processed", func(t *testing.T) {
-		dups := d.FindDuplicates([]string{"a", "b", "c"}, nil)
-		require.Equal(t, []int{}, dups)
+		messageIDs := []string{"a", "b", "c"}
+		for _, messageID := range messageIDs {
+			_, found := d.Get(messageID)
+			require.Equal(t, false, found)
+		}
 
-		dupsAgain := d.FindDuplicates([]string{"a", "b", "c"}, nil)
-		require.Equal(t, []int{}, dupsAgain)
+		// Checking it again should still result as false
+		for _, messageID := range messageIDs {
+			_, found := d.Get(messageID)
+			require.Equal(t, false, found)
+		}
 	})
 
 	t.Run("duplicate after marked as processed", func(t *testing.T) {
-		err := d.MarkProcessed([]string{"a", "b", "c"})
+		err := d.MarkProcessed([]dedup.Message{
+			{ID: "a", Size: 1},
+			{ID: "b", Size: 2},
+			{ID: "c", Size: 3},
+		})
 		require.NoError(t, err)
-		dups := d.FindDuplicates([]string{"a", "b", "c"}, nil)
-		require.Equal(t, []int{0, 1, 2}, dups)
+		messageIDs := []string{"a", "b", "c"}
+		for idx, messageID := range messageIDs {
+			size, found := d.Get(messageID)
+			require.Equal(t, int64(idx+1), size)
+			require.Equal(t, true, found)
+		}
 
-		dupsOther := d.FindDuplicates([]string{"d", "e"}, nil)
-		require.Equal(t, []int{}, dupsOther)
-	})
-
-	t.Run("no duplicate if not marked as processed", func(t *testing.T) {
-		dups := d.FindDuplicates([]string{"x", "y", "z"}, map[string]struct{}{"x": {}, "z": {}})
-		require.Equal(t, []int{0, 2}, dups)
-
-		dupsAgain := d.FindDuplicates([]string{"x", "y", "z"}, nil)
-		require.Equal(t, []int{}, dupsAgain)
+		messageIDs = []string{"d", "e"}
+		for _, messageID := range messageIDs {
+			_, found := d.Get(messageID)
+			require.Equal(t, false, found)
+		}
 	})
 }
 
@@ -65,18 +74,21 @@ func Test_Dedup_Window(t *testing.T) {
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Second))
 	defer d.Close()
 
-	err := d.MarkProcessed([]string{"to be deleted"})
+	err := d.MarkProcessed([]dedup.Message{
+		{ID: "to be deleted", Size: 1},
+	})
 	require.NoError(t, err)
 
-	dups := d.FindDuplicates([]string{"to be deleted"}, nil)
-	require.Equal(t, []int{0}, dups)
+	_, found := d.Get("to be deleted")
+	require.Equal(t, true, found)
 
 	require.Eventually(t, func() bool {
-		return len(d.FindDuplicates([]string{"to be deleted"}, nil)) == 0
+		_, found := d.Get("to be deleted")
+		return !found
 	}, 2*time.Second, 100*time.Millisecond)
 
-	dupsAfter := d.FindDuplicates([]string{"to be deleted"}, nil)
-	require.Equal(t, []int{}, dupsAfter)
+	_, found = d.Get("to be deleted")
+	require.Equal(t, false, found)
 }
 
 func Test_Dedup_ClearDB(t *testing.T) {
@@ -89,20 +101,23 @@ func Test_Dedup_ClearDB(t *testing.T) {
 
 	{
 		d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
-		err := d.MarkProcessed([]string{"a"})
+		err := d.MarkProcessed([]dedup.Message{
+			{ID: "a", Size: 1},
+		})
 		require.NoError(t, err)
 		d.Close()
 	}
 	{
 		dNew := dedup.New(dbPath)
-		dupsAgain := dNew.FindDuplicates([]string{"a"}, nil)
-		require.Equal(t, []int{0}, dupsAgain)
+		size, found := dNew.Get("a")
+		require.Equal(t, true, found)
+		require.Equal(t, int64(1), size)
 		dNew.Close()
 	}
 	{
 		dWithClear := dedup.New(dbPath, dedup.WithClearDB())
-		dupsAgain := dWithClear.FindDuplicates([]string{"a"}, nil)
-		require.Equal(t, []int{}, dupsAgain)
+		_, found := dWithClear.Get("a")
+		require.Equal(t, false, found)
 		dWithClear.Close()
 	}
 }
@@ -118,15 +133,16 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	defer d.Close()
 
 	size := 105_000
-	messageIDs := make([]string, size)
+	messages := make([]dedup.Message, size)
 	for i := 0; i < size; i++ {
-		messageIDs[i] = uuid.New().String()
+		messages[i] = dedup.Message{
+			ID:   uuid.New().String(),
+			Size: int64(i + 1),
+		}
 	}
-	err := d.MarkProcessed(messageIDs)
+	err := d.MarkProcessed(messages)
 	require.NoError(t, err)
 }
-
-var duplicateIndexes []int
 
 func Benchmark_Dedup(b *testing.B) {
 	config.Reset()
@@ -140,13 +156,18 @@ func Benchmark_Dedup(b *testing.B) {
 	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {
 		batchSize := 1000
 
-		msgIDs := make([]string, batchSize)
+		msgIDs := make([]dedup.Message, batchSize)
 
 		for i := 0; i < b.N; i++ {
-			msgIDs[i%batchSize] = uuid.New().String()
+			msgIDs[i%batchSize] = dedup.Message{
+				ID:   uuid.New().String(),
+				Size: int64(i + 1),
+			}
 
 			if i%batchSize == batchSize-1 || i == b.N-1 {
-				duplicateIndexes = d.FindDuplicates(msgIDs[:i%batchSize], nil)
+				for _, msgID := range msgIDs[:i%batchSize] {
+					d.Get(msgID.ID)
+				}
 				err := d.MarkProcessed(msgIDs[:i%batchSize])
 				require.NoError(b, err)
 			}
