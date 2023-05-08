@@ -56,7 +56,6 @@ type Config struct {
 
 type SSHConfig struct {
 	User, Host, PrivateKey string
-	AcceptAnyHostKey       bool
 }
 
 func (c *Config) defaults() {

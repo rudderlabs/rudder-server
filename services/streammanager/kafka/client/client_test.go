@@ -733,7 +733,7 @@ func TestSSH(t *testing.T) {
 		}
 	})
 
-	// Start Kafka cluster with ZooKeeper and one broker
+	// Start Kafka cluster with ZooKeeper and three brokers
 	_, err = dockerKafka.Setup(pool, &testCleanup{t},
 		dockerKafka.WithBrokers(3),
 		dockerKafka.WithLogger(t),
@@ -763,10 +763,9 @@ func TestSSH(t *testing.T) {
 	ctx := context.Background()
 	c, err := New("tcp", []string{"kafka1:9092", "kafka2:9092", "kafka3:9092"}, Config{
 		SSHConfig: &SSHConfig{
-			User:             "linuxserver.io",
-			Host:             sshServerHost,
-			PrivateKey:       string(privateKey),
-			AcceptAnyHostKey: true,
+			User:       "linuxserver.io",
+			Host:       sshServerHost,
+			PrivateKey: string(privateKey),
 		},
 	})
 	require.NoError(t, err)
