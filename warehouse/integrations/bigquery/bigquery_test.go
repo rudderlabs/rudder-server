@@ -196,72 +196,72 @@ func TestIntegration(t *testing.T) {
 			isDedupEnabled                      bool
 			customPartitionsEnabledWorkspaceIDs string
 		}{
-			//{
-			//	name:                          "Merge mode",
-			//	schema:                        namespace,
-			//	tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			//	writeKey:                      writeKey,
-			//	sourceID:                      sourceID,
-			//	destinationID:                 destinationID,
-			//	messageID:                     misc.FastUUID().String(),
-			//	stagingFilesEventsMap:         stagingFilesEventsMap(),
-			//	stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
-			//	loadFilesEventsMap:            loadFilesEventsMap(),
-			//	tableUploadsEventsMap:         tableUploadsEventsMap(),
-			//	warehouseEventsMap:            mergeEventsMap(),
-			//	isDedupEnabled:                true,
-			//	prerequisite: func(t testing.TB) {
-			//		t.Helper()
-			//
-			//		_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
-			//	},
-			//},
-			//{
-			//	name:          "Async Job",
-			//	writeKey:      sourcesWriteKey,
-			//	sourceID:      sourcesSourceID,
-			//	destinationID: sourcesDestinationID,
-			//	schema:        sourcesNamespace,
-			//	tables:        []string{"tracks", "google_sheet"},
-			//	eventsMap:     testhelper.SourcesSendEventsMap(),
-			//	stagingFilesEventsMap: testhelper.EventsCountMap{
-			//		"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
-			//	},
-			//	stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-			//		"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
-			//	},
-			//	loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
-			//	tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
-			//	warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-			//	asyncJob:              true,
-			//	isDedupEnabled:        false,
-			//	prerequisite: func(t testing.TB) {
-			//		t.Helper()
-			//
-			//		_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
-			//	},
-			//},
-			//{
-			//	name:                          "Append mode",
-			//	schema:                        namespace,
-			//	tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			//	writeKey:                      writeKey,
-			//	sourceID:                      sourceID,
-			//	destinationID:                 destinationID,
-			//	messageID:                     misc.FastUUID().String(),
-			//	stagingFilesEventsMap:         stagingFilesEventsMap(),
-			//	stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
-			//	loadFilesEventsMap:            loadFilesEventsMap(),
-			//	tableUploadsEventsMap:         tableUploadsEventsMap(),
-			//	warehouseEventsMap:            appendEventsMap(),
-			//	skipModifiedEvents:            true,
-			//	isDedupEnabled:                false,
-			//	prerequisite: func(t testing.TB) {
-			//		t.Helper()
-			//
-			//		_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
-			//	},
-			//},
+			{
+				name:                          "Merge mode",
+				schema:                        namespace,
+				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				writeKey:                      writeKey,
+				sourceID:                      sourceID,
+				destinationID:                 destinationID,
+				messageID:                     misc.FastUUID().String(),
+				stagingFilesEventsMap:         stagingFilesEventsMap(),
+				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
+				loadFilesEventsMap:            loadFilesEventsMap(),
+				tableUploadsEventsMap:         tableUploadsEventsMap(),
+				warehouseEventsMap:            mergeEventsMap(),
+				isDedupEnabled:                true,
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+				},
+			},
+			{
+				name:          "Async Job",
+				writeKey:      sourcesWriteKey,
+				sourceID:      sourcesSourceID,
+				destinationID: sourcesDestinationID,
+				schema:        sourcesNamespace,
+				tables:        []string{"tracks", "google_sheet"},
+				eventsMap:     testhelper.SourcesSendEventsMap(),
+				stagingFilesEventsMap: testhelper.EventsCountMap{
+					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
+				},
+				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
+					"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
+				},
+				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+				asyncJob:              true,
+				isDedupEnabled:        false,
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+				},
+			},
+			{
+				name:                          "Append mode",
+				schema:                        namespace,
+				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				writeKey:                      writeKey,
+				sourceID:                      sourceID,
+				destinationID:                 destinationID,
+				messageID:                     misc.FastUUID().String(),
+				stagingFilesEventsMap:         stagingFilesEventsMap(),
+				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
+				loadFilesEventsMap:            loadFilesEventsMap(),
+				tableUploadsEventsMap:         tableUploadsEventsMap(),
+				warehouseEventsMap:            appendEventsMap(),
+				skipModifiedEvents:            true,
+				isDedupEnabled:                false,
+				prerequisite: func(t testing.TB) {
+					t.Helper()
+
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+				},
+			},
 			{
 				name:                                "Append mode with custom partition",
 				schema:                              namespace,
