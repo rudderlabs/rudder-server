@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 )
@@ -48,11 +49,10 @@ type configuration struct {
 	EmbedAvroSchemaID bool
 	AvroSchemas       []avroSchema
 
-	UseSSH        bool
-	SSHHost       string
-	SSHPort       string
-	SSHUser       string
-	SSHPrivateKey string
+	UseSSH  bool
+	SSHHost string
+	SSHPort string
+	SSHUser string
 }
 
 func (c *configuration) validate() error {
@@ -818,9 +818,12 @@ func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, er
 }
 
 func getSSHPrivateKey(ctx context.Context, destinationID string) (string, error) {
-	c := controlplane.NewClient(
+	c := controlplane.NewAdminClient(
 		config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
-		backendconfig.DefaultBackendConfig.Identity(),
+		&identity.Admin{
+			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
+			Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
+		},
 	)
 	keyPair, err := c.GetDestinationSSHKeyPair(ctx, destinationID)
 	return keyPair.PrivateKey, err
