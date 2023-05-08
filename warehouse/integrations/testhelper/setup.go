@@ -643,17 +643,6 @@ func GetUserId(provider string) string {
 	return fmt.Sprintf("userId_%s_%s", strings.ToLower(provider), warehouseutils.RandHex())
 }
 
-func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
-	t.Helper()
-
-	payload, err := json.Marshal(&kvs)
-	require.NoError(t, err)
-
-	url := fmt.Sprintf(`%s/v1/setConfig`, misc.GetWarehouseURL())
-	_, err = warehouseutils.PostRequestWithTimeout(context.Background(), url, payload, time.Second*60)
-	require.NoError(t, err)
-}
-
 func RandSchema(provider string) string {
 	hex := strings.ToLower(rand.String(12))
 	namespace := fmt.Sprintf("test_%s_%d", hex, time.Now().Unix())
