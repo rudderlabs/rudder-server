@@ -1,10 +1,12 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/linkedin/goavro/v2"
 	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
@@ -27,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
 	dockerKafka "github.com/rudderlabs/rudder-server/testhelper/destination/kafka"
+	"github.com/rudderlabs/rudder-server/testhelper/destination/sshserver"
 )
 
 var sinceDuration = time.Second
@@ -48,61 +52,55 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewProducer(t *testing.T) {
-	t.Run("missing configuration data", func(t *testing.T) {
-		t.Run("missing topic", func(t *testing.T) {
+	requiredFields := map[string]interface{}{
+		"hostname": "some-hostname",
+		"topic":    "some-topic",
+		"port":     "1234",
+	}
+	withRequired := func(m map[string]interface{}) map[string]interface{} {
+		for k, v := range requiredFields {
+			m[k] = v
+		}
+		return m
+	}
+	buildTest := func(destConfig map[string]interface{}, expectedErr string) func(*testing.T) {
+		return func(t *testing.T) {
 			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
-			dest := backendconfig.DestinationT{}
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.ErrorContains(t, err, "invalid configuration: topic cannot be empty")
-		})
-		t.Run("missing hostname", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-			destConfig := map[string]interface{}{
-				"topic": "some-topic",
-			}
 			dest := backendconfig.DestinationT{Config: destConfig}
 
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.ErrorContains(t, err, "invalid configuration: hostname cannot be empty")
-		})
-		t.Run("missing port", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-			destConfig := map[string]interface{}{
+			_, err := NewProducer(&dest, common.Opts{})
+			require.ErrorContains(t, err, expectedErr)
+		}
+	}
+	t.Run("missing configuration data", func(t *testing.T) {
+		t.Run("missing topic", buildTest(
+			map[string]interface{}{},
+			"invalid configuration: topic cannot be empty"),
+		)
+		t.Run("missing hostname", buildTest(
+			map[string]interface{}{
+				"topic": "some-topic",
+			},
+			"invalid configuration: hostname cannot be empty"),
+		)
+		t.Run("missing port", buildTest(
+			map[string]interface{}{
 				"topic":    "some-topic",
 				"hostname": "some-hostname",
-			}
-			dest := backendconfig.DestinationT{Config: destConfig}
-
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.ErrorContains(t, err, `invalid configuration: invalid port: strconv.Atoi: parsing "": invalid syntax`)
-		})
-		t.Run("invalid port", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-			destConfig := map[string]interface{}{
+			},
+			"invalid configuration: invalid port"),
+		)
+		t.Run("invalid port", buildTest(
+			map[string]interface{}{
 				"topic":    "some-topic",
 				"hostname": "some-hostname",
 				"port":     "0",
-			}
-			dest := backendconfig.DestinationT{Config: destConfig}
-
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.ErrorContains(t, err, `invalid configuration: invalid port: 0`)
-		})
-		t.Run("invalid schema", func(t *testing.T) {
-			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-			destConfig := map[string]interface{}{
-				"topic":         "some-topic",
-				"hostname":      "some-hostname",
-				"port":          "9090",
+			},
+			"invalid configuration: invalid port"),
+		)
+		t.Run("invalid schema", buildTest(
+			withRequired(map[string]interface{}{
 				"convertToAvro": true,
 				"avroSchemas": []interface{}{
 					map[string]string{"schemaId": "schema001"},
@@ -110,12 +108,45 @@ func TestNewProducer(t *testing.T) {
 						"schema": map[string]string{"name": "MyClass"},
 					},
 				},
-			}
-			dest := backendconfig.DestinationT{Config: destConfig}
-
-			p, err := NewProducer(&dest, common.Opts{})
-			require.Nil(t, p)
-			require.EqualError(t, err, `[Kafka] Error while unmarshalling destination configuration map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] convertToAvro:true hostname:some-hostname port:9090 topic:some-topic], got error: json: cannot unmarshal object into Go struct field avroSchema.AvroSchemas.Schema of type string`)
+			}),
+			"Error while unmarshalling destination configuration "+
+				"map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] "+
+				"convertToAvro:true hostname:some-hostname port:1234 topic:some-topic], "+
+				"got error: json: cannot unmarshal object into Go struct field "+
+				"avroSchema.AvroSchemas.Schema of type string"),
+		)
+		t.Run("invalid ssh config", func(t *testing.T) {
+			t.Run("missing ssh host", buildTest(
+				withRequired(map[string]interface{}{
+					"useSSH": true,
+				}),
+				"invalid configuration: ssh host cannot be empty",
+			))
+			t.Run("missing ssh port", buildTest(
+				withRequired(map[string]interface{}{
+					"useSSH":  true,
+					"sshHost": "random-host",
+					"sshUser": "johnDoe",
+				}),
+				"invalid configuration: invalid ssh port",
+			))
+			t.Run("invalid ssh port", buildTest(
+				withRequired(map[string]interface{}{
+					"useSSH":  true,
+					"sshHost": "random-host",
+					"sshUser": "johnDoe",
+					"sshPort": "65536",
+				}),
+				"invalid configuration: invalid ssh port",
+			))
+			t.Run("missing ssh user", buildTest(
+				withRequired(map[string]interface{}{
+					"useSSH":  true,
+					"sshHost": "random-host",
+					"sshPort": "1234",
+				}),
+				"invalid configuration: ssh user cannot be empty",
+			))
 		})
 	})
 
@@ -129,7 +160,6 @@ func TestNewProducer(t *testing.T) {
 			dockerKafka.WithLogger(t),
 			dockerKafka.WithBrokers(1))
 		require.NoError(t, err)
-
 		destConfig := map[string]interface{}{
 			"topic":    "some-topic",
 			"hostname": "localhost",
@@ -143,7 +173,98 @@ func TestNewProducer(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err = p.p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01"), Topic: destConfig["topic"].(string)})
+			err = p.p.Publish(ctx, client.Message{
+				Key:   []byte("key-01"),
+				Value: []byte("message-01"),
+				Topic: destConfig["topic"].(string),
+			})
+			cancel()
+			return err == nil
+		}, 60*time.Second, 100*time.Millisecond)
+	})
+
+	t.Run("ok ssh", func(t *testing.T) {
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		// Start shared Docker network
+		network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+				t.Logf("Error while removing Docker network: %v", err)
+			}
+		})
+
+		// Start Kafka cluster with ZooKeeper and one broker
+		_, err = dockerKafka.Setup(pool, &testCleanup{t},
+			dockerKafka.WithBrokers(1),
+			dockerKafka.WithLogger(t),
+			dockerKafka.WithNetwork(network),
+			dockerKafka.WithoutDockerHostListeners(),
+		)
+		require.NoError(t, err)
+
+		// Read key pair
+		publicKeyPath, err := filepath.Abs("./client/testdata/ssh/test_key.pub")
+		require.NoError(t, err)
+		privateKey, err := os.ReadFile("./client/testdata/ssh/test_key")
+		require.NoError(t, err)
+		publicKey, err := os.ReadFile(publicKeyPath)
+		require.NoError(t, err)
+
+		// Setup SSH server
+		sshServer, err := sshserver.Setup(pool, &testCleanup{t},
+			sshserver.WithPublicKeyPath(publicKeyPath),
+			sshserver.WithCredentials("linuxserver.io", ""),
+			sshserver.WithDockerNetwork(network),
+			sshserver.WithLogger(t),
+		)
+		require.NoError(t, err)
+
+		// Setup ControlPlane to return the right SSH key pair
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/destinations/123/sshKeys", r.URL.String())
+			pvtKey := bytes.ReplaceAll(privateKey, []byte("\n"), []byte("\\n"))
+			pubKey := bytes.ReplaceAll(publicKey, []byte("\n"), []byte("\\n"))
+			_, _ = w.Write([]byte(`{
+				"privateKey": "` + string(pvtKey) + `",
+				"publicKey": "` + string(pubKey) + `"
+			}`))
+		}))
+		defer t.Cleanup(srv.Close)
+
+		t.Setenv("WORKSPACE_TOKEN", "someWorkspaceToken")
+		t.Setenv("CONFIG_BACKEND_URL", srv.URL)
+
+		require.NoError(t, backendconfig.Setup(nil))
+		defer backendconfig.DefaultBackendConfig.Stop()
+
+		// Populate destConfig according to the above configuration
+		destConfig := map[string]interface{}{
+			"topic":    "some-topic",
+			"hostname": "kafka1",
+			"port":     "9092",
+			"useSSH":   true,
+			"sshHost":  "localhost",
+			"sshPort":  sshServer.Port,
+			"sshUser":  "linuxserver.io",
+		}
+		dest := backendconfig.DestinationT{ID: "123", Config: destConfig}
+
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err = p.p.Publish(ctx, client.Message{
+				Key:   []byte("key-01"),
+				Value: []byte("message-01"),
+				Topic: destConfig["topic"].(string),
+			})
 			cancel()
 			return err == nil
 		}, 60*time.Second, 100*time.Millisecond)
@@ -968,10 +1089,9 @@ func TestSSHConfig(t *testing.T) {
 		conf, err := getSSHConfig("dest1", c)
 		require.NoError(t, err)
 		require.Equal(t, &client.SSHConfig{
-			User:             "some-user",
-			Host:             "1.2.3.4:22",
-			PrivateKey:       "key content",
-			AcceptAnyHostKey: true,
+			User:       "some-user",
+			Host:       "1.2.3.4:22",
+			PrivateKey: "key content",
 		}, conf)
 	})
 }
@@ -1096,34 +1216,12 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		}
 	})
 
-	t.Run("avro with schema id embedded", func(t *testing.T) {
-		t.Cleanup(config.Reset)
+	type User struct {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	}
 
-		// Setting up mocks
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
-		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
-		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
-
-		// Produce message in Avro format with schema 2
-		t.Log("Creating Kafka producer")
-		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, true)
-		p, err := NewProducer(&dest, common.Opts{})
-		require.NoError(t, err)
-		require.NotNil(t, p)
-
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
-		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
-
-		// Start consuming
-		t.Log("Consuming messages")
-		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
-		require.NoError(t, err)
-
-		type User struct {
-			FirstName string `json:"first_name"`
-			LastName  string `json:"last_name"`
-		}
-
+	consumeUserMsg := func(t *testing.T, deser *avro.GenericDeserializer) {
 		timeout := time.After(5 * time.Second)
 		for {
 			select {
@@ -1149,6 +1247,58 @@ func TestAvroSchemaRegistry(t *testing.T) {
 				}
 			}
 		}
+	}
+
+	t.Run("avro with schema id embedded", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+
+		// Setting up mocks
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+
+		// Produce message in Avro format with schema 2
+		t.Log("Creating Kafka producer")
+		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, true)
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NoError(t, err)
+		require.NotNil(t, p)
+
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
+
+		// Start consuming
+		t.Log("Consuming messages")
+		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
+		require.NoError(t, err)
+
+		consumeUserMsg(t, deser)
+	})
+
+	t.Run("avro with schema id embedding enabled via config", func(t *testing.T) {
+		t.Cleanup(config.Reset)
+
+		// Setting up mocks
+		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
+
+		// Produce message in Avro format with schema 2
+		t.Log("Creating Kafka producer")
+		destConfig["embedAvroSchemaID"] = true
+		p, err := NewProducer(&dest, common.Opts{})
+		require.NoError(t, err)
+		require.NotNil(t, p)
+
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
+
+		// Start consuming
+		t.Log("Consuming messages")
+		deser, err := avro.NewGenericDeserializer(schemaRegistryClient, serde.ValueSerde, avro.NewDeserializerConfig())
+		require.NoError(t, err)
+
+		consumeUserMsg(t, deser)
 	})
 }
 
