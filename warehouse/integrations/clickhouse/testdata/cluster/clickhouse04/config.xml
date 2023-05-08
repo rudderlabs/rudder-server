@@ -15,7 +15,7 @@
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
-    <interserver_http_host>wh-clickhouse02</interserver_http_host>
+    <interserver_http_host>clickhouse04</interserver_http_host>
     <interserver_http_port>9009</interserver_http_port>
 
     <max_connections>4096</max_connections>
@@ -38,21 +38,21 @@
         <rudder_cluster>
             <shard>
                 <replica>
-                    <host>wh-clickhouse01</host>
+                    <host>clickhouse01</host>
                     <port>9000</port>
                 </replica>
                 <replica>
-                    <host>wh-clickhouse02</host>
+                    <host>clickhouse02</host>
                     <port>9000</port>
                 </replica>
             </shard>
             <shard>
                 <replica>
-                    <host>wh-clickhouse03</host>
+                    <host>clickhouse03</host>
                     <port>9000</port>
                 </replica>
                 <replica>
-                    <host>wh-clickhouse04</host>
+                    <host>clickhouse04</host>
                     <port>9000</port>
                 </replica>
             </shard>
@@ -61,15 +61,15 @@
 
     <zookeeper>
         <node index="1">
-            <host>wh-clickhouse-zookeeper</host>
+            <host>zookeeper</host>
             <port>2181</port>
         </node>
     </zookeeper>
 
     <macros>
         <cluster>rudder_cluster</cluster>
-        <shard>02</shard>
-        <replica>wh-clickhouse02</replica>
+        <shard>04</shard>
+        <replica>clickhouse04</replica>
     </macros>
 
     <distributed_ddl>

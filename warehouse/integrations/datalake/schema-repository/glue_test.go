@@ -111,11 +111,11 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 				testTable     = fmt.Sprintf("test_table_%s", warehouseutils.RandHex())
 			)
 
-			destination := backendconfig.DestinationT{
+			dest := backendconfig.DestinationT{
 				Config: tc.config,
 			}
 			warehouse := model.Warehouse{
-				Destination: destination,
+				Destination: dest,
 				Namespace:   testNamespace,
 			}
 

@@ -1,27 +1,19 @@
 package testhelper
 
 import (
-	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
-	promCLient "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
-
-	"github.com/minio/minio-go/v6"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -29,12 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 
 	_ "github.com/lib/pq"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
@@ -49,23 +35,10 @@ const (
 )
 
 const (
-	SnowflakeIntegrationTestCredentials     = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
-	SnowflakeRBACIntegrationTestCredentials = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
-	RedshiftIntegrationTestCredentials      = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
-	DeltalakeIntegrationTestCredentials     = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
-	BigqueryIntegrationTestCredentials      = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
-)
-
-const (
-	SnowflakeIntegrationTestSchema = "SNOWFLAKE_INTEGRATION_TEST_SCHEMA"
-	RedshiftIntegrationTestSchema  = "REDSHIFT_INTEGRATION_TEST_SCHEMA"
-	DeltalakeIntegrationTestSchema = "DATABRICKS_INTEGRATION_TEST_SCHEMA"
-	BigqueryIntegrationTestSchema  = "BIGQUERY_INTEGRATION_TEST_SCHEMA"
-)
-
-const (
-	WorkspaceConfigPath   = "/etc/rudderstack/workspaceConfig.json"
-	WorkspaceTemplatePath = "warehouse/integrations/testdata/workspaceConfig/template.json"
+	jobsDBHost     = "localhost"
+	jobsDBDatabase = "jobsdb"
+	jobsDBUser     = "rudder"
+	jobsDBPassword = "password"
 )
 
 type EventsCountMap map[string]int
@@ -76,6 +49,7 @@ type WareHouseTest struct {
 	Schema                       string
 	UserID                       string
 	MessageID                    string
+	WorkspaceID                  string
 	JobRunID                     string
 	TaskRunID                    string
 	RecordID                     string
@@ -92,8 +66,8 @@ type WareHouseTest struct {
 	JobsDB                       *sql.DB
 	AsyncJob                     bool
 	Prerequisite                 func(t testing.TB)
-	StatsToVerify                []string
 	SkipWarehouse                bool
+	HTTPPort                     int
 }
 
 func (w *WareHouseTest) init() {
@@ -150,7 +124,6 @@ func (w *WareHouseTest) VerifyEvents(t testing.TB) {
 	if !w.SkipWarehouse {
 		verifyEventsInWareHouse(t, w)
 	}
-	verifyWorkspaceIDInStats(t, w.StatsToVerify...)
 }
 
 func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
@@ -176,32 +149,6 @@ func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 	if !w.SkipWarehouse {
 		verifyEventsInWareHouse(t, w)
 	}
-	verifyWorkspaceIDInStats(t)
-}
-
-func SetUpJobsDB(t testing.TB) *sql.DB {
-	t.Helper()
-
-	pgCredentials := &postgres.Credentials{
-		DBName:   "jobsdb",
-		Password: "password",
-		User:     "rudder",
-		Host:     "wh-jobsDb",
-		SSLMode:  "disable",
-		Port:     "5432",
-	}
-
-	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		pgCredentials.User, pgCredentials.Password, pgCredentials.Host, pgCredentials.Port, pgCredentials.DBName,
-	)
-	db, err := sql.Open("postgres", dsn)
-	require.NoError(t, err)
-
-	err = db.Ping()
-	require.NoError(t, err)
-
-	return db
 }
 
 func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
@@ -210,7 +157,6 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 
 	var (
 		tableName         = "wh_staging_files"
-		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		stagingFileEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -240,7 +186,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 		   	created_at > $4;
 	`
 	t.Logf("Checking events in staging files for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
-		workspaceID,
+		wareHouseTest.WorkspaceID,
 		wareHouseTest.SourceID,
 		wareHouseTest.DestinationID,
 		wareHouseTest.TimestampBeforeSendingEvents,
@@ -249,7 +195,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	operation = func() bool {
 		err = db.QueryRow(
 			sqlStatement,
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -345,7 +291,6 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Started verifying events in table uploads")
 
 	var (
-		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		tableUploadEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -382,7 +327,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 			   wh_table_uploads.status = 'exported_data';
 		`
 		t.Logf("Checking events in table uploads for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -392,7 +337,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 		operation = func() bool {
 			err = db.QueryRow(
 				sqlStatement,
-				workspaceID,
+				wareHouseTest.WorkspaceID,
 				wareHouseTest.SourceID,
 				wareHouseTest.DestinationID,
 				wareHouseTest.TimestampBeforeSendingEvents,
@@ -487,7 +432,6 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying async job")
 
-	workspaceID := "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 	asyncPayload := strings.NewReader(
 		fmt.Sprintf(
 			AsyncWhPayload,
@@ -496,7 +440,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TaskRunID,
 			wareHouseTest.DestinationID,
 			time.Now().UTC().Format("2006-01-02 15:04:05"),
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 		),
 	)
 	t.Logf("Run async job for sourceID: %s, DestinationID: %s, jobRunID: %s, taskRunID: %s",
@@ -506,7 +450,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		wareHouseTest.TaskRunID,
 	)
 
-	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST")
+	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
 
 	var (
 		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s&workspace_id=%s",
@@ -514,9 +458,9 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TaskRunID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 		)
-		url        = fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
+		url        = fmt.Sprintf("http://localhost:%d/v1/%s", wareHouseTest.HTTPPort, path)
 		method     = "GET"
 		httpClient = &http.Client{}
 		req        *http.Request
@@ -570,74 +514,6 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying async job")
 }
 
-func verifyWorkspaceIDInStats(t testing.TB, extraStats ...string) {
-	t.Helper()
-	t.Logf("Started verifying workspaceID in stats")
-
-	var (
-		statsToVerify []string
-		workspaceID   = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
-	)
-
-	statsToVerify = append(statsToVerify, extraStats...)
-	statsToVerify = append(statsToVerify, []string{
-		// Miscellaneous
-		"wh_scheduler_create_upload_jobs",
-		"wh_scheduler_pending_staging_files",
-		"warehouse_rudder_missing_datatype",
-		"warehouse_long_running_upload",
-		"warehouse_successful_upload_exists",
-		"persist_ssl_file_failure",
-
-		// Timer stats
-		"load_file_generation_time",
-		"event_delivery_time",
-		"identity_tables_load_time",
-		"other_tables_load_time",
-		"user_tables_load_time",
-		"upload_time",
-		"download_staging_file_time",
-		"staging_files_total_processing_time",
-		"process_staging_file_time",
-		"load_file_upload_time",
-
-		// Counter stats
-		"total_rows_synced",
-		"num_staged_events",
-		"upload_aborted",
-		"num_staged_events",
-		"upload_success",
-		"event_delivery",
-		"rows_synced",
-		"staging_files_processed",
-		"bytes_processed_in_staging_file",
-
-		// Gauge stats
-		"pre_load_table_rows",
-		"post_load_table_rows_estimate",
-		"post_load_table_rows",
-	}...)
-	mf := prometheusStats(t)
-
-	for _, statToVerify := range statsToVerify {
-		if ps, ok := mf[statToVerify]; ok {
-			for _, metric := range ps.GetMetric() {
-				found := false
-				for _, label := range metric.GetLabel() {
-					if label.GetName() == "workspaceId" {
-						require.Equalf(t, label.GetValue(), workspaceID, "workspaceId is empty for stat: %s", statToVerify)
-						found = true
-						break
-					}
-				}
-				require.Truef(t, found, "workspaceId not found in stat: %s", statToVerify)
-			}
-		}
-	}
-
-	t.Logf("Completed verifying workspaceID in stats")
-}
-
 func VerifyConfigurationTest(t testing.TB, destination backendconfig.DestinationT) {
 	t.Helper()
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
@@ -652,26 +528,6 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 	}))
 
 	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
-}
-
-func prometheusStats(t testing.TB) map[string]*promCLient.MetricFamily {
-	t.Helper()
-
-	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://statsd-exporter:9102/metrics", http.NoBody)
-	require.NoError(t, err)
-
-	httpClient := &http.Client{Timeout: 5 * time.Second}
-	resp, err := httpClient.Do(req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.NotNil(t, resp.Body)
-
-	defer func() { httputil.CloseResponse(resp) }()
-
-	var parser expfmt.TextParser
-	mf, err := parser.TextToMetricFamilies(resp.Body)
-	require.NoError(t, err)
-	return mf
 }
 
 func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
@@ -786,271 +642,27 @@ func GetUserId(provider string) string {
 	return fmt.Sprintf("userId_%s_%s", strings.ToLower(provider), warehouseutils.RandHex())
 }
 
-func CreateBucketForMinio(t testing.TB, bucketName string) {
-	t.Helper()
-	t.Logf("Creating bucket for minio: %s", bucketName)
-
-	const (
-		endPoint    = "wh-minio:9000"
-		accessKeyID = "MYACCESSKEY"
-		accessKey   = "MYSECRETKEY"
-		secure      = false
-	)
-	minioClient, err := minio.New(endPoint, accessKeyID, accessKey, secure)
-	require.NoError(t, err)
-
-	_ = minioClient.MakeBucket(bucketName, "us-east-1")
+func RandSchema(provider string) string {
+	hex := strings.ToLower(rand.String(12))
+	namespace := fmt.Sprintf("test_%s_%d", hex, time.Now().Unix())
+	return warehouseutils.ToProviderCase(provider, warehouseutils.ToSafeNamespace(provider,
+		namespace,
+	))
 }
 
-func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
+func JobsDB(t testing.TB, port int) *sql.DB {
 	t.Helper()
 
-	payload, err := json.Marshal(&kvs)
-	require.NoError(t, err)
-
-	url := fmt.Sprintf(`%s/v1/setConfig`, misc.GetWarehouseURL())
-	_, err = warehouseutils.PostRequestWithTimeout(context.TODO(), url, payload, time.Second*60)
-	require.NoError(t, err)
-}
-
-func PopulateTemplateConfigurations() map[string]string {
-	configurations := map[string]string{
-		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-
-		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-		"postgresHost":     "wh-postgres",
-		"postgresDatabase": "rudderdb",
-		"postgresUser":     "rudder",
-		"postgresPassword": "rudder-password",
-		"postgresPort":     "5432",
-
-		"clickHouseWriteKey": "C5AWX39IVUWSP2NcHciWvqZTa2N",
-		"clickHouseHost":     "wh-clickhouse",
-		"clickHouseDatabase": "rudderdb",
-		"clickHouseUser":     "rudder",
-		"clickHousePassword": "rudder-password",
-		"clickHousePort":     "9000",
-
-		"clickhouseClusterWriteKey": "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-		"clickhouseClusterHost":     "wh-clickhouse01",
-		"clickhouseClusterDatabase": "rudderdb",
-		"clickhouseClusterCluster":  "rudder_cluster",
-		"clickhouseClusterUser":     "rudder",
-		"clickhouseClusterPassword": "rudder-password",
-		"clickhouseClusterPort":     "9000",
-
-		"mssqlWriteKey": "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		"mssqlHost":     "wh-mssql",
-		"mssqlDatabase": "master",
-		"mssqlUser":     "SA",
-		"mssqlPassword": "reallyStrongPwd123",
-		"mssqlPort":     "1433",
-
-		"azureDatalakeWriteKey":      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
-		"azureDatalakeContainerName": "azure-datalake-test",
-		"azureDatalakeAccountName":   "MYACCESSKEY",
-		"azureDatalakeAccountKey":    "TVlTRUNSRVRLRVk=",
-		"azureDatalakeEndPoint":      "wh-azure:10000",
-
-		"s3DatalakeWriteKey":   "ZapZJHfSxUN96GTIuShnz6bv0zi",
-		"s3DatalakeBucketName": "s3-datalake-test",
-		"s3DatalakeRegion":     "us-east-1",
-
-		"gcsDatalakeWriteKey": "9zZFfcRqr2LpwerxICilhQmMybn",
-
-		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-		"snowflakeRBACWriteKey":          "2eSafstqwcFYUILzXv2fcNIrWO7",
-		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
-		"deltalakeNativeWriteKey":        "dasFgoilA0U1WxNeW1gdgUVDfas",
-
-		"postgresSourcesWriteKey":  "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
-		"mssqlSourcesWriteKey":     "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
-		"bigquerySourcesWriteKey":  "J77aeABtLFJ84qYU6UrN8ctewZt",
-		"redshiftSourcesWriteKey":  "BNAwdCxmM8BIabKERsUhPNmMmdf",
-		"snowflakeSourcesWriteKey": "2eSJyYtqwcFYerwzXv2fcNIrWO7",
-
-		"minioBucketName":      "testbucket",
-		"minioAccesskeyID":     "MYACCESSKEY",
-		"minioSecretAccessKey": "MYSECRETKEY",
-		"minioEndpoint":        "wh-minio:9000",
-
-		"postgresTunnelledWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3w",
-		"sshUser":                   "rudderstack",
-		"sshPort":                   "2222",
-		"sshHost":                   "wh-ssh-server",
-		"sshPrivateKey":             "-----BEGIN OPENSSH PRIVATE KEY-----\\n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\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----",
-		"privatePostgresHost":       "db-private-postgres",
-		"privatePostgresDatabase":   "postgres",
-		"privatePostgresPort":       "5432",
-		"privatePostgresUser":       "postgres",
-		"privatePostgresPassword":   "postgres",
-	}
-
-	enhanceWithRedshiftConfigurations(configurations)
-	enhanceWithSnowflakeConfigurations(configurations)
-	enhanceWithDeltalakeConfigurations(configurations)
-	enhanceWithBQConfigurations(configurations)
-	return configurations
-}
-
-func enhanceWithSnowflakeConfigurations(values map[string]string) {
-	if _, exists := os.LookupEnv(SnowflakeIntegrationTestCredentials); !exists {
-		return
-	}
-	if _, exists := os.LookupEnv(SnowflakeRBACIntegrationTestCredentials); !exists {
-		return
-	}
-
-	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
-		values[fmt.Sprintf("snowflake%s", k)] = v
-	}
-	for k, v := range credentialsFromKey(SnowflakeRBACIntegrationTestCredentials) {
-		values[fmt.Sprintf("snowflakeRBAC%s", k)] = v
-	}
-
-	values["snowflakeCaseSensitiveDatabase"] = strings.ToLower(values["snowflakeDatabase"])
-	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
-	values["snowflakeRBACNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "ROLE")
-	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
-	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "SOURCES")
-}
-
-func enhanceWithRedshiftConfigurations(values map[string]string) {
-	if _, exists := os.LookupEnv(RedshiftIntegrationTestCredentials); !exists {
-		return
-	}
-
-	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
-		values[fmt.Sprintf("redshift%s", k)] = v
-	}
-
-	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
-	values["redshiftSourcesNamespace"] = fmt.Sprintf("%s_%s", values["redshiftNamespace"], "sources")
-}
-
-func enhanceWithDeltalakeConfigurations(values map[string]string) {
-	if _, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials); !exists {
-		return
-	}
-
-	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
-		values[fmt.Sprintf("deltalake%s", k)] = v
-		values[fmt.Sprintf("deltalakeNative%s", k)] = v
-	}
-
-	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
-	values["deltalakeNativeNamespace"] = fmt.Sprintf("%s_%s", values["deltalakeNamespace"], "native")
-}
-
-func enhanceWithBQConfigurations(values map[string]string) {
-	if _, exists := os.LookupEnv(BigqueryIntegrationTestCredentials); !exists {
-		return
-	}
-
-	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
-		values[fmt.Sprintf("bigquery%s", k)] = v
-	}
-
-	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
-	values["bigquerySourcesNamespace"] = fmt.Sprintf("%s_%s", values["bigqueryNamespace"], "sources")
-
-	key := "bigqueryCredentials"
-	if credentials, exists := values[key]; exists {
-		escapedCredentials, err := json.Marshal(credentials)
-		if err != nil {
-			log.Panicf("error escaping big query JSON credentials while setting up the workspace config with error: %s", err.Error())
-		}
-		values[key] = strings.Trim(string(escapedCredentials), `"`)
-	}
-}
-
-func Schema(provider, schemaKey string) string {
-	return warehouseutils.ToProviderCase(
-		provider,
-		warehouseutils.ToSafeNamespace(
-			provider,
-			config.MustGetString(schemaKey),
-		),
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		jobsDBUser,
+		jobsDBPassword,
+		jobsDBHost,
+		strconv.Itoa(port),
+		jobsDBDatabase,
 	)
-}
+	jobsDB, err := sql.Open("postgres", dsn)
+	require.NoError(t, err)
+	require.NoError(t, jobsDB.Ping())
 
-func credentialsFromKey(key string) (credentials map[string]string) {
-	cred, exists := os.LookupEnv(key)
-	if !exists {
-		log.Print(fmt.Errorf("while setting up the workspace config: env %s does not exists", key))
-		return
-	}
-	if cred == "" {
-		log.Print(fmt.Errorf("while setting up the workspace config: env %s is empty", key))
-		return
-	}
-
-	err := json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		log.Panicf("error occurred while unmarshalling %s for setting up the workspace config", key)
-		return
-	}
-	return
-}
-
-func SnowflakeCredentials(env string) (credentials snowflake.Credentials, err error) {
-	cred, exists := os.LookupEnv(env)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Snowflake test", env)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling snowflake test credentials with err: %s", err.Error())
-		return
-	}
-	return
-}
-
-func RedshiftCredentials() (credentials redshift.RedshiftCredentials, err error) {
-	cred, exists := os.LookupEnv(RedshiftIntegrationTestCredentials)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Redshift test", RedshiftIntegrationTestCredentials)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling redshift test credentials with err: %s", err.Error())
-	}
-	return
-}
-
-func BigqueryCredentials() (credentials bigquery.BQCredentials, err error) {
-	cred, exists := os.LookupEnv(BigqueryIntegrationTestCredentials)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Bigquery test", BigqueryIntegrationTestCredentials)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling bigquery test credentials with err: %s", err.Error())
-		return
-	}
-	return
-}
-
-func DatabricksCredentials() (credentials client.Credentials, err error) {
-	cred, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Deltalake test", DeltalakeIntegrationTestCredentials)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling databricks test credentials with err: %s", err.Error())
-		return
-	}
-	return
+	return jobsDB
 }

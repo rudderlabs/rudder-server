@@ -3,7 +3,7 @@ package encoding
 import (
 	"io"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type EventReader interface {

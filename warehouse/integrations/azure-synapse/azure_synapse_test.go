@@ -1,4 +1,4 @@
-package mssql_test
+package azuresynapse_test
 
 import (
 	"context"
@@ -13,17 +13,16 @@ import (
 
 	"github.com/rudderlabs/compose-test/testcompose"
 	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestIntegration(t *testing.T) {
@@ -46,7 +45,7 @@ func TestIntegration(t *testing.T) {
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
 	transformerPort := c.Port("transformer", 9090)
-	mssqlPort := c.Port("mssql", 1433)
+	azureSynapsePort := c.Port("azure_synapse", 1433)
 
 	httpPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
@@ -57,14 +56,10 @@ func TestIntegration(t *testing.T) {
 	sourceID := warehouseutils.RandHex()
 	destinationID := warehouseutils.RandHex()
 	writeKey := warehouseutils.RandHex()
-	sourcesSourceID := warehouseutils.RandHex()
-	sourcesDestinationID := warehouseutils.RandHex()
-	sourcesWriteKey := warehouseutils.RandHex()
 
-	provider := warehouseutils.MSSQL
+	provider := warehouseutils.AZURE_SYNAPSE
 
 	namespace := testhelper.RandSchema(provider)
-	sourcesNamespace := testhelper.RandSchema(provider)
 
 	host := "localhost"
 	database := "master"
@@ -77,24 +72,20 @@ func TestIntegration(t *testing.T) {
 	endPoint := fmt.Sprintf("localhost:%d", minioPort)
 
 	templateConfigurations := map[string]any{
-		"workspaceID":          workspaceID,
-		"sourceID":             sourceID,
-		"destinationID":        destinationID,
-		"writeKey":             writeKey,
-		"sourcesSourceID":      sourcesSourceID,
-		"sourcesDestinationID": sourcesDestinationID,
-		"sourcesWriteKey":      sourcesWriteKey,
-		"host":                 host,
-		"database":             database,
-		"user":                 user,
-		"password":             password,
-		"port":                 strconv.Itoa(mssqlPort),
-		"namespace":            namespace,
-		"sourcesNamespace":     sourcesNamespace,
-		"bucketName":           bucketName,
-		"accessKeyID":          accessKeyID,
-		"secretAccessKey":      secretAccessKey,
-		"endPoint":             endPoint,
+		"workspaceID":     workspaceID,
+		"sourceID":        sourceID,
+		"destinationID":   destinationID,
+		"writeKey":        writeKey,
+		"host":            host,
+		"database":        database,
+		"user":            user,
+		"password":        password,
+		"port":            strconv.Itoa(azureSynapsePort),
+		"namespace":       namespace,
+		"bucketName":      bucketName,
+		"accessKeyID":     accessKeyID,
+		"secretAccessKey": secretAccessKey,
+		"endPoint":        endPoint,
 	}
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -122,14 +113,13 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
 	t.Setenv("DEST_TRANSFORM_URL", fmt.Sprintf("http://localhost:%d", transformerPort))
-	t.Setenv("RSERVER_WAREHOUSE_MSSQL_MAX_PARALLEL_LOADS", "8")
+	t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
 	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_WAREHOUSE_MSSQL_ENABLE_DELETE_BY_JOBS", "true")
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
 	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
@@ -146,7 +136,7 @@ func TestIntegration(t *testing.T) {
 
 	go func() {
 		r := runner.New(runner.ReleaseInfo{})
-		_ = r.Run(ctx, []string{"mssql-integration-test"})
+		_ = r.Run(ctx, []string{"azure-synapse-integration-test"})
 
 		close(svcDone)
 	}()
@@ -162,7 +152,7 @@ func TestIntegration(t *testing.T) {
 			user,
 			password,
 			host,
-			mssqlPort,
+			azureSynapsePort,
 			database,
 		)
 		db, err := sql.Open("sqlserver", dsn)
@@ -190,20 +180,6 @@ func TestIntegration(t *testing.T) {
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				sourceID:      sourceID,
 				destinationID: destinationID,
-			},
-			{
-				name:                  "Async Job",
-				writeKey:              sourcesWriteKey,
-				schema:                sourcesNamespace,
-				tables:                []string{"tracks", "google_sheet"},
-				sourceID:              sourcesSourceID,
-				destinationID:         sourcesDestinationID,
-				eventsMap:             testhelper.SourcesSendEventsMap(),
-				stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
-				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-				asyncJob:              true,
 			},
 		}
 
@@ -257,7 +233,7 @@ func TestIntegration(t *testing.T) {
 				"database":         database,
 				"user":             user,
 				"password":         password,
-				"port":             strconv.Itoa(mssqlPort),
+				"port":             strconv.Itoa(azureSynapsePort),
 				"sslMode":          "disable",
 				"namespace":        "",
 				"bucketProvider":   "MINIO",
@@ -271,10 +247,10 @@ func TestIntegration(t *testing.T) {
 			},
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				ID:          "1qvbUYC2xVQ7lvI9UUYkkM4IBt9",
-				Name:        "MSSQL",
+				Name:        "AZURE_SYNAPSE",
 				DisplayName: "Microsoft SQL Server",
 			},
-			Name:       "mssql-demo",
+			Name:       "azure-synapse-demo",
 			Enabled:    true,
 			RevisionID: "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
 		}

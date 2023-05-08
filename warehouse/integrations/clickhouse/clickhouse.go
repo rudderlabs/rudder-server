@@ -213,8 +213,8 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 	}
 }
 
-// ConnectToClickhouse connects to clickhouse with provided credentials
-func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
+// connectToClickhouse connects to clickhouse with provided credentials
+func (ch *Clickhouse) connectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
 	dsn := url.URL{
 		Scheme: "tcp",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -763,7 +763,7 @@ func (ch *Clickhouse) createSchema() (err error) {
 		ch.Logger.Infof("CH: Skipping creating database: %s since it already exists", ch.Namespace)
 		return
 	}
-	dbHandle, err := ch.ConnectToClickhouse(ch.getConnectionCredentials(), false)
+	dbHandle, err := ch.connectToClickhouse(ch.getConnectionCredentials(), false)
 	if err != nil {
 		return err
 	}
@@ -938,7 +938,7 @@ func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.U
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	ch.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, ch.NumWorkersDownloadLoadFiles)
 
-	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
+	ch.DB, err = ch.connectToClickhouse(ch.getConnectionCredentials(), true)
 	return err
 }
 
@@ -948,7 +948,7 @@ func (*Clickhouse) CrashRecover() {}
 func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
-	dbHandle, err := ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
+	dbHandle, err := ch.connectToClickhouse(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return
 	}
@@ -1079,7 +1079,7 @@ func (ch *Clickhouse) Connect(warehouse model.Warehouse) (client.Client, error) 
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
 	)
-	dbHandle, err := ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
+	dbHandle, err := ch.connectToClickhouse(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return client.Client{}, err
 	}
