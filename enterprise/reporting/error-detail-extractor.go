@@ -85,8 +85,8 @@ func (ext *ExtractorT) getJsonResponse(sampleResponse string) string {
 	if !IsJSON(sampleResponse) {
 		return sampleResponse
 	}
-	sampleResp := gjson.Parse(sampleResponse)
-	respRes := gjson.GetBytes([]byte(sampleResp.String()), responseKey)
+	sampleRespResult := gjson.Parse(sampleResponse)
+	respRes := gjson.GetBytes([]byte(sampleRespResult.String()), responseKey)
 	if respRes.Exists() && IsJSON(respRes.Str) {
 		var j json.RawMessage
 		e := json.Unmarshal([]byte(respRes.String()), &j)
@@ -94,7 +94,7 @@ func (ext *ExtractorT) getJsonResponse(sampleResponse string) string {
 			ext.log.Errorf("(GetJsonResponse)UnmarshalErr: %v\tResponse:%v\n", e, respRes.String())
 			return respRes.String()
 		}
-		byteArr, setErr := sjson.SetBytes([]byte(sampleResp.String()), responseKey, string(j))
+		byteArr, setErr := sjson.SetBytes([]byte(sampleRespResult.String()), responseKey, string(j))
 		if setErr != nil {
 			ext.log.Errorf("SetBytesError: %v\tWill return empty string as error response\n", setErr)
 			return ""
@@ -102,7 +102,7 @@ func (ext *ExtractorT) getJsonResponse(sampleResponse string) string {
 		return string(byteArr)
 	}
 
-	return sampleResp.String()
+	return sampleRespResult.String()
 }
 
 func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
@@ -260,15 +260,15 @@ func getErrorFromWarehouse(resp map[string]interface{}) string {
 }
 
 func IsJSON(s string) bool {
-	parsedBytes := gjson.ParseBytes([]byte(s))
+	parsedBytesResult := gjson.ParseBytes([]byte(s))
 
-	s = string(WhitespacesRegex.ReplaceAllLiteral([]byte(parsedBytes.String()), []byte("")))
+	s = string(WhitespacesRegex.ReplaceAllLiteral([]byte(parsedBytesResult.String()), []byte("")))
 	var isEndingFlowerBrace, isEndingArrBrace bool
 	if len(s) > 0 {
 		isEndingFlowerBrace = s[len(s)-1] == '}'
 		isEndingArrBrace = s[len(s)-1] == ']'
 	}
-	return ((parsedBytes.IsObject() && isEndingFlowerBrace) || (parsedBytes.IsArray() && isEndingArrBrace))
+	return ((parsedBytesResult.IsObject() && isEndingFlowerBrace) || (parsedBytesResult.IsArray() && isEndingArrBrace))
 }
 
 func (ext *ExtractorT) CleanUpErrorMessage(errMsg string) string {
