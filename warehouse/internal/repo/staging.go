@@ -342,23 +342,10 @@ func (repo *StagingFiles) CountPendingForDestination(ctx context.Context, destin
 }
 
 func (repo *StagingFiles) countPending(ctx context.Context, query string, value interface{}) (int64, error) {
-	var id sql.NullInt64
-	err := repo.db.QueryRowContext(ctx,
-		`SELECT MAX(end_staging_file_id) FROM `+uploadsTableName+` WHERE `+query,
-		value,
-	).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("querying uploads: %w", err)
-	}
-	lastStagingFileID := int64(0)
-	if id.Valid {
-		lastStagingFileID = id.Int64
-	}
-
 	var count int64
-	err = repo.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM `+stagingTableName+` WHERE `+query+` AND id > $2 `,
-		value, lastStagingFileID,
+	err := repo.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM `+stagingTableName+` WHERE `+query+` AND id > (SELECT COALESCE(MAX(end_staging_file_id), 0) FROM `+uploadsTableName+` WHERE `+query+`)`,
+		value,
 	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting staging files: %w", err)

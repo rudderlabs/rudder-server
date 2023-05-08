@@ -78,39 +78,42 @@ type DiagnosticT struct {
 
 // HandleT is the handle to this module.
 type HandleT struct {
-	responseQ                               chan jobResponseT
-	jobsDB                                  jobsdb.MultiTenantJobsDB
-	errorDB                                 jobsdb.JobsDB
-	netHandle                               NetHandleI
-	MultitenantI                            tenantStats
-	destName                                string
-	destinationId                           string
-	workers                                 []*worker
-	telemetry                               *DiagnosticT
-	customDestinationManager                customDestinationManager.DestinationManager
-	throttlingCosts                         atomic.Pointer[types.EventTypeThrottlingCost]
-	throttlerFactory                        *rtThrottler.Factory
-	guaranteeUserEventOrder                 bool
-	netClientTimeout                        time.Duration
-	backendProxyTimeout                     time.Duration
-	jobsDBCommandTimeout                    time.Duration
-	jobdDBMaxRetries                        int
-	enableBatching                          bool
-	transformer                             transformer.Transformer
-	configSubscriberLock                    sync.RWMutex
-	destinationsMap                         map[string]*routerutils.BatchDestinationT // destinationID -> destination
-	logger                                  logger.Logger
-	batchInputCountStat                     stats.Measurement
-	batchOutputCountStat                    stats.Measurement
-	routerTransformInputCountStat           stats.Measurement
-	routerTransformOutputCountStat          stats.Measurement
-	batchInputOutputDiffCountStat           stats.Measurement
-	routerResponseTransformStat             stats.Measurement
-	throttlingErrorStat                     stats.Measurement
-	throttledStat                           stats.Measurement
-	noOfWorkers                             int
-	workerInputBufferSize                   int
-	allowAbortedUserJobsCountForProcessing  int
+	responseQ                      chan jobResponseT
+	jobsDB                         jobsdb.MultiTenantJobsDB
+	errorDB                        jobsdb.JobsDB
+	netHandle                      NetHandleI
+	MultitenantI                   tenantStats
+	destName                       string
+	destinationId                  string
+	workers                        []*worker
+	telemetry                      *DiagnosticT
+	customDestinationManager       customDestinationManager.DestinationManager
+	throttlingCosts                atomic.Pointer[types.EventTypeThrottlingCost]
+	throttlerFactory               *rtThrottler.Factory
+	guaranteeUserEventOrder        bool
+	netClientTimeout               time.Duration
+	backendProxyTimeout            time.Duration
+	jobsDBCommandTimeout           time.Duration
+	jobdDBMaxRetries               int
+	enableBatching                 bool
+	transformer                    transformer.Transformer
+	configSubscriberLock           sync.RWMutex
+	destinationsMap                map[string]*routerutils.BatchDestinationT // destinationID -> destination
+	logger                         logger.Logger
+	batchInputCountStat            stats.Measurement
+	batchOutputCountStat           stats.Measurement
+	routerTransformInputCountStat  stats.Measurement
+	routerTransformOutputCountStat stats.Measurement
+	batchInputOutputDiffCountStat  stats.Measurement
+	routerResponseTransformStat    stats.Measurement
+	throttlingErrorStat            stats.Measurement
+	throttledStat                  stats.Measurement
+	noOfWorkers                    int
+	workerInputBufferSize          int
+
+	barrierConcurrencyLimit int
+	drainConcurrencyLimit   int
+
 	isBackendConfigInitialized              bool
 	backendConfig                           backendconfig.BackendConfig
 	backendConfigInitialized                chan bool
@@ -283,15 +286,17 @@ func (rt *HandleT) initWorkers() {
 
 	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
+
 		worker := &worker{
 			input: make(chan workerMessageT, rt.workerInputBufferSize),
-			barrier: eventorder.NewBarrier(
-				eventorder.WithConcurrencyLimit(rt.allowAbortedUserJobsCountForProcessing),
-				eventorder.WithMetadata(map[string]string{
-					"destType":         rt.destName,
-					"batching":         strconv.FormatBool(rt.enableBatching),
-					"transformerProxy": strconv.FormatBool(rt.transformerProxy),
-				})),
+			barrier: eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
+				"destType":         rt.destName,
+				"batching":         strconv.FormatBool(rt.enableBatching),
+				"transformerProxy": strconv.FormatBool(rt.transformerProxy),
+			}),
+				eventorder.WithConcurrencyLimit(rt.barrierConcurrencyLimit),
+				eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
+			),
 			id:                        i,
 			rt:                        rt,
 			deliveryTimeStat:          stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
@@ -922,7 +927,7 @@ func (rt *HandleT) Setup(
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
 	config.RegisterDurationConfigVariable(90, &rt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Router.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
-	config.RegisterIntConfigVariable(3, &rt.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+	config.RegisterIntConfigVariable(2, &rt.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	rt.crashRecover()
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	if rt.netHandle == nil {
@@ -976,7 +981,8 @@ func (rt *HandleT) Setup(
 	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForTransformation, true, rtAbortTransformationKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForDelivery, true, rtAbortDeliveryKeys...)
 	// END: Alert configuration
-	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
+	rt.drainConcurrencyLimit = getRouterConfigInt("drainedConcurrencyLimit", destName, 1)
+	rt.barrierConcurrencyLimit = getRouterConfigInt("barrierConcurrencyLimit", destName, 100)
 
 	statTags := stats.Tags{"destType": rt.destName}
 	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, statTags)

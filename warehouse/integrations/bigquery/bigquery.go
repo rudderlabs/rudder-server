@@ -302,15 +302,15 @@ func (bq *BigQuery) dropStagingTable(stagingTableName string) {
 }
 
 func (bq *BigQuery) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
-	bq.Logger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s : %v", tableNames)
-
 	for _, tb := range tableNames {
+		bq.Logger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s", tb)
 		tableName := fmt.Sprintf("`%s`.`%s`", bq.namespace, tb)
 		sqlStatement := fmt.Sprintf(`
 			DELETE FROM
 				%[1]s
 			WHERE
-				context_sources_job_run_id <> @jobrunid AND
+				context_sources_job_run_id <>
+			@jobrunid AND
 				context_sources_task_run_id <> @taskrunid AND
 				context_source_id = @sourceid AND
 				received_at < @starttime;
@@ -521,7 +521,7 @@ func (bq *BigQuery) loadTable(tableName string, _, getLoadFileLocFromTableUpload
 	return
 }
 
-func (bq *BigQuery) LoadUserTables() (errorMap map[string]error) {
+func (bq *BigQuery) LoadUserTables(context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	bq.Logger.Infof("BQ: Starting load for identifies and users tables\n")
 	identifyLoadTable, err := bq.loadTable(warehouseutils.IdentifiesTable, true, false, true)
@@ -844,11 +844,11 @@ func (bq *BigQuery) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 	return err
 }
 
-func (bq *BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
+func (*BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
 	return nil
 }
 
-func (bq *BigQuery) LoadTable(tableName string) error {
+func (bq *BigQuery) LoadTable(_ context.Context, tableName string) error {
 	var getLoadFileLocFromTableUploads bool
 	switch tableName {
 	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
@@ -988,12 +988,12 @@ func (bq *BigQuery) Cleanup() {
 
 func (bq *BigQuery) LoadIdentityMergeRulesTable() (err error) {
 	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(warehouseutils.BQ)
-	return bq.LoadTable(identityMergeRulesTable)
+	return bq.LoadTable(context.TODO(), identityMergeRulesTable)
 }
 
 func (bq *BigQuery) LoadIdentityMappingsTable() (err error) {
 	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(warehouseutils.BQ)
-	return bq.LoadTable(identityMappingsTable)
+	return bq.LoadTable(context.TODO(), identityMappingsTable)
 }
 
 func (bq *BigQuery) tableExists(tableName string) (exists bool, err error) {
@@ -1221,6 +1221,6 @@ func (bq *BigQuery) LoadTestTable(location, tableName string, _ map[string]inter
 func (*BigQuery) SetConnectionTimeout(_ time.Duration) {
 }
 
-func (bq *BigQuery) ErrorMappings() []model.JobError {
+func (*BigQuery) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
