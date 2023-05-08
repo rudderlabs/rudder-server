@@ -541,10 +541,11 @@ func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
 
 func WithConstantRetries(operation func() error) error {
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 6; i++ {
 		if err = operation(); err == nil {
 			return nil
 		}
+		time.Sleep(time.Duration(1+i) * time.Second)
 	}
 	return err
 }
