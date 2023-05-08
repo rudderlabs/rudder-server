@@ -71,7 +71,7 @@ require (
 	github.com/onsi/gomega v1.27.6
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
-	github.com/prometheus/client_model v0.3.0
+	github.com/prometheus/client_model v0.4.0
 	github.com/prometheus/common v0.42.0
 	github.com/rs/cors v1.9.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
