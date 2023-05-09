@@ -109,26 +109,27 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 	if !IsJSON(jsonStr) {
 		return jsonStr
 	}
-	error_reason_result := gjson.GetMany(jsonStr, "reason", "Error", responseKey)
-	for _, erRes := range error_reason_result {
-		if erRes.Exists() {
-			erResStr := erRes.String()
-			switch erRes.Path(jsonStr) {
-			case "reason":
-				return erResStr
-			case "Error":
-				if !IsJSON(erResStr) {
-					return strings.Split(erResStr, "\n")[0]
-				}
-				return ""
-			case responseKey:
-				if len(erResStr) == 0 {
-					return "EMPTY"
-				}
-				if !IsJSON(erResStr) {
-					return erResStr
-				}
 
+	jsonMap := unmarshalJsonToMap(jsonStr, &ext.log)
+	if jsonMap == nil {
+		return jsonStr
+	}
+
+	for key, erRes := range jsonMap {
+		erResStr, isString := erRes.(string)
+		if !isString {
+			ext.log.Errorf("Type-assertion failed for %v with value %v: not a string", key, erRes)
+		}
+		switch key {
+		case "reason":
+			return erResStr
+		case "Error":
+			if !IsJSON(erResStr) {
+				return strings.Split(erResStr, "\n")[0]
+			}
+			return ""
+		case responseKey:
+			if IsJSON(erResStr) {
 				// recursively search for common error message patterns
 				j := unmarshalJsonToMap(erResStr, &ext.log)
 				if j == nil {
@@ -136,24 +137,21 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 				}
 				return getErrorMessageFromResponse(j, ext.ErrorMessageKeys)
 			}
-		}
-	}
-
-	// For warehouse related errors
-	whJson := unmarshalJsonToMap(jsonStr, &ext.log)
-	if whJson == nil {
-		return jsonStr
-	}
-	for _, whKey := range ext.WhErrorMessageKeys {
-		if val, ok := whJson[whKey]; ok {
-			valAsMap, isMap := val.(map[string]interface{})
+			if len(erResStr) == 0 {
+				return "EMPTY"
+			}
+			return erResStr
+		// Warehouse related errors
+		case "internal_processing_failed", "fetching_remote_schema_failed", "exporting_data_failed":
+			valAsMap, isMap := erRes.(map[string]interface{})
 			if !isMap {
-				ext.log.Debugf("Failed while type asserting to map[string]interface{} warehouse error with whKey:%s", whKey)
+				ext.log.Debugf("Failed while type asserting to map[string]interface{} warehouse error with whKey:%s", key)
 				return ""
 			}
 			return getErrorFromWarehouse(valAsMap)
 		}
 	}
+
 	return ""
 }
 
@@ -261,9 +259,14 @@ func getErrorFromWarehouse(resp map[string]interface{}) string {
 
 func IsJSON(s string) bool {
 	parsedBytesResult := gjson.ParseBytes([]byte(s))
+	// Scenarios where we might have problems if the below logic is not included
+	// 1. Parsing of a string which contains { or [ at the start of the string could be parsed successfully
+	// 2. A valid with spacing before { or [ can also be deemed as not valid string
 
+	// We are making sure we remove white-spaces when we check the string for being an array or an object (scenario-2 is covered)
 	s = string(WhitespacesRegex.ReplaceAllLiteral([]byte(parsedBytesResult.String()), []byte("")))
 	var isEndingFlowerBrace, isEndingArrBrace bool
+	// We are making sure we check for end-braces for array or object(scenario-1 is covered)
 	if len(s) > 0 {
 		isEndingFlowerBrace = s[len(s)-1] == '}'
 		isEndingArrBrace = s[len(s)-1] == ']'

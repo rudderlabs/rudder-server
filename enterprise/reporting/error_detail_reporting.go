@@ -84,7 +84,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	var maxConcurrentRequests int
 	tr := &http.Transport{}
-	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
+	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
@@ -538,6 +538,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
+		edRep.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
 		if err != nil {
 			edRep.log.Error(err.Error())
 			return err
@@ -545,6 +546,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 
 		if !isMetricPosted(resp.StatusCode) {
 			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+			edRep.log.Error(err.Error())
 		}
 		return err
 	}
