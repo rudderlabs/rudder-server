@@ -377,7 +377,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	}
 
 	brt.logger.Debugf("BRT: Starting upload to %s", provider)
-	folderName := ""
+	var folderName string
 	if isWarehouse {
 		folderName = config.GetString("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
 	} else {
