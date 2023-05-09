@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/stretchr/testify/require"
-	"k8s.io/apimachinery/pkg/util/rand"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -37,7 +37,7 @@ func Test_Dedup(t *testing.T) {
 		require.Equal(t, int64(1), value)
 	})
 
-	t.Run("if message is commited, previous value should always return", func(t *testing.T) {
+	t.Run("if message is committed, previous value should always return", func(t *testing.T) {
 		found, _ := d.Set(dedup.KeyValue{Key: "b", Value: 1})
 		require.Equal(t, true, found)
 
@@ -49,7 +49,7 @@ func Test_Dedup(t *testing.T) {
 		require.Equal(t, int64(1), value)
 	})
 
-	t.Run("commiting a messageid not present in cache", func(t *testing.T) {
+	t.Run("committing a messageid not present in cache", func(t *testing.T) {
 		found, _ := d.Set(dedup.KeyValue{Key: "c", Value: 1})
 		require.Equal(t, true, found)
 
