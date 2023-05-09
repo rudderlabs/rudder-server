@@ -1470,7 +1470,7 @@ func fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var connectionsTableRequest warehouseutils.ConnectionsTablesRequest
+	var connectionsTableRequest warehouseutils.FetchTablesRequest
 	err = json.Unmarshal(body, &connectionsTableRequest)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
@@ -1485,8 +1485,9 @@ func fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can't fetch tables from schemas repo", http.StatusInternalServerError)
 		return
 	}
-
-	resBody, err := json.Marshal(tables)
+	resBody, err := json.Marshal(warehouseutils.FetchTablesResponse{
+		ConnectionsTables: tables,
+	})
 	if err != nil {
 		err := fmt.Errorf("failed to marshall tables to response : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
@@ -1582,7 +1583,7 @@ func startWebHandler(ctx context.Context) error {
 			srvMux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler).Methods("GET") // FIXME: add degraded mode
 
 			// fetch schema info
-			srvMux.HandleFunc("/v1/warehouse/fetch-tables", fetchTablesHandler).Methods("POST")
+			srvMux.HandleFunc("/v1/warehouse/fetch-tables", fetchTablesHandler).Methods("GET")
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {

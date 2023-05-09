@@ -305,18 +305,23 @@ type TriggerUploadRequest struct {
 	DestinationID string `json:"destination_id"`
 }
 
-type Connection struct {
-	SourceId      string   `json:"source_id"`
-	DestinationId string   `json:"destination_id"`
+type SourceIDDestinationID struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+}
+
+type FetchTablesRequest struct {
+	Connections []SourceIDDestinationID `json:"connections"`
+}
+
+type FetchTableInfo struct {
+	SourceID      string   `json:"source_id"`
+	DestinationID string   `json:"destination_id"`
 	Tables        []string `json:"tables"`
 }
 
-type ConnectionsTablesRequest struct {
-	Connections []Connection `json:"connections"`
-}
-
-type ConnectionsTablesResponse struct {
-	TablesPerConnection []Connection `json:"tables_per_connection"`
+type FetchTablesResponse struct {
+	ConnectionsTables []FetchTableInfo `json:"tables_per_connection"`
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {

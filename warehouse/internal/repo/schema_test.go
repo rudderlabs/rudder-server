@@ -119,27 +119,27 @@ func TestWHSchemasRepo(t *testing.T) {
 
 	t.Run("GetTablesForConnection", func(t *testing.T) {
 		t.Log("existing")
-		connection := warehouseutils.Connection{SourceId: sourceID, DestinationId: destinationID}
-		expectedTableNames, err := r.GetTablesForConnection(ctx, []warehouseutils.Connection{connection})
+		connection := warehouseutils.SourceIDDestinationID{SourceID: sourceID, DestinationID: destinationID}
+		expectedTableNames, err := r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
 		require.NoError(t, err)
 		require.Equal(t, len(expectedTableNames), 1)
-		require.Equal(t, expectedTableNames[0].SourceId, sourceID)
-		require.Equal(t, expectedTableNames[0].DestinationId, destinationID)
+		require.Equal(t, expectedTableNames[0].SourceID, sourceID)
+		require.Equal(t, expectedTableNames[0].DestinationID, destinationID)
 		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_1"))
 		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_2"))
 
 		t.Log("cancelled context")
-		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.Connection{connection})
+		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.SourceIDDestinationID{connection})
 		require.EqualError(t, err, errors.New("querying schema: context canceled").Error())
 
 		t.Log("not found")
 		expectedTableNames, err = r.GetTablesForConnection(ctx,
-			[]warehouseutils.Connection{{SourceId: notFound, DestinationId: notFound}})
+			[]warehouseutils.SourceIDDestinationID{{SourceID: notFound, DestinationID: notFound}})
 		require.NoError(t, err)
 		require.Empty(t, expectedTableNames, expectedTableNames)
 
 		t.Log("empty")
-		_, err = r.GetTablesForConnection(ctx, []warehouseutils.Connection{})
+		_, err = r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{})
 		require.EqualError(t, err, errors.New("no source id and destination id pairs provided").Error())
 	})
 }

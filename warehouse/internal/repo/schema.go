@@ -4,11 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
-
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"strings"
 )
 
 const whSchemaTableName = warehouseutils.WarehouseSchemasTable
@@ -194,34 +193,32 @@ func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string)
 	return namespace, nil
 }
 
-func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []warehouseutils.Connection) ([]warehouseutils.Connection, error) {
+func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []warehouseutils.SourceIDDestinationID) ([]warehouseutils.FetchTableInfo, error) {
 	if len(connections) == 0 {
 		return nil, fmt.Errorf("no source id and destination id pairs provided")
 	}
 
-	// select max id for each source id and destination id pair
-	innerQueryTemplate := `SELECT max(id) FROM ` + whSchemaTableName + `
-		WHERE
-			(source_id, destination_id) IN (%s)
-		AND
-			namespace <> ''
-		GROUP BY id
-	`
-	sourceIdDestinationIdArr := make([]string, len(connections))
+	var parameters []interface{}
+	sourceIDDestinationIDPairs := make([]string, len(connections))
 	for idx, connection := range connections {
-		pair := fmt.Sprintf("'%s','%s'", connection.SourceId, connection.DestinationId)
-		sourceIdDestinationIdArr[idx] = fmt.Sprintf("(%s)", pair)
+		sourceIDDestinationIDPairs[idx] = fmt.Sprintf("($%d,$%d)", 2*idx+1, 2*idx+2)
+		parameters = append(parameters, connection.SourceID, connection.DestinationID)
 	}
-	sourceIdDestinationIdStr := strings.Join(sourceIdDestinationIdArr, ", ")
-	innerQuery := fmt.Sprintf(innerQueryTemplate, sourceIdDestinationIdStr)
 
 	// select all rows with max id for each source id and destination id pair
 	query := `SELECT` + whSchemaTableColumns + `FROM ` + whSchemaTableName + `
-		WHERE id IN (` + innerQuery + `)
-	`
+		WHERE id IN (
+			SELECT max(id) FROM ` + whSchemaTableName + `
+			WHERE
+				(source_id, destination_id) IN (` + strings.Join(sourceIDDestinationIDPairs, ", ") + `)
+			AND
+				schema::text <> '{}'::text
+			GROUP BY id
+		)`
 	rows, err := repo.db.QueryContext(
 		ctx,
-		query)
+		query,
+		parameters...)
 	if err != nil {
 		return nil, fmt.Errorf("querying schema: %w", err)
 	}
@@ -231,15 +228,15 @@ func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []
 		return nil, fmt.Errorf("parsing rows: %w", err)
 	}
 
-	var tables []warehouseutils.Connection
+	var tables []warehouseutils.FetchTableInfo
 	for _, entry := range entries {
 		var allTablesOfConnections []string
 		for tableName := range entry.Schema {
 			allTablesOfConnections = append(allTablesOfConnections, tableName)
 		}
-		tables = append(tables, warehouseutils.Connection{
-			SourceId:      entry.SourceID,
-			DestinationId: entry.DestinationID,
+		tables = append(tables, warehouseutils.FetchTableInfo{
+			SourceID:      entry.SourceID,
+			DestinationID: entry.DestinationID,
 			Tables:        allTablesOfConnections,
 		})
 	}
