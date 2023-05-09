@@ -1447,9 +1447,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 						proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 						IncrementDupStatsMapByKey(sourceDupStats, source.ID, messageSize == previousSize, 1)
 						continue
-					} else {
-						uniqueMessageIds[messageId] = struct{}{}
 					}
+					uniqueMessageIds[messageId] = struct{}{}
 				}
 
 				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)

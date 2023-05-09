@@ -148,7 +148,7 @@ func Benchmark_Dedup(b *testing.B) {
 		batchSize := 1000
 
 		msgIDs := make([]dedup.KeyValue, batchSize)
-		keys := make([]string, batchSize)
+		keys := make([]string, 0)
 
 		for i := 0; i < b.N; i++ {
 			msgIDs[i%batchSize] = dedup.KeyValue{
@@ -163,8 +163,7 @@ func Benchmark_Dedup(b *testing.B) {
 				}
 				err := d.Commit(keys)
 				require.NoError(b, err)
-				msgIDs = make([]dedup.KeyValue, batchSize)
-				keys = make([]string, batchSize)
+				keys = nil
 			}
 		}
 		b.ReportMetric(float64(b.N), "events")
