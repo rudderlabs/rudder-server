@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	"github.com/stretchr/testify/require"
@@ -293,14 +292,6 @@ var _ = Describe("Upload", Ordered, func() {
 		})
 	})
 })
-
-type mockAlertSender struct {
-	mockError error
-}
-
-func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpts) error {
-	return m.mockError
-}
 
 func TestUploadJobT_Aborted(t *testing.T) {
 	var (
