@@ -19,7 +19,9 @@ import (
 
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
+		conf   = config.New()
 		client = &namespaceConfig{
+			config: conf,
 			logger: logger.NOP,
 		}
 		configBackendURL = "https://api.test.rudderstack.com"
@@ -27,9 +29,9 @@ func Test_Namespace_SetUp(t *testing.T) {
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
 	require.NoError(t, err)
 
-	t.Setenv("WORKSPACE_NAMESPACE", "a-testing-namespace")
-	t.Setenv("HOSTED_SERVICE_SECRET", "service-secret")
-	t.Setenv("CONFIG_BACKEND_URL", parsedConfigBackendURL.String())
+	conf.Set("WORKSPACE_NAMESPACE", "a-testing-namespace")
+	conf.Set("HOSTED_SERVICE_SECRET", "service-secret")
+	conf.Set("CONFIG_BACKEND_URL", parsedConfigBackendURL.String())
 
 	require.NoError(t, client.SetUp())
 	require.Equal(t, parsedConfigBackendURL, client.configBackendURL)
@@ -39,38 +41,35 @@ func Test_Namespace_SetUp(t *testing.T) {
 }
 
 func Test_Namespace_Get(t *testing.T) {
-	config.Reset()
-	logger.Reset()
-
 	var (
-		namespace   = "free-us-1"
-		cpRouterURL = "mockCpRouterURL"
+		ctx               = context.Background()
+		namespace         = "free-us-1"
+		cpRouterURL       = "mockCpRouterURL"
+		hostServiceSecret = "service-secret"
 	)
 
-	be := &backendConfigServer{
-		token: "service-secret",
-	}
-	be.AddNamespace(t, namespace, "./testdata/sample_namespace.json")
+	bcSrv := &backendConfigServer{token: hostServiceSecret}
+	bcSrv.addNamespace(t, namespace, "./testdata/sample_namespace.json")
 
-	ts := httptest.NewServer(be)
+	ts := httptest.NewServer(bcSrv)
 	defer ts.Close()
 	httpSrvURL, err := url.Parse(ts.URL)
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
+		config: config.New(),
 		logger: logger.NOP,
 
 		client:           ts.Client(),
 		configBackendURL: httpSrvURL,
 
-		namespace: namespace,
-
-		hostedServiceSecret: "service-secret",
+		namespace:           namespace,
+		hostedServiceSecret: hostServiceSecret,
 		cpRouterURL:         cpRouterURL,
 	}
 	require.NoError(t, client.SetUp())
 
-	c, err := client.Get(context.Background())
+	c, err := client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 2)
 
@@ -87,11 +86,10 @@ func Test_Namespace_Get(t *testing.T) {
 			namespace:           namespace,
 			hostedServiceSecret: "invalid-service-secret",
 		}
-
 		require.NoError(t, client.SetUp())
 
-		c, err := client.Get(context.Background())
-		require.EqualError(t, err, `backend config request failed with 401: {"message":"Unauthorized"}`) // Unauthorized
+		c, err := client.Get(ctx)
+		require.EqualError(t, err, `backend config request failed with 401: {"message":"Unauthorized"}`)
 		require.Empty(t, c)
 	})
 
@@ -101,31 +99,25 @@ func Test_Namespace_Get(t *testing.T) {
 			configBackendURL: httpSrvURL,
 
 			namespace:           "namespace-does-not-exist",
-			hostedServiceSecret: "service-secret",
+			hostedServiceSecret: hostServiceSecret,
 		}
-
 		require.NoError(t, client.SetUp())
 
-		c, err := client.Get(context.Background())
+		c, err := client.Get(ctx)
 		require.EqualError(t, err, "backend config request failed with 404")
 		require.Empty(t, c)
 	})
 }
 
 func Test_Namespace_Identity(t *testing.T) {
-	config.Reset()
-	logger.Reset()
-
 	var (
 		namespace = "free-us-1"
 		secret    = "service-secret"
 	)
 
-	be := &backendConfigServer{
-		token: secret,
-	}
+	bcSrv := &backendConfigServer{token: secret}
 
-	ts := httptest.NewServer(be)
+	ts := httptest.NewServer(bcSrv)
 	defer ts.Close()
 	httpSrvURL, err := url.Parse(ts.URL)
 	require.NoError(t, err)
@@ -136,9 +128,8 @@ func Test_Namespace_Identity(t *testing.T) {
 		client:           ts.Client(),
 		configBackendURL: httpSrvURL,
 
-		namespace: namespace,
-
-		hostedServiceSecret: "service-secret",
+		namespace:           namespace,
+		hostedServiceSecret: secret,
 		cpRouterURL:         cpRouterURL,
 	}
 	require.NoError(t, client.SetUp())
@@ -161,7 +152,7 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	bcSrv := &backendConfigServer{
 		token: secret,
 	}
-	bcSrv.AddNamespace(t, namespace, "./testdata/sample_namespace.json")
+	bcSrv.addNamespace(t, namespace, "./testdata/sample_namespace.json")
 
 	ts := httptest.NewServer(bcSrv)
 	defer ts.Close()
@@ -252,7 +243,7 @@ func (server *backendConfigServer) ServeHTTP(resp http.ResponseWriter, req *http
 	_, _ = resp.Write([]byte(body))
 }
 
-func (server *backendConfigServer) AddNamespace(t *testing.T, namespace, path string) {
+func (server *backendConfigServer) addNamespace(t *testing.T, namespace, path string) {
 	t.Helper()
 
 	if server.responses == nil {
