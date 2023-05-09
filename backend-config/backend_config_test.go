@@ -584,14 +584,6 @@ type mockIdentifier struct {
 	token string
 }
 
-func (m *mockIdentifier) ID() string {
-	return m.key
-}
-
-func (m *mockIdentifier) BasicAuth() (string, string) {
-	return m.token, ""
-}
-
-func (*mockIdentifier) Type() deployment.Type {
-	return deployment.Type(`mockType`)
-}
+func (m *mockIdentifier) ID() string                  { return m.key }
+func (m *mockIdentifier) BasicAuth() (string, string) { return m.token, "" }
+func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
