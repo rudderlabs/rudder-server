@@ -173,7 +173,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 	var respMap map[string]interface{}
 	respMap, isMap := resp.(map[string]interface{})
 
-	var getMessage = func(msgKeys []string, response interface{}) string {
+	getMessage := func(msgKeys []string, response interface{}) string {
 		if result := findFirstExistingKey(msgKeys, response); result != nil {
 			if s, ok := result.(string); ok {
 				return s
