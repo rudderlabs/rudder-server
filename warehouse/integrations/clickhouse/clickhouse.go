@@ -920,10 +920,6 @@ func (ch *Clickhouse) CreateSchema() (err error) {
 	return err
 }
 
-func (*Clickhouse) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, nil
-}
-
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *Clickhouse) TestConnection(warehouse model.Warehouse) (err error) {
 	ch.Warehouse = warehouse

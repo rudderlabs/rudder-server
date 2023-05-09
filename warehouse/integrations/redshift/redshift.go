@@ -451,7 +451,12 @@ func (rs *Redshift) loadTable(tableName string, tableSchemaInUpload, tableSchema
 	}, ",")
 
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
-	if err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload); err != nil {
+	_, err = rs.DB.Exec(fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
+		rs.Namespace,
+		stagingTableName,
+		tableName,
+	))
+	if err != nil {
 		return "", fmt.Errorf("creating staging table: %w", err)
 	}
 
@@ -1120,140 +1125,6 @@ func (rs *Redshift) CreateSchema() (err error) {
 		return
 	}
 	return rs.createSchema()
-}
-
-func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
-	var (
-		query                string
-		stagingColumnName    string
-		stagingColumnType    string
-		deprecatedColumnName string
-		isDependent          bool
-		tx                   *sql.Tx
-		err                  error
-		ctx                  = context.TODO()
-	)
-
-	// Begin a transaction
-	if tx, err = rs.DB.BeginTx(ctx, &sql.TxOptions{}); err != nil {
-		return model.AlterTableResponse{}, fmt.Errorf("begin transaction: %w", err)
-	}
-
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-			return
-		}
-	}()
-
-	// creating staging column
-	stagingColumnType = getRSDataType(columnType)
-	stagingColumnName = fmt.Sprintf(`%s-staging-%s`, columnName, misc.FastUUID().String())
-	query = fmt.Sprintf(`
-		ALTER TABLE
-		  %q.%q
-		ADD
-		  COLUMN %q %s;
-	`,
-		rs.Namespace,
-		tableName,
-		stagingColumnName,
-		stagingColumnType,
-	)
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		return model.AlterTableResponse{}, fmt.Errorf("add staging column: %w", err)
-	}
-
-	// populating staging column
-	query = fmt.Sprintf(`
-		UPDATE
-		  %[1]q.%[2]q
-		SET
-		  %[3]q = CAST (%[4]q AS %[5]s)
-		WHERE
-		  %[4]q IS NOT NULL;
-	`,
-		rs.Namespace,
-		tableName,
-		stagingColumnName,
-		columnName,
-		stagingColumnType,
-	)
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		return model.AlterTableResponse{}, fmt.Errorf("populate staging column: %w", err)
-	}
-
-	// renaming original column to deprecated column
-	deprecatedColumnName = fmt.Sprintf(`%s-deprecated-%s`, columnName, misc.FastUUID().String())
-	query = fmt.Sprintf(`
-		ALTER TABLE
-		  %[1]q.%[2]q
-		RENAME COLUMN
-		  %[3]q TO %[4]q;
-	`,
-		rs.Namespace,
-		tableName,
-		columnName,
-		deprecatedColumnName,
-	)
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		return model.AlterTableResponse{}, fmt.Errorf("rename original column: %w", err)
-	}
-
-	// renaming staging column to original column
-	query = fmt.Sprintf(`
-		ALTER TABLE
-		  %[1]q.%[2]q
-		RENAME COLUMN
-		  %[3]q TO %[4]q;
-	`,
-		rs.Namespace,
-		tableName,
-		stagingColumnName,
-		columnName,
-	)
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		return model.AlterTableResponse{}, fmt.Errorf("rename staging column: %w", err)
-	}
-
-	// Commit the transaction
-	if err = tx.Commit(); err != nil {
-		return model.AlterTableResponse{}, fmt.Errorf("commit transaction: %w", err)
-	}
-
-	// dropping deprecated column
-	// Since dropping the column can fail, we need to do it outside the transaction
-	// Because if will fail during the commit of the transaction
-	// https://github.com/lib/pq/blob/d5affd5073b06f745459768de35356df2e5fd91d/conn.go#L600
-	query = fmt.Sprintf(`
-		ALTER TABLE
-		  %[1]q.%[2]q
-		DROP COLUMN
-		  %[3]q;
-	`,
-		rs.Namespace,
-		tableName,
-		deprecatedColumnName,
-	)
-	if _, err = rs.DB.ExecContext(ctx, query); err != nil {
-		if pqError, ok := err.(*pq.Error); !ok || pqError.Code != "2BP01" {
-			return model.AlterTableResponse{}, fmt.Errorf("drop deprecated column: %w", err)
-		}
-
-		isDependent = true
-		err = nil
-	}
-
-	res := model.AlterTableResponse{
-		IsDependent: isDependent,
-		Query: fmt.Sprintf(`ALTER TABLE %[1]q.%[2]q DROP COLUMN %[3]q CASCADE;`,
-			rs.Namespace,
-			tableName,
-			deprecatedColumnName,
-		),
-	}
-
-	return res, nil
 }
 
 func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {

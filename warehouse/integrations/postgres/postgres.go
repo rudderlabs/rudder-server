@@ -348,10 +348,6 @@ func (pg *Postgres) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 	return
 }
 
-func (*Postgres) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, nil
-}
-
 func (pg *Postgres) TestConnection(warehouse model.Warehouse) (err error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {

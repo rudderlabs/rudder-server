@@ -1094,10 +1094,6 @@ func (sf *Snowflake) AddColumns(tableName string, columnsInfo []warehouseutils.C
 	return
 }
 
-func (*Snowflake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, nil
-}
-
 // DownloadIdentityRules gets distinct combinations of anonymous_id, user_id from tables in warehouse
 func (sf *Snowflake) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
 	getFromTable := func(tableName string) (err error) {

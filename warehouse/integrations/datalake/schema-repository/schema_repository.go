@@ -43,7 +43,6 @@ type SchemaRepository interface {
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap model.TableSchema) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
-	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
 	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFile) error
 }
 

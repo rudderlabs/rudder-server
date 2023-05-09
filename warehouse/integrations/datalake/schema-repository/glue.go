@@ -198,10 +198,6 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []wareh
 	return gl.updateTable(tableName, columnsInfo)
 }
 
-func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, gl.updateTable(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
-}
-
 func getGlueClient(wh model.Warehouse) (*glue.Glue, error) {
 	sessionConfig, err := awsutils.NewSimpleSessionConfigForDestination(&wh.Destination, glue.ServiceID)
 	if err != nil {

@@ -71,10 +71,6 @@ func (wh *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return wh.SchemaRepository.AddColumns(tableName, columnsInfo)
 }
 
-func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
-	return wh.SchemaRepository.AlterColumn(tableName, columnName, columnType)
-}
-
 func (wh *HandleT) LoadTable(tableName string) error {
 	pkgLogger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, wh.Warehouse.Destination.ID)
 	return nil

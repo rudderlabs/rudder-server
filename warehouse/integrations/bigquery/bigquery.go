@@ -882,10 +882,6 @@ func (bq *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return
 }
 
-func (*HandleT) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, nil
-}
-
 // FetchSchema queries bigquery and returns the schema associated with provided namespace
 func (bq *HandleT) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	bq.warehouse = warehouse

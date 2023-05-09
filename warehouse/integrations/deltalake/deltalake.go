@@ -873,11 +873,6 @@ func (dl *Deltalake) CreateSchema() (err error) {
 	return dl.createSchema()
 }
 
-// AlterColumn alter table with column name and type
-func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, nil
-}
-
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
 func (dl *Deltalake) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
 	dl.Warehouse = warehouse

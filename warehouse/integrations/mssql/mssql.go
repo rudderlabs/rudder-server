@@ -683,10 +683,6 @@ func (ms *MSSQL) AddColumns(tableName string, columnsInfo []warehouseutils.Colum
 	return
 }
 
-func (*MSSQL) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, nil
-}
-
 func (ms *MSSQL) TestConnection(warehouse model.Warehouse) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace

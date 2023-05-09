@@ -641,10 +641,6 @@ func (as *AzureSynapse) AddColumns(tableName string, columnsInfo []warehouseutil
 	return
 }
 
-func (*AzureSynapse) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, nil
-}
-
 func (as *AzureSynapse) TestConnection(warehouse model.Warehouse) (err error) {
 	as.Warehouse = warehouse
 	as.DB, err = connect(as.getConnectionCredentials())
