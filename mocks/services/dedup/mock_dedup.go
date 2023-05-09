@@ -46,43 +46,31 @@ func (mr *MockDedupMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockDedup)(nil).Close))
 }
 
-// Get mocks base method.
-func (m *MockDedup) Get(arg0 string) (int64, bool) {
+// Commit mocks base method.
+func (m *MockDedup) Commit(arg0 []string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", arg0)
-	ret0, _ := ret[0].(int64)
-	ret1, _ := ret[1].(bool)
-	return ret0, ret1
-}
-
-// Get indicates an expected call of Get.
-func (mr *MockDedupMockRecorder) Get(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockDedup)(nil).Get), arg0)
-}
-
-// MarkProcessed mocks base method.
-func (m *MockDedup) MarkProcessed(arg0 []dedup.Message) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkProcessed", arg0)
+	ret := m.ctrl.Call(m, "Commit", arg0)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// MarkProcessed indicates an expected call of MarkProcessed.
-func (mr *MockDedupMockRecorder) MarkProcessed(arg0 interface{}) *gomock.Call {
+// Commit indicates an expected call of Commit.
+func (mr *MockDedupMockRecorder) Commit(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkProcessed", reflect.TypeOf((*MockDedup)(nil).MarkProcessed), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockDedup)(nil).Commit), arg0)
 }
 
-// PrintHistogram mocks base method.
-func (m *MockDedup) PrintHistogram() {
+// Set mocks base method.
+func (m *MockDedup) Set(arg0 dedup.KeyValue) (bool, int64) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "PrintHistogram")
+	ret := m.ctrl.Call(m, "Set", arg0)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(int64)
+	return ret0, ret1
 }
 
-// PrintHistogram indicates an expected call of PrintHistogram.
-func (mr *MockDedupMockRecorder) PrintHistogram() *gomock.Call {
+// Set indicates an expected call of Set.
+func (mr *MockDedupMockRecorder) Set(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrintHistogram", reflect.TypeOf((*MockDedup)(nil).PrintHistogram))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockDedup)(nil).Set), arg0)
 }

@@ -39,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -395,7 +394,6 @@ func initProcessor() {
 	logger.Reset()
 	stash.Init()
 	admin.Init()
-	dedup.Init()
 	misc.Init()
 	integrations.Init()
 	format.MaxLength = 100000
@@ -1168,7 +1166,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().Get(gomock.Any()).Return(int64(0), false).After(callUnprocessed).Times(5)
-			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
+			c.MockDedup.EXPECT().Set(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
@@ -1192,7 +1190,7 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			processor.dedupHandler = c.MockDedup
+			processor.dedup = c.MockDedup
 			processor.multitenantI = c.MockMultitenantHandle
 			handlePendingGatewayJobs(processor)
 

@@ -42,10 +42,10 @@ func Test_Dedup(t *testing.T) {
 	})
 
 	t.Run("duplicate after marked as processed", func(t *testing.T) {
-		err := d.MarkProcessed([]dedup.Message{
-			{ID: "a", Size: 1},
-			{ID: "b", Size: 2},
-			{ID: "c", Size: 3},
+		err := d.Set([]dedup.KeyValue{
+			{Key: "a", Value: 1},
+			{Key: "b", Value: 2},
+			{Key: "c", Value: 3},
 		})
 		require.NoError(t, err)
 		messageIDs := []string{"a", "b", "c"}
@@ -74,8 +74,8 @@ func Test_Dedup_Window(t *testing.T) {
 	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Second))
 	defer d.Close()
 
-	err := d.MarkProcessed([]dedup.Message{
-		{ID: "to be deleted", Size: 1},
+	err := d.Set([]dedup.KeyValue{
+		{Key: "to be deleted", Value: 1},
 	})
 	require.NoError(t, err)
 
@@ -101,8 +101,8 @@ func Test_Dedup_ClearDB(t *testing.T) {
 
 	{
 		d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
-		err := d.MarkProcessed([]dedup.Message{
-			{ID: "a", Size: 1},
+		err := d.Set([]dedup.KeyValue{
+			{Key: "a", Value: 1},
 		})
 		require.NoError(t, err)
 		d.Close()
@@ -133,14 +133,14 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	defer d.Close()
 
 	size := 105_000
-	messages := make([]dedup.Message, size)
+	messages := make([]dedup.KeyValue, size)
 	for i := 0; i < size; i++ {
-		messages[i] = dedup.Message{
-			ID:   uuid.New().String(),
-			Size: int64(i + 1),
+		messages[i] = dedup.KeyValue{
+			Key:   uuid.New().String(),
+			Value: int64(i + 1),
 		}
 	}
-	err := d.MarkProcessed(messages)
+	err := d.Set(messages)
 	require.NoError(t, err)
 }
 
@@ -156,19 +156,19 @@ func Benchmark_Dedup(b *testing.B) {
 	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {
 		batchSize := 1000
 
-		msgIDs := make([]dedup.Message, batchSize)
+		msgIDs := make([]dedup.KeyValue, batchSize)
 
 		for i := 0; i < b.N; i++ {
-			msgIDs[i%batchSize] = dedup.Message{
-				ID:   uuid.New().String(),
-				Size: int64(i + 1),
+			msgIDs[i%batchSize] = dedup.KeyValue{
+				Key:   uuid.New().String(),
+				Value: int64(i + 1),
 			}
 
 			if i%batchSize == batchSize-1 || i == b.N-1 {
 				for _, msgID := range msgIDs[:i%batchSize] {
-					d.Get(msgID.ID)
+					d.Get(msgID.Key)
 				}
-				err := d.MarkProcessed(msgIDs[:i%batchSize])
+				err := d.Set(msgIDs[:i%batchSize])
 				require.NoError(b, err)
 			}
 		}

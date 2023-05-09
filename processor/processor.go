@@ -77,7 +77,7 @@ type Handle struct {
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
-	dedupHandler              dedup.Dedup
+	dedup                     dedup.Dedup
 	reporting                 types.ReportingI
 	reportingEnabled          bool
 	multitenantI              multitenant.MultiTenantI
@@ -410,7 +410,11 @@ func (proc *Handle) Setup(
 		proc.eventSchemaHandler = eventschema.GetInstance()
 	}
 	if proc.config.enableDedup {
-		proc.dedupHandler = dedup.GetInstance(clearDB)
+		opts := []dedup.OptFn{}
+		if *clearDB {
+			opts = append(opts, dedup.WithClearDB())
+		}
+		proc.dedup = dedup.New(dedup.DefaultPath(), opts...)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -531,6 +535,9 @@ func (proc *Handle) activePartitions(ctx context.Context) []string {
 }
 
 func (proc *Handle) Shutdown() {
+	if proc.dedup != nil {
+		proc.dedup.Close()
+	}
 	proc.backgroundCancel()
 	_ = proc.backgroundWait()
 }
@@ -1345,35 +1352,6 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-func (proc *Handle) getDuplicateMessageIndexes(singularEvents []types.SingularEventT, uniqueMessageIds map[string]int64) map[int]int64 {
-	duplicateMessageIndexes := make(map[int]int64, 0)
-	var messageIDs []string
-	messageIDFound := make(map[string]bool, 0)
-
-	// Get all the message IDs in the batch
-	for idx, singularEvent := range singularEvents {
-		value := misc.GetStringifiedData(singularEvent["messageId"])
-		if _, ok := messageIDFound[value]; ok {
-			duplicateMessageIndexes[idx] = 0
-		}
-		messageIDs = append(messageIDs, value)
-		messageIDFound[value] = true
-	}
-
-	for idx, messageID := range messageIDs {
-		if _, ok := uniqueMessageIds[messageID]; ok {
-			duplicateMessageIndexes[idx] = 0
-		}
-	}
-
-	for idx, messageID := range messageIDs {
-		if payloadSize, found := proc.dedupHandler.Get(messageID); found {
-			duplicateMessageIndexes[idx] = payloadSize
-		}
-	}
-	return duplicateMessageIndexes
-}
-
 type DupStat struct {
 	Count int
 	Cmp   bool
@@ -1425,7 +1403,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	marshalStart := time.Now()
-	uniqueMessageIds := make(map[string]int64)
+	uniqueMessageIds := make(map[string]struct{})
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	sourceDupStats := make(map[string]DupStat)
 
@@ -1453,13 +1431,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
 
 		if ok {
-			var duplicateMessageIndexes map[int]int64
-			if proc.config.enableDedup {
-				duplicateMessageIndexes = proc.getDuplicateMessageIndexes(singularEvents, uniqueMessageIds)
-			}
-
 			// Iterate through all the events in the batch
-			for eventIndex, singularEvent := range singularEvents {
+			for _, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
 				source, sourceError := proc.getSourceByWriteKey(writeKey)
 				if sourceError != nil {
@@ -1468,22 +1441,19 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 				}
 
 				if proc.config.enableDedup {
-					if messageIdxPayloadSize, ok := duplicateMessageIndexes[eventIndex]; ok {
+					payload, _ := jsonfast.Marshal(singularEvent)
+					messageSize := int64(len(payload))
+					if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: messageId, Value: messageSize}); !ok {
 						proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
-						if eventPayload, err := jsonfast.Marshal(singularEvent); err == nil {
-							IncrementDupStatsMapByKey(sourceDupStats, source.ID, int64(len(eventPayload)) == messageIdxPayloadSize, 1)
-						}
+						IncrementDupStatsMapByKey(sourceDupStats, source.ID, messageSize == previousSize, 1)
 						continue
+					} else {
+						uniqueMessageIds[messageId] = struct{}{}
 					}
 				}
 
 				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
 
-				if proc.config.enableDedup {
-					if payload, err := jsonfast.Marshal(singularEvent); err == nil {
-						uniqueMessageIds[messageId] = int64(len(payload))
-					}
-				}
 				// We count this as one, not destination specific ones
 				totalEvents++
 				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
@@ -1772,7 +1742,7 @@ type transformationMessage struct {
 	statusList                   []*jobsdb.JobStatusT
 	procErrorJobs                []*jobsdb.JobT
 	sourceDupStats               map[string]DupStat
-	uniqueMessageIds             map[string]int64
+	uniqueMessageIds             map[string]struct{}
 
 	totalEvents int
 	start       time.Time
@@ -1865,7 +1835,7 @@ type storeMessage struct {
 
 	reportMetrics    []*types.PUReportedMetric
 	sourceDupStats   map[string]DupStat
-	uniqueMessageIds map[string]int64
+	uniqueMessageIds map[string]struct{}
 
 	totalEvents int
 	start       time.Time
@@ -2029,27 +1999,19 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				proc.reporting.Report(in.reportMetrics, tx.SqlTx())
 			}
 
-			if proc.config.enableDedup {
-				proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
-				if len(in.uniqueMessageIds) > 0 {
-					var dedupedMessagesAcrossJobs []dedup.Message
-					for k, v := range in.uniqueMessageIds {
-						dedupedMessagesAcrossJobs = append(dedupedMessagesAcrossJobs, dedup.Message{
-							ID:   k,
-							Size: v,
-						})
-					}
-					err = proc.dedupHandler.MarkProcessed(dedupedMessagesAcrossJobs)
-					if err != nil {
-						return err
-					}
-				}
-			}
 			return nil
 		})
 	}, proc.sendRetryUpdateStats)
 	if err != nil {
 		panic(err)
+	}
+	if proc.config.enableDedup {
+		proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
+		if len(in.uniqueMessageIds) > 0 {
+			if err := proc.dedup.Commit(lo.Keys(in.uniqueMessageIds)); err != nil {
+				panic(err)
+			}
+		}
 	}
 	proc.stats.statDBW.Since(beforeStoreStatus)
 	dbWriteTime := time.Since(beforeStoreStatus)
