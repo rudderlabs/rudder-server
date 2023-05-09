@@ -28,6 +28,7 @@ type namespaceConfig struct {
 	configEnvHandler types.ConfigEnvI
 	cpRouterURL      string
 
+	config *config.Config
 	logger logger.Logger
 	client *http.Client
 
@@ -42,20 +43,23 @@ type namespaceConfig struct {
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
+	if nc.config == nil {
+		nc.config = config.Default
+	}
 	if nc.namespace == "" {
-		if !config.IsSet("WORKSPACE_NAMESPACE") {
+		if !nc.config.IsSet("WORKSPACE_NAMESPACE") {
 			return errors.New("workspaceNamespace is not configured")
 		}
-		nc.namespace = config.GetString("WORKSPACE_NAMESPACE", "")
+		nc.namespace = nc.config.GetString("WORKSPACE_NAMESPACE", "")
 	}
 	if nc.hostedServiceSecret == "" {
-		if !config.IsSet("HOSTED_SERVICE_SECRET") {
+		if !nc.config.IsSet("HOSTED_SERVICE_SECRET") {
 			return errors.New("hostedServiceSecret is not configured")
 		}
-		nc.hostedServiceSecret = config.GetString("HOSTED_SERVICE_SECRET", "")
+		nc.hostedServiceSecret = nc.config.GetString("HOSTED_SERVICE_SECRET", "")
 	}
 	if nc.configBackendURL == nil {
-		configBackendURL := config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
+		configBackendURL := nc.config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 		nc.configBackendURL, err = url.Parse(configBackendURL)
 		if err != nil {
 			return err
@@ -63,14 +67,14 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	}
 	if nc.client == nil {
 		nc.client = &http.Client{
-			Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second),
+			Timeout: nc.config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second),
 		}
 	}
 	if nc.logger == nil {
 		nc.logger = logger.NewLogger().Child("backend-config")
 	}
 	nc.workspacesConfig = make(map[string]ConfigT)
-	nc.logger.Infof("Fetching config for namespace %s", nc.namespace)
+	nc.logger.Infof("Setup config for namespace %s complete", nc.namespace)
 
 	return nil
 }
@@ -117,8 +121,8 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
 
-	var workspacesConfig map[string]ConfigT
-	err = jsonfast.Unmarshal(respBody, &workspacesConfig)
+	var requestData map[string]*ConfigT
+	err = jsonfast.Unmarshal(respBody, &requestData)
 	if err != nil {
 		nc.logger.Errorf("Error while parsing request: %v", err)
 		return configOnError, err
@@ -128,22 +132,25 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		nc.workspacesConfig = make(map[string]ConfigT)
 	}
 
-	for workspaceID, wc := range workspacesConfig {
-		if len(wc.Sources) == 0 {
+	for workspaceID, workspace := range requestData {
+		if workspace == nil { // this workspace was not updated, so skip it
 			continue
 		}
+
 		// always set connection flags to true for hosted and multi-tenant warehouse service
-		wc.ConnectionFlags.URL = nc.cpRouterURL
-		wc.ConnectionFlags.Services = map[string]bool{"warehouse": true}
-		nc.workspacesConfig[workspaceID] = wc
-		if wc.UpdatedAt.After(nc.lastUpdatedAt) {
-			nc.lastUpdatedAt = wc.UpdatedAt
+		workspace.ConnectionFlags.URL = nc.cpRouterURL
+		workspace.ConnectionFlags.Services = map[string]bool{"warehouse": true}
+		nc.workspacesConfig[workspaceID] = *workspace
+		if nc.useIncrementalConfigUpdates && workspace.UpdatedAt.After(nc.lastUpdatedAt) {
+			nc.lastUpdatedAt = workspace.UpdatedAt
 		}
 	}
 
-	for workspaceID := range nc.workspacesConfig {
-		if _, ok := workspacesConfig[workspaceID]; !ok {
-			delete(nc.workspacesConfig, workspaceID)
+	if nc.useIncrementalConfigUpdates {
+		for workspaceID := range nc.workspacesConfig {
+			if _, ok := requestData[workspaceID]; !ok {
+				delete(nc.workspacesConfig, workspaceID)
+			}
 		}
 	}
 

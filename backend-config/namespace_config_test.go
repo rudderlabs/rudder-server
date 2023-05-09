@@ -152,60 +152,58 @@ func Test_Namespace_Identity(t *testing.T) {
 }
 
 func Test_Namespace_IncrementalUpdates(t *testing.T) {
-	config.Reset()
-	logger.Reset()
-
 	var (
+		ctx       = context.Background()
 		namespace = "free-us-1"
 		secret    = "service-secret"
 	)
 
-	be := &backendConfigServer{
+	bcSrv := &backendConfigServer{
 		token: secret,
 	}
-	be.AddNamespace(t, namespace, "./testdata/sample_namespace.json")
+	bcSrv.AddNamespace(t, namespace, "./testdata/sample_namespace.json")
 
-	ts := httptest.NewServer(be)
+	ts := httptest.NewServer(bcSrv)
 	defer ts.Close()
 	httpSrvURL, err := url.Parse(ts.URL)
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
+		config: config.New(),
 		logger: logger.NOP,
 
 		client:           ts.Client(),
 		configBackendURL: httpSrvURL,
 
-		namespace: namespace,
-
+		namespace:                   namespace,
 		hostedServiceSecret:         secret,
 		cpRouterURL:                 cpRouterURL,
 		useIncrementalConfigUpdates: true,
 	}
 	require.NoError(t, client.SetUp())
 
-	c, err := client.Get(context.Background())
+	c, err := client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 2)
 
 	// send the request again, should receive any update for one more workspace
-	c, err = client.Get(context.Background())
+	c, err = client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 3)
 
 	// send the request again, should not receive any new workspace
-	c, err = client.Get(context.Background())
+	c, err = client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 3)
 
 	// send the request again, this time, the workspace would be deleted
-	c, err = client.Get(context.Background())
+	c, err = client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 2)
 
 	firstUpdateTime, _ := time.Parse(updateAfterTimeFormat, "2022-07-20T10:00:00.000Z")
-	require.Equal(t, be.receivedUpdateAt[0], firstUpdateTime, updateAfterTimeFormat)
-	require.Equal(t, be.receivedUpdateAt[1], firstUpdateTime.Add(60*time.Second), updateAfterTimeFormat)
+	require.Equal(t, bcSrv.receivedUpdateAt[0], firstUpdateTime, updateAfterTimeFormat)
+	require.Equal(t, bcSrv.receivedUpdateAt[1], firstUpdateTime.Add(60*time.Second), updateAfterTimeFormat)
 }
 
 type backendConfigServer struct {
