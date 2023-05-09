@@ -1353,8 +1353,8 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 }
 
 type dupStatKey struct {
-	sourceID    string
-	equalSize   bool
+	sourceID  string
+	equalSize bool
 }
 
 func IncrementDupStatsMapByKey(m map[dupStatKey]int, key dupStatKey, increment int) {
@@ -2669,7 +2669,7 @@ func (proc *Handle) crashRecover() {
 func (proc *Handle) updateSourceStats(sourceStats map[dupStatKey]int, bucket string) {
 	for dupStat, count := range sourceStats {
 		tags := map[string]string{
-			"source":  dupStat.sourceID,
+			"source":    dupStat.sourceID,
 			"equalSize": strconv.FormatBool(dupStat.equalSize),
 		}
 		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
