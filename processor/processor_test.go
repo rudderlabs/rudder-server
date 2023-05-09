@@ -3241,13 +3241,9 @@ var _ = Describe("TestSubJobMerger", func() {
 		},
 
 		reportMetrics: []*types.PUReportedMetric{{}, {}},
-		sourceDupStats: map[string]DupStat{
-			"stat-1": {
-				Count: 1,
-			},
-			"stat-2": {
-				Count: 2,
-			},
+		sourceDupStats: map[dupStatKey]int{
+			{sourceID: "stat-1"}: 1,
+			{sourceID: "stat-2"}: 2,
 		},
 		uniqueMessageIds: map[string]struct{}{
 			"messageId-1": {},
@@ -3262,7 +3258,7 @@ var _ = Describe("TestSubJobMerger", func() {
 			mergedJob := storeMessage{}
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]DupStat)
+			mergedJob.sourceDupStats = make(map[dupStatKey]int)
 
 			subJobs := []storeMessage{
 				{
@@ -3295,10 +3291,8 @@ var _ = Describe("TestSubJobMerger", func() {
 					reportMetrics: []*types.PUReportedMetric{
 						{},
 					},
-					sourceDupStats: map[string]DupStat{
-						"stat-1": {
-							Count: 1,
-						},
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-1"}: 1,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-1": {},
@@ -3336,10 +3330,8 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}},
-					sourceDupStats: map[string]DupStat{
-						"stat-2": {
-							Count: 2,
-						},
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-2"}: 2,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-2": {},
@@ -3368,7 +3360,7 @@ var _ = Describe("TestSubJobMerger", func() {
 			mergedJob := storeMessage{}
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]DupStat)
+			mergedJob.sourceDupStats = make(map[dupStatKey]int)
 
 			subJobs := []storeMessage{
 				{
@@ -3411,13 +3403,9 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}, {}},
-					sourceDupStats: map[string]DupStat{
-						"stat-1": {
-							Count: 1,
-						},
-						"stat-2": {
-							Count: 2,
-						},
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-1"}: 1,
+						{sourceID: "stat-2"}: 2,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-1": {},

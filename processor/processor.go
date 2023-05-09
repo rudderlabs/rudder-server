@@ -1352,21 +1352,17 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-type DupStat struct {
-	Count int
-	Cmp   bool
+type dupStatKey struct {
+	sourceID    string
+	equalSize   bool
 }
 
-func IncrementDupStatsMapByKey(m map[string]DupStat, key string, cmp bool, increment int) {
-	_, found := m[key]
+func IncrementDupStatsMapByKey(m map[dupStatKey]int, key dupStatKey, increment int) {
+	count, found := m[key]
 	if found {
-		dupStat := m[key]
-		dupStat.Count = dupStat.Count + increment
+		m[key] = count + increment
 	} else {
-		m[key] = DupStat{
-			Count: increment,
-			Cmp:   cmp,
-		}
+		m[key] = increment
 	}
 }
 
@@ -1405,7 +1401,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	marshalStart := time.Now()
 	uniqueMessageIds := make(map[string]struct{})
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
-	sourceDupStats := make(map[string]DupStat)
+	sourceDupStats := make(map[dupStatKey]int)
 
 	reportMetrics := make([]*types.PUReportedMetric, 0)
 	inCountMap := make(map[string]int64)
@@ -1445,7 +1441,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					messageSize := int64(len(payload))
 					if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: messageId, Value: messageSize}); !ok {
 						proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
-						IncrementDupStatsMapByKey(sourceDupStats, source.ID, messageSize == previousSize, 1)
+						IncrementDupStatsMapByKey(sourceDupStats, dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}, 1)
 						continue
 					}
 					uniqueMessageIds[messageId] = struct{}{}
@@ -1740,7 +1736,7 @@ type transformationMessage struct {
 	reportMetrics                []*types.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
 	procErrorJobs                []*jobsdb.JobT
-	sourceDupStats               map[string]DupStat
+	sourceDupStats               map[dupStatKey]int
 	uniqueMessageIds             map[string]struct{}
 
 	totalEvents int
@@ -1833,7 +1829,7 @@ type storeMessage struct {
 	procErrorJobs         []*jobsdb.JobT
 
 	reportMetrics    []*types.PUReportedMetric
-	sourceDupStats   map[string]DupStat
+	sourceDupStats   map[dupStatKey]int
 	uniqueMessageIds map[string]struct{}
 
 	totalEvents int
@@ -1854,8 +1850,8 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	}
 
 	sm.reportMetrics = append(sm.reportMetrics, subJob.reportMetrics...)
-	for id, dupStat := range subJob.sourceDupStats {
-		IncrementDupStatsMapByKey(sm.sourceDupStats, id, dupStat.Cmp, dupStat.Count)
+	for dupStatKey, count := range subJob.sourceDupStats {
+		IncrementDupStatsMapByKey(sm.sourceDupStats, dupStatKey, count)
 	}
 	for id, v := range subJob.uniqueMessageIds {
 		sm.uniqueMessageIds[id] = v
@@ -2650,8 +2646,8 @@ func subJobMerger(mergedJob, subJob *storeMessage) *storeMessage {
 	}
 
 	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
-	for id, dupStat := range subJob.sourceDupStats {
-		IncrementDupStatsMapByKey(mergedJob.sourceDupStats, id, dupStat.Cmp, dupStat.Count)
+	for dupStatKey, count := range subJob.sourceDupStats {
+		IncrementDupStatsMapByKey(mergedJob.sourceDupStats, dupStatKey, count)
 	}
 	for id, v := range subJob.uniqueMessageIds {
 		mergedJob.uniqueMessageIds[id] = v
@@ -2670,14 +2666,14 @@ func (proc *Handle) crashRecover() {
 	proc.gatewayDB.DeleteExecuting()
 }
 
-func (proc *Handle) updateSourceStats(sourceStats map[string]DupStat, bucket string) {
-	for sourceTag, dupStat := range sourceStats {
+func (proc *Handle) updateSourceStats(sourceStats map[dupStatKey]int, bucket string) {
+	for dupStat, count := range sourceStats {
 		tags := map[string]string{
-			"source":  sourceTag,
-			"sizeCmp": strconv.FormatBool(dupStat.Cmp),
+			"source":  dupStat.sourceID,
+			"equalSize": strconv.FormatBool(dupStat.equalSize),
 		}
 		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
-		sourceStatsD.Count(dupStat.Count)
+		sourceStatsD.Count(count)
 	}
 }
 
