@@ -10,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 const (
@@ -81,37 +80,21 @@ func unmarshalJsonToMap(jsonStr string, logger *logger.Logger) map[string]interf
 	return j
 }
 
-func (ext *ExtractorT) getJsonResponse(sampleResponse string) string {
-	if !IsJSON(sampleResponse) {
-		return sampleResponse
-	}
-	sampleRespResult := gjson.Parse(sampleResponse)
-	respRes := gjson.GetBytes([]byte(sampleRespResult.String()), responseKey)
-	if respRes.Exists() && IsJSON(respRes.Str) {
-		var j json.RawMessage
-		e := json.Unmarshal([]byte(respRes.String()), &j)
-		if e != nil {
-			ext.log.Errorf("(GetJsonResponse)UnmarshalErr: %v\tResponse:%v\n", e, respRes.String())
-			return respRes.String()
-		}
-		byteArr, setErr := sjson.SetBytes([]byte(sampleRespResult.String()), responseKey, string(j))
-		if setErr != nil {
-			ext.log.Errorf("SetBytesError: %v\tWill return empty string as error response\n", setErr)
-			return ""
-		}
-		return string(byteArr)
-	}
-
-	return sampleRespResult.String()
-}
-
 func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 	if !IsJSON(jsonStr) {
 		return jsonStr
 	}
 
-	jsonMap := unmarshalJsonToMap(jsonStr, &ext.log)
-	if jsonMap == nil {
+	var jsonI interface{}
+	er := json.Unmarshal([]byte(jsonStr), &jsonI)
+	if er != nil {
+		ext.log.Debugf("%v is not a unmarshallable into interface{}", jsonStr)
+		return jsonStr
+	}
+
+	jsonMap, isJsonMap := jsonI.(map[string]interface{})
+	if !isJsonMap {
+		ext.log.Debugf("%v is not a json map", jsonI)
 		return jsonStr
 	}
 
@@ -130,12 +113,12 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 			return ""
 		case responseKey:
 			if IsJSON(erResStr) {
-				// recursively search for common error message patterns
-				j := unmarshalJsonToMap(erResStr, &ext.log)
-				if j == nil {
-					return ""
+				var unmarshalledJsonI interface{}
+				unmarshalledErr := json.Unmarshal([]byte(erResStr), &unmarshalledJsonI)
+				if unmarshalledErr != nil {
+					return erResStr
 				}
-				return getErrorMessageFromResponse(j, ext.ErrorMessageKeys)
+				return getErrorMessageFromResponse(unmarshalledJsonI, ext.ErrorMessageKeys)
 			}
 			if len(erResStr) == 0 {
 				return "EMPTY"
@@ -156,8 +139,8 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 }
 
 func (ext *ExtractorT) GetErrorMessage(sampleResponse string) string {
-	jsonResp := ext.getJsonResponse(sampleResponse)
-	return ext.getSimpleMessage(jsonResp)
+	// jsonResp := ext.getJsonResponse(sampleResponse)
+	return ext.getSimpleMessage(sampleResponse)
 }
 
 func findKeys(keys []string, jsonObj interface{}) map[string]interface{} {
@@ -213,12 +196,17 @@ func getValue(keys []string, jsonObj map[string]interface{}) interface{} {
 	return nil
 }
 
-func getErrorMessageFromResponse(resp map[string]interface{}, messageKeys []string) string {
-	if _, ok := resp["msg"]; ok {
-		return resp["msg"].(string)
+func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string {
+	var respMap map[string]interface{}
+	respMap, isMap := resp.(map[string]interface{})
+	if !isMap {
+		goto skipToSome
+	}
+	if _, ok := respMap["msg"]; ok {
+		return respMap["msg"].(string)
 	}
 
-	if destinationResponse, ok := resp["destinationResponse"].(map[string]interface{}); ok {
+	if destinationResponse, ok := respMap["destinationResponse"].(map[string]interface{}); ok {
 		if result := findFirstExistingKey(messageKeys, destinationResponse); result != nil {
 			return result.(string)
 		}
@@ -229,6 +217,7 @@ func getErrorMessageFromResponse(resp map[string]interface{}, messageKeys []stri
 		}
 	}
 
+skipToSome:
 	if errors, ok := getValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{}); ok && len(errors) > 0 {
 		s := make([]string, len(errors))
 		for i, v := range errors {
