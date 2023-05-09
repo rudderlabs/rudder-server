@@ -169,6 +169,14 @@ func getFirstNonNilValue(keys []string, jsonObj map[string]interface{}) interfac
 	return nil
 }
 
+func convertInterfaceArrToStrArrWithDelimitter(arrI []interface{}, delimitter string) string {
+	s := make([]string, len(arrI))
+	for i, v := range arrI {
+		s[i] = fmt.Sprint(v)
+	}
+	return strings.Join(s, delimitter)
+}
+
 func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string {
 	var respMap map[string]interface{}
 	respMap, isMap := resp.(map[string]interface{})
@@ -204,11 +212,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 
 errorsBlock:
 	if errors, ok := getFirstNonNilValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{}); ok && len(errors) > 0 {
-		s := make([]string, len(errors))
-		for i, v := range errors {
-			s[i] = fmt.Sprint(v)
-		}
-		return strings.Join(s, ".")
+		return convertInterfaceArrToStrArrWithDelimitter(errors, ".")
 	}
 
 	return ""
@@ -224,11 +228,7 @@ func getErrorFromWarehouse(resp map[string]interface{}) string {
 		return ""
 	}
 	errors := lo.Uniq(arrOfErrs)
-	errorStrings := make([]string, len(errors))
-	for i, v := range errors {
-		errorStrings[i] = fmt.Sprint(v)
-	}
-	return strings.Join(errorStrings, ".")
+	return convertInterfaceArrToStrArrWithDelimitter(errors, ".")
 }
 
 func IsJSON(s string) bool {
