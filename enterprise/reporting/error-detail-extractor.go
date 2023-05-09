@@ -159,14 +159,14 @@ func findKeys(keys []string, jsonObj interface{}) map[string]interface{} {
 // This function takes a list of keys and a JSON object as input, and returns the value of the first key that exists in the JSON object.
 func findFirstExistingKey(keys []string, jsonObj interface{}) interface{} {
 	keyValues := findKeys(keys, jsonObj)
-	result := getValue(keys, keyValues)
+	result := getFirstNonNilValue(keys, keyValues)
 	if checkForGoMapOrList(result) {
 		return findFirstExistingKey(keys, result)
 	}
 	return result
 }
 
-func getValue(keys []string, jsonObj map[string]interface{}) interface{} {
+func getFirstNonNilValue(keys []string, jsonObj map[string]interface{}) interface{} {
 	for _, key := range keys {
 		if value, ok := jsonObj[key]; ok && value != nil {
 			return value
@@ -197,7 +197,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 	}
 
 skipToSome:
-	if errors, ok := getValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{}); ok && len(errors) > 0 {
+	if errors, ok := getFirstNonNilValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{}); ok && len(errors) > 0 {
 		s := make([]string, len(errors))
 		for i, v := range errors {
 			s[i] = fmt.Sprint(v)
