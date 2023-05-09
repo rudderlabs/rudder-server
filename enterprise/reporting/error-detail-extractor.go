@@ -63,23 +63,6 @@ func checkForGoMapOrList(value interface{}) bool {
 	return false
 }
 
-func unmarshalJsonToMap(jsonStr string, logger *logger.Logger) map[string]interface{} {
-	var j map[string]interface{}
-	err := json.Unmarshal([]byte(jsonStr), &j)
-	if err != nil {
-		errStr := fmt.Sprintf("Unmarshal Err: %v\nJsonStr:%v\n", err, jsonStr)
-		// For proper logging
-		if logger != nil {
-			(*logger).Errorf(errStr)
-		} else {
-			fmt.Println(errStr)
-		}
-
-		return nil
-	}
-	return j
-}
-
 func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 	if !IsJSON(jsonStr) {
 		return jsonStr
@@ -149,32 +132,28 @@ func findKeys(keys []string, jsonObj interface{}) map[string]interface{} {
 		return values
 	}
 	// recursively search for keys in nested JSON objects
-	if checkForGoMapOrList(jsonObj) {
-		switch jsonObj := jsonObj.(type) {
-		case map[string]interface{}: // if jsonObj is a map
-			for _, key := range keys {
-				if value, ok := jsonObj[key]; ok && value != nil {
-					values[key] = value
-				}
-			}
-			for _, value := range jsonObj {
-				subResults := findKeys(keys, value)
-				for k, v := range subResults {
-					values[k] = v
-				}
-			}
-		case []interface{}: // if jsonObj is a slice
-			for _, item := range jsonObj {
-				subResults := findKeys(keys, item)
-				for k, v := range subResults {
-					values[k] = v
-				}
+	switch jsonObj := jsonObj.(type) {
+	case map[string]interface{}: // if jsonObj is a map
+		for _, key := range keys {
+			if value, ok := jsonObj[key]; ok && value != nil {
+				values[key] = value
 			}
 		}
-		return values // return the map of keys and values
+		for _, value := range jsonObj {
+			subResults := findKeys(keys, value)
+			for k, v := range subResults {
+				values[k] = v
+			}
+		}
+	case []interface{}: // if jsonObj is a slice
+		for _, item := range jsonObj {
+			subResults := findKeys(keys, item)
+			for k, v := range subResults {
+				values[k] = v
+			}
+		}
 	}
-	// if jsonObj is not a map or slice, return an empty map
-	return values
+	return values // return the map of keys and values
 }
 
 // This function takes a list of keys and a JSON object as input, and returns the value of the first key that exists in the JSON object.
