@@ -172,25 +172,37 @@ func getFirstNonNilValue(keys []string, jsonObj map[string]interface{}) interfac
 func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string {
 	var respMap map[string]interface{}
 	respMap, isMap := resp.(map[string]interface{})
+
+	var getMessage = func(msgKeys []string, response interface{}) string {
+		if result := findFirstExistingKey(msgKeys, response); result != nil {
+			if s, ok := result.(string); ok {
+				return s
+			}
+		}
+		return ""
+	}
+
+	var msg string
+
 	if !isMap {
-		goto skipToSome
+		goto errorsBlock
 	}
 	if _, ok := respMap["msg"]; ok {
 		return respMap["msg"].(string)
 	}
 
 	if destinationResponse, ok := respMap["destinationResponse"].(map[string]interface{}); ok {
-		if result := findFirstExistingKey(messageKeys, destinationResponse); result != nil {
-			return result.(string)
+		msg = getMessage(messageKeys, destinationResponse)
+		if len(strings.TrimSpace(msg)) != 0 {
+			return msg
 		}
 	}
-	if message := findFirstExistingKey(messageKeys, resp); message != nil {
-		if s, ok := message.(string); ok {
-			return s
-		}
+	msg = getMessage(messageKeys, resp)
+	if len(strings.TrimSpace(msg)) != 0 {
+		return msg
 	}
 
-skipToSome:
+errorsBlock:
 	if errors, ok := getFirstNonNilValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{}); ok && len(errors) > 0 {
 		s := make([]string, len(errors))
 		for i, v := range errors {
