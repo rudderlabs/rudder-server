@@ -73,6 +73,15 @@ type webRequestT struct {
 	writeKey       string
 	ipAddr         string
 	userIDHeader   string
+	errors         []string
+}
+
+func (wr *webRequestT) respond() {
+	if len(wr.errors) > 0 {
+		wr.done <- wr.errors[0]
+	} else {
+		wr.done <- ""
+	}
 }
 
 type batchWebRequestT struct {
@@ -471,21 +480,18 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			errorMessagesMap = <-userWebRequestWorker.reponseQ
 		}
 
-		reqOKMap := make(map[*webRequestT]string)
 		for _, job := range jobList {
 			err, found := errorMessagesMap[job.UUID]
 			sourceTag := jobSourceTagMap[job.UUID]
 			if found {
 				sourceStats[sourceTag].RequestEventsFailed(job.EventCount, "storeFailed")
+				jobIDReqMap[job.UUID].errors = append(jobIDReqMap[job.UUID].errors, err)
 			} else {
 				sourceStats[sourceTag].RequestEventsSucceeded(job.EventCount)
 			}
-			if reqOKMap[jobIDReqMap[job.UUID]] == "" {
-				reqOKMap[jobIDReqMap[job.UUID]] = err
-			}
 		}
-		for req, err := range reqOKMap {
-			req.done <- err
+		for _, req := range breq.batchRequest {
+			req.respond()
 		}
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
