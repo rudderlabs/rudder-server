@@ -68,23 +68,17 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 		return jsonStr
 	}
 
-	var jsonI interface{}
-	er := json.Unmarshal([]byte(jsonStr), &jsonI)
+	var jsonMap map[string]interface{}
+	er := json.Unmarshal([]byte(jsonStr), &jsonMap)
 	if er != nil {
 		ext.log.Debugf("%v is not a unmarshallable into interface{}", jsonStr)
-		return jsonStr
-	}
-
-	jsonMap, isJsonMap := jsonI.(map[string]interface{})
-	if !isJsonMap {
-		ext.log.Debugf("%v is not a json map", jsonI)
 		return jsonStr
 	}
 
 	for key, erRes := range jsonMap {
 		erResStr, isString := erRes.(string)
 		if !isString {
-			ext.log.Errorf("Type-assertion failed for %v with value %v: not a string", key, erRes)
+			ext.log.Debugf("Type-assertion failed for %v with value %v: not a string", key, erRes)
 		}
 		switch key {
 		case "reason":
