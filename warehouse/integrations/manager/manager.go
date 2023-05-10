@@ -30,7 +30,7 @@ import (
 type Manager interface {
 	Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) error
 	CrashRecover()
-	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
+	FetchSchema() (model.Schema, model.Schema, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap model.TableSchema) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
