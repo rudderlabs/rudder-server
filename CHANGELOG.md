@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/rudderlabs/rudder-server/compare/v1.8.0...v1.8.1) (2023-05-10)
+
+
+### Bug Fixes
+
+* kafka secret comes first ([#3307](https://github.com/rudderlabs/rudder-server/issues/3307)) ([757f608](https://github.com/rudderlabs/rudder-server/commit/757f6085d89ee08599e28c2218e110403d303f54))
+
 ## [1.8.0](https://github.com/rudderlabs/rudder-server/compare/v1.7.0...v1.8.0) (2023-05-09)
 
 
