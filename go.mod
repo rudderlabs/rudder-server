@@ -99,7 +99,7 @@ require (
 	golang.org/x/exp v0.0.0-20230418202329-0354be287a23
 	golang.org/x/oauth2 v0.8.0
 	golang.org/x/sync v0.2.0
-	google.golang.org/api v0.121.0
+	google.golang.org/api v0.122.0
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 	google.golang.org/grpc v1.55.0
 	google.golang.org/protobuf v1.30.0
