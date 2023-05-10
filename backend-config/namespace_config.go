@@ -100,14 +100,20 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		values.Add("updatedAfter", nc.lastUpdatedAt.Format(updatedAfterTimeFormat))
 		u.RawQuery = values.Encode()
 	}
+
+	req, err := nc.prepareHTTPRequest(ctx, u.String())
+	if err != nil {
+		return configOnError, fmt.Errorf("error preparing request: %w", err)
+	}
+
 	operation := func() (fetchError error) {
 		nc.logger.Debugf("Fetching config from %s", u.String())
-		respBody, fetchError = nc.makeHTTPRequest(ctx, u.String())
+		respBody, fetchError = nc.makeHTTPRequest(req)
 		return fetchError
 	}
 
 	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		nc.logger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
@@ -128,36 +134,34 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		return configOnError, err
 	}
 
-	if !nc.useIncrementalConfigUpdates {
-		nc.workspacesConfig = make(map[string]ConfigT)
-	}
-
+	workspacesConfig := make(map[string]ConfigT, len(requestData))
 	for workspaceID, workspace := range requestData {
-		if workspace == nil { // this workspace was not updated, so skip it
-			continue
+		if workspace == nil { // this workspace was not updated, populate it with the previous config
+			previousConfig, ok := nc.workspacesConfig[workspaceID]
+			if !ok {
+				panic(fmt.Errorf(
+					"workspace %q was not updated but was not present in previous config: %+v",
+					workspaceID, req,
+				))
+			}
+			workspace = &previousConfig
 		}
 
 		// always set connection flags to true for hosted and multi-tenant warehouse service
 		workspace.ConnectionFlags.URL = nc.cpRouterURL
 		workspace.ConnectionFlags.Services = map[string]bool{"warehouse": true}
-		nc.workspacesConfig[workspaceID] = *workspace
+		workspacesConfig[workspaceID] = *workspace
 		if nc.useIncrementalConfigUpdates && workspace.UpdatedAt.After(nc.lastUpdatedAt) {
 			nc.lastUpdatedAt = workspace.UpdatedAt
 		}
 	}
 
-	if nc.useIncrementalConfigUpdates {
-		for workspaceID := range nc.workspacesConfig {
-			if _, ok := requestData[workspaceID]; !ok {
-				delete(nc.workspacesConfig, workspaceID)
-			}
-		}
-	}
+	nc.workspacesConfig = workspacesConfig
 
 	return nc.workspacesConfig, nil
 }
 
-func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
+func (nc *namespaceConfig) prepareHTTPRequest(ctx context.Context, url string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, err
@@ -169,6 +173,11 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 		q.Add("region", nc.region)
 		req.URL.RawQuery = q.Encode()
 	}
+
+	return req, nil
+}
+
+func (nc *namespaceConfig) makeHTTPRequest(req *http.Request) ([]byte, error) {
 	resp, err := nc.client.Do(req)
 	if err != nil {
 		return nil, err
