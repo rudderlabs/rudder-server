@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2](https://github.com/rudderlabs/rudder-server/compare/v1.8.1...v1.8.2) (2023-05-10)
+
+
+### Bug Fixes
+
+* stash loop not sleeping when no jobs are present ([#3312](https://github.com/rudderlabs/rudder-server/issues/3312)) ([b446ae7](https://github.com/rudderlabs/rudder-server/commit/b446ae756fa96186326f2c1cf14c4756c50a64cd))
+
 ## [1.8.1](https://github.com/rudderlabs/rudder-server/compare/v1.8.0...v1.8.1) (2023-05-10)
 
 
