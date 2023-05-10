@@ -100,13 +100,14 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		u.RawQuery = values.Encode()
 	}
 
-	req, err := nc.prepareHTTPRequest(ctx, u.String())
+	urlString := u.String()
+	req, err := nc.prepareHTTPRequest(ctx, urlString)
 	if err != nil {
 		return configOnError, fmt.Errorf("error preparing request: %w", err)
 	}
 
 	operation := func() (fetchError error) {
-		nc.logger.Debugf("Fetching config from %s", u.String())
+		nc.logger.Debugf("Fetching config from %s", urlString)
 		respBody, fetchError = nc.makeHTTPRequest(req)
 		return fetchError
 	}
