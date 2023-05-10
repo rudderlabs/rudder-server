@@ -535,11 +535,11 @@ func (proc *Handle) activePartitions(ctx context.Context) []string {
 }
 
 func (proc *Handle) Shutdown() {
+	proc.backgroundCancel()
+	_ = proc.backgroundWait()
 	if proc.dedup != nil {
 		proc.dedup.Close()
 	}
-	proc.backgroundCancel()
-	_ = proc.backgroundWait()
 }
 
 func (proc *Handle) loadConfig() {
@@ -1357,15 +1357,6 @@ type dupStatKey struct {
 	equalSize bool
 }
 
-func IncrementDupStatsMapByKey(m map[dupStatKey]int, key dupStatKey, increment int) {
-	count, found := m[key]
-	if found {
-		m[key] = count + increment
-	} else {
-		m[key] = increment
-	}
-}
-
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedEventList [][]types.SingularEventT) *transformationMessage {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
@@ -1441,7 +1432,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					messageSize := int64(len(payload))
 					if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: messageId, Value: messageSize}); !ok {
 						proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
-						IncrementDupStatsMapByKey(sourceDupStats, dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}, 1)
+						sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 						continue
 					}
 					uniqueMessageIds[messageId] = struct{}{}
@@ -1851,7 +1842,7 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 
 	sm.reportMetrics = append(sm.reportMetrics, subJob.reportMetrics...)
 	for dupStatKey, count := range subJob.sourceDupStats {
-		IncrementDupStatsMapByKey(sm.sourceDupStats, dupStatKey, count)
+		sm.sourceDupStats[dupStatKey] += count
 	}
 	for id, v := range subJob.uniqueMessageIds {
 		sm.uniqueMessageIds[id] = v
@@ -2647,7 +2638,7 @@ func subJobMerger(mergedJob, subJob *storeMessage) *storeMessage {
 
 	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
 	for dupStatKey, count := range subJob.sourceDupStats {
-		IncrementDupStatsMapByKey(mergedJob.sourceDupStats, dupStatKey, count)
+		mergedJob.sourceDupStats[dupStatKey] += count
 	}
 	for id, v := range subJob.uniqueMessageIds {
 		mergedJob.uniqueMessageIds[id] = v
