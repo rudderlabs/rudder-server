@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	jsonfast              = jsoniter.ConfigCompatibleWithStandardLibrary
-	updateAfterTimeFormat = "2006-01-02T15:04:05Z"
+	jsonfast               = jsoniter.ConfigCompatibleWithStandardLibrary
+	updatedAfterTimeFormat = "2006-01-02T15:04:05Z"
 )
 
 type namespaceConfig struct {
@@ -97,7 +97,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	u.Path = fmt.Sprintf("/data-plane/v1/namespaces/%s/config", nc.namespace)
 	if useUpdateAfter {
 		values := u.Query()
-		values.Add("updatedAfter", nc.lastUpdatedAt.Format(updateAfterTimeFormat))
+		values.Add("updatedAfter", nc.lastUpdatedAt.Format(updatedAfterTimeFormat))
 		u.RawQuery = values.Encode()
 	}
 	operation := func() (fetchError error) {

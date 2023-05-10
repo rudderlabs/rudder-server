@@ -48,8 +48,8 @@ func Test_Namespace_Get(t *testing.T) {
 		hostServiceSecret = "service-secret"
 	)
 
-	bcSrv := &backendConfigServer{token: hostServiceSecret}
-	bcSrv.addNamespace(t, namespace, "./testdata/sample_namespace.json")
+	bcSrv := &backendConfigServer{t: t, token: hostServiceSecret}
+	bcSrv.addNamespace(namespace, "./testdata/sample_namespace.json")
 
 	ts := httptest.NewServer(bcSrv)
 	defer ts.Close()
@@ -115,7 +115,7 @@ func Test_Namespace_Identity(t *testing.T) {
 		secret    = "service-secret"
 	)
 
-	bcSrv := &backendConfigServer{token: secret}
+	bcSrv := &backendConfigServer{t: t, token: secret}
 
 	ts := httptest.NewServer(bcSrv)
 	defer ts.Close()
@@ -144,17 +144,61 @@ func Test_Namespace_Identity(t *testing.T) {
 
 func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	var (
-		ctx       = context.Background()
-		namespace = "free-us-1"
-		secret    = "service-secret"
+		ctx                  = context.Background()
+		namespace            = "free-us-1"
+		secret               = "service-secret"
+		requestNumber        int
+		receivedUpdatedAfter []time.Time
 	)
 
-	bcSrv := &backendConfigServer{
-		token: secret,
-	}
-	bcSrv.addNamespace(t, namespace, "./testdata/sample_namespace.json")
+	responseBody, err := os.ReadFile("./testdata/sample_namespace.json")
+	require.NoError(t, err)
 
-	ts := httptest.NewServer(bcSrv)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() { requestNumber++ }()
+
+		user, _, ok := r.BasicAuth()
+		require.True(t, ok)
+		require.Equal(t, secret, user)
+
+		var (
+			err              error
+			updatedAfterTime time.Time
+		)
+		for k, v := range r.URL.Query() {
+			if k != "updatedAfter" {
+				continue
+			}
+
+			updatedAfterTime, err = time.Parse(updatedAfterTimeFormat, v[0])
+			require.NoError(t, err)
+
+			receivedUpdatedAfter = append(receivedUpdatedAfter, updatedAfterTime)
+		}
+
+		switch requestNumber {
+		case 0: // 1st request, return file content as is
+		case 1: // 2nd request, return new workspace, no updates for the other 2
+			responseBody = []byte(fmt.Sprintf(`{
+				"dummy":{"updatedAt":%q,"libraries":[{"versionId":"foo"},{"versionId":"bar"}]},
+				"2CCgbmvBSa8Mv81YaIgtR36M7aW":null,
+				"2CChLejq5aIWi3qsKVm1PjHkyTj":null
+			}`, updatedAfterTime.Add(time.Minute).Format(updatedAfterTimeFormat)))
+		case 2: // 3rd request, return updated dummy workspace, no updates for the other 2
+			responseBody = []byte(fmt.Sprintf(`{
+				"dummy":{"updatedAt":%q,"libraries":[{"versionId":"baz"}]},
+				"2CCgbmvBSa8Mv81YaIgtR36M7aW":null,
+				"2CChLejq5aIWi3qsKVm1PjHkyTj":null
+			}`, updatedAfterTime.Add(time.Minute).Format(updatedAfterTimeFormat)))
+		case 3, 4: // 4th and 5th request, delete the dummy workspace
+			responseBody = []byte(`{
+				"2CCgbmvBSa8Mv81YaIgtR36M7aW":null,
+				"2CChLejq5aIWi3qsKVm1PjHkyTj":null
+			}`)
+		}
+
+		_, _ = w.Write(responseBody)
+	}))
 	defer ts.Close()
 	httpSrvURL, err := url.Parse(ts.URL)
 	require.NoError(t, err)
@@ -173,85 +217,91 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	}
 	require.NoError(t, client.SetUp())
 
+	// send the request the first time
 	c, err := client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 2)
+	require.Contains(t, c, "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
+	require.Empty(t, receivedUpdatedAfter, "The first request should not have updatedAfter in the query params")
 
-	// send the request again, should receive any update for one more workspace
+	// send the request again, should receive the new dummy workspace
 	c, err = client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 3)
+	require.Contains(t, c, "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
+	require.Contains(t, c, "dummy")
+	require.Equal(t, LibrariesT{{VersionID: "foo"}, {VersionID: "bar"}}, c["dummy"].Libraries)
+	require.Len(t, receivedUpdatedAfter, 1)
+	expectedUpdatedAt, err := time.Parse(updatedAfterTimeFormat, "2022-07-20T10:00:00.000Z")
+	require.NoError(t, err)
+	require.Equal(t, receivedUpdatedAfter[0], expectedUpdatedAt, updatedAfterTimeFormat)
 
-	// send the request again, should not receive any new workspace
+	// send the request again, should receive the updated dummy workspace
 	c, err = client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 3)
+	require.Contains(t, c, "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
+	require.Contains(t, c, "dummy")
+	require.Equal(t, LibrariesT{{VersionID: "baz"}}, c["dummy"].Libraries)
+	require.Len(t, receivedUpdatedAfter, 2)
+	require.Equal(t, receivedUpdatedAfter[1], expectedUpdatedAt.Add(time.Minute), updatedAfterTimeFormat)
 
-	// send the request again, this time, the workspace would be deleted
+	// send the request again, should not receive dummy since it was deleted
 	c, err = client.Get(ctx)
 	require.NoError(t, err)
 	require.Len(t, c, 2)
+	require.Contains(t, c, "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
+	require.Len(t, receivedUpdatedAfter, 3)
+	require.Equal(t, receivedUpdatedAfter[2], expectedUpdatedAt.Add(2*time.Minute), updatedAfterTimeFormat)
 
-	firstUpdateTime, _ := time.Parse(updateAfterTimeFormat, "2022-07-20T10:00:00.000Z")
-	require.Equal(t, bcSrv.receivedUpdateAt[0], firstUpdateTime, updateAfterTimeFormat)
-	require.Equal(t, bcSrv.receivedUpdateAt[1], firstUpdateTime.Add(60*time.Second), updateAfterTimeFormat)
+	// send the request again, the updatedAfter should be the same as the last request since no updates
+	// were received, we have no way of knowing the "control plane time"
+	c, err = client.Get(ctx)
+	require.NoError(t, err)
+	require.Len(t, c, 2)
+	require.Contains(t, c, "2CCgbmvBSa8Mv81YaIgtR36M7aW")
+	require.Contains(t, c, "2CChLejq5aIWi3qsKVm1PjHkyTj")
+	require.Len(t, receivedUpdatedAfter, 4)
+	require.Equal(t, receivedUpdatedAfter[3], expectedUpdatedAt.Add(2*time.Minute), updatedAfterTimeFormat)
 }
 
 type backendConfigServer struct {
-	responses              map[string]string
-	receivedUpdateAt       []time.Time
-	numIncrementalRequests int
-	token                  string
+	t         *testing.T
+	responses map[string]string
+	token     string
 }
 
-func (server *backendConfigServer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	user, _, ok := req.BasicAuth()
-	if !ok || user != server.token {
-		resp.WriteHeader(http.StatusUnauthorized)
-		_, _ = resp.Write([]byte(`{"message":"Unauthorized"}`))
+func (s *backendConfigServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	user, _, ok := r.BasicAuth()
+	if !ok || user != s.token {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"Unauthorized"}`))
 		return
 	}
-	values := req.URL.Query()
-	for k, v := range values {
-		if k == "updatedAfter" {
-			server.numIncrementalRequests = server.numIncrementalRequests + 1
-			updateAtTime, err := time.Parse(updateAfterTimeFormat, v[0])
-			if err != nil {
-				resp.WriteHeader(http.StatusBadRequest)
-				_, _ = resp.Write([]byte(`{"message":"invalid param for updatedAfter"}`))
-			}
-			server.receivedUpdateAt = append(server.receivedUpdateAt, updateAtTime)
-			newUpdateAt := updateAtTime.Add(60 * time.Second)
-			var response string
-			if server.numIncrementalRequests < 3 {
-				response = fmt.Sprintf(`{"dummy":{"updatedAt":%q, "sources":[{}]}, "2CCgbmvBSa8Mv81YaIgtR36M7aW": null, "2CChLejq5aIWi3qsKVm1PjHkyTj" : null}`, newUpdateAt.Format((updateAfterTimeFormat)))
-			} else {
-				response = `{"2CChLejq5aIWi3qsKVm1PjHkyTj" : null, "2CCgbmvBSa8Mv81YaIgtR36M7aW": null}`
-			}
-			resp.WriteHeader(http.StatusOK)
-			_, _ = resp.Write([]byte(response))
-			return
-		}
-	}
-	body, ok := server.responses[req.URL.Path]
+
+	body, ok := s.responses[r.URL.Path]
 	if !ok {
-		resp.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	resp.WriteHeader(http.StatusOK)
-	_, _ = resp.Write([]byte(body))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(body))
 }
 
-func (server *backendConfigServer) addNamespace(t *testing.T, namespace, path string) {
-	t.Helper()
+func (s *backendConfigServer) addNamespace(namespace, path string) {
+	s.t.Helper()
 
-	if server.responses == nil {
-		server.responses = make(map[string]string)
+	if s.responses == nil {
+		s.responses = make(map[string]string)
 	}
 
 	payload, err := os.ReadFile(path)
-	require.NoError(t, err)
+	require.NoError(s.t, err)
 
-	server.responses["/data-plane/v1/namespaces/"+namespace+"/config"] = string(payload)
+	s.responses["/data-plane/v1/namespaces/"+namespace+"/config"] = string(payload)
 }
