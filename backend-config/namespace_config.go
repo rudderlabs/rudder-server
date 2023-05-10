@@ -103,7 +103,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	urlString := u.String()
 	req, err := nc.prepareHTTPRequest(ctx, urlString)
 	if err != nil {
-		return configOnError, fmt.Errorf("error preparing request: %w", err)
+		return configOnError, fmt.Errorf("error preparing request: %s: %w", urlString, err)
 	}
 
 	operation := func() (fetchError error) {
