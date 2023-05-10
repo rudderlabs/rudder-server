@@ -321,7 +321,7 @@ type FetchTableInfo struct {
 }
 
 type FetchTablesResponse struct {
-	ConnectionsTables []FetchTableInfo `json:"tables_per_connection"`
+	ConnectionsTables []FetchTableInfo `json:"connections_tables"`
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
