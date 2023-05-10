@@ -90,12 +90,11 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	if nc.namespace == "" {
 		return configOnError, fmt.Errorf("namespace is not configured")
 	}
-	useUpdateAfter := nc.useIncrementalConfigUpdates && !nc.lastUpdatedAt.IsZero()
 
 	var respBody []byte
 	u := *nc.configBackendURL
 	u.Path = fmt.Sprintf("/data-plane/v1/namespaces/%s/config", nc.namespace)
-	if useUpdateAfter {
+	if nc.useIncrementalConfigUpdates && !nc.lastUpdatedAt.IsZero() {
 		values := u.Query()
 		values.Add("updatedAfter", nc.lastUpdatedAt.Format(updatedAfterTimeFormat))
 		u.RawQuery = values.Encode()
