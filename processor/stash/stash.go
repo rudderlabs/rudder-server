@@ -354,6 +354,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 
 			if len(combinedList) == 0 {
 				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
+				sleepTime = st.calculateSleepTime(limitReached)
 				continue
 			}
 
