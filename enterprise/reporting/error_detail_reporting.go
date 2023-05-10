@@ -199,11 +199,6 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 		workspaceID := edRep.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
 
-		// TODO: Think through with team on if PII exclusion is required
-		// if edRep.IsPIIReportingDisabled(workspaceID) {
-		// 	metric = transformMetricForPII(metric, getPIIColumnsToExclude())
-		// }
-
 		// extract error-message & error-code
 		errDets := edRep.extractErrorDetails(metric.StatusDetail.SampleResponse)
 		_, err = stmt.Exec(
@@ -277,7 +272,6 @@ func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
 }
 
 func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
-	// TODO: to extract information
 	errMsg := edRep.errorDetailExtractor.GetErrorMessage(sampleResponse)
 	cleanedErrMsg := edRep.errorDetailExtractor.CleanUpErrorMessage(errMsg)
 	return errorDetails{
