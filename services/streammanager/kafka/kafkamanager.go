@@ -325,8 +325,12 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		}
 	}
 
-	var sshConfig *client.SSHConfig
-	if destConfig.UseSSH {
+	// TODO: once the latest control-plane changes are in production we can safely remove this
+	sshConfig, err := getSSHConfig(destination.ID, config.Default)
+	if err != nil {
+		return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
+	}
+	if sshConfig == nil && destConfig.UseSSH {
 		privateKey, err := getSSHPrivateKey(context.Background(), destination.ID)
 		if err != nil {
 			return nil, fmt.Errorf("[Kafka] invalid SSH private key: %w", err)
@@ -335,11 +339,6 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 			Host:       destConfig.SSHHost + ":" + destConfig.SSHPort,
 			User:       destConfig.SSHUser,
 			PrivateKey: privateKey,
-		}
-	} else { // TODO: once the latest control-plane changes are in production we can safely remove this
-		sshConfig, err = getSSHConfig(destination.ID, config.Default)
-		if err != nil {
-			return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
 		}
 	}
 
