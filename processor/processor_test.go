@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -38,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -57,7 +57,7 @@ type testContext struct {
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB    *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReportingI
-	MockDedup             *mockDedup.MockDedupI
+	MockDedup             *mockDedup.MockDedup
 	MockMultitenantHandle *mocksMultitenant.MockMultiTenantI
 	MockRsourcesService   *rsources.MockJobService
 }
@@ -85,7 +85,7 @@ func (c *testContext) Setup() {
 			return ch
 		})
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
-	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
+	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 }
 
@@ -394,9 +394,10 @@ func initProcessor() {
 	logger.Reset()
 	stash.Init()
 	admin.Init()
-	dedup.Init()
 	misc.Init()
 	integrations.Init()
+	format.MaxLength = 100000
+	format.MaxDepth = 10
 }
 
 var _ = Describe("Processor with event schemas v2", Ordered, func() {
@@ -1164,8 +1165,8 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return([]int{1}).After(callUnprocessed).Times(2)
-			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
+			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0)).After(callUnprocessed).Times(3)
+			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
@@ -1173,7 +1174,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil).Times(1)
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(2)).Times(1)
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(3)).Times(1)
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
@@ -1189,7 +1190,7 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			processor.dedupHandler = c.MockDedup
+			processor.dedup = c.MockDedup
 			processor.multitenantI = c.MockMultitenantHandle
 			handlePendingGatewayJobs(processor)
 		})
@@ -1568,6 +1569,8 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 			c.mockProcErrorsDB.EXPECT().FailExecuting().Times(1)
+			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).AnyTimes()
 
 			var wg sync.WaitGroup
 			wg.Add(1)
@@ -1904,6 +1907,7 @@ var _ = Describe("Static Function Tests", func() {
 	Context("ConvertToTransformerResponse Tests", func() {
 		It("Should filter out unsupported message types", func() {
 			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"identify"},
@@ -1970,6 +1974,7 @@ var _ = Describe("Static Function Tests", func() {
 				Config: map[string]interface{}{
 					"enableServerSideIdentify": false,
 				},
+				IsProcessorEnabled: true, // assuming the mode is cloud/hybrid
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
 						"supportedMessageTypes": []interface{}{"identify", "track"},
@@ -2284,6 +2289,517 @@ var _ = Describe("Static Function Tests", func() {
 						Output:     events[2].Message,
 						StatusCode: 200,
 						Metadata:   events[2].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to cloud-mode destination, should filter out any event types that are not track/group", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "cloud",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "page"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": map[string]interface{}{
+								"messageType": []interface{}{"track", "group"},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "identify",
+						"event": "User Authenticated",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					// {
+					// 	Output:     events[1].Message,
+					// 	StatusCode: 200,
+					// 	Metadata:   events[1].Metadata,
+					// },
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to device-mode destination, should filter out all the events to this destination", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: false,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "device",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": map[string]interface{}{
+								"messageType": []interface{}{"track", "group"},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events:       nil,
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to hybrid-mode destination, should filter out any event types that are not track/group", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": map[string]interface{}{
+								"messageType": []interface{}{"track", "group"},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter is not present, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "group",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web is a string, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": "al",
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "group",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "web",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
+					},
+				},
+				FailedEvents: nil,
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response).To(Equal(expectedResponse))
+		})
+
+		// source-type(in sourceDefinition) is empty string
+		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web.messageType supports track only but sourceType is coming up as empty string, should filter out all the events with event.type not in supportedMessageTypes", func() {
+			destinationConfig := backendconfig.DestinationT{
+				IsProcessorEnabled: true,
+				Config: map[string]interface{}{
+					"enableServerSideIdentify": false,
+					"listOfConversions": []interface{}{
+						map[string]interface{}{"conversions": "Credit Card Added"},
+						map[string]interface{}{"conversions": 1},
+					},
+					"connectionMode": "hybrid",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]interface{}{
+							"android": []interface{}{
+								"cloud",
+								"device",
+							},
+							"web": []interface{}{
+								"cloud",
+								"device",
+								"hybrid",
+							},
+						},
+						"hybridModeCloudEventsFilter": map[string]interface{}{
+							"web": map[string]interface{}{
+								"messageType": []interface{}{"track"},
+							},
+						},
+					},
+				},
+			}
+
+			events := []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-1",
+						SourceDefinitionType: "",
+					},
+					Message: map[string]interface{}{
+						"type":  "track",
+						"event": "Cart Cleared",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "",
+					},
+					Message: map[string]interface{}{
+						"type":  "group",
+						"event": "Credit Card Added",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID:            "message-2",
+						SourceDefinitionType: "",
+					},
+					Message: map[string]interface{}{
+						"type":  "screen",
+						"event": 2,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			expectedResponse := transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output:     events[0].Message,
+						StatusCode: 200,
+						Metadata:   events[0].Metadata,
+					},
+					{
+						Output:     events[1].Message,
+						StatusCode: 200,
+						Metadata:   events[1].Metadata,
 					},
 				},
 				FailedEvents: nil,
@@ -2725,9 +3241,9 @@ var _ = Describe("TestSubJobMerger", func() {
 		},
 
 		reportMetrics: []*types.PUReportedMetric{{}, {}},
-		sourceDupStats: map[string]int{
-			"stat-1": 1,
-			"stat-2": 2,
+		sourceDupStats: map[dupStatKey]int{
+			{sourceID: "stat-1"}: 1,
+			{sourceID: "stat-2"}: 2,
 		},
 		uniqueMessageIds: map[string]struct{}{
 			"messageId-1": {},
@@ -2742,7 +3258,7 @@ var _ = Describe("TestSubJobMerger", func() {
 			mergedJob := storeMessage{}
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]int)
+			mergedJob.sourceDupStats = make(map[dupStatKey]int)
 
 			subJobs := []storeMessage{
 				{
@@ -2775,8 +3291,8 @@ var _ = Describe("TestSubJobMerger", func() {
 					reportMetrics: []*types.PUReportedMetric{
 						{},
 					},
-					sourceDupStats: map[string]int{
-						"stat-1": 1,
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-1"}: 1,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-1": {},
@@ -2814,8 +3330,8 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}},
-					sourceDupStats: map[string]int{
-						"stat-2": 2,
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-2"}: 2,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-2": {},
@@ -2844,7 +3360,7 @@ var _ = Describe("TestSubJobMerger", func() {
 			mergedJob := storeMessage{}
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]int)
+			mergedJob.sourceDupStats = make(map[dupStatKey]int)
 
 			subJobs := []storeMessage{
 				{
@@ -2887,9 +3403,9 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}, {}},
-					sourceDupStats: map[string]int{
-						"stat-1": 1,
-						"stat-2": 2,
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-1"}: 1,
+						{sourceID: "stat-2"}: 2,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-1": {},

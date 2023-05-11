@@ -51,8 +51,8 @@ func (d *Datalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uplo
 
 func (*Datalake) CrashRecover() {}
 
-func (d *Datalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
-	return d.SchemaRepository.FetchSchema(warehouse)
+func (d *Datalake) FetchSchema() (model.Schema, model.Schema, error) {
+	return d.SchemaRepository.FetchSchema(d.Warehouse)
 }
 
 func (d *Datalake) CreateSchema() (err error) {
@@ -75,7 +75,7 @@ func (d *Datalake) AlterColumn(tableName, columnName, columnType string) (model.
 	return d.SchemaRepository.AlterColumn(tableName, columnName, columnType)
 }
 
-func (d *Datalake) LoadTable(tableName string) error {
+func (d *Datalake) LoadTable(_ context.Context, tableName string) error {
 	d.Logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.Warehouse.Destination.ID)
 	return nil
 }
@@ -84,7 +84,7 @@ func (*Datalake) DeleteBy([]string, warehouseutils.DeleteByParams) (err error) {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
-func (d *Datalake) LoadUserTables() map[string]error {
+func (d *Datalake) LoadUserTables(context.Context) map[string]error {
 	d.Logger.Infof("Skipping load for user tables : %s is a datalake destination", d.Warehouse.Destination.ID)
 	// return map with nil error entries for identifies and users(if any) tables
 	// this is so that they are marked as succeeded
@@ -135,6 +135,6 @@ func (*Datalake) LoadTestTable(_, _ string, _ map[string]interface{}, _ string) 
 func (*Datalake) SetConnectionTimeout(_ time.Duration) {
 }
 
-func (d *Datalake) ErrorMappings() []model.JobError {
+func (*Datalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

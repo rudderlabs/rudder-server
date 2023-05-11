@@ -1,169 +1,321 @@
 package mssql_test
 
 import (
+	"context"
+	"database/sql"
+	"fmt"
 	"os"
+	"strconv"
 	"testing"
+	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
-
+	"github.com/rudderlabs/compose-test/testcompose"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestIntegrationMSSQL(t *testing.T) {
-	t.Parallel()
-
+func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	db, err := mssql.Connect(mssql.Credentials{
-		DBName:   "master",
-		Password: "reallyStrongPwd123",
-		User:     "SA",
-		Host:     "wh-mssql",
-		SSLMode:  "disable",
-		Port:     "1433",
+	c := testcompose.New(t, "testdata/docker-compose.yml")
+
+	t.Cleanup(func() {
+		c.Stop(context.Background())
 	})
-	require.NoError(t, err)
-
-	err = db.Ping()
-	require.NoError(t, err)
-
-	var (
-		provider = warehouseutils.MSSQL
-		jobsDB   = testhelper.SetUpJobsDB(t)
-	)
-
-	testcase := []struct {
-		name                  string
-		writeKey              string
-		schema                string
-		sourceID              string
-		destinationID         string
-		eventsMap             testhelper.EventsCountMap
-		stagingFilesEventsMap testhelper.EventsCountMap
-		loadFilesEventsMap    testhelper.EventsCountMap
-		tableUploadsEventsMap testhelper.EventsCountMap
-		warehouseEventsMap    testhelper.EventsCountMap
-		asyncJob              bool
-		tables                []string
-	}{
-		{
-			name:          "Upload Job",
-			writeKey:      "YSQ3n267l1VQKGNbSuJE9fQbzON",
-			schema:        "mssql_wh_integration",
-			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			sourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
-			destinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
-		},
-		{
-			name:                  "Async Job",
-			writeKey:              "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
-			schema:                "mssql_wh_sources_integration",
-			tables:                []string{"tracks", "google_sheet"},
-			sourceID:              "2DkCpUr0xfiINRJxIwqyqfyHdq4",
-			destinationID:         "21Ezdq58kMNMj07VJB0VJmxLvgu",
-			eventsMap:             testhelper.SourcesSendEventsMap(),
-			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
-			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
-			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
-			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-			asyncJob:              true,
-		},
-	}
-
-	for _, tc := range testcase {
-		tc := tc
-
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			ts := testhelper.WareHouseTest{
-				Schema:                tc.schema,
-				WriteKey:              tc.writeKey,
-				SourceID:              tc.sourceID,
-				DestinationID:         tc.destinationID,
-				Tables:                tc.tables,
-				EventsMap:             tc.eventsMap,
-				StagingFilesEventsMap: tc.stagingFilesEventsMap,
-				LoadFilesEventsMap:    tc.loadFilesEventsMap,
-				TableUploadsEventsMap: tc.tableUploadsEventsMap,
-				WarehouseEventsMap:    tc.warehouseEventsMap,
-				AsyncJob:              tc.asyncJob,
-				UserID:                testhelper.GetUserId(provider),
-				Provider:              provider,
-				JobsDB:                jobsDB,
-				JobRunID:              misc.FastUUID().String(),
-				TaskRunID:             misc.FastUUID().String(),
-				Client: &client.Client{
-					SQL:  db,
-					Type: client.SQLClient,
-				},
-			}
-			ts.VerifyEvents(t)
-
-			if !tc.asyncJob {
-				ts.UserID = testhelper.GetUserId(provider)
-			}
-			ts.JobRunID = misc.FastUUID().String()
-			ts.TaskRunID = misc.FastUUID().String()
-			ts.VerifyModifiedEvents(t)
-		})
-	}
-}
-
-func TestConfigurationValidationMSSQL(t *testing.T) {
-	if os.Getenv("SLOW") != "1" {
-		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
-	}
-
-	t.Parallel()
+	c.Start(context.Background())
 
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
 	encoding.Init()
 
-	configurations := testhelper.PopulateTemplateConfigurations()
-	destination := backendconfig.DestinationT{
-		ID: "21Ezdq58khNMj07VJB0VJmxLvgu",
-		Config: map[string]interface{}{
-			"host":             configurations["mssqlHost"],
-			"database":         configurations["mssqlDatabase"],
-			"user":             configurations["mssqlUser"],
-			"password":         configurations["mssqlPassword"],
-			"port":             configurations["mssqlPort"],
-			"sslMode":          "disable",
-			"namespace":        "",
-			"bucketProvider":   "MINIO",
-			"bucketName":       configurations["minioBucketName"],
-			"accessKeyID":      configurations["minioAccesskeyID"],
-			"secretAccessKey":  configurations["minioSecretAccessKey"],
-			"useSSL":           false,
-			"endPoint":         configurations["minioEndpoint"],
-			"syncFrequency":    "30",
-			"useRudderStorage": false,
-		},
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			ID:          "1qvbUYC2xVQ7lvI9UUYkkM4IBt9",
-			Name:        "MSSQL",
-			DisplayName: "Microsoft SQL Server",
-		},
-		Name:       "mssql-demo",
-		Enabled:    true,
-		RevisionID: "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
+	jobsDBPort := c.Port("jobsDb", 5432)
+	minioPort := c.Port("minio", 9000)
+	transformerPort := c.Port("transformer", 9090)
+	mssqlPort := c.Port("mssql", 1433)
+
+	httpPort, err := kitHelper.GetFreePort()
+	require.NoError(t, err)
+	httpAdminPort, err := kitHelper.GetFreePort()
+	require.NoError(t, err)
+
+	workspaceID := warehouseutils.RandHex()
+	sourceID := warehouseutils.RandHex()
+	destinationID := warehouseutils.RandHex()
+	writeKey := warehouseutils.RandHex()
+	sourcesSourceID := warehouseutils.RandHex()
+	sourcesDestinationID := warehouseutils.RandHex()
+	sourcesWriteKey := warehouseutils.RandHex()
+
+	destType := warehouseutils.MSSQL
+
+	namespace := testhelper.RandSchema(destType)
+	sourcesNamespace := testhelper.RandSchema(destType)
+
+	host := "localhost"
+	database := "master"
+	user := "SA"
+	password := "reallyStrongPwd123"
+
+	bucketName := "testbucket"
+	accessKeyID := "MYACCESSKEY"
+	secretAccessKey := "MYSECRETKEY"
+
+	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
+	transformerEndpoint := fmt.Sprintf("http://localhost:%d", transformerPort)
+
+	templateConfigurations := map[string]any{
+		"workspaceID":          workspaceID,
+		"sourceID":             sourceID,
+		"destinationID":        destinationID,
+		"writeKey":             writeKey,
+		"sourcesSourceID":      sourcesSourceID,
+		"sourcesDestinationID": sourcesDestinationID,
+		"sourcesWriteKey":      sourcesWriteKey,
+		"host":                 host,
+		"database":             database,
+		"user":                 user,
+		"password":             password,
+		"port":                 strconv.Itoa(mssqlPort),
+		"namespace":            namespace,
+		"sourcesNamespace":     sourcesNamespace,
+		"bucketName":           bucketName,
+		"accessKeyID":          accessKeyID,
+		"secretAccessKey":      secretAccessKey,
+		"endPoint":             minioEndpoint,
 	}
-	testhelper.VerifyConfigurationTest(t, destination)
+	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
+
+	t.Setenv("JOBS_DB_HOST", "localhost")
+	t.Setenv("JOBS_DB_NAME", "jobsdb")
+	t.Setenv("JOBS_DB_DB_NAME", "jobsdb")
+	t.Setenv("JOBS_DB_USER", "rudder")
+	t.Setenv("JOBS_DB_PASSWORD", "password")
+	t.Setenv("JOBS_DB_SSL_MODE", "disable")
+	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
+	t.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
+	t.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
+	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
+	t.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
+	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
+	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
+	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
+	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
+	t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
+	t.Setenv("MINIO_SSL", "false")
+	t.Setenv("GO_ENV", "production")
+	t.Setenv("LOG_LEVEL", "INFO")
+	t.Setenv("INSTANCE_ID", "1")
+	t.Setenv("ALERT_PROVIDER", "pagerduty")
+	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
+	t.Setenv("DEST_TRANSFORM_URL", transformerEndpoint)
+	t.Setenv("RSERVER_WAREHOUSE_MSSQL_MAX_PARALLEL_LOADS", "8")
+	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
+	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
+	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
+	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
+	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
+	t.Setenv("RSERVER_WAREHOUSE_MSSQL_ENABLE_DELETE_BY_JOBS", "true")
+	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+	if testing.Verbose() {
+		t.Setenv("LOG_LEVEL", "DEBUG")
+	}
+
+	svcDone := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		r := runner.New(runner.ReleaseInfo{})
+		_ = r.Run(ctx, []string{"mssql-integration-test"})
+
+		close(svcDone)
+	}()
+	t.Cleanup(func() { <-svcDone })
+
+	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
+	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
+
+	t.Run("Events flow", func(t *testing.T) {
+		jobsDB := testhelper.JobsDB(t, jobsDBPort)
+
+		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+			user,
+			password,
+			host,
+			mssqlPort,
+			database,
+		)
+		db, err := sql.Open("sqlserver", dsn)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+
+		testcase := []struct {
+			name                  string
+			writeKey              string
+			schema                string
+			sourceID              string
+			destinationID         string
+			tables                []string
+			stagingFilesEventsMap testhelper.EventsCountMap
+			loadFilesEventsMap    testhelper.EventsCountMap
+			tableUploadsEventsMap testhelper.EventsCountMap
+			warehouseEventsMap    testhelper.EventsCountMap
+			asyncJob              bool
+		}{
+			{
+				name:          "Upload Job",
+				writeKey:      writeKey,
+				schema:        namespace,
+				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				sourceID:      sourceID,
+				destinationID: destinationID,
+			},
+			{
+				name:                  "Async Job",
+				writeKey:              sourcesWriteKey,
+				schema:                sourcesNamespace,
+				tables:                []string{"tracks", "google_sheet"},
+				sourceID:              sourcesSourceID,
+				destinationID:         sourcesDestinationID,
+				stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
+				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+				asyncJob:              true,
+			},
+		}
+
+		for _, tc := range testcase {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				sqlClient := &client.Client{
+					SQL:  db,
+					Type: client.SQLClient,
+				}
+
+				conf := map[string]interface{}{
+					"bucketProvider":   "MINIO",
+					"bucketName":       bucketName,
+					"accessKeyID":      accessKeyID,
+					"secretAccessKey":  secretAccessKey,
+					"useSSL":           false,
+					"endPoint":         minioEndpoint,
+					"useRudderStorage": false,
+				}
+
+				t.Log("verifying test case 1")
+				ts1 := testhelper.TestConfig{
+					WriteKey:              tc.writeKey,
+					Schema:                tc.schema,
+					Tables:                tc.tables,
+					SourceID:              tc.sourceID,
+					DestinationID:         tc.destinationID,
+					StagingFilesEventsMap: tc.stagingFilesEventsMap,
+					LoadFilesEventsMap:    tc.loadFilesEventsMap,
+					TableUploadsEventsMap: tc.tableUploadsEventsMap,
+					WarehouseEventsMap:    tc.warehouseEventsMap,
+					Config:                conf,
+					WorkspaceID:           workspaceID,
+					DestinationType:       destType,
+					JobsDB:                jobsDB,
+					HTTPPort:              httpPort,
+					Client:                sqlClient,
+					JobRunID:              misc.FastUUID().String(),
+					TaskRunID:             misc.FastUUID().String(),
+					EventTemplateCountMap: testhelper.DefaultEventsCountMap(),
+					UserID:                testhelper.GetUserId(destType),
+				}
+				if tc.asyncJob {
+					ts1.EventTemplateCountMap = testhelper.DefaultSourcesEventsCountMap()
+				}
+				ts1.VerifyEvents(t)
+
+				t.Log("verifying test case 2")
+				ts2 := testhelper.TestConfig{
+					WriteKey:              tc.writeKey,
+					Schema:                tc.schema,
+					Tables:                tc.tables,
+					SourceID:              tc.sourceID,
+					DestinationID:         tc.destinationID,
+					StagingFilesEventsMap: tc.stagingFilesEventsMap,
+					LoadFilesEventsMap:    tc.loadFilesEventsMap,
+					TableUploadsEventsMap: tc.tableUploadsEventsMap,
+					WarehouseEventsMap:    tc.warehouseEventsMap,
+					AsyncJob:              tc.asyncJob,
+					Config:                conf,
+					WorkspaceID:           workspaceID,
+					DestinationType:       destType,
+					JobsDB:                jobsDB,
+					HTTPPort:              httpPort,
+					Client:                sqlClient,
+					JobRunID:              misc.FastUUID().String(),
+					TaskRunID:             misc.FastUUID().String(),
+					EventTemplateCountMap: testhelper.ModifiedEventsCountMap(),
+					UserID:                testhelper.GetUserId(destType),
+				}
+				if tc.asyncJob {
+					ts2.UserID = ts1.UserID
+					ts2.EventTemplateCountMap = testhelper.DefaultSourcesModifiedEventsCountMap()
+				}
+				ts2.VerifyEvents(t)
+			})
+		}
+	})
+
+	t.Run("Validations", func(t *testing.T) {
+		dest := backendconfig.DestinationT{
+			ID: destinationID,
+			Config: map[string]interface{}{
+				"host":             host,
+				"database":         database,
+				"user":             user,
+				"password":         password,
+				"port":             strconv.Itoa(mssqlPort),
+				"sslMode":          "disable",
+				"namespace":        "",
+				"bucketProvider":   "MINIO",
+				"bucketName":       bucketName,
+				"accessKeyID":      accessKeyID,
+				"secretAccessKey":  secretAccessKey,
+				"useSSL":           false,
+				"endPoint":         minioEndpoint,
+				"syncFrequency":    "30",
+				"useRudderStorage": false,
+			},
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				ID:          "1qvbUYC2xVQ7lvI9UUYkkM4IBt9",
+				Name:        "MSSQL",
+				DisplayName: "Microsoft SQL Server",
+			},
+			Name:       "mssql-demo",
+			Enabled:    true,
+			RevisionID: destinationID,
+		}
+		testhelper.VerifyConfigurationTest(t, dest)
+	})
 }

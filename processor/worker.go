@@ -131,7 +131,7 @@ func (w *worker) start() {
 					rsourcesStats:         subJob.rsourcesStats,
 					uniqueMessageIds:      make(map[string]struct{}),
 					procErrorJobsByDestID: make(map[string][]*jobsdb.JobT),
-					sourceDupStats:        make(map[string]int),
+					sourceDupStats:        make(map[dupStatKey]int),
 					start:                 subJob.start,
 				}
 				firstSubJob = false

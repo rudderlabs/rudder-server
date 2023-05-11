@@ -11,6 +11,7 @@ import (
 	"time"
 
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"golang.org/x/exp/slices"
 
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
@@ -122,7 +123,7 @@ var errorsMappings = []model.JobError{
 }
 
 type Deltalake struct {
-	DB                     *sql.DB
+	DB                     *sqlmiddleware.DB
 	Namespace              string
 	ObjectStorage          string
 	Warehouse              model.Warehouse
@@ -132,6 +133,10 @@ type Deltalake struct {
 	Stats                  stats.Stats
 	LoadTableStrategy      string
 	EnablePartitionPruning bool
+	SlowQueryThreshold     time.Duration
+	MaxRetries             int
+	RetryMinWait           time.Duration
+	RetryMaxWait           time.Duration
 }
 
 func New() *Deltalake {
@@ -144,6 +149,10 @@ func New() *Deltalake {
 func WithConfig(h *Deltalake, config *config.Config) {
 	h.LoadTableStrategy = config.GetString("Warehouse.deltalake.loadTableStrategy", mergeMode)
 	h.EnablePartitionPruning = config.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
+	h.SlowQueryThreshold = config.GetDuration("Warehouse.deltalake.slowQueryThreshold", 5, time.Minute)
+	h.MaxRetries = config.GetInt("Warehouse.deltalake.maxRetries", 10)
+	h.RetryMinWait = config.GetDuration("Warehouse.deltalake.retryMinWait", 1, time.Second)
+	h.RetryMaxWait = config.GetDuration("Warehouse.deltalake.retryMaxWait", 300, time.Second)
 }
 
 // Setup sets up the warehouse
@@ -168,7 +177,7 @@ func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Upl
 }
 
 // connect connects to the warehouse
-func (d *Deltalake) connect() (*sql.DB, error) {
+func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	port, err := strconv.Atoi(warehouseutils.GetConfigValue(port, d.Warehouse))
 	if err != nil {
 		return nil, fmt.Errorf("port is not a number: %w", err)
@@ -188,6 +197,7 @@ func (d *Deltalake) connect() (*sql.DB, error) {
 			warehouseutils.GetConfigValue(catalog, d.Warehouse),
 			"",
 		),
+		dbsql.WithRetries(d.MaxRetries, d.RetryMinWait, d.RetryMaxWait),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating connector: %w", err)
@@ -198,8 +208,25 @@ func (d *Deltalake) connect() (*sql.DB, error) {
 	}
 
 	db := sql.OpenDB(connector)
-
-	return db, nil
+	middleware := sqlmiddleware.New(
+		db,
+		sqlmiddleware.WithLogger(d.Logger),
+		sqlmiddleware.WithKeyAndValues(
+			logfield.SourceID, d.Warehouse.Source.ID,
+			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, d.Warehouse.Destination.ID,
+			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+			logfield.Schema, d.Namespace,
+		),
+		sqlmiddleware.WithSlowQueryThreshold(d.SlowQueryThreshold),
+		sqlmiddleware.WithSecretsRegex(map[string]string{
+			"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
+			"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
+			"'awsSessionToken' = '[^']*'": "'awsSessionToken' = '***'",
+		}),
+	)
+	return middleware, nil
 }
 
 // CrashRecover crash recover scenarios
@@ -291,7 +318,7 @@ func (d *Deltalake) dropTable(table string) error {
 }
 
 // FetchSchema fetches the schema from the warehouse
-func (d *Deltalake) FetchSchema(model.Warehouse) (model.Schema, model.Schema, error) {
+func (d *Deltalake) FetchSchema() (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 	tableNames, err := d.fetchTables(nonRudderStagingTableRegex)
@@ -513,11 +540,11 @@ func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) 
 }
 
 // LoadTable loads table for table name
-func (d *Deltalake) LoadTable(tableName string) error {
+func (d *Deltalake) LoadTable(ctx context.Context, tableName string) error {
 	uploadTableSchema := d.Uploader.GetTableSchemaInUpload(tableName)
 	warehouseTableSchema := d.Uploader.GetTableSchemaInWarehouse(tableName)
 
-	_, err := d.loadTable(tableName, uploadTableSchema, warehouseTableSchema, false)
+	_, err := d.loadTable(ctx, tableName, uploadTableSchema, warehouseTableSchema, false)
 	if err != nil {
 		return fmt.Errorf("loading table: %w", err)
 	}
@@ -525,7 +552,7 @@ func (d *Deltalake) LoadTable(tableName string) error {
 	return nil
 }
 
-func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
+func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchemaInUpload, tableSchemaAfterUpload model.TableSchema, skipTempTableDelete bool) (string, error) {
 	var (
 		sortedColumnKeys = warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 		stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
@@ -618,7 +645,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 	}
 
-	if _, err = d.DB.Exec(query); err != nil {
+	if _, err = d.DB.ExecContext(ctx, query); err != nil {
 		return "", fmt.Errorf("running COPY command: %w", err)
 	}
 
@@ -654,7 +681,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 			primaryKey(tableName),
 		)
 	} else {
-		if partitionQuery, err = d.partitionQuery(tableName); err != nil {
+		if partitionQuery, err = d.partitionQuery(ctx, tableName); err != nil {
 			return "", fmt.Errorf("getting partition query: %w", err)
 		}
 
@@ -700,7 +727,7 @@ func (d *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchema
 		)
 	}
 
-	row = d.DB.QueryRow(query)
+	row = d.DB.QueryRowContext(ctx, query)
 
 	var (
 		affected int64
@@ -859,13 +886,13 @@ func (d *Deltalake) hasAWSCredentials() bool {
 }
 
 // partitionQuery returns a query to fetch partitions for a table
-func (d *Deltalake) partitionQuery(tableName string) (string, error) {
+func (d *Deltalake) partitionQuery(ctx context.Context, tableName string) (string, error) {
 	if !d.EnablePartitionPruning {
 		return "", nil
 	}
 
 	query := fmt.Sprintf(`SHOW PARTITIONS %s.%s;`, d.Namespace, tableName)
-	rows, err := d.DB.Query(query)
+	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
 		if strings.Contains(err.Error(), partitionNotFound) {
 			return "", nil
@@ -903,7 +930,7 @@ func partitionedByEventDate(columns []string) bool {
 }
 
 // LoadUserTables loads user tables
-func (d *Deltalake) LoadUserTables() map[string]error {
+func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	var (
 		identifiesSchemaInUpload    = d.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
 		identifiesSchemaInWarehouse = d.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable)
@@ -920,7 +947,7 @@ func (d *Deltalake) LoadUserTables() map[string]error {
 		logfield.Namespace, d.Namespace,
 	)
 
-	identifyStagingTable, err := d.loadTable(warehouseutils.IdentifiesTable, identifiesSchemaInUpload, identifiesSchemaInWarehouse, true)
+	identifyStagingTable, err := d.loadTable(ctx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload, identifiesSchemaInWarehouse, true)
 	if err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("loading table %s: %w", warehouseutils.IdentifiesTable, err),
@@ -994,7 +1021,7 @@ func (d *Deltalake) LoadUserTables() map[string]error {
 		tableLocationSql,
 	)
 
-	_, err = d.DB.Exec(query)
+	_, err = d.DB.ExecContext(ctx, query)
 
 	if err != nil {
 		return map[string]error{
@@ -1026,7 +1053,7 @@ func (d *Deltalake) LoadUserTables() map[string]error {
 			columnNames(columnKeys),
 		)
 	} else {
-		if partitionQuery, err = d.partitionQuery(warehouseutils.UsersTable); err != nil {
+		if partitionQuery, err = d.partitionQuery(ctx, warehouseutils.UsersTable); err != nil {
 			return map[string]error{
 				warehouseutils.IdentifiesTable: nil,
 				warehouseutils.UsersTable:      fmt.Errorf("getting partition query: %w", err),
@@ -1061,7 +1088,7 @@ func (d *Deltalake) LoadUserTables() map[string]error {
 		)
 	}
 
-	row = d.DB.QueryRow(query)
+	row = d.DB.QueryRowContext(ctx, query)
 
 	var (
 		affected int64
@@ -1216,7 +1243,7 @@ func (d *Deltalake) Connect(warehouse model.Warehouse) (warehouseclient.Client, 
 		return warehouseclient.Client{}, fmt.Errorf("connecting: %w", err)
 	}
 
-	return warehouseclient.Client{Type: warehouseclient.SQLClient, SQL: db}, nil
+	return warehouseclient.Client{Type: warehouseclient.SQLClient, SQL: db.DB}, nil
 }
 
 // LoadTestTable loads the test table

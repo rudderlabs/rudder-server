@@ -99,7 +99,7 @@ func NewDestinationValidator() DestinationValidator {
 	return &destinationValidationImpl{}
 }
 
-func (v *destinationValidationImpl) Validate(dest *backendconfig.DestinationT) *model.DestinationValidationResponse {
+func (*destinationValidationImpl) Validate(dest *backendconfig.DestinationT) *model.DestinationValidationResponse {
 	return validateDestination(dest, "")
 }
 
@@ -319,7 +319,7 @@ func (cat *createAlterTable) Validate() error {
 func (fs *fetchSchema) Validate() error {
 	defer fs.manager.Cleanup()
 
-	if _, _, err := fs.manager.FetchSchema(createDummyWarehouse(fs.destination)); err != nil {
+	if _, _, err := fs.manager.FetchSchema(); err != nil {
 		return fmt.Errorf("fetch schema: %w", err)
 	}
 	return nil

@@ -2,12 +2,17 @@ package identity
 
 import "github.com/rudderlabs/rudder-server/utils/types/deployment"
 
+// Authorizer abstracts how data-plane can be authorized by the control-plane.
+type Authorizer interface {
+	BasicAuth() (string, string)
+}
+
 // Identifier abstracts how data-plane can be identified to the control-plane.
 //
 //	Including both a unique identifier and the authentication method.
 type Identifier interface {
+	Authorizer
 	ID() string
-	BasicAuth() (string, string)
 	Type() deployment.Type
 }
 
@@ -71,6 +76,15 @@ func (*NOOP) BasicAuth() (string, string) {
 
 func (*NOOP) Type() deployment.Type {
 	return ""
+}
+
+// Admin is an implementation of the Authorizer interface for data-plane admin endpoints.
+type Admin struct {
+	Username, Password string
+}
+
+func (a *Admin) BasicAuth() (string, string) {
+	return a.Username, a.Password
 }
 
 type IdentifierDecorator struct {

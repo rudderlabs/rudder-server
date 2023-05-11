@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
-
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/xitongsys/parquet-go/types"
 )
 

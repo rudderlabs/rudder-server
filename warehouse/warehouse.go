@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/samber/lo"
 
@@ -81,6 +82,7 @@ var (
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
 	connectionsMap                      map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
+	slaveConnectionsMap                 map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
 	connectionsMapLock                  sync.RWMutex
 	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
 	triggerUploadsMapLock               sync.RWMutex
@@ -190,6 +192,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
 	connectionsMap = map[string]map[string]model.Warehouse{}
+	slaveConnectionsMap = map[string]map[string]model.Warehouse{}
 	triggerUploadsMap = map[string]bool{}
 	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
@@ -220,16 +223,16 @@ func (wh *HandleT) workerIdentifier(warehouse model.Warehouse) (identifier strin
 	return
 }
 
-func getDestinationFromConnectionMap(DestinationId, SourceId string) (model.Warehouse, error) {
-	if DestinationId == "" || SourceId == "" {
+func getDestinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
+	if destinationId == "" || sourceId == "" {
 		return model.Warehouse{}, errors.New("invalid Parameters")
 	}
-	sourceMap, ok := connectionsMap[DestinationId]
+	sourceMap, ok := slaveConnectionsMap[destinationId]
 	if !ok {
 		return model.Warehouse{}, errors.New("invalid Destination Id")
 	}
 
-	conn, ok := sourceMap[SourceId]
+	conn, ok := sourceMap[sourceId]
 	if !ok {
 		return model.Warehouse{}, errors.New("invalid Source Id")
 	}
@@ -330,8 +333,11 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					wh.workerChannelMapLock.Unlock()
 
 					connectionsMapLock.Lock()
-					if connectionsMap[destination.ID] == nil {
+					if _, ok := connectionsMap[destination.ID]; !ok {
 						connectionsMap[destination.ID] = map[string]model.Warehouse{}
+					}
+					if _, ok := slaveConnectionsMap[destination.ID]; !ok {
+						slaveConnectionsMap[destination.ID] = map[string]model.Warehouse{}
 					}
 					if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 						if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
@@ -340,6 +346,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 						}
 					}
 					connectionsMap[destination.ID][source.ID] = warehouse
+					slaveConnectionsMap[destination.ID][source.ID] = warehouse
 					connectionsMapLock.Unlock()
 
 					if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
@@ -961,14 +968,17 @@ func (wh *HandleT) resetInProgressJobs() {
 		wh.destType,
 		true,
 	)
-	_, err := wh.dbHandle.Query(sqlStatement)
+	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
+	if rows.Err() != nil {
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, rows.Err()))
+	}
 }
 
-func minimalConfigSubscriber() {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
+func minimalConfigSubscriber(ctx context.Context) {
+	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	for data := range ch {
 		pkgLogger.Debug("Got config from config-backend", data)
 		configData := data.Data.(map[string]backendconfig.ConfigT)
@@ -986,15 +996,20 @@ func minimalConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 						wh := &HandleT{
-							dbHandle: dbHandle,
-							destType: destination.DestinationDefinition.Name,
+							dbHandle:     dbHandle,
+							destType:     destination.DestinationDefinition.Name,
+							whSchemaRepo: repo.NewWHSchemas(dbHandle),
 						}
 						namespace := wh.getNamespace(source, destination)
+
 						connectionsMapLock.Lock()
-						if connectionsMap[destination.ID] == nil {
+						if _, ok := slaveConnectionsMap[destination.ID]; !ok {
+							slaveConnectionsMap[destination.ID] = map[string]model.Warehouse{}
+						}
+						if _, ok := connectionsMap[destination.ID]; !ok {
 							connectionsMap[destination.ID] = map[string]model.Warehouse{}
 						}
-						connectionsMap[destination.ID][source.ID] = model.Warehouse{
+						warehouse := model.Warehouse{
 							WorkspaceID: workspaceID,
 							Destination: destination,
 							Namespace:   namespace,
@@ -1002,6 +1017,14 @@ func minimalConfigSubscriber() {
 							Source:      source,
 							Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
 						}
+						if destination.Config["sslMode"] == "verify-ca" {
+							if err := warehouseutils.WriteSSLKeys(destination); err.IsError() {
+								wh.Logger.Error(err.Error())
+								persistSSLFileErrorStat(workspaceID, wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+							}
+						}
+						slaveConnectionsMap[destination.ID][source.ID] = warehouse
+						connectionsMap[destination.ID][source.ID] = warehouse
 						connectionsMapLock.Unlock()
 					}
 				}
@@ -1117,35 +1140,16 @@ func CheckPGHealth(dbHandle *sql.DB) bool {
 		return false
 	}
 	rows, err := dbHandle.Query(`SELECT 'Rudder Warehouse DB Health Check'::text as message`)
+	defer func() { _ = rows.Close() }()
 	if err != nil {
 		pkgLogger.Error(err)
 		return false
 	}
-	defer func() { _ = rows.Close() }()
+	if rows.Err() != nil {
+		pkgLogger.Error(rows.Err())
+		return false
+	}
 	return true
-}
-
-func setConfigHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
-		http.Error(w, "can't read body", http.StatusBadRequest)
-		return
-	}
-	defer func() { _ = r.Body.Close() }()
-
-	var kvs []warehouseutils.KeyValue
-	err = json.Unmarshal(body, &kvs)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
-		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
-		return
-	}
-
-	for _, kv := range kvs {
-		config.Set(kv.Key, kv.Value)
-	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -1153,12 +1157,6 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 
 	ctx := r.Context()
-
-	if r.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
 	// read body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -1493,18 +1491,18 @@ func getConnectionString() string {
 }
 
 func startWebHandler(ctx context.Context) error {
-	mux := http.NewServeMux()
+	srvMux := mux.NewRouter()
 
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
-		mux.HandleFunc("/health", healthHandler)
+		srvMux.HandleFunc("/health", healthHandler).Methods("GET")
 	}
 	if runningMode != DegradedMode {
 		if isMaster() {
 			pkgLogger.Infof("WH: Warehouse master service waiting for BackendConfig before starting on %d", webPort)
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			mux.Handle("/v1/process", (&api.WarehouseAPI{
+			srvMux.Handle("/v1/process", (&api.WarehouseAPI{
 				Logger:      pkgLogger,
 				Stats:       stats.Default,
 				Repo:        repo.NewStagingFiles(dbHandle),
@@ -1512,15 +1510,14 @@ func startWebHandler(ctx context.Context) error {
 			}).Handler())
 
 			// triggers upload only when there are pending events and triggerUpload is sent for a sourceId
-			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+			srvMux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler).Methods("POST")
 			// triggers uploads for a source
-			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
-			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
-			mux.HandleFunc("/v1/setConfig", setConfigHandler)
+			srvMux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler).Methods("POST")
+			srvMux.HandleFunc("/databricksVersion", databricksVersionHandler).Methods("GET")
 
 			// Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)           // FIXME: add degraded mode
-			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // FIXME: add degraded mode
+			srvMux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler).Methods("POST")          // FIXME: add degraded mode
+			srvMux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler).Methods("GET") // FIXME: add degraded mode
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
@@ -1530,7 +1527,7 @@ func startWebHandler(ctx context.Context) error {
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", webPort),
-		Handler:           bugsnag.Handler(mux),
+		Handler:           bugsnag.Handler(srvMux),
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
@@ -1566,10 +1563,6 @@ func isStandAloneSlave() bool {
 }
 
 func setupDB(ctx context.Context, connInfo string) error {
-	if isStandAloneSlave() {
-		return nil
-	}
-
 	var err error
 	dbHandle, err = sql.Open("postgres", connInfo)
 	if err != nil {
@@ -1587,6 +1580,10 @@ func setupDB(ctx context.Context, connInfo string) error {
 		return err
 	}
 
+	if isStandAloneSlave() {
+		dbHandle.SetMaxOpenConns(1)
+	}
+
 	if err = dbHandle.PingContext(ctx); err != nil {
 		return fmt.Errorf("could not ping WH db: %w", err)
 	}
@@ -1596,7 +1593,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 
 // Setup prepares the database connection for warehouse service, verifies database compatibility and creates the required tables
 func Setup(ctx context.Context) error {
-	if !isStandAlone() && !db.IsNormalMode() {
+	if !db.IsNormalMode() {
 		return nil
 	}
 	psqlInfo := getConnectionString()
@@ -1634,7 +1631,7 @@ func Start(ctx context.Context, app app.App) error {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
 			rruntime.GoForWarehouse(func() {
-				minimalConfigSubscriber()
+				minimalConfigSubscriber(ctx)
 			})
 			err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 			if err != nil {
@@ -1686,6 +1683,10 @@ func Start(ctx context.Context, app app.App) error {
 
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			minimalConfigSubscriber(ctx)
+			return nil
+		}))
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return setupSlave(ctx)
 		}))

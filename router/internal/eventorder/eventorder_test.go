@@ -55,7 +55,7 @@ func Test_Job_Failed_Scenario(t *testing.T) {
 }
 
 func Test_Job_Aborted_Scenario(t *testing.T) {
-	barrier := NewBarrier(WithConcurrencyLimit(1))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(1))
 
 	// Fail job 1 then enter again
 	enter, previousFailedJobID := barrier.Enter("user1", 1)
@@ -122,7 +122,7 @@ func Test_Job_Aborted_Scenario(t *testing.T) {
 }
 
 func Test_Job_Abort_then_Fail(t *testing.T) {
-	barrier := NewBarrier(WithConcurrencyLimit(2))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(2))
 
 	enter, previousFailedJobID := barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
@@ -160,7 +160,7 @@ func Test_Job_Abort_then_Fail(t *testing.T) {
 }
 
 func Test_Job_Fail_then_Abort(t *testing.T) {
-	barrier := NewBarrier(WithConcurrencyLimit(2))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(2))
 
 	enter, previousFailedJobID := barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
@@ -238,7 +238,7 @@ func Test_Panic_Scenarios(t *testing.T) {
 
 func TestBarrier_Leave(t *testing.T) {
 	orderKey := "user1"
-	barrier := NewBarrier(WithConcurrencyLimit(1))
+	barrier := NewBarrier(WithDrainConcurrencyLimit(1))
 
 	enter, _ := barrier.Enter(orderKey, 1)
 	require.Truef(t, enter, "job 1 for %s should be accepted since no barrier exists", orderKey)
@@ -259,6 +259,56 @@ func TestBarrier_Leave(t *testing.T) {
 	barrier.Leave(orderKey, 2)
 	enter, _ = barrier.Enter(orderKey, 3)
 	require.Truef(t, enter, "job 3 for %s should now be accepted since job 2 left", orderKey)
+}
+
+func TestGlobalConcurrencyLimiter(t *testing.T) {
+	orderKey := "user1"
+	barrier := NewBarrier(WithConcurrencyLimit(2))
+
+	enter, previous := barrier.Enter(orderKey, 1)
+	require.True(t, enter, "job 1 for %s should be accepted since no barrier exists and concurrency limiter should be 1", orderKey)
+	require.Nil(t, previous)
+
+	enter, previous = barrier.Enter(orderKey, 2)
+	require.True(t, enter, "job 2 for %s should be accepted since no barrier exists and concurrency limiter should be 2", orderKey)
+	require.Nil(t, previous)
+
+	enter, previous = barrier.Enter(orderKey, 3)
+	require.False(t, enter, "job 3 for %s shouldn't be accepted due to concurrency limiter restrictions", orderKey)
+	require.Nil(t, previous)
+
+	require.NoError(t, barrier.StateChanged(orderKey, 1, jobsdb.Succeeded.State))
+	barrier.Sync()
+
+	enter, previous = barrier.Enter(orderKey, 3)
+	require.True(t, enter, "job 3 for %s should be accepted after job 1 succeeded", orderKey)
+	require.Nil(t, previous)
+
+	enter, previous = barrier.Enter(orderKey, 4)
+	require.False(t, enter, "job 4 for %s shouldn't be accepted due to concurrency limiter restrictions", orderKey)
+	require.Nil(t, previous)
+
+	require.NoError(t, barrier.StateChanged(orderKey, 2, jobsdb.Aborted.State))
+	barrier.Sync()
+
+	enter, previous = barrier.Enter(orderKey, 4)
+	require.True(t, enter, "job 4 for %s should be accepted after job 2 got aborted", orderKey)
+	require.Nil(t, previous)
+
+	enter, previous = barrier.Enter(orderKey, 5)
+	require.False(t, enter, "job 5 for %s shouldn't be accepted due to concurrency limiter restrictions", orderKey)
+	require.Nil(t, previous)
+
+	require.NoError(t, barrier.StateChanged(orderKey, 3, jobsdb.Failed.State))
+
+	enter, previous = barrier.Enter(orderKey, 3)
+	require.True(t, enter, "job 3 for %s should be accepted after failing", orderKey)
+	require.NotNil(t, previous)
+	require.EqualValues(t, 3, *previous)
+
+	enter, previous = barrier.Enter(orderKey, 5)
+	require.False(t, enter, "job 5 for %s shouldn't be accepted due to concurrency limiter restrictions", orderKey)
+	require.Nil(t, previous)
 }
 
 func firstBool(v bool, _ ...interface{}) bool {
