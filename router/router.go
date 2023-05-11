@@ -98,7 +98,7 @@ type HandleT struct {
 	enableBatching                 bool
 	transformer                    transformer.Transformer
 	configSubscriberLock           sync.RWMutex
-	destinationsMap                map[string]*routerutils.BatchDestinationT // destinationID -> destination
+	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
 	logger                         logger.Logger
 	batchInputCountStat            stats.Measurement
 	batchOutputCountStat           stats.Measurement
@@ -1073,7 +1073,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for configEvent := range ch {
 		rt.configSubscriberLock.Lock()
-		rt.destinationsMap = map[string]*routerutils.BatchDestinationT{}
+		rt.destinationsMap = map[string]*routerutils.DestinationWithSources{}
 		configData := configEvent.Data.(map[string]backendconfig.ConfigT)
 		rt.sourceIDWorkspaceMap = map[string]string{}
 		for workspaceID, wConfig := range configData {
@@ -1084,7 +1084,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 					destination := &source.Destinations[i]
 					if destination.DestinationDefinition.Name == rt.destName {
 						if _, ok := rt.destinationsMap[destination.ID]; !ok {
-							rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{
+							rt.destinationsMap[destination.ID] = &routerutils.DestinationWithSources{
 								Destination: *destination,
 								Sources:     []backendconfig.SourceT{},
 							}

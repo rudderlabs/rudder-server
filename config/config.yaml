@@ -136,7 +136,6 @@ Router:
     httpTimeout: 120s
     httpMaxIdleConnsPerHost: 32
 BatchRouter:
-  mainLoopSleep: 2s
   jobQueryBatchSize: 100000
   uploadFreq: 30s
   warehouseServiceMaxRetryTime: 3h
