@@ -80,7 +80,7 @@ type Handle struct {
 	jobsDBCommandTimeout         time.Duration
 	jobdDBQueryRequestTimeout    time.Duration
 	jobdDBMaxRetries             int
-	mainLoopSleep                time.Duration
+	minIdleSleep                 time.Duration
 	uploadFreq                   time.Duration
 	readPerDestination           bool
 	disableEgress                bool
@@ -139,14 +139,16 @@ type Handle struct {
 func (brt *Handle) mainLoop(ctx context.Context) {
 	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)
 	defer pool.Shutdown()
+	mainLoopSleep := time.Duration(0)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(brt.mainLoopSleep):
+		case <-time.After(mainLoopSleep):
 			for _, partition := range brt.activePartitions(ctx) {
 				pool.PingWorker(partition)
 			}
+			mainLoopSleep = brt.uploadFreq
 		}
 	}
 }
@@ -220,21 +222,17 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	for destID, destJobs := range jobsByDesID {
 		if batchDest, ok := destinationsMap[destID]; ok {
 			var processJobs bool
-
+			brt.lastExecTimesMu.Lock()
 			if limitsReached { // if limits are reached, process all jobs regardless of their upload frequency
 				processJobs = true
-				brt.lastExecTimesMu.Lock()
-				brt.lastExecTimes[destID] = time.Now()
-				brt.lastExecTimesMu.Unlock()
 			} else { // honour upload frequency
-				brt.lastExecTimesMu.Lock()
 				lastExecTime := brt.lastExecTimes[destID]
-				if lastExecTime.IsZero() || time.Since(lastExecTime) > brt.uploadFreq {
+				if lastExecTime.IsZero() || time.Since(lastExecTime) >= brt.uploadFreq {
 					processJobs = true
 					brt.lastExecTimes[destID] = time.Now()
 				}
-				brt.lastExecTimesMu.Unlock()
 			}
+			brt.lastExecTimesMu.Unlock()
 			if processJobs {
 				workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
 			}

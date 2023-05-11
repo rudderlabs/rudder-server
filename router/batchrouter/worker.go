@@ -249,7 +249,16 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 
 // SleepDurations returns the min and max sleep durations for the worker when idle, i.e when [Work] returns false.
 func (w *worker) SleepDurations() (min, max time.Duration) {
-	return w.brt.mainLoopSleep, w.brt.uploadFreq
+	w.brt.lastExecTimesMu.Lock()
+	defer w.brt.lastExecTimesMu.Unlock()
+	if lastExecTime, ok := w.brt.lastExecTimes[w.partition]; ok {
+		if nextAllowedTime := lastExecTime.Add(w.brt.uploadFreq); nextAllowedTime.After(time.Now()) {
+			sleepTime := time.Until(nextAllowedTime)
+			// sleep at least until the next upload frequency window opens
+			return sleepTime, w.brt.uploadFreq
+		}
+	}
+	return w.brt.minIdleSleep, w.brt.uploadFreq / 2
 }
 
 // Stop is no-op for this worker since the worker is not running any goroutine internally.

@@ -283,7 +283,8 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
 
 			<-batchrouter.backendConfigInitialized
-			batchrouter.mainLoopSleep = time.Microsecond
+			batchrouter.minIdleSleep = time.Microsecond
+			batchrouter.uploadFreq = time.Microsecond
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			wg.Add(1)

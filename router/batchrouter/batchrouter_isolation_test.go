@@ -249,7 +249,8 @@ func BatchrouterIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec)
 
 	config.Set("BatchRouter.isolationMode", string(spec.isolationMode))
 	config.Set("BatchRouter.jobQueryBatchSize", spec.jobQueryBatchSize)
-	config.Set("BatchRouter.mainLoopSleep", "1ms")
+	config.Set("BatchRouter.minIdleSleep", "1s")
+	config.Set("BatchRouter.uploadFreq", "1s")
 	config.Set("BatchRouter.Limiter.statsPeriod", "1s")
 
 	config.Set("JobsDB.enableWriterQueue", false)
