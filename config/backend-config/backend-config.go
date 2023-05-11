@@ -5,7 +5,6 @@ package backendconfig
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -322,34 +321,11 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 }
 
 func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string) {
-	var err error
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
-	bc.cache = cacheOverride
-	if bc.cache == nil {
-		identifier := bc.Identity()
-		u, _ := identifier.BasicAuth()
-		secret := sha256.Sum256([]byte(u))
-		cacheKey := identifier.ID()
-		bc.cache, err = cache.Start(
-			ctx,
-			secret,
-			cacheKey,
-			func() pubsub.DataChannel { return bc.Subscribe(ctx, TopicBackendConfig) },
-		)
-		if err != nil {
-			// the only reason why we should resume by using no cache,
-			// would be if no database configuration has been set
-			if config.IsSet("DB.host") {
-				panic(fmt.Errorf("error starting backend config cache: %w", err))
-			} else {
-				pkgLogger.Warnf("Failed to start backend config cache, no cache will be used: %w", err)
-				bc.cache = &noCache{}
-			}
-		}
-	}
+	bc.cache = &noCache{}
 
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
