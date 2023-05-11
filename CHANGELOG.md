@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.2](https://github.com/rudderlabs/rudder-server/compare/v1.8.1...v1.8.2) (2023-05-10)
+
+
+### Bug Fixes
+
+* stash loop not sleeping when no jobs are present ([#3312](https://github.com/rudderlabs/rudder-server/issues/3312)) ([b446ae7](https://github.com/rudderlabs/rudder-server/commit/b446ae756fa96186326f2c1cf14c4756c50a64cd))
+
+## [1.8.1](https://github.com/rudderlabs/rudder-server/compare/v1.8.0...v1.8.1) (2023-05-10)
+
+
+### Bug Fixes
+
+* kafka secret comes first ([#3307](https://github.com/rudderlabs/rudder-server/issues/3307)) ([757f608](https://github.com/rudderlabs/rudder-server/commit/757f6085d89ee08599e28c2218e110403d303f54))
+
 ## [1.8.0](https://github.com/rudderlabs/rudder-server/compare/v1.7.0...v1.8.0) (2023-05-09)
 
 
