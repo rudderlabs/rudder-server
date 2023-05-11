@@ -269,7 +269,7 @@ func (c *NoResultsCache[T]) filtersToInvalidationKeys(workspaceFilter string, st
 // String returns a string representation of the cache's tree contents.
 func (c *NoResultsCache[T]) String() string {
 	if c == nil {
-		return "Cache is nil"
+		return "nil"
 	}
 	c.cacheTreeMu.RLock()
 	defer c.cacheTreeMu.RUnlock()
