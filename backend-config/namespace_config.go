@@ -34,12 +34,12 @@ type namespaceConfig struct {
 
 	hostedServiceSecret string
 
-	namespace                   string
-	configBackendURL            *url.URL
-	region                      string
-	useIncrementalConfigUpdates bool
-	lastUpdatedAt               time.Time
-	workspacesConfig            map[string]ConfigT
+	namespace                string
+	configBackendURL         *url.URL
+	region                   string
+	incrementalConfigUpdates bool
+	lastUpdatedAt            time.Time
+	workspacesConfig         map[string]ConfigT
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
@@ -94,7 +94,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	var respBody []byte
 	u := *nc.configBackendURL
 	u.Path = fmt.Sprintf("/data-plane/v1/namespaces/%s/config", nc.namespace)
-	if nc.useIncrementalConfigUpdates && !nc.lastUpdatedAt.IsZero() {
+	if nc.incrementalConfigUpdates && !nc.lastUpdatedAt.IsZero() {
 		values := u.Query()
 		values.Add("updatedAfter", nc.lastUpdatedAt.Format(updatedAfterTimeFormat))
 		u.RawQuery = values.Encode()
@@ -151,7 +151,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		workspace.ConnectionFlags.URL = nc.cpRouterURL
 		workspace.ConnectionFlags.Services = map[string]bool{"warehouse": true}
 		workspacesConfig[workspaceID] = *workspace
-		if nc.useIncrementalConfigUpdates && workspace.UpdatedAt.After(nc.lastUpdatedAt) {
+		if nc.incrementalConfigUpdates && workspace.UpdatedAt.After(nc.lastUpdatedAt) {
 			nc.lastUpdatedAt = workspace.UpdatedAt
 		}
 	}

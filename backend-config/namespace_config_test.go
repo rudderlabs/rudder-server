@@ -210,10 +210,10 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 		client:           ts.Client(),
 		configBackendURL: httpSrvURL,
 
-		namespace:                   namespace,
-		hostedServiceSecret:         secret,
-		cpRouterURL:                 cpRouterURL,
-		useIncrementalConfigUpdates: true,
+		namespace:                namespace,
+		hostedServiceSecret:      secret,
+		cpRouterURL:              cpRouterURL,
+		incrementalConfigUpdates: true,
 	}
 	require.NoError(t, client.SetUp())
 
