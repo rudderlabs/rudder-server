@@ -58,6 +58,8 @@ func isGCSTestCredentialsAvailable() bool {
 }
 
 func TestIntegration(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}

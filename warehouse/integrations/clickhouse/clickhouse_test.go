@@ -520,8 +520,6 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			ch := clickhouse.New()
 			ch.Logger = logger.NOP
 
@@ -775,8 +773,6 @@ func TestClickhouse_TestConnection(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			ch := clickhouse.New()
 			ch.Logger = logger.NOP
 
@@ -872,8 +868,6 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 		i := i
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			ch := clickhouse.New()
 			ch.Logger = logger.NOP
 
@@ -942,8 +936,6 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	chResource = setUpClickhouse(t, pool)
 
 	t.Run("Success", func(t *testing.T) {
-		t.Parallel()
-
 		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
@@ -990,8 +982,6 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	})
 
 	t.Run("Invalid host", func(t *testing.T) {
-		t.Parallel()
-
 		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
@@ -1019,8 +1009,6 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	})
 
 	t.Run("Invalid database", func(t *testing.T) {
-		t.Parallel()
-
 		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
@@ -1048,8 +1036,6 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	})
 
 	t.Run("Empty schema", func(t *testing.T) {
-		t.Parallel()
-
 		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
@@ -1080,8 +1066,6 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	})
 
 	t.Run("Unrecognized schema", func(t *testing.T) {
-		t.Parallel()
-
 		ch := clickhouse.New()
 		ch.Logger = logger.NOP
 
