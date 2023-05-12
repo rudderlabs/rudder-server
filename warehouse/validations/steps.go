@@ -1,6 +1,7 @@
 package validations
 
 import (
+	"context"
 	"encoding/json"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -9,7 +10,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func validateStepFunc(destination *backendconfig.DestinationT, _ string) (json.RawMessage, error) {
+func validateStepFunc(_ context.Context, destination *backendconfig.DestinationT, _ string) (json.RawMessage, error) {
 	return json.Marshal(StepsToValidate(destination))
 }
 
@@ -26,7 +27,6 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 
 	switch destType {
 	case warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-		break
 	case warehouseutils.S3_DATALAKE:
 		wh := createDummyWarehouse(dest)
 		if canUseGlue := schemarepository.UseGlue(&wh); !canUseGlue {

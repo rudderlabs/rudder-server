@@ -1,151 +1,151 @@
 {
-    "WorkspaceID": "279L3V7FSpx43LaNJ0nIs9KRaNC",
-    "BatchDestination": {
-        "Source": {
-            "ID": "279L3gEKqwruBoKGsXZtSVX7vIy",
-            "Name": "Rudderstack Sample HTTP Source",
-            "SourceDefinition": {
-                "ID": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
-                "Name": "HTTP",
-                "Category": ""
-            },
-            "Config": {
-                "eventUpload": false,
-                "eventUploadTS": 1666964977653,
-                "isSampleSource": true
-            },
-            "Enabled": true,
-            "WorkspaceID": "279L3V7FSpx43LaNJ0nIs9KRaNC",
-            "Destinations": [],
-            "WriteKey": "279L3kidvJtWFFtBLfhFpa90ZbC",
-            "DgSourceTrackingPlanConfig": {
-                "sourceId": "279L3gEKqwruBoKGsXZtSVX7vIy",
-                "version": 1,
-                "config": {
-                    "global": {
-                        "ajvOptions": {},
-                        "allowUnplannedEvents": true,
-                        "sendViolatedEventsTo": "procErrors"
-                    },
-                    "track": {
-                        "allowUnplannedEvents": true,
-                        "anyOtherViolation": "forward",
-                        "propagateValidationErrors": true,
-                        "sendViolatedEventsTo": "procErrors",
-                        "unplannedProperties": "forward"
-                    }
-                },
-                "mergedConfig": null,
-                "deleted": true,
-                "trackingPlan": {
-                    "id": "",
-                    "version": 0
-                }
-            },
-            "Transient": false
+  "WorkspaceID": "279L3V7FSpx43LaNJ0nIs9KRaNC",
+  "BatchDestination": {
+    "Source": {
+      "ID": "279L3gEKqwruBoKGsXZtSVX7vIy",
+      "Name": "Rudderstack Sample HTTP Source",
+      "SourceDefinition": {
+        "ID": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "Name": "HTTP",
+        "Category": ""
+      },
+      "Config": {
+        "eventUpload": false,
+        "eventUploadTS": 1666964977653,
+        "isSampleSource": true
+      },
+      "Enabled": true,
+      "WorkspaceID": "279L3V7FSpx43LaNJ0nIs9KRaNC",
+      "Destinations": [],
+      "WriteKey": "279L3kidvJtWFFtBLfhFpa90ZbC",
+      "DgSourceTrackingPlanConfig": {
+        "sourceId": "279L3gEKqwruBoKGsXZtSVX7vIy",
+        "version": 1,
+        "config": {
+          "global": {
+            "ajvOptions": {},
+            "allowUnplannedEvents": true,
+            "sendViolatedEventsTo": "procErrors"
+          },
+          "track": {
+            "allowUnplannedEvents": true,
+            "anyOtherViolation": "forward",
+            "propagateValidationErrors": true,
+            "sendViolatedEventsTo": "procErrors",
+            "unplannedProperties": "forward"
+          }
         },
-        "Destination": {
-            "ID": "27CHciD6leAhurSyFAeN4dp14qZ",
-            "Name": "postgres-demo",
-            "DestinationDefinition": {
-                "ID": "1bJ4YC7INdkvBTzotNh0zta5jDm",
-                "Name": "POSTGRES",
-                "DisplayName": "Postgres",
-                "Config": {
-                    "destConfig": {
-                        "defaultConfig": [
-                            "host",
-                            "database",
-                            "user",
-                            "password",
-                            "port",
-                            "sslMode",
-                            "namespace",
-                            "bucketProvider",
-                            "bucketName",
-                            "accessKeyID",
-                            "accessKey",
-                            "accountName",
-                            "accountKey",
-                            "useSASTokens",
-                            "sasToken",
-                            "credentials",
-                            "secretAccessKey",
-                            "useSSL",
-                            "containerName",
-                            "endPoint",
-                            "syncFrequency",
-                            "syncStartAt",
-                            "excludeWindow",
-                            "jsonPaths",
-                            "useRudderStorage",
-                            "clientKey",
-                            "clientCert",
-                            "serverCA"
-                        ]
-                    },
-                    "excludeKeys": [],
-                    "includeKeys": [],
-                    "saveDestinationResponse": true,
-                    "secretKeys": [
-                        "password",
-                        "accessKeyID",
-                        "accessKey",
-                        "accountKey",
-                        "sasToken",
-                        "secretAccessKey",
-                        "credentials"
-                    ],
-                    "supportedSourceTypes": [
-                        "android",
-                        "ios",
-                        "web",
-                        "unity",
-                        "amp",
-                        "cloud",
-                        "reactnative",
-                        "cloudSource",
-                        "flutter",
-                        "cordova"
-                    ],
-                    "transformAt": "processor",
-                    "transformAtV1": "processor"
-                },
-                "ResponseRules": null
-            },
-            "Config": {
-                "accessKeyID": "<****>",
-                "bucketName": "<****>",
-                "bucketProvider": "MINIO",
-                "database": "<****>",
-                "endPoint": "<****>",
-                "host": "<****>",
-                "jsonPaths": "",
-                "namespace": "",
-                "password": "<****>-",
-                "port": "5432",
-                "secretAccessKey": "<****>",
-                "sslMode": "disable",
-                "syncFrequency": "30",
-                "useRudderStorage": false,
-                "useSSL": true,
-                "user": "<****>"
-            },
-            "Enabled": true,
-            "WorkspaceID": "279L3V7FSpx43LaNJ0nIs9KRaNC",
-            "Transformations": [],
-            "IsProcessorEnabled": true,
-            "RevisionID": "2H1cLBvL3v0prRBNzpe8D34XTzU"
+        "mergedConfig": null,
+        "deleted": true,
+        "trackingPlan": {
+          "id": "",
+          "version": 0
         }
+      },
+      "Transient": false
     },
-    "Location": "rudder-warehouse-staging-logs/279L3gEKqwruBoKGsXZtSVX7vIy/2022-11-08/1667913810.279L3gEKqwruBoKGsXZtSVX7vIy.7a6e7785-7a75-4345-8d3c-d7a1ce49a43f.json.gz",
-    "FirstEventAt": "2022-11-08T13:23:07Z",
-    "LastEventAt": "2022-11-08T13:23:07Z",
-    "TotalEvents": 2,
-    "UseRudderStorage": false,
-    "DestinationRevisionID": "2H1cLBvL3v0prRBNzpe8D34XTzU",
-    "SourceTaskRunID": "",
-    "SourceJobID": "",
-    "SourceJobRunID": "",
-    "TimeWindow": "0001-01-01T00:00:00Z"
+    "Destination": {
+      "ID": "27CHciD6leAhurSyFAeN4dp14qZ",
+      "Name": "postgres-demo",
+      "DestinationDefinition": {
+        "ID": "1bJ4YC7INdkvBTzotNh0zta5jDm",
+        "Name": "POSTGRES",
+        "DisplayName": "Postgres",
+        "Config": {
+          "destConfig": {
+            "defaultConfig": [
+              "host",
+              "database",
+              "user",
+              "password",
+              "port",
+              "sslMode",
+              "namespace",
+              "bucketProvider",
+              "bucketName",
+              "accessKeyID",
+              "accessKey",
+              "accountName",
+              "accountKey",
+              "useSASTokens",
+              "sasToken",
+              "credentials",
+              "secretAccessKey",
+              "useSSL",
+              "containerName",
+              "endPoint",
+              "syncFrequency",
+              "syncStartAt",
+              "excludeWindow",
+              "jsonPaths",
+              "useRudderStorage",
+              "clientKey",
+              "clientCert",
+              "serverCA"
+            ]
+          },
+          "excludeKeys": [],
+          "includeKeys": [],
+          "saveDestinationResponse": true,
+          "secretKeys": [
+            "password",
+            "accessKeyID",
+            "accessKey",
+            "accountKey",
+            "sasToken",
+            "secretAccessKey",
+            "credentials"
+          ],
+          "supportedSourceTypes": [
+            "android",
+            "ios",
+            "web",
+            "unity",
+            "amp",
+            "cloud",
+            "reactnative",
+            "cloudSource",
+            "flutter",
+            "cordova"
+          ],
+          "transformAt": "processor",
+          "transformAtV1": "processor"
+        },
+        "ResponseRules": null
+      },
+      "Config": {
+        "accessKeyID": "<****>",
+        "bucketName": "<****>",
+        "bucketProvider": "MINIO",
+        "database": "<****>",
+        "endPoint": "<****>",
+        "host": "<****>",
+        "jsonPaths": "",
+        "namespace": "",
+        "password": "<****>-",
+        "port": "5432",
+        "secretAccessKey": "<****>",
+        "sslMode": "disable",
+        "syncFrequency": "30",
+        "useRudderStorage": false,
+        "useSSL": true,
+        "user": "<****>"
+      },
+      "Enabled": true,
+      "WorkspaceID": "279L3V7FSpx43LaNJ0nIs9KRaNC",
+      "Transformations": [],
+      "IsProcessorEnabled": true,
+      "RevisionID": "2H1cLBvL3v0prRBNzpe8D34XTzU"
+    }
+  },
+  "Location": "rudder-warehouse-staging-logs/279L3gEKqwruBoKGsXZtSVX7vIy/2022-11-08/1667913810.279L3gEKqwruBoKGsXZtSVX7vIy.7a6e7785-7a75-4345-8d3c-d7a1ce49a43f.json.gz",
+  "FirstEventAt": "2022-11-08T13:23:07Z",
+  "LastEventAt": "2022-11-08T13:23:07Z",
+  "TotalEvents": 2,
+  "UseRudderStorage": false,
+  "DestinationRevisionID": "2H1cLBvL3v0prRBNzpe8D34XTzU",
+  "SourceTaskRunID": "",
+  "SourceJobID": "",
+  "SourceJobRunID": "",
+  "TimeWindow": "0001-01-01T00:00:00Z"
 }

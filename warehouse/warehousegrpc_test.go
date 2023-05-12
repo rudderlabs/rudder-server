@@ -56,7 +56,7 @@ var _ = Describe("WarehouseGrpc", func() {
 
 				initWarehouse()
 
-				err = setupDB(context.TODO(), getConnectionString())
+				err = setupDB(context.Background(), getConnectionString())
 				Expect(err).To(BeNil())
 
 				sqlStatement, err := os.ReadFile("testdata/sql/grpc_test.sql")
@@ -81,7 +81,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				}
 
 				w = &warehouseGRPC{}
-				c = context.TODO()
+				c = context.Background()
 			})
 
 			AfterAll(func() {
@@ -557,7 +557,7 @@ var _ = Describe("WarehouseGrpc", func() {
 
 				initWarehouse()
 
-				err = setupDB(context.TODO(), getConnectionString())
+				err = setupDB(context.Background(), getConnectionString())
 				Expect(err).To(BeNil())
 
 				sqlStatement, err := os.ReadFile("testdata/sql/grpc_test.sql")
@@ -579,7 +579,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				}
 
 				w = &warehouseGRPC{}
-				c = context.TODO()
+				c = context.Background()
 			})
 
 			AfterAll(func() {

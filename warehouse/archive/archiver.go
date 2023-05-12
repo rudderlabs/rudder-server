@@ -69,7 +69,7 @@ type Archiver struct {
 	Multitenant *multitenant.Manager
 }
 
-func (a *Archiver) backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
+func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (backupLocation string, err error) {
 	a.Logger.Infof(`Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`, args.uploadID, args.sourceID, args.destID, args.tableName)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -91,7 +91,7 @@ func (a *Archiver) backupRecords(args backupRecordsArgs) (backupLocation string,
 
 	fManager, err := a.FileManager.New(&filemanager.SettingsT{
 		Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigForBackupsFromEnv(context.TODO()),
+		Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
 	})
 	if err != nil {
 		err = fmt.Errorf("error in creating a file manager for:%s. Error: %w", config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
@@ -133,7 +133,7 @@ func (a *Archiver) backupRecords(args backupRecordsArgs) (backupLocation string,
 	return
 }
 
-func (a *Archiver) deleteFilesInStorage(locations []string) error {
+func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string) error {
 	fManager, err := a.FileManager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.S3,
 		Config:   misc.GetRudderObjectStorageConfig(""),
@@ -143,7 +143,7 @@ func (a *Archiver) deleteFilesInStorage(locations []string) error {
 		return err
 	}
 
-	err = fManager.DeleteObjects(context.TODO(), locations)
+	err = fManager.DeleteObjects(ctx, locations)
 	if err != nil {
 		a.Logger.Errorf("Error in deleting objects in Rudder S3: %v", err)
 	}
@@ -297,7 +297,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 		if len(stagingFileIDs) > 0 {
 			if !hasUsedRudderStorage {
 				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
-				storedStagingFilesLocation, err = a.backupRecords(backupRecordsArgs{
+				storedStagingFilesLocation, err = a.backupRecords(ctx, backupRecordsArgs{
 					tableName:      warehouseutils.WarehouseStagingFilesTable,
 					sourceID:       u.sourceID,
 					destID:         u.destID,
@@ -315,7 +315,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 			}
 
 			if hasUsedRudderStorage {
-				err = a.deleteFilesInStorage(stagingFileLocations)
+				err = a.deleteFilesInStorage(ctx, stagingFileLocations)
 				if err != nil {
 					a.Logger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
 					txn.Rollback()
@@ -380,7 +380,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 					}
 					paths = append(paths, u.Path[1:])
 				}
-				err = a.deleteFilesInStorage(paths)
+				err = a.deleteFilesInStorage(ctx, paths)
 				if err != nil {
 					a.Logger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
 					txn.Rollback()

@@ -1,7 +1,6 @@
 package warehouse
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -119,7 +118,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		err               error
 	)
 	numUploadedEvents, err = job.tableUploadsRepo.TotalExportedEvents(
-		context.TODO(),
+		job.ctx,
 		job.upload.ID,
 		[]string{},
 	)
@@ -136,7 +135,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 	}
 
 	numStagedEvents, err = repo.NewStagingFiles(dbHandle).TotalEventsForUpload(
-		context.TODO(),
+		job.ctx,
 		job.upload,
 	)
 	if err != nil {
@@ -168,7 +167,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		err               error
 	)
 	numUploadedEvents, err = job.tableUploadsRepo.TotalExportedEvents(
-		context.TODO(),
+		job.ctx,
 		job.upload.ID,
 		[]string{},
 	)
@@ -185,7 +184,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 	}
 
 	numStagedEvents, err = repo.NewStagingFiles(dbHandle).TotalEventsForUpload(
-		context.TODO(),
+		job.ctx,
 		job.upload,
 	)
 	if err != nil {
@@ -228,7 +227,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		Value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
-	firstEventAt, err := repo.NewStagingFiles(dbHandle).FirstEventForUpload(context.TODO(), job.upload)
+	firstEventAt, err := repo.NewStagingFiles(dbHandle).FirstEventForUpload(job.ctx, job.upload)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
@@ -254,7 +253,7 @@ func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (er
 		(SELECT created_at FROM %[1]s WHERE id=%[3]d) f2
 	`, warehouseutils.WarehouseLoadFilesTable, startID, endID)
 	var timeTakenInS time.Duration
-	err = job.dbHandle.QueryRow(stmt).Scan(&timeTakenInS)
+	err = job.dbHandle.QueryRowContext(job.ctx, stmt).Scan(&timeTakenInS)
 	if err != nil {
 		return
 	}

@@ -162,20 +162,20 @@ func (wh *HandleT) hasLocalIdentityData(warehouse model.Warehouse) (exists bool)
 	return
 }
 
-func (wh *HandleT) hasWarehouseData(warehouse model.Warehouse) (bool, error) {
+func (wh *HandleT) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
 		panic(err)
 	}
 
-	empty, err := whManager.IsEmpty(warehouse)
+	empty, err := whManager.IsEmpty(ctx, warehouse)
 	if err != nil {
 		return false, err
 	}
 	return !empty, nil
 }
 
-func (wh *HandleT) setupIdentityTables(warehouse model.Warehouse) {
+func (wh *HandleT) setupIdentityTables(ctx context.Context, warehouse model.Warehouse) {
 	var name sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&name)
@@ -198,7 +198,7 @@ func (wh *HandleT) setupIdentityTables(warehouse model.Warehouse) {
 		`, warehouseutils.IdentityMergeRulesTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.Exec(sqlStatement)
+	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -212,7 +212,7 @@ func (wh *HandleT) setupIdentityTables(warehouse model.Warehouse) {
 		warehouseutils.IdentityMergeRulesTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.Exec(sqlStatement)
+	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -229,7 +229,7 @@ func (wh *HandleT) setupIdentityTables(warehouse model.Warehouse) {
 		warehouseutils.IdentityMappingsTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.Exec(sqlStatement)
+	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -246,7 +246,7 @@ func (wh *HandleT) setupIdentityTables(warehouse model.Warehouse) {
 		warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
 	)
 
-	_, err = wh.dbHandle.Exec(sqlStatement)
+	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -257,7 +257,7 @@ func (wh *HandleT) setupIdentityTables(warehouse model.Warehouse) {
 		warehouseutils.IdentityMappingsTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.Exec(sqlStatement)
+	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -270,7 +270,7 @@ func (wh *HandleT) setupIdentityTables(warehouse model.Warehouse) {
 		warehouseutils.IdentityMappingsTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.Exec(sqlStatement)
+	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -361,7 +361,7 @@ func (*HandleT) setFailedStat(warehouse model.Warehouse, err error) {
 	}
 }
 
-func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
+func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse model.Warehouse) {
 	if isDestHistoricIdentitiesPopulated(warehouse) || isDestHistoricIdentitiesPopulateInProgress(warehouse) {
 		return
 	}
@@ -391,7 +391,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 				return
 			}
 			var hasData bool
-			hasData, err = wh.hasWarehouseData(warehouse)
+			hasData, err = wh.hasWarehouseData(ctx, warehouse)
 			if err != nil {
 				pkgLogger.Errorf(`[WH]: Error checking for data in %s:%s:%s, err: %s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name, err.Error())
 				return
@@ -410,12 +410,12 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 			panic(err)
 		}
 
-		job := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+		job := wh.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 			Upload:    upload,
 			Warehouse: warehouse,
 		}, whManager)
 
-		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(context.TODO(), job.upload.ID)
+		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(ctx, job.upload.ID)
 		if tableUploadsErr != nil {
 			pkgLogger.Warnw("table uploads exists",
 				logfield.UploadJobID, job.upload.ID,
@@ -435,12 +435,12 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 			}
 		}
 
-		err = whManager.Setup(job.warehouse, job)
+		err = whManager.Setup(ctx, job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)
 			return
 		}
-		defer whManager.Cleanup()
+		defer whManager.Cleanup(ctx)
 
 		schemaHandle := SchemaHandle{
 			warehouse:    job.warehouse,
@@ -450,7 +450,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse model.Warehouse) {
 		}
 		job.schemaHandle = &schemaHandle
 
-		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema()
+		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)

@@ -310,7 +310,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 						destination = wh.attachSSHTunnellingInfo(ctx, destination)
 					}
 
-					namespace := wh.getNamespace(source, destination)
+					namespace := wh.getNamespace(ctx, source, destination)
 					warehouse := model.Warehouse{
 						WorkspaceID: workspaceID,
 						Source:      source,
@@ -350,10 +350,10 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					connectionsMapLock.Unlock()
 
 					if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
-						wh.setupIdentityTables(warehouse)
+						wh.setupIdentityTables(ctx, warehouse)
 						if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
 							// non-blocking populate historic identities
-							wh.populateHistoricIdentities(warehouse)
+							wh.populateHistoricIdentities(ctx, warehouse)
 						}
 					}
 				}
@@ -411,7 +411,7 @@ func deepCopy(src, dest interface{}) error {
 //  1. user set name from destinationConfig
 //  2. from existing record in wh_schemas with same source + dest combo
 //  3. convert source name
-func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT) string {
+func (wh *HandleT) getNamespace(ctx context.Context, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
 	configMap := destination.Config
 	if wh.destType == warehouseutils.CLICKHOUSE {
 		if _, ok := configMap["database"].(string); ok {
@@ -431,7 +431,7 @@ func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backen
 		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
 
-	namespace, err := wh.whSchemaRepo.GetNamespace(context.TODO(), source.ID, destination.ID)
+	namespace, err := wh.whSchemaRepo.GetNamespace(ctx, source.ID, destination.ID)
 	if err != nil {
 		pkgLogger.Errorw("getting namespace",
 			logfield.SourceID, source.ID,
@@ -574,9 +574,9 @@ func getUploadStartAfterTime() time.Time {
 	return time.Now()
 }
 
-func (wh *HandleT) getLatestUploadStatus(warehouse *model.Warehouse) (int64, string, int) {
+func (wh *HandleT) getLatestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
 	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
-		context.TODO(),
+		ctx,
 		warehouse.Type,
 		warehouse.Source.ID,
 		warehouse.Destination.ID)
@@ -600,7 +600,7 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse model.Warehouse) (e
 	}
 
 	priority := defaultUploadPriority
-	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
+	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(ctx, &warehouse)
 	if uploadStatus == model.Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgress := wh.isUploadJobInProgress(warehouse, uploadID); !inProgress {
@@ -750,7 +750,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
 
 		if !found {
-			uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+			uploadJob := wh.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 				Upload: upload,
 			}, nil)
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
@@ -768,7 +768,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		if err != nil {
 			return nil, err
 		}
-		uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+		uploadJob := wh.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 			Warehouse:    warehouse,
 			Upload:       upload,
 			StagingFiles: stagingFilesList,
@@ -1000,7 +1000,7 @@ func minimalConfigSubscriber(ctx context.Context) {
 							destType:     destination.DestinationDefinition.Name,
 							whSchemaRepo: repo.NewWHSchemas(dbHandle),
 						}
-						namespace := wh.getNamespace(source, destination)
+						namespace := wh.getNamespace(ctx, source, destination)
 
 						connectionsMapLock.Lock()
 						if _, ok := slaveConnectionsMap[destination.ID]; !ok {
@@ -1150,29 +1150,6 @@ func CheckPGHealth(dbHandle *sql.DB) bool {
 		return false
 	}
 	return true
-}
-
-func setConfigHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
-		http.Error(w, "can't read body", http.StatusBadRequest)
-		return
-	}
-	defer func() { _ = r.Body.Close() }()
-
-	var kvs []warehouseutils.KeyValue
-	err = json.Unmarshal(body, &kvs)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
-		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
-		return
-	}
-
-	for _, kv := range kvs {
-		config.Set(kv.Key, kv.Value)
-	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -1454,9 +1431,9 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
+func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion()))
+	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion(r.Context())))
 }
 
 func isUploadTriggered(wh model.Warehouse) bool {
@@ -1537,7 +1514,6 @@ func startWebHandler(ctx context.Context) error {
 			// triggers uploads for a source
 			srvMux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler).Methods("POST")
 			srvMux.HandleFunc("/databricksVersion", databricksVersionHandler).Methods("GET")
-			srvMux.HandleFunc("/v1/setConfig", setConfigHandler).Methods("POST")
 
 			// Warehouse Async Job end-points
 			srvMux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler).Methods("POST")          // FIXME: add degraded mode

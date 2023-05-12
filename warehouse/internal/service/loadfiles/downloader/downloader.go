@@ -12,7 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -46,7 +46,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		fileNamesLock sync.RWMutex
 	)
 
-	objects := l.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
+	objects := l.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(
 		l.warehouse.Destination.DestinationDefinition.Name,
 		l.warehouse.Destination.Config,

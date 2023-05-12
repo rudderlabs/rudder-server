@@ -26,7 +26,7 @@ func (r *mockRepo) InterruptedDestinations(_ context.Context, destinationType st
 	return r.m[destinationType], r.err
 }
 
-func (d *mockDestination) CrashRecover() {
+func (d *mockDestination) CrashRecover(_ context.Context) {
 	d.recovered += 1
 }
 
