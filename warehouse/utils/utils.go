@@ -317,6 +317,7 @@ type FetchTablesRequest struct {
 type FetchTableInfo struct {
 	SourceID      string   `json:"source_id"`
 	DestinationID string   `json:"destination_id"`
+	Namespace     string   `json:"namespace"`
 	Tables        []string `json:"tables"`
 }
 

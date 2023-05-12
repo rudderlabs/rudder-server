@@ -125,6 +125,7 @@ func TestWHSchemasRepo(t *testing.T) {
 		require.Equal(t, len(expectedTableNames), 1)
 		require.Equal(t, expectedTableNames[0].SourceID, sourceID)
 		require.Equal(t, expectedTableNames[0].DestinationID, destinationID)
+		require.Equal(t, expectedTableNames[0].Namespace, namespace)
 		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_1"))
 		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_2"))
 

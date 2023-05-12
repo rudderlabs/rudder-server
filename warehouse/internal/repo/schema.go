@@ -238,6 +238,7 @@ func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []
 		tables = append(tables, warehouseutils.FetchTableInfo{
 			SourceID:      entry.SourceID,
 			DestinationID: entry.DestinationID,
+			Namespace:     entry.Namespace,
 			Tables:        allTablesOfConnections,
 		})
 	}
