@@ -1,18 +1,6 @@
 version: "3.9"
 
 services:
-  jobsDb:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=jobsdb
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_USER=rudder
-    ports:
-      - "5432"
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready" ]
-      interval: 1s
-      retries: 25
   databricks-connector:
     image: rudderstack/rudder-databricks-connector:v1.4.2
     ports:
