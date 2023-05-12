@@ -239,7 +239,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 	var archivedUploads int
 	for _, u := range uploadsToArchive {
 
-		txn, err := a.DB.Begin()
+		txn, err := a.DB.BeginTx(ctx, &sql.TxOptions{})
 		if err != nil {
 			a.Logger.Errorf(`Error creating txn in archiveUploadFiles. Error: %v`, err)
 			continue
@@ -267,7 +267,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 			u.endStagingFileId,
 		)
 
-		stagingFileRows, err := txn.Query(stmt)
+		stagingFileRows, err := txn.QueryContext(ctx, stmt)
 		if err != nil {
 			a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 			txn.Rollback()
@@ -333,7 +333,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 				warehouseutils.WarehouseStagingFilesTable,
 				misc.IntArrayToString(stagingFileIDs, ","),
 			)
-			_, err = txn.Query(stmt)
+			_, err = txn.QueryContext(ctx, stmt)
 			if err != nil {
 				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 				txn.Rollback()
@@ -349,7 +349,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 `,
 				warehouseutils.WarehouseLoadFilesTable,
 			)
-			loadLocationRows, err := txn.Query(stmt, pq.Array(stagingFileIDs))
+			loadLocationRows, err := txn.QueryContext(ctx, stmt, pq.Array(stagingFileIDs))
 			if err != nil {
 				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 				txn.Rollback()
@@ -403,7 +403,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 			warehouseutils.WarehouseUploadsTable,
 			u.uploadID,
 		)
-		_, err = txn.Exec(stmt, u.uploadMetdata)
+		_, err = txn.ExecContext(ctx, stmt, u.uploadMetdata)
 		if err != nil {
 			a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 			txn.Rollback()
