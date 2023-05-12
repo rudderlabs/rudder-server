@@ -26,6 +26,13 @@ const (
 	AsyncJOBQueryFrequency = 1000 * time.Millisecond
 )
 
+const (
+	jobsDBHost     = "localhost"
+	jobsDBDatabase = "jobsdb"
+	jobsDBUser     = "rudder"
+	jobsDBPassword = "password"
+)
+
 type EventsCountMap map[string]int
 
 type TestConfig struct {
@@ -177,11 +184,11 @@ func JobsDB(t testing.TB, port int) *sql.DB {
 	t.Helper()
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		"rudder",
-		"password",
-		"localhost",
+		jobsDBUser,
+		jobsDBPassword,
+		jobsDBHost,
 		strconv.Itoa(port),
-		"jobsdb",
+		jobsDBDatabase,
 	)
 	jobsDB, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
@@ -199,4 +206,40 @@ func WithConstantRetries(operation func() error) error {
 		time.Sleep(time.Duration(1+i) * time.Second)
 	}
 	return err
+}
+
+func EnhanceWithDefaultEnvs(t *testing.T) {
+	t.Setenv("JOBS_DB_HOST", jobsDBHost)
+	t.Setenv("JOBS_DB_NAME", jobsDBDatabase)
+	t.Setenv("JOBS_DB_DB_NAME", jobsDBDatabase)
+	t.Setenv("JOBS_DB_USER", jobsDBUser)
+	t.Setenv("JOBS_DB_PASSWORD", jobsDBPassword)
+	t.Setenv("JOBS_DB_SSL_MODE", "disable")
+	t.Setenv("WAREHOUSE_JOBS_DB_HOST", jobsDBHost)
+	t.Setenv("WAREHOUSE_JOBS_DB_NAME", jobsDBDatabase)
+	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", jobsDBDatabase)
+	t.Setenv("WAREHOUSE_JOBS_DB_USER", jobsDBUser)
+	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", jobsDBPassword)
+	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	t.Setenv("MINIO_SSL", "false")
+	t.Setenv("GO_ENV", "production")
+	t.Setenv("LOG_LEVEL", "INFO")
+	t.Setenv("INSTANCE_ID", "1")
+	t.Setenv("ALERT_PROVIDER", "pagerduty")
+	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
+	t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_MAX_PARALLEL_LOADS", "8")
+	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
+	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
+	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
+	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
+	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
+	t.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+	t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_SLOW_QUERY_THRESHOLD", "0s")
+	if testing.Verbose() {
+		t.Setenv("LOG_LEVEL", "DEBUG")
+	}
 }

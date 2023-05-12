@@ -73,7 +73,7 @@ func TestIntegration(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
-	c := testcompose.New(t, "testdata/docker-compose.yml")
+	c := testcompose.New(t, "../testdata/docker-compose.jobsdb.yml", "testdata/docker-compose.yml")
 
 	t.Cleanup(func() {
 		c.Stop(context.Background())
