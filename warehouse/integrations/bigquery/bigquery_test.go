@@ -179,7 +179,6 @@ func TestIntegration(t *testing.T) {
 			schema                              string
 			sourceID                            string
 			destinationID                       string
-			messageID                           string
 			tables                              []string
 			stagingFilesEventsMap               testhelper.EventsCountMap
 			stagingFilesModifiedEventsMap       testhelper.EventsCountMap
@@ -200,7 +199,6 @@ func TestIntegration(t *testing.T) {
 				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
-				messageID:                     misc.FastUUID().String(),
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
 				loadFilesEventsMap:            loadFilesEventsMap(),
@@ -246,7 +244,6 @@ func TestIntegration(t *testing.T) {
 				writeKey:                      writeKey,
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
-				messageID:                     misc.FastUUID().String(),
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
 				loadFilesEventsMap:            loadFilesEventsMap(),
@@ -268,7 +265,6 @@ func TestIntegration(t *testing.T) {
 				writeKey:                            writeKey,
 				sourceID:                            sourceID,
 				destinationID:                       destinationID,
-				messageID:                           misc.FastUUID().String(),
 				stagingFilesEventsMap:               stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
 				loadFilesEventsMap:                  loadFilesEventsMap(),
@@ -333,7 +329,6 @@ func TestIntegration(t *testing.T) {
 					Tables:                tc.tables,
 					SourceID:              tc.sourceID,
 					DestinationID:         tc.destinationID,
-					MessageID:             tc.messageID,
 					StagingFilesEventsMap: tc.stagingFilesEventsMap,
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
@@ -362,7 +357,6 @@ func TestIntegration(t *testing.T) {
 					Tables:                tc.tables,
 					SourceID:              tc.sourceID,
 					DestinationID:         tc.destinationID,
-					MessageID:             tc.messageID,
 					StagingFilesEventsMap: tc.stagingFilesModifiedEventsMap,
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,

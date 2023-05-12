@@ -213,17 +213,17 @@ func TestIntegration(t *testing.T) {
 			useParquetLoadFiles bool
 			stagingFilePrefix   string
 		}{
-			//{
-			//	name:                "Merge Mode",
-			//	writeKey:            writeKey,
-			//	schema:              namespace,
-			//	sourceID:            sourceID,
-			//	destinationID:       destinationID,
-			//	warehouseEventsMap:  mergeEventsMap(),
-			//	loadTableStrategy:   "MERGE",
-			//	useParquetLoadFiles: false,
-			//	stagingFilePrefix:   "testdata/upload-job-merge-mode",
-			//},
+			{
+				name:                "Merge Mode",
+				writeKey:            writeKey,
+				schema:              namespace,
+				sourceID:            sourceID,
+				destinationID:       destinationID,
+				warehouseEventsMap:  mergeEventsMap(),
+				loadTableStrategy:   "MERGE",
+				useParquetLoadFiles: false,
+				stagingFilePrefix:   "testdata/upload-job-merge-mode",
+			},
 			{
 				name:                "Append Mode",
 				writeKey:            writeKey,
@@ -235,17 +235,17 @@ func TestIntegration(t *testing.T) {
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-append-mode",
 			},
-			//{
-			//	name:                "Parquet load files",
-			//	writeKey:            writeKey,
-			//	schema:              namespace,
-			//	sourceID:            sourceID,
-			//	destinationID:       destinationID,
-			//	warehouseEventsMap:  mergeEventsMap(),
-			//	loadTableStrategy:   "MERGE",
-			//	useParquetLoadFiles: true,
-			//	stagingFilePrefix:   "testdata/upload-job-parquet",
-			//},
+			{
+				name:                "Parquet load files",
+				writeKey:            writeKey,
+				schema:              namespace,
+				sourceID:            sourceID,
+				destinationID:       destinationID,
+				warehouseEventsMap:  mergeEventsMap(),
+				loadTableStrategy:   "MERGE",
+				useParquetLoadFiles: true,
+				stagingFilePrefix:   "testdata/upload-job-parquet",
+			},
 		}
 
 		for _, tc := range testCases {
@@ -277,7 +277,6 @@ func TestIntegration(t *testing.T) {
 					Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 					SourceID:      tc.sourceID,
 					DestinationID: tc.destinationID,
-					MessageID:     misc.FastUUID().String(),
 					WarehouseEventsMap: testhelper.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
@@ -306,7 +305,6 @@ func TestIntegration(t *testing.T) {
 					Tables:             []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 					SourceID:           tc.sourceID,
 					DestinationID:      tc.destinationID,
-					MessageID:          misc.FastUUID().String(),
 					WarehouseEventsMap: tc.warehouseEventsMap,
 					Config:             conf,
 					WorkspaceID:        workspaceID,
@@ -323,8 +321,6 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
-		t.Skip()
-
 		dest := backendconfig.DestinationT{
 			ID: destinationID,
 			Config: map[string]interface{}{

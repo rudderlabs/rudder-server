@@ -12,7 +12,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	_ "github.com/lib/pq"
@@ -33,11 +32,9 @@ type TestConfig struct {
 	WriteKey                     string
 	Schema                       string
 	UserID                       string
-	MessageID                    string
 	WorkspaceID                  string
 	JobRunID                     string
 	TaskRunID                    string
-	RecordID                     string
 	SourceID                     string
 	DestinationID                string
 	DestinationType              string
@@ -90,20 +87,6 @@ func (w *TestConfig) reset() {
 	if len(w.WarehouseEventsMap) == 0 {
 		w.WarehouseEventsMap = defaultWarehouseEventsMap()
 	}
-}
-
-func (w *TestConfig) msgID() string {
-	if w.MessageID == "" {
-		return misc.FastUUID().String()
-	}
-	return w.MessageID
-}
-
-func (w *TestConfig) recordID() string {
-	if w.RecordID == "" {
-		return misc.FastUUID().String()
-	}
-	return w.RecordID
 }
 
 func defaultStagingFilesEventsMap() EventsCountMap {

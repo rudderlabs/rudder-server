@@ -2,7 +2,7 @@ package testhelper
 
 import (
 	"database/sql"
-	b64 "encoding/base64"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,7 +17,6 @@ import (
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"github.com/segmentio/asm/base64"
 	"github.com/stretchr/testify/require"
 )
 
@@ -219,7 +218,7 @@ func verifyAsyncJob(t testing.TB, testConfig *TestConfig) {
 
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization",
-		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
+		fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString(
 			[]byte(fmt.Sprintf("%s:", testConfig.WriteKey)),
 		)),
 	)
