@@ -6,18 +6,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 )
 
 func createStagingFile(t testing.TB, testConfig *TestConfig) {
@@ -27,7 +28,8 @@ func createStagingFile(t testing.TB, testConfig *TestConfig) {
 
 	payload := prepareStagingPayload(t, testConfig, stagingFile, uploadOutput)
 
-	err := warehouseclient.NewWarehouse(misc.GetWarehouseURL()).Process(context.Background(), payload)
+	url := fmt.Sprintf("http://localhost:%d", testConfig.HTTPPort)
+	err := warehouseclient.NewWarehouse(url).Process(context.Background(), payload)
 	require.NoError(t, err)
 }
 
@@ -44,26 +46,25 @@ func prepareStagingFile(t testing.TB, testConfig *TestConfig) string {
 	require.NoError(t, err)
 	defer func() { _ = gzWriter.CloseGZ() }()
 
-	for eventTemplate, templ := range templatesMap {
-		for i := 0; i < testConfig.EventTemplateCountMap[eventTemplate]; i++ {
-			data := map[string]any{
-				"userID":    testConfig.UserID,
-				"destType":  testConfig.DestinationType,
-				"msgID":     testConfig.msgID(),
-				"recordID":  testConfig.recordID(),
-				"jobRunID":  testConfig.JobRunID,
-				"taskRunID": testConfig.TaskRunID,
-				"sourceID":  testConfig.SourceID,
-				"destID":    testConfig.DestinationID,
-			}
+	f, err := os.ReadFile(testConfig.StagingFilePath)
+	require.NoError(t, err)
 
-			payload := parseTemplate(t, templ, data)
-			payload += "\n"
+	tpl, err := template.New(uuid.New().String()).Parse(string(f))
+	require.NoError(t, err)
 
-			err = gzWriter.WriteGZ(payload)
-			require.NoError(t, err)
-		}
-	}
+	b := new(strings.Builder)
+
+	err = tpl.Execute(b, map[string]any{
+		"userID":    testConfig.UserID,
+		"sourceID":  testConfig.SourceID,
+		"destID":    testConfig.DestinationID,
+		"jobRunID":  testConfig.JobRunID,
+		"taskRunID": testConfig.TaskRunID,
+	})
+	require.NoError(t, err)
+
+	err = gzWriter.WriteGZ(b.String())
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		if err := os.Remove(gzWriter.File.Name()); err != nil {
@@ -72,20 +73,6 @@ func prepareStagingFile(t testing.TB, testConfig *TestConfig) string {
 	})
 
 	return gzipFilePath
-}
-
-func parseTemplate(t testing.TB, text string, data map[string]any) string {
-	t.Helper()
-
-	tpl, err := template.New(uuid.New().String()).Parse(text)
-	require.NoError(t, err)
-
-	b := new(strings.Builder)
-
-	err = tpl.Execute(b, data)
-	require.NoError(t, err)
-
-	return b.String()
 }
 
 func uploadStagingFile(t testing.TB, testConfig *TestConfig, stagingFile string) filemanager.UploadOutput {
@@ -170,7 +157,12 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 		}
 	}
 
-	receivedAt, err := time.Parse(time.RFC3339, stagingEvents[0].Data["received_at"].(string))
+	receivedAtProperty := "received_at"
+	if testConfig.DestinationType == warehouseutils.SNOWFLAKE {
+		receivedAtProperty = "RECEIVED_AT"
+	}
+
+	receivedAt, err := time.Parse(time.RFC3339, stagingEvents[0].Data[receivedAtProperty].(string))
 	require.NoError(t, err)
 
 	stagingFileInfo, err := os.Stat(stagingFile)
@@ -183,8 +175,8 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 		DestinationID:         testConfig.DestinationID,
 		DestinationRevisionID: testConfig.DestinationID,
 		Location:              uploadOutput.ObjectName,
-		FirstEventAt:          stagingEvents[0].Data["received_at"].(string),
-		LastEventAt:           stagingEvents[len(stagingEvents)-1].Data["received_at"].(string),
+		FirstEventAt:          stagingEvents[0].Data[receivedAtProperty].(string),
+		LastEventAt:           stagingEvents[len(stagingEvents)-1].Data[receivedAtProperty].(string),
 		TotalEvents:           len(stagingEvents),
 		TotalBytes:            int(stagingFileInfo.Size()),
 		SourceTaskRunID:       testConfig.TaskRunID,

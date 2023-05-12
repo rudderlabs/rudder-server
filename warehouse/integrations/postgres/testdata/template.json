@@ -49,7 +49,7 @@
           "deleted": false,
           "createdAt": "2021-11-18T19:28:48.030Z",
           "updatedAt": "2021-11-18T19:28:48.030Z",
-          "revisionId": "{{.destinationID}}",
+          "revisionId": "{{.tunnelledDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {

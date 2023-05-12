@@ -5,6 +5,13 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
@@ -12,12 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/segmentio/asm/base64"
 	"github.com/stretchr/testify/require"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
-	"testing"
-	"time"
 )
 
 func verifyEventsInStagingFiles(t testing.TB, testConfig *TestConfig) {

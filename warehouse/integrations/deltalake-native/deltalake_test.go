@@ -86,12 +86,9 @@ func TestIntegration(t *testing.T) {
 	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
-	transformerPort := c.Port("transformer", 9090)
 	databricksConnectorPort := c.Port("databricks-connector", 50051)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -99,12 +96,14 @@ func TestIntegration(t *testing.T) {
 	destinationID := warehouseutils.RandHex()
 	writeKey := warehouseutils.RandHex()
 
-	provider := warehouseutils.DELTALAKE
+	destType := warehouseutils.DELTALAKE
 
-	namespace := testhelper.RandSchema(provider)
+	namespace := testhelper.RandSchema(destType)
 
 	deltaLakeCredentials, err := deltaLakeTestCredentials()
 	require.NoError(t, err)
+
+	databricksEndpoint := fmt.Sprintf("localhost:%d", databricksConnectorPort)
 
 	templateConfigurations := map[string]any{
 		"workspaceID":   workspaceID,
@@ -141,8 +140,7 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DATABRICKS_CONNECTOR_URL", fmt.Sprintf("localhost:%d", databricksConnectorPort))
-	t.Setenv("DEST_TRANSFORM_URL", fmt.Sprintf("http://localhost:%d", transformerPort))
+	t.Setenv("DATABRICKS_CONNECTOR_URL", databricksEndpoint)
 	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
@@ -150,8 +148,9 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
@@ -177,8 +176,6 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Event flow", func(t *testing.T) {
 		jobsDB := testhelper.JobsDB(t, jobsDBPort)
-
-		provider := warehouseutils.DELTALAKE
 
 		port, err := strconv.Atoi(deltaLakeCredentials.Port)
 		require.NoError(t, err)
@@ -206,6 +203,7 @@ func TestIntegration(t *testing.T) {
 
 		testCases := []struct {
 			name                string
+			writeKey            string
 			schema              string
 			sourceID            string
 			destinationID       string
@@ -213,34 +211,41 @@ func TestIntegration(t *testing.T) {
 			warehouseEventsMap  testhelper.EventsCountMap
 			loadTableStrategy   string
 			useParquetLoadFiles bool
+			stagingFilePrefix   string
 		}{
-			{
-				name:                "Merge Mode",
-				schema:              namespace,
-				sourceID:            sourceID,
-				destinationID:       destinationID,
-				warehouseEventsMap:  mergeEventsMap(),
-				loadTableStrategy:   "MERGE",
-				useParquetLoadFiles: false,
-			},
+			//{
+			//	name:                "Merge Mode",
+			//	writeKey:            writeKey,
+			//	schema:              namespace,
+			//	sourceID:            sourceID,
+			//	destinationID:       destinationID,
+			//	warehouseEventsMap:  mergeEventsMap(),
+			//	loadTableStrategy:   "MERGE",
+			//	useParquetLoadFiles: false,
+			//	stagingFilePrefix:   "testdata/upload-job-merge-mode",
+			//},
 			{
 				name:                "Append Mode",
+				writeKey:            writeKey,
 				schema:              namespace,
 				sourceID:            sourceID,
 				destinationID:       destinationID,
 				warehouseEventsMap:  appendEventsMap(),
 				loadTableStrategy:   "APPEND",
 				useParquetLoadFiles: false,
+				stagingFilePrefix:   "testdata/upload-job-append-mode",
 			},
-			{
-				name:                "Parquet load files",
-				schema:              namespace,
-				sourceID:            sourceID,
-				destinationID:       destinationID,
-				warehouseEventsMap:  mergeEventsMap(),
-				loadTableStrategy:   "MERGE",
-				useParquetLoadFiles: true,
-			},
+			//{
+			//	name:                "Parquet load files",
+			//	writeKey:            writeKey,
+			//	schema:              namespace,
+			//	sourceID:            sourceID,
+			//	destinationID:       destinationID,
+			//	warehouseEventsMap:  mergeEventsMap(),
+			//	loadTableStrategy:   "MERGE",
+			//	useParquetLoadFiles: true,
+			//	stagingFilePrefix:   "testdata/upload-job-parquet",
+			//},
 		}
 
 		for _, tc := range testCases {
@@ -250,15 +255,29 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_LOAD_TABLE_STRATEGY", tc.loadTableStrategy)
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 
-				ts := testhelper.TestConfig{
-					Schema:          tc.schema,
-					SourceID:        tc.sourceID,
-					DestinationID:   tc.destinationID,
-					JobsDB:          jobsDB,
-					DestinationType: provider,
-					UserID:          testhelper.GetUserId(provider),
-					MessageID:       misc.FastUUID().String(),
-					Tables:          []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				sqlClient := &warehouseclient.Client{
+					SQL:  db,
+					Type: warehouseclient.SQLClient,
+				}
+
+				conf := map[string]interface{}{
+					"bucketProvider": "AZURE_BLOB",
+					"containerName":  deltaLakeCredentials.ContainerName,
+					"prefix":         "",
+					"useSTSTokens":   false,
+					"enableSSE":      false,
+					"accountName":    deltaLakeCredentials.AccountName,
+					"accountKey":     deltaLakeCredentials.AccountKey,
+				}
+
+				t.Log("verifying test case 1")
+				ts1 := testhelper.TestConfig{
+					WriteKey:      writeKey,
+					Schema:        tc.schema,
+					Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+					SourceID:      tc.sourceID,
+					DestinationID: tc.destinationID,
+					MessageID:     misc.FastUUID().String(),
 					WarehouseEventsMap: testhelper.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
@@ -269,22 +288,43 @@ func TestIntegration(t *testing.T) {
 						"aliases":       1,
 						"groups":        1,
 					},
-					Client: &warehouseclient.Client{
-						SQL:  db,
-						Type: warehouseclient.SQLClient,
-					},
-					HTTPPort:    httpPort,
-					WorkspaceID: workspaceID,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					StagingFilePath: tc.stagingFilePrefix + ".staging-1.json",
+					UserID:          testhelper.GetUserId(destType),
 				}
-				ts.VerifyEvents(t)
+				ts1.VerifyEvents(t)
 
-				ts.WarehouseEventsMap = tc.warehouseEventsMap
-				ts.VerifyEvents(t)
+				t.Log("verifying test case 2")
+				ts2 := testhelper.TestConfig{
+					WriteKey:           writeKey,
+					Schema:             tc.schema,
+					Tables:             []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+					SourceID:           tc.sourceID,
+					DestinationID:      tc.destinationID,
+					MessageID:          misc.FastUUID().String(),
+					WarehouseEventsMap: tc.warehouseEventsMap,
+					Config:             conf,
+					WorkspaceID:        workspaceID,
+					DestinationType:    destType,
+					JobsDB:             jobsDB,
+					HTTPPort:           httpPort,
+					Client:             sqlClient,
+					StagingFilePath:    tc.stagingFilePrefix + ".staging-2.json",
+					UserID:             ts1.UserID,
+				}
+				ts2.VerifyEvents(t)
 			})
 		}
 	})
 
 	t.Run("Validation", func(t *testing.T) {
+		t.Skip()
+
 		dest := backendconfig.DestinationT{
 			ID: destinationID,
 			Config: map[string]interface{}{

@@ -45,7 +45,7 @@ type TestConfig struct {
 	Client                       *warehouseclient.Client
 	TimestampBeforeSendingEvents time.Time
 	Config                       map[string]interface{}
-	EventTemplateCountMap        EventsCountMap
+	StagingFilePath              string
 	StagingFilesEventsMap        EventsCountMap
 	LoadFilesEventsMap           EventsCountMap
 	TableUploadsEventsMap        EventsCountMap

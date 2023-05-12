@@ -13,10 +13,6 @@ services:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 1s
       retries: 25
-  transformer:
-    image: rudderstack/develop-rudder-transformer:latest
-    ports:
-      - "9090"
   databricks-connector:
     image: rudderstack/rudder-databricks-connector:v1.4.2
     ports:

@@ -100,11 +100,8 @@ func TestIntegration(t *testing.T) {
 	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
-	transformerPort := c.Port("transformer", 9090)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -133,8 +130,6 @@ func TestIntegration(t *testing.T) {
 
 	rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
 	require.NoError(t, err)
-
-	transformerEndpoint := fmt.Sprintf("http://localhost:%d", transformerPort)
 
 	templateConfigurations := map[string]any{
 		"workspaceID":                workspaceID,
@@ -195,7 +190,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DEST_TRANSFORM_URL", transformerEndpoint)
 	t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
@@ -205,8 +199,9 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
 	t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_ENABLE_DELETE_BY_JOBS", "true")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
@@ -250,6 +245,7 @@ func TestIntegration(t *testing.T) {
 			cred                          *testCredentials
 			database                      string
 			asyncJob                      bool
+			stagingFilePrefix             string
 		}{
 			{
 				name:          "Upload Job with Normal Database",
@@ -266,6 +262,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
+				stagingFilePrefix: "testdata/upload-job",
 			},
 			{
 				name:          "Upload Job with Role",
@@ -282,6 +279,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
+				stagingFilePrefix: "testdata/upload-job-with-role",
 			},
 			{
 				name:          "Upload Job with Case Sensitive Database",
@@ -298,6 +296,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
+				stagingFilePrefix: "testdata/upload-job-case-sensitive",
 			},
 			{
 				name:          "Async Job with Sources",
@@ -312,12 +311,13 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
 				},
 				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
+					"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
 				},
 				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				asyncJob:              true,
+				stagingFilePrefix:     "testdata/sources-job",
 			},
 		}
 
@@ -388,11 +388,8 @@ func TestIntegration(t *testing.T) {
 					Client:                sqlClient,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					EventTemplateCountMap: testhelper.DefaultEventsCountMapWithIdResolution(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
 					UserID:                testhelper.GetUserId(destType),
-				}
-				if tc.asyncJob {
-					ts1.EventTemplateCountMap = testhelper.DefaultSourcesEventsCountMapWithIDResolution()
 				}
 				ts1.VerifyEvents(t)
 
@@ -403,7 +400,7 @@ func TestIntegration(t *testing.T) {
 					Tables:                tc.tables,
 					SourceID:              tc.sourceID,
 					DestinationID:         tc.destinationID,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
+					StagingFilesEventsMap: tc.stagingFilesModifiedEventsMap,
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
@@ -416,12 +413,11 @@ func TestIntegration(t *testing.T) {
 					Client:                sqlClient,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					EventTemplateCountMap: testhelper.ModifiedEventsCountMapWithIdResolution(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                testhelper.GetUserId(destType),
 				}
 				if tc.asyncJob {
 					ts2.UserID = ts1.UserID
-					ts2.EventTemplateCountMap = testhelper.DefaultSourcesModifiedEventsCountMapWithIDResolution()
 				}
 				ts2.VerifyEvents(t)
 			})

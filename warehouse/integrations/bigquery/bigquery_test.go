@@ -60,11 +60,8 @@ func TestIntegration(t *testing.T) {
 	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
-	transformerPort := c.Port("transformer", 9090)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -87,8 +84,6 @@ func TestIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	escapedCredentialsTrimmedStr := strings.Trim(string(escapedCredentials), `"`)
-
-	transformerEndpoint := fmt.Sprintf("http://localhost:%d", transformerPort)
 
 	templateConfigurations := map[string]any{
 		"workspaceID":          workspaceID,
@@ -126,7 +121,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DEST_TRANSFORM_URL", transformerEndpoint)
 	t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
@@ -136,8 +130,9 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
 	t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_ENABLE_DELETE_BY_JOBS", "true")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
@@ -196,6 +191,7 @@ func TestIntegration(t *testing.T) {
 			prerequisite                        func(t testing.TB)
 			isDedupEnabled                      bool
 			customPartitionsEnabledWorkspaceIDs string
+			stagingFilePrefix                   string
 		}{
 			{
 				name:                          "Merge mode",
@@ -216,6 +212,7 @@ func TestIntegration(t *testing.T) {
 
 					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 				},
+				stagingFilePrefix: "testdata/upload-job-merge-mode",
 			},
 			{
 				name:          "Async Job",
@@ -240,6 +237,7 @@ func TestIntegration(t *testing.T) {
 
 					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 				},
+				stagingFilePrefix: "testdata/sources-job",
 			},
 			{
 				name:                          "Append mode",
@@ -261,6 +259,7 @@ func TestIntegration(t *testing.T) {
 
 					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 				},
+				stagingFilePrefix: "testdata/upload-job-append-mode",
 			},
 			{
 				name:                                "Append mode with custom partition",
@@ -302,6 +301,7 @@ func TestIntegration(t *testing.T) {
 					)
 					require.NoError(t, err)
 				},
+				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
 			},
 		}
 
@@ -346,11 +346,8 @@ func TestIntegration(t *testing.T) {
 					Client:                sqlClient,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					EventTemplateCountMap: testhelper.DefaultEventsCountMap(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
 					UserID:                testhelper.GetUserId(destType),
-				}
-				if tc.asyncJob {
-					ts1.EventTemplateCountMap = testhelper.DefaultSourcesEventsCountMap()
 				}
 				ts1.VerifyEvents(t)
 
@@ -379,12 +376,11 @@ func TestIntegration(t *testing.T) {
 					Client:                sqlClient,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					EventTemplateCountMap: testhelper.ModifiedEventsCountMap(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                testhelper.GetUserId(destType),
 				}
 				if tc.asyncJob {
 					ts2.UserID = ts1.UserID
-					ts2.EventTemplateCountMap = testhelper.DefaultSourcesModifiedEventsCountMap()
 				}
 				ts2.VerifyEvents(t)
 			})
@@ -416,14 +412,6 @@ func TestIntegration(t *testing.T) {
 	})
 }
 
-func makeUpperCase(eventMap testhelper.EventsCountMap) testhelper.EventsCountMap {
-	newEventMap := make(testhelper.EventsCountMap)
-	for k, v := range eventMap {
-		newEventMap[strings.ToUpper(k)] = v
-	}
-	return newEventMap
-}
-
 func loadFilesEventsMap() testhelper.EventsCountMap {
 	return testhelper.EventsCountMap{
 		"identifies":    4,
@@ -433,7 +421,8 @@ func loadFilesEventsMap() testhelper.EventsCountMap {
 		"pages":         4,
 		"screens":       4,
 		"aliases":       4,
-		"groups":        4,
+		"groups":        1,
+		"_groups":       3,
 	}
 }
 
@@ -446,7 +435,8 @@ func tableUploadsEventsMap() testhelper.EventsCountMap {
 		"pages":         4,
 		"screens":       4,
 		"aliases":       4,
-		"groups":        4,
+		"groups":        1,
+		"_groups":       3,
 	}
 }
 
@@ -466,6 +456,7 @@ func mergeEventsMap() testhelper.EventsCountMap {
 		"screens":       1,
 		"aliases":       1,
 		"groups":        1,
+		"_groups":       1,
 	}
 }
 
@@ -478,7 +469,8 @@ func appendEventsMap() testhelper.EventsCountMap {
 		"pages":         4,
 		"screens":       4,
 		"aliases":       4,
-		"groups":        4,
+		"groups":        1,
+		"_groups":       3,
 	}
 }
 

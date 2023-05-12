@@ -62,7 +62,6 @@ func TestIntegration(t *testing.T) {
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
-	transformerPort := c.Port("transformer", 9090)
 	port := c.Port("clickhouse", 9000)
 	clusterPort1 := c.Port("clickhouse01", 9000)
 	clusterPort2 := c.Port("clickhouse02", 9000)
@@ -70,8 +69,6 @@ func TestIntegration(t *testing.T) {
 	clusterPort4 := c.Port("clickhouse04", 9000)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -82,7 +79,7 @@ func TestIntegration(t *testing.T) {
 	clusterDestinationID := warehouseutils.RandHex()
 	clusterWriteKey := warehouseutils.RandHex()
 
-	provider := warehouseutils.CLICKHOUSE
+	destType := warehouseutils.CLICKHOUSE
 
 	host := "localhost"
 	database := "rudderdb"
@@ -93,7 +90,8 @@ func TestIntegration(t *testing.T) {
 	bucketName := "testbucket"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
-	endPoint := fmt.Sprintf("localhost:%d", minioPort)
+
+	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
 
 	templateConfigurations := map[string]any{
 		"workspaceID":          workspaceID,
@@ -118,7 +116,7 @@ func TestIntegration(t *testing.T) {
 		"bucketName":           bucketName,
 		"accessKeyID":          accessKeyID,
 		"secretAccessKey":      secretAccessKey,
-		"endPoint":             endPoint,
+		"endPoint":             minioEndpoint,
 	}
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -136,16 +134,15 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("MINIO_ACCESS_KEY_ID", "MYACCESSKEY")
-	t.Setenv("MINIO_SECRET_ACCESS_KEY", "MYSECRETKEY")
-	t.Setenv("MINIO_MINIO_ENDPOINT", endPoint)
+	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
+	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
+	t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
 	t.Setenv("MINIO_SSL", "false")
 	t.Setenv("GO_ENV", "production")
 	t.Setenv("LOG_LEVEL", "INFO")
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DEST_TRANSFORM_URL", fmt.Sprintf("http://localhost:%d", transformerPort))
 	t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
@@ -153,8 +150,9 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
@@ -199,26 +197,28 @@ func TestIntegration(t *testing.T) {
 
 		testCases := []struct {
 			name                    string
+			writeKey                string
 			sourceID                string
 			destinationID           string
-			writeKey                string
 			warehouseEvents         testhelper.EventsCountMap
 			warehouseModifiedEvents testhelper.EventsCountMap
 			clusterSetup            func(t testing.TB)
 			db                      *sql.DB
+			stagingFilePrefix       string
 		}{
 			{
-				name:          "Single Setup",
-				sourceID:      sourceID,
-				destinationID: destinationID,
-				writeKey:      writeKey,
-				db:            dbs[0],
+				name:              "Single Setup",
+				writeKey:          writeKey,
+				sourceID:          sourceID,
+				destinationID:     destinationID,
+				db:                dbs[0],
+				stagingFilePrefix: "testdata/upload-job",
 			},
 			{
 				name:          "Cluster Mode Setup",
+				writeKey:      clusterWriteKey,
 				sourceID:      clusterSourceID,
 				destinationID: clusterDestinationID,
-				writeKey:      clusterWriteKey,
 				db:            dbs[1],
 				warehouseModifiedEvents: testhelper.EventsCountMap{
 					"identifies":    8,
@@ -234,6 +234,7 @@ func TestIntegration(t *testing.T) {
 					t.Helper()
 					initializeClickhouseClusterMode(t, dbs[1:], tables)
 				},
+				stagingFilePrefix: "testdata/upload-cluster-job",
 			},
 		}
 
@@ -241,31 +242,63 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				ts := testhelper.TestConfig{
+				sqlClient := &client.Client{
+					SQL:  tc.db,
+					Type: client.SQLClient,
+				}
+
+				conf := map[string]interface{}{
+					"bucketProvider":   "MINIO",
+					"bucketName":       bucketName,
+					"accessKeyID":      accessKeyID,
+					"secretAccessKey":  secretAccessKey,
+					"useSSL":           false,
+					"endPoint":         minioEndpoint,
+					"useRudderStorage": false,
+				}
+
+				t.Log("verifying test case 1")
+				ts1 := testhelper.TestConfig{
+					WriteKey:           tc.writeKey,
 					Schema:             database,
+					Tables:             tables,
 					SourceID:           tc.sourceID,
 					DestinationID:      tc.destinationID,
 					WarehouseEventsMap: tc.warehouseEvents,
-					Tables:             tables,
-					DestinationType:    provider,
+					Config:             conf,
+					WorkspaceID:        workspaceID,
+					DestinationType:    destType,
 					JobsDB:             jobsDB,
-					UserID:             testhelper.GetUserId(provider),
-					Client: &client.Client{
-						SQL:  tc.db,
-						Type: client.SQLClient,
-					},
-					HTTPPort:    httpPort,
-					WorkspaceID: workspaceID,
+					HTTPPort:           httpPort,
+					Client:             sqlClient,
+					UserID:             testhelper.GetUserId(destType),
+					StagingFilePath:    tc.stagingFilePrefix + ".staging-1.json",
 				}
-				ts.VerifyEvents(t)
+				ts1.VerifyEvents(t)
 
+				t.Log("setting up cluster")
 				if tc.clusterSetup != nil {
 					tc.clusterSetup(t)
 				}
 
-				ts.UserID = testhelper.GetUserId(provider)
-				ts.WarehouseEventsMap = tc.warehouseModifiedEvents
-				ts.VerifyEvents(t)
+				t.Log("verifying test case 2")
+				ts2 := testhelper.TestConfig{
+					WriteKey:           tc.writeKey,
+					Schema:             database,
+					Tables:             tables,
+					SourceID:           tc.sourceID,
+					DestinationID:      tc.destinationID,
+					WarehouseEventsMap: tc.warehouseModifiedEvents,
+					Config:             conf,
+					WorkspaceID:        workspaceID,
+					DestinationType:    destType,
+					JobsDB:             jobsDB,
+					HTTPPort:           httpPort,
+					Client:             sqlClient,
+					UserID:             testhelper.GetUserId(destType),
+					StagingFilePath:    tc.stagingFilePrefix + ".staging-2.json",
+				}
+				ts2.VerifyEvents(t)
 			})
 		}
 	})
@@ -287,7 +320,7 @@ func TestIntegration(t *testing.T) {
 				"accessKeyID":      accessKeyID,
 				"secretAccessKey":  secretAccessKey,
 				"useSSL":           false,
-				"endPoint":         endPoint,
+				"endPoint":         minioEndpoint,
 				"syncFrequency":    "30",
 				"useRudderStorage": false,
 			},

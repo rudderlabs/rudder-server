@@ -44,12 +44,9 @@ func TestIntegration(t *testing.T) {
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
-	transformerPort := c.Port("transformer", 9090)
 	azureSynapsePort := c.Port("azure_synapse", 1433)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -71,7 +68,6 @@ func TestIntegration(t *testing.T) {
 	secretAccessKey := "MYSECRETKEY"
 
 	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-	transformerEndpoint := fmt.Sprintf("http://localhost:%d", transformerPort)
 
 	templateConfigurations := map[string]any{
 		"workspaceID":     workspaceID,
@@ -114,7 +110,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DEST_TRANSFORM_URL", transformerEndpoint)
 	t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
@@ -122,8 +117,9 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
@@ -202,41 +198,41 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying test case 1")
 				ts1 := testhelper.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
-					Tables:                tc.tables,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              misc.FastUUID().String(),
-					TaskRunID:             misc.FastUUID().String(),
-					EventTemplateCountMap: testhelper.DefaultEventsCountMap(),
-					UserID:                testhelper.GetUserId(destType),
+					WriteKey:        tc.writeKey,
+					Schema:          tc.schema,
+					Tables:          tc.tables,
+					SourceID:        tc.sourceID,
+					DestinationID:   tc.destinationID,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					JobRunID:        misc.FastUUID().String(),
+					TaskRunID:       misc.FastUUID().String(),
+					StagingFilePath: "testdata/upload-job.staging-1.json",
+					UserID:          testhelper.GetUserId(destType),
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
 				ts2 := testhelper.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
-					Tables:                tc.tables,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              misc.FastUUID().String(),
-					TaskRunID:             misc.FastUUID().String(),
-					EventTemplateCountMap: testhelper.ModifiedEventsCountMap(),
-					UserID:                testhelper.GetUserId(destType),
+					WriteKey:        tc.writeKey,
+					Schema:          tc.schema,
+					Tables:          tc.tables,
+					SourceID:        tc.sourceID,
+					DestinationID:   tc.destinationID,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					JobRunID:        misc.FastUUID().String(),
+					TaskRunID:       misc.FastUUID().String(),
+					StagingFilePath: "testdata/upload-job.staging-2.json",
+					UserID:          testhelper.GetUserId(destType),
 				}
 				ts2.VerifyEvents(t)
 			})

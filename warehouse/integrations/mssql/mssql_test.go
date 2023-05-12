@@ -45,12 +45,9 @@ func TestIntegration(t *testing.T) {
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
-	transformerPort := c.Port("transformer", 9090)
 	mssqlPort := c.Port("mssql", 1433)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -76,7 +73,6 @@ func TestIntegration(t *testing.T) {
 	secretAccessKey := "MYSECRETKEY"
 
 	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-	transformerEndpoint := fmt.Sprintf("http://localhost:%d", transformerPort)
 
 	templateConfigurations := map[string]any{
 		"workspaceID":          workspaceID,
@@ -123,7 +119,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DEST_TRANSFORM_URL", transformerEndpoint)
 	t.Setenv("RSERVER_WAREHOUSE_MSSQL_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
@@ -132,8 +127,9 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
 	t.Setenv("RSERVER_WAREHOUSE_MSSQL_ENABLE_DELETE_BY_JOBS", "true")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
@@ -183,14 +179,16 @@ func TestIntegration(t *testing.T) {
 			tableUploadsEventsMap testhelper.EventsCountMap
 			warehouseEventsMap    testhelper.EventsCountMap
 			asyncJob              bool
+			stagingFilePrefix     string
 		}{
 			{
-				name:          "Upload Job",
-				writeKey:      writeKey,
-				schema:        namespace,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:      sourceID,
-				destinationID: destinationID,
+				name:              "Upload Job",
+				writeKey:          writeKey,
+				schema:            namespace,
+				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				sourceID:          sourceID,
+				destinationID:     destinationID,
+				stagingFilePrefix: "testdata/upload-job",
 			},
 			{
 				name:                  "Async Job",
@@ -204,6 +202,7 @@ func TestIntegration(t *testing.T) {
 				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				asyncJob:              true,
+				stagingFilePrefix:     "testdata/sources-job",
 			},
 		}
 
@@ -247,11 +246,8 @@ func TestIntegration(t *testing.T) {
 					Client:                sqlClient,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					EventTemplateCountMap: testhelper.DefaultEventsCountMap(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
 					UserID:                testhelper.GetUserId(destType),
-				}
-				if tc.asyncJob {
-					ts1.EventTemplateCountMap = testhelper.DefaultSourcesEventsCountMap()
 				}
 				ts1.VerifyEvents(t)
 
@@ -275,12 +271,11 @@ func TestIntegration(t *testing.T) {
 					Client:                sqlClient,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					EventTemplateCountMap: testhelper.ModifiedEventsCountMap(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                testhelper.GetUserId(destType),
 				}
 				if tc.asyncJob {
 					ts2.UserID = ts1.UserID
-					ts2.EventTemplateCountMap = testhelper.DefaultSourcesModifiedEventsCountMap()
 				}
 				ts2.VerifyEvents(t)
 			})
