@@ -158,6 +158,7 @@ type HandleT struct {
 	NowSQL                            string
 	Logger                            logger.Logger
 	cpInternalClient                  cpclient.InternalControlPlane
+	conf                              *config.Config
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -426,7 +427,7 @@ func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backen
 		}
 	}
 	// TODO: Move config to global level based on use case
-	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[wh.destType]), "")
+	namespacePrefix := wh.conf.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[wh.destType]), "")
 	if namespacePrefix != "" {
 		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
@@ -868,6 +869,7 @@ func (wh *HandleT) Disable() {
 func (wh *HandleT) Setup(whType string) error {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.Logger = pkgLogger
+	wh.conf = config.Default
 	wh.dbHandle = dbHandle
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
@@ -911,8 +913,8 @@ func (wh *HandleT) Setup(whType string) error {
 	wh.cpInternalClient = cpclient.NewInternalClientWithCache(
 		configBackendURL,
 		cpclient.BasicAuth{
-			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
-			Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
+			Username: wh.conf.GetString("CP_INTERNAL_API_USERNAME", ""),
+			Password: wh.conf.GetString("CP_INTERNAL_API_PASSWORD", ""),
 		},
 	)
 
@@ -999,6 +1001,7 @@ func minimalConfigSubscriber(ctx context.Context) {
 							dbHandle:     dbHandle,
 							destType:     destination.DestinationDefinition.Name,
 							whSchemaRepo: repo.NewWHSchemas(dbHandle),
+							conf:         config.Default,
 						}
 						namespace := wh.getNamespace(source, destination)
 
