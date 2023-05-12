@@ -10,3 +10,6 @@ ignore:
   - "mocks"
   - "proto"
   - "cmd/devtool"
+
+comment:
+  behavior: default
