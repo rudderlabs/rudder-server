@@ -595,14 +595,14 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			uploadOutput, err := fm.Upload(context.TODO(), f, fmt.Sprintf("test_prefix_%d", i))
+			ctx := context.Background()
+
+			uploadOutput, err := fm.Upload(ctx, f, fmt.Sprintf("test_prefix_%d", i))
 			require.NoError(t, err)
 
 			mockUploader.metadata = append(mockUploader.metadata, warehouseutils.LoadFile{
 				Location: uploadOutput.Location,
 			})
-
-			ctx := context.Background()
 
 			t.Log("Setting up clickhouse")
 			err = ch.Setup(ctx, warehouse, mockUploader)
@@ -683,11 +683,11 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			}
 
 			t.Log("Loading data into table")
-			err = ch.LoadTable(context.TODO(), table)
+			err = ch.LoadTable(ctx, table)
 			require.NoError(t, err)
 
 			t.Log("Checking table count")
-			count, err := ch.GetTotalCountInTable(context.TODO(), table)
+			count, err := ch.GetTotalCountInTable(ctx, table)
 			require.NoError(t, err)
 			require.EqualValues(t, 2, count)
 
@@ -810,7 +810,7 @@ func TestClickhouse_TestConnection(t *testing.T) {
 
 			ch.SetConnectionTimeout(tc.timeout)
 
-			ctx, cancel := context.WithTimeout(context.TODO(), tc.timeout)
+			ctx, cancel := context.WithTimeout(ctx, tc.timeout)
 			defer cancel()
 
 			err := ch.TestConnection(ctx, warehouse)

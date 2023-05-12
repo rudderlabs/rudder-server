@@ -158,8 +158,10 @@ func TestIntegration(t *testing.T) {
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Event flow", func(t *testing.T) {
+		ctx := context.Background()
+
 		db, err := bigquery.NewClient(
-			context.TODO(),
+			ctx,
 			bqTestCredentials.ProjectID, option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
 		)
 		require.NoError(t, err)
@@ -169,7 +171,7 @@ func TestIntegration(t *testing.T) {
 		t.Cleanup(func() {
 			for _, dataset := range []string{namespace, sourcesNamespace} {
 				require.NoError(t, testhelper.WithConstantRetries(func() error {
-					return db.Dataset(dataset).DeleteWithContents(context.TODO())
+					return db.Dataset(dataset).DeleteWithContents(ctx)
 				}))
 			}
 		})
@@ -209,7 +211,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
 				},
 				stagingFilePrefix: "testdata/upload-job-merge-mode",
 			},
@@ -234,7 +236,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
 				},
 				stagingFilePrefix: "testdata/sources-job",
 			},
@@ -255,7 +257,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
 				},
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 			},
@@ -277,7 +279,7 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
 
 					err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
 						Location: "US",
