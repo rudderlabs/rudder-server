@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	bqHeloer "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
+	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
 	"cloud.google.com/go/bigquery"
 
@@ -43,8 +43,8 @@ func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	if !bqHeloer.IsBQTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHeloer.TestKey)
+	if !bqHelper.IsBQTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
@@ -77,7 +77,7 @@ func TestIntegration(t *testing.T) {
 	namespace := testhelper.RandSchema(destType)
 	sourcesNamespace := testhelper.RandSchema(destType)
 
-	bqTestCredentials, err := bqHeloer.GetBQTestCredentials()
+	bqTestCredentials, err := bqHelper.GetBQTestCredentials()
 	require.NoError(t, err)
 
 	escapedCredentials, err := json.Marshal(bqTestCredentials.Credentials)
@@ -136,6 +136,7 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+	t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_SLOW_QUERY_THRESHOLD", "0s")
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
 	}

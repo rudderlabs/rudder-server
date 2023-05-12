@@ -153,6 +153,7 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")

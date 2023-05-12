@@ -58,8 +58,6 @@ func isGCSTestCredentialsAvailable() bool {
 }
 
 func TestIntegration(t *testing.T) {
-	t.Parallel()
-
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -186,6 +184,7 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+	t.Setenv("RSERVER_WAREHOUSE_DATALAKE_SLOW_QUERY_THRESHOLD", "0s")
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
 	}
@@ -297,8 +296,6 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-
 				if tc.prerequisite != nil {
 					tc.prerequisite(t)
 				}
@@ -339,8 +336,6 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("S3 DataLake Validation", func(t *testing.T) {
-		t.Parallel()
-
 		const (
 			secure = false
 			region = "us-east-1"
@@ -378,8 +373,6 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("GCS DataLake Validation", func(t *testing.T) {
-		t.Parallel()
-
 		if !isGCSTestCredentialsAvailable() {
 			t.Skipf("Skipping %s as %s is not set", t.Name(), gcsTestKey)
 		}
@@ -408,8 +401,6 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Azure DataLake Validation", func(t *testing.T) {
-		t.Parallel()
-
 		dest := backendconfig.DestinationT{
 			ID: azDestinationID,
 			Config: map[string]interface{}{
