@@ -132,7 +132,7 @@ func TestBadResponse(t *testing.T) {
 				workspaceConfig: conf,
 				eb:              pubsub.New(),
 			}
-			bc.StartWithIDs(ctx, "")
+			bc.StartWithIDs(ctx, "", true)
 			go bc.WaitForConfig(ctx)
 
 			timeout := time.NewTimer(3 * time.Second)
@@ -381,7 +381,7 @@ func TestCache(t *testing.T) {
 			eb:              pubsub.New(),
 			curSourceJSON:   map[string]ConfigT{},
 		}
-		bc.StartWithIDs(ctx, workspaces)
+		bc.StartWithIDs(ctx, workspaces, true)
 
 		cacheVal, err := bc.cache.Get(ctx)
 		require.Equal(t, fmt.Errorf(`noCache: cache disabled`), err)
@@ -507,7 +507,7 @@ func TestCache(t *testing.T) {
 			eb:              pubsub.New(),
 			curSourceJSON:   map[string]ConfigT{},
 		}
-		bc.StartWithIDs(ctx, workspaces)
+		bc.StartWithIDs(ctx, workspaces, true)
 		bc.WaitForConfig(ctx)
 		var (
 			configBytes []byte
@@ -566,7 +566,7 @@ func TestCache(t *testing.T) {
 			eb:              pubsub.New(),
 			curSourceJSON:   map[string]ConfigT{},
 		}
-		require.Panics(t, func() { bc.StartWithIDs(ctx, workspaces) })
+		require.Panics(t, func() { bc.StartWithIDs(ctx, workspaces, true) })
 	})
 }
 

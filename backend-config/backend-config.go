@@ -1,7 +1,7 @@
 package backendconfig
 
-// go:generate mockgen -destination=../mocks/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/backend-config BackendConfig
-// go:generate mockgen -destination=./mock_workspaceconfig.go -package=backendconfig -source=./backend-config.go workspaceConfig
+//go:generate mockgen -destination=../mocks/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/backend-config BackendConfig
+//go:generate mockgen -destination=./mock_workspaceconfig.go -package=backendconfig -source=./backend-config.go workspaceConfig
 
 import (
 	"context"
@@ -71,7 +71,7 @@ type BackendConfig interface {
 	WaitForConfig(ctx context.Context)
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
-	StartWithIDs(ctx context.Context, workspaces string)
+	StartWithIDs(ctx context.Context, workspaces string, canUseCache bool)
 }
 
 type backendConfigImpl struct {
@@ -312,14 +312,14 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	return nil
 }
 
-func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string) {
+func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string, canUseCache bool) {
 	var err error
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
 	bc.cache = cacheOverride
-	if bc.cache == nil {
+	if bc.cache == nil && canUseCache {
 		identifier := bc.Identity()
 		u, _ := identifier.BasicAuth()
 		secret := sha256.Sum256([]byte(u))
@@ -340,6 +340,8 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string
 				bc.cache = &noCache{}
 			}
 		}
+	} else {
+		bc.cache = &noCache{}
 	}
 
 	rruntime.Go(func() {

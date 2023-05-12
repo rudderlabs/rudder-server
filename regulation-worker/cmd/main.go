@@ -74,7 +74,7 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("getting deployment type: %w", err)
 	}
 	pkgLogger.Infof("Running regulation worker in %s mode", deploymentType)
-	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
+	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "", true)
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 	identity := backendconfig.DefaultBackendConfig.Identity()
 	dest.Start(ctx)

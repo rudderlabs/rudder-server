@@ -40,7 +40,7 @@ func TestSuppressionSetup(t *testing.T) {
 
 	require.NoError(t, backendconfig.Setup(nil))
 	defer backendconfig.DefaultBackendConfig.Stop()
-	backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "")
+	backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "", true)
 
 	t.Run(
 		"should setup badgerdb and syncer successfully after getting suppression from backup service",

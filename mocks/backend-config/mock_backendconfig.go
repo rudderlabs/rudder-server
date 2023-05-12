@@ -95,15 +95,15 @@ func (mr *MockBackendConfigMockRecorder) SetUp() *gomock.Call {
 }
 
 // StartWithIDs mocks base method.
-func (m *MockBackendConfig) StartWithIDs(arg0 context.Context, arg1 string) {
+func (m *MockBackendConfig) StartWithIDs(arg0 context.Context, arg1 string, arg2 bool) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "StartWithIDs", arg0, arg1)
+	m.ctrl.Call(m, "StartWithIDs", arg0, arg1, arg2)
 }
 
 // StartWithIDs indicates an expected call of StartWithIDs.
-func (mr *MockBackendConfigMockRecorder) StartWithIDs(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockBackendConfigMockRecorder) StartWithIDs(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWithIDs", reflect.TypeOf((*MockBackendConfig)(nil).StartWithIDs), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWithIDs", reflect.TypeOf((*MockBackendConfig)(nil).StartWithIDs), arg0, arg1, arg2)
 }
 
 // Stop mocks base method.

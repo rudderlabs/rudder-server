@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -23,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/exporter"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/sync/errgroup"
 )
 
 var pkgLogger = logger.NewLogger().Child("suppression-backup-service")
@@ -123,7 +124,7 @@ func getIdentity(ctx context.Context) (identity.Identifier, error) {
 	}
 	defer backendconfig.DefaultBackendConfig.Stop()
 
-	backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "")
+	backendconfig.DefaultBackendConfig.StartWithIDs(context.TODO(), "", true)
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 	id := backendconfig.DefaultBackendConfig.Identity()

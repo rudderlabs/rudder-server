@@ -195,12 +195,12 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		}).Gauge(1)
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
-
+	canUseBackendConfigCache := config.GetBool("BackendConfigCache.enabled", true)
 	if err := backendconfig.Setup(configEnvHandler); err != nil {
 		r.logger.Errorf("Unable to setup backend config: %s", err)
 		return 1
 	}
-	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
+	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "", canUseBackendConfigCache)
 
 	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
 	if r.canStartServer() {
