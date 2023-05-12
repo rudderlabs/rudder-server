@@ -48,7 +48,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, "testdata/docker-compose.yml")
+	c := testcompose.New(t, "testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml")
 
 	t.Cleanup(func() {
 		c.Stop(context.Background())
@@ -120,46 +120,17 @@ func TestIntegration(t *testing.T) {
 	}
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
-	t.Setenv("JOBS_DB_HOST", "localhost")
-	t.Setenv("JOBS_DB_NAME", "jobsdb")
-	t.Setenv("JOBS_DB_DB_NAME", "jobsdb")
-	t.Setenv("JOBS_DB_USER", "rudder")
-	t.Setenv("JOBS_DB_PASSWORD", "password")
-	t.Setenv("JOBS_DB_SSL_MODE", "disable")
+	testhelper.EnhanceWithDefaultEnvs(t)
 	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
-	t.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
-	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
-	t.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
-	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
-	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
 	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
 	t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
 	t.Setenv("MINIO_SSL", "false")
-	t.Setenv("GO_ENV", "production")
-	t.Setenv("LOG_LEVEL", "INFO")
-	t.Setenv("INSTANCE_ID", "1")
-	t.Setenv("ALERT_PROVIDER", "pagerduty")
-	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
 	t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_MAX_PARALLEL_LOADS", "8")
-	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
-	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
-	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
-	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
-	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
 	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
-	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-	t.Setenv("RUDDER_TMPDIR", t.TempDir())
 	t.Setenv("RSERVER_WAREHOUSE_CLICKHOUSE_SLOW_QUERY_THRESHOLD", "0s")
-	if testing.Verbose() {
-		t.Setenv("LOG_LEVEL", "DEBUG")
-	}
 
 	svcDone := make(chan struct{})
 
@@ -185,10 +156,7 @@ func TestIntegration(t *testing.T) {
 				"localhost", port, "rudderdb", "rudder-password", "rudder",
 			)
 
-			db, err := sql.Open("clickhouse", dsn)
-			require.NoError(t, err)
-			require.NoError(t, db.Ping())
-
+			db := connectClickhouseDB(ctx, t, dsn)
 			dbs = append(dbs, db)
 		}
 
@@ -1131,6 +1099,20 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 		"localhost", resource.GetPort("9000/tcp"), databaseName, password, user,
 	)
 
+	db := connectClickhouseDB(context.Background(), t, dsn)
+	defer func() { _ = db.Close() }()
+
+	t.Cleanup(func() {
+		if err := pool.Purge(resource); err != nil {
+			t.Log("Could not purge resource:", err)
+		}
+	})
+	return resource
+}
+
+func connectClickhouseDB(ctx context.Context, t testing.TB, dsn string) *sql.DB {
+	t.Helper()
+
 	db, err := sql.Open("clickhouse", dsn)
 	require.NoError(t, err)
 
@@ -1144,12 +1126,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	err = db.PingContext(ctx)
 	require.NoError(t, err)
 
-	t.Cleanup(func() {
-		if err := pool.Purge(resource); err != nil {
-			t.Log("Could not purge resource:", err)
-		}
-	})
-	return resource
+	return db
 }
 
 func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables []string) {

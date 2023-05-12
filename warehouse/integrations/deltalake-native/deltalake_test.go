@@ -73,7 +73,7 @@ func TestIntegration(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
-	c := testcompose.New(t, "testdata/docker-compose.yml")
+	c := testcompose.New(t, "testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml")
 
 	t.Cleanup(func() {
 		c.Stop(context.Background())
@@ -121,43 +121,14 @@ func TestIntegration(t *testing.T) {
 	}
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
-	t.Setenv("JOBS_DB_HOST", "localhost")
-	t.Setenv("JOBS_DB_NAME", "jobsdb")
-	t.Setenv("JOBS_DB_DB_NAME", "jobsdb")
-	t.Setenv("JOBS_DB_USER", "rudder")
-	t.Setenv("JOBS_DB_PASSWORD", "password")
-	t.Setenv("JOBS_DB_SSL_MODE", "disable")
+	testhelper.EnhanceWithDefaultEnvs(t)
 	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
-	t.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
-	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
-	t.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
-	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
-	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("GO_ENV", "production")
-	t.Setenv("LOG_LEVEL", "INFO")
-	t.Setenv("INSTANCE_ID", "1")
-	t.Setenv("ALERT_PROVIDER", "pagerduty")
-	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
 	t.Setenv("DATABRICKS_CONNECTOR_URL", databricksEndpoint)
 	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
-	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
-	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
-	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
-	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
-	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
 	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
-	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
-	t.Setenv("RUDDER_TMPDIR", t.TempDir())
-	if testing.Verbose() {
-		t.Setenv("LOG_LEVEL", "DEBUG")
-	}
 
 	svcDone := make(chan struct{})
 
