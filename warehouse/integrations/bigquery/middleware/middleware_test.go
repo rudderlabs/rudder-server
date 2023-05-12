@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	bqHeloer "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
+	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
 	"github.com/golang/mock/gomock"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
@@ -16,11 +16,11 @@ import (
 )
 
 func TestQueryWrapper(t *testing.T) {
-	if !bqHeloer.IsBQTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHeloer.TestKey)
+	if !bqHelper.IsBQTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
 	}
 
-	bqTestCredentials, err := bqHeloer.GetBQTestCredentials()
+	bqTestCredentials, err := bqHelper.GetBQTestCredentials()
 	require.NoError(t, err)
 
 	db, err := bigquery.Connect(context.Background(), &bigquery.BQCredentials{

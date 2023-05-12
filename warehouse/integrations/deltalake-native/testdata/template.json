@@ -52,7 +52,7 @@
           "deleted": false,
           "createdAt": "2022-02-18T17:37:22.146Z",
           "updatedAt": "2022-05-25T07:38:38.033Z",
-          "revisionId": "29eClxJQQlaWzMWyqnQctFDP5T2",
+          "revisionId": "{{.destinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {

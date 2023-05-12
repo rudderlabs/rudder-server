@@ -709,66 +709,62 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) bool {
 	return delSuccess
 }
 
-// FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
-func (as *AzureSynapse) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
-	as.Warehouse = warehouse
-	as.Namespace = warehouse.Namespace
-	dbHandle, err := connect(as.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer func() { _ = dbHandle.Close() }()
+// FetchSchema returns the schema of the warehouse
+func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+	schema := make(model.Schema)
+	unrecognizedSchema := make(model.Schema)
 
-	schema = make(model.Schema)
-	unrecognizedSchema = make(model.Schema)
-
-	sqlStatement := fmt.Sprintf(`
-			SELECT
-			  table_name,
-			  column_name,
-			  data_type
-			FROM
-			  INFORMATION_SCHEMA.COLUMNS
-			WHERE
-			  table_schema = '%s'
-			  and table_name not like '%s'
-		`,
-		as.Namespace,
-		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+	sqlStatement := `
+		SELECT
+			table_name,
+			column_name,
+			data_type
+		FROM
+			INFORMATION_SCHEMA.COLUMNS
+		WHERE
+			table_schema = @schema
+			and table_name not like @prefix
+`
+	rows, err := as.DB.QueryContext(
+		ctx,
+		sqlStatement,
+		sql.Named("schema", as.Namespace),
+		sql.Named("prefix", fmt.Sprintf("%s%%", warehouseutils.StagingTablePrefix(provider))),
 	)
-	rows, err := dbHandle.QueryContext(ctx, sqlStatement)
-
-	if err != nil && err != io.EOF {
-		as.Logger.Errorf("AZ: Error in fetching schema from synapse destination:%v, query: %v", as.Warehouse.Destination.ID, sqlStatement)
-		return
-	}
-	if err == io.EOF {
-		as.Logger.Infof("AZ: No rows, while fetching schema from  destination:%v, query: %v", as.Warehouse.Identifier, sqlStatement)
+	if errors.Is(err, io.EOF) {
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var tName, cName, cType string
-		err = rows.Scan(&tName, &cName, &cType)
-		if err != nil {
-			as.Logger.Errorf("AZ: Error in processing fetched schema from synapse destination:%v", as.Warehouse.Destination.ID)
-			return
-		}
-		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(model.TableSchema)
-		}
-		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
-			schema[tName][cName] = datatype
-		} else {
-			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
 
-			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+	for rows.Next() {
+		var tableName, columnName, columnType string
+
+		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
+			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+		}
+
+		if _, ok := schema[tableName]; !ok {
+			schema[tableName] = make(model.TableSchema)
+		}
+		if datatype, ok := mssqlDataTypesMapToRudder[columnType]; ok {
+			schema[tableName][columnName] = datatype
+		} else {
+			if _, ok := unrecognizedSchema[tableName]; !ok {
+				unrecognizedSchema[tableName] = make(model.TableSchema)
+			}
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
-	return
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return schema, unrecognizedSchema, nil
 }
 
 func (as *AzureSynapse) LoadUserTables(ctx context.Context) map[string]error {

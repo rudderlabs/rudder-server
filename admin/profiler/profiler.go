@@ -48,6 +48,8 @@ func (p *Profiler) StartServer(ctx context.Context) error {
 	p.init()
 	if !p.enabled {
 		pkgLogger.Infof("Profiler disabled: no pprof HTTP server")
+		<-ctx.Done()
+		return nil
 	}
 
 	mux := http.NewServeMux()

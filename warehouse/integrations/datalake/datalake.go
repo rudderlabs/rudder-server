@@ -51,8 +51,8 @@ func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader 
 
 func (*Datalake) CrashRecover(context.Context) {}
 
-func (d *Datalake) FetchSchema(ctx context.Context, warehouse model.Warehouse) (model.Schema, model.Schema, error) {
-	return d.SchemaRepository.FetchSchema(ctx, warehouse)
+func (d *Datalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+	return d.SchemaRepository.FetchSchema(ctx, d.Warehouse)
 }
 
 func (d *Datalake) CreateSchema(ctx context.Context) (err error) {
@@ -135,6 +135,6 @@ func (*Datalake) LoadTestTable(context.Context, string, string, map[string]inter
 func (*Datalake) SetConnectionTimeout(_ time.Duration) {
 }
 
-func (d *Datalake) ErrorMappings() []model.JobError {
+func (*Datalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

@@ -43,7 +43,7 @@
           "deleted": false,
           "createdAt": "2022-04-07T09:57:14.783Z",
           "updatedAt": "2022-05-17T08:16:32.613Z",
-          "revisionId": "29HgOWobnr0RYZLpaSwPIbN2987",
+          "revisionId": "{{.azDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -151,7 +151,7 @@
           "deleted": false,
           "createdAt": "2022-04-07T09:57:14.783Z",
           "updatedAt": "2022-05-17T08:16:32.613Z",
-          "revisionId": "29HgOWobnr0RYZLpaSwPINb2987",
+          "revisionId": "{{.s3DestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -255,7 +255,7 @@
           "deleted": false,
           "createdAt": "2022-04-07T09:57:14.783Z",
           "updatedAt": "2022-05-17T08:16:32.613Z",
-          "revisionId": "29HgOWobnr0RYZpLASwPINb2987",
+          "revisionId": "{{.gcsDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {

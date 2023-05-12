@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	bqHeloer "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
+	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
 	"cloud.google.com/go/bigquery"
 
@@ -43,8 +43,8 @@ func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	if !bqHeloer.IsBQTestCredentialsAvailable() {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHeloer.TestKey)
+	if !bqHelper.IsBQTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
 	}
 
 	c := testcompose.New(t, "testdata/docker-compose.yml")
@@ -60,11 +60,8 @@ func TestIntegration(t *testing.T) {
 	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
-	transformerPort := c.Port("transformer", 9090)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -75,12 +72,12 @@ func TestIntegration(t *testing.T) {
 	sourcesDestinationID := warehouseutils.RandHex()
 	sourcesWriteKey := warehouseutils.RandHex()
 
-	provider := warehouseutils.BQ
+	destType := warehouseutils.BQ
 
-	namespace := testhelper.RandSchema(provider)
-	sourcesNamespace := testhelper.RandSchema(provider)
+	namespace := testhelper.RandSchema(destType)
+	sourcesNamespace := testhelper.RandSchema(destType)
 
-	bqTestCredentials, err := bqHeloer.GetBQTestCredentials()
+	bqTestCredentials, err := bqHelper.GetBQTestCredentials()
 	require.NoError(t, err)
 
 	escapedCredentials, err := json.Marshal(bqTestCredentials.Credentials)
@@ -124,7 +121,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DEST_TRANSFORM_URL", fmt.Sprintf("http://localhost:%d", transformerPort))
 	t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
@@ -134,11 +130,13 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
 	t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_ENABLE_DELETE_BY_JOBS", "true")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+	t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_SLOW_QUERY_THRESHOLD", "0s")
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
 	}
@@ -161,7 +159,7 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Event flow", func(t *testing.T) {
 		db, err := bigquery.NewClient(
-			ctx,
+			context.TODO(),
 			bqTestCredentials.ProjectID, option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
 		)
 		require.NoError(t, err)
@@ -171,19 +169,18 @@ func TestIntegration(t *testing.T) {
 		t.Cleanup(func() {
 			for _, dataset := range []string{namespace, sourcesNamespace} {
 				require.NoError(t, testhelper.WithConstantRetries(func() error {
-					return db.Dataset(dataset).DeleteWithContents(ctx)
+					return db.Dataset(dataset).DeleteWithContents(context.TODO())
 				}))
 			}
 		})
 
 		testcase := []struct {
 			name                                string
-			schema                              string
 			writeKey                            string
+			schema                              string
 			sourceID                            string
 			destinationID                       string
-			messageID                           string
-			eventsMap                           testhelper.EventsCountMap
+			tables                              []string
 			stagingFilesEventsMap               testhelper.EventsCountMap
 			stagingFilesModifiedEventsMap       testhelper.EventsCountMap
 			loadFilesEventsMap                  testhelper.EventsCountMap
@@ -192,18 +189,17 @@ func TestIntegration(t *testing.T) {
 			asyncJob                            bool
 			skipModifiedEvents                  bool
 			prerequisite                        func(t testing.TB)
-			tables                              []string
 			isDedupEnabled                      bool
 			customPartitionsEnabledWorkspaceIDs string
+			stagingFilePrefix                   string
 		}{
 			{
 				name:                          "Merge mode",
+				writeKey:                      writeKey,
 				schema:                        namespace,
 				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:                      writeKey,
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
-				messageID:                     misc.FastUUID().String(),
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
 				loadFilesEventsMap:            loadFilesEventsMap(),
@@ -213,8 +209,9 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(ctx)
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 				},
+				stagingFilePrefix: "testdata/upload-job-merge-mode",
 			},
 			{
 				name:          "Async Job",
@@ -223,7 +220,6 @@ func TestIntegration(t *testing.T) {
 				destinationID: sourcesDestinationID,
 				schema:        sourcesNamespace,
 				tables:        []string{"tracks", "google_sheet"},
-				eventsMap:     testhelper.SourcesSendEventsMap(),
 				stagingFilesEventsMap: testhelper.EventsCountMap{
 					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
 				},
@@ -238,8 +234,9 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(ctx)
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 				},
+				stagingFilePrefix: "testdata/sources-job",
 			},
 			{
 				name:                          "Append mode",
@@ -248,7 +245,6 @@ func TestIntegration(t *testing.T) {
 				writeKey:                      writeKey,
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
-				messageID:                     misc.FastUUID().String(),
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
 				loadFilesEventsMap:            loadFilesEventsMap(),
@@ -259,8 +255,9 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(ctx)
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 				},
+				stagingFilePrefix: "testdata/upload-job-append-mode",
 			},
 			{
 				name:                                "Append mode with custom partition",
@@ -269,7 +266,6 @@ func TestIntegration(t *testing.T) {
 				writeKey:                            writeKey,
 				sourceID:                            sourceID,
 				destinationID:                       destinationID,
-				messageID:                           misc.FastUUID().String(),
 				stagingFilesEventsMap:               stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
 				loadFilesEventsMap:                  loadFilesEventsMap(),
@@ -281,15 +277,15 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
-					_ = db.Dataset(namespace).DeleteWithContents(ctx)
+					_ = db.Dataset(namespace).DeleteWithContents(context.TODO())
 
-					err = db.Dataset(namespace).Create(ctx, &bigquery.DatasetMetadata{
+					err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
 						Location: "US",
 					})
 					require.NoError(t, err)
 
 					err = db.Dataset(namespace).Table("tracks").Create(
-						ctx,
+						context.Background(),
 						&bigquery.TableMetadata{
 							Schema: []*bigquery.FieldSchema{{
 								Name: "timestamp",
@@ -302,6 +298,7 @@ func TestIntegration(t *testing.T) {
 					)
 					require.NoError(t, err)
 				},
+				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
 			},
 		}
 
@@ -312,45 +309,75 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_IS_DEDUP_ENABLED", strconv.FormatBool(tc.isDedupEnabled))
 				t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_CUSTOM_PARTITIONS_ENABLED_WORKSPACE_IDS", tc.customPartitionsEnabledWorkspaceIDs)
 
-				ts := testhelper.WareHouseTest{
-					Schema:                tc.schema,
+				if tc.prerequisite != nil {
+					tc.prerequisite(t)
+				}
+
+				sqlClient := &client.Client{
+					BQ:   db,
+					Type: client.BQClient,
+				}
+
+				conf := map[string]interface{}{
+					"bucketName":  bqTestCredentials.BucketName,
+					"credentials": bqTestCredentials.Credentials,
+				}
+
+				t.Log("verifying test case 1")
+				ts1 := testhelper.TestConfig{
 					WriteKey:              tc.writeKey,
+					Schema:                tc.schema,
+					Tables:                tc.tables,
 					SourceID:              tc.sourceID,
 					DestinationID:         tc.destinationID,
-					MessageID:             tc.messageID,
-					Tables:                tc.tables,
-					EventsMap:             tc.eventsMap,
 					StagingFilesEventsMap: tc.stagingFilesEventsMap,
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					Prerequisite:          tc.prerequisite,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
-					AsyncJob:              tc.asyncJob,
-					Provider:              provider,
+					Config:                conf,
+					WorkspaceID:           workspaceID,
+					DestinationType:       destType,
 					JobsDB:                jobsDB,
-					TaskRunID:             misc.FastUUID().String(),
+					HTTPPort:              httpPort,
+					Client:                sqlClient,
 					JobRunID:              misc.FastUUID().String(),
-					UserID:                testhelper.GetUserId(provider),
-					Client: &client.Client{
-						BQ:   db,
-						Type: client.BQClient,
-					},
-					HTTPPort:    httpPort,
-					WorkspaceID: workspaceID,
+					TaskRunID:             misc.FastUUID().String(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
+					UserID:                testhelper.GetUserId(destType),
 				}
-				ts.VerifyEvents(t)
+				ts1.VerifyEvents(t)
 
 				if tc.skipModifiedEvents {
 					return
 				}
 
-				if !tc.asyncJob {
-					ts.UserID = testhelper.GetUserId(provider)
+				t.Log("verifying test case 2")
+				ts2 := testhelper.TestConfig{
+					WriteKey:              tc.writeKey,
+					Schema:                tc.schema,
+					Tables:                tc.tables,
+					SourceID:              tc.sourceID,
+					DestinationID:         tc.destinationID,
+					StagingFilesEventsMap: tc.stagingFilesModifiedEventsMap,
+					LoadFilesEventsMap:    tc.loadFilesEventsMap,
+					TableUploadsEventsMap: tc.tableUploadsEventsMap,
+					WarehouseEventsMap:    tc.warehouseEventsMap,
+					AsyncJob:              tc.asyncJob,
+					Config:                conf,
+					WorkspaceID:           workspaceID,
+					DestinationType:       destType,
+					JobsDB:                jobsDB,
+					HTTPPort:              httpPort,
+					Client:                sqlClient,
+					JobRunID:              misc.FastUUID().String(),
+					TaskRunID:             misc.FastUUID().String(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
+					UserID:                testhelper.GetUserId(destType),
 				}
-				ts.StagingFilesEventsMap = tc.stagingFilesModifiedEventsMap
-				ts.JobRunID = misc.FastUUID().String()
-				ts.TaskRunID = misc.FastUUID().String()
-				ts.VerifyModifiedEvents(t)
+				if tc.asyncJob {
+					ts2.UserID = ts1.UserID
+				}
+				ts2.VerifyEvents(t)
 			})
 		}
 	})
@@ -374,7 +401,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Name:       "bigquery-integration",
 			Enabled:    true,
-			RevisionID: "29eejWUH80lK1abiB766fzv5Iba",
+			RevisionID: destinationID,
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
 	})

@@ -42,7 +42,7 @@
           "deleted": false,
           "createdAt": "2022-03-10T08:55:49.791Z",
           "updatedAt": "2022-03-10T08:55:49.791Z",
-          "revisionId": "29eejWUH80lK1abiB766fzv5Iba",
+          "revisionId": "{{.destinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -170,7 +170,7 @@
           "deleted": false,
           "createdAt": "2022-03-10T08:55:49.791Z",
           "updatedAt": "2022-03-10T08:55:49.791Z",
-          "revisionId": "29eejWUH80lK1abiB766fzv5Iba",
+          "revisionId": "{{.sourcesDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {

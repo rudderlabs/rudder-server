@@ -95,11 +95,8 @@ func TestIntegration(t *testing.T) {
 	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
-	transformerPort := c.Port("transformer", 9090)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -110,10 +107,10 @@ func TestIntegration(t *testing.T) {
 	sourcesDestinationID := warehouseutils.RandHex()
 	sourcesWriteKey := warehouseutils.RandHex()
 
-	provider := warehouseutils.RS
+	destType := warehouseutils.RS
 
-	namespace := testhelper.RandSchema(provider)
-	sourcesNamespace := testhelper.RandSchema(provider)
+	namespace := testhelper.RandSchema(destType)
+	sourcesNamespace := testhelper.RandSchema(destType)
 
 	rsTestCredentials, err := rsTestCredentials()
 	require.NoError(t, err)
@@ -158,7 +155,6 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DEST_TRANSFORM_URL", fmt.Sprintf("http://localhost:%d", transformerPort))
 	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
@@ -169,11 +165,13 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_ENABLE_DELETE_BY_JOBS", "true")
 	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_DEDUP_WINDOW", "true")
 	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_DEDUP_WINDOW_IN_HOURS", "5")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+	t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_SLOW_QUERY_THRESHOLD", "0s")
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
 	}
@@ -199,39 +197,40 @@ func TestIntegration(t *testing.T) {
 
 		testcase := []struct {
 			name                  string
-			schema                string
 			writeKey              string
+			schema                string
 			sourceID              string
 			destinationID         string
-			eventsMap             testhelper.EventsCountMap
+			tables                []string
 			stagingFilesEventsMap testhelper.EventsCountMap
 			loadFilesEventsMap    testhelper.EventsCountMap
 			tableUploadsEventsMap testhelper.EventsCountMap
 			warehouseEventsMap    testhelper.EventsCountMap
 			asyncJob              bool
-			tables                []string
+			stagingFilePrefix     string
 		}{
 			{
-				name:          "Upload Job",
-				schema:        namespace,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				writeKey:      writeKey,
-				sourceID:      sourceID,
-				destinationID: destinationID,
+				name:              "Upload Job",
+				writeKey:          writeKey,
+				schema:            namespace,
+				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				sourceID:          sourceID,
+				destinationID:     destinationID,
+				stagingFilePrefix: "testdata/upload-job",
 			},
 			{
 				name:                  "Async Job",
+				writeKey:              sourcesWriteKey,
 				schema:                sourcesNamespace,
 				tables:                []string{"tracks", "google_sheet"},
-				writeKey:              sourcesWriteKey,
 				sourceID:              sourcesSourceID,
 				destinationID:         sourcesDestinationID,
-				eventsMap:             testhelper.SourcesSendEventsMap(),
 				stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				asyncJob:              true,
+				stagingFilePrefix:     "testdata/sources-job",
 			},
 		}
 
@@ -260,38 +259,70 @@ func TestIntegration(t *testing.T) {
 					}))
 				})
 
-				ts := testhelper.WareHouseTest{
-					Schema:                tc.schema,
+				sqlClient := &client.Client{
+					SQL:  db,
+					Type: client.SQLClient,
+				}
+
+				conf := map[string]interface{}{
+					"bucketName":       rsTestCredentials.BucketName,
+					"accessKeyID":      rsTestCredentials.AccessKeyID,
+					"accessKey":        rsTestCredentials.AccessKey,
+					"enableSSE":        false,
+					"useRudderStorage": false,
+				}
+
+				t.Log("verifying test case 1")
+				ts1 := testhelper.TestConfig{
 					WriteKey:              tc.writeKey,
+					Schema:                tc.schema,
+					Tables:                tc.tables,
 					SourceID:              tc.sourceID,
 					DestinationID:         tc.destinationID,
+					StagingFilesEventsMap: tc.stagingFilesEventsMap,
+					LoadFilesEventsMap:    tc.loadFilesEventsMap,
+					TableUploadsEventsMap: tc.tableUploadsEventsMap,
+					WarehouseEventsMap:    tc.warehouseEventsMap,
+					Config:                conf,
+					WorkspaceID:           workspaceID,
+					DestinationType:       destType,
+					JobsDB:                jobsDB,
+					HTTPPort:              httpPort,
+					Client:                sqlClient,
+					JobRunID:              misc.FastUUID().String(),
+					TaskRunID:             misc.FastUUID().String(),
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
+					UserID:                testhelper.GetUserId(destType),
+				}
+				ts1.VerifyEvents(t)
+
+				t.Log("verifying test case 2")
+				ts2 := testhelper.TestConfig{
+					WriteKey:              tc.writeKey,
+					Schema:                tc.schema,
 					Tables:                tc.tables,
-					EventsMap:             tc.eventsMap,
+					SourceID:              tc.sourceID,
+					DestinationID:         tc.destinationID,
 					StagingFilesEventsMap: tc.stagingFilesEventsMap,
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
 					AsyncJob:              tc.asyncJob,
-					Provider:              provider,
+					Config:                conf,
+					WorkspaceID:           workspaceID,
+					DestinationType:       destType,
 					JobsDB:                jobsDB,
+					HTTPPort:              httpPort,
+					Client:                sqlClient,
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
-					UserID:                testhelper.GetUserId(provider),
-					WorkspaceID:           workspaceID,
-					Client: &client.Client{
-						SQL:  db,
-						Type: client.SQLClient,
-					},
-					HTTPPort: httpPort,
+					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
+					UserID:                testhelper.GetUserId(destType),
 				}
-				ts.VerifyEvents(t)
-
-				if !tc.asyncJob {
-					ts.UserID = testhelper.GetUserId(provider)
+				if tc.asyncJob {
+					ts2.UserID = ts1.UserID
 				}
-				ts.JobRunID = misc.FastUUID().String()
-				ts.TaskRunID = misc.FastUUID().String()
-				ts.VerifyModifiedEvents(t)
+				ts2.VerifyEvents(t)
 			})
 		}
 	})
@@ -354,8 +385,6 @@ func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			require.Equal(t, tc.expected, redshift.CheckAndIgnoreColumnAlreadyExistError(tc.err))
 		})
 	}
@@ -384,19 +413,17 @@ func TestRedshift_AlterColumn(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-
 	for _, tc := range testCases {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
+
+			ctx := context.Background()
 
 			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)

@@ -49,7 +49,7 @@
           "deleted": false,
           "createdAt": "2021-11-18T19:28:48.030Z",
           "updatedAt": "2021-11-18T19:28:48.030Z",
-          "revisionId": "29eeuu9kywWsRAybaXcxcnTVEl8",
+          "revisionId": "{{.tunnelledDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -174,7 +174,7 @@
           "deleted": false,
           "createdAt": "2021-11-18T19:28:48.030Z",
           "updatedAt": "2021-11-18T19:28:48.030Z",
-          "revisionId": "29eeuu9kywWsRAybaXcxcnTVEl8",
+          "revisionId": "{{.destinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -326,7 +326,7 @@
           "deleted": false,
           "createdAt": "2021-11-18T19:28:48.030Z",
           "updatedAt": "2021-11-18T19:28:48.030Z",
-          "revisionId": "29eeuu9kywWsRAybaXcxcnTVEl8",
+          "revisionId": "{{.sourcesDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {

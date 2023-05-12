@@ -450,7 +450,7 @@ func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse mod
 		}
 		job.schemaHandle = &schemaHandle
 
-		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx, job.warehouse)
+		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)

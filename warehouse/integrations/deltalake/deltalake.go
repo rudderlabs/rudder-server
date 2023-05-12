@@ -871,23 +871,15 @@ func (*Deltalake) AlterColumn(context.Context, string, string, string) (model.Al
 }
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
-func (dl *Deltalake) FetchSchema(ctx context.Context, warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
-	dl.Warehouse = warehouse
-	dl.Namespace = warehouse.Namespace
-	Client, err := dl.connectToWarehouse(ctx)
-	if err != nil {
-		return
-	}
-	defer Client.Close(ctx)
-
+func (dl *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
 	// Schema Initialization
-	schema = make(model.Schema)
-	unrecognizedSchema = make(model.Schema)
+	schema := make(model.Schema)
+	unrecognizedSchema := make(model.Schema)
 
 	// Fetching the tables
-	tableNames, err := dl.fetchTables(ctx, Client, dl.Namespace)
+	tableNames, err := dl.fetchTables(ctx, dl.Client, dl.Namespace)
 	if err != nil {
-		return
+		return nil, nil, fmt.Errorf("fetching tables: %w", err)
 	}
 
 	// Filtering tables based on not part of staging tables
@@ -902,9 +894,9 @@ func (dl *Deltalake) FetchSchema(ctx context.Context, warehouse model.Warehouse)
 
 	// For each table we are generating schema
 	for _, tableName := range filteredTablesNames {
-		fetchTableAttributesResponse, err := Client.Client.FetchTableAttributes(ctx, &proto.FetchTableAttributesRequest{
-			Config:     Client.CredConfig,
-			Identifier: Client.CredIdentifier,
+		fetchTableAttributesResponse, err := dl.Client.Client.FetchTableAttributes(ctx, &proto.FetchTableAttributesRequest{
+			Config:     dl.Client.CredConfig,
+			Identifier: dl.Client.CredIdentifier,
 			Schema:     dl.Namespace,
 			Table:      tableName,
 		})
@@ -936,7 +928,7 @@ func (dl *Deltalake) FetchSchema(ctx context.Context, warehouse model.Warehouse)
 			}
 		}
 	}
-	return
+	return schema, unrecognizedSchema, nil
 }
 
 // Setup populate the Deltalake

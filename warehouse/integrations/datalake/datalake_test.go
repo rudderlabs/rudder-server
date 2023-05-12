@@ -76,12 +76,9 @@ func TestIntegration(t *testing.T) {
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
-	transformerPort := c.Port("transformer", 9090)
 	azurePort := c.Port("azure", 10000)
 
 	httpPort, err := kitHelper.GetFreePort()
-	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
@@ -104,6 +101,14 @@ func TestIntegration(t *testing.T) {
 	s3AccessKeyID := "MYACCESSKEY"
 	s3AccessKey := "MYSECRETKEY"
 	s3EndPoint := fmt.Sprintf("localhost:%d", minioPort)
+
+	accessKeyID := "MYACCESSKEY"
+	secretAccessKey := "MYSECRETKEY"
+
+	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
+
+	var gcsBucketName string
+	var gcsCredentials string
 
 	templateConfigurations := map[string]any{
 		"workspaceID":      workspaceID,
@@ -137,6 +142,9 @@ func TestIntegration(t *testing.T) {
 
 		templateConfigurations["gcsBucketName"] = credentials.BucketName
 		templateConfigurations["gcsCredentials"] = escapedCredentialsTrimmedStr
+
+		gcsBucketName = credentials.BucketName
+		gcsCredentials = credentials.Credentials
 	}
 
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
@@ -155,27 +163,28 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("MINIO_ACCESS_KEY_ID", "MYACCESSKEY")
-	t.Setenv("MINIO_SECRET_ACCESS_KEY", "MYSECRETKEY")
-	t.Setenv("MINIO_MINIO_ENDPOINT", fmt.Sprintf("localhost:%d", minioPort))
+	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
+	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
+	t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
 	t.Setenv("MINIO_SSL", "false")
 	t.Setenv("GO_ENV", "production")
 	t.Setenv("LOG_LEVEL", "INFO")
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
-	t.Setenv("DEST_TRANSFORM_URL", fmt.Sprintf("http://localhost:%d", transformerPort))
 	t.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	t.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
 	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")
+	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "master_and_slave")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RUDDER_TMPDIR", t.TempDir())
+	t.Setenv("RSERVER_WAREHOUSE_DATALAKE_SLOW_QUERY_THRESHOLD", "0s")
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
 	}
@@ -198,19 +207,33 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Events flow", func(t *testing.T) {
 		testCases := []struct {
-			name          string
-			writeKey      string
-			sourceID      string
-			destinationID string
-			provider      string
-			prerequisite  func(t testing.TB)
+			name              string
+			writeKey          string
+			sourceID          string
+			destinationID     string
+			destType          string
+			conf              map[string]interface{}
+			prerequisite      func(t testing.TB)
+			stagingFilePrefix string
 		}{
 			{
 				name:          "S3Datalake",
 				writeKey:      s3WriteKey,
 				sourceID:      s3SourceID,
 				destinationID: s3DestinationID,
-				provider:      warehouseutils.S3_DATALAKE,
+				destType:      warehouseutils.S3_DATALAKE,
+				conf: map[string]interface{}{
+					"region":           s3Region,
+					"bucketName":       s3BucketName,
+					"accessKeyID":      s3AccessKeyID,
+					"accessKey":        s3AccessKey,
+					"endPoint":         s3EndPoint,
+					"enableSSE":        false,
+					"s3ForcePathStyle": true,
+					"disableSSL":       true,
+					"prefix":           "some-prefix",
+					"syncFrequency":    "30",
+				},
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
@@ -224,13 +247,20 @@ func TestIntegration(t *testing.T) {
 
 					_ = minioClient.MakeBucket(s3BucketName, region)
 				},
+				stagingFilePrefix: "testdata/upload-job-s3-datalake",
 			},
 			{
 				name:          "GCSDatalake",
 				writeKey:      gcsWriteKey,
 				sourceID:      gcsSourceID,
 				destinationID: gcsDestinationID,
-				provider:      warehouseutils.GCS_DATALAKE,
+				destType:      warehouseutils.GCS_DATALAKE,
+				conf: map[string]interface{}{
+					"bucketName":    gcsBucketName,
+					"prefix":        "",
+					"credentials":   gcsCredentials,
+					"syncFrequency": "30",
+				},
 				prerequisite: func(t testing.TB) {
 					t.Helper()
 
@@ -238,13 +268,25 @@ func TestIntegration(t *testing.T) {
 						t.Skipf("Skipping %s as %s is not set", t.Name(), gcsTestKey)
 					}
 				},
+				stagingFilePrefix: "testdata/upload-job-gcs-datalake",
 			},
 			{
 				name:          "AzureDatalake",
 				writeKey:      azWriteKey,
 				sourceID:      azSourceID,
 				destinationID: azDestinationID,
-				provider:      warehouseutils.AZURE_DATALAKE,
+				destType:      warehouseutils.AZURE_DATALAKE,
+				conf: map[string]interface{}{
+					"containerName":  azContainerName,
+					"prefix":         "",
+					"accountName":    azAccountName,
+					"accountKey":     azAccountKey,
+					"endPoint":       azEndPoint,
+					"syncFrequency":  "30",
+					"forcePathStyle": true,
+					"disableSSL":     true,
+				},
+				stagingFilePrefix: "testdata/upload-job-azure-datalake",
 			},
 		}
 
@@ -254,31 +296,46 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-
-				ts := testhelper.WareHouseTest{
-					WriteKey:      tc.writeKey,
-					SourceID:      tc.sourceID,
-					DestinationID: tc.destinationID,
-					Prerequisite:  tc.prerequisite,
-					Provider:      tc.provider,
-					JobsDB:        jobsDB,
-					UserID:        testhelper.GetUserId(tc.provider),
-					SkipWarehouse: true,
-					HTTPPort:      httpPort,
-					WorkspaceID:   workspaceID,
+				if tc.prerequisite != nil {
+					tc.prerequisite(t)
 				}
-				ts.VerifyEvents(t)
 
-				ts.UserID = testhelper.GetUserId(tc.provider)
-				ts.VerifyModifiedEvents(t)
+				t.Log("verifying test case 1")
+				ts1 := testhelper.TestConfig{
+					WriteKey:        tc.writeKey,
+					SourceID:        tc.sourceID,
+					DestinationID:   tc.destinationID,
+					DestinationType: tc.destType,
+					Config:          tc.conf,
+					WorkspaceID:     workspaceID,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					UserID:          testhelper.GetUserId(tc.destType),
+					SkipWarehouse:   true,
+					StagingFilePath: tc.stagingFilePrefix + ".staging-1.json",
+				}
+				ts1.VerifyEvents(t)
+
+				t.Log("verifying test case 2")
+				ts2 := testhelper.TestConfig{
+					WriteKey:        tc.writeKey,
+					SourceID:        tc.sourceID,
+					DestinationID:   tc.destinationID,
+					DestinationType: tc.destType,
+					Config:          tc.conf,
+					WorkspaceID:     workspaceID,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					UserID:          testhelper.GetUserId(tc.destType),
+					SkipWarehouse:   true,
+					StagingFilePath: tc.stagingFilePrefix + ".staging-2.json",
+				}
+				ts2.VerifyEvents(t)
 			})
 		}
 	})
 
 	t.Run("S3 DataLake Validation", func(t *testing.T) {
-		t.Parallel()
-
 		const (
 			secure = false
 			region = "us-east-1"
@@ -316,8 +373,6 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("GCS DataLake Validation", func(t *testing.T) {
-		t.Parallel()
-
 		if !isGCSTestCredentialsAvailable() {
 			t.Skipf("Skipping %s as %s is not set", t.Name(), gcsTestKey)
 		}
@@ -346,8 +401,6 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Azure DataLake Validation", func(t *testing.T) {
-		t.Parallel()
-
 		dest := backendconfig.DestinationT{
 			ID: azDestinationID,
 			Config: map[string]interface{}{

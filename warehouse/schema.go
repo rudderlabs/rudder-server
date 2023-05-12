@@ -100,7 +100,7 @@ func (sh *SchemaHandle) updateLocalSchema(ctx context.Context, uploadId int64, u
 }
 
 func (sh *SchemaHandle) fetchSchemaFromWarehouse(ctx context.Context, whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse model.Schema, err error) {
-	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx, sh.warehouse)
+	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return model.Schema{}, model.Schema{}, err

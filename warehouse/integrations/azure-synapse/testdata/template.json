@@ -44,7 +44,7 @@
           "deleted": false,
           "createdAt": "2021-11-21T18:58:44.286Z",
           "updatedAt": "2021-11-21T18:58:44.286Z",
-          "revisionId": "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
+          "revisionId": "{{.destinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {

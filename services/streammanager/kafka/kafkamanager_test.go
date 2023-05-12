@@ -12,15 +12,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/linkedin/goavro/v2"
+	"github.com/ory/dockertest/v3"
+	"github.com/segmentio/kafka-go"
+
 	kafkaConfluent "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde/avro"
 	"github.com/golang/mock/gomock"
-	"github.com/linkedin/goavro/v2"
-	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
-	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -226,7 +227,11 @@ func TestNewProducer(t *testing.T) {
 
 		// Setup ControlPlane to return the right SSH key pair
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			require.Equal(t, "/destinations/123/sshKeys", r.URL.String())
+			require.Equal(t, "/dataplane/admin/destinations/123/sshKeys", r.URL.String())
+			username, password, ok := r.BasicAuth()
+			require.True(t, ok)
+			require.Equal(t, "johnDoe", username)
+			require.Equal(t, "so-secret", password)
 			pvtKey := bytes.ReplaceAll(privateKey, []byte("\n"), []byte("\\n"))
 			pubKey := bytes.ReplaceAll(publicKey, []byte("\n"), []byte("\\n"))
 			_, _ = w.Write([]byte(`{
@@ -238,6 +243,8 @@ func TestNewProducer(t *testing.T) {
 
 		t.Setenv("WORKSPACE_TOKEN", "someWorkspaceToken")
 		t.Setenv("CONFIG_BACKEND_URL", srv.URL)
+		t.Setenv("CP_INTERNAL_API_USERNAME", "johnDoe")
+		t.Setenv("CP_INTERNAL_API_PASSWORD", "so-secret")
 
 		require.NoError(t, backendconfig.Setup(nil))
 		defer backendconfig.DefaultBackendConfig.Stop()

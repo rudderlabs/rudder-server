@@ -34,7 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
@@ -44,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -343,10 +341,8 @@ func runAllInit() {
 	validations.Init()
 	transformer.Init()
 	webhook.Init()
-	batchrouter.Init()
 	asyncdestinationmanager.Init()
 	batchrouterutils.Init()
-	dedup.Init()
 	eventschema.Init()
 	eventschema.Init2()
 	stash.Init()

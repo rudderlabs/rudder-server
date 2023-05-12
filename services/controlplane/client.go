@@ -23,39 +23,48 @@ var (
 	defaultMaxRetries = 3
 )
 
-type OptFn func(c *Client)
+type OptFn func(c *commonClient)
 
 func WithHTTPClient(httpClient *http.Client) OptFn {
-	return func(c *Client) {
+	return func(c *commonClient) {
 		c.client = httpClient
 	}
 }
 
 func WithTimeout(timeout time.Duration) OptFn {
-	return func(c *Client) {
+	return func(c *commonClient) {
 		c.client.Timeout = timeout
 	}
 }
 
 func WithMaxRetries(retries int) OptFn {
-	return func(c *Client) {
+	return func(c *commonClient) {
 		c.retries = retries
 	}
 }
 
 func WithRegion(region string) OptFn {
-	return func(c *Client) {
+	return func(c *commonClient) {
 		c.region = region
 	}
 }
 
+type commonClient struct {
+	client  *http.Client
+	retries int
+	ua      string
+	url     string
+	region  string
+}
+
 type Client struct {
-	client   *http.Client
-	retries  int
-	ua       string
-	url      string
+	*commonClient
 	identity identity.Identifier
-	region   string
+}
+
+type AdminClient struct {
+	*commonClient
+	authorizer identity.Authorizer
 }
 
 type payloadSchema struct {
@@ -80,28 +89,39 @@ func hostname() string {
 	return hostname
 }
 
-func NewClient(baseURL string, identity identity.Identifier, fns ...OptFn) *Client {
-	c := &Client{
-		url:      baseURL,
-		identity: identity,
-
-		client: &http.Client{
-			Timeout: defaultTimeout,
-		},
+func newCommonClient(baseURL string, fns ...OptFn) *commonClient {
+	c := &commonClient{
+		url:     baseURL,
 		retries: defaultMaxRetries,
-		ua:      fmt.Sprintf("Go-http-client/1.1; %s; control-plane/features; %s", runtime.Version(), hostname()),
+		client:  &http.Client{Timeout: defaultTimeout},
+		ua: fmt.Sprintf(
+			"Go-http-client/1.1; %s; control-plane/features; %s",
+			runtime.Version(), hostname(),
+		),
 	}
-
 	for _, fn := range fns {
 		fn(c)
 	}
-
 	return c
+}
+
+func NewClient(baseURL string, identity identity.Identifier, fns ...OptFn) *Client {
+	return &Client{
+		identity:     identity,
+		commonClient: newCommonClient(baseURL, fns...),
+	}
+}
+
+func NewAdminClient(baseURL string, authorizer identity.Authorizer, fns ...OptFn) *AdminClient {
+	return &AdminClient{
+		authorizer:   authorizer,
+		commonClient: newCommonClient(baseURL, fns...),
+	}
 }
 
 type PerComponent = map[string][]string
 
-func (c *Client) retry(ctx context.Context, fn func() error) error {
+func (c *commonClient) retry(ctx context.Context, fn func() error) error {
 	var opts backoff.BackOff
 
 	opts = backoff.NewExponentialBackOff()
@@ -111,8 +131,8 @@ func (c *Client) retry(ctx context.Context, fn func() error) error {
 	return backoff.Retry(fn, opts)
 }
 
-func (c *Client) GetDestinationSSHKeyPair(ctx context.Context, destID string) (kp SSHKeyPair, err error) {
-	endpoint := fmt.Sprintf("%s/destinations/%s/sshKeys", c.url, destID)
+func (c *AdminClient) GetDestinationSSHKeyPair(ctx context.Context, destID string) (kp SSHKeyPair, err error) {
+	endpoint := fmt.Sprintf("%s/dataplane/admin/destinations/%s/sshKeys", c.url, destID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return kp, fmt.Errorf("cannot create request to get ssh key pair: %w", err)
@@ -120,7 +140,7 @@ func (c *Client) GetDestinationSSHKeyPair(ctx context.Context, destID string) (k
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", c.ua)
-	req.SetBasicAuth(c.identity.BasicAuth())
+	req.SetBasicAuth(c.authorizer.BasicAuth())
 
 	err = c.retry(ctx, func() error {
 		resp, err := c.client.Do(req)
@@ -145,13 +165,12 @@ func (c *Client) GetDestinationSSHKeyPair(ctx context.Context, destID string) (k
 }
 
 func (c *Client) SendFeatures(ctx context.Context, component string, features []string) error {
-	var url string
-
+	var endpoint string
 	switch t := c.identity.(type) {
 	case *identity.Namespace:
-		url = fmt.Sprintf("%s/data-plane/v1/namespaces/%s/settings", c.url, c.identity.ID())
+		endpoint = fmt.Sprintf("%s/data-plane/v1/namespaces/%s/settings", c.url, c.identity.ID())
 	case *identity.Workspace:
-		url = fmt.Sprintf("%s/data-plane/v1/workspaces/%s/settings", c.url, c.identity.ID())
+		endpoint = fmt.Sprintf("%s/data-plane/v1/workspaces/%s/settings", c.url, c.identity.ID())
 	default:
 		return fmt.Errorf("identity not supported %T", t)
 	}
@@ -171,7 +190,7 @@ func (c *Client) SendFeatures(ctx context.Context, component string, features []
 	}
 
 	return c.retry(ctx, func() error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("new request: %w", err)
 		}

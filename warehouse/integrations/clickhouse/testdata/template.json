@@ -44,7 +44,7 @@
           "deleted": false,
           "createdAt": "2021-11-21T18:21:25.599Z",
           "updatedAt": "2021-11-21T18:21:25.599Z",
-          "revisionId": "29eeuTnqbBKn0XVTj5z9XQIbaru",
+          "revisionId": "{{.destinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -169,7 +169,7 @@
           "deleted": false,
           "createdAt": "2021-11-21T18:21:25.599Z",
           "updatedAt": "2021-11-21T18:21:25.599Z",
-          "revisionId": "29eelRZYrY0nZQUz7DbKDu1KORG",
+          "revisionId": "{{.clusterDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {

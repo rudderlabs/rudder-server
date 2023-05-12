@@ -1,12 +1,8 @@
 package testhelper
 
 import (
-	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,11 +12,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	_ "github.com/lib/pq"
@@ -35,48 +26,55 @@ const (
 	AsyncJOBQueryFrequency = 1000 * time.Millisecond
 )
 
-const (
-	jobsDBHost     = "localhost"
-	jobsDBDatabase = "jobsdb"
-	jobsDBUser     = "rudder"
-	jobsDBPassword = "password"
-)
-
 type EventsCountMap map[string]int
 
-type WareHouseTest struct {
-	Client                       *warehouseclient.Client
+type TestConfig struct {
 	WriteKey                     string
 	Schema                       string
 	UserID                       string
-	MessageID                    string
 	WorkspaceID                  string
 	JobRunID                     string
 	TaskRunID                    string
-	RecordID                     string
-	Tables                       []string
-	Provider                     string
 	SourceID                     string
 	DestinationID                string
+	DestinationType              string
+	Tables                       []string
+	Client                       *warehouseclient.Client
 	TimestampBeforeSendingEvents time.Time
-	EventsMap                    EventsCountMap
+	Config                       map[string]interface{}
+	StagingFilePath              string
 	StagingFilesEventsMap        EventsCountMap
 	LoadFilesEventsMap           EventsCountMap
 	TableUploadsEventsMap        EventsCountMap
 	WarehouseEventsMap           EventsCountMap
 	JobsDB                       *sql.DB
 	AsyncJob                     bool
-	Prerequisite                 func(t testing.TB)
 	SkipWarehouse                bool
 	HTTPPort                     int
 }
 
-func (w *WareHouseTest) init() {
+func (w *TestConfig) VerifyEvents(t testing.TB) {
+	t.Helper()
+
+	w.reset()
+
+	createStagingFile(t, w)
+
+	verifyEventsInStagingFiles(t, w)
+	verifyEventsInLoadFiles(t, w)
+	verifyEventsInTableUploads(t, w)
+
+	if w.AsyncJob {
+		verifyAsyncJob(t, w)
+	}
+	if !w.SkipWarehouse {
+		verifyEventsInWareHouse(t, w)
+	}
+}
+
+func (w *TestConfig) reset() {
 	w.TimestampBeforeSendingEvents = timeutil.Now()
 
-	if len(w.EventsMap) == 0 {
-		w.EventsMap = defaultSendEventsMap()
-	}
 	if len(w.StagingFilesEventsMap) == 0 {
 		w.StagingFilesEventsMap = defaultStagingFilesEventsMap()
 	}
@@ -88,476 +86,6 @@ func (w *WareHouseTest) init() {
 	}
 	if len(w.WarehouseEventsMap) == 0 {
 		w.WarehouseEventsMap = defaultWarehouseEventsMap()
-	}
-}
-
-func (w *WareHouseTest) msgID() string {
-	if w.MessageID == "" {
-		return misc.FastUUID().String()
-	}
-	return w.MessageID
-}
-
-func (w *WareHouseTest) recordID() string {
-	if w.RecordID == "" {
-		return misc.FastUUID().String()
-	}
-	return w.RecordID
-}
-
-func (w *WareHouseTest) VerifyEvents(t testing.TB) {
-	t.Helper()
-
-	w.init()
-
-	if w.Prerequisite != nil {
-		w.Prerequisite(t)
-	}
-
-	SendEvents(t, w)
-	SendEvents(t, w)
-	SendEvents(t, w)
-	SendIntegratedEvents(t, w)
-
-	verifyEventsInStagingFiles(t, w)
-	verifyEventsInLoadFiles(t, w)
-	verifyEventsInTableUploads(t, w)
-	if !w.SkipWarehouse {
-		verifyEventsInWareHouse(t, w)
-	}
-}
-
-func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
-	t.Helper()
-
-	w.init()
-
-	if w.Prerequisite != nil {
-		w.Prerequisite(t)
-	}
-
-	SendModifiedEvents(t, w)
-	SendModifiedEvents(t, w)
-	SendModifiedEvents(t, w)
-	SendIntegratedEvents(t, w)
-
-	verifyEventsInStagingFiles(t, w)
-	verifyEventsInLoadFiles(t, w)
-	verifyEventsInTableUploads(t, w)
-	if w.AsyncJob {
-		verifyAsyncJob(t, w)
-	}
-	if !w.SkipWarehouse {
-		verifyEventsInWareHouse(t, w)
-	}
-}
-
-func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
-	t.Helper()
-	t.Logf("Started verifying events in staging files")
-
-	var (
-		tableName         = "wh_staging_files"
-		stagingFileEvents int
-		sqlStatement      string
-		operation         func() bool
-		count             sql.NullInt64
-		err               error
-		db                = wareHouseTest.JobsDB
-		eventsMap         = wareHouseTest.StagingFilesEventsMap
-	)
-
-	require.NotEmpty(t, wareHouseTest.SourceID)
-	require.NotEmpty(t, wareHouseTest.DestinationID)
-	require.NotEmpty(t, eventsMap)
-	require.NotEmpty(t, eventsMap[tableName])
-	require.NotNil(t, db)
-
-	stagingFileEvents = eventsMap[tableName]
-
-	sqlStatement = `
-		SELECT
-			COALESCE(SUM(total_events)) AS sum
-		FROM
-			wh_staging_files
-		WHERE
-		   	workspace_id = $1 AND
-		   	source_id = $2 AND
-		   	destination_id = $3 AND
-		   	created_at > $4;
-	`
-	t.Logf("Checking events in staging files for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
-		wareHouseTest.WorkspaceID,
-		wareHouseTest.SourceID,
-		wareHouseTest.DestinationID,
-		wareHouseTest.TimestampBeforeSendingEvents,
-		sqlStatement,
-	)
-	operation = func() bool {
-		err = db.QueryRow(
-			sqlStatement,
-			wareHouseTest.WorkspaceID,
-			wareHouseTest.SourceID,
-			wareHouseTest.DestinationID,
-			wareHouseTest.TimestampBeforeSendingEvents,
-		).Scan(&count)
-		require.NoError(t, err)
-		return count.Int64 == int64(stagingFileEvents)
-	}
-	require.Eventually(
-		t,
-		operation,
-		WaitFor2Minute,
-		DefaultQueryFrequency,
-		fmt.Sprintf("Expected staging files events count is %d and Actual staging files events count is %d",
-			stagingFileEvents,
-			count.Int64,
-		),
-	)
-
-	t.Logf("Completed verifying events in staging files")
-}
-
-func verifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
-	t.Helper()
-	t.Logf("Started verifying events in load file")
-
-	var (
-		loadFileEvents int
-		sqlStatement   string
-		operation      func() bool
-		count          sql.NullInt64
-		err            error
-		db             = wareHouseTest.JobsDB
-		eventsMap      = wareHouseTest.LoadFilesEventsMap
-	)
-
-	require.NotEmpty(t, wareHouseTest.SourceID)
-	require.NotEmpty(t, wareHouseTest.DestinationID)
-	require.NotEmpty(t, eventsMap)
-	require.NotNil(t, db)
-
-	for _, table := range wareHouseTest.Tables {
-		require.NotEmpty(t, eventsMap[table])
-
-		loadFileEvents = eventsMap[table]
-
-		sqlStatement = `
-			SELECT
-			   COALESCE(SUM(total_events)) AS sum
-			FROM
-			   wh_load_files
-			WHERE
-			   source_id = $1
-			   AND destination_id = $2
-			   AND created_at > $3
-			   AND table_name = $4;
-		`
-		t.Logf("Checking events in load files for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
-			wareHouseTest.SourceID,
-			wareHouseTest.DestinationID,
-			wareHouseTest.TimestampBeforeSendingEvents,
-			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-			sqlStatement,
-		)
-		operation = func() bool {
-			err = db.QueryRow(
-				sqlStatement,
-				wareHouseTest.SourceID,
-				wareHouseTest.DestinationID,
-				wareHouseTest.TimestampBeforeSendingEvents,
-				warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-			).Scan(&count)
-			require.NoError(t, err)
-			return count.Int64 == int64(loadFileEvents)
-		}
-		require.Eventually(
-			t,
-			operation,
-			WaitFor10Minute,
-			DefaultQueryFrequency,
-			fmt.Sprintf("Expected load files events count is %d and Actual load files events count is %d for table %s",
-				loadFileEvents,
-				count.Int64,
-				table,
-			),
-		)
-	}
-
-	t.Logf("Completed verifying events in load files")
-}
-
-func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
-	t.Helper()
-	t.Logf("Started verifying events in table uploads")
-
-	var (
-		tableUploadEvents int
-		sqlStatement      string
-		operation         func() bool
-		count             sql.NullInt64
-		err               error
-		db                = wareHouseTest.JobsDB
-		eventsMap         = wareHouseTest.TableUploadsEventsMap
-	)
-
-	require.NotEmpty(t, wareHouseTest.SourceID)
-	require.NotEmpty(t, wareHouseTest.DestinationID)
-	require.NotEmpty(t, eventsMap)
-	require.NotNil(t, db)
-
-	for _, table := range wareHouseTest.Tables {
-		require.NotEmpty(t, eventsMap[table])
-
-		tableUploadEvents = eventsMap[table]
-
-		sqlStatement = `
-			SELECT
-			   COALESCE(SUM(total_events)) AS sum
-			FROM
-			   wh_table_uploads
-			   LEFT JOIN
-				  wh_uploads
-				  ON wh_uploads.id = wh_table_uploads.wh_upload_id
-			WHERE
-			   wh_uploads.workspace_id = $1 AND
-			   wh_uploads.source_id = $2 AND
-			   wh_uploads.destination_id = $3 AND
-			   wh_uploads.created_at > $4 AND
-			   wh_table_uploads.table_name = $5 AND
-			   wh_table_uploads.status = 'exported_data';
-		`
-		t.Logf("Checking events in table uploads for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
-			wareHouseTest.WorkspaceID,
-			wareHouseTest.SourceID,
-			wareHouseTest.DestinationID,
-			wareHouseTest.TimestampBeforeSendingEvents,
-			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-			sqlStatement,
-		)
-		operation = func() bool {
-			err = db.QueryRow(
-				sqlStatement,
-				wareHouseTest.WorkspaceID,
-				wareHouseTest.SourceID,
-				wareHouseTest.DestinationID,
-				wareHouseTest.TimestampBeforeSendingEvents,
-				warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-			).Scan(&count)
-			require.NoError(t, err)
-			return count.Int64 == int64(tableUploadEvents)
-		}
-		require.Eventually(t,
-			operation,
-			WaitFor10Minute,
-			DefaultQueryFrequency,
-			fmt.Sprintf("Expected table uploads events count is %d and Actual table uploads events count is %d for table %s",
-				tableUploadEvents,
-				count.Int64,
-				table,
-			),
-		)
-	}
-
-	t.Logf("Completed verifying events in table uploads")
-}
-
-func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
-	t.Helper()
-	t.Logf("Started verifying events in warehouse")
-
-	eventsMap := wareHouseTest.WarehouseEventsMap
-
-	require.NotEmpty(t, wareHouseTest.Schema)
-	require.NotEmpty(t, wareHouseTest.UserID)
-	require.NotNil(t, wareHouseTest.Client)
-
-	primaryKey := func(tableName string) string {
-		if tableName == "users" {
-			return "id"
-		}
-		return "user_id"
-	}
-
-	var (
-		count    int64
-		countErr error
-	)
-
-	for _, table := range wareHouseTest.Tables {
-		require.Contains(t, eventsMap, table)
-
-		tableCount := eventsMap[table]
-		sqlStatement := fmt.Sprintf(`
-			select
-			  count(*)
-			from
-			  %s.%s
-			where
-			  %s = '%s';`,
-			wareHouseTest.Schema,
-			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-			primaryKey(table),
-			wareHouseTest.UserID,
-		)
-		t.Logf("Checking events in warehouse for schema: %s, table: %s, primaryKey: %s, UserID: %s, sqlStatement: %s",
-			wareHouseTest.Schema,
-			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-			primaryKey(table),
-			wareHouseTest.UserID,
-			sqlStatement,
-		)
-
-		require.NoError(t, WithConstantRetries(func() error {
-			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
-			if countErr != nil {
-				return countErr
-			}
-			if count != int64(tableCount) {
-				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
-					wareHouseTest.Schema,
-					warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-					wareHouseTest.UserID,
-					count,
-					tableCount,
-				)
-			}
-			return nil
-		}))
-	}
-
-	t.Logf("Completed verifying events in warehouse")
-}
-
-func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
-	t.Helper()
-	t.Logf("Started verifying async job")
-
-	asyncPayload := strings.NewReader(
-		fmt.Sprintf(
-			AsyncWhPayload,
-			wareHouseTest.SourceID,
-			wareHouseTest.JobRunID,
-			wareHouseTest.TaskRunID,
-			wareHouseTest.DestinationID,
-			time.Now().UTC().Format("2006-01-02 15:04:05"),
-			wareHouseTest.WorkspaceID,
-		),
-	)
-	t.Logf("Run async job for sourceID: %s, DestinationID: %s, jobRunID: %s, taskRunID: %s",
-		wareHouseTest.SourceID,
-		wareHouseTest.DestinationID,
-		wareHouseTest.JobRunID,
-		wareHouseTest.TaskRunID,
-	)
-
-	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST", wareHouseTest.HTTPPort)
-
-	var (
-		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s&workspace_id=%s",
-			wareHouseTest.JobRunID,
-			wareHouseTest.TaskRunID,
-			wareHouseTest.SourceID,
-			wareHouseTest.DestinationID,
-			wareHouseTest.WorkspaceID,
-		)
-		url        = fmt.Sprintf("http://localhost:%d/v1/%s", wareHouseTest.HTTPPort, path)
-		method     = "GET"
-		httpClient = &http.Client{}
-		req        *http.Request
-		res        *http.Response
-		err        error
-	)
-
-	type asyncResponse struct {
-		Status string `json:"status"`
-		Error  string `json:"error"`
-	}
-
-	operation := func() bool {
-		if req, err = http.NewRequest(method, url, strings.NewReader("")); err != nil {
-			return false
-		}
-
-		req.Header.Add("Content-Type", "application/json")
-		req.Header.Add("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", wareHouseTest.WriteKey)),
-		)))
-
-		if res, err = httpClient.Do(req); err != nil {
-			return false
-		}
-		if res.StatusCode != http.StatusOK {
-			return false
-		}
-
-		defer func() { httputil.CloseResponse(res) }()
-
-		var asyncRes asyncResponse
-		if err = json.NewDecoder(res.Body).Decode(&asyncRes); err != nil {
-			return false
-		}
-		return asyncRes.Status == "succeeded"
-	}
-	require.Eventually(
-		t,
-		operation,
-		WaitFor10Minute,
-		AsyncJOBQueryFrequency,
-		fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s",
-			wareHouseTest.JobRunID,
-			wareHouseTest.TaskRunID,
-			wareHouseTest.SourceID,
-			wareHouseTest.DestinationID,
-		),
-	)
-
-	t.Logf("Completed verifying async job")
-}
-
-func VerifyConfigurationTest(t testing.TB, destination backendconfig.DestinationT) {
-	t.Helper()
-	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
-
-	require.NoError(t, WithConstantRetries(func() error {
-		destinationValidator := validations.NewDestinationValidator()
-		response := destinationValidator.Validate(context.Background(), &destination)
-		if !response.Success {
-			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
-		}
-		return nil
-	}))
-
-	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
-}
-
-func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
-	result, err := cl.Query(statement)
-	if err != nil || result.Values == nil {
-		return 0, err
-	}
-	return strconv.ParseInt(result.Values[0][0], 10, 64)
-}
-
-func WithConstantRetries(operation func() error) error {
-	var err error
-	for i := 0; i < 6; i++ {
-		if err = operation(); err == nil {
-			return nil
-		}
-		time.Sleep(time.Duration(1+i) * time.Second)
-	}
-	return err
-}
-
-func defaultSendEventsMap() EventsCountMap {
-	return EventsCountMap{
-		"identifies": 1,
-		"tracks":     1,
-		"pages":      1,
-		"screens":    1,
-		"aliases":    1,
-		"groups":     1,
 	}
 }
 
@@ -606,12 +134,6 @@ func defaultWarehouseEventsMap() EventsCountMap {
 	}
 }
 
-func SourcesSendEventsMap() EventsCountMap {
-	return EventsCountMap{
-		"google_sheet": 1,
-	}
-}
-
 func SourcesStagingFilesEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"wh_staging_files": 8,
@@ -655,15 +177,26 @@ func JobsDB(t testing.TB, port int) *sql.DB {
 	t.Helper()
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		jobsDBUser,
-		jobsDBPassword,
-		jobsDBHost,
+		"rudder",
+		"password",
+		"localhost",
 		strconv.Itoa(port),
-		jobsDBDatabase,
+		"jobsdb",
 	)
 	jobsDB, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
 	require.NoError(t, jobsDB.Ping())
 
 	return jobsDB
+}
+
+func WithConstantRetries(operation func() error) error {
+	var err error
+	for i := 0; i < 6; i++ {
+		if err = operation(); err == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(1+i) * time.Second)
+	}
+	return err
 }

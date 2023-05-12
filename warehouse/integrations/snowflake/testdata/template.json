@@ -50,7 +50,7 @@
           "deleted": false,
           "createdAt": "2022-02-08T23:19:58.278Z",
           "updatedAt": "2022-05-17T08:18:33.587Z",
-          "revisionId": "29HgdgvNPwqFDMONSgmIZ3YSehV",
+          "revisionId": "{{.destinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -174,7 +174,7 @@
           "deleted": false,
           "createdAt": "2022-02-08T23:19:58.278Z",
           "updatedAt": "2022-05-17T08:18:33.587Z",
-          "revisionId": "29HgdgvNPwqFDTUESgmIZ3YSehV",
+          "revisionId": "{{.caseSensitiveDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -285,7 +285,7 @@
             "accessKeyID": "{{.rbacAccessKeyID}}",
             "accessKey": "{{.rbacAccessKey}}",
             "namespace": "{{.rbacNamespace}}",
-            "prefix": "snowflake-rbac-prefix",
+            "prefix": "snowflake-prefix",
             "syncFrequency": "30",
             "enableSSE": false,
             "useRudderStorage": false
@@ -299,7 +299,7 @@
           "deleted": false,
           "createdAt": "2022-02-08T23:19:58.278Z",
           "updatedAt": "2022-05-17T08:18:33.587Z",
-          "revisionId": "29HgdgvsdsqFDTUESgmIZ3YSehV",
+          "revisionId": "{{.rbacDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
@@ -449,7 +449,7 @@
           "deleted": false,
           "createdAt": "2022-02-08T23:19:58.278Z",
           "updatedAt": "2022-05-17T08:18:33.587Z",
-          "revisionId": "29HgdgvNPwqFDMONSgmIZ3YSehV",
+          "revisionId": "{{.sourcesDestinationID}}",
           "transformations": [],
           "destinationDefinition": {
             "config": {
