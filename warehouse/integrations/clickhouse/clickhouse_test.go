@@ -185,10 +185,7 @@ func TestIntegration(t *testing.T) {
 				"localhost", port, "rudderdb", "rudder-password", "rudder",
 			)
 
-			db, err := sql.Open("clickhouse", dsn)
-			require.NoError(t, err)
-			require.NoError(t, db.Ping())
-
+			db := connectClickhouseDB(t, ctx, dsn)
 			dbs = append(dbs, db)
 		}
 
@@ -1149,6 +1146,20 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 		"localhost", resource.GetPort("9000/tcp"), databaseName, password, user,
 	)
 
+	db := connectClickhouseDB(t, context.Background(), dsn)
+	defer func() { _ = db.Close() }()
+
+	t.Cleanup(func() {
+		if err := pool.Purge(resource); err != nil {
+			t.Log("Could not purge resource:", err)
+		}
+	})
+	return resource
+}
+
+func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
+	t.Helper()
+
 	db, err := sql.Open("clickhouse", dsn)
 	require.NoError(t, err)
 
@@ -1162,12 +1173,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	err = db.PingContext(ctx)
 	require.NoError(t, err)
 
-	t.Cleanup(func() {
-		if err := pool.Purge(resource); err != nil {
-			t.Log("Could not purge resource:", err)
-		}
-	})
-	return resource
+	return db
 }
 
 func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables []string) {
