@@ -185,7 +185,7 @@ func TestIntegration(t *testing.T) {
 				"localhost", port, "rudderdb", "rudder-password", "rudder",
 			)
 
-			db := connectClickhouseDB(t, ctx, dsn)
+			db := connectClickhouseDB(ctx, t, dsn)
 			dbs = append(dbs, db)
 		}
 
@@ -1146,7 +1146,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 		"localhost", resource.GetPort("9000/tcp"), databaseName, password, user,
 	)
 
-	db := connectClickhouseDB(t, context.Background(), dsn)
+	db := connectClickhouseDB(context.Background(), t, dsn)
 	defer func() { _ = db.Close() }()
 
 	t.Cleanup(func() {
@@ -1157,7 +1157,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	return resource
 }
 
-func connectClickhouseDB(t testing.TB, ctx context.Context, dsn string) *sql.DB {
+func connectClickhouseDB(ctx context.Context, t testing.TB, dsn string) *sql.DB {
 	t.Helper()
 
 	db, err := sql.Open("clickhouse", dsn)
