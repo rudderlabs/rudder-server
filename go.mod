@@ -243,7 +243,7 @@ require (
 	github.com/rivo/uniseg v0.1.0 // indirect
 	github.com/rs/xid v1.4.0 // indirect
 	github.com/rs/zerolog v1.28.0 // indirect
-	github.com/rudderlabs/compose-test v0.0.0-20221205185752-1290775b38f6
+	github.com/rudderlabs/compose-test v0.1.0
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/segmentio/backo-go v1.0.1 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
