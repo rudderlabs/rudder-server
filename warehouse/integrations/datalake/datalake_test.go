@@ -181,6 +181,7 @@ func TestIntegration(t *testing.T) {
 		testCases := []struct {
 			name              string
 			writeKey          string
+			tables            []string
 			sourceID          string
 			destinationID     string
 			destType          string
@@ -191,6 +192,7 @@ func TestIntegration(t *testing.T) {
 			{
 				name:          "S3Datalake",
 				writeKey:      s3WriteKey,
+				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				sourceID:      s3SourceID,
 				destinationID: s3DestinationID,
 				destType:      warehouseutils.S3_DATALAKE,
@@ -224,6 +226,7 @@ func TestIntegration(t *testing.T) {
 			{
 				name:          "GCSDatalake",
 				writeKey:      gcsWriteKey,
+				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
 				sourceID:      gcsSourceID,
 				destinationID: gcsDestinationID,
 				destType:      warehouseutils.GCS_DATALAKE,
@@ -245,6 +248,7 @@ func TestIntegration(t *testing.T) {
 			{
 				name:          "AzureDatalake",
 				writeKey:      azWriteKey,
+				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				sourceID:      azSourceID,
 				destinationID: azDestinationID,
 				destType:      warehouseutils.AZURE_DATALAKE,
@@ -272,16 +276,14 @@ func TestIntegration(t *testing.T) {
 					tc.prerequisite(t)
 				}
 
-				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
 				t.Log("verifying test case 1")
 				ts1 := testhelper.TestConfig{
 					WriteKey:        tc.writeKey,
+					Tables:          tc.tables,
 					SourceID:        tc.sourceID,
 					DestinationID:   tc.destinationID,
 					DestinationType: tc.destType,
 					Config:          tc.conf,
-					Tables:          tables,
 					WorkspaceID:     workspaceID,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
@@ -294,11 +296,11 @@ func TestIntegration(t *testing.T) {
 				t.Log("verifying test case 2")
 				ts2 := testhelper.TestConfig{
 					WriteKey:        tc.writeKey,
+					Tables:          tc.tables,
 					SourceID:        tc.sourceID,
 					DestinationID:   tc.destinationID,
 					DestinationType: tc.destType,
 					Config:          tc.conf,
-					Tables:          tables,
 					WorkspaceID:     workspaceID,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
