@@ -1,6 +1,8 @@
 package backendconfig
 
 import (
+	"time"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -91,6 +93,7 @@ type ConfigT struct {
 	Libraries       LibrariesT      `json:"libraries"`
 	ConnectionFlags ConnectionFlags `json:"flags"`
 	Settings        Settings        `json:"settings"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
 }
 
 type Settings struct {
