@@ -552,8 +552,6 @@ func (proc *Handle) loadConfig() {
 	defaultSubJobSize := 2000
 	defaultMaxEventsToProcess := 10000
 	defaultPayloadLimit := 100 * bytesize.MB
-	defaultReadLoopSleepMs := int64(200)
-	defaultMaxLoopSleeppMs := int64(5000)
 
 	defaultIsolationMode := isolation.ModeSource
 	if config.IsSet("WORKSPACE_NAMESPACE") {
@@ -565,19 +563,17 @@ func (proc *Handle) loadConfig() {
 		defaultSubJobSize = 400
 		defaultMaxEventsToProcess = 2000
 		defaultPayloadLimit = 20 * bytesize.MB
-		defaultReadLoopSleepMs = 10
-		defaultMaxLoopSleeppMs = 2000
 	}
 
 	config.RegisterInt64ConfigVariable(defaultPayloadLimit, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterBoolConfigVariable(true, &proc.config.enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterIntConfigVariable(0, &proc.config.pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterIntConfigVariable(defaultSubJobSize, &proc.config.subJobSize, false, 1, "Processor.subJobSize")
-	config.RegisterDurationConfigVariable(defaultMaxLoopSleeppMs, &proc.config.maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(10000, &proc.config.maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(5, &proc.config.storeTimeout, true, time.Minute, "Processor.storeTimeout")
 
 	config.RegisterDurationConfigVariable(1000, &proc.config.pingerSleep, true, time.Millisecond, "Processor.pingerSleep")
-	config.RegisterDurationConfigVariable(defaultReadLoopSleepMs, &proc.config.readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
+	config.RegisterDurationConfigVariable(1000, &proc.config.readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	// DEPRECATED: used only on the old mainLoop:
 	config.RegisterDurationConfigVariable(10, &proc.config.loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
 	// DEPRECATED: used only on the old mainLoop:
