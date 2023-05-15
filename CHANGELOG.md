@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.3](https://github.com/rudderlabs/rudder-server/compare/v1.8.2...v1.8.3) (2023-05-12)
+
+
+### Miscellaneous
+
+* add toggle for backendconfig db caching ([#3320](https://github.com/rudderlabs/rudder-server/issues/3320)) ([e75fea0](https://github.com/rudderlabs/rudder-server/commit/e75fea005243e4c55127ac2c7a51bcd30ff20fa8))
+
 ## [1.8.2](https://github.com/rudderlabs/rudder-server/compare/v1.8.1...v1.8.2) (2023-05-10)
 
 
