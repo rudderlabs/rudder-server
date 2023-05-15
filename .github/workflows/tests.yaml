@@ -96,7 +96,7 @@ jobs:
           RSERVER_WAREHOUSE_DELTALAKE_USE_NATIVE: ${{ matrix.useNative }}
       - uses: codecov/codecov-action@v3
         with:
-          flags: "integration"
+          flags: "unit"
           fail_ci_if_error: true
 
   unit:
@@ -123,5 +123,5 @@ jobs:
         run: make test
       - uses: codecov/codecov-action@v3
         with:
-          flags: "unittests"
+          flags: "unit"
           fail_ci_if_error: true
