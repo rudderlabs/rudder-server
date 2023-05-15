@@ -85,7 +85,7 @@ jobs:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
-        run: SLOW=1 go test -v ./${{ matrix.package }}/... -p 8 -timeout 30m -count 1 -run 'TestIntegration' -coverprofile=coverage.out -covermode=atomic -coverpkg=./...
+        run: make test-warehouse package=./${{ matrix.package }}/...
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
@@ -94,7 +94,9 @@ jobs:
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
           RSERVER_WAREHOUSE_POSTGRES_USE_LEGACY: ${{ matrix.useLegacy }}
           RSERVER_WAREHOUSE_DELTALAKE_USE_NATIVE: ${{ matrix.useNative }}
-      - uses: codecov/codecov-action@v2
+      - uses: codecov/codecov-action@v3
+        with:
+          flags: "integration"
 
   unit:
     name: Unit
@@ -118,4 +120,4 @@ jobs:
           TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
         run: make test
-      - uses: codecov/codecov-action@v2
+      - uses: codecov/codecov-action@v3
