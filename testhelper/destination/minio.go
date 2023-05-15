@@ -3,16 +3,13 @@ package destination
 import (
 	_ "encoding/json"
 	"fmt"
-	"log"
 	"net/http"
-	"strconv"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest/v3"
-	dc "github.com/ory/dockertest/v3/docker"
 
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -33,12 +30,6 @@ func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
 	secretKey := "MYSECRETKEY"
 	bucketName := "testbucket"
 
-	minioPortInt, err := kitHelper.GetFreePort()
-	if err != nil {
-		fmt.Println(err)
-	}
-	minioPort := fmt.Sprintf("%s/tcp", strconv.Itoa(minioPortInt))
-	log.Println("minioPort:", minioPort)
 	// Setup MINIO
 	var minioClient *minio.Client
 
@@ -47,9 +38,6 @@ func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
 		Repository: "minio/minio",
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
-		PortBindings: map[dc.Port][]dc.PortBinding{
-			"9000/tcp": {{HostPort: strconv.Itoa(minioPortInt)}},
-		},
 		Env: []string{
 			"MINIO_ACCESS_KEY=" + accessKey,
 			"MINIO_SECRET_KEY=" + secretKey,
@@ -73,7 +61,10 @@ func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
 	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
 	if err := pool.Retry(func() error {
 		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
-		resp, err := http.Get(url)
+		client := &http.Client{
+			Timeout: 5 * time.Second,
+		}
+		resp, err := client.Get(url)
 		if err != nil {
 			return err
 		}

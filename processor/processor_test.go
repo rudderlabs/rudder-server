@@ -39,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -58,7 +57,7 @@ type testContext struct {
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB    *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReportingI
-	MockDedup             *mockDedup.MockDedupI
+	MockDedup             *mockDedup.MockDedup
 	MockMultitenantHandle *mocksMultitenant.MockMultiTenantI
 	MockRsourcesService   *rsources.MockJobService
 }
@@ -86,7 +85,7 @@ func (c *testContext) Setup() {
 			return ch
 		})
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
-	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
+	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 }
 
@@ -395,7 +394,6 @@ func initProcessor() {
 	logger.Reset()
 	stash.Init()
 	admin.Init()
-	dedup.Init()
 	misc.Init()
 	integrations.Init()
 	format.MaxLength = 100000
@@ -1167,8 +1165,8 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return([]int{1}).After(callUnprocessed).Times(2)
-			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
+			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0)).After(callUnprocessed).Times(3)
+			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
@@ -1176,7 +1174,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil).Times(1)
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(2)).Times(1)
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(3)).Times(1)
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
@@ -1192,7 +1190,7 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			processor.dedupHandler = c.MockDedup
+			processor.dedup = c.MockDedup
 			processor.multitenantI = c.MockMultitenantHandle
 			handlePendingGatewayJobs(processor)
 		})
@@ -3243,9 +3241,9 @@ var _ = Describe("TestSubJobMerger", func() {
 		},
 
 		reportMetrics: []*types.PUReportedMetric{{}, {}},
-		sourceDupStats: map[string]int{
-			"stat-1": 1,
-			"stat-2": 2,
+		sourceDupStats: map[dupStatKey]int{
+			{sourceID: "stat-1"}: 1,
+			{sourceID: "stat-2"}: 2,
 		},
 		uniqueMessageIds: map[string]struct{}{
 			"messageId-1": {},
@@ -3260,7 +3258,7 @@ var _ = Describe("TestSubJobMerger", func() {
 			mergedJob := storeMessage{}
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]int)
+			mergedJob.sourceDupStats = make(map[dupStatKey]int)
 
 			subJobs := []storeMessage{
 				{
@@ -3293,8 +3291,8 @@ var _ = Describe("TestSubJobMerger", func() {
 					reportMetrics: []*types.PUReportedMetric{
 						{},
 					},
-					sourceDupStats: map[string]int{
-						"stat-1": 1,
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-1"}: 1,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-1": {},
@@ -3332,8 +3330,8 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}},
-					sourceDupStats: map[string]int{
-						"stat-2": 2,
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-2"}: 2,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-2": {},
@@ -3362,7 +3360,7 @@ var _ = Describe("TestSubJobMerger", func() {
 			mergedJob := storeMessage{}
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[string]int)
+			mergedJob.sourceDupStats = make(map[dupStatKey]int)
 
 			subJobs := []storeMessage{
 				{
@@ -3405,9 +3403,9 @@ var _ = Describe("TestSubJobMerger", func() {
 					},
 
 					reportMetrics: []*types.PUReportedMetric{{}, {}},
-					sourceDupStats: map[string]int{
-						"stat-1": 1,
-						"stat-2": 2,
+					sourceDupStats: map[dupStatKey]int{
+						{sourceID: "stat-1"}: 1,
+						{sourceID: "stat-2"}: 2,
 					},
 					uniqueMessageIds: map[string]struct{}{
 						"messageId-1": {},

@@ -287,7 +287,7 @@ func TestNoResultsCache(t *testing.T) {
 		})
 	})
 
-	t.Run("Print", func(t *testing.T) {
+	t.Run("String", func(t *testing.T) {
 		c := cache.NewNoResultsCache[paramFilter](supportedParamFilters, ttlFunc)
 		c.StartNoResultTx(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}).Commit()
 		require.True(t, c.Get(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}))

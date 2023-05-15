@@ -470,16 +470,6 @@ func GetIPFromReq(req *http.Request) string {
 	return strings.ReplaceAll(addresses[0], " ", "")
 }
 
-// IncrementMapByKey starts with 1 and increments the counter of a key
-func IncrementMapByKey(m map[string]int, key string, increment int) {
-	_, found := m[key]
-	if found {
-		m[key] = m[key] + increment
-	} else {
-		m[key] = increment
-	}
-}
-
 //  Returns chronological timestamp of the event using the formula
 //  timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {

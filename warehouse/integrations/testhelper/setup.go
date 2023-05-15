@@ -38,6 +38,7 @@ import (
 
 	_ "github.com/lib/pq"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -255,6 +256,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TimestampBeforeSendingEvents,
 		).Scan(&count)
 		require.NoError(t, err)
+		t.Logf("Got count: %d, expected: %d", count.Int64, stagingFileEvents)
 		return count.Int64 == int64(stagingFileEvents)
 	}
 	require.Eventually(
@@ -322,6 +324,7 @@ func verifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 				warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 			).Scan(&count)
 			require.NoError(t, err)
+			t.Logf("Got count: %d, expected %d", count.Int64, loadFileEvents)
 			return count.Int64 == int64(loadFileEvents)
 		}
 		require.Eventually(
@@ -399,6 +402,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 				warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 			).Scan(&count)
 			require.NoError(t, err)
+			t.Logf("Got count: %d, expected %d", count.Int64, tableUploadEvents)
 			return count.Int64 == int64(tableUploadEvents)
 		}
 		require.Eventually(t,
@@ -462,22 +466,28 @@ func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 			sqlStatement,
 		)
 
-		require.NoError(t, WithConstantRetries(func() error {
+		operation := func() bool {
 			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
 			if countErr != nil {
-				return countErr
+				return false
 			}
+			t.Logf("Got count: %d, expected %d", count, tableCount)
 			if count != int64(tableCount) {
-				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
+				countErr = fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
 					wareHouseTest.Schema,
 					warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 					wareHouseTest.UserID,
 					count,
 					tableCount,
 				)
+				return false
 			}
-			return nil
-		}))
+			return true
+		}
+		if !assert.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency) {
+			t.Error(countErr)
+			t.FailNow()
+		}
 	}
 
 	t.Logf("Completed verifying events in warehouse")
@@ -684,10 +694,11 @@ func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
 
 func WithConstantRetries(operation func() error) error {
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 15; i++ {
 		if err = operation(); err == nil {
 			return nil
 		}
+		time.Sleep(time.Duration(1+i) * time.Second)
 	}
 	return err
 }
