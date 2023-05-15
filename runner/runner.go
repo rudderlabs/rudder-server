@@ -11,9 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -33,7 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
@@ -43,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -195,14 +194,11 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
 
-	// Start backend config
-	if r.canStartBackendConfig() {
-		if err := backendconfig.Setup(configEnvHandler); err != nil {
-			r.logger.Errorf("Unable to setup backend config: %s", err)
-			return 1
-		}
-		backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
+	if err := backendconfig.Setup(configEnvHandler); err != nil {
+		r.logger.Errorf("Unable to setup backend config: %s", err)
+		return 1
 	}
+	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
 
 	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
 	if r.canStartServer() {
@@ -345,10 +341,8 @@ func runAllInit() {
 	validations.Init()
 	transformer.Init()
 	webhook.Init()
-	batchrouter.Init()
 	asyncdestinationmanager.Init()
 	batchrouterutils.Init()
-	dedup.Init()
 	eventschema.Init()
 	eventschema.Init2()
 	stash.Init()
@@ -398,8 +392,4 @@ func (r *Runner) canStartServer() bool {
 
 func (r *Runner) canStartWarehouse() bool {
 	return r.appType != app.GATEWAY && r.warehouseMode != config.OffMode
-}
-
-func (r *Runner) canStartBackendConfig() bool {
-	return r.warehouseMode != config.SlaveMode
 }

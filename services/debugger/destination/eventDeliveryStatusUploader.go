@@ -124,8 +124,6 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	}
 	<-h.initialized
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
-	h.uploadEnabledDestinationIDsMu.RLock()
-	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	if !h.HasUploadEnabled(destinationID) {
 		err := h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
 		if err != nil {
@@ -203,8 +201,6 @@ func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConf
 }
 
 func (h *Handle) recordHistoricEventsDelivery(destinationIDs []string) {
-	h.uploadEnabledDestinationIDsMu.RLock()
-	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	for _, destinationID := range destinationIDs {
 		historicEventsDelivery, err := h.eventsDeliveryCache.Read(destinationID)
 		if err != nil {

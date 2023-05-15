@@ -514,7 +514,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Log("Verifying empty schema")
-			schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+			schema, unrecognizedSchema, err := ch.FetchSchema()
 			require.NoError(t, err)
 			require.Empty(t, schema)
 			require.Empty(t, unrecognizedSchema)
@@ -555,7 +555,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Log("Verifying schema")
-			schema, unrecognizedSchema, err = ch.FetchSchema(warehouse)
+			schema, unrecognizedSchema, err = ch.FetchSchema()
 			require.NoError(t, err)
 			require.NotEmpty(t, schema)
 			require.Empty(t, unrecognizedSchema)
@@ -584,7 +584,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			}
 
 			t.Log("Loading data into table")
-			err = ch.LoadTable(table)
+			err = ch.LoadTable(context.TODO(), table)
 			require.NoError(t, err)
 
 			t.Log("Checking table count")
@@ -618,7 +618,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			}
 
 			t.Log("Verifying empty schema")
-			schema, unrecognizedSchema, err = ch.FetchSchema(warehouse)
+			schema, unrecognizedSchema, err = ch.FetchSchema()
 			require.NoError(t, err)
 			require.Empty(t, schema)
 			require.Empty(t, unrecognizedSchema)
@@ -893,7 +893,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.NoError(t, err)
 		require.NotEmpty(t, schema)
 		require.Empty(t, unrecognizedSchema)
@@ -922,7 +922,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		err := ch.Setup(warehouse, &mockUploader{})
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.ErrorContains(t, err, errors.New("dial tcp: lookup clickhouse").Error())
 		require.Empty(t, schema)
 		require.Empty(t, unrecognizedSchema)
@@ -951,7 +951,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		err := ch.Setup(warehouse, &mockUploader{})
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.NoError(t, err)
 		require.Empty(t, schema)
 		require.Empty(t, unrecognizedSchema)
@@ -983,7 +983,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		err = ch.CreateSchema()
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.NoError(t, err)
 		require.Empty(t, schema)
 		require.Empty(t, unrecognizedSchema)
@@ -1021,7 +1021,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		))
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.NoError(t, err)
 		require.NotEmpty(t, schema)
 		require.NotEmpty(t, unrecognizedSchema)

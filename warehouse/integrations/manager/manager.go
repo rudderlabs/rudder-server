@@ -30,13 +30,13 @@ import (
 type Manager interface {
 	Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) error
 	CrashRecover()
-	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
+	FetchSchema() (model.Schema, model.Schema, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap model.TableSchema) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
-	LoadTable(tableName string) error
-	LoadUserTables() map[string]error
+	LoadTable(ctx context.Context, tableName string) error
+	LoadUserTables(ctx context.Context) map[string]error
 	LoadIdentityMergeRulesTable() error
 	LoadIdentityMappingsTable() error
 	Cleanup()

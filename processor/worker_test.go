@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,7 +47,7 @@ func TestWorkerPool(t *testing.T) {
 		defer poolCancel()
 
 		// create a worker pool
-		wp := newWorkerPool(poolCtx, wh)
+		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, wh) }, logger.NOP)
 
 		// start pinging for work for 100 partitions
 		var wg sync.WaitGroup
@@ -99,14 +100,15 @@ func TestWorkerPoolIdle(t *testing.T) {
 			stored      int
 		}{},
 	}
-
 	poolCtx, poolCancel := context.WithCancel(context.Background())
 	defer poolCancel()
 
 	// create a worker pool
-	wp := newWorkerPool(poolCtx, wh,
-		withWorkerPoolCleanupPeriod(200*time.Millisecond),
-		withWorkerPoolIdleTimeout(200*time.Millisecond))
+	wp := workerpool.New(poolCtx,
+		func(partition string) workerpool.Worker { return newProcessorWorker(partition, wh) },
+		logger.NOP,
+		workerpool.WithCleanupPeriod(200*time.Millisecond),
+		workerpool.WithIdleTimeout(200*time.Millisecond))
 
 	require.Equal(t, 0, wp.Size())
 

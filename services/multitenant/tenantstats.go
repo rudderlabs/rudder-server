@@ -103,8 +103,8 @@ func sendQueryRetryStats(attempt int) {
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	var t Stats
-	config.RegisterDurationConfigVariable(60, &t.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Multitenant.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
-	config.RegisterIntConfigVariable(3, &t.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+	config.RegisterDurationConfigVariable(600, &t.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Multitenant.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
+	config.RegisterIntConfigVariable(2, &t.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	t.RouterDBs = routerDBs
 	t.reset()
 	return &t

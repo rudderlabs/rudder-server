@@ -2,6 +2,7 @@ package controlplane_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -225,7 +226,7 @@ func TestDestinationHistory(t *testing.T) {
 				require.Equal(t, tc.wantPath, r.URL.String())
 
 				w.WriteHeader(tc.responseStatus)
-				fmt.Fprint(w, tc.responseBody)
+				_, _ = fmt.Fprint(w, tc.responseBody)
 			}))
 			defer s.Close()
 
@@ -341,4 +342,68 @@ func TestRetriesTimeout(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestGetDestinationSSHKeyPair(t *testing.T) {
+	var count int
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if count == 0 { // failing the first call to test retries
+			count++
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		if r.Header.Get("Content-Type") != "application/json" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if r.Header.Get("User-Agent") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if r.URL.Path != "/dataplane/admin/destinations/123/sshKeys" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		username, password, ok := r.BasicAuth()
+		if !ok || username != "johnDoe" || password != "so-secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(controlplane.SSHKeyPair{
+			PrivateKey: "test-private-key",
+			PublicKey:  "test-public-key",
+		}))
+	}))
+	t.Cleanup(mockServer.Close)
+
+	client := controlplane.NewAdminClient(
+		mockServer.URL,
+		&identity.Admin{
+			Username: "johnDoe",
+			Password: "so-secret",
+		},
+		controlplane.WithHTTPClient(mockServer.Client()),
+	)
+
+	keyPair, err := client.GetDestinationSSHKeyPair(context.Background(), "123")
+	require.NoError(t, err)
+	require.Equal(t, controlplane.SSHKeyPair{
+		PrivateKey: "test-private-key",
+		PublicKey:  "test-public-key",
+	}, keyPair)
+
+	_, err = client.GetDestinationSSHKeyPair(context.Background(), "456")
+	require.Error(t, err)
 }

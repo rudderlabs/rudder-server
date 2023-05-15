@@ -14,35 +14,32 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
-	STATS_WORKER_IDLE_TIME                  = "worker_idle_time"
-	STATS_WORKER_CLAIM_PROCESSING_TIME      = "worker_claim_processing_time"
-	STATS_WORKER_CLAIM_PROCESSING_FAILED    = "worker_claim_processing_failed"
-	STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED = "worker_claim_processing_succeeded"
-	TAG_WORKERID                            = "workerId"
+	statsWorkerIdleTime                 = "worker_idle_time"
+	statsWorkerClaimProcessingTime      = "worker_claim_processing_time"
+	statsWorkerClaimProcessingFailed    = "worker_claim_processing_failed"
+	statsWorkerClaimProcessingSucceeded = "worker_claim_processing_succeeded"
+	tagWorkerid                         = "workerId"
 )
 
 const (
-	WorkerProcessingDownloadStagingFileFailed = "worker_processing_download_staging_file_failed"
+	workerProcessingDownloadStagingFileFailed = "worker_processing_download_staging_file_failed"
 )
 
 // JobRun Temporary store for processing staging file to load file
@@ -109,7 +106,7 @@ func (job *Payload) sendDownloadStagingFileFailedStat() {
 			Value: job.DestinationType,
 		},
 	}
-	warehouseutils.NewCounterStat(WorkerProcessingDownloadStagingFileFailed, tags...).Increment()
+	warehouseutils.NewCounterStat(workerProcessingDownloadStagingFileFailed, tags...).Increment()
 }
 
 // Get fileManager
@@ -596,14 +593,14 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 func processClaimedUploadJob(claimedJob pgnotifier.Claim, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
-		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
+		warehouseutils.NewTimerStat(statsWorkerClaimProcessingTime, warehouseutils.Tag{Name: tagWorkerid, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
 	}()
 	handleErr := func(err error, claim pgnotifier.Claim) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponse{
 			Err: err,
 		}
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(statsWorkerClaimProcessingFailed, warehouseutils.Tag{Name: tagWorkerid, Value: strconv.Itoa(workerIndex)}).Increment()
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
@@ -627,9 +624,9 @@ func processClaimedUploadJob(claimedJob pgnotifier.Claim, workerIndex int) {
 		Payload: output,
 	}
 	if response.Err != nil {
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(statsWorkerClaimProcessingFailed, warehouseutils.Tag{Name: tagWorkerid, Value: strconv.Itoa(workerIndex)}).Increment()
 	} else {
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(statsWorkerClaimProcessingSucceeded, warehouseutils.Tag{Name: tagWorkerid, Value: strconv.Itoa(workerIndex)}).Increment()
 	}
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
@@ -640,7 +637,7 @@ type AsyncJobRunResult struct {
 }
 
 func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
-	warehouse, err := getDestinationFromConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
+	warehouse, err := getDestinationFromSlaveConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
@@ -656,7 +653,10 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayload) (AsyncJobRunResult, error) {
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
-	whManager.Setup(warehouse, whasyncjob)
+	err = whManager.Setup(warehouse, whasyncjob)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
 	defer whManager.Cleanup()
 	tableNames := []string{asyncjob.TableName}
 	if asyncjob.AsyncJobType == "deletebyjobrunid" {
@@ -719,7 +719,7 @@ func setupSlave(ctx context.Context) error {
 		idx := workerIdx
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			// create tags and timers
-			workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
+			workerIdleTimer := warehouseutils.NewTimerStat(statsWorkerIdleTime, warehouseutils.Tag{Name: tagWorkerid, Value: fmt.Sprintf("%d", idx)})
 			workerIdleTimeStart := time.Now()
 			for claimedJob := range jobNotificationChannel {
 				workerIdleTimer.Since(workerIdleTimeStart)

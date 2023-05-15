@@ -182,7 +182,7 @@ func (*AzureSynapse) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (as *AzureSynapse) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	as.Logger.Infof("AZ: Starting load for table:%s", tableName)
 
 	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(as.Uploader.GetTableSchemaInWarehouse(tableName))
@@ -196,7 +196,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 			extraColumns = append(extraColumns, column)
 		}
 	}
-	fileNames, err := as.LoadFileDownLoader.Download(context.TODO(), tableName)
+	fileNames, err := as.LoadFileDownLoader.Download(ctx, tableName)
 	defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		return
@@ -211,13 +211,13 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, as.Namespace, stagingTableName, tableName)
 
 	as.Logger.Debugf("AZ: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = as.DB.Exec(sqlStatement)
+	_, err = as.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		as.Logger.Errorf("AZ: Error creating temporary table for table:%s: %v\n", tableName, err)
 		return
 	}
 
-	txn, err := as.DB.Begin()
+	txn, err := as.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		as.Logger.Errorf("AZ: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
 		return
@@ -227,7 +227,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 		defer as.dropStagingTable(stagingTableName)
 	}
 
-	stmt, err := txn.Prepare(mssql.CopyIn(as.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, append(sortedColumnKeys, extraColumns...)...))
+	stmt, err := txn.PrepareContext(ctx, mssql.CopyIn(as.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, append(sortedColumnKeys, extraColumns...)...))
 	if err != nil {
 		as.Logger.Errorf("AZ: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		return
@@ -350,7 +350,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 			for range extraColumns {
 				finalColumnValues = append(finalColumnValues, nil)
 			}
-			_, err = stmt.Exec(finalColumnValues...)
+			_, err = stmt.ExecContext(ctx, finalColumnValues...)
 			if err != nil {
 				as.Logger.Errorf("AZ: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
 				txn.Rollback()
@@ -362,7 +362,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 		gzipFile.Close()
 	}
 
-	_, err = stmt.Exec()
+	_, err = stmt.ExecContext(ctx)
 	if err != nil {
 		txn.Rollback()
 		as.Logger.Errorf("AZ: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
@@ -384,7 +384,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 	}
 	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" FROM "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, as.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	as.Logger.Infof("AZ: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		as.Logger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
 		txn.Rollback()
@@ -392,7 +392,7 @@ func (as *AzureSynapse) loadTable(tableName string, tableSchemaInUpload model.Ta
 	}
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, as.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
 	as.Logger.Infof("AZ: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.ExecContext(ctx, sqlStatement)
 
 	if err != nil {
 		as.Logger.Errorf("AZ: Error inserting into original table: %v\n", err)
@@ -429,10 +429,10 @@ func hasDiacritics(str string) bool {
 	return false
 }
 
-func (as *AzureSynapse) loadUserTables() (errorMap map[string]error) {
+func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	as.Logger.Infof("AZ: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := as.loadTable(warehouseutils.IdentifiesTable, as.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
+	identifyStagingTable, err := as.loadTable(ctx, warehouseutils.IdentifiesTable, as.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -481,7 +481,7 @@ func (as *AzureSynapse) loadUserTables() (errorMap map[string]error) {
 											`, as.Namespace, as.Namespace+"."+warehouseutils.UsersTable, as.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), as.Namespace+"."+unionStagingTableName)
 
 	as.Logger.Debugf("AZ: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
-	_, err = as.DB.Exec(sqlStatement)
+	_, err = as.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -500,7 +500,7 @@ func (as *AzureSynapse) loadUserTables() (errorMap map[string]error) {
 	)
 
 	as.Logger.Debugf("AZ: Creating staging table for users: %s\n", sqlStatement)
-	_, err = as.DB.Exec(sqlStatement)
+	_, err = as.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		as.Logger.Errorf("AZ: Error Creating staging table for users: %s\n", sqlStatement)
 		errorMap[warehouseutils.UsersTable] = err
@@ -508,7 +508,7 @@ func (as *AzureSynapse) loadUserTables() (errorMap map[string]error) {
 	}
 
 	// BEGIN TRANSACTION
-	tx, err := as.DB.Begin()
+	tx, err := as.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -517,7 +517,7 @@ func (as *AzureSynapse) loadUserTables() (errorMap map[string]error) {
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, as.Namespace, warehouseutils.UsersTable, as.Namespace+"."+stagingTableName, primaryKey)
 	as.Logger.Infof("AZ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
+	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		as.Logger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
@@ -527,7 +527,7 @@ func (as *AzureSynapse) loadUserTables() (errorMap map[string]error) {
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, as.Namespace, warehouseutils.UsersTable, as.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	as.Logger.Infof("AZ: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
+	_, err = tx.ExecContext(ctx, sqlStatement)
 
 	if err != nil {
 		as.Logger.Errorf("AZ: Error inserting into users table from staging table: %v\n", err)
@@ -708,74 +708,68 @@ func (as *AzureSynapse) dropDanglingStagingTables() bool {
 	return delSuccess
 }
 
-// FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
-func (as *AzureSynapse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
-	as.Warehouse = warehouse
-	as.Namespace = warehouse.Namespace
-	dbHandle, err := connect(as.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer dbHandle.Close()
+// FetchSchema returns the schema of the warehouse
+func (as *AzureSynapse) FetchSchema() (model.Schema, model.Schema, error) {
+	schema := make(model.Schema)
+	unrecognizedSchema := make(model.Schema)
 
-	schema = make(model.Schema)
-	unrecognizedSchema = make(model.Schema)
-
-	sqlStatement := fmt.Sprintf(`
-			SELECT
-			  table_name,
-			  column_name,
-			  data_type
-			FROM
-			  INFORMATION_SCHEMA.COLUMNS
-			WHERE
-			  table_schema = '%s'
-			  and table_name not like '%s'
-		`,
-		as.Namespace,
-		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+	sqlStatement := `
+		SELECT
+			table_name,
+			column_name,
+			data_type
+		FROM
+			INFORMATION_SCHEMA.COLUMNS
+		WHERE
+			table_schema = @schema
+			and table_name not like @prefix
+`
+	rows, err := as.DB.Query(sqlStatement,
+		sql.Named("schema", as.Namespace),
+		sql.Named("prefix", fmt.Sprintf("%s%%", warehouseutils.StagingTablePrefix(provider))),
 	)
-	rows, err := dbHandle.Query(sqlStatement)
-
-	if err != nil && err != io.EOF {
-		as.Logger.Errorf("AZ: Error in fetching schema from synapse destination:%v, query: %v", as.Warehouse.Destination.ID, sqlStatement)
-		return
-	}
-	if err == io.EOF {
-		as.Logger.Infof("AZ: No rows, while fetching schema from  destination:%v, query: %v", as.Warehouse.Identifier, sqlStatement)
+	if errors.Is(err, io.EOF) {
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var tName, cName, cType string
-		err = rows.Scan(&tName, &cName, &cType)
-		if err != nil {
-			as.Logger.Errorf("AZ: Error in processing fetched schema from synapse destination:%v", as.Warehouse.Destination.ID)
-			return
-		}
-		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(model.TableSchema)
-		}
-		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
-			schema[tName][cName] = datatype
-		} else {
-			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
 
-			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+	for rows.Next() {
+		var tableName, columnName, columnType string
+
+		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
+			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+		}
+
+		if _, ok := schema[tableName]; !ok {
+			schema[tableName] = make(model.TableSchema)
+		}
+		if datatype, ok := mssqlDataTypesMapToRudder[columnType]; ok {
+			schema[tableName][columnName] = datatype
+		} else {
+			if _, ok := unrecognizedSchema[tableName]; !ok {
+				unrecognizedSchema[tableName] = make(model.TableSchema)
+			}
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
-	return
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return schema, unrecognizedSchema, nil
 }
 
-func (as *AzureSynapse) LoadUserTables() map[string]error {
-	return as.loadUserTables()
+func (as *AzureSynapse) LoadUserTables(ctx context.Context) map[string]error {
+	return as.loadUserTables(ctx)
 }
 
-func (as *AzureSynapse) LoadTable(tableName string) error {
-	_, err := as.loadTable(tableName, as.Uploader.GetTableSchemaInUpload(tableName), false)
+func (as *AzureSynapse) LoadTable(ctx context.Context, tableName string) error {
+	_, err := as.loadTable(ctx, tableName, as.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }
 

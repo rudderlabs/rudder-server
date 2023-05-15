@@ -281,7 +281,7 @@ func (*Postgres) IsEmpty(_ model.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (pg *Postgres) DownloadLoadFiles(tableName string) ([]string, error) {
+func (pg *Postgres) DownloadLoadFiles(ctx context.Context, tableName string) ([]string, error) {
 	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
@@ -321,7 +321,7 @@ func (pg *Postgres) DownloadLoadFiles(tableName string) ([]string, error) {
 			pg.logger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		err = downloader.Download(context.TODO(), objectFile, objectName)
+		err = downloader.Download(ctx, objectFile, objectName)
 		if err != nil {
 			pg.logger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
@@ -358,9 +358,9 @@ func (pg *Postgres) runRollbackWithTimeout(f func() error, onTimeout func(tags s
 	}
 }
 
-func (pg *Postgres) loadTable(tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (pg *Postgres) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, skipTempTableDelete bool) (stagingTableName string, err error) {
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		return
 	}
@@ -377,13 +377,13 @@ func (pg *Postgres) loadTable(tableName string, tableSchemaInUpload model.TableS
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
-	fileNames, err := pg.DownloadLoadFiles(tableName)
+	fileNames, err := pg.DownloadLoadFiles(ctx, tableName)
 	defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		return
 	}
 
-	txn, err := pg.DB.Begin()
+	txn, err := pg.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		pg.logger.Errorf("PG: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
 		return
@@ -392,7 +392,7 @@ func (pg *Postgres) loadTable(tableName string, tableSchemaInUpload model.TableS
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s".%[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	pg.logger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		pg.logger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
 		tags["stage"] = createStagingTable
@@ -403,7 +403,7 @@ func (pg *Postgres) loadTable(tableName string, tableSchemaInUpload model.TableS
 		defer pg.dropStagingTable(stagingTableName)
 	}
 
-	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, stagingTableName, sortedColumnKeys...))
+	stmt, err := txn.PrepareContext(ctx, pq.CopyInSchema(pg.Namespace, stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		pg.logger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		tags["stage"] = copyInSchemaStagingTable
@@ -459,7 +459,7 @@ func (pg *Postgres) loadTable(tableName string, tableSchemaInUpload model.TableS
 					recordInterface = append(recordInterface, value)
 				}
 			}
-			_, err = stmt.Exec(recordInterface...)
+			_, err = stmt.ExecContext(ctx, recordInterface...)
 			if err != nil {
 				pg.logger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
 				tags["stage"] = loadStagingTable
@@ -472,7 +472,7 @@ func (pg *Postgres) loadTable(tableName string, tableSchemaInUpload model.TableS
 		gzipFile.Close()
 	}
 
-	_, err = stmt.Exec()
+	_, err = stmt.ExecContext(ctx)
 	if err != nil {
 		pg.logger.Errorf("PG: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		tags["stage"] = stagingTableloadStage
@@ -568,17 +568,17 @@ func (pg *Postgres) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 	return nil
 }
 
-func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
+func (pg *Postgres) loadUserTables(ctx context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
-	_, err := pg.DB.Exec(sqlStatement)
+	_, err := pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
 	}
 	pg.logger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
 	pg.logger.Infof("PG: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
+	identifyStagingTable, err := pg.loadTable(ctx, warehouseutils.IdentifiesTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
 	defer pg.dropStagingTable(identifyStagingTable)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
@@ -591,7 +591,7 @@ func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
 	errorMap[warehouseutils.UsersTable] = nil
 
 	if pg.SkipComputingUserLatestTraits || slices.Contains(pg.SkipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID) {
-		_, err := pg.loadTable(warehouseutils.UsersTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), false)
+		_, err := pg.loadTable(ctx, warehouseutils.UsersTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), false)
 		if err != nil {
 			errorMap[warehouseutils.UsersTable] = err
 		}
@@ -631,7 +631,7 @@ func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
 											)`, pg.Namespace, warehouseutils.UsersTable, identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
 
 	pg.logger.Infof("PG: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -651,14 +651,14 @@ func (pg *Postgres) loadUserTables() (errorMap map[string]error) {
 	)
 
 	pg.logger.Debugf("PG: Creating staging table for users: %s\n", sqlStatement)
-	_, err = pg.DB.Exec(sqlStatement)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
 	// BEGIN TRANSACTION
-	tx, err := pg.DB.Begin()
+	tx, err := pg.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -885,17 +885,9 @@ func (pg *Postgres) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
-	pg.Warehouse = warehouse
-	pg.Namespace = warehouse.Namespace
-	dbHandle, err := pg.connect()
-	if err != nil {
-		return
-	}
-	defer dbHandle.Close()
-
-	schema = make(model.Schema)
-	unrecognizedSchema = make(model.Schema)
+func (pg *Postgres) FetchSchema() (model.Schema, model.Schema, error) {
+	schema := make(model.Schema)
+	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := `
 		SELECT
@@ -907,53 +899,54 @@ func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 		WHERE
 		  table_schema = $1
 		  AND table_name NOT LIKE $2;
-		`
-	rows, err := dbHandle.Query(
+	`
+	rows, err := pg.DB.Query(
 		sqlStatement,
 		pg.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
-	if err != nil && err != sql.ErrNoRows {
-		pg.logger.Errorf("PG: Error in fetching schema from postgres destination:%v, query: %v", pg.Warehouse.Destination.ID, sqlStatement)
-		return
-	}
-	if err == sql.ErrNoRows {
-		pg.logger.Infof("PG: No rows, while fetching schema from  destination:%v, query: %v", pg.Warehouse.Identifier, sqlStatement)
+	if errors.Is(err, sql.ErrNoRows) {
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var tName, cName, cType sql.NullString
-		err = rows.Scan(&tName, &cName, &cType)
-		if err != nil {
-			pg.logger.Errorf("PG: Error in processing fetched schema from clickhouse destination:%v", pg.Warehouse.Destination.ID)
-			return
-		}
-		if _, ok := schema[tName.String]; !ok {
-			schema[tName.String] = make(map[string]string)
-		}
-		if cName.Valid && cType.Valid {
-			if datatype, ok := postgresDataTypesMapToRudder[cType.String]; ok {
-				schema[tName.String][cName.String] = datatype
-			} else {
-				if _, ok := unrecognizedSchema[tName.String]; !ok {
-					unrecognizedSchema[tName.String] = make(map[string]string)
-				}
-				unrecognizedSchema[tName.String][cType.String] = warehouseutils.MISSING_DATATYPE
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
 
-				warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &pg.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType.String}).Count(1)
+	for rows.Next() {
+		var tableName, columnName, columnType string
+
+		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
+			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+		}
+
+		if _, ok := schema[tableName]; !ok {
+			schema[tableName] = make(model.TableSchema)
+		}
+		if datatype, ok := postgresDataTypesMapToRudder[columnType]; ok {
+			schema[tableName][columnName] = datatype
+		} else {
+			if _, ok := unrecognizedSchema[tableName]; !ok {
+				unrecognizedSchema[tableName] = make(model.TableSchema)
 			}
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &pg.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
-	return
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return schema, unrecognizedSchema, nil
 }
 
-func (pg *Postgres) LoadUserTables() map[string]error {
-	return pg.loadUserTables()
+func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
+	return pg.loadUserTables(ctx)
 }
 
-func (pg *Postgres) LoadTable(tableName string) error {
-	_, err := pg.loadTable(tableName, pg.Uploader.GetTableSchemaInUpload(tableName), false)
+func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
+	_, err := pg.loadTable(ctx, tableName, pg.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }
 
@@ -1090,6 +1083,6 @@ func (pg *Postgres) handleExec(e *QueryParams) (err error) {
 	return
 }
 
-func (pq *Postgres) ErrorMappings() []model.JobError {
+func (*Postgres) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

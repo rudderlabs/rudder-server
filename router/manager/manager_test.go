@@ -168,7 +168,6 @@ func initRouter() {
 	jobsdb.Init2()
 	archiver.Init()
 	router.Init()
-	batchrouter.Init()
 }
 
 func TestRouterManager(t *testing.T) {
