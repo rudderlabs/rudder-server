@@ -94,7 +94,9 @@ jobs:
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
           RSERVER_WAREHOUSE_POSTGRES_USE_LEGACY: ${{ matrix.useLegacy }}
           RSERVER_WAREHOUSE_DELTALAKE_USE_NATIVE: ${{ matrix.useNative }}
-      - uses: codecov/codecov-action@v2
+      - uses: codecov/codecov-action@v3
+        with:
+          flags: "integration"
 
   unit:
     name: Unit
@@ -118,4 +120,4 @@ jobs:
           TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
         run: make test
-      - uses: codecov/codecov-action@v2
+      - uses: codecov/codecov-action@v3
