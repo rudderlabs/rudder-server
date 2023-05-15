@@ -2,7 +2,6 @@ package processor
 
 import (
 	"context"
-	"math"
 	"sync"
 	"time"
 
@@ -48,9 +47,6 @@ type worker struct {
 		transform  chan *transformationMessage // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		store      chan *storeMessage          // store channel is used to send jobs to store asynchronously when pipelining is enabled
 	}
-
-	// state
-	limitsReached bool // limitsReached is set to true when the worker has reached the limits for the current batch
 }
 
 // start starts the various worker goroutines
@@ -128,8 +124,7 @@ func (w *worker) Work() (worked bool) {
 	if w.handle.config().enablePipelining {
 		start := time.Now()
 		jobs := w.handle.getJobs(w.partition)
-		w.limitsReached = jobs.LimitsReached
-
+		afterGetJobs := time.Now()
 		if len(jobs.Jobs) == 0 {
 			return
 		}
@@ -149,11 +144,15 @@ func (w *worker) Work() (worked bool) {
 			w.channel.preprocess <- subJob
 		}
 
-		// sleepRatio is dependent on the number of events read in this loop
-		sleepRatio := 1.0 - math.Min(1, float64(jobs.EventsCount)/float64(w.handle.config().maxEventsToProcess))
-		if err := misc.SleepCtx(w.lifecycle.ctx, time.Duration(sleepRatio*float64(w.handle.config().readLoopSleep))); err != nil {
-			return
+		if !jobs.LimitsReached {
+			readLoopSleep := w.handle.config().readLoopSleep
+			if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep {
+				if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep-elapsed); err != nil {
+					return
+				}
+			}
 		}
+
 		return
 	} else {
 		return w.handle.handlePendingGatewayJobs(w.partition)
@@ -161,9 +160,6 @@ func (w *worker) Work() (worked bool) {
 }
 
 func (w *worker) SleepDurations() (min, max time.Duration) {
-	if w.limitsReached {
-		return 10 * time.Millisecond, 10 * time.Millisecond
-	}
 	return w.handle.config().readLoopSleep, w.handle.config().maxLoopSleep
 }
 
