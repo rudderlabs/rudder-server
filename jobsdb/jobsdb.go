@@ -275,8 +275,8 @@ type JobsDB interface {
 	// grouped by workspaceId and destination type
 	GetPileUpCounts(ctx context.Context) (statMap map[string]map[string]int, err error)
 
-	// GetActiveWorkspaces returns a list of active workspace ids
-	GetActiveWorkspaces(ctx context.Context) (workspaces []string, err error)
+	// GetActiveWorkspaces returns a list of active workspace ids. If customVal is not empty, it will be used as a filter
+	GetActiveWorkspaces(ctx context.Context, customVal string) (workspaces []string, err error)
 
 	// GetDistinctParameterValues returns the list of distinct parameter values inside the jobs tables
 	GetDistinctParameterValues(ctx context.Context, parameterName string) (values []string, err error)
@@ -512,7 +512,11 @@ func (jd *HandleT) registerBackUpSettings() {
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Fatal(jd.tablePrefix, jd.ownerType, jd.noResultsCache.String())
+		jd.logger.Fatalw("assertError failure",
+			"error", err,
+			"tablePrefix", jd.tablePrefix,
+			"ownerType", jd.ownerType,
+			"noResultsCache", jd.noResultsCache.String())
 		panic(err)
 	}
 }
@@ -520,7 +524,11 @@ func (jd *HandleT) assertError(err error) {
 func (jd *HandleT) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
-		jd.logger.Fatal(jd.noResultsCache.String())
+		jd.logger.Fatalw("assert condition failed",
+			"errorString", errorString,
+			"tablePrefix", jd.tablePrefix,
+			"ownerType", jd.ownerType,
+			"noResultsCache", jd.noResultsCache.String())
 		panic(fmt.Errorf("[[ %s ]]: %s", jd.tablePrefix, errorString))
 	}
 }
@@ -1316,6 +1324,11 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
 			return err
 		}
 	}
+	if jd.tablePrefix == "batch_rt" { // for retrieving active partitions filtered by destination type when workspace isolation is enabled
+		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws_cv" ON %[1]q (workspace_id,custom_val)`, newDS.JobTable)); err != nil {
+			return err
+		}
+	}
 
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
@@ -1844,7 +1857,7 @@ func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]i
 	return statMap, nil
 }
 
-func (jd *HandleT) GetActiveWorkspaces(ctx context.Context) ([]string, error) {
+func (jd *HandleT) GetActiveWorkspaces(ctx context.Context, customVal string) ([]string, error) {
 	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
 		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
 	}
@@ -1858,15 +1871,27 @@ func (jd *HandleT) GetActiveWorkspaces(ctx context.Context) ([]string, error) {
 	var workspaceIds []string
 	var queries []string
 	for _, ds := range dsList {
-		queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
-			(SELECT workspace_id FROM %[1]q ORDER BY workspace_id LIMIT 1)
-			UNION ALL
-			(SELECT s.* FROM t, LATERAL(
-			  SELECT workspace_id FROM %[1]q f
-			  WHERE f.workspace_id > t.workspace_id
-			  ORDER BY workspace_id LIMIT 1) s)
-		  )
-		  SELECT * FROM t) a`, ds.JobTable))
+		if customVal == "" {
+			queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
+				(SELECT workspace_id FROM %[1]q ORDER BY workspace_id LIMIT 1)
+				UNION ALL
+				(SELECT s.* FROM t, LATERAL(
+				  SELECT workspace_id FROM %[1]q f
+				  WHERE f.workspace_id > t.workspace_id
+				  ORDER BY workspace_id LIMIT 1) s)
+			  )
+			  SELECT * FROM t) a`, ds.JobTable))
+		} else {
+			queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
+				(SELECT workspace_id FROM %[1]q WHERE custom_val = '%[2]s' ORDER BY workspace_id LIMIT 1)
+				UNION ALL
+				(SELECT s.* FROM t, LATERAL(
+				  SELECT workspace_id FROM %[1]q f
+				  WHERE custom_val = '%[2]s' AND f.workspace_id > t.workspace_id
+				  ORDER BY workspace_id LIMIT 1) s)
+			  )
+			  SELECT * FROM t) a`, ds.JobTable, customVal))
+		}
 	}
 	query := strings.Join(queries, " UNION ")
 	rows, err := jd.dbHandle.QueryContext(ctx, query)

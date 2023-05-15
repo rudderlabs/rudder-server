@@ -885,17 +885,9 @@ func (pg *Postgres) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
-	pg.Warehouse = warehouse
-	pg.Namespace = warehouse.Namespace
-	dbHandle, err := pg.connect()
-	if err != nil {
-		return
-	}
-	defer dbHandle.Close()
-
-	schema = make(model.Schema)
-	unrecognizedSchema = make(model.Schema)
+func (pg *Postgres) FetchSchema() (model.Schema, model.Schema, error) {
+	schema := make(model.Schema)
+	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := `
 		SELECT
@@ -907,45 +899,46 @@ func (pg *Postgres) FetchSchema(warehouse model.Warehouse) (schema, unrecognized
 		WHERE
 		  table_schema = $1
 		  AND table_name NOT LIKE $2;
-		`
-	rows, err := dbHandle.Query(
+	`
+	rows, err := pg.DB.Query(
 		sqlStatement,
 		pg.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
-	if err != nil && err != sql.ErrNoRows {
-		pg.logger.Errorf("PG: Error in fetching schema from postgres destination:%v, query: %v", pg.Warehouse.Destination.ID, sqlStatement)
-		return
-	}
-	if err == sql.ErrNoRows {
-		pg.logger.Infof("PG: No rows, while fetching schema from  destination:%v, query: %v", pg.Warehouse.Identifier, sqlStatement)
+	if errors.Is(err, sql.ErrNoRows) {
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var tName, cName, cType sql.NullString
-		err = rows.Scan(&tName, &cName, &cType)
-		if err != nil {
-			pg.logger.Errorf("PG: Error in processing fetched schema from clickhouse destination:%v", pg.Warehouse.Destination.ID)
-			return
-		}
-		if _, ok := schema[tName.String]; !ok {
-			schema[tName.String] = make(map[string]string)
-		}
-		if cName.Valid && cType.Valid {
-			if datatype, ok := postgresDataTypesMapToRudder[cType.String]; ok {
-				schema[tName.String][cName.String] = datatype
-			} else {
-				if _, ok := unrecognizedSchema[tName.String]; !ok {
-					unrecognizedSchema[tName.String] = make(map[string]string)
-				}
-				unrecognizedSchema[tName.String][cType.String] = warehouseutils.MISSING_DATATYPE
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
 
-				warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &pg.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType.String}).Count(1)
+	for rows.Next() {
+		var tableName, columnName, columnType string
+
+		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
+			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+		}
+
+		if _, ok := schema[tableName]; !ok {
+			schema[tableName] = make(model.TableSchema)
+		}
+		if datatype, ok := postgresDataTypesMapToRudder[columnType]; ok {
+			schema[tableName][columnName] = datatype
+		} else {
+			if _, ok := unrecognizedSchema[tableName]; !ok {
+				unrecognizedSchema[tableName] = make(model.TableSchema)
 			}
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &pg.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
-	return
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return schema, unrecognizedSchema, nil
 }
 
 func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
