@@ -18,7 +18,7 @@ import (
 )
 
 func TestWorkerPool(t *testing.T) {
-	run := func(t *testing.T, pipelining bool) {
+	run := func(t *testing.T, pipelining, limitsReached bool) {
 		wh := &mockWorkerHandle{
 			pipelining: pipelining,
 			log:        logger.NOP,
@@ -30,6 +30,7 @@ func TestWorkerPool(t *testing.T) {
 				transformed int
 				stored      int
 			}{},
+			limitsReached: limitsReached,
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -79,11 +80,21 @@ func TestWorkerPool(t *testing.T) {
 	}
 
 	t.Run("work without pipelining", func(t *testing.T) {
-		run(t, false)
+		t.Run("limits not reached", func(t *testing.T) {
+			run(t, false, false)
+		})
+		t.Run("limits reached", func(t *testing.T) {
+			run(t, false, true)
+		})
 	})
 
 	t.Run("work with pipelining", func(t *testing.T) {
-		run(t, true)
+		t.Run("limits not reached", func(t *testing.T) {
+			run(t, true, false)
+		})
+		t.Run("limits reached", func(t *testing.T) {
+			run(t, true, true)
+		})
 	})
 }
 
@@ -143,6 +154,8 @@ type mockWorkerHandle struct {
 		transform utilsync.Limiter
 		store     utilsync.Limiter
 	}
+
+	limitsReached bool
 }
 
 func (m *mockWorkerHandle) validate(t *testing.T) {
@@ -216,8 +229,9 @@ func (m *mockWorkerHandle) getJobs(partition string) jobsdb.JobsResult {
 		})
 	}
 	return jobsdb.JobsResult{
-		Jobs:        jobs,
-		EventsCount: m.loopEvents,
+		Jobs:          jobs,
+		EventsCount:   m.loopEvents,
+		LimitsReached: m.limitsReached,
 	}
 }
 
