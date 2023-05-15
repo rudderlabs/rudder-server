@@ -24,13 +24,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
 	ErrorDetailReportsTable = "error_detail_reports"
-	MutexMapDelimitter      = "::"
+	groupKeyDelimitter      = "::"
 )
 
 var ErrorDetailReportsColumns = []string{
@@ -69,6 +68,8 @@ type ErrorDetailReporter struct {
 	httpClient                *http.Client
 	clientsMapLock            sync.RWMutex
 
+	errorDetailExtractor *ExtractorT
+
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
 	edReportingRequestLatency   stats.Measurement
@@ -83,7 +84,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	var maxConcurrentRequests int
 	tr := &http.Transport{}
-	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
+	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
@@ -91,10 +92,13 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
 
+	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
+	extractor := NewErrorDetailExtractor(log)
+
 	return &ErrorDetailReporter{
 		reportingServiceURL:   reportingServiceURL,
 		Table:                 ErrorDetailReportsTable,
-		log:                   logger.NewLogger().Child("enterprise").Child("error-detail-reporting"),
+		log:                   log,
 		sleepInterval:         sleepInterval,
 		mainLoopSleepInterval: mainLoopSleepInterval,
 		maxConcurrentRequests: maxConcurrentRequests,
@@ -107,6 +111,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 		init:                      make(chan struct{}),
 		workspaceIDForSourceIDMap: make(map[string]string),
 		clients:                   make(map[string]*types.Client),
+		errorDetailExtractor:      extractor,
 	}
 }
 
@@ -194,11 +199,6 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 		workspaceID := edRep.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
 
-		// TODO: Think through with team on if PII exclusion is required
-		// if edRep.IsPIIReportingDisabled(workspaceID) {
-		// 	metric = transformMetricForPII(metric, getPIIColumnsToExclude())
-		// }
-
 		// extract error-message & error-code
 		errDets := edRep.extractErrorDetails(metric.StatusDetail.SampleResponse)
 		_, err = stmt.Exec(
@@ -272,23 +272,11 @@ func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
 }
 
 func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
-	// TODO: to extract information
-	// Transformer throws structured error -- tf <--> srv --- easy
-	// Transformer throws error -- but I only get strings in sampleResponse -- easy
-	// Router delivery -- destination schema(very random) -- hard
-	if !gjson.Valid(sampleResponse) {
-		return errorDetails{ErrorMessage: sampleResponse}
+	errMsg := edRep.errorDetailExtractor.GetErrorMessage(sampleResponse)
+	cleanedErrMsg := edRep.errorDetailExtractor.CleanUpErrorMessage(errMsg)
+	return errorDetails{
+		ErrorMessage: cleanedErrMsg,
 	}
-	// Preliminary checks for error responses from transformer(tf proxy, router tf, process tf, batch tf)
-	prelimResults := gjson.GetMany(sampleResponse, []string{"response.error", "response.message"}...)
-	for _, prelimResult := range prelimResults {
-		if prelimResult.Exists() && prelimResult.Type == gjson.String {
-			return errorDetails{ErrorMessage: prelimResult.String()}
-		}
-	}
-	// TODO: Incorportate iterative exhaustive search algo for possible message fields
-
-	return errorDetails{}
 }
 
 func (edRep *ErrorDetailReporter) getDBHandle(clientName string) (*sql.DB, error) {
@@ -403,12 +391,12 @@ func (edRep *ErrorDetailReporter) getReports(currentMs int64, clientName string)
 		panic(err)
 	}
 
-	// queryStart := time.Now()
+	queryStart := time.Now()
 	err = dbHandle.QueryRow(sqlStatement).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
-	// edRep.getMinReportedAtQueryTime.Since(queryStart)
+	edRep.minReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
 		return nil, 0
 	}
@@ -416,12 +404,12 @@ func (edRep *ErrorDetailReporter) getReports(currentMs int64, clientName string)
 	sqlStatement = fmt.Sprintf(`SELECT %s FROM %s WHERE reported_at = %d`, edSelColumns, ErrorDetailReportsTable, queryMin.Int64)
 	edRep.log.Infof("[EdRep] sql statement: %s\n", sqlStatement)
 	var rows *sql.Rows
-	// queryStart = time.Now()
+	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
-	// r.getReportsQueryTime.Since(queryStart)
+	edRep.errorDetailReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
 	var metrics []*types.EDReportsDB
 	for rows.Next() {
@@ -480,24 +468,24 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 			report.DestinationDefinitionId,
 			report.PU,
 		}
-		return strings.Join(keys, "::")
+		return strings.Join(keys, groupKeyDelimitter)
 	})
 	var edReportingMetrics []*types.EDMetric
 	for _, reports := range groupedReports {
-		fstRep := reports[0]
+		firstReport := reports[0]
 		edRepSchema := types.EDMetric{
 			EDInstanceDetails: types.EDInstanceDetails{
-				WorkspaceID: fstRep.WorkspaceID,
-				Namespace:   fstRep.Namespace,
-				InstanceID:  fstRep.InstanceID,
+				WorkspaceID: firstReport.WorkspaceID,
+				Namespace:   firstReport.Namespace,
+				InstanceID:  firstReport.InstanceID,
 			},
 			EDConnectionDetails: types.EDConnectionDetails{
-				DestinationID:           fstRep.DestinationID,
-				DestinationDefinitionId: fstRep.DestinationDefinitionId,
-				SourceID:                fstRep.SourceID,
-				SourceDefinitionId:      fstRep.SourceDefinitionId,
+				DestinationID:           firstReport.DestinationID,
+				DestinationDefinitionId: firstReport.DestinationDefinitionId,
+				SourceID:                firstReport.SourceID,
+				SourceDefinitionId:      firstReport.SourceDefinitionId,
 			},
-			PU: fstRep.PU,
+			PU: firstReport.PU,
 		}
 		errs := lo.Map(reports, func(rep *types.EDReportsDB, _ int) types.EDErrorDetails {
 			return types.EDErrorDetails{
@@ -507,7 +495,6 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 				EventType:    rep.EventType,
 			}
 		})
-		// edRepSchema.errors = errs
 		edRepSchema.Errors = errs
 		edReportingMetrics = append(edReportingMetrics, &edRepSchema)
 	}
@@ -521,7 +508,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 	}
 	operation := func() error {
 		uri := fmt.Sprintf("%s/recordErrors", edRep.reportingServiceURL)
-		req, err := http.NewRequestWithContext(ctx, "POST", uri, bytes.NewBuffer(payload))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, uri, bytes.NewBuffer(payload))
 		if err != nil {
 			return err
 		}
@@ -545,6 +532,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
+		edRep.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
 		if err != nil {
 			edRep.log.Error(err.Error())
 			return err
@@ -552,6 +540,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 
 		if !isMetricPosted(resp.StatusCode) {
 			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+			edRep.log.Error(err.Error())
 		}
 		return err
 	}
