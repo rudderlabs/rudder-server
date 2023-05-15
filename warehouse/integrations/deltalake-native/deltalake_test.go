@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/compose-test/compose"
+
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	dbsql "github.com/databricks/databricks-sql-go"
@@ -73,7 +75,7 @@ func TestIntegration(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
-	c := testcompose.New(t, "testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml")
+	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml"}))
 
 	t.Cleanup(func() {
 		c.Stop(context.Background())
