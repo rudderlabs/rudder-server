@@ -97,6 +97,7 @@ jobs:
       - uses: codecov/codecov-action@v3
         with:
           flags: "integration"
+          fail_ci_if_error: true
 
   unit:
     name: Unit
@@ -121,3 +122,6 @@ jobs:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
         run: make test
       - uses: codecov/codecov-action@v3
+        with:
+          flags: "unittests"
+          fail_ci_if_error: true
