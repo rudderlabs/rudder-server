@@ -25,6 +25,14 @@ else
 	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
 endif
 
+test-warehouse-integration:
+	$(eval TEST_PATTERN = 'TestIntegration')
+	$(eval TEST_CMD = SLOW=1 go test)
+	$(eval TEST_OPTIONS = -v -p 8 -timeout 30m -count 1 -run $(TEST_PATTERN) -coverprofile=profile.out -covermode=atomic -coverpkg=./...)
+	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
+
+test-warehouse: test-warehouse-integration test-teardown
+
 test-teardown:
 	@if [ -f "$(TESTFILE)" ]; then \
     	echo "Tests passed, tearing down..." ;\
