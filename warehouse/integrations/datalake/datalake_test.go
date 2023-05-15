@@ -272,6 +272,8 @@ func TestIntegration(t *testing.T) {
 					tc.prerequisite(t)
 				}
 
+				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+
 				t.Log("verifying test case 1")
 				ts1 := testhelper.TestConfig{
 					WriteKey:        tc.writeKey,
@@ -279,6 +281,7 @@ func TestIntegration(t *testing.T) {
 					DestinationID:   tc.destinationID,
 					DestinationType: tc.destType,
 					Config:          tc.conf,
+					Tables:          tables,
 					WorkspaceID:     workspaceID,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
@@ -295,6 +298,7 @@ func TestIntegration(t *testing.T) {
 					DestinationID:   tc.destinationID,
 					DestinationType: tc.destType,
 					Config:          tc.conf,
+					Tables:          tables,
 					WorkspaceID:     workspaceID,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
