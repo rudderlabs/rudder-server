@@ -344,8 +344,8 @@ func (sh *Schema) hasLocalSchemaChanged() bool {
 	return false
 }
 
-// uploadSchemaDiff returns the diff between the localSchema and the schemaInWarehouse
-func (sh *Schema) uploadSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
+// generateTableSchemaDiff returns the diff between the localSchema and the schemaInWarehouse
+func (sh *Schema) generateTableSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
 	diff := warehouseutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
 		UpdatedSchema:    make(model.TableSchema),

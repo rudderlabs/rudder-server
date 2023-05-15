@@ -707,7 +707,7 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 				schemaInWarehouse: tc.currentSchema,
 				uploadSchema:      tc.uploadSchema,
 			}
-			diff := sch.uploadSchemaDiff(tc.tableName)
+			diff := sch.generateTableSchemaDiff(tc.tableName)
 			require.EqualValues(t, diff, tc.expected)
 		})
 	}
