@@ -21,7 +21,7 @@ import (
 
 var (
 	jsonfast               = jsoniter.ConfigCompatibleWithStandardLibrary
-	updatedAfterTimeFormat = "2006-01-02T15:04:05Z"
+	updatedAfterTimeFormat = "2006-01-02T15:04:05.000Z"
 )
 
 type namespaceConfig struct {
