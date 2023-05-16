@@ -235,6 +235,9 @@ type JobsDB interface {
 	//    })
 	StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) (map[uuid.UUID]string, error)
 
+	// Like StoreWithRetryEachInTx, but for batches of jobs
+	StoreEachBatchRetryInTx(ctx context.Context, tx StoreSafeTx, jobBatches [][]*JobT) (map[uuid.UUID]string, error)
+
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
 	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
 	// needs to call UpdateJobStatusInTx.
@@ -2981,6 +2984,93 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 	}
 	_ = storeCmd()
 	return res, err
+}
+
+func (jd *HandleT) StoreEachBatchRetryInTx(
+	ctx context.Context,
+	tx StoreSafeTx,
+	jobBatches [][]*JobT) (map[uuid.UUID]string, error) {
+	var (
+		err error
+		res map[uuid.UUID]string
+	)
+	storeCmd := func() error {
+		command := func() interface{} {
+			dsList := jd.getDSList()
+			res, err = jd.internalStoreEachBatchRetryInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobBatches)
+			return res
+		}
+		res, _ = jd.executeDbRequest(newWriteDbRequest("store_each_batch_retry", nil, command)).(map[uuid.UUID]string)
+		return err
+	}
+	if tx.storeSafeTxIdentifier() != jd.Identifier() {
+		_ = jd.inStoreSafeCtx(ctx, storeCmd)
+		return res, err
+	}
+	_ = storeCmd()
+	return res, err
+}
+
+func (jd *HandleT) internalStoreEachBatchRetryInTx(
+	ctx context.Context,
+	tx *Tx,
+	ds dataSetT,
+	jobBatches [][]*JobT) (
+	errorMessagesMap map[uuid.UUID]string, err error) {
+	const (
+		savepointSql = "SAVEPOINT storeWithRetryEach"
+		rollbackSql  = "ROLLBACK TO " + savepointSql
+	)
+
+	failAll := func(err error) map[uuid.UUID]string {
+		errorMessagesMap = make(map[uuid.UUID]string, len(jobBatches))
+		for i := range jobBatches {
+			errorMessagesMap[jobBatches[i][0].UUID] = err.Error()
+		}
+		return errorMessagesMap
+	}
+	defer jd.getTimerStat("store_jobs_retry_each_batch", nil).RecordDuration()()
+	_, err = tx.ExecContext(ctx, savepointSql)
+	if err != nil {
+		return failAll(err), nil
+	}
+	err = jd.internalStoreJobsInTx(ctx, tx, ds, lo.Flatten(jobBatches))
+	if err == nil {
+		return
+	}
+	if errors.Is(err, errStaleDsList) {
+		return nil, err
+	}
+	_, err = tx.ExecContext(ctx, rollbackSql)
+	if err != nil {
+		return failAll(err), nil
+	}
+	jd.logger.Errorf("Copy In command failed with error %v", err)
+	errorMessagesMap = make(map[uuid.UUID]string)
+	var txErr error
+	for _, jobBatch := range jobBatches {
+		if txErr != nil { // stop trying treat all remaining as failed
+			errorMessagesMap[jobBatch[0].UUID] = txErr.Error()
+			continue
+		}
+		// savepoint
+		_, txErr = tx.ExecContext(ctx, savepointSql)
+		if txErr != nil {
+			errorMessagesMap[jobBatch[0].UUID] = txErr.Error()
+			continue
+		}
+
+		err = jd.internalStoreJobsInTx(ctx, tx, ds, jobBatch)
+		if err != nil {
+			if errors.Is(err, errStaleDsList) {
+				return nil, err
+			}
+			errorMessagesMap[jobBatch[0].UUID] = err.Error()
+			// rollback to savepoint
+			_, txErr = tx.ExecContext(ctx, rollbackSql)
+		}
+	}
+	return
 }
 
 /*

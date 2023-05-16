@@ -278,6 +278,21 @@ func (mr *MockJobsDBMockRecorder) Store(arg0, arg1 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Store", reflect.TypeOf((*MockJobsDB)(nil).Store), arg0, arg1)
 }
 
+// StoreEachBatchRetryInTx mocks base method.
+func (m *MockJobsDB) StoreEachBatchRetryInTx(arg0 context.Context, arg1 jobsdb.StoreSafeTx, arg2 [][]*jobsdb.JobT) (map[uuid.UUID]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StoreEachBatchRetryInTx", arg0, arg1, arg2)
+	ret0, _ := ret[0].(map[uuid.UUID]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StoreEachBatchRetryInTx indicates an expected call of StoreEachBatchRetryInTx.
+func (mr *MockJobsDBMockRecorder) StoreEachBatchRetryInTx(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreEachBatchRetryInTx", reflect.TypeOf((*MockJobsDB)(nil).StoreEachBatchRetryInTx), arg0, arg1, arg2)
+}
+
 // StoreInTx mocks base method.
 func (m *MockJobsDB) StoreInTx(arg0 context.Context, arg1 jobsdb.StoreSafeTx, arg2 []*jobsdb.JobT) error {
 	m.ctrl.T.Helper()
