@@ -225,7 +225,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
 		Reporting:        &reporting.NOOP{},
-		EdReporting:      &reporting.NOOP{},
+		ErrorReporting:   &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         tDb,

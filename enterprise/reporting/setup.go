@@ -12,11 +12,11 @@ import (
 )
 
 type Factory struct {
-	EnterpriseToken     string
-	Log                 logger.Logger
-	once                sync.Once
-	reportingInstance   types.ReportingI
-	edReportingInstance types.ReportingI
+	EnterpriseToken        string
+	Log                    logger.Logger
+	once                   sync.Once
+	reportingInstance      types.ReportingI
+	errorReportingInstance types.ReportingI
 }
 
 // Setup initializes Suppress User feature
@@ -28,13 +28,13 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Reporti
 		reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 		if !reportingEnabled {
 			m.reportingInstance = &NOOP{}
-			m.edReportingInstance = &NOOP{}
+			m.errorReportingInstance = &NOOP{}
 			return
 		}
 
 		if m.EnterpriseToken == "" {
 			m.reportingInstance = &NOOP{}
-			m.edReportingInstance = &NOOP{}
+			m.errorReportingInstance = &NOOP{}
 			return
 		}
 
@@ -47,11 +47,11 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Reporti
 			ed.setup(backendConfig)
 		})
 		m.reportingInstance = h
-		m.edReportingInstance = ed
+		m.errorReportingInstance = ed
 	})
 	return types.ReportingInstances{
-		ReportingInstance:   m.reportingInstance,
-		EdReportingInstance: m.edReportingInstance,
+		ReportingInstance:      m.reportingInstance,
+		ErrorReportingInstance: m.errorReportingInstance,
 	}
 }
 
@@ -65,7 +65,7 @@ func (m *Factory) GetReportingInstance(reporterType types.ReporterType) types.Re
 	}
 	switch reporterType {
 	case types.ErrorDetailReport:
-		return returnReportingI(m.edReportingInstance)
+		return returnReportingI(m.errorReportingInstance)
 	case types.Report:
 		return returnReportingI(m.reportingInstance)
 	}

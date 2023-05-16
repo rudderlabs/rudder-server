@@ -31,7 +31,7 @@ type LifecycleManager struct {
 	clearDB          *bool
 	MultitenantStats multitenant.MultiTenantI // need not initialize again
 	ReportingI       types.ReportingI         // need not initialize again
-	EdReportingI     types.ReportingI         // need not initialize again
+	ErrorReportingI  types.ReportingI         // need not initialize again
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
 	transientSources transientsource.Service
@@ -51,7 +51,7 @@ func (proc *LifecycleManager) Start() error {
 
 	proc.Handle.Setup(
 		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB, proc.esDB,
-		proc.clearDB, proc.ReportingI, proc.EdReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
+		proc.clearDB, proc.ReportingI, proc.ErrorReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -87,7 +87,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb, esDB *jobsdb.HandleT,
 	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
-	edReporting types.ReportingI,
+	errorReporting types.ReportingI,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
@@ -102,7 +102,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb, esDB *job
 		MultitenantStats: tenantDB,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		ReportingI:       reporting,
-		EdReportingI:     edReporting,
+		ErrorReportingI:  errorReporting,
 		transientSources: transientSources,
 		fileuploader:     fileuploader,
 		rsourcesService:  rsourcesService,

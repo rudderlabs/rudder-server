@@ -357,7 +357,9 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 			}
 			errGroup.Go(func() error {
 				err := edRep.sendMetric(errCtx, clientName, metricToSend)
-				edRep.log.Error("Error while sending to Reporting service:", err)
+				if err != nil {
+					edRep.log.Error("Error while sending to Reporting service:", err)
+				}
 				<-requestChan
 				return err
 			})

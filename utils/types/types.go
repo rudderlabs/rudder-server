@@ -17,8 +17,8 @@ const (
 )
 
 type ReportingInstances struct {
-	ReportingInstance   ReportingI
-	EdReportingInstance ReportingI
+	ReportingInstance      ReportingI
+	ErrorReportingInstance ReportingI
 }
 
 // SingularEventT single event structrue
