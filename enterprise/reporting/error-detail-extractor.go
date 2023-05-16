@@ -162,7 +162,7 @@ func findFirstExistingKey(keys []string, jsonObj interface{}) interface{} {
 
 func getFirstNonNilValue(keys []string, jsonObj map[string]interface{}) interface{} {
 	for _, key := range keys {
-		if value, ok := jsonObj[key]; ok && value != nil {
+		if value := jsonObj[key]; value != nil {
 			return value
 		}
 	}
@@ -184,7 +184,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 	getMessage := func(msgKeys []string, response interface{}) string {
 		if result := findFirstExistingKey(msgKeys, response); result != nil {
 			if s, ok := result.(string); ok {
-				return s
+				return strings.TrimSpace(s)
 			}
 		}
 		return ""
@@ -201,7 +201,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 
 	if destinationResponse, ok := respMap["destinationResponse"].(map[string]interface{}); ok {
 		msg = getMessage(messageKeys, destinationResponse)
-		if len(strings.TrimSpace(msg)) != 0 {
+		if msg != "" {
 			return msg
 		}
 	}
@@ -211,7 +211,8 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 	}
 
 errorsBlock:
-	if errors, ok := getFirstNonNilValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{}); ok && len(errors) > 0 {
+	errors, ok := getFirstNonNilValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{})
+	if ok && len(errors) > 0 {
 		return convertInterfaceArrToStrArrWithDelimitter(errors, ".")
 	}
 
