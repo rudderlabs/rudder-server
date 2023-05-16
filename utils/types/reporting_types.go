@@ -104,6 +104,7 @@ type EDErrorDetails struct {
 	ErrorMessage string `json:"errorMessage"`
 	// TODO: need to check with team if this makes sense ?
 	EventType string `json:"-"`
+	Count     int    `json:"count"`
 }
 
 type EDReportsDB struct {
@@ -127,7 +128,6 @@ type EDMetric struct {
 
 	Errors []EDErrorDetails `json:"errors"`
 
-	// TODO: need to check with team if this makes sense ?
 	Count int64 `json:"-"`
 }
 

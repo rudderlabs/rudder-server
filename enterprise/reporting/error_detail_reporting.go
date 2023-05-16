@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,7 +30,7 @@ import (
 
 const (
 	ErrorDetailReportsTable = "error_detail_reports"
-	groupKeyDelimitter      = "::"
+	groupKeyDelimitter      = "$::$"
 )
 
 var ErrorDetailReportsColumns = []string{
@@ -182,7 +183,7 @@ func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConf
 }
 
 func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
-	edRep.log.Info("[ErrorDetailReport] Report method called\n")
+	edRep.log.Debug("[ErrorDetailReport] Report method called\n")
 	if len(metrics) == 0 {
 		return
 	}
@@ -303,7 +304,9 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 
 	mainLoopTimer := stats.Default.NewTaggedStat("ed_main_loop_time", stats.TimerType, tags)
 	getReportsTimer := stats.Default.NewTaggedStat("ed_get_reports_time", stats.TimerType, tags)
+	getReportsCount := stats.Default.NewTaggedStat("ed_get_reports_count", stats.HistogramType, tags)
 	aggregateTimer := stats.Default.NewTaggedStat("ed_aggregate_time", stats.TimerType, tags)
+	getAggregatedReportsCount := stats.Default.NewTaggedStat("ed_aggregated_reports_count", stats.HistogramType, tags)
 
 	errorDetailReportsDeleteQueryTimer := stats.Default.NewTaggedStat("error_detail_reports_delete_query_time", stats.TimerType, tags)
 
@@ -328,7 +331,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		getReportsStart := time.Now()
 		reports, reportedAt := edRep.getReports(currentMs, clientName)
 		getReportsTimer.Since(getReportsStart)
-		// getReportsCount.Observe(float64(len(reports)))
+		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
 			select {
 			case <-ctx.Done():
@@ -342,7 +345,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		aggregationStart := time.Now()
 		metrics := edRep.aggregate(reports)
 		aggregateTimer.Since(aggregationStart)
-		// getAggregatedReportsCount.Observe(float64(len(metrics)))
+		getAggregatedReportsCount.Observe(float64(len(metrics)))
 
 		errGroup, errCtx := errgroup.WithContext(ctx)
 		for _, metric := range metrics {
@@ -354,6 +357,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 			}
 			errGroup.Go(func() error {
 				err := edRep.sendMetric(errCtx, clientName, metricToSend)
+				edRep.log.Error("Error while sending to Reporting service:", err)
 				<-requestChan
 				return err
 			})
@@ -402,7 +406,7 @@ func (edRep *ErrorDetailReporter) getReports(currentMs int64, clientName string)
 	}
 	edSelColumns := strings.Join(ErrorDetailReportsColumns, ", ")
 	sqlStatement = fmt.Sprintf(`SELECT %s FROM %s WHERE reported_at = %d`, edSelColumns, ErrorDetailReportsTable, queryMin.Int64)
-	edRep.log.Infof("[EdRep] sql statement: %s\n", sqlStatement)
+	edRep.log.Debugf("[EdRep] sql statement: %s\n", sqlStatement)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement)
@@ -467,11 +471,16 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 			report.DestinationID,
 			report.DestinationDefinitionId,
 			report.PU,
+			fmt.Sprint(report.ReportedAt),
 		}
 		return strings.Join(keys, groupKeyDelimitter)
 	})
 	var edReportingMetrics []*types.EDMetric
-	for _, reports := range groupedReports {
+	groupKeys := lo.Keys(groupedReports)
+	sort.Strings(groupKeys)
+
+	for _, key := range groupKeys {
+		reports := groupedReports[key]
 		firstReport := reports[0]
 		edRepSchema := types.EDMetric{
 			EDInstanceDetails: types.EDInstanceDetails{
@@ -486,8 +495,13 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 				SourceDefinitionId:      firstReport.SourceDefinitionId,
 			},
 			PU: firstReport.PU,
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: firstReport.ReportedAt,
+			},
 		}
-		errs := lo.Map(reports, func(rep *types.EDReportsDB, _ int) types.EDErrorDetails {
+		var errs []types.EDErrorDetails
+
+		reportsCountMap := lo.CountValuesBy(reports, func(rep *types.EDReportsDB) types.EDErrorDetails {
 			return types.EDErrorDetails{
 				StatusCode:   rep.StatusCode,
 				ErrorCode:    rep.ErrorCode,
@@ -495,6 +509,25 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 				EventType:    rep.EventType,
 			}
 		})
+
+		reportGrpKeys := lo.Keys(reportsCountMap)
+		sort.SliceStable(reportGrpKeys, func(i, j int) bool {
+			irep := reportGrpKeys[i]
+			jrep := reportGrpKeys[j]
+
+			return (irep.StatusCode < jrep.StatusCode ||
+				irep.ErrorMessage < jrep.ErrorMessage ||
+				irep.EventType < jrep.EventType)
+		})
+		for _, rep := range reportGrpKeys {
+			errs = append(errs, types.EDErrorDetails{
+				StatusCode:   rep.StatusCode,
+				ErrorCode:    rep.ErrorCode,
+				ErrorMessage: rep.ErrorMessage,
+				EventType:    rep.EventType,
+				Count:        reportsCountMap[rep],
+			})
+		}
 		edRepSchema.Errors = errs
 		edReportingMetrics = append(edReportingMetrics, &edRepSchema)
 	}
