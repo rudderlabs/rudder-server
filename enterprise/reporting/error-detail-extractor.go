@@ -29,27 +29,22 @@ var (
 	sRegex           = regexp.MustCompile(`\s+`)
 	WhitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
-	defaultErrorMessageKeys   = []string{"message", "description", "detail", "title", "error", "error_message"}
-	defaultWhErrorMessageKeys = []string{"internal_processing_failed", "fetching_remote_schema_failed", "exporting_data_failed"}
+	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "error", "error_message"}
 )
 
 type ExtractorT struct {
-	log                logger.Logger
-	ErrorMessageKeys   []string // the keys where in we may have error message
-	WhErrorMessageKeys []string // the keys where in we may have error message for warehouse destinations
+	log              logger.Logger
+	ErrorMessageKeys []string // the keys where in we may have error message
 }
 
 func NewErrorDetailExtractor(log logger.Logger) *ExtractorT {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
-	whErrMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.WhErrorMessageKeys", []string{})
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
-	defaultWhErrorMessageKeys = append(defaultWhErrorMessageKeys, whErrMsgKeys...)
 
 	extractor := &ExtractorT{
-		ErrorMessageKeys:   defaultErrorMessageKeys,
-		WhErrorMessageKeys: defaultWhErrorMessageKeys,
-		log:                log.Child("ErrorDetailExtractor"),
+		ErrorMessageKeys: defaultErrorMessageKeys,
+		log:              log.Child("ErrorDetailExtractor"),
 	}
 	return extractor
 }
