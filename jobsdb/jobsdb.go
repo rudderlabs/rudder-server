@@ -2989,7 +2989,8 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 func (jd *HandleT) StoreEachBatchRetryInTx(
 	ctx context.Context,
 	tx StoreSafeTx,
-	jobBatches [][]*JobT) (map[uuid.UUID]string, error) {
+	jobBatches [][]*JobT,
+) (map[uuid.UUID]string, error) {
 	var (
 		err error
 		res map[uuid.UUID]string
@@ -3016,7 +3017,8 @@ func (jd *HandleT) internalStoreEachBatchRetryInTx(
 	tx *Tx,
 	ds dataSetT,
 	jobBatches [][]*JobT) (
-	errorMessagesMap map[uuid.UUID]string, err error) {
+	errorMessagesMap map[uuid.UUID]string, err error,
+) {
 	const (
 		savepointSql = "SAVEPOINT storeWithRetryEach"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
