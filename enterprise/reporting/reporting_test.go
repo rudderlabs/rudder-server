@@ -447,7 +447,6 @@ func BenchmarkJsonNestedSearch(b *testing.B) {
 }
 
 func TestAggregationLogic(t *testing.T) {
-
 	dbErrs := []*types.EDReportsDB{
 		{
 			PU: "dest_transformer",
@@ -658,5 +657,4 @@ func TestAggregationLogic(t *testing.T) {
 	}
 
 	require.Equal(t, reportResults, reportingMetrics)
-
 }
