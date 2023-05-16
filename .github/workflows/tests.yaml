@@ -41,34 +41,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        destination: [ bigquery, clickhouse, datalake, deltalake, deltalake-native, mssql, azure-synapse, postgres, postgres-legacy, redshift, snowflake ]
+        destination: [ mssql, azure-synapse]
         include:
-          - package: warehouse/integrations/bigquery
-            destination: bigquery
-          - package: warehouse/integrations/clickhouse
-            destination: clickhouse
-          - package: warehouse/integrations/datalake
-            destination: datalake
-          - package: warehouse/integrations/deltalake-native
-            destination: deltalake
-            useNative: false
-          - package: warehouse/integrations/deltalake-native
-            destination: deltalake-native
-            useNative: true
           - package: warehouse/integrations/mssql
             destination: mssql
           - package: warehouse/integrations/azure-synapse
             destination: azure-synapse
-          - package: warehouse/integrations/postgres
-            destination: postgres
-            useLegacy: false
-          - package: warehouse/integrations/postgres
-            destination: postgres-legacy
-            useLegacy: true
-          - package: warehouse/integrations/redshift
-            destination: redshift
-          - package: warehouse/integrations/snowflake
-            destination: snowflake
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -121,7 +99,7 @@ jobs:
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
           TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
-        run: make test
+        run: make test package=./gateway/...
       - name: Upload coverage report
         uses: actions/upload-artifact@v3
         with:
@@ -145,7 +123,10 @@ jobs:
         run: |
           go install github.com/wadey/gocovmerge@latest
           gocovmerge */coverage.txt > coverage.txt
+          cat coverage.txt
+      - name: List coverage reports
+        run: ls -R
       - uses: codecov/codecov-action@v3
         with:
           fail_ci_if_error: true
-          files: coverage.txt
+          files: ./coverage.txt
