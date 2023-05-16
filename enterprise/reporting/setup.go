@@ -55,10 +55,7 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Reporti
 	}
 }
 
-func (m *Factory) GetReportingInstance(names ...string) types.ReportingI {
-	if len(names) > 1 {
-		panic(fmt.Errorf("only 1 or no arguments is expected but provided %v", len(names)))
-	}
+func (m *Factory) GetReportingInstance(reporterType types.ReporterType) types.ReportingI {
 	// Inner fn
 	returnReportingI := func(repI types.ReportingI) types.ReportingI {
 		if repI == nil {
@@ -66,9 +63,11 @@ func (m *Factory) GetReportingInstance(names ...string) types.ReportingI {
 		}
 		return repI
 	}
-	// error detail reporting instance
-	if len(names) > 0 && (names[0] == "error_detail_report") {
+	switch reporterType {
+	case types.ErrorDetailReport:
 		return returnReportingI(m.edReportingInstance)
+	case types.Report:
+		return returnReportingI(m.reportingInstance)
 	}
-	return returnReportingI(m.reportingInstance)
+	panic(fmt.Errorf("valid reporter type is not provided"))
 }

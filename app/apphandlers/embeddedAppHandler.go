@@ -125,8 +125,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	defer sourceHandle.Stop()
 
-	reportingI := a.app.Features().Reporting.GetReportingInstance()
-	edReportingI := a.app.Features().Reporting.GetReportingInstance(string(types.ErrorDetailReport))
+	reportingI := a.app.Features().Reporting.GetReportingInstance(types.Report)
+	edReportingI := a.app.Features().Reporting.GetReportingInstance(types.ErrorDetailReport)
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),

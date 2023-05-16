@@ -258,7 +258,7 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 		EnterpriseToken: "dummy-token",
 	}
 	f.Setup(config)
-	reporting := f.GetReportingInstance()
+	reporting := f.GetReportingInstance(types.Report)
 
 	var reportingDisabled bool
 
