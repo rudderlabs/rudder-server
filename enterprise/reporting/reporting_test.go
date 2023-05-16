@@ -445,3 +445,218 @@ func BenchmarkJsonNestedSearch(b *testing.B) {
 		}
 	})
 }
+
+func TestAggregationLogic(t *testing.T) {
+
+	dbErrs := []*types.EDReportsDB{
+		{
+			PU: "dest_transformer",
+			EDInstanceDetails: types.EDInstanceDetails{
+				WorkspaceID: "wsp1",
+				InstanceID:  "instance-1",
+				Namespace:   "nmspc",
+			},
+			EDConnectionDetails: types.EDConnectionDetails{
+				SourceID:                "src-1",
+				SourceDefinitionId:      "src-def-1",
+				DestinationDefinitionId: "des-def-1",
+				DestinationID:           "des-1",
+			},
+			EDErrorDetails: types.EDErrorDetails{
+				StatusCode:   200,
+				ErrorCode:    "",
+				ErrorMessage: "",
+				EventType:    "identify",
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: 124335445,
+			},
+		},
+		{
+			PU: "dest_transformer",
+			EDInstanceDetails: types.EDInstanceDetails{
+				WorkspaceID: "wsp1",
+				InstanceID:  "instance-1",
+				Namespace:   "nmspc",
+			},
+			EDConnectionDetails: types.EDConnectionDetails{
+				SourceID:                "src-1",
+				SourceDefinitionId:      "src-def-1",
+				DestinationDefinitionId: "des-def-1",
+				DestinationID:           "des-1",
+			},
+			EDErrorDetails: types.EDErrorDetails{
+				StatusCode:   400,
+				ErrorCode:    "",
+				ErrorMessage: "bad data sent for transformation",
+				EventType:    "identify",
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: 124335445,
+			},
+		},
+		{
+			PU: "dest_transformer",
+			EDInstanceDetails: types.EDInstanceDetails{
+				WorkspaceID: "wsp1",
+				InstanceID:  "instance-1",
+				Namespace:   "nmspc",
+			},
+			EDConnectionDetails: types.EDConnectionDetails{
+				SourceID:                "src-1",
+				SourceDefinitionId:      "src-def-1",
+				DestinationDefinitionId: "des-def-1",
+				DestinationID:           "des-1",
+			},
+			EDErrorDetails: types.EDErrorDetails{
+				StatusCode:   400,
+				ErrorCode:    "",
+				ErrorMessage: "bad data sent for transformation",
+				EventType:    "identify",
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: 124335445,
+			},
+		},
+		{
+			PU: "dest_transformer",
+			EDInstanceDetails: types.EDInstanceDetails{
+				WorkspaceID: "wsp1",
+				InstanceID:  "instance-1",
+				Namespace:   "nmspc",
+			},
+			EDConnectionDetails: types.EDConnectionDetails{
+				SourceID:                "src-1",
+				SourceDefinitionId:      "src-def-1",
+				DestinationDefinitionId: "des-def-1",
+				DestinationID:           "des-1",
+			},
+			EDErrorDetails: types.EDErrorDetails{
+				StatusCode:   400,
+				ErrorCode:    "",
+				ErrorMessage: "user_id information missing",
+				EventType:    "identify",
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: 124335446,
+			},
+		},
+		// error occurred at router level(assume this is batching enabled)
+		{
+			PU: "router",
+			EDInstanceDetails: types.EDInstanceDetails{
+				WorkspaceID: "wsp1",
+				InstanceID:  "instance-1",
+				Namespace:   "nmspc",
+			},
+			EDConnectionDetails: types.EDConnectionDetails{
+				SourceID:                "src-1",
+				SourceDefinitionId:      "src-def-1",
+				DestinationDefinitionId: "des-def-1",
+				DestinationID:           "des-1",
+			},
+			EDErrorDetails: types.EDErrorDetails{
+				StatusCode:   500,
+				ErrorCode:    "",
+				ErrorMessage: "Cannot read type property of undefined", // some error during batching
+				EventType:    "identify",
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: 124335446,
+			},
+		},
+	}
+	ed := NewEdReporterFromEnvConfig()
+	reportingMetrics := ed.aggregate(dbErrs)
+
+	reportResults := []*types.EDMetric{
+		{
+			PU: dbErrs[0].PU,
+			EDInstanceDetails: types.EDInstanceDetails{
+				WorkspaceID: dbErrs[0].WorkspaceID,
+				InstanceID:  dbErrs[0].InstanceID,
+				Namespace:   dbErrs[0].Namespace,
+			},
+			EDConnectionDetails: types.EDConnectionDetails{
+				SourceID:                dbErrs[0].SourceID,
+				SourceDefinitionId:      dbErrs[0].SourceDefinitionId,
+				DestinationDefinitionId: dbErrs[0].DestinationDefinitionId,
+				DestinationID:           dbErrs[0].DestinationID,
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: dbErrs[0].ReportedAt,
+			},
+			Errors: []types.EDErrorDetails{
+				{
+					StatusCode:   dbErrs[0].StatusCode,
+					ErrorCode:    dbErrs[0].ErrorCode,
+					ErrorMessage: dbErrs[0].ErrorMessage,
+					EventType:    dbErrs[0].EventType,
+					Count:        1,
+				},
+				{
+					StatusCode:   dbErrs[1].StatusCode,
+					ErrorCode:    dbErrs[1].ErrorCode,
+					ErrorMessage: dbErrs[1].ErrorMessage,
+					EventType:    dbErrs[1].EventType,
+					Count:        2,
+				},
+			},
+		},
+		{
+			PU: dbErrs[3].PU,
+			EDInstanceDetails: types.EDInstanceDetails{
+				WorkspaceID: dbErrs[3].WorkspaceID,
+				InstanceID:  dbErrs[3].InstanceID,
+				Namespace:   dbErrs[3].Namespace,
+			},
+			EDConnectionDetails: types.EDConnectionDetails{
+				SourceID:                dbErrs[3].SourceID,
+				SourceDefinitionId:      dbErrs[3].SourceDefinitionId,
+				DestinationDefinitionId: dbErrs[3].DestinationDefinitionId,
+				DestinationID:           dbErrs[3].DestinationID,
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: dbErrs[3].ReportedAt,
+			},
+			Errors: []types.EDErrorDetails{
+				{
+					StatusCode:   dbErrs[3].StatusCode,
+					ErrorCode:    dbErrs[3].ErrorCode,
+					ErrorMessage: dbErrs[3].ErrorMessage,
+					EventType:    dbErrs[3].EventType,
+					Count:        1,
+				},
+			},
+		},
+		{
+			PU: dbErrs[4].PU,
+			EDInstanceDetails: types.EDInstanceDetails{
+				WorkspaceID: dbErrs[4].WorkspaceID,
+				InstanceID:  dbErrs[4].InstanceID,
+				Namespace:   dbErrs[4].Namespace,
+			},
+			EDConnectionDetails: types.EDConnectionDetails{
+				SourceID:                dbErrs[4].SourceID,
+				SourceDefinitionId:      dbErrs[4].SourceDefinitionId,
+				DestinationDefinitionId: dbErrs[4].DestinationDefinitionId,
+				DestinationID:           dbErrs[4].DestinationID,
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: dbErrs[4].ReportedAt,
+			},
+			Errors: []types.EDErrorDetails{
+				{
+					StatusCode:   dbErrs[4].StatusCode,
+					ErrorCode:    dbErrs[4].ErrorCode,
+					ErrorMessage: dbErrs[4].ErrorMessage,
+					EventType:    dbErrs[4].EventType,
+					Count:        1,
+				},
+			},
+		},
+	}
+
+	require.Equal(t, reportResults, reportingMetrics)
+
+}
