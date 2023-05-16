@@ -2676,7 +2676,7 @@ func (proc *Handle) isReportingEnabled() bool {
 }
 
 func (proc *Handle) isErrorReportingEnabled() bool {
-	return proc.errorReporting != nil && proc.reportingEnabled
+	return proc.reportingEnabled && proc.errorReporting != nil
 }
 
 func (proc *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
