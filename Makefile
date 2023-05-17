@@ -86,6 +86,7 @@ lint: fmt ## Run linters on all go files
 .PHONY: fmt
 fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
+	go run .github/tools/matrixchecker/main.go
 
 .PHONY: proto
 proto: install-tools ## Generate protobuf files

@@ -2,7 +2,6 @@ package processor
 
 import (
 	"context"
-	"math"
 	"sync"
 	"time"
 
@@ -125,7 +124,7 @@ func (w *worker) Work() (worked bool) {
 	if w.handle.config().enablePipelining {
 		start := time.Now()
 		jobs := w.handle.getJobs(w.partition)
-
+		afterGetJobs := time.Now()
 		if len(jobs.Jobs) == 0 {
 			return
 		}
@@ -145,11 +144,15 @@ func (w *worker) Work() (worked bool) {
 			w.channel.preprocess <- subJob
 		}
 
-		// sleepRatio is dependent on the number of events read in this loop
-		sleepRatio := 1.0 - math.Min(1, float64(jobs.EventsCount)/float64(w.handle.config().maxEventsToProcess))
-		if err := misc.SleepCtx(w.lifecycle.ctx, time.Duration(sleepRatio*float64(w.handle.config().readLoopSleep))); err != nil {
-			return
+		if !jobs.LimitsReached {
+			readLoopSleep := w.handle.config().readLoopSleep
+			if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep {
+				if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep-elapsed); err != nil {
+					return
+				}
+			}
 		}
+
 		return
 	} else {
 		return w.handle.handlePendingGatewayJobs(w.partition)

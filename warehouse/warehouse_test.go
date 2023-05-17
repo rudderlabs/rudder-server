@@ -72,6 +72,8 @@ func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMe
 var _ = Describe("Warehouse", func() {})
 
 func TestUploadJob_ProcessingStats(t *testing.T) {
+	t.Parallel()
+
 	testcases := []struct {
 		name            string
 		destType        string
@@ -186,6 +188,8 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 }
 
 func Test_GetNamespace(t *testing.T) {
+	t.Parallel()
+
 	testcases := []struct {
 		config      map[string]interface{}
 		source      backendconfig.SourceT
@@ -323,17 +327,20 @@ func Test_GetNamespace(t *testing.T) {
 				Handle:          pgResource.DB,
 				MigrationsTable: "wh_schema_migrations",
 			}).Migrate("warehouse")
-
 			require.NoError(t, err)
+
+			conf := config.New()
 			store := memstats.New()
+
 			wh := HandleT{
 				destType:     tc.destType,
 				stats:        store,
 				dbHandle:     pgResource.DB,
 				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
+				conf:         conf,
 			}
 			if tc.setConfig {
-				config.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destType]), "config_result")
+				conf.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destType]), "config_result")
 			}
 
 			sqlStatement, err := os.ReadFile("testdata/sql/namespace_test.sql")
@@ -344,7 +351,6 @@ func Test_GetNamespace(t *testing.T) {
 
 			namespace := wh.getNamespace(context.Background(), tc.source, tc.destination)
 			require.Equal(t, tc.result, namespace)
-			config.Reset()
 		})
 	}
 }

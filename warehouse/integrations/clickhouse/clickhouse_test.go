@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/compose-test/compose"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -48,7 +50,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, "testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml")
+	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
 
 	t.Cleanup(func() {
 		c.Stop(context.Background())
@@ -373,25 +375,23 @@ type mockUploader struct {
 	metadata    []warehouseutils.LoadFile
 }
 
-func (*mockUploader) GetSchemaInWarehouse() model.Schema { return model.Schema{} }
-func (*mockUploader) GetLocalSchema(context.Context) (model.Schema, error) {
-	return model.Schema{}, nil
-}
-func (*mockUploader) UpdateLocalSchema(_ context.Context, _ model.Schema) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                           { return false }
-func (*mockUploader) UseRudderStorage() bool                                    { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time                        { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                                   { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)                 { return time.Time{}, time.Time{} }
+func (*mockUploader) GetSchemaInWarehouse() model.Schema        { return model.Schema{} }
+func (*mockUploader) GetLocalSchema() (model.Schema, error)     { return model.Schema{}, nil }
+func (*mockUploader) UpdateLocalSchema(_ model.Schema) error    { return nil }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool           { return false }
+func (*mockUploader) UseRudderStorage() bool                    { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time        { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                   { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Time{}, time.Time{} }
 func (*mockUploader) GetTableSchemaInWarehouse(_ string) model.TableSchema {
 	return model.TableSchema{}
 }
 
-func (*mockUploader) GetSingleLoadFile(_ context.Context, _ string) (warehouseutils.LoadFile, error) {
+func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFile, error) {
 	return warehouseutils.LoadFile{}, nil
 }
 
-func (m *mockUploader) GetSampleLoadFileLocation(_ context.Context, _ string) (string, error) {
+func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	minioHostPort := fmt.Sprintf("localhost:%s", m.minioPort)
 
 	sampleLocation := m.metadata[0].Location
@@ -403,7 +403,7 @@ func (m *mockUploader) GetTableSchemaInUpload(string) model.TableSchema {
 	return m.tableSchema
 }
 
-func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return m.metadata
 }
 
@@ -563,9 +563,7 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			ctx := context.Background()
-
-			uploadOutput, err := fm.Upload(ctx, f, fmt.Sprintf("test_prefix_%d", i))
+			uploadOutput, err := fm.Upload(context.TODO(), f, fmt.Sprintf("test_prefix_%d", i))
 			require.NoError(t, err)
 
 			mockUploader.metadata = append(mockUploader.metadata, warehouseutils.LoadFile{
@@ -573,29 +571,29 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			})
 
 			t.Log("Setting up clickhouse")
-			err = ch.Setup(ctx, warehouse, mockUploader)
+			err = ch.Setup(warehouse, mockUploader)
 			require.NoError(t, err)
 
 			t.Log("Verifying connection")
-			_, err = ch.Connect(ctx, warehouse)
+			_, err = ch.Connect(warehouse)
 			require.NoError(t, err)
 
 			t.Log("Verifying empty schema")
-			schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+			schema, unrecognizedSchema, err := ch.FetchSchema()
 			require.NoError(t, err)
 			require.Empty(t, schema)
 			require.Empty(t, unrecognizedSchema)
 
 			t.Log("Creating schema")
-			err = ch.CreateSchema(ctx)
+			err = ch.CreateSchema()
 			require.NoError(t, err)
 
 			t.Log("Creating schema twice should not fail")
-			err = ch.CreateSchema(ctx)
+			err = ch.CreateSchema()
 			require.NoError(t, err)
 
 			t.Log("Creating table")
-			err = ch.CreateTable(ctx, table, model.TableSchema{
+			err = ch.CreateTable(table, model.TableSchema{
 				"id":                  "string",
 				"test_int":            "int",
 				"test_float":          "float",
@@ -612,7 +610,7 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Log("Adding columns")
-			err = ch.AddColumns(ctx, table, []warehouseutils.ColumnInfo{
+			err = ch.AddColumns(table, []warehouseutils.ColumnInfo{
 				{Name: "alter_test_int", Type: "int"},
 				{Name: "alter_test_float", Type: "float"},
 				{Name: "alter_test_bool", Type: "boolean"},
@@ -622,7 +620,7 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Log("Verifying schema")
-			schema, unrecognizedSchema, err = ch.FetchSchema(ctx)
+			schema, unrecognizedSchema, err = ch.FetchSchema()
 			require.NoError(t, err)
 			require.NotEmpty(t, schema)
 			require.Empty(t, unrecognizedSchema)
@@ -651,21 +649,21 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			}
 
 			t.Log("Loading data into table")
-			err = ch.LoadTable(ctx, table)
+			err = ch.LoadTable(context.TODO(), table)
 			require.NoError(t, err)
 
 			t.Log("Checking table count")
-			count, err := ch.GetTotalCountInTable(ctx, table)
+			count, err := ch.GetTotalCountInTable(context.TODO(), table)
 			require.NoError(t, err)
 			require.EqualValues(t, 2, count)
 
 			t.Log("Drop table")
-			err = ch.DropTable(ctx, table)
+			err = ch.DropTable(table)
 			require.NoError(t, err)
 
 			t.Log("Creating users identifies and table")
 			for _, tableName := range []string{warehouseutils.IdentifiesTable, warehouseutils.UsersTable} {
-				err = ch.CreateTable(ctx, tableName, model.TableSchema{
+				err = ch.CreateTable(tableName, model.TableSchema{
 					"id":            "string",
 					"user_id":       "string",
 					"test_int":      "int",
@@ -680,12 +678,12 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 
 			t.Log("Drop users identifies and table")
 			for _, tableName := range []string{warehouseutils.IdentifiesTable, warehouseutils.UsersTable} {
-				err = ch.DropTable(ctx, tableName)
+				err = ch.DropTable(tableName)
 				require.NoError(t, err)
 			}
 
 			t.Log("Verifying empty schema")
-			schema, unrecognizedSchema, err = ch.FetchSchema(ctx)
+			schema, unrecognizedSchema, err = ch.FetchSchema()
 			require.NoError(t, err)
 			require.Empty(t, schema)
 			require.Empty(t, unrecognizedSchema)
@@ -771,14 +769,12 @@ func TestClickhouse_TestConnection(t *testing.T) {
 				},
 			}
 
-			ctx := context.Background()
-
-			err = ch.Setup(ctx, warehouse, &mockUploader{})
+			err = ch.Setup(warehouse, &mockUploader{})
 			require.NoError(t, err)
 
 			ch.SetConnectionTimeout(tc.timeout)
 
-			ctx, cancel := context.WithTimeout(ctx, tc.timeout)
+			ctx, cancel := context.WithTimeout(context.TODO(), tc.timeout)
 			defer cancel()
 
 			err := ch.TestConnection(ctx, warehouse)
@@ -869,20 +865,18 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 				payload[k] = v
 			}
 
-			ctx := context.Background()
-
-			err := ch.Setup(ctx, warehouse, &mockUploader{})
+			err := ch.Setup(warehouse, &mockUploader{})
 			require.NoError(t, err)
 
-			err = ch.CreateSchema(ctx)
+			err = ch.CreateSchema()
 			require.NoError(t, err)
 
 			tableName := fmt.Sprintf("%s_%d", tableName, i)
 
-			err = ch.CreateTable(ctx, tableName, testColumns)
+			err = ch.CreateTable(tableName, testColumns)
 			require.NoError(t, err)
 
-			err = ch.LoadTestTable(ctx, "", tableName, payload, "")
+			err = ch.LoadTestTable("", tableName, payload, "")
 			if tc.wantError != nil {
 				require.ErrorContains(t, err, tc.wantError.Error())
 				return
@@ -930,15 +924,13 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		ctx := context.Background()
-
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		err := ch.Setup(warehouse, &mockUploader{})
 		require.NoError(t, err)
 
-		err = ch.CreateSchema(ctx)
+		err = ch.CreateSchema()
 		require.NoError(t, err)
 
-		err = ch.CreateTable(ctx, table, model.TableSchema{
+		err = ch.CreateTable(table, model.TableSchema{
 			"id":                  "string",
 			"test_int":            "int",
 			"test_float":          "float",
@@ -954,7 +946,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.NoError(t, err)
 		require.NotEmpty(t, schema)
 		require.Empty(t, unrecognizedSchema)
@@ -978,12 +970,10 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		ctx := context.Background()
-
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		err := ch.Setup(warehouse, &mockUploader{})
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.ErrorContains(t, err, errors.New("dial tcp: lookup clickhouse").Error())
 		require.Empty(t, schema)
 		require.Empty(t, unrecognizedSchema)
@@ -1007,12 +997,10 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		ctx := context.Background()
-
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		err := ch.Setup(warehouse, &mockUploader{})
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.NoError(t, err)
 		require.Empty(t, schema)
 		require.Empty(t, unrecognizedSchema)
@@ -1036,15 +1024,13 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		ctx := context.Background()
-
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		err := ch.Setup(warehouse, &mockUploader{})
 		require.NoError(t, err)
 
-		err = ch.CreateSchema(ctx)
+		err = ch.CreateSchema()
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.NoError(t, err)
 		require.Empty(t, schema)
 		require.Empty(t, unrecognizedSchema)
@@ -1068,12 +1054,10 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		ctx := context.Background()
-
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		err := ch.Setup(warehouse, &mockUploader{})
 		require.NoError(t, err)
 
-		err = ch.CreateSchema(ctx)
+		err = ch.CreateSchema()
 		require.NoError(t, err)
 
 		_, err = ch.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
@@ -1082,7 +1066,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 		))
 		require.NoError(t, err)
 
-		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+		schema, unrecognizedSchema, err := ch.FetchSchema()
 		require.NoError(t, err)
 		require.NotEmpty(t, schema)
 		require.NotEmpty(t, unrecognizedSchema)

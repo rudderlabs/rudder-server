@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -191,4 +192,56 @@ func (repo *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string)
 	}
 
 	return namespace, nil
+}
+
+func (repo *WHSchema) GetTablesForConnection(ctx context.Context, connections []warehouseutils.SourceIDDestinationID) ([]warehouseutils.FetchTableInfo, error) {
+	if len(connections) == 0 {
+		return nil, fmt.Errorf("no source id and destination id pairs provided")
+	}
+
+	var parameters []interface{}
+	sourceIDDestinationIDPairs := make([]string, len(connections))
+	for idx, connection := range connections {
+		sourceIDDestinationIDPairs[idx] = fmt.Sprintf("($%d,$%d)", 2*idx+1, 2*idx+2)
+		parameters = append(parameters, connection.SourceID, connection.DestinationID)
+	}
+
+	// select all rows with max id for each source id and destination id pair
+	query := `SELECT` + whSchemaTableColumns + `FROM ` + whSchemaTableName + `
+		WHERE id IN (
+			SELECT max(id) FROM ` + whSchemaTableName + `
+			WHERE
+				(source_id, destination_id) IN (` + strings.Join(sourceIDDestinationIDPairs, ", ") + `)
+			AND
+				schema::text <> '{}'::text
+			GROUP BY id
+		)`
+	rows, err := repo.db.QueryContext(
+		ctx,
+		query,
+		parameters...)
+	if err != nil {
+		return nil, fmt.Errorf("querying schema: %w", err)
+	}
+
+	entries, err := repo.parseRows(rows)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rows: %w", err)
+	}
+
+	var tables []warehouseutils.FetchTableInfo
+	for _, entry := range entries {
+		var allTablesOfConnections []string
+		for tableName := range entry.Schema {
+			allTablesOfConnections = append(allTablesOfConnections, tableName)
+		}
+		tables = append(tables, warehouseutils.FetchTableInfo{
+			SourceID:      entry.SourceID,
+			DestinationID: entry.DestinationID,
+			Namespace:     entry.Namespace,
+			Tables:        allTablesOfConnections,
+		})
+	}
+
+	return tables, nil
 }

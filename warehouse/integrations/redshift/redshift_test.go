@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/compose-test/compose"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -82,7 +84,7 @@ func TestIntegration(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
-	c := testcompose.New(t, "../testdata/docker-compose.jobsdb.yml")
+	c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
 
 	t.Cleanup(func() {
 		c.Stop(context.Background())
@@ -394,8 +396,6 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
-			ctx := context.Background()
-
 			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
@@ -449,7 +449,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			)
 			require.ErrorContains(t, err, errors.New("pq: value too long for type character varying(512)").Error())
 
-			res, err := rs.AlterColumn(ctx, testTable, testColumn, testColumnType)
+			res, err := rs.AlterColumn(testTable, testColumn, testColumnType)
 			require.NoError(t, err)
 
 			if tc.createView {
