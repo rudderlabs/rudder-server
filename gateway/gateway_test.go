@@ -11,12 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"reflect"
 	"testing"
 	"time"
-
-	_ "net/http/pprof"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -993,11 +990,9 @@ var _ = Describe("Gateway", func() {
 					Expect(string(reqBody)).To(Equal(payload))
 					w.WriteHeader(code)
 				}))
-				err := os.Setenv("WAREHOUSE_URL", whMock.URL)
-				Expect(err).To(BeNil())
-				err = os.Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
-				Expect(err).To(BeNil())
-				err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+				GinkgoT().Setenv("WAREHOUSE_URL", whMock.URL)
+				GinkgoT().Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
+				err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 				Expect(err).To(BeNil())
 
 				defer func() {
@@ -1247,5 +1242,12 @@ func getWorkspaceID(writeKey string) string {
 type mockRequestHandler struct{}
 
 func (mrh mockRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+	// deepsource ignore: Unused method arguments
+	_ = gateway
+	_ = w
+	_ = r
+	_ = reqType
+	_ = payload
+	_ = writeKey
 	return ""
 }
