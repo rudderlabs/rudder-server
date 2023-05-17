@@ -1462,6 +1462,45 @@ func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion()))
 }
 
+func fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	defer func() { _ = r.Body.Close() }()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
+		http.Error(w, "can't read body", http.StatusBadRequest)
+		return
+	}
+
+	var connectionsTableRequest warehouseutils.FetchTablesRequest
+	err = json.Unmarshal(body, &connectionsTableRequest)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
+		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
+		return
+	}
+
+	schemaRepo := repo.NewWHSchemas(dbHandle)
+	tables, err := schemaRepo.GetTablesForConnection(ctx, connectionsTableRequest.Connections)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error fetching tables: %v", err)
+		http.Error(w, "can't fetch tables from schemas repo", http.StatusInternalServerError)
+		return
+	}
+	resBody, err := json.Marshal(warehouseutils.FetchTablesResponse{
+		ConnectionsTables: tables,
+	})
+	if err != nil {
+		err := fmt.Errorf("failed to marshall tables to response : %v", err)
+		pkgLogger.Errorf("[WH]: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, _ = w.Write(resBody)
+}
+
 func isUploadTriggered(wh model.Warehouse) bool {
 	triggerUploadsMapLock.RLock()
 	defer triggerUploadsMapLock.RUnlock()
@@ -1545,6 +1584,9 @@ func startWebHandler(ctx context.Context) error {
 			// Warehouse Async Job end-points
 			srvMux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler).Methods("POST")          // FIXME: add degraded mode
 			srvMux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler).Methods("GET") // FIXME: add degraded mode
+
+			// fetch schema info
+			srvMux.HandleFunc("/v1/warehouse/fetch-tables", fetchTablesHandler).Methods("GET")
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
