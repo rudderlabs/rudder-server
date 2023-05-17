@@ -302,11 +302,9 @@ func (edRep *ErrorDetailReporter) getTags(clientName string) stats.Tags {
 func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName string) {
 	tags := edRep.getTags(clientName)
 
-	mainLoopTimer := stats.Default.NewTaggedStat("ed_main_loop_time", stats.TimerType, tags)
-	getReportsTimer := stats.Default.NewTaggedStat("ed_get_reports_time", stats.TimerType, tags)
-	getReportsCount := stats.Default.NewTaggedStat("ed_get_reports_count", stats.HistogramType, tags)
-	aggregateTimer := stats.Default.NewTaggedStat("ed_aggregate_time", stats.TimerType, tags)
-	getAggregatedReportsCount := stats.Default.NewTaggedStat("ed_aggregated_reports_count", stats.HistogramType, tags)
+	mainLoopTimer := stats.Default.NewTaggedStat("error_detail_reports_main_loop_time", stats.TimerType, tags)
+	getReportsTimer := stats.Default.NewTaggedStat("error_detail_reports_get_reports_time", stats.TimerType, tags)
+	aggregateTimer := stats.Default.NewTaggedStat("error_detai_reportsl_aggregate_time", stats.TimerType, tags)
 
 	errorDetailReportsDeleteQueryTimer := stats.Default.NewTaggedStat("error_detail_reports_delete_query_time", stats.TimerType, tags)
 
@@ -331,7 +329,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		getReportsStart := time.Now()
 		reports, reportedAt := edRep.getReports(currentMs, clientName)
 		getReportsTimer.Since(getReportsStart)
-		getReportsCount.Observe(float64(len(reports)))
+
 		if len(reports) == 0 {
 			select {
 			case <-ctx.Done():
@@ -345,7 +343,6 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		aggregationStart := time.Now()
 		metrics := edRep.aggregate(reports)
 		aggregateTimer.Since(aggregationStart)
-		getAggregatedReportsCount.Observe(float64(len(metrics)))
 
 		errGroup, errCtx := errgroup.WithContext(ctx)
 		for _, metric := range metrics {

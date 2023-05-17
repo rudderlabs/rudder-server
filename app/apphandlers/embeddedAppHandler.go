@@ -101,7 +101,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return nil
 	})
 
-	// Error detail reporting thread
+	// Error detail reporting go-routine
 	g.Go(func() error {
 		reporting.ErrorReportingInstance.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
 		return nil
@@ -126,7 +126,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	defer sourceHandle.Stop()
 
 	reportingI := a.app.Features().Reporting.GetReportingInstance(types.Report)
-	errorReportingI := a.app.Features().Reporting.GetReportingInstance(types.ErrorDetailReport)
+	errorReporting := a.app.Features().Reporting.GetReportingInstance(types.ErrorDetailReport)
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
@@ -227,7 +227,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		rsourcesService,
 		destinationHandle,
 		transformationhandle,
-		errorReportingI,
+		errorReporting,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := rtThrottler.New(stats.Default)
@@ -236,7 +236,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
-		ErrorReporting:   errorReportingI,
+		ErrorReporting:   errorReporting,
 		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         tenantRouterDB,

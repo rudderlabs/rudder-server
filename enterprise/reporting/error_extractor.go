@@ -27,7 +27,7 @@ var (
 	notWordRegex     = regexp.MustCompile(`\W+`)
 	idRegex          = regexp.MustCompile(`\b([a-zA-Z0-9-]*\d[a-zA-Z0-9-]*)\b`)
 	sRegex           = regexp.MustCompile(`\s+`)
-	WhitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
+	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
 	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "error", "error_message"}
 )
@@ -234,7 +234,7 @@ func IsJSON(s string) bool {
 	// 2. A valid with spacing before { or [ can also be deemed as not valid string
 
 	// We are making sure we remove white-spaces when we check the string for being an array or an object (scenario-2 is covered)
-	s = string(WhitespacesRegex.ReplaceAllLiteral([]byte(parsedBytesResult.String()), []byte("")))
+	s = string(whitespacesRegex.ReplaceAllLiteral([]byte(parsedBytesResult.String()), []byte("")))
 	var isEndingFlowerBrace, isEndingArrBrace bool
 	// We are making sure we check for end-braces for array or object(scenario-1 is covered)
 	if len(s) > 0 {
