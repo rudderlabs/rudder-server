@@ -346,7 +346,7 @@ func TestFailedRecordsDisabled(t *testing.T) {
 
 	service.EXPECT().GetFailedRecords(gomock.Any(), gomock.Any(), gomock.Any()).Return(rsources.JobFailedRecords{}, rsources.ErrOperationNotSupported).Times(1)
 
-	url := fmt.Sprintf("http://localhost:8080%s", prepURL("/v1/job-status/{job_run_id}/failed-records", "123"))
+	url := fmt.Sprintf("http://localhost:8080%s", prepURL("/{job_run_id}/failed-records", "123"))
 	req, err := http.NewRequest("GET", url, http.NoBody)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")

@@ -10,10 +10,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"testing"
 	"time"
+
+	_ "net/http/pprof"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -34,7 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	mockThrottler "github.com/rudderlabs/rudder-server/mocks/gateway"
+	mockGateway "github.com/rudderlabs/rudder-server/mocks/gateway"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -103,12 +106,12 @@ var sampleBackendConfig = backendconfig.ConfigT{
 type testContext struct {
 	asyncHelper testutils.AsyncTestHelper
 
-	mockCtrl          *gomock.Controller
-	mockJobsDB        *mocksJobsDB.MockJobsDB
-	mockBackendConfig *mocksBackendConfig.MockBackendConfig
-	mockRateLimiter   *mockThrottler.MockThrottler
-	mockApp           *mocksApp.MockApp
-
+	mockCtrl           *gomock.Controller
+	mockJobsDB         *mocksJobsDB.MockJobsDB
+	mockBackendConfig  *mocksBackendConfig.MockBackendConfig
+	mockRateLimiter    *mockGateway.MockThrottler
+	mockApp            *mocksApp.MockApp
+	mockWebhook        *mockGateway.MockWebhook
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
 	// Enterprise mocks
@@ -138,8 +141,9 @@ func (c *testContext) Setup() {
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
-	c.mockRateLimiter = mockThrottler.NewMockThrottler(c.mockCtrl)
-
+	c.mockRateLimiter = mockGateway.NewMockThrottler(c.mockCtrl)
+	c.mockWebhook = mockGateway.NewMockWebhook(c.mockCtrl)
+	c.mockWebhook.EXPECT().Shutdown().AnyTimes()
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			ch := make(chan pubsub.DataEvent, 1)
@@ -159,18 +163,26 @@ func (c *testContext) Finish() {
 	c.mockCtrl.Finish()
 }
 
+func initGW() {
+	config.Reset()
+	admin.Init()
+	logger.Reset()
+	misc.Init()
+	Init()
+}
+
 var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 	gateway := &HandleT{}
 	_ = DescribeTable("newDSIdx tests",
 		func(inputKey, value string) {
 			testValidBody := `{"batch":[
-                {"anonymousId":"anon_id_1","event":"event_1_1"},
-                {"anonymousId":"anon_id_2","event":"event_2_1"},
-                {"anonymousId":"anon_id_3","event":"event_3_1"},
-                {"anonymousId":"anon_id_1","event":"event_1_2"},
-                {"anonymousId":"anon_id_2","event":"event_2_2"},
-                {"anonymousId":"anon_id_1","event":"event_1_3"}
-            ]}`
+		                {"anonymousId":"anon_id_1","event":"event_1_1"},
+		                {"anonymousId":"anon_id_2","event":"event_2_1"},
+		                {"anonymousId":"anon_id_3","event":"event_3_1"},
+		                {"anonymousId":"anon_id_1","event":"event_1_2"},
+		                {"anonymousId":"anon_id_2","event":"event_2_2"},
+		                {"anonymousId":"anon_id_1","event":"event_1_3"}
+		            ]}`
 			response, payloadError := gateway.getUsersPayload([]byte(testValidBody))
 			key, err := misc.GetMD5UUID(inputKey)
 			Expect(string(response[key.String()])).To(Equal(value))
@@ -182,14 +194,6 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 		Entry("Expected JSON for Key 3 Test 1 : ", ":anon_id_3", `{"batch":[{"anonymousId":"anon_id_3","event":"event_3_1"}]}`),
 	)
 })
-
-func initGW() {
-	config.Reset()
-	admin.Init()
-	logger.Reset()
-	misc.Init()
-	Init()
-}
 
 var _ = Describe("Gateway Enterprise", func() {
 	initGW()
@@ -332,6 +336,93 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			err = gateway.Shutdown()
 			Expect(err).To(BeNil())
+		})
+	})
+
+	Context("Test All endpoints", func() {
+		var (
+			gateway    *HandleT
+			statsStore *memstats.Store
+			whServer   *httptest.Server
+		)
+
+		BeforeEach(func() {
+			whServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, "OK")
+			}))
+			url, err := url.Parse(whServer.URL)
+			Expect(err).To(BeNil())
+			config.Set("Warehouse.webPort", url.Port())
+
+			gateway = &HandleT{}
+			err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+			Expect(err).To(BeNil())
+			gateway.irh = mockRequestHandler{}
+			gateway.rrh = mockRequestHandler{}
+			gateway.webhookHandler = c.mockWebhook
+			statsStore = memstats.New()
+			gateway.stats = statsStore
+		})
+		AfterEach(func() {
+			err := gateway.Shutdown()
+			Expect(err).To(BeNil())
+			whServer.Close()
+		})
+
+		createValidBody := func(customProperty, customValue string) []byte {
+			validData := fmt.Sprintf(
+				`{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}},%s}`,
+				sdkContext,
+			)
+			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
+
+			return validDataWithProperty
+		}
+		verifyEndpoing := func(endpoints []string, method string) {
+			client := &http.Client{}
+			baseURL := "http://localhost:8080"
+			for _, ep := range endpoints {
+				url := baseURL + ep
+				var req *http.Request
+				var err error
+				if ep == "/beacon/v1/batch" {
+					url = url + "?writeKey=WriteKeyEnabled"
+				}
+
+				if method == http.MethodGet {
+					req, err = http.NewRequest(method, url, nil)
+				} else {
+					req, err = http.NewRequest(method, url, bytes.NewBuffer(createValidBody("custom-property", "custom-value")))
+				}
+				Expect(err).To(BeNil())
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
+				resp, err := client.Do(req)
+				Expect(err).To(BeNil())
+
+				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)))
+
+			}
+		}
+		It("should be able to hit all the handlers", func() {
+			c.mockWebhook.EXPECT().RequestHandler(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, "OK")
+			})
+			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
+			var err error
+			ctx, cancel := context.WithCancel(context.Background())
+			go func() {
+				err = gateway.StartWebHandler(ctx)
+				Expect(err).To(BeNil())
+			}()
+			getEndpoing, postEndpoints, deleteEndpoints := getEndpointMethodMap()
+
+			verifyEndpoing(getEndpoing, http.MethodGet)
+			verifyEndpoing(postEndpoints, http.MethodPost)
+			verifyEndpoing(deleteEndpoints, http.MethodDelete)
+			cancel()
 		})
 	})
 
@@ -792,8 +883,8 @@ var _ = Describe("Gateway", func() {
 					data[i] = 'a'
 				}
 				body := `{
-	                "anonymousId": "anon_id"
-	              }`
+			                "anonymousId": "anon_id"
+			              }`
 				body, _ = sjson.Set(body, "properties", data)
 				if handlerType == "batch" || handlerType == "import" {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
@@ -1063,6 +1154,43 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 	}, testTimeout)
 }
 
+// return all endpoints as key and method as value
+func getEndpointMethodMap() (getEndpoints, postEndpoints, deleteEndpoints []string) {
+	getEndpoints = []string{
+		"/version",
+		"/robots.txt",
+		"/pixel/v1/track",
+		"/pixel/v1/page",
+		"/v1/warehouse",
+		"/v1/webhook",
+		"/v1/job-status/123",
+		"/v1/job-status/123/failed-records",
+	}
+
+	postEndpoints = []string{
+		"/v1/batch",
+		"/v1/identify",
+		"/v1/track",
+		"/v1/page",
+		"/v1/screen",
+		"/v1/alias",
+		"/v1/merge",
+		"/v1/group",
+		"/v1/import",
+		"/v1/audiencelist",
+		"/v1/webhook",
+		"/v1/warehouse",
+		"/beacon/v1/batch",
+		"/internal/v1/extract",
+		"/v1/warehouse/pending-events",
+	}
+
+	deleteEndpoints = []string{
+		"/v1/job-status/1234",
+	}
+	return
+}
+
 func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"alias":        gateway.webAliasHandler,
@@ -1114,4 +1242,10 @@ func getWorkspaceID(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	return enabledWriteKeyWorkspaceMap[writeKey]
+}
+
+type mockRequestHandler struct{}
+
+func (mrh mockRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+	return ""
 }

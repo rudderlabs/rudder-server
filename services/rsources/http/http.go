@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -15,10 +15,10 @@ func NewHandler(service rsources.JobService, logger logger.Logger) http.Handler 
 		service: service,
 		logger:  logger,
 	}
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.getStatus).Methods("GET")
-	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.delete).Methods("DELETE")
-	srvMux.HandleFunc("/v1/job-status/{job_run_id}/failed-records", h.failedRecords).Methods("GET")
+	srvMux := chi.NewRouter()
+	srvMux.Get("/{job_run_id}", h.getStatus)
+	srvMux.Delete("/{job_run_id}", h.delete)
+	srvMux.Get("/{job_run_id}/failed-records", h.failedRecords)
 	return srvMux
 }
 
@@ -120,9 +120,8 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 }
 
 func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []string) {
-	var ok bool
-	jobRunID, ok = mux.Vars(r)["job_run_id"]
-	if !ok {
+	jobRunID = chi.URLParam(r, "job_run_id")
+	if jobRunID == "" {
 		return
 	}
 	tID, okTID := r.URL.Query()["task_run_id"]
