@@ -147,7 +147,7 @@ func (edRep *ErrorDetailReporter) GetClient(clientName string) *types.Client {
 }
 
 func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConfig) {
-	edRep.log.Info("[[ Error Detail Reporting ]] Setting up reporting handler")
+	edRep.log.Info("[Error Detail Reporting] Setting up reporting handler")
 
 	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 
@@ -191,7 +191,8 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 	stmt, err := txn.Prepare(pq.CopyIn(edRep.Table, ErrorDetailReportsColumns...))
 	if err != nil {
 		_ = txn.Rollback()
-		panic(err)
+		edRep.log.Errorf("Failed during statement preparation: %v", err)
+		return
 	}
 	defer func() { _ = stmt.Close() }()
 
@@ -219,13 +220,15 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 			errDets.ErrorMessage,
 		)
 		if err != nil {
-			panic(err)
+			edRep.log.Errorf("Failed during statement execution(each metric): %v", err)
+			return
 		}
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
-		panic(err)
+		edRep.log.Errorf("Failed during statement preparation: %v", err)
+		return
 	}
 }
 
@@ -304,7 +307,9 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 
 	mainLoopTimer := stats.Default.NewTaggedStat("error_detail_reports_main_loop_time", stats.TimerType, tags)
 	getReportsTimer := stats.Default.NewTaggedStat("error_detail_reports_get_reports_time", stats.TimerType, tags)
-	aggregateTimer := stats.Default.NewTaggedStat("error_detai_reportsl_aggregate_time", stats.TimerType, tags)
+	aggregateTimer := stats.Default.NewTaggedStat("error_detail_reports_aggregate_time", stats.TimerType, tags)
+	getReportsSize := stats.Default.NewTaggedStat("error_detail_reports_size", stats.HistogramType, tags)
+	getAggregatedReportsSize := stats.Default.NewTaggedStat("error_detail_reports_aggregated_size", stats.HistogramType, tags)
 
 	errorDetailReportsDeleteQueryTimer := stats.Default.NewTaggedStat("error_detail_reports_delete_query_time", stats.TimerType, tags)
 
@@ -327,8 +332,9 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		currentMs := time.Now().UTC().Unix() / 60
 
 		getReportsStart := time.Now()
-		reports, reportedAt := edRep.getReports(currentMs, clientName)
+		reports, reportedAt := edRep.getReports(ctx, currentMs, clientName)
 		getReportsTimer.Since(getReportsStart)
+		getReportsSize.Observe(float64(len(reports)))
 
 		if len(reports) == 0 {
 			select {
@@ -343,6 +349,7 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 		aggregationStart := time.Now()
 		metrics := edRep.aggregate(reports)
 		aggregateTimer.Since(aggregationStart)
+		getAggregatedReportsSize.Observe(float64(len(metrics)))
 
 		errGroup, errCtx := errgroup.WithContext(ctx)
 		for _, metric := range metrics {
@@ -364,13 +371,14 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 
 		err := errGroup.Wait()
 		if err == nil {
-			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ErrorDetailReportsTable, reportedAt)
+			// sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ErrorDetailReportsTable, reportedAt)
 			dbHandle, err := edRep.getDBHandle(clientName)
 			if err != nil {
-				panic(err)
+				edRep.log.Errorf("error reports deletion getDbhandle failed: %v", err)
+				continue
 			}
 			deleteReportsStart := time.Now()
-			_, err = dbHandle.Exec(sqlStatement)
+			_, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
 				edRep.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
@@ -386,31 +394,34 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 	}
 }
 
-func (edRep *ErrorDetailReporter) getReports(currentMs int64, clientName string) ([]*types.EDReportsDB, int64) {
-	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ErrorDetailReportsTable, currentMs)
+func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, clientName string) ([]*types.EDReportsDB, int64) {
+	// sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ErrorDetailReportsTable, currentMs)
 	var queryMin sql.NullInt64
 	dbHandle, err := edRep.getDBHandle(clientName)
 	if err != nil {
-		panic(err)
+		edRep.log.Errorf("Failed while getting DbHandle: %v", err)
+		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 
 	queryStart := time.Now()
-	err = dbHandle.QueryRow(sqlStatement).Scan(&queryMin)
+	err = dbHandle.QueryRowContext(ctx, "SELECT reported_at FROM "+ErrorDetailReportsTable+" WHERE reported_at < $1 ORDER BY reported_at ASC LIMIT 1", currentMs).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		edRep.log.Errorf("Failed while getting reported_at: %v", err)
+		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 	edRep.minReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
 		return nil, 0
 	}
 	edSelColumns := strings.Join(ErrorDetailReportsColumns, ", ")
-	sqlStatement = fmt.Sprintf(`SELECT %s FROM %s WHERE reported_at = %d`, edSelColumns, ErrorDetailReportsTable, queryMin.Int64)
-	edRep.log.Debugf("[EdRep] sql statement: %s\n", sqlStatement)
+	// sqlStatement = fmt.Sprintf(`SELECT %s FROM %s WHERE reported_at = %d`, edSelColumns, ErrorDetailReportsTable, queryMin.Int64)
+	// edRep.log.Debugf("[EdRep] sql statement: %s\n", sqlStatement)
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement)
+	rows, err = dbHandle.Query(`SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
 	if err != nil {
-		panic(err)
+		edRep.log.Errorf("Failed while getting reports(reported_at=%v): %v", queryMin.Int64, err)
+		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 	edRep.errorDetailReportsQueryTime.Since(queryStart)
 	defer func() { _ = rows.Close() }()
@@ -453,7 +464,8 @@ func (edRep *ErrorDetailReporter) getReports(currentMs int64, clientName string)
 			&dbEdMetric.EDErrorDetails.ErrorMessage,
 		)
 		if err != nil {
-			panic(err)
+			edRep.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
+			return []*types.EDReportsDB{}, queryMin.Int64
 		}
 		metrics = append(metrics, dbEdMetric)
 	}
@@ -536,7 +548,7 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName string, metric *types.EDMetric) error {
 	payload, err := json.Marshal(metric)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("marshal failure: %v", err)
 	}
 	operation := func() error {
 		uri := fmt.Sprintf("%s/recordErrors", edRep.reportingServiceURL)
@@ -553,7 +565,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 		httpRequestStart := time.Now()
 		resp, err := edRep.httpClient.Do(req)
 		if err != nil {
-			edRep.log.Error(err.Error())
+			edRep.log.Errorf("Sending request failed: %v", err)
 			return err
 		}
 
@@ -566,7 +578,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 		respBody, err := io.ReadAll(resp.Body)
 		edRep.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
 		if err != nil {
-			edRep.log.Error(err.Error())
+			edRep.log.Errorf("Reading response failed: %v", err)
 			return err
 		}
 
