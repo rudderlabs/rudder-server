@@ -386,6 +386,8 @@ func TestRedshift_AlterColumn(t *testing.T) {
 		},
 	}
 
+	ctx := context.Background()
+
 	for _, tc := range testCases {
 		tc := tc
 
@@ -449,7 +451,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			)
 			require.ErrorContains(t, err, errors.New("pq: value too long for type character varying(512)").Error())
 
-			res, err := rs.AlterColumn(testTable, testColumn, testColumnType)
+			res, err := rs.AlterColumn(ctx, testTable, testColumn, testColumnType)
 			require.NoError(t, err)
 
 			if tc.createView {
