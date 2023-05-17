@@ -123,6 +123,7 @@ func (jf *JobsForwarder) Start() error {
 								ExecTime:      time.Now(),
 								RetryTime:     time.Now(),
 								ErrorCode:     "400",
+								Parameters:    []byte(`{}`),
 								JobParameters: job.Parameters,
 								ErrorResponse: errorResponse,
 							})
@@ -146,6 +147,7 @@ func (jf *JobsForwarder) Start() error {
 										AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 										JobState:      jobsdb.Succeeded.State,
 										ExecTime:      time.Now(),
+										Parameters:    []byte(`{}`),
 										JobParameters: job.Parameters,
 									})
 									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Increment()
@@ -179,6 +181,7 @@ func (jf *JobsForwarder) Start() error {
 							ExecTime:      time.Now(),
 							RetryTime:     time.Now(),
 							ErrorCode:     "400",
+							Parameters:    []byte(`{}`),
 							JobParameters: job.Parameters,
 							ErrorResponse: errorResponse,
 						})
