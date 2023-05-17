@@ -503,8 +503,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		gateway.batchSizeStat.Observe(float64(len(breq.batchRequest)))
 
 		for _, v := range sourceStats {
-			gateway.logger.Info(`@@@@@@@`)
-			gateway.logger.Info(v)
 			v.Report(gateway.stats)
 		}
 	}
