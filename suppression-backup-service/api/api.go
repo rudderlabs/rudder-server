@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-go-kit/gorillaware"
+	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/rudderlabs/rudder-go-kit/chiware"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
@@ -29,16 +29,18 @@ func NewAPI(logger logger.Logger, fullBackup, latestBackup model.File) *API {
 }
 
 func (api *API) Handler(ctx context.Context) http.Handler {
-	srvMux := mux.NewRouter()
-	srvMux.Use(gorillaware.StatMiddleware(ctx, srvMux, stats.Default, "suppression_backup_service"))
+	srvMux := chi.NewMux()
+	srvMux.Use(chiware.StatMiddleware(ctx, srvMux, stats.Default, "suppression_backup_service"))
+	srvMux.Use(middleware.Compress(gzip.BestSpeed))
 	srvMux.HandleFunc("/health", http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		fmt.Fprintln(rw, "OK")
 	}))
-	srvMux.HandleFunc("/full-export", ServeFile(api.fullBackup)).Methods(http.MethodGet)
-	srvMux.HandleFunc("/latest-export", ServeFile(api.latestBackup)).Methods(http.MethodGet)
+	srvMux.Get("/full-export", ServeFile(api.fullBackup))
+	srvMux.Get("/latest-export", ServeFile(api.latestBackup))
+
 	api.log.Info("Suppression backup service Handler declared")
-	return handlers.CompressHandlerLevel(srvMux, gzip.BestSpeed)
+	return srvMux
 }
 
 func ServeFile(file model.File) func(w http.ResponseWriter, r *http.Request) {

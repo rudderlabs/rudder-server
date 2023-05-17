@@ -21,7 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -103,9 +103,9 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	})
 	require.NoError(t, err)
 
-	backendConfRouter := mux.NewRouter()
+	beConfigRouter := chi.NewRouter()
 	if testing.Verbose() {
-		backendConfRouter.Use(func(next http.Handler) http.Handler {
+		beConfigRouter.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				t.Logf("BackendConfig server call: %+v", r)
 				next.ServeHTTP(w, r)
@@ -113,33 +113,28 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		})
 	}
 
-	backendConfRouter.
-		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
-			n, err := w.Write(marshalledWorkspaces.Bytes())
-			require.NoError(t, err)
-			require.Equal(t, marshalledWorkspaces.Len(), n)
-		})).
-		Methods("GET")
-	backendConfRouter.
-		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
-			expectBody, err := os.ReadFile("testdata/expected_features.json")
-			require.NoError(t, err)
+	beConfigRouter.Get("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
+		n, err := w.Write(marshalledWorkspaces.Bytes())
+		require.NoError(t, err)
+		require.Equal(t, marshalledWorkspaces.Len(), n)
+	}))
+	beConfigRouter.Post("/data-plane/v1/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
+		expectBody, err := os.ReadFile("testdata/expected_features.json")
+		require.NoError(t, err)
 
-			actualBody, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
+		actualBody, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
 
-			require.JSONEq(t, string(expectBody), string(actualBody))
+		require.JSONEq(t, string(expectBody), string(actualBody))
 
-			w.WriteHeader(http.StatusNoContent)
-		})).
-		Methods("POST")
-
-	backendConfRouter.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	beConfigRouter.NotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.FailNowf(t, "backend config", "unexpected request to backend config, not found: %+v", r.URL)
 		w.WriteHeader(http.StatusNotFound)
-	})
+	}))
 
-	backendConfigSrv := httptest.NewServer(backendConfRouter)
+	backendConfigSrv := httptest.NewServer(beConfigRouter)
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
 
