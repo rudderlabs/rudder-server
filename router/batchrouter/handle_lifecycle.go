@@ -91,7 +91,8 @@ func (brt *Handle) Setup(
 
 	config.RegisterIntConfigVariable(10000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
-	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
+	// TODO: Revert
+	config.RegisterDurationConfigVariable(1, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterIntConfigVariable(100000, &brt.jobQueryBatchSize, true, 1, []string{"BatchRouter." + brt.destType + "." + "jobQueryBatchSize", "BatchRouter.jobQueryBatchSize"}...)
@@ -101,7 +102,8 @@ func (brt *Handle) Setup(
 	config.RegisterDurationConfigVariable(600, &brt.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.BatchRouter.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterIntConfigVariable(2, &brt.jobdDBMaxRetries, true, 1, []string{"JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(2, &brt.minIdleSleep, true, time.Second, []string{"BatchRouter.minIdleSleep"}...)
-	config.RegisterDurationConfigVariable(30, &brt.uploadFreq, true, time.Second, []string{"BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq"}...)
+	// TODO: Revert
+	config.RegisterDurationConfigVariable(5, &brt.uploadFreq, true, time.Second, []string{"BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq"}...)
 	config.RegisterBoolConfigVariable(false, &brt.disableEgress, false, "disableEgress")
 	config.RegisterStringConfigVariable("", &brt.toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	config.RegisterDurationConfigVariable(3, &brt.warehouseServiceMaxRetryTime, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)

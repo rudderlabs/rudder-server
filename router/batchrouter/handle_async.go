@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -68,7 +69,13 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 
 						startPollTime := time.Now()
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
-						bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(brt.transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
+						var bodyBytes []byte
+						var statusCode int
+						if brt.destType == "MARKETO_BULK_UPLOAD" {
+							bodyBytes, statusCode = bingads.Poll()
+						} else {
+							bodyBytes, statusCode = misc.HTTPCallWithRetryWithTimeout(brt.transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
+						}
 						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 						brt.asyncPollTimeStat.Since(startPollTime)
 
@@ -76,7 +83,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							panic("HTTP Request Failed" + err.Error())
 						}
 						if statusCode == 200 {
-							var asyncResponse AsyncStatusResponse
+							var asyncResponse asyncdestinationmanager.AsyncStatusResponse
 							if err != nil {
 								panic("Read Body Failed" + err.Error())
 							}
@@ -372,7 +379,12 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeout := uploadIntervalMap[destinationID]
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					uploadResponse := asyncdestinationmanager.Upload(resolveURL(brt.transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					var uploadResponse asyncdestinationmanager.AsyncUploadOutput
+					if brt.destType == "MARKETO_BULK_UPLOAD" {
+						uploadResponse = bingads.Upload(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					} else {
+						uploadResponse = asyncdestinationmanager.Upload(resolveURL(brt.transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					}
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
 				}

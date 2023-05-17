@@ -29,7 +29,7 @@ type AsyncUploadOutput struct {
 	FailedReason        string
 	AbortJobIDs         []int64
 	AbortReason         string
-	importingCount      int
+	ImportingCount      int
 	FailedCount         int
 	AbortCount          int
 	DestinationID       string
@@ -211,7 +211,7 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
 			ImportingParameters: stdjson.RawMessage(importParameters),
-			importingCount:      len(importingJobIDs),
+			ImportingCount:      len(importingJobIDs),
 			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID:       destinationID,
 		}

@@ -76,12 +76,3 @@ type AsyncPoll struct {
 	ImportId string                 `json:"importId"`
 	DestType string                 `json:"destType"`
 }
-
-type AsyncStatusResponse struct {
-	Success        bool
-	StatusCode     int
-	HasFailed      bool
-	HasWarning     bool
-	FailedJobsURL  string
-	WarningJobsURL string
-}
