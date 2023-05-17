@@ -1283,72 +1283,73 @@ func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace
-func (rs *Redshift) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
-	rs.Warehouse = warehouse
-	rs.Namespace = warehouse.Namespace
-	dbHandle, err := rs.connect()
-	if err != nil {
-		return
-	}
-	defer func() { _ = dbHandle.Close() }()
-
-	schema = make(model.Schema)
-	unrecognizedSchema = make(model.Schema)
+func (rs *Redshift) FetchSchema() (model.Schema, model.Schema, error) {
+	schema := make(model.Schema)
+	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := `
-			SELECT
-			  table_name,
-			  column_name,
-			  data_type,
-			  character_maximum_length
-			FROM
-			  INFORMATION_SCHEMA.COLUMNS
-			WHERE
-			  table_schema = $1
-			  and table_name not like $2;
-		`
+		SELECT
+		  table_name,
+		  column_name,
+		  data_type,
+		  character_maximum_length
+		FROM
+		  INFORMATION_SCHEMA.COLUMNS
+		WHERE
+		  table_schema = $1
+		  and table_name not like $2;
+	`
 
-	rows, err := dbHandle.Query(
+	rows, err := rs.DB.Query(
 		sqlStatement,
 		rs.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
-	if err != nil && err != sql.ErrNoRows {
-		rs.Logger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
-		return
-	}
-	if err == sql.ErrNoRows {
-		rs.Logger.Infof("RS: No rows, while fetching schema from  destination:%v, query: %v", rs.Warehouse.Identifier,
-			sqlStatement)
+	if errors.Is(err, sql.ErrNoRows) {
 		return schema, unrecognizedSchema, nil
 	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
 	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var tName, cName, cType string
-		var charLength sql.NullInt64
-		err = rows.Scan(&tName, &cName, &cType, &charLength)
-		if err != nil {
-			rs.Logger.Errorf("RS: Error in processing fetched schema from redshift destination:%v", rs.Warehouse.Destination.ID)
-			return
-		}
-		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(model.TableSchema)
-		}
-		if datatype, ok := dataTypesMapToRudder[cType]; ok {
-			if datatype == "string" && charLength.Int64 > rudderStringLength {
-				datatype = "text"
-			}
-			schema[tName][cName] = datatype
-		} else {
-			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
-			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &rs.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+	for rows.Next() {
+		var tableName, columnName, columnType string
+		var charLength sql.NullInt64
+
+		if err := rows.Scan(&tableName, &columnName, &columnType, &charLength); err != nil {
+			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+		}
+
+		if _, ok := schema[tableName]; !ok {
+			schema[tableName] = make(model.TableSchema)
+		}
+		if datatype, ok := calculateDataType(columnType, charLength); ok {
+			schema[tableName][columnName] = datatype
+		} else {
+			if _, ok := unrecognizedSchema[tableName]; !ok {
+				unrecognizedSchema[tableName] = make(model.TableSchema)
+			}
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &rs.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
-	return
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return schema, unrecognizedSchema, nil
+}
+
+func calculateDataType(columnType string, charLength sql.NullInt64) (string, bool) {
+	if datatype, ok := dataTypesMapToRudder[columnType]; ok {
+		if datatype == "string" && charLength.Int64 > rudderStringLength {
+			datatype = "text"
+		}
+		return datatype, true
+	}
+	return "", false
 }
 
 func (rs *Redshift) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {

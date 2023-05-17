@@ -60,11 +60,18 @@ var WithLimiterDynamicPeriod = func(dynamicPeriod time.Duration) func(*limiter) 
 	}
 }
 
+var WithLimiterTags = func(tags stats.Tags) func(*limiter) {
+	return func(l *limiter) {
+		l.tags = tags
+	}
+}
+
 // NewLimiter creates a new limiter
 func NewLimiter(ctx context.Context, wg *sync.WaitGroup, name string, limit int, statsf stats.Stats, opts ...func(*limiter)) Limiter {
 	l := &limiter{
 		name:     name,
 		limit:    limit,
+		tags:     stats.Tags{},
 		waitList: make(queue.PriorityQueue[chan struct{}], 0),
 	}
 	heap.Init(&l.waitList)
@@ -72,9 +79,9 @@ func NewLimiter(ctx context.Context, wg *sync.WaitGroup, name string, limit int,
 		return time.After(15 * time.Second)
 	}
 	l.stats.stat = statsf
-	l.stats.waitGauge = statsf.NewStat(name+"_limiter_waiting_routines", stats.GaugeType)
-	l.stats.activeGauge = statsf.NewStat(name+"_limiter_active_routines", stats.GaugeType)
-	l.stats.availabilityGauge = statsf.NewStat(name+"_limiter_availability", stats.GaugeType)
+	l.stats.waitGauge = statsf.NewTaggedStat(name+"_limiter_waiting_routines", stats.GaugeType, l.tags)
+	l.stats.activeGauge = statsf.NewTaggedStat(name+"_limiter_active_routines", stats.GaugeType, l.tags)
+	l.stats.availabilityGauge = statsf.NewTaggedStat(name+"_limiter_availability", stats.GaugeType, l.tags)
 
 	for _, opt := range opts {
 		opt(l)
@@ -102,6 +109,7 @@ func NewLimiter(ctx context.Context, wg *sync.WaitGroup, name string, limit int,
 type limiter struct {
 	name          string
 	limit         int
+	tags          stats.Tags
 	dynamicPeriod time.Duration
 
 	mu       sync.Mutex // protects count and waitList below

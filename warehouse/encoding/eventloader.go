@@ -1,6 +1,6 @@
 package encoding
 
-import "github.com/rudderlabs/rudder-server/warehouse/utils"
+import warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 type EventLoader interface {
 	IsLoadTimeColumn(columnName string) bool

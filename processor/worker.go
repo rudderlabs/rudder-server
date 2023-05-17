@@ -2,7 +2,6 @@ package processor
 
 import (
 	"context"
-	"math"
 	"sync"
 	"time"
 
@@ -13,15 +12,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// newWorker creates a new worker
-func newWorker(ctx context.Context, partition string, h workerHandle) *worker {
+// newProcessorWorker creates a new worker
+func newProcessorWorker(partition string, h workerHandle) *worker {
 	w := &worker{
 		handle:    h,
 		logger:    h.logger().Child(partition),
 		partition: partition,
 	}
-	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(ctx)
-	w.channel.ping = make(chan struct{}, 1)
+	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
 	w.channel.preprocess = make(chan subJob, w.handle.config().pipelineBufferedItems)
 	w.channel.transform = make(chan *transformationMessage, w.handle.config().pipelineBufferedItems)
 	w.channel.store = make(chan *storeMessage, (w.handle.config().pipelineBufferedItems+1)*(w.handle.config().maxEventsToProcess/w.handle.config().subJobSize+1))
@@ -43,13 +41,8 @@ type worker struct {
 		ctx    context.Context    // worker context
 		cancel context.CancelFunc // worker context cancel function
 		wg     sync.WaitGroup     // worker wait group
-
-		idleMu    sync.RWMutex // idle mutex
-		idleSince time.Time    // idle since
 	}
-
 	channel struct { // worker channels
-		ping       chan struct{}               // ping channel triggers the worker to start working
 		preprocess chan subJob                 // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
 		transform  chan *transformationMessage // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		store      chan *storeMessage          // store channel is used to send jobs to store asynchronously when pipelining is enabled
@@ -58,37 +51,17 @@ type worker struct {
 
 // start starts the various worker goroutines
 func (w *worker) start() {
-	// ping loop
-	w.lifecycle.wg.Add(1)
-	rruntime.Go(func() {
-		var exponentialSleep misc.ExponentialNumber[time.Duration]
-		defer w.lifecycle.wg.Done()
-		defer close(w.channel.preprocess)
-		defer close(w.channel.ping)
-		defer w.logger.Debugf("ping loop stopped for worker: %s", w.partition)
-		for {
-			select {
-			case <-w.lifecycle.ctx.Done():
-				return
-			case <-w.channel.ping:
-			}
-
-			w.setIdleSince(time.Time{})
-			if w.pickJobs() {
-				exponentialSleep.Reset()
-			} else {
-				if err := misc.SleepCtx(w.lifecycle.ctx, exponentialSleep.Next(w.handle.config().readLoopSleep, w.handle.config().maxLoopSleep)); err != nil {
-					w.logger.Info("ping loop stopped for worker: ", w.partition, " due to: ", err)
-					return
-				}
-				w.setIdleSince(time.Now())
-			}
-		}
-	})
-
 	if !w.handle.config().enablePipelining {
 		return
 	}
+
+	// wait for context to be cancelled
+	w.lifecycle.wg.Add(1)
+	rruntime.Go(func() {
+		defer w.lifecycle.wg.Done()
+		defer close(w.channel.preprocess)
+		<-w.lifecycle.ctx.Done()
+	})
 
 	// preprocess jobs
 	w.lifecycle.wg.Add(1)
@@ -131,7 +104,7 @@ func (w *worker) start() {
 					rsourcesStats:         subJob.rsourcesStats,
 					uniqueMessageIds:      make(map[string]struct{}),
 					procErrorJobsByDestID: make(map[string][]*jobsdb.JobT),
-					sourceDupStats:        make(map[string]int),
+					sourceDupStats:        make(map[dupStatKey]int),
 					start:                 subJob.start,
 				}
 				firstSubJob = false
@@ -146,16 +119,16 @@ func (w *worker) start() {
 	})
 }
 
-// pickJobs picks the next set of jobs from the jobsdb and returns [true] if jobs were picked, [false] otherwise
-func (w *worker) pickJobs() (picked bool) {
+// Work picks the next set of jobs from the jobsdb and returns [true] if jobs were picked, [false] otherwise
+func (w *worker) Work() (worked bool) {
 	if w.handle.config().enablePipelining {
 		start := time.Now()
 		jobs := w.handle.getJobs(w.partition)
-
+		afterGetJobs := time.Now()
 		if len(jobs.Jobs) == 0 {
 			return
 		}
-		picked = true
+		worked = true
 
 		if err := w.handle.markExecuting(jobs.Jobs); err != nil {
 			w.logger.Error(err)
@@ -171,41 +144,27 @@ func (w *worker) pickJobs() (picked bool) {
 			w.channel.preprocess <- subJob
 		}
 
-		// sleepRatio is dependent on the number of events read in this loop
-		sleepRatio := 1.0 - math.Min(1, float64(jobs.EventsCount)/float64(w.handle.config().maxEventsToProcess))
-		if err := misc.SleepCtx(w.lifecycle.ctx, time.Duration(sleepRatio*float64(w.handle.config().readLoopSleep))); err != nil {
-			return
+		if !jobs.LimitsReached {
+			readLoopSleep := w.handle.config().readLoopSleep
+			if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep {
+				if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep-elapsed); err != nil {
+					return
+				}
+			}
 		}
+
 		return
 	} else {
 		return w.handle.handlePendingGatewayJobs(w.partition)
 	}
 }
 
-func (w *worker) setIdleSince(t time.Time) {
-	w.lifecycle.idleMu.Lock()
-	defer w.lifecycle.idleMu.Unlock()
-	w.lifecycle.idleSince = t
-}
-
-// Ping triggers the worker to pick more jobs
-func (w *worker) Ping() {
-	select {
-	case w.channel.ping <- struct{}{}:
-	default:
-	}
-}
-
-// IdleSince returns the time when the worker was last idle. If the worker is not idle, it returns a zero time.
-func (w *worker) IdleSince() time.Time {
-	w.lifecycle.idleMu.RLock()
-	defer w.lifecycle.idleMu.RUnlock()
-	return w.lifecycle.idleSince
+func (w *worker) SleepDurations() (min, max time.Duration) {
+	return w.handle.config().readLoopSleep, w.handle.config().maxLoopSleep
 }
 
 // Stop stops the worker and waits until all its goroutines have stopped
 func (w *worker) Stop() {
 	w.lifecycle.cancel()
 	w.lifecycle.wg.Wait()
-	w.logger.Debugf("Stopped worker: %s", w.partition)
 }

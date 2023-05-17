@@ -318,7 +318,7 @@ func (d *Deltalake) dropTable(table string) error {
 }
 
 // FetchSchema fetches the schema from the warehouse
-func (d *Deltalake) FetchSchema(model.Warehouse) (model.Schema, model.Schema, error) {
+func (d *Deltalake) FetchSchema() (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 	tableNames, err := d.fetchTables(nonRudderStagingTableRegex)

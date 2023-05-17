@@ -139,9 +139,15 @@ const (
 var DeprecatedColumnsRegex = regexp.MustCompile(`.*-deprecated-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 var (
-	IdentityEnabledWarehouses []string
-	enableIDResolution        bool
-	AWSCredsExpiryInS         int64
+	pkgLogger          logger.Logger
+	enableIDResolution bool
+	AWSCredsExpiryInS  int64
+
+	TimeWindowDestinations    []string = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
+	WarehouseDestinations     []string = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
+	IdentityEnabledWarehouses []string = []string{SNOWFLAKE, BQ}
+	S3PathStyleRegex                   = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
+	S3VirtualHostedRegex               = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
 )
 
 var WHDestNameMap = map[string]string{
@@ -188,26 +194,12 @@ const (
 	TestConnectionTimeout  = 15 * time.Second
 )
 
-var (
-	pkgLogger              logger.Logger
-	TimeWindowDestinations []string
-	WarehouseDestinations  []string
-)
-
-var (
-	S3PathStyleRegex     = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
-	S3VirtualHostedRegex = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
-)
-
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
 }
 
 func loadConfig() {
-	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
-	TimeWindowDestinations = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
-	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 }
@@ -303,6 +295,26 @@ type PendingEventsResponse struct {
 type TriggerUploadRequest struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+}
+
+type SourceIDDestinationID struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+}
+
+type FetchTablesRequest struct {
+	Connections []SourceIDDestinationID `json:"connections"`
+}
+
+type FetchTableInfo struct {
+	SourceID      string   `json:"source_id"`
+	DestinationID string   `json:"destination_id"`
+	Namespace     string   `json:"namespace"`
+	Tables        []string `json:"tables"`
+}
+
+type FetchTablesResponse struct {
+	ConnectionsTables []FetchTableInfo `json:"connections_tables"`
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {

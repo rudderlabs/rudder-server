@@ -51,8 +51,8 @@ func (d *Datalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uplo
 
 func (*Datalake) CrashRecover() {}
 
-func (d *Datalake) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
-	return d.SchemaRepository.FetchSchema(warehouse)
+func (d *Datalake) FetchSchema() (model.Schema, model.Schema, error) {
+	return d.SchemaRepository.FetchSchema(d.Warehouse)
 }
 
 func (d *Datalake) CreateSchema() (err error) {
@@ -135,6 +135,6 @@ func (*Datalake) LoadTestTable(_, _ string, _ map[string]interface{}, _ string) 
 func (*Datalake) SetConnectionTimeout(_ time.Duration) {
 }
 
-func (d *Datalake) ErrorMappings() []model.JobError {
+func (*Datalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

@@ -28,7 +28,7 @@ const (
 	ERROR_AT_CUST = "custom"
 )
 
-type BatchDestinationT struct {
+type DestinationWithSources struct {
 	Destination backendconfig.DestinationT
 	Sources     []backendconfig.SourceT
 }
@@ -61,7 +61,7 @@ func getRetentionTimeForDestination(destID string) time.Duration {
 	return JobRetention
 }
 
-func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
+func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*DestinationWithSources) (bool, string) {
 	// drain if job is older than the destination's retention time
 	jobReceivedAt := gjson.GetBytes(job.Parameters, "received_at")
 	if jobReceivedAt.Exists() {

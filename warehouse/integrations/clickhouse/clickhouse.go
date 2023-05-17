@@ -213,8 +213,8 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 	}
 }
 
-// ConnectToClickhouse connects to clickhouse with provided credentials
-func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
+// connectToClickhouse connects to clickhouse with provided credentials
+func (ch *Clickhouse) connectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
 	dsn := url.URL{
 		Scheme: "tcp",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -763,7 +763,7 @@ func (ch *Clickhouse) createSchema() (err error) {
 		ch.Logger.Infof("CH: Skipping creating database: %s since it already exists", ch.Namespace)
 		return
 	}
-	dbHandle, err := ch.ConnectToClickhouse(ch.getConnectionCredentials(), false)
+	dbHandle, err := ch.connectToClickhouse(ch.getConnectionCredentials(), false)
 	if err != nil {
 		return err
 	}
@@ -938,26 +938,18 @@ func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.U
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	ch.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, ch.NumWorkersDownloadLoadFiles)
 
-	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
+	ch.DB, err = ch.connectToClickhouse(ch.getConnectionCredentials(), true)
 	return err
 }
 
 func (*Clickhouse) CrashRecover() {}
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecognizedSchema model.Schema, err error) {
-	ch.Warehouse = warehouse
-	ch.Namespace = warehouse.Namespace
-	dbHandle, err := ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
-	if err != nil {
-		return
-	}
-	defer dbHandle.Close()
+func (ch *Clickhouse) FetchSchema() (model.Schema, model.Schema, error) {
+	schema := make(model.Schema)
+	unrecognizedSchema := make(model.Schema)
 
-	schema = make(model.Schema)
-	unrecognizedSchema = make(model.Schema)
-
-	sqlStatement := fmt.Sprintf(`
+	sqlStatement := `
 		SELECT
 		  table,
 		  name,
@@ -965,47 +957,47 @@ func (ch *Clickhouse) FetchSchema(warehouse model.Warehouse) (schema, unrecogniz
 		FROM
 		  system.columns
 		WHERE
-		  database = '%s'
-	`,
-		ch.Namespace,
-	)
+		  database = ?
+	`
 
-	rows, err := dbHandle.Query(sqlStatement)
-	if err != nil && err != sql.ErrNoRows {
-		if exception, ok := err.(*clickhouse.Exception); ok && exception.Code == 81 {
-			ch.Logger.Infof("CH: No database found while fetching schema: %s from  destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
-			return schema, unrecognizedSchema, nil
-		}
-		ch.Logger.Errorf("CH: Error in fetching schema from clickhouse destination:%v, query: %v", ch.Warehouse.Destination.ID, sqlStatement)
-		return
-	}
-	if err == sql.ErrNoRows {
-		ch.Logger.Infof("CH: No rows, while fetching schema: %s from destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
+	rows, err := ch.DB.Query(sqlStatement, ch.Namespace)
+	if errors.Is(err, sql.ErrNoRows) {
 		return schema, unrecognizedSchema, nil
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var tName, cName, cType string
-		err = rows.Scan(&tName, &cName, &cType)
-		if err != nil {
-			ch.Logger.Errorf("CH: Error in processing fetched schema from clickhouse destination:%v", ch.Warehouse.Destination.ID)
-			return
+	if err != nil {
+		if clickhouseErr, ok := err.(*clickhouse.Exception); ok && clickhouseErr.Code == 81 {
+			return schema, unrecognizedSchema, nil
 		}
-		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(model.TableSchema)
-		}
-		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
-			schema[tName][cName] = datatype
-		} else {
-			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
 
-			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
+	for rows.Next() {
+		var tableName, columnName, columnType string
+
+		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
+			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+		}
+
+		if _, ok := schema[tableName]; !ok {
+			schema[tableName] = make(model.TableSchema)
+		}
+		if datatype, ok := clickhouseDataTypesMapToRudder[columnType]; ok {
+			schema[tableName][columnName] = datatype
+		} else {
+			if _, ok := unrecognizedSchema[tableName]; !ok {
+				unrecognizedSchema[tableName] = make(model.TableSchema)
+			}
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+
+			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
-	return
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return schema, unrecognizedSchema, nil
 }
 
 func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]error) {
@@ -1079,7 +1071,7 @@ func (ch *Clickhouse) Connect(warehouse model.Warehouse) (client.Client, error) 
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
 	)
-	dbHandle, err := ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
+	dbHandle, err := ch.connectToClickhouse(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return client.Client{}, err
 	}
