@@ -265,7 +265,6 @@ func TestMainFlow(t *testing.T) {
 		method := "GET"
 		resBody, _ := getEvent(url, method)
 		require.Eventually(t, func() bool {
-
 			// Similarly, pole until the Event Schema Tables are updated
 			resBody, _ = getEvent(url, method)
 			return resBody != "[]"
