@@ -2050,14 +2050,15 @@ func (proc *Handle) transformSrcDest(
 	destination := &eventList[0].Destination
 	workspaceID := eventList[0].Metadata.WorkspaceID
 	commonMetaData := &transformer.MetadataT{
-		SourceID:        sourceID,
-		SourceType:      eventList[0].Metadata.SourceType,
-		SourceCategory:  eventList[0].Metadata.SourceCategory,
-		WorkspaceID:     workspaceID,
-		Namespace:       config.GetKubeNamespace(),
-		InstanceID:      misc.GetInstanceID(),
-		DestinationID:   destID,
-		DestinationType: destination.DestinationDefinition.Name,
+		SourceID:             sourceID,
+		SourceType:           eventList[0].Metadata.SourceType,
+		SourceCategory:       eventList[0].Metadata.SourceCategory,
+		WorkspaceID:          workspaceID,
+		Namespace:            config.GetKubeNamespace(),
+		InstanceID:           misc.GetInstanceID(),
+		DestinationID:        destID,
+		DestinationType:      destination.DestinationDefinition.Name,
+		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
 	}
 
 	reportMetrics := make([]*types.PUReportedMetric, 0)

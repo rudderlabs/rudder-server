@@ -1625,10 +1625,6 @@ func setupDB(ctx context.Context, connInfo string) error {
 		return err
 	}
 
-	if isStandAloneSlave() {
-		dbHandle.SetMaxOpenConns(1)
-	}
-
 	if err = dbHandle.PingContext(ctx); err != nil {
 		return fmt.Errorf("could not ping WH db: %w", err)
 	}
