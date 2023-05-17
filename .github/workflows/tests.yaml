@@ -41,12 +41,34 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        destination: [ mssql, azure-synapse]
+        destination: [ bigquery, clickhouse, datalake, deltalake, deltalake-native, mssql, azure-synapse, postgres, postgres-legacy, redshift, snowflake ]
         include:
+          - package: warehouse/integrations/bigquery
+            destination: bigquery
+          - package: warehouse/integrations/clickhouse
+            destination: clickhouse
+          - package: warehouse/integrations/datalake
+            destination: datalake
+          - package: warehouse/integrations/deltalake-native
+            destination: deltalake
+            useNative: false
+          - package: warehouse/integrations/deltalake-native
+            destination: deltalake-native
+            useNative: true
           - package: warehouse/integrations/mssql
             destination: mssql
           - package: warehouse/integrations/azure-synapse
             destination: azure-synapse
+          - package: warehouse/integrations/postgres
+            destination: postgres
+            useLegacy: false
+          - package: warehouse/integrations/postgres
+            destination: postgres-legacy
+            useLegacy: true
+          - package: warehouse/integrations/redshift
+            destination: redshift
+          - package: warehouse/integrations/snowflake
+            destination: snowflake
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -110,6 +132,8 @@ jobs:
     needs: [warehouse-integration, unit]
     runs-on: 'ubuntu-20.04'
     steps:
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
@@ -117,8 +141,6 @@ jobs:
           check-latest: true
       - name: Download coverage reports
         uses: actions/download-artifact@v3
-      - name: List coverage reports
-        run: ls -R
       - name: Merge Coverage
         run: |
           go install github.com/wadey/gocovmerge@latest
