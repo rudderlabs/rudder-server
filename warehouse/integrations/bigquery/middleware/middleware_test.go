@@ -2,28 +2,31 @@ package middleware_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
+
+	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
 	"github.com/golang/mock/gomock"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/stretchr/testify/require"
 )
 
 func TestQueryWrapper(t *testing.T) {
-	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
+	if !bqHelper.IsBQTestCredentialsAvailable() {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
 	}
 
-	credentials, err := testhelper.BigqueryCredentials()
+	bqTestCredentials, err := bqHelper.GetBQTestCredentials()
 	require.NoError(t, err)
 
-	db, err := bigquery.Connect(context.TODO(), &credentials)
+	db, err := bigquery.Connect(context.TODO(), &bigquery.BQCredentials{
+		ProjectID:   bqTestCredentials.ProjectID,
+		Credentials: bqTestCredentials.Credentials,
+	})
 	require.NoError(t, err)
 
 	testCases := []struct {

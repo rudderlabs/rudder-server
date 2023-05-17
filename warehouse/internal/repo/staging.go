@@ -150,7 +150,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 		stagingFile.WorkspaceID,
 		stagingFile.SourceID,
 		stagingFile.DestinationID,
-		stagingFile.Status,
+		warehouseutils.StagingFileWaitingState,
 		stagingFile.TotalEvents,
 		stagingFile.TotalBytes,
 		firstEventAt,

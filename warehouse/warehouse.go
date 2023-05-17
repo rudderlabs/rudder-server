@@ -156,6 +156,7 @@ type HandleT struct {
 	NowSQL                            string
 	Logger                            logger.Logger
 	cpInternalClient                  cpclient.InternalControlPlane
+	conf                              *config.Config
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -422,7 +423,7 @@ func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backen
 		}
 	}
 	// TODO: Move config to global level based on use case
-	namespacePrefix := config.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[wh.destType]), "")
+	namespacePrefix := wh.conf.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[wh.destType]), "")
 	if namespacePrefix != "" {
 		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
@@ -864,6 +865,7 @@ func (wh *HandleT) Disable() {
 func (wh *HandleT) Setup(whType string) error {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.Logger = pkgLogger
+	wh.conf = config.Default
 	wh.dbHandle = dbHandle
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
@@ -907,8 +909,8 @@ func (wh *HandleT) Setup(whType string) error {
 	wh.cpInternalClient = cpclient.NewInternalClientWithCache(
 		configBackendURL,
 		cpclient.BasicAuth{
-			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
-			Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
+			Username: wh.conf.GetString("CP_INTERNAL_API_USERNAME", ""),
+			Password: wh.conf.GetString("CP_INTERNAL_API_PASSWORD", ""),
 		},
 	)
 
@@ -995,6 +997,7 @@ func minimalConfigSubscriber(ctx context.Context) {
 							dbHandle:     dbHandle,
 							destType:     destination.DestinationDefinition.Name,
 							whSchemaRepo: repo.NewWHSchemas(dbHandle),
+							conf:         config.Default,
 						}
 						namespace := wh.getNamespace(source, destination)
 
@@ -1146,29 +1149,6 @@ func CheckPGHealth(dbHandle *sql.DB) bool {
 		return false
 	}
 	return true
-}
-
-func setConfigHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
-		http.Error(w, "can't read body", http.StatusBadRequest)
-		return
-	}
-	defer func() { _ = r.Body.Close() }()
-
-	var kvs []warehouseutils.KeyValue
-	err = json.Unmarshal(body, &kvs)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
-		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
-		return
-	}
-
-	for _, kv := range kvs {
-		config.Set(kv.Key, kv.Value)
-	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -1455,6 +1435,45 @@ func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion()))
 }
 
+func fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	defer func() { _ = r.Body.Close() }()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
+		http.Error(w, "can't read body", http.StatusBadRequest)
+		return
+	}
+
+	var connectionsTableRequest warehouseutils.FetchTablesRequest
+	err = json.Unmarshal(body, &connectionsTableRequest)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
+		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
+		return
+	}
+
+	schemaRepo := repo.NewWHSchemas(dbHandle)
+	tables, err := schemaRepo.GetTablesForConnection(ctx, connectionsTableRequest.Connections)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error fetching tables: %v", err)
+		http.Error(w, "can't fetch tables from schemas repo", http.StatusInternalServerError)
+		return
+	}
+	resBody, err := json.Marshal(warehouseutils.FetchTablesResponse{
+		ConnectionsTables: tables,
+	})
+	if err != nil {
+		err := fmt.Errorf("failed to marshall tables to response : %v", err)
+		pkgLogger.Errorf("[WH]: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, _ = w.Write(resBody)
+}
+
 func isUploadTriggered(wh model.Warehouse) bool {
 	triggerUploadsMapLock.RLock()
 	defer triggerUploadsMapLock.RUnlock()
@@ -1533,11 +1552,13 @@ func startWebHandler(ctx context.Context) error {
 			// triggers uploads for a source
 			srvMux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler).Methods("POST")
 			srvMux.HandleFunc("/databricksVersion", databricksVersionHandler).Methods("GET")
-			srvMux.HandleFunc("/v1/setConfig", setConfigHandler).Methods("POST")
 
 			// Warehouse Async Job end-points
 			srvMux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler).Methods("POST")          // FIXME: add degraded mode
 			srvMux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler).Methods("GET") // FIXME: add degraded mode
+
+			// fetch schema info
+			srvMux.HandleFunc("/v1/warehouse/fetch-tables", fetchTablesHandler).Methods("GET")
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
