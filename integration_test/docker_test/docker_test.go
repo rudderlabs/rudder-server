@@ -107,7 +107,6 @@ func TestMainFlow(t *testing.T) {
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := setupMainFlow(svcCtx, t)
 	sendEventsToGateway(t)
-
 	t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return webhook.RequestsCount() == 10
@@ -266,6 +265,7 @@ func TestMainFlow(t *testing.T) {
 		method := "GET"
 		resBody, _ := getEvent(url, method)
 		require.Eventually(t, func() bool {
+
 			// Similarly, pole until the Event Schema Tables are updated
 			resBody, _ = getEvent(url, method)
 			return resBody != "[]"
