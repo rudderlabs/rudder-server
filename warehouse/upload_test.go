@@ -565,7 +565,7 @@ func TestUploadJobT_Aborted(t *testing.T) {
 			job := &UploadJob{
 				minRetryAttempts: minAttempts,
 				retryTimeWindow:  minRetryWindow,
-				Now:              func() time.Time { return now },
+				now:              func() time.Time { return now },
 				ctx:              context.Background(),
 			}
 

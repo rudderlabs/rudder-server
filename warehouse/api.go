@@ -401,7 +401,7 @@ func (uploadReq *UploadReq) TriggerWHUpload(ctx context.Context) (response *prot
 	uploadJobT := UploadJob{
 		upload:   upload,
 		dbHandle: uploadReq.API.dbHandle,
-		Now:      timeutil.Now,
+		now:      timeutil.Now,
 		ctx:      ctx,
 	}
 
