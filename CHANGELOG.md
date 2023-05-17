@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.5](https://github.com/rudderlabs/rudder-server/compare/v1.8.4...v1.8.5) (2023-05-17)
+
+
+### Bug Fixes
+
+* max connections for warehouse slaves ([#3341](https://github.com/rudderlabs/rudder-server/issues/3341)) ([b355eb2](https://github.com/rudderlabs/rudder-server/commit/b355eb2e87aaf7985e1d225f9b24a7ff89b3c33b))
+
 ## [1.8.4](https://github.com/rudderlabs/rudder-server/compare/v1.8.3...v1.8.4) (2023-05-17)
 
 
