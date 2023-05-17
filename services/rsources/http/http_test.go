@@ -37,7 +37,7 @@ func TestDelete(t *testing.T) {
 			name:                 "basic test",
 			jobRunId:             "123",
 			jobFilter:            rsources.JobFilter{},
-			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
+			endpoint:             prepURL("/{job_run_id}", "123"),
 			method:               http.MethodDelete,
 			expectedResponseCode: http.StatusNoContent,
 		},
@@ -45,7 +45,7 @@ func TestDelete(t *testing.T) {
 			name:                 "service returns error test",
 			jobRunId:             "123",
 			jobFilter:            rsources.JobFilter{},
-			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
+			endpoint:             prepURL("/{job_run_id}", "123"),
 			method:               http.MethodDelete,
 			expectedResponseCode: http.StatusInternalServerError,
 			serviceReturnError:   fmt.Errorf("something when wrong"),
@@ -54,7 +54,7 @@ func TestDelete(t *testing.T) {
 			name:                 "job run id doesn't exist",
 			jobRunId:             "invalid",
 			jobFilter:            rsources.JobFilter{},
-			endpoint:             prepURL("/v1/job-status/{job_run_id}", "invalid"),
+			endpoint:             prepURL("/{job_run_id}", "invalid"),
 			method:               http.MethodDelete,
 			expectedResponseCode: http.StatusNotFound,
 			serviceReturnError:   rsources.ErrStatusNotFound,
@@ -63,7 +63,7 @@ func TestDelete(t *testing.T) {
 			name:                 "job's source is incomplete",
 			jobRunId:             "123",
 			jobFilter:            rsources.JobFilter{},
-			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
+			endpoint:             prepURL("/{job_run_id}", "123"),
 			method:               http.MethodDelete,
 			expectedResponseCode: http.StatusBadRequest,
 			serviceReturnError:   rsources.ErrSourceNotCompleted,
@@ -124,7 +124,7 @@ func TestGetStatus(t *testing.T) {
 		{
 			name:                 "basic test - get status success",
 			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
+			endpoint:             prepURL("/{job_run_id}", "123"),
 			method:               "GET",
 			expectedResponseCode: 200,
 			filter: map[string][]string{
@@ -191,7 +191,7 @@ func TestGetStatus(t *testing.T) {
 		{
 			name:                 "basic test - GetStatus fails with StatusNotFoundError",
 			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
+			endpoint:             prepURL("/{job_run_id}", "123"),
 			method:               "GET",
 			expectedResponseCode: http.StatusNotFound,
 			filter: map[string][]string{
@@ -205,7 +205,7 @@ func TestGetStatus(t *testing.T) {
 		{
 			name:                 "basic test - GetStatus fails with internal server error",
 			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
+			endpoint:             prepURL("/{job_run_id}", "123"),
 			method:               "GET",
 			expectedResponseCode: 500,
 			filter: map[string][]string{
@@ -262,7 +262,7 @@ func TestGetFailedRecords(t *testing.T) {
 		{
 			name:                 "basic test - GetFailedRecords succeeds",
 			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_run_id}/failed-records", "123"),
+			endpoint:             prepURL("/{job_run_id}/failed-records", "123"),
 			method:               "GET",
 			expectedResponseCode: http.StatusOK,
 			filter: map[string][]string{
@@ -288,7 +288,7 @@ func TestGetFailedRecords(t *testing.T) {
 		{
 			name:                 "get failed records basic test with no failed records",
 			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_run_id}/failed-records", "123"),
+			endpoint:             prepURL("/{job_run_id}/failed-records", "123"),
 			method:               "GET",
 			expectedResponseCode: 200,
 			failedRecordsError:   nil,
@@ -302,7 +302,7 @@ func TestGetFailedRecords(t *testing.T) {
 		{
 			name:                 "get failed records basic test - GetFailedRecords fails",
 			jobID:                "123",
-			endpoint:             prepURL("/v1/job-status/{job_run_id}/failed-records", "123"),
+			endpoint:             prepURL("/{job_run_id}/failed-records", "123"),
 			method:               "GET",
 			expectedResponseCode: 500,
 			filter: map[string][]string{
