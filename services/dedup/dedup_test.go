@@ -24,7 +24,7 @@ func Test_Dedup(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
 
-	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
+	d := dedup.New(dbPath)
 	defer d.Close()
 
 	t.Run("if message id is not present in cache and badger db", func(t *testing.T) {
@@ -65,8 +65,8 @@ func Test_Dedup_Window(t *testing.T) {
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
-
-	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Second))
+	config.Set("Dedup.dedupWindow", "1s")
+	d := dedup.New(dbPath)
 	defer d.Close()
 
 	found, _ := d.Set(dedup.KeyValue{Key: "to be deleted", Value: 1})
@@ -93,7 +93,7 @@ func Test_Dedup_ClearDB(t *testing.T) {
 	_ = os.RemoveAll(dbPath)
 
 	t.Run("Setting a messageid with clear db and dedup window", func(t *testing.T) {
-		d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
+		d := dedup.New(dbPath)
 		found, _ := d.Set(dedup.KeyValue{Key: "a", Value: 1})
 		require.Equal(t, true, found)
 		err := d.Commit([]string{"a"})
@@ -107,12 +107,6 @@ func Test_Dedup_ClearDB(t *testing.T) {
 		require.Equal(t, int64(1), size)
 		dNew.Close()
 	})
-	t.Run("Setting a messageid with cleardb should return true", func(t *testing.T) {
-		dWithClear := dedup.New(dbPath, dedup.WithClearDB())
-		found, _ := dWithClear.Set(dedup.KeyValue{Key: "a", Value: 1})
-		require.Equal(t, true, found)
-		dWithClear.Close()
-	})
 }
 
 func Test_Dedup_ErrTxnTooBig(t *testing.T) {
@@ -122,7 +116,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
 	defer os.RemoveAll(dbPath)
 	os.RemoveAll(dbPath)
-	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Hour))
+	d := dedup.New(dbPath)
 	defer d.Close()
 
 	size := 105_000
@@ -142,7 +136,7 @@ func Benchmark_Dedup(b *testing.B) {
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.MkdirAll(dbPath, 0o750)
-	d := dedup.New(dbPath, dedup.WithClearDB(), dedup.WithWindow(time.Minute))
+	d := dedup.New(dbPath)
 
 	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {
 		batchSize := 1000

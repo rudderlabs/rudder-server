@@ -7,8 +7,8 @@ import (
 	"path"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
-	"github.com/dgraph-io/badger/v3/options"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -31,7 +31,7 @@ func (e *Cache[E]) loadCacheConfig() {
 	config.RegisterIntConfigVariable(5, &e.numLevelZeroTables, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTables", "LiveEvent.cache.NumLevelZeroTables")
 	config.RegisterIntConfigVariable(15, &e.numLevelZeroTablesStall, false, 1, "LiveEvent.cache."+e.origin+".NumLevelZeroTablesStall", "LiveEvent.cache.NumLevelZeroTablesStall")
 	// Using the maximum value threshold: (1 << 20) == 1048576 (1MB)
-	config.RegisterInt64ConfigVariable((1 << 20), &e.valueThreshold, false, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
+	config.RegisterInt64ConfigVariable(1<<20, &e.valueThreshold, false, 1, "LiveEvent.cache."+e.origin+".ValueThreshold", "LiveEvent.cache.ValueThreshold")
 	config.RegisterBoolConfigVariable(false, &e.syncWrites, false, "LiveEvent.cache."+e.origin+".SyncWrites", "LiveEvent.cache.SyncWrites")
 	config.RegisterBoolConfigVariable(true, &e.cleanupOnStartup, false, "LiveEvent.cache."+e.origin+".CleanupOnStartup", "LiveEvent.cache.CleanupOnStartup")
 }
@@ -145,7 +145,7 @@ func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...fun
 		opt(e)
 	}
 	badgerOpts := badger.
-		DefaultOptions(storagePath).
+		DefaultOptions(e.path).
 		WithLogger(badgerLogger{e.logger}).
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
@@ -193,9 +193,9 @@ func (e *Cache[E]) gcBadgerDB() {
 		}
 
 		statName := fmt.Sprintf("liveevent-cache-%s", e.origin)
-		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
-		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
-		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge(lsmSize)
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge(vlogSize)
+		e.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge(totSize)
 	}
 }
 
