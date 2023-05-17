@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.4](https://github.com/rudderlabs/rudder-server/compare/v1.8.3...v1.8.4) (2023-05-17)
+
+
+### Bug Fixes
+
+* include source definition type when destination has UT ([#3338](https://github.com/rudderlabs/rudder-server/issues/3338)) ([3343017](https://github.com/rudderlabs/rudder-server/commit/334301754f2862a75ab1b633475538cbb435e186))
+
 ## [1.8.3](https://github.com/rudderlabs/rudder-server/compare/v1.8.2...v1.8.3) (2023-05-12)
 
 
