@@ -1,12 +1,15 @@
 package router
 
 import (
+	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	reportingPkg "github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type Factory struct {
@@ -24,6 +27,11 @@ type Factory struct {
 }
 
 func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
+	reportingEnabled := false
+	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &reportingEnabled, false, "Reporting.enabled")
+	if f.ErrorReporting == nil || !reportingEnabled {
+		f.ErrorReporting = &reportingPkg.NOOP{}
+	}
 	r := &HandleT{
 		Reporting:        f.Reporting,
 		ErrorReporting:   f.ErrorReporting,
