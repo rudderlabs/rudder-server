@@ -297,6 +297,26 @@ type TriggerUploadRequest struct {
 	DestinationID string `json:"destination_id"`
 }
 
+type SourceIDDestinationID struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+}
+
+type FetchTablesRequest struct {
+	Connections []SourceIDDestinationID `json:"connections"`
+}
+
+type FetchTableInfo struct {
+	SourceID      string   `json:"source_id"`
+	DestinationID string   `json:"destination_id"`
+	Namespace     string   `json:"namespace"`
+	Tables        []string `json:"tables"`
+}
+
+type FetchTablesResponse struct {
+	ConnectionsTables []FetchTableInfo `json:"connections_tables"`
+}
+
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
 	timingsMap := gjson.Parse(str.String).Map()
 	for s, t := range timingsMap {

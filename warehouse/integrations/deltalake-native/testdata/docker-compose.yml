@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  databricks-connector:
+    image: rudderstack/rudder-databricks-connector:v1.4.2
+    ports:
+      - "50051"
+    healthcheck:
+      test: /bin/grpc_health_probe -addr=localhost:50051
+      interval: 1s
+      retries: 25

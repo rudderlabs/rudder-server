@@ -1,9 +1,9 @@
 package workspaceConfig
 
 import (
-	"html/template"
 	"os"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/require"
 )
