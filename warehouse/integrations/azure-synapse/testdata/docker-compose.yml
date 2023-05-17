@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  azure_synapse:
+    image: rudderstack/azure-sql-edge:1.0.6
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=reallyStrongPwd123
+      - SA_DB=master
+      - SA_USER=SA
+    ports:
+      - "1433"
