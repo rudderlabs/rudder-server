@@ -1473,3 +1473,41 @@ func initJobsDB() {
 	Init2()
 	archiver.Init()
 }
+
+// TestWithExponentialBackoffRetry tests WithExponentialBackoffRetry func
+func TestWithExponentialBackoffRetry(t *testing.T) {
+	ctx := context.Background()
+	maxWait := 2 * time.Second
+
+	t.Run("Successful execution without retries", func(t *testing.T) {
+		err := WithExponentialBackoffRetry(ctx, func(ctx context.Context) error {
+			return nil
+		}, maxWait)
+		require.NoError(t, err, "Expected no error, got: %v", err)
+	})
+
+	t.Run("Retries with exponential backoff", func(t *testing.T) {
+		var callCount int
+		err := WithExponentialBackoffRetry(ctx, func(ctx context.Context) error {
+			callCount++
+			return errors.New("mock error")
+		}, maxWait)
+		require.NotNil(t, err, "Expected error, got nil")
+		require.Greater(t, callCount, 1, "Expected more than 1 call, got %d", callCount)
+	})
+
+	t.Run("Successful execution after retries", func(t *testing.T) {
+		retryCount := 2
+		var callCount int
+
+		err := WithExponentialBackoffRetry(ctx, func(ctx context.Context) error {
+			callCount++
+			if callCount <= retryCount {
+				return errors.New("mock error")
+			}
+			return nil
+		}, maxWait)
+		require.NoError(t, err, "Expected no error, got: %v", err)
+		require.Equal(t, retryCount+1, callCount, "Expected %d calls, got %d", retryCount+1, callCount)
+	})
+}
