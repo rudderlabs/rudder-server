@@ -415,7 +415,7 @@ var _ = Describe("Gateway", func() {
 				Expect(err).To(BeNil())
 			}()
 			getEndpoing, postEndpoints, deleteEndpoints := getEndpointMethodMap()
-
+			time.Sleep(1 * time.Second)
 			verifyEndpoing(getEndpoing, http.MethodGet)
 			verifyEndpoing(postEndpoints, http.MethodPost)
 			verifyEndpoing(deleteEndpoints, http.MethodDelete)
