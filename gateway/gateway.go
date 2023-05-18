@@ -835,9 +835,10 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	_ = r.Body.Close()
 	if err != nil {
 		gateway.logger.Errorf(
-			"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n",
+			"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n:%v",
 			r.Header.Get("Content-Length"),
 			string(payload),
+			err,
 		)
 		return payload, errors.New(response.RequestBodyReadFailed)
 	}
