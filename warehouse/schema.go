@@ -41,7 +41,7 @@ type stagingFileRepo interface {
 }
 
 type fetchSchemaRepo interface {
-	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
+	FetchSchema() (model.Schema, model.Schema, error)
 }
 
 type Schema struct {
@@ -84,7 +84,7 @@ func (sh *Schema) updateLocalSchema(uploadId int64, updatedSchema model.Schema) 
 		Schema:          updatedSchema,
 	})
 	if err != nil {
-		return fmt.Errorf("updating schema: %w", err)
+		return fmt.Errorf("updating local schema: %w", err)
 	}
 
 	sh.localSchema = updatedSchema
@@ -122,7 +122,7 @@ func (sh *Schema) getLocalSchema() (model.Schema, error) {
 
 // fetchSchemaFromWarehouse fetches schema from warehouse
 func (sh *Schema) fetchSchemaFromWarehouse(repo fetchSchemaRepo) error {
-	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema(sh.warehouse)
+	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema()
 	if err != nil {
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
 	}

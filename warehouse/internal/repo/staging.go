@@ -270,20 +270,20 @@ func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]m
 		)
 
 		if err := rows.Scan(&rawSchema); err != nil {
-			return nil, fmt.Errorf("scanning row: %w", err)
+			return nil, fmt.Errorf("cannot get schemas by ids: scanning row: %w", err)
 		}
 		if err := json.Unmarshal(rawSchema, &schema); err != nil {
-			return nil, fmt.Errorf("unmarshal staging schema: %w", err)
+			return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
 		}
 
 		schemas = append(schemas, schema)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating rows: %w", err)
+		return nil, fmt.Errorf("cannot get schemas by ids: iterating rows: %w", err)
 	}
 	if len(schemas) != len(ids) {
-		return nil, fmt.Errorf("not all schemas were found")
+		return nil, fmt.Errorf("cannot get schemas by ids: not all schemas were found")
 	}
 
 	return schemas, nil
