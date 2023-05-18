@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/golang/mock/gomock"
-	"github.com/gorilla/mux"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
@@ -22,9 +23,8 @@ import (
 )
 
 func (d *deleteAPI) handler() http.Handler {
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/deleteUsers", d.deleteMockServer).Methods("POST")
-
+	srvMux := chi.NewMux()
+	srvMux.Post("/deleteUsers", d.deleteMockServer)
 	return srvMux
 }
 
@@ -642,14 +642,13 @@ func (s *cpResponseProducer) GetNext() cpResponseParams {
 	return cpResp
 }
 
-func (cpRespProducer *cpResponseProducer) mockCpRequests() *mux.Router {
-	srvMux := mux.NewRouter()
+func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
+	srvMux := chi.NewMux()
 	srvMux.HandleFunc("/destination/workspaces/{workspaceId}/accounts/{accountId}/token", func(w http.ResponseWriter, req *http.Request) {
-		vars := mux.Vars(req)
 		// iterating over request parameters
 		for _, reqParam := range []string{"workspaceId", "accountId"} {
-			_, ok := vars[reqParam]
-			if !ok {
+			param := chi.URLParam(req, reqParam)
+			if param == "" {
 				// This case wouldn't occur I guess
 				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusInternalServerError)
 				return
@@ -702,9 +701,10 @@ func (s *deleteResponseProducer) GetNext() *deleteResponseParams {
 	return deleteResp
 }
 
-func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *mux.Router {
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/deleteUsers", func(w http.ResponseWriter, req *http.Request) {
+func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *chi.Mux {
+	srvMux := chi.NewRouter()
+
+	srvMux.Post("/deleteUsers", func(w http.ResponseWriter, req *http.Request) {
 		buf := new(bytes.Buffer)
 		_, bufErr := buf.ReadFrom(req.Body)
 		if bufErr != nil {
@@ -728,6 +728,7 @@ func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *mux.Router 
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
 			return
 		}
-	}).Methods(http.MethodPost)
+	})
+
 	return srvMux
 }

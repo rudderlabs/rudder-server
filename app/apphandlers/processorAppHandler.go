@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
@@ -19,7 +20,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/gorilla/mux"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
@@ -310,7 +310,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.HandleT) error {
 	// Port where Processor health handler is running
 	a.log.Infof("Starting in %d", a.config.http.webPort)
-	srvMux := mux.NewRouter()
+	srvMux := chi.NewMux()
 	srvMux.HandleFunc("/health", app.LivenessHandler(db))
 	srvMux.HandleFunc("/", app.LivenessHandler(db))
 	srv := &http.Server{
