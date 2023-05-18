@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	jsoniter "github.com/json-iterator/go"
 
-	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -102,9 +102,8 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, er
 // Implemented routes:
 // - POST /v1/process
 func (api *WarehouseAPI) Handler() http.Handler {
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/v1/process", api.processHandler).Methods("POST")
-
+	srvMux := chi.NewRouter()
+	srvMux.Post("/v1/process", api.processHandler)
 	return srvMux
 }
 
