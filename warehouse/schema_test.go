@@ -303,7 +303,7 @@ type mockFetchSchemaFromWarehouse struct {
 	err                           error
 }
 
-func (m *mockFetchSchemaFromWarehouse) FetchSchema(model.Warehouse) (model.Schema, model.Schema, error) {
+func (m *mockFetchSchemaFromWarehouse) FetchSchema() (model.Schema, model.Schema, error) {
 	return m.schemaInWarehouse, m.unrecognizedSchemaInWarehouse, m.err
 }
 

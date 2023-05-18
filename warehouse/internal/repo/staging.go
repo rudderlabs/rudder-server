@@ -253,6 +253,7 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 
 // GetSchemasByIDs returns staging file schemas for the given IDs.
 func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
+	time.Sleep(time.Second * 5)
 	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
 
 	rows, err := repo.db.QueryContext(ctx, query, pq.Array(ids))
