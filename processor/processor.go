@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 
-	reportingPkg "github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -329,6 +328,9 @@ func (proc *Handle) Setup(
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
+	proc.reporting = reporting
+	proc.errorReporting = errorReporting
+
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -337,12 +339,6 @@ func (proc *Handle) Setup(
 	config.RegisterIntConfigVariable(2, &proc.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig
-
-	if errorReporting == nil || !proc.reportingEnabled {
-		errorReporting = &reportingPkg.NOOP{}
-	}
-	proc.reporting = reporting
-	proc.errorReporting = errorReporting
 
 	proc.multitenantI = multiTenantStat
 	proc.gatewayDB = gatewayDB
