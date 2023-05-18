@@ -138,14 +138,20 @@ func New(options *Options) App {
 // LivenessHandler is the http handler for the Kubernetes liveness probe
 func LivenessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(getHealthVal(jobsDB)))
+		healthy, responsePayload := getHealthVal(jobsDB)
+		if !healthy {
+			http.Error(w, "Cannot connect to db", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(responsePayload))
 	}
 }
 
-func getHealthVal(jobsDB jobsdb.JobsDB) string {
+func getHealthVal(jobsDB jobsdb.JobsDB) (bool, string) {
 	dbService := "UP"
 	if jobsDB.Ping() != nil {
 		dbService = "DOWN"
+		return false, ""
 	}
 	enabledRouter := "TRUE"
 	if !config.GetBool("enableRouter", true) {
@@ -157,7 +163,7 @@ func getHealthVal(jobsDB jobsdb.JobsDB) string {
 	}
 
 	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", EMBEDDED))
-	return fmt.Sprintf(
+	return true, fmt.Sprintf(
 		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
 			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
 		appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode),
