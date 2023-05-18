@@ -128,7 +128,8 @@ func (edRep *ErrorDetailReporter) AddClient(ctx context.Context, c types.Config)
 	edRep.clientsMapLock.RUnlock()
 	dbHandle, err := edRep.migrate(c)
 	if err != nil {
-		panic(err)
+		edRep.log.Errorf("Failed during migration: %v", err)
+		return
 	}
 	edRep.clientsMapLock.Lock()
 	edRep.clients[c.ClientName] = &types.Client{Config: c, DbHandle: dbHandle}
