@@ -2680,10 +2680,6 @@ func (proc *Handle) isReportingEnabled() bool {
 	return proc.reporting != nil && proc.reportingEnabled
 }
 
-func (proc *Handle) isErrorReportingEnabled() bool {
-	return proc.reportingEnabled && proc.errorReporting != nil
-}
-
 func (proc *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
 	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
 	rsourcesStats.JobsStored(jobs)
