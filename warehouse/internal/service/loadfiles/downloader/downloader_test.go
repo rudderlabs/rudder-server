@@ -47,7 +47,7 @@ func (*mockUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.
 	return warehouseutils.LoadFile{}, nil
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(string) model.TableSchema {
+func (*mockUploader) GetTableSchemaInUpload(string) model.TableSchema {
 	return model.TableSchema{}
 }
 
@@ -56,6 +56,8 @@ func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetL
 }
 
 func TestDownloader(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 
 	pool, err := dockertest.NewPool("")

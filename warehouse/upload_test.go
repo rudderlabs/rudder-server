@@ -309,6 +309,8 @@ func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpt
 }
 
 func TestUploadJobT_UpdateTableSchema(t *testing.T) {
+	t.Parallel()
+
 	Init()
 	Init4()
 
@@ -519,6 +521,8 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 }
 
 func TestUploadJobT_Aborted(t *testing.T) {
+	t.Parallel()
+
 	var (
 		minAttempts    = 3
 		minRetryWindow = 3 * time.Hour
@@ -586,6 +590,8 @@ func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, int
 }
 
 func TestUploadJobT_TablesToSkip(t *testing.T) {
+	t.Parallel()
+
 	t.Run("repo error", func(t *testing.T) {
 		t.Parallel()
 

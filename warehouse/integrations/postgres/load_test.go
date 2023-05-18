@@ -90,6 +90,8 @@ func cloneFiles(t *testing.T, files []string) []string {
 }
 
 func TestLoadTable(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 
@@ -392,6 +394,8 @@ func TestLoadTable(t *testing.T) {
 }
 
 func TestLoadUsersTable(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 

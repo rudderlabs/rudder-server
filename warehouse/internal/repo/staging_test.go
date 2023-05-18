@@ -166,6 +166,8 @@ func manyStagingFiles(size int, now time.Time) []*model.StagingFile {
 }
 
 func TestStagingFileRepo_Many(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Second).UTC()

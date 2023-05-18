@@ -50,6 +50,8 @@ func (m *mockUploader) UpdateLocalSchema(context2.Context, model.Schema) error {
 }
 
 func TestLocalSchemaRepository_CreateTable(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name        string
 		mockError   error
@@ -105,6 +107,8 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 }
 
 func TestLocalSchemaRepository_AddColumns(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name        string
 		mockError   error
@@ -166,6 +170,8 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 }
 
 func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name        string
 		mockError   error

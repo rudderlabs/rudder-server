@@ -55,6 +55,8 @@ func setup(t *testing.T, pool *dockertest.Pool) testResource {
 }
 
 func TestValidator(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
