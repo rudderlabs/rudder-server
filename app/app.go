@@ -149,9 +149,10 @@ func LivenessHandler(jobsDB jobsdb.JobsDB) http.HandlerFunc {
 
 func getHealthVal(jobsDB jobsdb.JobsDB) (bool, string) {
 	dbService := "UP"
+	healthy := true
 	if jobsDB.Ping() != nil {
 		dbService = "DOWN"
-		return false, ""
+		healthy = false
 	}
 	enabledRouter := "TRUE"
 	if !config.GetBool("enableRouter", true) {
@@ -163,7 +164,7 @@ func getHealthVal(jobsDB jobsdb.JobsDB) (bool, string) {
 	}
 
 	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", EMBEDDED))
-	return true, fmt.Sprintf(
+	return healthy, fmt.Sprintf(
 		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
 			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,
 		appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode),
