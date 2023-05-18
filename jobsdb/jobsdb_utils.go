@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -19,29 +20,23 @@ type sqlDbOrTx interface {
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
-func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dataSetT {
+func (jd *HandleT) getDSListFromDB() []dataSetT {
 	var datasetList []dataSetT
-
-	// Read the table names from PG
-	tableNames := mustGetAllTableNames(jd, dbHandle)
-
-	// Tables are of form jobs_ and job_status_. Iterate
-	// through them and sort them to produce and
-	// ordered list of datasets
+	tableNames := jd.mustGetAllTableNames()
 
 	jobNameMap := map[string]string{}
 	jobStatusNameMap := map[string]string{}
 	var dnumList []string
 
 	for _, t := range tableNames {
-		if strings.HasPrefix(t, tablePrefix+"_jobs_") {
-			dnum := t[len(tablePrefix+"_jobs_"):]
+		if strings.HasPrefix(t, jd.tablePrefix+"_jobs_") {
+			dnum := t[len(jd.tablePrefix+"_jobs_"):]
 			jobNameMap[dnum] = t
 			dnumList = append(dnumList, dnum)
 			continue
 		}
-		if strings.HasPrefix(t, tablePrefix+"_job_status_") {
-			dnum := t[len(tablePrefix+"_job_status_"):]
+		if strings.HasPrefix(t, jd.tablePrefix+"_job_status_") {
+			dnum := t[len(jd.tablePrefix+"_job_status_"):]
 			jobStatusNameMap[dnum] = t
 			continue
 		}
@@ -49,7 +44,6 @@ func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dat
 
 	sortDnumList(dnumList)
 
-	// Create the structure
 	for _, dnum := range dnumList {
 		jobName, ok := jobNameMap[dnum]
 		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobNameMap", dnum))
@@ -78,8 +72,15 @@ func sortDnumList(dnumList []string) {
 }
 
 // mustGetAllTableNames gets all table names from Postgres and panics in case of an error
-func mustGetAllTableNames(jd assertInterface, dbHandle sqlDbOrTx) []string {
-	tableNames, err := getAllTableNames(dbHandle)
+func (jd *HandleT) mustGetAllTableNames() []string {
+	var tableNames []string
+	var err error
+
+	err = WithExponentialBackoffRetry(context.TODO(), func(context.Context) error {
+		tableNames, err = getAllTableNames(jd.dbHandle)
+		return err
+	}, jd.maxQueryRetryTime)
+
 	jd.assertError(err)
 	return tableNames
 }

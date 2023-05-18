@@ -40,7 +40,7 @@ func Test_mustRenameDS(t *testing.T) {
 
 	mustRenameDS := func(ds dataSetT) error {
 		return jobsdb.WithTx(func(tx *Tx) error {
-			return jobsdb.mustRenameDSInTx(tx, ds)
+			return jobsdb.renameDSInTx(tx, ds)
 		})
 	}
 
@@ -85,7 +85,7 @@ func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 
 	mustRenameDS := func(ds dataSetT) error {
 		return jobsdb.WithTx(func(tx *Tx) error {
-			return jobsdb.mustRenameDSInTx(tx, ds)
+			return jobsdb.renameDSInTx(tx, ds)
 		})
 	}
 

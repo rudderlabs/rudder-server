@@ -52,7 +52,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			return
 		}
 		jd.logger.Debugf("backupDSLoop backup enabled %s", jd.tablePrefix)
-		backupDSRange := jd.getBackupDSRange()
+		backupDSRange := jd.mustGetBackupDSRange()
 		// check if non-empty dataset is present to back up
 		// else continue
 		sleepMultiplier = 1
@@ -615,12 +615,12 @@ func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file 
 	return output, err
 }
 
-func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
+func (jd *HandleT) mustGetBackupDSRange() *dataSetRangeT {
 	var backupDS dataSetT
 	var backupDSRange dataSetRangeT
 
 	// Read the table names from PG
-	tableNames := mustGetAllTableNames(jd, jd.dbHandle)
+	tableNames := jd.mustGetAllTableNames()
 
 	// We check for job_status because that is renamed after job
 	var dnumList []string
@@ -645,15 +645,22 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	}
 
 	var minID, maxID sql.NullInt64
-	jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) from %q`, backupDS.JobTable)
-	row := jd.dbHandle.QueryRow(jobIDSQLStatement)
-	err := row.Scan(&minID, &maxID)
+	var row *sql.Row
+	var err error
+
+	err = WithExponentialBackoffRetry(context.Background(), func(context.Context) error {
+		jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) from %q`, backupDS.JobTable)
+		row = jd.dbHandle.QueryRow(jobIDSQLStatement)
+		return row.Scan(&minID, &maxID)
+	}, jd.maxQueryRetryTime)
 	jd.assertError(err)
 
 	var minCreatedAt, maxCreatedAt time.Time
-	jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) from %q`, backupDS.JobTable)
-	row = jd.dbHandle.QueryRow(jobTimeSQLStatement)
-	err = row.Scan(&minCreatedAt, &maxCreatedAt)
+	err = WithExponentialBackoffRetry(context.Background(), func(context.Context) error {
+		jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) from %q`, backupDS.JobTable)
+		row = jd.dbHandle.QueryRow(jobTimeSQLStatement)
+		return row.Scan(&minCreatedAt, &maxCreatedAt)
+	}, jd.maxQueryRetryTime)
 	jd.assertError(err)
 
 	backupDSRange = dataSetRangeT{

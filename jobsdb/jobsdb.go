@@ -37,6 +37,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -307,6 +308,30 @@ var (
 	pathPrefix          string
 )
 
+// retries a given func with exponential backoff
+func WithExponentialBackoffRetry(ctx context.Context, fn func(ctx context.Context) error, maxWait time.Duration) error {
+	bo := backoff.NewExponentialBackOff()
+	boCtx := backoff.WithContext(bo, ctx)
+	bo.MaxInterval = maxWait / 4
+	bo.MaxElapsedTime = maxWait
+
+	var err error
+	if err = func(context.Context) error {
+		if err = backoff.Retry(func() error {
+			err = fn(ctx)
+			return err
+		}, boCtx); err != nil {
+			if bo.NextBackOff() == backoff.Stop {
+				return err
+			}
+		}
+		return nil
+	}(ctx); err == nil {
+		return nil
+	}
+	return err
+}
+
 /*
 UpdateJobStatusInTx updates the status of a batch of jobs in the past transaction
 customValFilters[] is passed, so we can efficiently mark empty cache
@@ -444,8 +469,10 @@ type HandleT struct {
 	backgroundCancel              context.CancelFunc
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
-	preBackupHandlers             []prebackup.Handler
-	fileUploaderProvider          fileuploader.Provider
+	maxQueryRetryTime             time.Duration
+
+	preBackupHandlers    []prebackup.Handler
+	fileUploaderProvider fileuploader.Provider
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
@@ -502,6 +529,7 @@ func (jd *HandleT) registerBackUpSettings() {
 	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
+	config.RegisterDurationConfigVariable(5, &jd.maxQueryRetryTime, false, time.Minute, "JobsDB.query.maxRetry")
 	config.RegisterDurationConfigVariable(1, &jd.refreshDSTimeout, false, time.Minute, "JobsDB.refreshDS.timeout")
 	config.RegisterDurationConfigVariable(2, &jd.migrateDSTimeout, false, time.Minute, "JobsDB.migrateDS.timeout")
 
@@ -804,7 +832,7 @@ func (jd *HandleT) init() {
 					// doesn't return the full list of datasets, only the rightmost two.
 					// But we need to run the schema migration against all datasets, no matter
 					// whether jobsdb is a writer or not.
-					datasets := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+					datasets := jd.getDSListFromDB()
 
 					datasetIndices := make([]string, 0)
 					for _, dataset := range datasets {
@@ -1025,7 +1053,7 @@ func (jd *HandleT) getDSList() []dataSetT {
 func (jd *HandleT) refreshDSList(l lock.LockToken) []dataSetT {
 	jd.assert(l != nil, "cannot refresh DS list without a valid lock token")
 	// Reset the global list
-	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
+	jd.datasetList = jd.getDSListFromDB()
 
 	// report table count metrics before shrinking the datasetList
 	jd.statTableCount.Gauge(len(jd.datasetList))
@@ -1246,8 +1274,12 @@ func (jd *HandleT) addDSInTx(tx *Tx, ds dataSetT) error {
 
 // mustDropDS drops a dataset and panics if it fails to do so
 func (jd *HandleT) mustDropDS(ds dataSetT) {
-	err := jd.dropDS(ds)
-	jd.assertError(err)
+	jd.assertError(
+		WithExponentialBackoffRetry(context.Background(), func(context.Context) error {
+			return jd.WithTx(func(tx *Tx) error {
+				return jd.dropDSInTx(tx, ds)
+			})
+		}, jd.maxQueryRetryTime))
 }
 
 func (jd *HandleT) computeNewIdxForAppend(l lock.LockToken) string {
@@ -1489,8 +1521,8 @@ func (jd *HandleT) postDropDs(ds dataSetT) {
 	jd.isStatDropDSPeriodInitialized = true
 }
 
-// mustRenameDS renames a dataset
-func (jd *HandleT) mustRenameDSInTx(tx *Tx, ds dataSetT) error {
+// renameDS renames a dataset
+func (jd *HandleT) renameDSInTx(tx *Tx, ds dataSetT) error {
 	var sqlStatement string
 	renamedJobStatusTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
 	renamedJobTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
@@ -2474,47 +2506,49 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		var dsListLock lock.LockToken
 		var releaseDsListLock chan<- lock.LockToken
 		// start a transaction
-		err := jd.WithTx(func(tx *Tx) error {
-			return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
-				return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
-					var err error
-					// We acquire the list lock only after we have acquired the advisory lock.
-					// We will release the list lock after the transaction ends, that's why we need to use an async lock
-					dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
-					if err != nil {
-						return err
-					}
-					// refresh ds list
-					var dsList []dataSetT
-					var nextDSIdx string
-					// make sure we are operating on the latest version of the list
-					dsList = getDSList(jd, tx, jd.tablePrefix)
-					latestDS := dsList[len(dsList)-1]
-					full, err := jd.checkIfFullDSInTx(tx, latestDS)
-					if err != nil {
-						return fmt.Errorf("error while checking if DS is full: %w", err)
-					}
-					// checkIfFullDS is true for last DS in the list
-					if full {
-						if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
-							return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+		err := WithExponentialBackoffRetry(ctx, func(context.Context) error {
+			return jd.WithTx(func(tx *Tx) error {
+				return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
+					return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
+						var err error
+						// We acquire the list lock only after we have acquired the advisory lock.
+						// We will release the list lock after the transaction ends, that's why we need to use an async lock
+						dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+						if err != nil {
+							return err
 						}
+						// refresh ds list
+						var dsList []dataSetT
+						var nextDSIdx string
+						// make sure we are operating on the latest version of the list
+						dsList = jd.getDSListFromDB()
+						latestDS := dsList[len(dsList)-1]
+						full, err := jd.checkIfFullDSInTx(tx, latestDS)
+						if err != nil {
+							return fmt.Errorf("error while checking if DS is full: %w", err)
+						}
+						// checkIfFullDS is true for last DS in the list
+						if full {
+							if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+							}
 
-						nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
-						jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-						if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
-							return fmt.Errorf("error adding new DS: %w", err)
-						}
+							nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
+							jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
+							if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
+								return fmt.Errorf("error adding new DS: %w", err)
+							}
 
-						// previous DS should become read only
-						if err = setReadonlyDsInTx(tx, latestDS); err != nil {
-							return fmt.Errorf("error making dataset read only: %w", err)
+							// previous DS should become read only
+							if err = setReadonlyDsInTx(tx, latestDS); err != nil {
+								return fmt.Errorf("error making dataset read only: %w", err)
+							}
 						}
-					}
-					return nil
+						return nil
+					})
 				})
 			})
-		})
+		}, jd.maxQueryRetryTime)
 		jd.assertError(err)
 
 		// to get the updated DS list in the cache after createDS transaction has been committed.
@@ -2596,12 +2630,15 @@ func (jd *HandleT) dropJournal() {
 
 func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
 	var opID int64
-	err := jd.WithTx(func(tx *Tx) error {
-		var err error
-		opID, err = jd.JournalMarkStartInTx(tx, opType, opPayload)
-		return err
-	})
-	jd.assertError(err)
+	jd.assertError(
+		WithExponentialBackoffRetry(
+			context.Background(), func(context.Context) error {
+				return jd.WithTx(func(tx *Tx) error {
+					var err error
+					opID, err = jd.JournalMarkStartInTx(tx, opType, opPayload)
+					return err
+				})
+			}, jd.maxQueryRetryTime))
 	return opID
 }
 
@@ -2623,10 +2660,13 @@ func (jd *HandleT) JournalMarkStartInTx(tx *Tx, opType string, opPayload json.Ra
 
 // JournalMarkDone marks the end of a journal action
 func (jd *HandleT) JournalMarkDone(opID int64) {
-	err := jd.WithTx(func(tx *Tx) error {
-		return jd.journalMarkDoneInTx(tx, opID)
-	})
-	jd.assertError(err)
+	jd.assertError(
+		WithExponentialBackoffRetry(
+			context.Background(), func(context.Context) error {
+				return jd.WithTx(func(tx *Tx) error {
+					return jd.journalMarkDoneInTx(tx, opID)
+				})
+			}, jd.maxQueryRetryTime))
 }
 
 // JournalMarkDoneInTx marks the end of a journal action in a transaction
@@ -2637,36 +2677,52 @@ func (jd *HandleT) journalMarkDoneInTx(tx *Tx, opID int64) error {
 }
 
 func (jd *HandleT) JournalDeleteEntry(opID int64) {
-	sqlStatement := fmt.Sprintf(`DELETE from "%s_journal" WHERE id=$1 AND owner=$2`, jd.tablePrefix)
-	_, err := jd.dbHandle.Exec(sqlStatement, opID, jd.ownerType)
-	jd.assertError(err)
+	jd.assertError(
+		WithExponentialBackoffRetry(
+			context.Background(), func(context.Context) error {
+				sqlStatement := fmt.Sprintf(`DELETE from "%s_journal" WHERE id=$1 AND owner=$2`, jd.tablePrefix)
+				_, err := jd.dbHandle.Exec(sqlStatement, opID, jd.ownerType)
+				return err
+			}, jd.maxQueryRetryTime))
 }
 
 func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
-	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
-                                	from "%s_journal"
-                                	WHERE
-									done=False
-									AND
-									operation = '%s'
-									AND
-									owner='%s'
-									ORDER BY id`, jd.tablePrefix, opType, jd.ownerType)
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer func() { _ = stmt.Close() }()
+	fn := func(context.Context) error {
+		sqlStatement := fmt.Sprintf(`
+			SELECT id, operation, done, operation_payload
+			FROM "%s_journal"
+			WHERE done = false
+			AND operation = '%s'
+			AND owner = '%s'
+			ORDER BY id`,
+			jd.tablePrefix,
+			opType,
+			jd.ownerType)
+		stmt, err := jd.dbHandle.Prepare(sqlStatement)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = stmt.Close() }()
 
-	rows, err := stmt.Query()
-	jd.assertError(err)
-	defer func() { _ = rows.Close() }()
+		rows, err := stmt.Query()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
 
-	count := 0
-	for rows.Next() {
-		entries = append(entries, JournalEntryT{})
-		err = rows.Scan(&entries[count].OpID, &entries[count].OpType, &entries[count].OpDone, &entries[count].OpPayload)
-		jd.assertError(err)
-		count++
+		count := 0
+		for rows.Next() {
+			entries = append(entries, JournalEntryT{})
+			err = rows.Scan(&entries[count].OpID, &entries[count].OpType, &entries[count].OpDone, &entries[count].OpPayload)
+			if err != nil {
+				return err
+			}
+			count++
+		}
+		return nil
 	}
+	err := WithExponentialBackoffRetry(context.Background(), fn, jd.maxQueryRetryTime)
+	jd.assertError(err)
 	return
 }
 
