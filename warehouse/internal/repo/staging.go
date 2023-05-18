@@ -253,6 +253,7 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 
 // GetSchemasByIDs returns staging file schemas for the given IDs.
 func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
+	time.Sleep(time.Second * 5)
 	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
 
 	rows, err := repo.db.QueryContext(ctx, query, pq.Array(ids))
@@ -270,20 +271,20 @@ func (repo *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]m
 		)
 
 		if err := rows.Scan(&rawSchema); err != nil {
-			return nil, fmt.Errorf("scanning row: %w", err)
+			return nil, fmt.Errorf("cannot get schemas by ids: scanning row: %w", err)
 		}
 		if err := json.Unmarshal(rawSchema, &schema); err != nil {
-			return nil, fmt.Errorf("unmarshal staging schema: %w", err)
+			return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
 		}
 
 		schemas = append(schemas, schema)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating rows: %w", err)
+		return nil, fmt.Errorf("cannot get schemas by ids: iterating rows: %w", err)
 	}
 	if len(schemas) != len(ids) {
-		return nil, fmt.Errorf("not all schemas were found")
+		return nil, fmt.Errorf("cannot get schemas by ids: not all schemas were found")
 	}
 
 	return schemas, nil

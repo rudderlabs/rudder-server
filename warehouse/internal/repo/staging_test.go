@@ -228,8 +228,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 	})
 
 	t.Run("GetSchemasByIDs", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("get all", func(t *testing.T) {
 			t.Parallel()
 
@@ -251,7 +249,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			t.Parallel()
 
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1, 2, 3, 101, 102, 103})
-			require.EqualError(t, err, "not all schemas were found")
+			require.EqualError(t, err, "cannot get schemas by ids: not all schemas were found")
 			require.Nil(t, expectedSchemas)
 		})
 
