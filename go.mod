@@ -43,7 +43,6 @@ require (
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dgraph-io/badger/v3 v3.2103.5
 	github.com/docker/docker v23.0.4+incompatible
-	github.com/go-chi/chi v1.5.4
 	github.com/go-chi/chi/v5 v5.0.8
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
