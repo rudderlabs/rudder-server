@@ -115,6 +115,7 @@ func (jf *JobsForwarder) Start() error {
 						if err != nil { // mark job as aborted and remove from toRetry
 							mu.Lock()
 							jobDone(job)
+							errorResponse, _ := json.Marshal(map[string]string{"transform_error": err.Error()})
 							statuses = append(statuses, &jobsdb.JobStatusT{
 								JobID:         job.JobID,
 								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -122,9 +123,9 @@ func (jf *JobsForwarder) Start() error {
 								ExecTime:      time.Now(),
 								RetryTime:     time.Now(),
 								ErrorCode:     "400",
-								Parameters:    []byte{},
+								Parameters:    []byte(`{}`),
 								JobParameters: job.Parameters,
-								ErrorResponse: json.RawMessage(fmt.Sprintf(`{"transform_error": %q}`, err.Error())),
+								ErrorResponse: errorResponse,
 							})
 							jf.stat.NewTaggedStat("schema_forwarder_jobs", stats.CountType, stats.Tags{"state": "invalid"}).Increment()
 							mu.Unlock()
@@ -146,6 +147,7 @@ func (jf *JobsForwarder) Start() error {
 										AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 										JobState:      jobsdb.Succeeded.State,
 										ExecTime:      time.Now(),
+										Parameters:    []byte(`{}`),
 										JobParameters: job.Parameters,
 									})
 									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Increment()
@@ -171,6 +173,7 @@ func (jf *JobsForwarder) Start() error {
 				expB.MaxElapsedTime = jf.maxRetryElapsedTime
 				if err = backoff.Retry(tryForwardJobs, backoff.WithContext(expB, ctx)); err != nil {
 					for _, job := range toRetry { // mark all to retry jobs as aborted
+						errorResponse, _ := json.Marshal(map[string]string{"error": err.Error()})
 						statuses = append(statuses, &jobsdb.JobStatusT{
 							JobID:         job.JobID,
 							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -178,9 +181,9 @@ func (jf *JobsForwarder) Start() error {
 							ExecTime:      time.Now(),
 							RetryTime:     time.Now(),
 							ErrorCode:     "400",
-							Parameters:    []byte{},
+							Parameters:    []byte(`{}`),
 							JobParameters: job.Parameters,
-							ErrorResponse: json.RawMessage(fmt.Sprintf(`{"error": %q}`, err.Error())),
+							ErrorResponse: errorResponse,
 						})
 					}
 					jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "abort"}).Count(len(toRetry))
