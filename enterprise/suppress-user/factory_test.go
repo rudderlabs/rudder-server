@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -81,16 +81,12 @@ func TestSuppressionSetup(t *testing.T) {
 
 func httpHandler(t *testing.T) http.Handler {
 	t.Helper()
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/workspaceConfig", getSingleTenantWorkspaceConfig).Methods(http.MethodGet)
-	srvMux.HandleFunc("/full-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/full-export") }).Methods(http.MethodGet)
-	srvMux.HandleFunc("/latest-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/latest-export") }).Methods(http.MethodGet)
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/suppressions", getSuppressionFromManager).Methods(http.MethodGet)
-	srvMux.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			next.ServeHTTP(w, req)
-		})
-	})
+	srvMux := chi.NewMux()
+
+	srvMux.Get("/workspaceConfig", getSingleTenantWorkspaceConfig)
+	srvMux.Get("/full-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/full-export") })
+	srvMux.Get("/latest-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "testdata/latest-export") })
+	srvMux.Get("/dataplane/workspaces/{workspace_id}/regulations/suppressions", getSuppressionFromManager)
 
 	return srvMux
 }

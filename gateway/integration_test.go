@@ -18,7 +18,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -85,9 +85,9 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	})
 	require.NoError(t, err)
 
-	backendConfRouter := mux.NewRouter()
+	beConfigRouter := chi.NewMux()
 	if testing.Verbose() {
-		backendConfRouter.Use(func(next http.Handler) http.Handler {
+		beConfigRouter.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				t.Logf("BackendConfig server call: %+v", r)
 				next.ServeHTTP(w, r)
@@ -106,15 +106,14 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		require.NoError(t, err)
 		require.Equal(t, marshalledWorkspaces.Len(), n)
 	}
-	backendConfRouter.
-		HandleFunc("/workspaceConfig", backedConfigHandler).
-		Methods("GET")
-	backendConfRouter.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	beConfigRouter.Get("/workspaceConfig", backedConfigHandler)
+	beConfigRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		require.FailNowf(t, "backend config", "unexpected request to backend config, not found: %+v", r.URL)
 		w.WriteHeader(http.StatusNotFound)
 	})
 
-	backendConfigSrv := httptest.NewServer(backendConfRouter)
+	backendConfigSrv := httptest.NewServer(beConfigRouter)
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
 
