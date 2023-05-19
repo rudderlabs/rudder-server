@@ -76,14 +76,6 @@ type webRequestT struct {
 	errors         []string
 }
 
-func (wr *webRequestT) respond() {
-	if len(wr.errors) > 0 {
-		wr.done <- wr.errors[0]
-	} else {
-		wr.done <- ""
-	}
-}
-
 type batchWebRequestT struct {
 	batchRequest []*webRequestT
 }
@@ -490,9 +482,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			} else {
 				sourceStats[sourceTag].RequestEventsSucceeded(len(batch))
 			}
-		}
-		for _, req := range breq.batchRequest {
-			req.respond()
+			jobIDReqMap[batch[0].UUID].done <- err
 		}
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
@@ -694,14 +684,13 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		)
 	}
 	if !allowBatchSplitting {
-		events := lo.FilterMap(out, func(userEvent jobObject, _ int) (map[string]interface{}, bool) {
-			return userEvent.events[0], true
-		})
-		userID := out[0].userID
+		// instead of multiple jobs with one event, create one job with all events
 		out = []jobObject{
 			{
-				userID: userID,
-				events: events,
+				userID: out[0].userID,
+				events: lo.Map(out, func(userEvent jobObject, _ int) map[string]interface{} {
+					return userEvent.events[0]
+				}),
 			},
 		}
 	}
