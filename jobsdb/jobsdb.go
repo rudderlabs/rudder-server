@@ -2928,8 +2928,11 @@ func (jd *HandleT) internalStoreEachBatchRetryInTx(
 	if err != nil {
 		return failAll(err), nil
 	}
-	err = jd.internalStoreJobsInTx(ctx, tx, ds, lo.Flatten(jobBatches))
+	err = jd.doStoreJobsInTx(ctx, tx, ds, lo.Flatten(jobBatches))
 	if err == nil {
+		tx.AddSuccessListener(func() {
+			jd.invalidateCacheForJobs(ds, lo.Flatten(jobBatches))
+		})
 		return
 	}
 	if errors.Is(err, errStaleDsList) {
@@ -2955,7 +2958,7 @@ func (jd *HandleT) internalStoreEachBatchRetryInTx(
 			continue
 		}
 
-		err = jd.internalStoreJobsInTx(ctx, tx, ds, jobBatch)
+		err = jd.doStoreJobsInTx(ctx, tx, ds, jobBatch)
 		if err != nil {
 			if errors.Is(err, errStaleDsList) {
 				return nil, err
@@ -2963,7 +2966,11 @@ func (jd *HandleT) internalStoreEachBatchRetryInTx(
 			errorMessagesMap[jobBatch[0].UUID] = err.Error()
 			// rollback to savepoint
 			_, txErr = tx.ExecContext(ctx, rollbackSql)
+			continue
 		}
+		tx.AddSuccessListener(func() {
+			jd.invalidateCacheForJobs(ds, jobBatch)
+		})
 	}
 	return
 }
