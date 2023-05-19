@@ -376,7 +376,7 @@ var _ = Describe("Gateway", func() {
 
 			return validDataWithProperty
 		}
-		verifyEndpoing := func(endpoints []string, method string) {
+		verifyEndpoint := func(endpoints []string, method string) {
 			client := &http.Client{}
 			baseURL := "http://localhost:8080"
 			for _, ep := range endpoints {
@@ -414,11 +414,15 @@ var _ = Describe("Gateway", func() {
 				err = gateway.StartWebHandler(ctx)
 				Expect(err).To(BeNil())
 			}()
+			require.Eventually(GinkgoT(), func() bool {
+				verifyEndpoint([]string{"/version"}, http.MethodGet)
+				return true
+			}, time.Second*10, time.Second)
+
 			getEndpoing, postEndpoints, deleteEndpoints := getEndpointMethodMap()
-			time.Sleep(1 * time.Second)
-			verifyEndpoing(getEndpoing, http.MethodGet)
-			verifyEndpoing(postEndpoints, http.MethodPost)
-			verifyEndpoing(deleteEndpoints, http.MethodDelete)
+			verifyEndpoint(getEndpoing, http.MethodGet)
+			verifyEndpoint(postEndpoints, http.MethodPost)
+			verifyEndpoint(deleteEndpoints, http.MethodDelete)
 			cancel()
 		})
 	})
