@@ -419,8 +419,8 @@ var _ = Describe("Gateway", func() {
 				return true
 			}, time.Second*10, time.Second)
 
-			getEndpoing, postEndpoints, deleteEndpoints := getEndpointMethodMap()
-			verifyEndpoint(getEndpoing, http.MethodGet)
+			getEndpoint, postEndpoints, deleteEndpoints := getEndpointMethodMap()
+			verifyEndpoint(getEndpoint, http.MethodGet)
 			verifyEndpoint(postEndpoints, http.MethodPost)
 			verifyEndpoint(deleteEndpoints, http.MethodDelete)
 			cancel()
