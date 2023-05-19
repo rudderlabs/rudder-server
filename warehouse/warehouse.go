@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/samber/lo"
 
@@ -1533,11 +1533,11 @@ func getConnectionString() string {
 }
 
 func startWebHandler(ctx context.Context) error {
-	srvMux := mux.NewRouter()
+	srvMux := chi.NewRouter()
 
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
-		srvMux.HandleFunc("/health", healthHandler).Methods("GET")
+		srvMux.Get("/health", healthHandler)
 	}
 	if runningMode != DegradedMode {
 		if isMaster() {
@@ -1552,17 +1552,17 @@ func startWebHandler(ctx context.Context) error {
 			}).Handler())
 
 			// triggers upload only when there are pending events and triggerUpload is sent for a sourceId
-			srvMux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler).Methods("POST")
+			srvMux.Post("/v1/warehouse/pending-events", pendingEventsHandler)
 			// triggers uploads for a source
-			srvMux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler).Methods("POST")
-			srvMux.HandleFunc("/databricksVersion", databricksVersionHandler).Methods("GET")
+			srvMux.Post("/v1/warehouse/trigger-upload", triggerUploadHandler)
+			srvMux.Get("/databricksVersion", databricksVersionHandler)
 
 			// Warehouse Async Job end-points
-			srvMux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler).Methods("POST")          // FIXME: add degraded mode
-			srvMux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler).Methods("GET") // FIXME: add degraded mode
+			srvMux.Post("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)          // FIXME: add degraded mode
+			srvMux.Get("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // FIXME: add degraded mode
 
 			// fetch schema info
-			srvMux.HandleFunc("/v1/warehouse/fetch-tables", fetchTablesHandler).Methods("GET")
+			srvMux.Get("/v1/warehouse/fetch-tables", fetchTablesHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {

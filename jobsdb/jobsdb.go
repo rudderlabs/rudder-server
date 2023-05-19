@@ -2379,6 +2379,8 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSet
 		if err != nil {
 			return err
 		}
+
+		defer func() { _ = stmt.Close() }()
 		for _, status := range statusList {
 			//  Handle the case when google analytics returns gif in response
 			if _, ok := updatedStates[status.WorkspaceId]; !ok {

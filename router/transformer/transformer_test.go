@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/golang/mock/gomock"
-	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
@@ -319,12 +319,11 @@ func TestProxyRequest(t *testing.T) {
 }
 
 // A kind of mock for transformer proxy endpoint in transformer
-func mockProxyHandler(timeout time.Duration, code int, response string) *mux.Router {
-	srvMux := mux.NewRouter()
+func mockProxyHandler(timeout time.Duration, code int, response string) *chi.Mux {
+	srvMux := chi.NewRouter()
 	srvMux.HandleFunc("/v0/destinations/{destName}/proxy", func(w http.ResponseWriter, req *http.Request) {
-		vars := mux.Vars(req)
-		_, ok := vars["destName"]
-		if !ok {
+		dName := chi.URLParam(req, "destName")
+		if dName == "" {
 			// This case wouldn't occur I guess
 			http.Error(w, "Wrong url being sent", http.StatusInternalServerError)
 			return
