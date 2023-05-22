@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
@@ -131,13 +131,13 @@ func TestKafkaBatching(t *testing.T) {
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
 
-	httpPort, err := kitHelper.GetFreePort()
+	httpPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
+	httpAdminPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
-	debugPort, err := kitHelper.GetFreePort()
+	debugPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
-	prometheusPort, err := kitHelper.GetFreePort()
+	prometheusPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")

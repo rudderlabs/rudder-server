@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
+	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
 )
 
 func (ops *VictorOps) Alert(message string) {
@@ -33,7 +33,7 @@ func (ops *VictorOps) Alert(message string) {
 	}
 
 	body, err := io.ReadAll(resp.Body)
-	defer func() { httputil.CloseResponse(resp) }()
+	defer func() { kit_httputil.CloseResponse(resp) }()
 	if err != nil {
 		pkgLogger.Errorf("Alert: Failed to read response body: %s", err.Error())
 		return

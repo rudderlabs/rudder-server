@@ -79,7 +79,7 @@ install-tools:
 	go install mvdan.cc/gofumpt@latest
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
-	go install gotest.tools/gotestsum@v1.8.2
+	go install gotest.tools/gotestsum@v1.10.0
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files

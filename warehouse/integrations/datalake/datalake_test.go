@@ -16,7 +16,7 @@ import (
 
 	"github.com/minio/minio-go/v6"
 	"github.com/rudderlabs/compose-test/testcompose"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -76,7 +76,7 @@ func TestIntegration(t *testing.T) {
 	minioPort := c.Port("minio", 9000)
 	azurePort := c.Port("azure", 10000)
 
-	httpPort, err := kitHelper.GetFreePort()
+	httpPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()

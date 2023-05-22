@@ -9,8 +9,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest/v3"
-
-	"github.com/rudderlabs/rudder-server/utils/httputil"
+	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
 )
 
 type MINIOResource struct {
@@ -68,7 +67,7 @@ func SetupMINIO(pool *dockertest.Pool, d Cleaner) (*MINIOResource, error) {
 		if err != nil {
 			return err
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		defer func() { kit_httputil.CloseResponse(resp) }()
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")
 		}

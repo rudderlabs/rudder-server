@@ -9,9 +9,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/stretchr/testify/require"
 )
@@ -37,10 +37,10 @@ func TestWorkerPool(t *testing.T) {
 
 		if pipelining {
 			var limiterWg sync.WaitGroup
-			wh.limiters.query = utilsync.NewLimiter(poolCtx, &limiterWg, "query", 2, stats.Default)
-			wh.limiters.process = utilsync.NewLimiter(poolCtx, &limiterWg, "process", 2, stats.Default)
-			wh.limiters.store = utilsync.NewLimiter(poolCtx, &limiterWg, "store", 2, stats.Default)
-			wh.limiters.transform = utilsync.NewLimiter(poolCtx, &limiterWg, "transform", 2, stats.Default)
+			wh.limiters.query = kit_sync.NewLimiter(poolCtx, &limiterWg, "query", 2, stats.Default)
+			wh.limiters.process = kit_sync.NewLimiter(poolCtx, &limiterWg, "process", 2, stats.Default)
+			wh.limiters.store = kit_sync.NewLimiter(poolCtx, &limiterWg, "store", 2, stats.Default)
+			wh.limiters.transform = kit_sync.NewLimiter(poolCtx, &limiterWg, "transform", 2, stats.Default)
 			defer limiterWg.Wait()
 		}
 
@@ -148,10 +148,10 @@ type mockWorkerHandle struct {
 	}
 
 	limiters struct {
-		query     utilsync.Limiter
-		process   utilsync.Limiter
-		transform utilsync.Limiter
-		store     utilsync.Limiter
+		query     kit_sync.Limiter
+		process   kit_sync.Limiter
+		transform kit_sync.Limiter
+		store     kit_sync.Limiter
 	}
 
 	limitsReached bool

@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -39,7 +40,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -109,9 +109,9 @@ type Handle struct {
 	encounteredMergeRuleMap   map[string]map[string]bool
 
 	limiter struct {
-		read    miscsync.Limiter
-		process miscsync.Limiter
-		upload  miscsync.Limiter
+		read    kit_sync.Limiter
+		process kit_sync.Limiter
+		upload  kit_sync.Limiter
 	}
 
 	lastExecTimesMu sync.RWMutex

@@ -33,10 +33,12 @@ type (
 )
 
 type GetAllJobsResult struct {
-	Jobs []*JobT
-	More MoreToken
+	Jobs          []*JobT
+	More          MoreToken
+	LimitsReached bool
 }
 
+// TODO: delete this once we remove the old fair pickup algorithm and move MultiTenantLegacy#GetAllJobs inside JobsDB
 type MultiTenantJobsDB interface {
 	GetAllJobs(context.Context, map[string]int, GetQueryParamsT, int, MoreToken) (*GetAllJobsResult, error)
 
@@ -51,6 +53,8 @@ type MultiTenantJobsDB interface {
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64
 	JournalDeleteEntry(opID int64)
 	GetPileUpCounts(context.Context) (map[string]map[string]int, error)
+	GetActiveWorkspaces(ctx context.Context, customVal string) (workspaces []string, err error)
+	GetDistinctParameterValues(ctx context.Context, parameterName string) (values []string, err error)
 }
 
 func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsLimit int, payloadLimit int64, afterJobID *int64) string {

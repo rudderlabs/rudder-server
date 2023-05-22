@@ -32,7 +32,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -429,12 +429,12 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
-	httpPortInt, err := kitHelper.GetFreePort()
+	httpPortInt, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
 
 	httpPort = strconv.Itoa(httpPortInt)
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
-	httpAdminPort, err := kitHelper.GetFreePort()
+	httpAdminPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
 
 	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))

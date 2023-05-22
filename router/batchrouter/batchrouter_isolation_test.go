@@ -19,7 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -137,8 +137,8 @@ func BenchmarkBatchrouterIsolationModes(b *testing.B) {
 //
 // The generated spec's jobs will be split in two destinations for every workspace, one for postgres and another one for minio.
 // Thus, the number of destinations will be equal to workspaces * 2.
-func NewBatchrouterIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, eventsPerWorkspace int) *ProcIsolationScenarioSpec {
-	var s ProcIsolationScenarioSpec
+func NewBatchrouterIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, eventsPerWorkspace int) *BrtIsolationScenarioSpec {
+	var s BrtIsolationScenarioSpec
 	s.jobQueryBatchSize = 10000
 	s.isolationMode = isolationMode
 	s.jobs = make([]*brtIsolationJobSpec, workspaces*eventsPerWorkspace)
@@ -174,7 +174,7 @@ func NewBatchrouterIsolationScenarioSpec(isolationMode isolation.Mode, workspace
 // 4. Verifies that all events have been processed
 // 5. Optional if [spec.verifyDestinations == true]: Verifies that the correct number of events have been delivered to the appropriate object storage locations
 // 6. Returns the total processing duration (last event time - first event time).
-func BatchrouterIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overallDuration time.Duration) {
+func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) (overallDuration time.Duration) {
 	var m brtIsolationMethods
 
 	config.Reset()
@@ -225,7 +225,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec)
 	defer mockWH.Close()
 
 	t.Logf("Preparing the necessary configuration")
-	gatewayPort, err := kitHelper.GetFreePort()
+	gatewayPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
 	config.Set("Gateway.webPort", gatewayPort)
 	config.Set("Profiler.Enabled", false)
@@ -363,7 +363,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec)
 	return
 }
 
-type ProcIsolationScenarioSpec struct {
+type BrtIsolationScenarioSpec struct {
 	isolationMode      isolation.Mode
 	workspaces         []string
 	jobs               []*brtIsolationJobSpec
@@ -440,7 +440,7 @@ func (jobSpec *brtIsolationJobSpec) payload() []byte {
 }
 
 // Using a struct to keep batchrouter_test package clean and
-// avoid method collisions with other tests
+// avoid function collisions with other tests
 type brtIsolationMethods struct{}
 
 // newMockConfigBackend creates a mock config backend server serving the config file at the given path
@@ -470,7 +470,7 @@ func (brtIsolationMethods) newMockWarehouse() *httptest.Server {
 }
 
 // seedBrtDB seeds the batch router database with jobs based on the provided spec
-func (m brtIsolationMethods) seedBrtDB(t testing.TB, spec *ProcIsolationScenarioSpec) {
+func (m brtIsolationMethods) seedBrtDB(t testing.TB, spec *BrtIsolationScenarioSpec) {
 	jobsdb.Init()
 	jobsdb.Init2()
 	brtJobsDB := jobsdb.NewForWrite("batch_rt")

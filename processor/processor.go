@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
@@ -40,10 +41,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/samber/lo"
@@ -99,10 +98,10 @@ type Handle struct {
 	transDebugger             transformationdebugger.TransformationDebugger
 	isolationStrategy         isolation.Strategy
 	limiter                   struct {
-		read       miscsync.Limiter
-		preprocess miscsync.Limiter
-		transform  miscsync.Limiter
-		store      miscsync.Limiter
+		read       kit_sync.Limiter
+		preprocess kit_sync.Limiter
+		transform  kit_sync.Limiter
+		store      kit_sync.Limiter
 	}
 	config struct {
 		isolationMode             isolation.Mode
@@ -461,22 +460,22 @@ func (proc *Handle) Start(ctx context.Context) error {
 	// limiters
 	s := proc.statsFactory
 	var limiterGroup sync.WaitGroup
-	proc.limiter.read = miscsync.NewLimiter(ctx, &limiterGroup, "proc_read",
+	proc.limiter.read = kit_sync.NewLimiter(ctx, &limiterGroup, "proc_read",
 		config.GetInt("Processor.Limiter.read.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
-	proc.limiter.preprocess = miscsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
+		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
+	proc.limiter.preprocess = kit_sync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
 		config.GetInt("Processor.Limiter.preprocess.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
-	proc.limiter.transform = miscsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
+		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+	proc.limiter.transform = kit_sync.NewLimiter(ctx, &limiterGroup, "proc_transform",
 		config.GetInt("Processor.Limiter.transform.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.store = miscsync.NewLimiter(ctx, &limiterGroup, "proc_store",
+		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
+	proc.limiter.store = kit_sync.NewLimiter(ctx, &limiterGroup, "proc_store",
 		config.GetInt("Processor.Limiter.store.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
+		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
 	g.Go(func() error {
 		limiterGroup.Wait()
 		return nil
@@ -2712,8 +2711,8 @@ func filterConfig(eventCopy *transformer.TransformerEventT) {
 	}
 }
 
-func (*Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
-	return miscsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
+func (*Handle) getLimiterPriority(partition string) kit_sync.LimiterPriorityValue {
+	return kit_sync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
 }
 
 func (proc *Handle) filterDestinations(

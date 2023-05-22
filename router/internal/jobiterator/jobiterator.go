@@ -69,6 +69,8 @@ type IteratorStats struct {
 	TotalJobs int
 	// DiscardedJobs is the number of jobs discarded
 	DiscardedJobs int
+	// LimitsReached indicates whether the iterator reached the limits of the jobsDB while querying
+	LimitsReached bool
 }
 
 // New returns a new job iterator
@@ -136,6 +138,9 @@ func (ji *Iterator) HasNext() bool {
 	ji.state.jobs = allJobsResult.Jobs
 	ji.state.continuationToken = allJobsResult.More
 	ji.state.stats.TotalJobs += len(ji.state.jobs)
+	if !ji.state.stats.LimitsReached {
+		ji.state.stats.LimitsReached = allJobsResult.LimitsReached
+	}
 
 	// reset state
 	ji.state.idx = 0

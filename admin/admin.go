@@ -45,8 +45,8 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -170,5 +170,5 @@ func StartServer(ctx context.Context) error {
 
 	srv := &http.Server{Handler: srvMux, ReadHeaderTimeout: 3 * time.Second}
 
-	return httputil.Serve(ctx, srv, l, time.Second)
+	return kit_httputil.Serve(ctx, srv, l, time.Second)
 }

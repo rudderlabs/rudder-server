@@ -5,23 +5,25 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/tidwall/gjson"
 )
 
-// ResponseHandlerI - handle destination response
-type ResponseHandlerI interface {
+// ResponseHandler - handle destination response
+type ResponseHandler interface {
 	IsSuccessStatus(respCode int, respBody string) (returnCode int)
 }
 
-// JSONResponseHandler handler for json response
-type JSONResponseHandler struct {
+// jsonResponseHandler handler for json response
+type jsonResponseHandler struct {
+	logger         logger.Logger
 	abortRules     []map[string]interface{}
 	retryableRules []map[string]interface{}
 	throttledRules []map[string]interface{}
 }
 
-// TXTResponseHandler handler for text response
-type TXTResponseHandler struct {
+// txtResponseHandler handler for text response
+type txtResponseHandler struct {
 	abortRules     []map[string]interface{}
 	retryableRules []map[string]interface{}
 	throttledRules []map[string]interface{}
@@ -43,8 +45,8 @@ func getRulesArrForKey(key string, rules map[string]interface{}) []map[string]in
 	return rulesArr
 }
 
-// New returns a destination response handler. Can be nil(Check before using this)
-func New(responseRules map[string]interface{}) ResponseHandlerI {
+// NewResponseHandler returns a destination response handler. Can be nil(Check before using this)
+func NewResponseHandler(logger logger.Logger, responseRules map[string]interface{}) ResponseHandler {
 	if responseType, ok := responseRules["responseType"]; !ok || reflect.TypeOf(responseType).Kind() != reflect.String {
 		return nil
 	}
@@ -64,9 +66,9 @@ func New(responseRules map[string]interface{}) ResponseHandlerI {
 	throttledRules := getRulesArrForKey("throttled", rules)
 
 	if responseRules["responseType"].(string) == "JSON" {
-		return &JSONResponseHandler{abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
+		return &jsonResponseHandler{logger: logger.Child("jsonResponseHandler"), abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
 	} else if responseRules["responseType"].(string) == "TXT" {
-		return &TXTResponseHandler{abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
+		return &txtResponseHandler{abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
 	}
 
 	return nil
@@ -115,10 +117,10 @@ func evalBody(body string, rules []map[string]interface{}) bool {
 // JSONResponseHandler -- start
 
 // IsSuccessStatus - returns the status code based on the response code and body
-func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody string) (returnCode int) {
+func (handler *jsonResponseHandler) IsSuccessStatus(respCode int, respBody string) (returnCode int) {
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLogger.Error(r)
+			handler.logger.Error(r)
 			returnCode = respCode
 		}
 	}()
@@ -146,7 +148,7 @@ func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody strin
 // TXTResponseHandler -- start
 
 // IsSuccessStatus - returns the status code based on the response code and body
-func (*TXTResponseHandler) IsSuccessStatus(respCode int, _ string) (returnCode int) {
+func (*txtResponseHandler) IsSuccessStatus(respCode int, _ string) (returnCode int) {
 	returnCode = respCode
 	return
 }

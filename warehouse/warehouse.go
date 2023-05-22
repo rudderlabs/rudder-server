@@ -29,6 +29,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
@@ -41,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -1571,7 +1571,7 @@ func startWebHandler(ctx context.Context) error {
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
-	return httputil.ListenAndServe(ctx, srv)
+	return kit_httputil.ListenAndServe(ctx, srv)
 }
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present

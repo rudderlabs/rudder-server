@@ -25,7 +25,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
@@ -138,11 +138,11 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
 
-	httpPort, err := kitHelper.GetFreePort()
+	httpPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := kitHelper.GetFreePort()
+	httpAdminPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
-	debugPort, err := kitHelper.GetFreePort()
+	debugPort, err := kit_helper.GetFreePort()
 	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
