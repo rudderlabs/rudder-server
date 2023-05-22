@@ -865,7 +865,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 				localSchema:          tc.localSchema,
 				schemaInWarehouse:    tc.schemaInWarehouse,
 			}
-			require.Equal(t, tc.expected, sch.hasLocalSchemaChanged())
+			require.Equal(t, tc.expected, sch.hasSchemaChanged())
 		})
 	}
 }
@@ -989,6 +989,74 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 					"destination_id":   "string",
 					"source_type":      "string",
 					"destination_type": "string",
+				},
+				"rudder_discards": model.TableSchema{
+					"column_name":  "string",
+					"column_value": "string",
+					"received_at":  "datetime",
+					"row_id":       "string",
+					"table_name":   "string",
+					"uuid_ts":      "datetime",
+				},
+			},
+		},
+		{
+			name:          "users have extra properties as compared to identifies",
+			warehouseType: warehouseutils.RS,
+			mockSchemas: []model.Schema{
+				{
+					"identifies": model.TableSchema{
+						"id":               "string",
+						"user_id":          "int",
+						"anonymous_id":     "string",
+						"received_at":      "datetime",
+						"sent_at":          "datetime",
+						"timestamp":        "datetime",
+						"source_id":        "string",
+						"destination_id":   "string",
+						"source_type":      "string",
+						"destination_type": "string",
+					},
+					"users": model.TableSchema{
+						"id":               "string",
+						"anonymous_id":     "string",
+						"received_at":      "datetime",
+						"sent_at":          "datetime",
+						"timestamp":        "datetime",
+						"source_id":        "string",
+						"destination_id":   "string",
+						"source_type":      "string",
+						"destination_type": "string",
+						"extra_property_1": "string",
+						"extra_property_2": "string",
+					},
+				},
+			},
+			expectedSchema: model.Schema{
+				"identifies": model.TableSchema{
+					"id":               "string",
+					"user_id":          "int",
+					"anonymous_id":     "string",
+					"received_at":      "datetime",
+					"sent_at":          "datetime",
+					"timestamp":        "datetime",
+					"source_id":        "string",
+					"destination_id":   "string",
+					"source_type":      "string",
+					"destination_type": "string",
+				},
+				"users": model.TableSchema{
+					"id":               "int",
+					"anonymous_id":     "string",
+					"received_at":      "datetime",
+					"sent_at":          "datetime",
+					"timestamp":        "datetime",
+					"source_id":        "string",
+					"destination_id":   "string",
+					"source_type":      "string",
+					"destination_type": "string",
+					"extra_property_1": "string",
+					"extra_property_2": "string",
 				},
 				"rudder_discards": model.TableSchema{
 					"column_name":  "string",

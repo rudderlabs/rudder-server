@@ -315,8 +315,8 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && slices.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-// hasLocalSchemaChanged compares the localSchema with the schemaInWarehouse
-func (sh *Schema) hasLocalSchemaChanged() bool {
+// hasSchemaChanged compares the localSchema with the schemaInWarehouse
+func (sh *Schema) hasSchemaChanged() bool {
 	if !sh.skipDeepEqualSchemas {
 		eq := reflect.DeepEqual(sh.localSchema, sh.schemaInWarehouse)
 		return !eq

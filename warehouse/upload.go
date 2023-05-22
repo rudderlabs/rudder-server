@@ -292,7 +292,7 @@ func (job *UploadJob) syncRemoteSchema() (bool, error) {
 		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	schemaChanged := job.schemaHandle.hasLocalSchemaChanged()
+	schemaChanged := job.schemaHandle.hasSchemaChanged()
 	if schemaChanged {
 		pkgLogger.Infow("schema changed",
 			logfield.SourceID, job.warehouse.Source.ID,
