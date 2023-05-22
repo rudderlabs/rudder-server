@@ -149,3 +149,15 @@ jobs:
         with:
           fail_ci_if_error: true
           files: ./coverage.txt
+
+  all-tests-successful:
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - integration
+      - warehouse-integration
+      - unit
+    steps:
+      - uses: re-actors/alls-green@v1.2.2
+        with:
+          jobs: ${{ toJSON(needs) }}
