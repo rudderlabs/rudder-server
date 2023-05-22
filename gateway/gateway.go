@@ -21,15 +21,16 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/gorilla/mux"
+
 	"github.com/rs/cors"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-go-kit/chiware"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/gorillaware"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
@@ -179,13 +180,13 @@ type HandleT struct {
 	trackFailureCount int
 
 	userWebRequestWorkers []*userWebRequestWorkerT
-	webhookHandler        *webhook.HandleT
+	webhookHandler        webhook.Webhook
 	suppressUserHandler   types.UserSuppression
 	eventSchemaHandler    types.EventSchemasI
 	versionHandler        func(w http.ResponseWriter, r *http.Request)
 	logger                logger.Logger
-	rrh                   *RegularRequestHandler
-	irh                   *ImportRequestHandler
+	rrh                   RequestHandler
+	irh                   RequestHandler
 	netHandle             *http.Client
 	httpTimeout           time.Duration
 	httpWebServer         *http.Server
@@ -834,9 +835,10 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	_ = r.Body.Close()
 	if err != nil {
 		gateway.logger.Errorf(
-			"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n",
+			"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n:%v",
 			r.Header.Get("Content-Length"),
 			string(payload),
+			err,
 		)
 		return payload, errors.New(response.RequestBodyReadFailed)
 	}
@@ -1248,54 +1250,63 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	gateway.backendConfig.WaitForConfig(ctx)
 	gateway.logger.Infof("WebHandler Starting on %d", webPort)
 	component := "gateway"
-	srvMux := mux.NewRouter()
+	srvMux := chi.NewRouter()
 	srvMux.Use(
-		gorillaware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		chiware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 		middleware.UncompressMiddleware,
 	)
-	internalMux := srvMux.PathPrefix("/internal").Subrouter() // mux for internal endpoints
+	srvMux.Route("/internal", func(r chi.Router) {
+		r.Post("/v1/extract", gateway.webExtractHandler)
+	})
 
-	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/track", gateway.webTrackHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/page", gateway.webPageHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/screen", gateway.webScreenHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
-	srvMux.HandleFunc("/health", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
-	srvMux.HandleFunc("/", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
-	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
-	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
-	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
-	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
-	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
-	srvMux.PathPrefix("/v1/warehouse").Handler(http.HandlerFunc(warehouseHandler)).Methods("GET", "POST")
-	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
-	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
+	srvMux.Route("/v1", func(r chi.Router) {
+		r.Post("/alias", gateway.webAliasHandler)
+		r.Post("/audiencelist", gateway.webAudienceListHandler)
+		r.Post("/batch", gateway.webBatchHandler)
+		r.Post("/group", gateway.webGroupHandler)
+		r.Post("/identify", gateway.webIdentifyHandler)
+		r.Post("/import", gateway.webImportHandler)
+		r.Post("/merge", gateway.webMergeHandler)
+		r.Post("/page", gateway.webPageHandler)
+		r.Post("/screen", gateway.webScreenHandler)
+		r.Post("/track", gateway.webTrackHandler)
+		r.Post("/webhook", gateway.webhookHandler.RequestHandler)
+		r.Post("/warehouse", warehouseHandler)
+		r.Post("/warehouse/pending-events", gateway.whProxy.ServeHTTP)
 
-	// internal endpoints
-	internalMux.HandleFunc("/v1/extract", gateway.webExtractHandler).Methods("POST")
+		r.Get("/webhook", gateway.webhookHandler.RequestHandler)
+		r.Get("/warehouse", warehouseHandler)
+	})
+
+	srvMux.Get("/health", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB)))
+
+	srvMux.Get("/", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB)))
+	srvMux.Route("/pixel/v1", func(r chi.Router) {
+		r.Get("/track", gateway.pixelTrackHandler)
+		r.Get("/page", gateway.pixelPageHandler)
+	})
+	srvMux.Post("/beacon/v1/batch", gateway.beaconBatchHandler)
+	srvMux.Get("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler))
+	srvMux.Get("/robots.txt", gateway.robots)
 
 	if enableEventSchemasFeature {
-		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-versions", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-models/json-schemas", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas))).Methods("GET")
+		srvMux.Route("/schemas", func(r chi.Router) {
+			r.Get("/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels)))
+			r.Get("/event-versions", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions)))
+			r.Get("/event-model/{EventID}/key-counts", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts)))
+			r.Get("/event-model/{EventID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata)))
+			r.Get("/event-version/{VersionID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata)))
+			r.Get("/event-version/{VersionID}/missing-keys", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys)))
+			r.Get("/event-models/json-schemas", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas)))
+		})
 	}
-
-	srvMux.HandleFunc("/v1/warehouse/pending-events", gateway.whProxy.ServeHTTP).Methods("POST")
 
 	// rudder-sources new APIs
 	rsourcesHandler := rsources_http.NewHandler(
 		gateway.rsourcesService,
 		gateway.logger.Child("rsources"))
-	srvMux.PathPrefix("/v1/job-status").Handler(WithContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
+	srvMux.Mount("/v1/job-status", WithContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -1327,9 +1338,9 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	gateway.backendConfig.WaitForConfig(ctx)
 	gateway.logger.Infof("AdminHandler starting on %d", adminWebPort)
 	component := "gateway"
-	srvMux := mux.NewRouter()
+	srvMux := chi.NewRouter()
 	srvMux.Use(
-		gorillaware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		chiware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srv := &http.Server{
@@ -1474,7 +1485,7 @@ func (gateway *HandleT) Setup(
 
 	whURL, err := url.ParseRequestURI(misc.GetWarehouseURL())
 	if err != nil {
-		return fmt.Errorf("Invalid warehouse URL %s: %w", whURL, err)
+		return fmt.Errorf("invalid warehouse URL %s: %w", whURL, err)
 	}
 	whProxy := httputil.NewSingleHostReverseProxy(whURL)
 	gateway.whProxy = whProxy

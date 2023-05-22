@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
@@ -172,17 +172,16 @@ func exportPath() (baseDir string, err error) {
 
 func handler(t *testing.T) http.Handler {
 	t.Helper()
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/suppressions", getSuppressions).Methods(http.MethodGet)
-	srvMux.HandleFunc("/dataplane/namespaces/{namespace_id}/regulations/suppressions", getSuppressions).Methods(http.MethodGet)
-	srvMux.HandleFunc("/workspaceConfig", getSingleTenantWorkspaceConfig).Methods(http.MethodGet)
-	srvMux.HandleFunc("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig).Methods(http.MethodGet)
-
+	srvMux := chi.NewMux()
 	srvMux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			next.ServeHTTP(w, req)
 		})
 	})
+	srvMux.Get("/dataplane/workspaces/{workspace_id}/regulations/suppressions", getSuppressions)
+	srvMux.Get("/dataplane/namespaces/{namespace_id}/regulations/suppressions", getSuppressions)
+	srvMux.Get("/workspaceConfig", getSingleTenantWorkspaceConfig)
+	srvMux.Get("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig)
 
 	return srvMux
 }

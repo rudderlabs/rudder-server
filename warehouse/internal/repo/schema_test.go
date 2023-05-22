@@ -6,6 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/exp/slices"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/stretchr/testify/require"
@@ -111,5 +115,32 @@ func TestWHSchemasRepo(t *testing.T) {
 		expectedNamespace, err = r.GetNamespace(ctx, notFound, notFound)
 		require.NoError(t, err)
 		require.Empty(t, expectedNamespace, expectedNamespace)
+	})
+
+	t.Run("GetTablesForConnection", func(t *testing.T) {
+		t.Log("existing")
+		connection := warehouseutils.SourceIDDestinationID{SourceID: sourceID, DestinationID: destinationID}
+		expectedTableNames, err := r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
+		require.NoError(t, err)
+		require.Equal(t, len(expectedTableNames), 1)
+		require.Equal(t, expectedTableNames[0].SourceID, sourceID)
+		require.Equal(t, expectedTableNames[0].DestinationID, destinationID)
+		require.Equal(t, expectedTableNames[0].Namespace, namespace)
+		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_1"))
+		require.True(t, slices.Contains(expectedTableNames[0].Tables, "table_name_2"))
+
+		t.Log("cancelled context")
+		_, err = r.GetTablesForConnection(cancelledCtx, []warehouseutils.SourceIDDestinationID{connection})
+		require.EqualError(t, err, errors.New("querying schema: context canceled").Error())
+
+		t.Log("not found")
+		expectedTableNames, err = r.GetTablesForConnection(ctx,
+			[]warehouseutils.SourceIDDestinationID{{SourceID: notFound, DestinationID: notFound}})
+		require.NoError(t, err)
+		require.Empty(t, expectedTableNames, expectedTableNames)
+
+		t.Log("empty")
+		_, err = r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{})
+		require.EqualError(t, err, errors.New("no source id and destination id pairs provided").Error())
 	})
 }

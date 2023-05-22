@@ -55,6 +55,13 @@ type batchWebhookT struct {
 	sourceType   string
 }
 
+//go:generate mockgen -destination=../../mocks/gateway/webhook.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/webhook Webhook
+type Webhook interface {
+	RequestHandler(w http.ResponseWriter, r *http.Request)
+	Register(name string)
+	Shutdown() error
+}
+
 type HandleT struct {
 	requestQMu    sync.RWMutex
 	requestQ      map[string]chan *webhookT
