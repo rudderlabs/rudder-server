@@ -271,7 +271,7 @@ func TestHandleSchemaChange(t *testing.T) {
 				tc.value,
 			)
 			require.Equal(t, newColumnVal, tc.newColumnVal)
-			require.Equal(t, convError, tc.convError)
+			require.ErrorIs(t, convError, tc.convError)
 		})
 	}
 }

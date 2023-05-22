@@ -264,6 +264,30 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			require.EqualError(t, err, "querying schemas: context canceled")
 			require.Nil(t, expectedSchemas)
 		})
+
+		t.Run("invalid JSON", func(t *testing.T) {
+			db := setupDB(t)
+
+			_, err := db.ExecContext(ctx, `
+				INSERT INTO wh_staging_files (
+				  location, source_id, destination_id,
+				  schema, created_at, updated_at, workspace_id
+				)
+				VALUES
+				  (
+					's3://bucket/path/to/file', 'source_id',
+					'destination_id', '1', NOW(), NOW(),
+					'workspace_id'
+				  );
+			`)
+			require.NoError(t, err)
+
+			r := repo.NewStagingFiles(db)
+
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
+			require.EqualError(t, err, "cannot get schemas by ids: unmarshal staging schema: ReadMapCB: expect { or n, but found 1, error found in #1 byte of ...|1|..., bigger context ...|1|...")
+			require.Nil(t, expectedSchemas)
+		})
 	})
 }
 
