@@ -50,7 +50,7 @@ func (brt *Handle) Setup(
 	debugger destinationdebugger.DestinationDebugger,
 ) {
 	brt.destType = destType
-
+	brt.asyncdestinationmanager = asyncdestinationmanager.NewAsyncDestinationManager(brt.destType)
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destType)
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},

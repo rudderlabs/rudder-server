@@ -13,11 +13,17 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
 
+type Asyncdestinationmanager interface {
+	Upload(importingJobIDs []int64, destinationID string) common.AsyncUploadOutput
+	Poll() ([]byte, int)
+}
 type AsyncUploadOutput struct {
 	Key                 string
 	ImportingJobIDs     []int64
@@ -292,4 +298,15 @@ func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, i
 		panic("JSON Marshal Failed" + err.Error())
 	}
 	return payload
+}
+
+func NewAsyncDestinationManager(destType string) Asyncdestinationmanager {
+	if destType == "BING_ADS" {
+		return bingads.Manager()
+	} else if destType == "MARKETO_BULK_UPLOAD" {
+		// return marketobulkupload.Manager()
+		return bingads.Manager() // for now, as marketo is not converted with interface as of now.
+	} else {
+		return nil
+	}
 }

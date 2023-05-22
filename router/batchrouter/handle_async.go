@@ -1,10 +1,10 @@
+// file related to marketo
 package batchrouter
 
 import (
 	"context"
 	stdjson "encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
-	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -55,7 +55,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
 						parameters := importingJob.LastJobStatus.Parameters
-						pollUrl := gjson.GetBytes(parameters, "pollURL").String()
+						// pollUrl := gjson.GetBytes(parameters, "pollURL").String()
 						importId := gjson.GetBytes(parameters, "importId").String()
 						csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 						var pollStruct AsyncPoll
@@ -71,11 +71,11 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 						var bodyBytes []byte
 						var statusCode int
-						if brt.destType == "MARKETO_BULK_UPLOAD" {
-							bodyBytes, statusCode = bingads.Poll()
-						} else {
-							bodyBytes, statusCode = misc.HTTPCallWithRetryWithTimeout(brt.transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
-						}
+						// if brt.destType == "BING_ADS" {
+						bodyBytes, statusCode = brt.asyncdestinationmanager.Poll()
+						// } else {
+						// 	bodyBytes, statusCode = misc.HTTPCallWithRetryWithTimeout(brt.transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
+						// }
 						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 						brt.asyncPollTimeStat.Since(startPollTime)
 
@@ -340,18 +340,18 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 }
 
 func (brt *Handle) asyncUploadWorker(ctx context.Context) {
-	resolveURL := func(base, relative string) string {
-		baseURL, err := url.Parse(base)
-		if err != nil {
-			brt.logger.Fatal(err)
-		}
-		relURL, err := url.Parse(relative)
-		if err != nil {
-			brt.logger.Fatal(err)
-		}
-		destURL := baseURL.ResolveReference(relURL).String()
-		return destURL
-	}
+	// resolveURL := func(base, relative string) string {
+	// 	baseURL, err := url.Parse(base)
+	// 	if err != nil {
+	// 		brt.logger.Fatal(err)
+	// 	}
+	// 	relURL, err := url.Parse(relative)
+	// 	if err != nil {
+	// 		brt.logger.Fatal(err)
+	// 	}
+	// 	destURL := baseURL.ResolveReference(relURL).String()
+	// 	return destURL
+	// }
 
 	if !slices.Contains(asyncDestinations, brt.destType) {
 		return
@@ -379,12 +379,12 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeout := uploadIntervalMap[destinationID]
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					var uploadResponse asyncdestinationmanager.AsyncUploadOutput
-					if brt.destType == "MARKETO_BULK_UPLOAD" {
-						uploadResponse = bingads.Upload(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
-					} else {
-						uploadResponse = asyncdestinationmanager.Upload(resolveURL(brt.transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
-					}
+					var uploadResponse common.AsyncUploadOutput
+					// if brt.destType == "MARKETO_BULK_UPLOAD" {
+					uploadResponse = brt.asyncdestinationmanager.Upload(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					// } else {
+					// 	uploadResponse = asyncdestinationmanager.Upload(resolveURL(brt.transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					// }
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
 				}
@@ -428,7 +428,7 @@ func (brt *Handle) asyncStructCleanUp(destinationID string) {
 
 func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	if brt.disableEgress {
-		out := asyncdestinationmanager.AsyncUploadOutput{}
+		out := common.AsyncUploadOutput{}
 		for _, job := range batchJobs.Jobs {
 			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
 			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.DisabledEgress.Error()) // skipcq: GO-R4002
@@ -448,7 +448,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 		defer brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 		if brt.asyncDestinationStruct[destinationID].CanUpload {
-			out := asyncdestinationmanager.AsyncUploadOutput{}
+			out := common.AsyncUploadOutput{}
 			for _, job := range batchJobs.Jobs {
 				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
 				out.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
@@ -505,7 +505,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	}
 }
 
-func (brt *Handle) setMultipleJobStatus(asyncOutput asyncdestinationmanager.AsyncUploadOutput, rsourcesStats rsources.StatsCollector) {
+func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rsourcesStats rsources.StatsCollector) {
 	jobParameters := []byte(fmt.Sprintf(`{"destination_id": %q}`, asyncOutput.DestinationID)) // TODO: there should be a consistent way of finding the actual job parameters
 	workspace := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var statusList []*jobsdb.JobStatusT

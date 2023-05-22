@@ -1,13 +1,17 @@
 package bingads
 
 import (
-	"encoding/json"
+	stdjson "encoding/json"
 
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func Upload(importingJobIDs []int64, destinationID string) asyncdestinationmanager.AsyncUploadOutput {
-	return asyncdestinationmanager.AsyncUploadOutput{
+type BING_ADS struct {
+	destName string
+}
+
+func (b *BING_ADS) Upload(importingJobIDs []int64, destinationID string) common.AsyncUploadOutput {
+	return common.AsyncUploadOutput{
 		ImportingJobIDs:     importingJobIDs,
 		FailedJobIDs:        nil,
 		FailedReason:        ``,
@@ -18,8 +22,8 @@ func Upload(importingJobIDs []int64, destinationID string) asyncdestinationmanag
 	}
 }
 
-func Poll() ([]byte, int) {
-	resp := asyncdestinationmanager.AsyncStatusResponse{
+func (b *BING_ADS) Poll() ([]byte, int) {
+	resp := common.AsyncStatusResponse{
 		Success:        true,
 		StatusCode:     200,
 		HasFailed:      false,
@@ -28,10 +32,15 @@ func Poll() ([]byte, int) {
 		WarningJobsURL: "",
 	}
 
-	respBytes, err := json.Marshal(resp)
+	respBytes, err := stdjson.Marshal(resp)
 	if err != nil {
 		panic(err)
 	}
 
 	return respBytes, 200
+}
+
+func Manager() *BING_ADS {
+	bingads := &BING_ADS{destName: "BING_ADS"}
+	return bingads
 }
