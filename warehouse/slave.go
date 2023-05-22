@@ -523,7 +523,7 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, convError := HandleSchemaChange(
+				newColumnVal, convError := handleSchemaChange(
 					model.SchemaType(dataTypeInSchema),
 					model.SchemaType(columnType),
 					columnVal,

@@ -3,92 +3,79 @@ package warehouse
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"golang.org/x/exp/slices"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type SchemaHandle struct {
-	dbHandle                      *sql.DB
-	stagingFiles                  []*model.StagingFile
-	warehouse                     model.Warehouse
-	localSchema                   model.Schema
-	schemaInWarehouse             model.Schema
-	unrecognizedSchemaInWarehouse model.Schema
-	uploadSchema                  model.Schema
-	whSchemaRepo                  *repo.WHSchema
+var (
+	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
+	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
+)
+
+// deprecatedColumnsRegex
+// This regex is used to identify deprecated columns in the warehouse
+// Example: abc-deprecated-dba626a7-406a-4757-b3e0-3875559c5840
+var deprecatedColumnsRegex = regexp.MustCompile(`.*-deprecated-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+type schemaRepo interface {
+	GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error)
+	Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error)
 }
 
-func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
-	var (
-		newColumnVal any
-		err          error
-	)
-
-	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
-		// only stringify if the previous type is non-string/text/json
-		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
-			newColumnVal = fmt.Sprintf("%v", value)
-		} else {
-			newColumnVal = value
-		}
-	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
-		intVal, ok := value.(int)
-		if !ok {
-			err = ErrIncompatibleSchemaConversion
-		} else {
-			newColumnVal = float64(intVal)
-		}
-	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
-		floatVal, ok := value.(float64)
-		if !ok {
-			err = ErrIncompatibleSchemaConversion
-		} else {
-			newColumnVal = int(floatVal)
-		}
-	} else if existingDataType == model.JSONDataType {
-		var interfaceSliceSample []any
-		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
-			newColumnVal = fmt.Sprintf("%v", value)
-		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
-			newColumnVal = value
-		} else {
-			newColumnVal = fmt.Sprintf(`"%v"`, value)
-		}
-	} else {
-		err = ErrSchemaConversionNotSupported
-	}
-
-	return newColumnVal, err
+type stagingFileRepo interface {
+	GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error)
 }
 
-func (sh *SchemaHandle) getLocalSchema(ctx context.Context) (model.Schema, error) {
-	whSchema, err := sh.whSchemaRepo.GetForNamespace(
-		ctx,
-		sh.warehouse.Source.ID,
-		sh.warehouse.Destination.ID,
-		sh.warehouse.Namespace,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get schema for namespace: %w", err)
-	}
-	if whSchema.Schema == nil {
-		return model.Schema{}, nil
-	}
-	return whSchema.Schema, nil
+type fetchSchemaRepo interface {
+	FetchSchema(ctx context.Context) (model.Schema, model.Schema, error)
 }
 
-func (sh *SchemaHandle) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
-	_, err := sh.whSchemaRepo.Insert(ctx, &model.WHSchema{
+type Schema struct {
+	warehouse                        model.Warehouse
+	localSchema                      model.Schema
+	schemaInWarehouse                model.Schema
+	unrecognizedSchemaInWarehouse    model.Schema
+	uploadSchema                     model.Schema
+	schemaRepo                       schemaRepo
+	stagingFileRepo                  stagingFileRepo
+	log                              logger.Logger
+	stagingFilesSchemaPaginationSize int
+	skipDeepEqualSchemas             bool
+	enableIDResolution               bool
+}
+
+func NewSchema(
+	db *sql.DB,
+	warehouse model.Warehouse,
+	conf *config.Config,
+) *Schema {
+	return &Schema{
+		warehouse:                        warehouse,
+		schemaRepo:                       repo.NewWHSchemas(db),
+		stagingFileRepo:                  repo.NewStagingFiles(db),
+		log:                              logger.NewLogger().Child("warehouse").Child("schema"),
+		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
+		skipDeepEqualSchemas:             conf.GetBool("Warehouse.skipDeepEqualSchemas", false),
+		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
+	}
+}
+
+func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
+	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
 		UploadID:        uploadId,
 		SourceID:        sh.warehouse.Source.ID,
 		Namespace:       sh.warehouse.Namespace,
@@ -96,26 +83,65 @@ func (sh *SchemaHandle) updateLocalSchema(ctx context.Context, uploadId int64, u
 		DestinationType: sh.warehouse.Type,
 		Schema:          updatedSchema,
 	})
-	return err
-}
-
-func (sh *SchemaHandle) fetchSchemaFromWarehouse(ctx context.Context, whManager manager.Manager) (schemaInWarehouse, unrecognizedSchemaInWarehouse model.Schema, err error) {
-	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx)
 	if err != nil {
-		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-		return model.Schema{}, model.Schema{}, err
+		return fmt.Errorf("updating local schema: %w", err)
 	}
 
-	sh.SkipDeprecatedColumns(schemaInWarehouse)
-	sh.SkipDeprecatedColumns(unrecognizedSchemaInWarehouse)
-	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
+	sh.localSchema = updatedSchema
+
+	return nil
 }
 
-func (sh *SchemaHandle) SkipDeprecatedColumns(schema model.Schema) {
+// fetchSchemaFromLocal fetches schema from local
+func (sh *Schema) fetchSchemaFromLocal(ctx context.Context) error {
+	localSchema, err := sh.getLocalSchema(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching schema from local: %w", err)
+	}
+
+	sh.localSchema = localSchema
+
+	return nil
+}
+
+func (sh *Schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
+	whSchema, err := sh.schemaRepo.GetForNamespace(
+		ctx,
+		sh.warehouse.Source.ID,
+		sh.warehouse.Destination.ID,
+		sh.warehouse.Namespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return model.Schema{}, nil
+	}
+	return whSchema.Schema, nil
+}
+
+// fetchSchemaFromWarehouse fetches schema from warehouse
+func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error {
+	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching schema from warehouse: %w", err)
+	}
+
+	sh.skipDeprecatedColumns(warehouseSchema)
+	sh.skipDeprecatedColumns(unrecognizedWarehouseSchema)
+
+	sh.schemaInWarehouse = warehouseSchema
+	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema
+
+	return nil
+}
+
+// skipDeprecatedColumns skips deprecated columns from the schema
+func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
-			if warehouseutils.DeprecatedColumnsRegex.MatchString(columnName) {
-				pkgLogger.Debugw("skipping deprecated column",
+			if deprecatedColumnsRegex.MatchString(columnName) {
+				sh.log.Debugw("skipping deprecated column",
 					logfield.SourceID, sh.warehouse.Source.ID,
 					logfield.DestinationID, sh.warehouse.Destination.ID,
 					logfield.DestinationType, sh.warehouse.Destination.DestinationDefinition.Name,
@@ -131,198 +157,174 @@ func (sh *SchemaHandle) SkipDeprecatedColumns(schema model.Schema) {
 	}
 }
 
-func MergeSchema(currentSchema model.Schema, schemaList []model.Schema, currentMergedSchema model.Schema, warehouseType string) model.Schema {
-	if len(currentMergedSchema) == 0 {
-		currentMergedSchema = model.Schema{}
+func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model.StagingFile) error {
+	consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(ctx, stagingFiles)
+	if err != nil {
+		return fmt.Errorf("consolidating staging files schema: %w", err)
 	}
 
-	setColumnTypeFromExistingSchema := func(refSchema model.Schema, tableName, refTableName, columnName, refColumnName, columnType string) bool {
-		columnTypeInDB, ok := refSchema[refTableName][refColumnName]
-		if !ok {
-			return false
+	sh.uploadSchema = consolidatedSchema
+	return nil
+}
+
+// consolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
+func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
+	consolidatedSchema := model.Schema{}
+	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
+	for _, batch := range batches {
+		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(
+			ctx,
+			repo.StagingFileIDs(batch),
+		)
+		if err != nil {
+			return model.Schema{}, fmt.Errorf("getting staging files schema: %v", err)
 		}
-		if columnTypeInDB == "string" && columnType == "text" {
-			currentMergedSchema[tableName][columnName] = columnType
-			return true
-		}
-		// if columnTypeInDB is text, then we should not change it to string
-		if currentMergedSchema[tableName][columnName] == "text" {
-			return true
-		}
-		currentMergedSchema[tableName][columnName] = columnTypeInDB
-		return true
+
+		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
 	}
+	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.localSchema)
+	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type)
+	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
+	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
+	return consolidatedSchema, nil
+}
 
-	usersTableName := warehouseutils.ToProviderCase(warehouseType, "users")
-	identifiesTableName := warehouseutils.ToProviderCase(warehouseType, "identifies")
-
-	for _, schema := range schemaList {
+// consolidateStagingSchemas merges multiple schemas into one
+// Prefer the type of the first schema, If the type is text, prefer text
+func consolidateStagingSchemas(consolidatedSchema model.Schema, schemas []model.Schema) model.Schema {
+	for _, schema := range schemas {
 		for tableName, columnMap := range schema {
-			if currentMergedSchema[tableName] == nil {
-				currentMergedSchema[tableName] = make(model.TableSchema)
-			}
-			var toInferFromIdentifies bool
-			var refSchema model.Schema
-			if tableName == usersTableName {
-				if _, ok := currentSchema[identifiesTableName]; ok {
-					toInferFromIdentifies = true
-					refSchema = currentSchema
-				} else if _, ok := currentMergedSchema[identifiesTableName]; ok { // also check in identifies of currentMergedSchema if identifies table not present in warehouse
-					toInferFromIdentifies = true
-					refSchema = currentMergedSchema
-				}
+			if _, ok := consolidatedSchema[tableName]; !ok {
+				consolidatedSchema[tableName] = model.TableSchema{}
 			}
 			for columnName, columnType := range columnMap {
-				// if column already has a type in db, use that
-				// check for data type in identifies for users table before check in users table
-				// to ensure same data type is set for the same column in both users and identifies
-				if tableName == usersTableName && toInferFromIdentifies {
-					refColumnName := columnName
-					if columnName == warehouseutils.ToProviderCase(warehouseType, "id") {
-						refColumnName = warehouseutils.ToProviderCase(warehouseType, "user_id")
-					}
-					if setColumnTypeFromExistingSchema(refSchema, tableName, identifiesTableName, columnName, refColumnName, columnType) {
-						continue
-					}
+				if model.SchemaType(columnType) == model.TextDataType {
+					consolidatedSchema[tableName][columnName] = string(model.TextDataType)
+					continue
 				}
 
-				if _, ok := currentSchema[tableName]; ok {
-					if setColumnTypeFromExistingSchema(currentSchema, tableName, tableName, columnName, columnName, columnType) {
-						continue
-					}
-				}
-				// check if we already set the columnType in currentMergedSchema
-				if _, ok := currentMergedSchema[tableName][columnName]; !ok {
-					currentMergedSchema[tableName][columnName] = columnType
+				if _, ok := consolidatedSchema[tableName][columnName]; !ok {
+					consolidatedSchema[tableName][columnName] = columnType
 				}
 			}
 		}
 	}
-	return currentMergedSchema
+	return consolidatedSchema
 }
 
-func (sh *SchemaHandle) safeName(columnName string) string {
-	return warehouseutils.ToProviderCase(sh.warehouse.Type, columnName)
-}
-
-func (sh *SchemaHandle) getDiscardsSchema() model.TableSchema {
-	discards := model.TableSchema{}
-	for colName, colType := range warehouseutils.DiscardsSchema {
-		discards[sh.safeName(colName)] = colType
-	}
-
-	// add loaded_at for bq to be segment compatible
-	if sh.warehouse.Type == warehouseutils.BQ {
-		discards[sh.safeName("loaded_at")] = "datetime"
-	}
-	return discards
-}
-
-func (sh *SchemaHandle) getMergeRulesSchema() model.TableSchema {
-	return model.TableSchema{
-		sh.safeName("merge_property_1_type"):  "string",
-		sh.safeName("merge_property_1_value"): "string",
-		sh.safeName("merge_property_2_type"):  "string",
-		sh.safeName("merge_property_2_value"): "string",
-	}
-}
-
-func (sh *SchemaHandle) getIdentitiesMappingsSchema() model.TableSchema {
-	return model.TableSchema{
-		sh.safeName("merge_property_type"):  "string",
-		sh.safeName("merge_property_value"): "string",
-		sh.safeName("rudder_id"):            "string",
-		sh.safeName("updated_at"):           "datetime",
-	}
-}
-
-func (sh *SchemaHandle) isIDResolutionEnabled() bool {
-	return warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
-}
-
-func (sh *SchemaHandle) consolidateStagingFilesSchemaUsingWarehouseSchema() model.Schema {
-	schemaInLocalDB := sh.localSchema
-
-	consolidatedSchema := model.Schema{}
-	count := 0
-	for {
-		lastIndex := count + stagingFilesSchemaPaginationSize
-		if lastIndex >= len(sh.stagingFiles) {
-			lastIndex = len(sh.stagingFiles)
+// consolidateWarehouseSchema overwrites the consolidatedSchema with the schemaInWarehouse
+// Prefer the type of the schemaInWarehouse, If the type is text, prefer text
+func consolidateWarehouseSchema(consolidatedSchema, warehouseSchema model.Schema) model.Schema {
+	for tableName, columnMap := range warehouseSchema {
+		if _, ok := consolidatedSchema[tableName]; !ok {
+			continue
 		}
 
-		var ids []int64
-		for _, stagingFile := range sh.stagingFiles[count:lastIndex] {
-			ids = append(ids, stagingFile.ID)
-		}
-
-		sqlStatement := fmt.Sprintf(`
-			SELECT
-			  schema
-			FROM
-			  %s
-			WHERE
-			  id IN (%s);
-`,
-			warehouseutils.WarehouseStagingFilesTable,
-			misc.IntArrayToString(ids, ","),
-		)
-		rows, err := sh.dbHandle.Query(sqlStatement)
-		if err != nil && err != sql.ErrNoRows {
-			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-		}
-
-		var schemas []model.Schema
-		for rows.Next() {
-			var s json.RawMessage
-			err := rows.Scan(&s)
-			if err != nil {
-				panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
-			}
-			var schema model.Schema
-			err = json.Unmarshal(s, &schema)
-			if err != nil {
-				panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(s), err))
+		for columnName, columnType := range columnMap {
+			if _, ok := consolidatedSchema[tableName][columnName]; !ok {
+				continue
 			}
 
-			schemas = append(schemas, schema)
-		}
-		_ = rows.Close()
+			var (
+				consolidatedSchemaType = model.SchemaType(consolidatedSchema[tableName][columnName])
+				warehouseSchemaType    = model.SchemaType(columnType)
+			)
 
-		consolidatedSchema = MergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
+			if consolidatedSchemaType == model.TextDataType && warehouseSchemaType == model.StringDataType {
+				continue
+			}
 
-		count += stagingFilesSchemaPaginationSize
-		if count >= len(sh.stagingFiles) {
-			break
-		}
-	}
-
-	// add rudder_discards Schema
-	consolidatedSchema[sh.safeName(warehouseutils.DiscardsTable)] = sh.getDiscardsSchema()
-
-	// add rudder_identity_mappings Schema
-	if sh.isIDResolutionEnabled() {
-		if _, ok := consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)]; ok {
-			consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)] = sh.getMergeRulesSchema()
-			consolidatedSchema[sh.safeName(warehouseutils.IdentityMappingsTable)] = sh.getIdentitiesMappingsSchema()
+			consolidatedSchema[tableName][columnName] = columnType
 		}
 	}
+	return consolidatedSchema
+}
+
+// overrideUsersWithIdentifiesSchema overrides the users table with the identifies table
+// users(id) <-> identifies(user_id)
+// Removes the user_id column from the users table
+func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehouseType string) model.Schema {
+	var (
+		usersTable      = warehouseutils.ToProviderCase(warehouseType, warehouseutils.UsersTable)
+		identifiesTable = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentifiesTable)
+		userIDColumn    = warehouseutils.ToProviderCase(warehouseType, "user_id")
+		IDColumn        = warehouseutils.ToProviderCase(warehouseType, "id")
+	)
+
+	if _, ok := consolidatedSchema[usersTable]; !ok {
+		return consolidatedSchema
+	}
+	if _, ok := consolidatedSchema[identifiesTable]; !ok {
+		return consolidatedSchema
+	}
+
+	for k, v := range consolidatedSchema[identifiesTable] {
+		consolidatedSchema[usersTable][k] = v
+	}
+
+	consolidatedSchema[usersTable][IDColumn] = consolidatedSchema[identifiesTable][userIDColumn]
+	delete(consolidatedSchema[usersTable], userIDColumn)
 
 	return consolidatedSchema
 }
 
-// hasSchemaChanged Default behaviour is to do the deep equals.
-// If we are skipping deep equals, then we are validating local schemas against warehouse schemas only.
-// Not the other way around.
-func hasSchemaChanged(localSchema, schemaInWarehouse model.Schema) bool {
-	if !skipDeepEqualSchemas {
-		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
+// enhanceDiscardsSchema adds the discards table to the schema
+// For bq, adds the loaded_at column to be segment compatible
+func enhanceDiscardsSchema(consolidatedSchema model.Schema, warehouseType string) model.Schema {
+	discards := model.TableSchema{}
+
+	for colName, colType := range warehouseutils.DiscardsSchema {
+		discards[warehouseutils.ToProviderCase(warehouseType, colName)] = colType
+	}
+
+	if warehouseType == warehouseutils.BQ {
+		discards[warehouseutils.ToProviderCase(warehouseType, "loaded_at")] = "datetime"
+	}
+
+	consolidatedSchema[warehouseutils.ToProviderCase(warehouseType, warehouseutils.DiscardsTable)] = discards
+	return consolidatedSchema
+}
+
+// enhanceSchemaWithIDResolution adds the merge rules and mappings table to the schema if IDResolution is enabled
+func enhanceSchemaWithIDResolution(consolidatedSchema model.Schema, isIDResolutionEnabled bool, warehouseType string) model.Schema {
+	if !isIDResolutionEnabled {
+		return consolidatedSchema
+	}
+	var (
+		mergeRulesTable = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentityMergeRulesTable)
+		mappingsTable   = warehouseutils.ToProviderCase(warehouseType, warehouseutils.IdentityMappingsTable)
+	)
+	if _, ok := consolidatedSchema[mergeRulesTable]; ok {
+		consolidatedSchema[mergeRulesTable] = model.TableSchema{
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_1_type"):  "string",
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_1_value"): "string",
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_2_type"):  "string",
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_2_value"): "string",
+		}
+		consolidatedSchema[mappingsTable] = model.TableSchema{
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_type"):  "string",
+			warehouseutils.ToProviderCase(warehouseType, "merge_property_value"): "string",
+			warehouseutils.ToProviderCase(warehouseType, "rudder_id"):            "string",
+			warehouseutils.ToProviderCase(warehouseType, "updated_at"):           "datetime",
+		}
+	}
+	return consolidatedSchema
+}
+
+func (sh *Schema) isIDResolutionEnabled() bool {
+	return sh.enableIDResolution && slices.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+}
+
+// hasSchemaChanged compares the localSchema with the schemaInWarehouse
+func (sh *Schema) hasSchemaChanged() bool {
+	if !sh.skipDeepEqualSchemas {
+		eq := reflect.DeepEqual(sh.localSchema, sh.schemaInWarehouse)
 		return !eq
 	}
 	// Iterating through all tableName in the localSchema
-	for tableName := range localSchema {
-		localColumns := localSchema[tableName]
-		warehouseColumns, whColumnsExist := schemaInWarehouse[tableName]
+	for tableName := range sh.localSchema {
+		localColumns := sh.localSchema[tableName]
+		warehouseColumns, whColumnsExist := sh.schemaInWarehouse[tableName]
 
 		// If warehouse does  not contain the specified table return true.
 		if !whColumnsExist {
@@ -342,32 +344,32 @@ func hasSchemaChanged(localSchema, schemaInWarehouse model.Schema) bool {
 	return false
 }
 
-func getTableSchemaDiff(tableName string, currentSchema, uploadSchema model.Schema) (diff warehouseutils.TableSchemaDiff) {
-	diff = warehouseutils.TableSchemaDiff{
+// generateTableSchemaDiff returns the diff between the warehouse schema and the upload schema
+func (sh *Schema) generateTableSchemaDiff(tableName string) warehouseutils.TableSchemaDiff {
+	diff := warehouseutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
 		UpdatedSchema:    make(model.TableSchema),
 		AlteredColumnMap: make(model.TableSchema),
 	}
 
-	var currentTableSchema model.TableSchema
-	var ok bool
-	if currentTableSchema, ok = currentSchema[tableName]; !ok {
-		if _, ok := uploadSchema[tableName]; !ok {
-			return
+	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
+	if !ok {
+		if _, ok := sh.uploadSchema[tableName]; !ok {
+			return diff
 		}
 		diff.Exists = true
 		diff.TableToBeCreated = true
-		diff.ColumnMap = uploadSchema[tableName]
-		diff.UpdatedSchema = uploadSchema[tableName]
+		diff.ColumnMap = sh.uploadSchema[tableName]
+		diff.UpdatedSchema = sh.uploadSchema[tableName]
 		return diff
 	}
 
-	for columnName, columnType := range currentSchema[tableName] {
+	for columnName, columnType := range currentTableSchema {
 		diff.UpdatedSchema[columnName] = columnType
 	}
 
 	diff.ColumnMap = make(model.TableSchema)
-	for columnName, columnType := range uploadSchema[tableName] {
+	for columnName, columnType := range sh.uploadSchema[tableName] {
 		if _, ok := currentTableSchema[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType
@@ -379,4 +381,48 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema model.Sche
 		}
 	}
 	return diff
+}
+
+// handleSchemaChange checks if the existing column type is compatible with the new column type
+func handleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
+	var (
+		newColumnVal any
+		err          error
+	)
+
+	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
+		// only stringify if the previous type is non-string/text/json
+		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else {
+			newColumnVal = value
+		}
+	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
+		intVal, ok := value.(int)
+		if !ok {
+			err = errIncompatibleSchemaConversion
+		} else {
+			newColumnVal = float64(intVal)
+		}
+	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
+		floatVal, ok := value.(float64)
+		if !ok {
+			err = errIncompatibleSchemaConversion
+		} else {
+			newColumnVal = int(floatVal)
+		}
+	} else if existingDataType == model.JSONDataType {
+		var interfaceSliceSample []any
+		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
+			newColumnVal = value
+		} else {
+			newColumnVal = fmt.Sprintf(`"%v"`, value)
+		}
+	} else {
+		err = errSchemaConversionNotSupported
+	}
+
+	return newColumnVal, err
 }

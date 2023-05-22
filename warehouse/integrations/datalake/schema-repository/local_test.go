@@ -94,7 +94,9 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
 
-			err = s.CreateTable(context.TODO(), "test_table", model.TableSchema{
+			ctx := context.Background()
+
+			err = s.CreateTable(ctx, "test_table", model.TableSchema{
 				"test_column_2": "test_type_2",
 			})
 			if tc.wantError != nil {
@@ -154,7 +156,9 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
 
-			err = s.AddColumns(context.TODO(), "test_table", []warehouseutils.ColumnInfo{
+			ctx := context.Background()
+
+			err = s.AddColumns(ctx, "test_table", []warehouseutils.ColumnInfo{
 				{
 					Name: "test_column_2",
 					Type: "test_type_2",
@@ -226,7 +230,9 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
 
-			_, err = s.AlterColumn(context.TODO(), "test_table", "test_column_1", "test_type_2")
+			ctx := context.Background()
+
+			_, err = s.AlterColumn(ctx, "test_table", "test_column_1", "test_type_2")
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {

@@ -9,8 +9,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -442,23 +440,12 @@ func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse mod
 		}
 		defer whManager.Cleanup(ctx)
 
-		schemaHandle := SchemaHandle{
-			warehouse:    job.warehouse,
-			stagingFiles: job.stagingFiles,
-			dbHandle:     job.dbHandle,
-			whSchemaRepo: repo.NewWHSchemas(job.dbHandle),
-		}
-		job.schemaHandle = &schemaHandle
-
-		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(ctx)
+		err = job.schemaHandle.fetchSchemaFromWarehouse(ctx, whManager)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)
 			return
 		}
-
-		schemaHandle.SkipDeprecatedColumns(job.schemaHandle.schemaInWarehouse)
-		schemaHandle.SkipDeprecatedColumns(job.schemaHandle.unrecognizedSchemaInWarehouse)
 
 		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(model.ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)

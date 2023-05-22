@@ -85,7 +85,7 @@ type UploadJob struct {
 	recovery             *service.Recovery
 	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PGNotifier
-	schemaHandle         *SchemaHandle
+	schemaHandle         *Schema
 	stats                stats.Stats
 	LoadFileGenStartTime time.Time
 
@@ -183,6 +183,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		destinationValidator: f.destinationValidator,
 		stats:                f.stats,
 		tableUploadsRepo:     repo.NewTableUploads(f.dbHandle),
+		schemaHandle:         NewSchema(f.dbHandle, dto.Warehouse, config.Default),
 
 		upload:         dto.Upload,
 		warehouse:      dto.Warehouse,
@@ -243,12 +244,23 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 	return ch
 }
 
-func (job *UploadJob) generateUploadSchema(schemaHandle *SchemaHandle) error {
-	schemaHandle.uploadSchema = schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema()
-	// set upload schema
-	_ = job.setMergedSchema(schemaHandle.uploadSchema)
-	err := job.setUploadSchema(schemaHandle.uploadSchema)
-	return err
+func (job *UploadJob) generateUploadSchema() error {
+	err := job.schemaHandle.prepareUploadSchema(
+		job.ctx,
+		job.stagingFiles,
+	)
+	if err != nil {
+		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
+	}
+
+	if err := job.setMergedSchema(job.schemaHandle.uploadSchema); err != nil {
+		return fmt.Errorf("set merged schema: %w", err)
+	}
+	if err := job.setUploadSchema(job.schemaHandle.uploadSchema); err != nil {
+		return fmt.Errorf("set upload schema: %w", err)
+	}
+
+	return nil
 }
 
 func (job *UploadJob) initTableUploads() error {
@@ -272,34 +284,32 @@ func (job *UploadJob) initTableUploads() error {
 	)
 }
 
-func (job *UploadJob) syncRemoteSchema() (schemaChanged bool, err error) {
-	schemaHandle := SchemaHandle{
-		warehouse:    job.warehouse,
-		stagingFiles: job.stagingFiles,
-		dbHandle:     job.dbHandle,
-		whSchemaRepo: repo.NewWHSchemas(job.dbHandle),
-	}
-	job.schemaHandle = &schemaHandle
-
-	localSchema, err := schemaHandle.getLocalSchema(job.ctx)
+func (job *UploadJob) syncRemoteSchema() (bool, error) {
+	err := job.schemaHandle.fetchSchemaFromLocal(job.ctx)
 	if err != nil {
-		return false, fmt.Errorf("getting local schema: %w", err)
+		return false, fmt.Errorf("fetching schema from local: %w", err)
 	}
 
-	schemaHandle.localSchema = localSchema
-	schemaHandle.schemaInWarehouse, schemaHandle.unrecognizedSchemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse(job.ctx, job.whManager)
+	err = job.schemaHandle.fetchSchemaFromWarehouse(job.ctx, job.whManager)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	schemaChanged = hasSchemaChanged(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
+	schemaChanged := job.schemaHandle.hasSchemaChanged()
 	if schemaChanged {
-		pkgLogger.Infof("syncRemoteSchema: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		err = schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, schemaHandle.schemaInWarehouse)
+		pkgLogger.Infow("schema changed",
+			logfield.SourceID, job.warehouse.Source.ID,
+			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, job.warehouse.Destination.ID,
+			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, job.warehouse.WorkspaceID,
+			logfield.Namespace, job.warehouse.Namespace,
+		)
+
+		err = job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("updating local schema: %w", err)
 		}
-		schemaHandle.localSchema = schemaHandle.schemaInWarehouse
 	}
 
 	return schemaChanged, nil
@@ -398,8 +408,8 @@ func (job *UploadJob) run() (err error) {
 	if hasSchemaChanged {
 		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
-	schemaHandle := job.schemaHandle
-	schemaHandle.uploadSchema = job.upload.UploadSchema
+
+	job.schemaHandle.uploadSchema = job.upload.UploadSchema
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -429,7 +439,7 @@ func (job *UploadJob) run() (err error) {
 		switch targetStatus {
 		case model.GeneratedUploadSchema:
 			newStatus = nextUploadState.failed
-			err = job.generateUploadSchema(schemaHandle)
+			err = job.generateUploadSchema()
 			if err != nil {
 				break
 			}
@@ -492,7 +502,7 @@ func (job *UploadJob) run() (err error) {
 
 		case model.CreatedRemoteSchema:
 			newStatus = nextUploadState.failed
-			if len(schemaHandle.schemaInWarehouse) == 0 {
+			if len(job.schemaHandle.schemaInWarehouse) == 0 {
 				err = whManager.CreateSchema(job.ctx)
 				if err != nil {
 					break
@@ -965,7 +975,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 }
 
 func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
+	tableSchemaDiff := job.schemaHandle.generateTableSchemaDiff(tName)
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1261,7 +1271,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 		errorMap[tableName] = nil
 
-		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
+		tableSchemaDiff := job.schemaHandle.generateTableSchemaDiff(tableName)
 		if tableSchemaDiff.Exists {
 			err := job.UpdateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
