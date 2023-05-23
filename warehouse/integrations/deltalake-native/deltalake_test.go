@@ -328,6 +328,7 @@ func TestIntegration(t *testing.T) {
 		testCases := []struct {
 			name                string
 			useParquetLoadFiles bool
+			conf                map[string]interface{}
 		}{
 			{
 				name:                "Parquet load files",
@@ -337,6 +338,14 @@ func TestIntegration(t *testing.T) {
 				name:                "CSV load files",
 				useParquetLoadFiles: false,
 			},
+			{
+				name:                "External location",
+				useParquetLoadFiles: true,
+				conf: map[string]interface{}{
+					"enableExternalLocation": true,
+					"externalLocation":       "/path/to/delta/table",
+				},
+			},
 		}
 
 		for _, tc := range testCases {
@@ -344,6 +353,11 @@ func TestIntegration(t *testing.T) {
 
 			t.Run(tc.name, func(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
+
+				for k, v := range tc.conf {
+					dest.Config[k] = v
+				}
+
 				testhelper.VerifyConfigurationTest(t, dest)
 			})
 		}

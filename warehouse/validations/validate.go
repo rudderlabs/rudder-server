@@ -233,7 +233,7 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &createAlterTable{
-			table:   Table,
+			table:   getTable(dest),
 			manager: operations,
 		}, nil
 	case model.VerifyingFetchSchema:
@@ -251,7 +251,7 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 		return &loadTable{
 			destination: dest,
 			manager:     operations,
-			table:       Table,
+			table:       getTable(dest),
 		}, nil
 	}
 
@@ -572,4 +572,23 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 		}
 	}
 	return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, Namespace))
+}
+
+func getTable(dest *backendconfig.DestinationT) string {
+	destType := dest.DestinationDefinition.Name
+	conf := dest.Config
+
+	if destType == warehouseutils.DELTALAKE {
+		enableExternalLocation, _ := conf["enableExternalLocation"].(bool)
+		externalLocation, _ := conf["externalLocation"].(string)
+		if enableExternalLocation && externalLocation != "" {
+			return tableWithUUID()
+		}
+	}
+
+	return Table
+}
+
+func tableWithUUID() string {
+	return Table + warehouseutils.RandHex()
 }
