@@ -80,7 +80,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							panic("HTTP Request Failed" + err.Error())
 						}
 						if statusCode == 200 {
-							var asyncResponse asyncdestinationmanager.AsyncStatusResponse
+							var asyncResponse common.AsyncStatusResponse
 							if err != nil {
 								panic("Read Body Failed" + err.Error())
 							}

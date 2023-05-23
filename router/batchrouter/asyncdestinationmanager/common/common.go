@@ -21,7 +21,6 @@ type AsyncStatusResponse struct {
 	FailedJobsURL  string
 	WarningJobsURL string
 }
-
 type AsyncUploadOutput struct {
 	Key                 string
 	ImportingJobIDs     []int64
