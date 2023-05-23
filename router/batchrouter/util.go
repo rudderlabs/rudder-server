@@ -16,7 +16,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func isJobTerminated(status int) bool {
+func IsJobTerminated(status int) bool {
 	if status == 429 {
 		return false
 	}

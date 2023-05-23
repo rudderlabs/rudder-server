@@ -5,6 +5,7 @@ import (
 	"context"
 	stdjson "encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,7 +56,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
 						parameters := importingJob.LastJobStatus.Parameters
-						// pollUrl := gjson.GetBytes(parameters, "pollURL").String()
+						pollUrl := gjson.GetBytes(parameters, "pollURL").String()
 						importId := gjson.GetBytes(parameters, "importId").String()
 						csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 						var pollStruct AsyncPoll
@@ -71,11 +72,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 						var bodyBytes []byte
 						var statusCode int
-						// if brt.destType == "BING_ADS" {
-						bodyBytes, statusCode = brt.asyncdestinationmanager.Poll()
-						// } else {
-						// 	bodyBytes, statusCode = misc.HTTPCallWithRetryWithTimeout(brt.transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
-						// }
+						bodyBytes, statusCode = brt.asyncdestinationmanager.Poll(brt.transformerURL+pollUrl, payload, common.HTTPTimeout)
 						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 						brt.asyncPollTimeStat.Since(startPollTime)
 
@@ -268,7 +265,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								}
 
 								importingList := list.Jobs
-								if isJobTerminated(statusCode) {
+								if IsJobTerminated(statusCode) {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
 											JobID:         job.JobID,
@@ -340,18 +337,18 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 }
 
 func (brt *Handle) asyncUploadWorker(ctx context.Context) {
-	// resolveURL := func(base, relative string) string {
-	// 	baseURL, err := url.Parse(base)
-	// 	if err != nil {
-	// 		brt.logger.Fatal(err)
-	// 	}
-	// 	relURL, err := url.Parse(relative)
-	// 	if err != nil {
-	// 		brt.logger.Fatal(err)
-	// 	}
-	// 	destURL := baseURL.ResolveReference(relURL).String()
-	// 	return destURL
-	// }
+	resolveURL := func(base, relative string) string {
+		baseURL, err := url.Parse(base)
+		if err != nil {
+			brt.logger.Fatal(err)
+		}
+		relURL, err := url.Parse(relative)
+		if err != nil {
+			brt.logger.Fatal(err)
+		}
+		destURL := baseURL.ResolveReference(relURL).String()
+		return destURL
+	}
 
 	if !slices.Contains(asyncDestinations, brt.destType) {
 		return
@@ -380,11 +377,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					var uploadResponse common.AsyncUploadOutput
-					// if brt.destType == "MARKETO_BULK_UPLOAD" {
-					uploadResponse = brt.asyncdestinationmanager.Upload(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
-					// } else {
-					// 	uploadResponse = asyncdestinationmanager.Upload(resolveURL(brt.transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
-					// }
+					uploadResponse = brt.asyncdestinationmanager.Upload(resolveURL(brt.transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
 				}

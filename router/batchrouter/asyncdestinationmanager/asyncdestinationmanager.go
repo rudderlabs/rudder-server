@@ -6,23 +6,23 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
+	time "time"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
 
 type Asyncdestinationmanager interface {
-	Upload(importingJobIDs []int64, destinationID string) common.AsyncUploadOutput
-	Poll() ([]byte, int)
+	Upload(url string, filePath string, config map[string]interface{}, destType string, failedJobIDs []int64, importingJobIDs []int64, destinationID string) common.AsyncUploadOutput
+	Poll(url string, payload []byte, timeout time.Duration) ([]byte, int)
 }
 type AsyncUploadOutput struct {
 	Key                 string
@@ -302,10 +302,9 @@ func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, i
 
 func NewAsyncDestinationManager(destType string) Asyncdestinationmanager {
 	if destType == "BING_ADS" {
-		return bingads.Manager()
+		return marketobulkupload.Manager()
 	} else if destType == "MARKETO_BULK_UPLOAD" {
-		// return marketobulkupload.Manager()
-		return bingads.Manager() // for now, as marketo is not converted with interface as of now.
+		return marketobulkupload.Manager()
 	} else {
 		return nil
 	}
