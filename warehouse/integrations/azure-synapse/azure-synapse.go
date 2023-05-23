@@ -258,13 +258,13 @@ func (as *AzureSynapse) loadTable(ctx context.Context, tableName string, tableSc
 					break
 				}
 				as.Logger.Errorf("AZ: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-				_ = txn.Rollback()
+				txn.Rollback()
 				return
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				as.Logger.Error(err)
-				_ = txn.Rollback()
+				txn.Rollback()
 				return
 			}
 			var recordInterface []interface{}
@@ -352,18 +352,18 @@ func (as *AzureSynapse) loadTable(ctx context.Context, tableName string, tableSc
 			_, err = stmt.ExecContext(ctx, finalColumnValues...)
 			if err != nil {
 				as.Logger.Errorf("AZ: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				_ = txn.Rollback()
+				txn.Rollback()
 				return
 			}
 			csvRowsProcessedCount++
 		}
-		_ = gzipReader.Close()
+		gzipReader.Close()
 		gzipFile.Close()
 	}
 
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {
-		_ = txn.Rollback()
+		txn.Rollback()
 		as.Logger.Errorf("AZ: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		return
 
@@ -386,7 +386,7 @@ func (as *AzureSynapse) loadTable(ctx context.Context, tableName string, tableSc
 	_, err = txn.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		as.Logger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
-		_ = txn.Rollback()
+		txn.Rollback()
 		return
 	}
 
@@ -397,7 +397,7 @@ func (as *AzureSynapse) loadTable(ctx context.Context, tableName string, tableSc
 
 	if err != nil {
 		as.Logger.Errorf("AZ: Error inserting into original table: %v\n", err)
-		_ = txn.Rollback()
+		txn.Rollback()
 		return
 	}
 
@@ -521,7 +521,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		as.Logger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
-		_ = tx.Rollback()
+		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -532,7 +532,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 
 	if err != nil {
 		as.Logger.Errorf("AZ: Error inserting into users table from staging table: %v\n", err)
-		_ = tx.Rollback()
+		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -540,7 +540,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	err = tx.Commit()
 	if err != nil {
 		as.Logger.Errorf("AZ: Error in transaction commit for users table: %v\n", err)
-		_ = tx.Rollback()
+		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -780,7 +780,7 @@ func (as *AzureSynapse) Cleanup(ctx context.Context) {
 	if as.DB != nil {
 		// extra check aside dropStagingTable(table)
 		as.dropDanglingStagingTables(ctx)
-		_ = as.DB.Close()
+		as.DB.Close()
 	}
 }
 

@@ -421,7 +421,7 @@ func (idr *Identity) createTempGzFile(dirName string) (gzWriter misc.GZipWriter,
 }
 
 func (idr *Identity) processMergeRules(fileNames []string) (err error) {
-	txn, err := idr.db.Begin()
+	txn, err := idr.db.BeginTx(idr.ctx, &sql.TxOptions{})
 	if err != nil {
 		panic(err)
 	}
