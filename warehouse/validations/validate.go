@@ -233,7 +233,7 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 			return nil, fmt.Errorf("create manager: %w", err)
 		}
 		return &createAlterTable{
-			table:   Table,
+			table:   getTable(dest),
 			manager: operations,
 		}, nil
 	case model.VerifyingFetchSchema:
@@ -251,7 +251,7 @@ func NewValidator(step string, dest *backendconfig.DestinationT) (Validator, err
 		return &loadTable{
 			destination: dest,
 			manager:     operations,
-			table:       Table,
+			table:       getTable(dest),
 		}, nil
 	}
 
@@ -298,13 +298,13 @@ func (cs *createSchema) Validate() error {
 func (cat *createAlterTable) Validate() error {
 	defer cat.manager.Cleanup()
 
-	if err := cat.manager.CreateTable(cat.table, TableSchemaMap); err != nil {
+	if err := cat.manager.CreateTable(cat.table, tableSchemaMap); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
 	defer func() { _ = cat.manager.DropTable(cat.table) }()
 
-	for columnName, columnType := range AlterColumnMap {
+	for columnName, columnType := range alterColumnMap {
 		if err := cat.manager.AddColumns(
 			cat.table,
 			[]warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}},
@@ -345,7 +345,7 @@ func (lt *loadTable) Validate() error {
 		return fmt.Errorf("upload file: %w", err)
 	}
 
-	if err = lt.manager.CreateTable(lt.table, TableSchemaMap); err != nil {
+	if err = lt.manager.CreateTable(lt.table, tableSchemaMap); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
 
@@ -354,7 +354,7 @@ func (lt *loadTable) Validate() error {
 	if err = lt.manager.LoadTestTable(
 		uploadOutput.Location,
 		lt.table,
-		PayloadMap,
+		payloadMap,
 		loadFileType,
 	); err != nil {
 		return fmt.Errorf("load test table: %w", err)
@@ -392,7 +392,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	}
 
 	if loadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		writer, err = encoding.CreateParquetWriter(TableSchemaMap, filePath, destinationType)
+		writer, err = encoding.CreateParquetWriter(tableSchemaMap, filePath, destinationType)
 	} else {
 		writer, err = misc.CreateGZ(filePath)
 	}
@@ -402,7 +402,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 
 	eventLoader := encoding.GetNewEventLoader(destinationType, loadFileType, writer)
 	for _, column := range []string{"id", "val"} {
-		eventLoader.AddColumn(column, TableSchemaMap[column], PayloadMap[column])
+		eventLoader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
 	}
 
 	if err = eventLoader.Write(); err != nil {
@@ -571,5 +571,24 @@ func configuredNamespaceInDestination(dest *backendconfig.DestinationT) string {
 			return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
 		}
 	}
-	return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, Namespace))
+	return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
+}
+
+func getTable(dest *backendconfig.DestinationT) string {
+	destType := dest.DestinationDefinition.Name
+	conf := dest.Config
+
+	if destType == warehouseutils.DELTALAKE {
+		enableExternalLocation, _ := conf["enableExternalLocation"].(bool)
+		externalLocation, _ := conf["externalLocation"].(string)
+		if enableExternalLocation && externalLocation != "" {
+			return tableWithUUID()
+		}
+	}
+
+	return table
+}
+
+func tableWithUUID() string {
+	return table + "_" + warehouseutils.RandHex()
 }
