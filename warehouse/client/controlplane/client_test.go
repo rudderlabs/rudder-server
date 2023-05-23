@@ -53,9 +53,11 @@ func TestFetchSSHKeys(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-
 		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+
 			svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_, _, ok := r.BasicAuth()
 				require.True(t, ok)
@@ -73,7 +75,7 @@ func TestFetchSSHKeys(t *testing.T) {
 				Password: "password",
 			})
 
-			keys, err := client.GetDestinationSSHKeys(context.Background(), tc.destinationID)
+			keys, err := client.GetDestinationSSHKeys(ctx, tc.destinationID)
 			require.Equal(t, tc.expectedError, err)
 			require.Equal(t, tc.expectedKeyPair, keys)
 		})

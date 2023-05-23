@@ -122,7 +122,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.warehouse))
 		pkgLogger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
-		_, err = txn.Exec(sqlStatement)
+		_, err = txn.ExecContext(idr.ctx, sqlStatement)
 		if err != nil {
 			pkgLogger.Errorf(`IDR: Error inserting properties from merge_rule into mappings table: %v`, err)
 			return
@@ -162,7 +162,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 
 		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, misc.SingleQuoteLiteralJoin(rudderIDs[1:]))
 		var res sql.Result
-		res, err = txn.Exec(sqlStatement)
+		res, err = txn.ExecContext(idr.ctx, sqlStatement)
 		if err != nil {
 			return
 		}
@@ -171,7 +171,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.warehouse))
 		pkgLogger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
-		_, err = txn.Exec(sqlStatement)
+		_, err = txn.ExecContext(idr.ctx, sqlStatement)
 		if err != nil {
 			return
 		}
@@ -199,7 +199,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 						WITH NO DATA;`, mergeRulesStagingTable, idr.mergeRulesTable())
 
 	pkgLogger.Infof(`IDR: Creating temp table %s in postgres for loading %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.ExecContext(idr.ctx, sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error creating temp table %s in postgres: %v`, mergeRulesStagingTable, err)
 		return
@@ -252,7 +252,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 			// add rowID which allows us to insert in same order from staging to original merge _rules table
 			rowID++
 			recordInterface[4] = rowID
-			_, err = stmt.Exec(recordInterface[:]...)
+			_, err = stmt.ExecContext(idr.ctx, recordInterface[:]...)
 			if err != nil {
 				pkgLogger.Errorf("IDR: Error while adding rowID to merge_rules table: %v", err)
 				return
@@ -260,7 +260,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 		}
 	}
 
-	_, err = stmt.Exec()
+	_, err = stmt.ExecContext(idr.ctx)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error bulk copy using CopyIn: %v for uploadID: %v`, err, idr.uploadID)
 		return
@@ -278,7 +278,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 					(original.merge_property_2_value = staging.merge_property_2_value)`,
 		mergeRulesStagingTable, idr.mergeRulesTable())
 	pkgLogger.Infof(`IDR: Deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.ExecContext(idr.ctx, sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), err)
 		return
@@ -395,7 +395,7 @@ func (idr *Identity) uploadFile(filePath string, txn *sql.Tx, tableName string, 
 
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET location='%s', total_events=%d WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, output.Location, totalRecords, idr.uploadID, warehouseutils.ToProviderCase(idr.warehouse.Destination.DestinationDefinition.Name, tableName))
 	pkgLogger.Infof(`IDR: Updating load file location for table: %s: %s `, tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = txn.ExecContext(idr.ctx, sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error updating load file location for table: %s: %v`, tableName, err)
 	}

@@ -862,7 +862,7 @@ func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
 
-func (wh *HandleT) Setup(whType string) error {
+func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.Logger = pkgLogger
 	wh.conf = config.Default
@@ -876,7 +876,7 @@ func (wh *HandleT) Setup(whType string) error {
 
 	wh.notifier = notifier
 	wh.destType = whType
-	wh.resetInProgressJobs()
+	wh.resetInProgressJobs(ctx)
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobID)
@@ -914,7 +914,7 @@ func (wh *HandleT) Setup(whType string) error {
 		},
 	)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
 	wh.backgroundCancel = cancel
@@ -951,7 +951,7 @@ func (wh *HandleT) Shutdown() error {
 	return wh.backgroundWait()
 }
 
-func (wh *HandleT) resetInProgressJobs() {
+func (wh *HandleT) resetInProgressJobs(ctx context.Context) {
 	sqlStatement := fmt.Sprintf(`
 		UPDATE
 		  %s
@@ -966,7 +966,7 @@ func (wh *HandleT) resetInProgressJobs() {
 		wh.destType,
 		true,
 	)
-	rows, err := wh.dbHandle.Query(sqlStatement)
+	rows, err := wh.dbHandle.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
@@ -1047,7 +1047,7 @@ func monitorDestRouters(ctx context.Context) error {
 
 	ch := tenantManager.WatchConfig(ctx)
 	for configData := range ch {
-		err := onConfigDataEvent(configData, dstToWhRouter)
+		err := onConfigDataEvent(ctx, configData, dstToWhRouter)
 		if err != nil {
 			return err
 		}
@@ -1061,7 +1061,7 @@ func monitorDestRouters(ctx context.Context) error {
 	return g.Wait()
 }
 
-func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter map[string]*HandleT) error {
+func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.ConfigT, dstToWhRouter map[string]*HandleT) error {
 	pkgLogger.Debug("Got config from config-backend", config)
 
 	enabledDestinations := make(map[string]bool)
@@ -1077,7 +1077,7 @@ func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter ma
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 						wh = &HandleT{}
 						wh.configSubscriberLock.Lock()
-						if err := wh.Setup(destination.DestinationDefinition.Name); err != nil {
+						if err := wh.Setup(ctx, destination.DestinationDefinition.Name); err != nil {
 							return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
 						}
 						wh.configSubscriberLock.Unlock()
