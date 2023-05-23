@@ -19,7 +19,7 @@ type OptFn func(*badgerDB)
 
 // DefaultPath returns the default path for the deduplication service's badger DB
 func DefaultPath() string {
-	badgerPathName := "/badgerdbv2"
+	badgerPathName := "/badgerdbv4"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
