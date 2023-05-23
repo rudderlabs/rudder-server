@@ -409,10 +409,12 @@ var _ = Describe("Gateway", func() {
 			})
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
 			var err error
+			wait := make(chan struct{})
 			ctx, cancel := context.WithCancel(context.Background())
 			go func() {
 				err = gateway.StartWebHandler(ctx)
 				Expect(err).To(BeNil())
+				close(wait)
 			}()
 			require.Eventually(GinkgoT(), func() bool {
 				verifyEndpoint([]string{"/version"}, http.MethodGet)
@@ -424,6 +426,7 @@ var _ = Describe("Gateway", func() {
 			verifyEndpoint(postEndpoints, http.MethodPost)
 			verifyEndpoint(deleteEndpoints, http.MethodDelete)
 			cancel()
+			<-wait
 		})
 	})
 
