@@ -102,6 +102,7 @@ func (brt *Handle) Setup(
 	config.RegisterIntConfigVariable(2, &brt.jobdDBMaxRetries, true, 1, []string{"JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(2, &brt.minIdleSleep, true, time.Second, []string{"BatchRouter.minIdleSleep"}...)
 	config.RegisterDurationConfigVariable(30, &brt.uploadFreq, true, time.Second, []string{"BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq"}...)
+	config.RegisterBoolConfigVariable(false, &brt.forceHonorUploadFrequency, true, "BatchRouter.forceHonorUploadFrequency")
 	config.RegisterBoolConfigVariable(false, &brt.disableEgress, false, "disableEgress")
 	config.RegisterStringConfigVariable("", &brt.toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	config.RegisterDurationConfigVariable(3, &brt.warehouseServiceMaxRetryTime, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
