@@ -382,7 +382,7 @@ var _ = Describe("Gateway", func() {
 			client := &http.Client{}
 			// baseURL := "http://localhost:8080"
 			for _, ep := range endpoints {
-				url := serverURL + ep
+				url := fmt.Sprintf("%s%s", serverURL, ep)
 				var req *http.Request
 				var err error
 				if ep == "/beacon/v1/batch" {
@@ -418,10 +418,10 @@ var _ = Describe("Gateway", func() {
 				Expect(err).To(BeNil())
 				close(wait)
 			}()
-			require.Eventually(GinkgoT(), func() bool {
-				verifyEndpoint([]string{"/version"}, http.MethodGet)
-				return true
-			}, time.Second*10, time.Second)
+			Eventually(func() bool {
+				resp, _ := http.Get(fmt.Sprintf("%s/version", serverURL))
+				return resp.StatusCode == http.StatusOK
+			}, time.Second*10, time.Second).Should(BeTrue())
 
 			getEndpoint, postEndpoints, deleteEndpoints := getEndpointMethodMap()
 			verifyEndpoint(getEndpoint, http.MethodGet)
