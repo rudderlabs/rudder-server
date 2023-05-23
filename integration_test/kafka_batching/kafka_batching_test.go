@@ -294,6 +294,16 @@ func TestKafkaBatching(t *testing.T) {
 	metrics, err := testhelper.ParsePrometheusMetrics(bytes.NewBuffer(buf))
 	require.NoError(t, err)
 
+	expectedDefaultAttrs := []*promClient.LabelPair{
+		{Name: ptr("job"), Value: ptr(app.EMBEDDED)},
+		{Name: ptr("service_name"), Value: ptr(app.EMBEDDED)},
+		{Name: ptr("service_version"), Value: ptr("Not an official release. Get the latest release from the github repo.")},
+		{Name: ptr("instanceName"), Value: &serverInstanceID},
+		{Name: ptr("telemetry_sdk_language"), Value: ptr("go")},
+		{Name: ptr("telemetry_sdk_name"), Value: ptr("opentelemetry")},
+		{Name: ptr("telemetry_sdk_version"), Value: ptr("1.14.0")},
+	}
+
 	requireHistogramEqual(t, metrics["router_kafka_batch_size"], histogram{
 		name: "router_kafka_batch_size", count: 1, sum: 10,
 		buckets: []*promClient.Bucket{
@@ -320,31 +330,24 @@ func TestKafkaBatching(t *testing.T) {
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(1209600.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(math.Inf(1))},
 		},
-		labels: []*promClient.LabelPair{
-			{Name: ptr("job"), Value: ptr(app.EMBEDDED)},
-			{Name: ptr("instance"), Value: &serverInstanceID},
-		},
+		labels: expectedDefaultAttrs,
 	})
 
 	require.EqualValues(t, ptr("router_batch_num_input_jobs"), metrics["router_batch_num_input_jobs"].Name)
 	require.EqualValues(t, ptr(promClient.MetricType_COUNTER), metrics["router_batch_num_input_jobs"].Type)
 	require.Len(t, metrics["router_batch_num_input_jobs"].Metric, 1)
 	require.EqualValues(t, &promClient.Counter{Value: ptr(10.0)}, metrics["router_batch_num_input_jobs"].Metric[0].Counter)
-	require.ElementsMatch(t, []*promClient.LabelPair{
-		{Name: ptr("destType"), Value: ptr("KAFKA")},
-		{Name: ptr("job"), Value: ptr(app.EMBEDDED)},
-		{Name: ptr("instance"), Value: &serverInstanceID},
-	}, metrics["router_batch_num_input_jobs"].Metric[0].Label)
+	require.ElementsMatch(t, append(expectedDefaultAttrs,
+		&promClient.LabelPair{Name: ptr("destType"), Value: ptr("KAFKA")},
+	), metrics["router_batch_num_input_jobs"].Metric[0].Label)
 
 	require.EqualValues(t, ptr("router_batch_num_output_jobs"), metrics["router_batch_num_output_jobs"].Name)
 	require.EqualValues(t, ptr(promClient.MetricType_COUNTER), metrics["router_batch_num_output_jobs"].Type)
 	require.Len(t, metrics["router_batch_num_output_jobs"].Metric, 1)
 	require.EqualValues(t, &promClient.Counter{Value: ptr(1.0)}, metrics["router_batch_num_output_jobs"].Metric[0].Counter)
-	require.ElementsMatch(t, []*promClient.LabelPair{
-		{Name: ptr("destType"), Value: ptr("KAFKA")},
-		{Name: ptr("job"), Value: ptr(app.EMBEDDED)},
-		{Name: ptr("instance"), Value: &serverInstanceID},
-	}, metrics["router_batch_num_output_jobs"].Metric[0].Label)
+	require.ElementsMatch(t, append(expectedDefaultAttrs,
+		&promClient.LabelPair{Name: ptr("destType"), Value: ptr("KAFKA")},
+	), metrics["router_batch_num_output_jobs"].Metric[0].Label)
 }
 
 func requireHistogramEqual(t *testing.T, mf *promClient.MetricFamily, h histogram) {
