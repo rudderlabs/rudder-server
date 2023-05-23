@@ -341,6 +341,7 @@ var _ = Describe("Gateway", func() {
 			gateway    *HandleT
 			statsStore *memstats.Store
 			whServer   *httptest.Server
+			serverURL  string
 		)
 
 		BeforeEach(func() {
@@ -348,9 +349,10 @@ var _ = Describe("Gateway", func() {
 				w.WriteHeader(http.StatusOK)
 				_, _ = io.WriteString(w, "OK")
 			}))
-			url, err := url.Parse(whServer.URL)
+			serverURL = whServer.URL
+			parsedURL, err := url.Parse(serverURL)
 			Expect(err).To(BeNil())
-			config.Set("Warehouse.webPort", url.Port())
+			config.Set("Warehouse.webPort", parsedURL.Port())
 
 			gateway = &HandleT{}
 			err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
@@ -378,9 +380,9 @@ var _ = Describe("Gateway", func() {
 		}
 		verifyEndpoint := func(endpoints []string, method string) {
 			client := &http.Client{}
-			baseURL := "http://localhost:8080"
+			// baseURL := "http://localhost:8080"
 			for _, ep := range endpoints {
-				url := baseURL + ep
+				url := serverURL + ep
 				var req *http.Request
 				var err error
 				if ep == "/beacon/v1/batch" {
