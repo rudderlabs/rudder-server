@@ -71,8 +71,8 @@ type BatchedJobs struct {
 	TimeWindow time.Time
 }
 
-type AsyncPoll struct {
-	Config   map[string]interface{} `json:"config"`
-	ImportId string                 `json:"importId"`
-	DestType string                 `json:"destType"`
-}
+// type AsyncPoll struct {
+// 	Config   map[string]interface{} `json:"config"`
+// 	ImportId string                 `json:"importId"`
+// 	DestType string                 `json:"destType"`
+// }

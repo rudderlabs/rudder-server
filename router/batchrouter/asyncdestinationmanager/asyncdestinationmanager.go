@@ -1,9 +1,7 @@
 package asyncdestinationmanager
 
 import (
-	"bufio"
 	stdjson "encoding/json"
-	"os"
 	"strings"
 	"sync"
 	time "time"
@@ -11,7 +9,6 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
@@ -24,22 +21,23 @@ type Asyncdestinationmanager interface {
 	Upload(url string, filePath string, config map[string]interface{}, destType string, failedJobIDs []int64, importingJobIDs []int64, destinationID string) common.AsyncUploadOutput
 	Poll(url string, payload []byte, timeout time.Duration) ([]byte, int)
 }
-type AsyncUploadOutput struct {
-	Key                 string
-	ImportingJobIDs     []int64
-	ImportingParameters stdjson.RawMessage
-	SuccessJobIDs       []int64
-	FailedJobIDs        []int64
-	SucceededJobIDs     []int64
-	SuccessResponse     string
-	FailedReason        string
-	AbortJobIDs         []int64
-	AbortReason         string
-	ImportingCount      int
-	FailedCount         int
-	AbortCount          int
-	DestinationID       string
-}
+
+// type AsyncUploadOutput struct {
+// 	Key                 string
+// 	ImportingJobIDs     []int64
+// 	ImportingParameters stdjson.RawMessage
+// 	SuccessJobIDs       []int64
+// 	FailedJobIDs        []int64
+// 	SucceededJobIDs     []int64
+// 	SuccessResponse     string
+// 	FailedReason        string
+// 	AbortJobIDs         []int64
+// 	AbortReason         string
+// 	ImportingCount      int
+// 	FailedCount         int
+// 	AbortCount          int
+// 	DestinationID       string
+// }
 
 type AsyncDestinationStruct struct {
 	ImportingJobIDs []int64
@@ -130,128 +128,128 @@ func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int6
 	return succesfulJobIDs, failedJobIDsTrans
 }
 
-func Upload(url, filePath string, config map[string]interface{}, destType string, failedJobIDs, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
-	file, err := os.Open(filePath)
-	if err != nil {
-		panic("BRT: Read File Failed" + err.Error())
-	}
-	defer file.Close()
-	var input []AsyncJob
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		var tempJob AsyncJob
-		jobBytes := scanner.Bytes()
-		err := json.Unmarshal(jobBytes, &tempJob)
-		if err != nil {
-			panic("Unmarshalling a Single Line Failed")
-		}
-		input = append(input, tempJob)
-	}
-	var uploadT AsyncUploadT
-	uploadT.Input = input
-	uploadT.Config = config
-	uploadT.DestType = strings.ToLower(destType)
-	payload, err := json.Marshal(uploadT)
-	if err != nil {
-		panic("BRT: JSON Marshal Failed " + err.Error())
-	}
+// func Upload(url, filePath string, config map[string]interface{}, destType string, failedJobIDs, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
+// 	file, err := os.Open(filePath)
+// 	if err != nil {
+// 		panic("BRT: Read File Failed" + err.Error())
+// 	}
+// 	defer file.Close()
+// 	var input []AsyncJob
+// 	scanner := bufio.NewScanner(file)
+// 	for scanner.Scan() {
+// 		var tempJob AsyncJob
+// 		jobBytes := scanner.Bytes()
+// 		err := json.Unmarshal(jobBytes, &tempJob)
+// 		if err != nil {
+// 			panic("Unmarshalling a Single Line Failed")
+// 		}
+// 		input = append(input, tempJob)
+// 	}
+// 	var uploadT AsyncUploadT
+// 	uploadT.Input = input
+// 	uploadT.Config = config
+// 	uploadT.DestType = strings.ToLower(destType)
+// 	payload, err := json.Marshal(uploadT)
+// 	if err != nil {
+// 		panic("BRT: JSON Marshal Failed " + err.Error())
+// 	}
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	})
+// 	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+// 		"module":   "batch_router",
+// 		"destType": destType,
+// 	})
 
-	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	})
+// 	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
+// 		"module":   "batch_router",
+// 		"destType": destType,
+// 	})
 
-	startTime := time.Now()
-	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
-	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
-	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, HTTPTimeout)
-	pkgLogger.Debugf("[Async Destination Maanger] File Upload Finished for Dest Type %v", destType)
-	uploadTimeStat.Since(startTime)
-	var bodyBytes []byte
-	var httpFailed bool
-	var statusCode string
-	if statusCodeHTTP != 200 {
-		bodyBytes = []byte(`"error" : "HTTP Call to Transformer Returned Non 200"`)
-		httpFailed = true
-	} else {
-		bodyBytes = responseBody
-		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
-	}
+// 	startTime := time.Now()
+// 	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
+// 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
+// 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, HTTPTimeout)
+// 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Finished for Dest Type %v", destType)
+// 	uploadTimeStat.Since(startTime)
+// 	var bodyBytes []byte
+// 	var httpFailed bool
+// 	var statusCode string
+// 	if statusCodeHTTP != 200 {
+// 		bodyBytes = []byte(`"error" : "HTTP Call to Transformer Returned Non 200"`)
+// 		httpFailed = true
+// 	} else {
+// 		bodyBytes = responseBody
+// 		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
+// 	}
 
-	var uploadResponse AsyncUploadOutput
-	if httpFailed {
-		uploadResponse = AsyncUploadOutput{
-			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  string(bodyBytes),
-			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
-			DestinationID: destinationID,
-		}
-	} else if statusCode == "200" {
-		var responseStruct UploadStruct
-		err := json.Unmarshal(bodyBytes, &responseStruct)
-		if err != nil {
-			panic("Incorrect Response from Transformer: " + err.Error())
-		}
-		var parameters Parameters
-		parameters.ImportId = responseStruct.ImportId
-		parameters.PollUrl = responseStruct.PollUrl
-		metaDataString, ok := responseStruct.Metadata["csvHeader"].(string)
-		if !ok {
-			parameters.MetaData = MetaDataT{CSVHeaders: ""}
-		} else {
-			parameters.MetaData = MetaDataT{CSVHeaders: metaDataString}
-		}
-		importParameters, err := json.Marshal(parameters)
-		if err != nil {
-			panic("Errored in Marshalling" + err.Error())
-		}
-		successfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+// 	var uploadResponse AsyncUploadOutput
+// 	if httpFailed {
+// 		uploadResponse = AsyncUploadOutput{
+// 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+// 			FailedReason:  string(bodyBytes),
+// 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+// 			DestinationID: destinationID,
+// 		}
+// 	} else if statusCode == "200" {
+// 		var responseStruct UploadStruct
+// 		err := json.Unmarshal(bodyBytes, &responseStruct)
+// 		if err != nil {
+// 			panic("Incorrect Response from Transformer: " + err.Error())
+// 		}
+// 		var parameters Parameters
+// 		parameters.ImportId = responseStruct.ImportId
+// 		parameters.PollUrl = responseStruct.PollUrl
+// 		metaDataString, ok := responseStruct.Metadata["csvHeader"].(string)
+// 		if !ok {
+// 			parameters.MetaData = MetaDataT{CSVHeaders: ""}
+// 		} else {
+// 			parameters.MetaData = MetaDataT{CSVHeaders: metaDataString}
+// 		}
+// 		importParameters, err := json.Marshal(parameters)
+// 		if err != nil {
+// 			panic("Errored in Marshalling" + err.Error())
+// 		}
+// 		successfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
 
-		uploadResponse = AsyncUploadOutput{
-			ImportingJobIDs:     successfulJobIDs,
-			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
-			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
-			ImportingParameters: stdjson.RawMessage(importParameters),
-			ImportingCount:      len(importingJobIDs),
-			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
-			DestinationID:       destinationID,
-		}
-	} else if statusCode == "400" {
-		var responseStruct UploadStruct
-		err := json.Unmarshal(bodyBytes, &responseStruct)
-		if err != nil {
-			panic("Incorrect Response from Transformer: " + err.Error())
-		}
-		eventsAbortedStat := stats.Default.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
-			"module":   "batch_router",
-			"destType": destType,
-		})
-		abortedJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
-		eventsAbortedStat.Count(len(abortedJobIDs))
-		uploadResponse = AsyncUploadOutput{
-			AbortJobIDs:   abortedJobIDs,
-			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
-			FailedReason:  `{"error":"Jobs flowed over the prescribed limit"}`,
-			AbortReason:   string(bodyBytes),
-			AbortCount:    len(importingJobIDs),
-			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
-			DestinationID: destinationID,
-		}
-	} else {
-		uploadResponse = AsyncUploadOutput{
-			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  string(bodyBytes),
-			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
-			DestinationID: destinationID,
-		}
-	}
-	return uploadResponse
-}
+// 		uploadResponse = AsyncUploadOutput{
+// 			ImportingJobIDs:     successfulJobIDs,
+// 			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
+// 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
+// 			ImportingParameters: stdjson.RawMessage(importParameters),
+// 			ImportingCount:      len(importingJobIDs),
+// 			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
+// 			DestinationID:       destinationID,
+// 		}
+// 	} else if statusCode == "400" {
+// 		var responseStruct UploadStruct
+// 		err := json.Unmarshal(bodyBytes, &responseStruct)
+// 		if err != nil {
+// 			panic("Incorrect Response from Transformer: " + err.Error())
+// 		}
+// 		eventsAbortedStat := stats.Default.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
+// 			"module":   "batch_router",
+// 			"destType": destType,
+// 		})
+// 		abortedJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+// 		eventsAbortedStat.Count(len(abortedJobIDs))
+// 		uploadResponse = AsyncUploadOutput{
+// 			AbortJobIDs:   abortedJobIDs,
+// 			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
+// 			FailedReason:  `{"error":"Jobs flowed over the prescribed limit"}`,
+// 			AbortReason:   string(bodyBytes),
+// 			AbortCount:    len(importingJobIDs),
+// 			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
+// 			DestinationID: destinationID,
+// 		}
+// 	} else {
+// 		uploadResponse = AsyncUploadOutput{
+// 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+// 			FailedReason:  string(bodyBytes),
+// 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+// 			DestinationID: destinationID,
+// 		}
+// 	}
+// 	return uploadResponse
+// }
 
 func GetTransformedData(payload stdjson.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()

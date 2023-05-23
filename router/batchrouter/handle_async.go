@@ -59,7 +59,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						pollUrl := gjson.GetBytes(parameters, "pollURL").String()
 						importId := gjson.GetBytes(parameters, "importId").String()
 						csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
-						var pollStruct AsyncPoll
+						var pollStruct common.AsyncPoll
 						pollStruct.ImportId = importId
 						pollStruct.Config = destinationsMap[key].Destination.Config
 						pollStruct.DestType = strings.ToLower(brt.destType)
