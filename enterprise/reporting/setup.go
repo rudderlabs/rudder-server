@@ -19,35 +19,42 @@ type Factory struct {
 	errorReportingInstance types.ReportingI
 }
 
+func (m *Factory) formReportInstance(backendConfig backendconfig.BackendConfig) types.ReportingI {
+	m.Log.Debug("Forming reporting instance")
+	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
+	if !reportingEnabled || m.EnterpriseToken == "" {
+		return &NOOP{}
+	}
+	reportingHandle := NewFromEnvConfig(m.Log)
+	rruntime.Go(func() {
+		reportingHandle.setup(backendConfig)
+	})
+	return reportingHandle
+}
+
+func (m *Factory) formErrorReportInstance(backendConfig backendconfig.BackendConfig) types.ReportingI {
+	m.Log.Debug("Forming error reporting instance")
+	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
+	errorReportingEnabled := config.GetBool("Reporting.errorReporting.enabled", false)
+
+	if !(reportingEnabled && errorReportingEnabled) || m.EnterpriseToken == "" {
+		return &NOOP{}
+	}
+	errorReporter := NewEdReporterFromEnvConfig()
+	rruntime.Go(func() {
+		errorReporter.setup(backendConfig)
+	})
+	return errorReporter
+}
+
 // Setup initializes Suppress User feature
 func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.ReportingInstances {
 	if m.Log == nil {
 		m.Log = logger.NewLogger().Child("enterprise").Child("reporting")
 	}
 	m.once.Do(func() {
-		reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
-		if !reportingEnabled {
-			m.reportingInstance = &NOOP{}
-			m.errorReportingInstance = &NOOP{}
-			return
-		}
-
-		if m.EnterpriseToken == "" {
-			m.reportingInstance = &NOOP{}
-			m.errorReportingInstance = &NOOP{}
-			return
-		}
-
-		h := NewFromEnvConfig(m.Log)
-		ed := NewEdReporterFromEnvConfig()
-		rruntime.Go(func() {
-			h.setup(backendConfig)
-		})
-		rruntime.Go(func() {
-			ed.setup(backendConfig)
-		})
-		m.reportingInstance = h
-		m.errorReportingInstance = ed
+		m.reportingInstance = m.formReportInstance(backendConfig)
+		m.errorReportingInstance = m.formErrorReportInstance(backendConfig)
 	})
 	return types.ReportingInstances{
 		ReportingInstance:      m.reportingInstance,

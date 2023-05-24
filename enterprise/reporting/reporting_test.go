@@ -236,7 +236,7 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 	configCh := make(chan pubsub.DataEvent)
 
 	var ready sync.WaitGroup
-	ready.Add(3)
+	ready.Add(2)
 
 	var reportingSettings sync.WaitGroup
 	reportingSettings.Add(1)
@@ -244,7 +244,7 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 	config.EXPECT().Subscribe(
 		gomock.Any(),
 		gomock.Eq(backendconfig.TopicBackendConfig),
-	).MaxTimes(2).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+	).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 		ready.Done()
 		go func() {
 			<-ctx.Done()
