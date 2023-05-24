@@ -134,7 +134,7 @@ func getParquetSchema(schema model.TableSchema, destType string) ([]string, erro
 	var pSchema []string
 	for _, col := range getSortedTableColumns(schema) {
 		dataType := whTypeMap[schema[col]]
-		if config.GetBool(fmt.Sprintf("Warehouse.%v.useNewTimeFormat", destType), false) && schema[col] == "timestamp" {
+		if config.GetBool(fmt.Sprintf("Warehouse.%v.useNewTimeFormat", destType), false) && schema[col] == "datetime" {
 			dataType = ParquetTimestampMicrosNew
 		}
 		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), dataType)
