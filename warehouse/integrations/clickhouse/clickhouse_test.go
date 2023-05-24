@@ -412,9 +412,6 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 	warehouseutils.Init()
 	encoding.Init()
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
 	var (
 		minioResource *destination.MINIOResource
 		chResource    *dockertest.Resource
@@ -425,6 +422,20 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 		workspaceID   = "test_workspace_id"
 		provider      = "MINIO"
 	)
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	t.Log("Setting up ClickHouse Minio network")
+	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{
+		Name: "clickhouse-minio-network",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+			t.Log("could not remove clickhouse minio network:", err)
+		}
+	})
 
 	g := errgroup.Group{}
 	g.Go(func() error {
@@ -438,17 +449,6 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, g.Wait())
-
-	t.Log("Setting up ClickHouse Minio network")
-	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{
-		Name: "clickhouse-minio-network",
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-			t.Log("could not remove clickhouse minio network:", err)
-		}
-	})
 
 	for _, resourceName := range []string{chResource.Container.Name, minioResource.ResourceName} {
 		err = pool.Client.ConnectNetwork(network.ID, dc.NetworkConnectionOptions{
