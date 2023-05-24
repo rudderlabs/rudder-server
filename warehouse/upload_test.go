@@ -155,7 +155,7 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				stats: store,
-				schemaHandle: &SchemaHandle{
+				schemaHandle: &Schema{
 					schemaInWarehouse: model.Schema{
 						tableName: model.TableSchema{
 							"test-column-1": "string",
