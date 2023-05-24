@@ -227,7 +227,6 @@ func TestIntegration(t *testing.T) {
 
 			t.Run(tc.name, func(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_LOAD_TABLE_STRATEGY", tc.loadTableStrategy)
-				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 
 				sqlClient := &warehouseclient.Client{
 					SQL:  db,
@@ -343,7 +342,6 @@ func TestIntegration(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 				testhelper.VerifyConfigurationTest(t, dest)
 			})
 		}
