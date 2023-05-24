@@ -6,12 +6,11 @@ import (
 	"os"
 	"sort"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/xitongsys/parquet-go/writer"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/xitongsys/parquet-go/writer"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
@@ -19,7 +18,7 @@ const (
 	ParquetBoolean         = "type=BOOLEAN, repetitiontype=OPTIONAL"
 	ParquetDouble          = "type=DOUBLE, repetitiontype=OPTIONAL"
 	ParquetString          = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
-	ParquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS,logicaltype.isadjustedtoutc=true, repetitiontype=OPTIONAL"
+	ParquetTimestampMicros = "type=INT64, logicaltype=TIMESTAMP,logicaltype.unit=MICROS,logicaltype.isadjustedtoutc=true, repetitiontype=OPTIONAL"
 )
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
