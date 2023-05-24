@@ -341,6 +341,7 @@ var _ = Describe("Gateway", func() {
 			gateway    *HandleT
 			statsStore *memstats.Store
 			whServer   *httptest.Server
+			serverURL  string
 		)
 
 		BeforeEach(func() {
@@ -348,9 +349,10 @@ var _ = Describe("Gateway", func() {
 				w.WriteHeader(http.StatusOK)
 				_, _ = io.WriteString(w, "OK")
 			}))
-			url, err := url.Parse(whServer.URL)
+			serverURL = whServer.URL
+			parsedURL, err := url.Parse(serverURL)
 			Expect(err).To(BeNil())
-			config.Set("Warehouse.webPort", url.Port())
+			config.Set("Warehouse.webPort", parsedURL.Port())
 
 			gateway = &HandleT{}
 			err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
@@ -376,11 +378,11 @@ var _ = Describe("Gateway", func() {
 
 			return validDataWithProperty
 		}
-		verifyEndpoing := func(endpoints []string, method string) {
+		verifyEndpoint := func(endpoints []string, method string) {
 			client := &http.Client{}
-			baseURL := "http://localhost:8080"
+			// baseURL := "http://localhost:8080"
 			for _, ep := range endpoints {
-				url := baseURL + ep
+				url := fmt.Sprintf("%s%s", serverURL, ep)
 				var req *http.Request
 				var err error
 				if ep == "/beacon/v1/batch" {
@@ -409,17 +411,24 @@ var _ = Describe("Gateway", func() {
 			})
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
 			var err error
+			wait := make(chan struct{})
 			ctx, cancel := context.WithCancel(context.Background())
 			go func() {
 				err = gateway.StartWebHandler(ctx)
 				Expect(err).To(BeNil())
+				close(wait)
 			}()
-			getEndpoing, postEndpoints, deleteEndpoints := getEndpointMethodMap()
+			Eventually(func() bool {
+				resp, _ := http.Get(fmt.Sprintf("%s/version", serverURL))
+				return resp.StatusCode == http.StatusOK
+			}, time.Second*10, time.Second).Should(BeTrue())
 
-			verifyEndpoing(getEndpoing, http.MethodGet)
-			verifyEndpoing(postEndpoints, http.MethodPost)
-			verifyEndpoing(deleteEndpoints, http.MethodDelete)
+			getEndpoint, postEndpoints, deleteEndpoints := getEndpointMethodMap()
+			verifyEndpoint(getEndpoint, http.MethodGet)
+			verifyEndpoint(postEndpoints, http.MethodPost)
+			verifyEndpoint(deleteEndpoints, http.MethodDelete)
 			cancel()
+			<-wait
 		})
 	})
 
