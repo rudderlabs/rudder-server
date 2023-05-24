@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS error_detail_reports (
 		source_definition_id TEXT DEFAULT '',
 		destination_id VARCHAR(64) NOT NULL,
 		destination_definition_id TEXT DEFAULT '',
-		in_pu VARCHAR(64),
+		dest_type TEXT DEFAULT '',
 		pu VARCHAR(64),
 		reported_at BIGINT NOT NULL,
 		status_code INT,
