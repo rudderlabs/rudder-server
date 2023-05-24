@@ -2,15 +2,12 @@ package warehouseutils
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -33,7 +30,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
@@ -51,7 +47,6 @@ const (
 	MSSQL          = "MSSQL"
 	AZURE_SYNAPSE  = "AZURE_SYNAPSE"
 	DELTALAKE      = "DELTALAKE"
-	DELTALAKE_OLD  = "DELTALAKE"
 	S3_DATALAKE    = "S3_DATALAKE"
 	GCS_DATALAKE   = "GCS_DATALAKE"
 	AZURE_DATALAKE = "AZURE_DATALAKE"
@@ -159,7 +154,6 @@ var WHDestNameMap = map[string]string{
 	SNOWFLAKE:      "snowflake",
 	CLICKHOUSE:     "clickhouse",
 	DELTALAKE:      "deltalake",
-	DELTALAKE_OLD:  "deltalake",
 	S3_DATALAKE:    "s3_datalake",
 	GCS_DATALAKE:   "gcs_datalake",
 	AZURE_DATALAKE: "azure_datalake",
@@ -925,30 +919,6 @@ func GetLoadFileFormat(loadFileType string) string {
 	default:
 		return "csv.gz"
 	}
-}
-
-func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, timeout time.Duration) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
-	if err != nil {
-		return []byte{}, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(config.GetWorkspaceToken(), "")
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = io.ReadAll(resp.Body)
-		func() { httputil.CloseResponse(resp) }()
-	}
-
-	return respBody, nil
 }
 
 func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []string) {
