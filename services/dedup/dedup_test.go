@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -19,11 +20,10 @@ import (
 func Test_Dedup(t *testing.T) {
 	config.Reset()
 	logger.Reset()
-
+	misc.Init()
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
-
 	d := dedup.New(dbPath)
 	defer d.Close()
 
