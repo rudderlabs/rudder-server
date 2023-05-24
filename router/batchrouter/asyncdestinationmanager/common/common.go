@@ -2,10 +2,12 @@ package common
 
 import (
 	stdjson "encoding/json"
+	"sync"
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -82,6 +84,20 @@ type Parameters struct {
 	ImportId string    `json:"importId"`
 	PollUrl  string    `json:"pollURL"`
 	MetaData MetaDataT `json:"metadata"`
+}
+
+type AsyncDestinationStruct struct {
+	ImportingJobIDs []int64
+	FailedJobIDs    []int64
+	Exists          bool
+	Size            int
+	CreatedAt       time.Time
+	FileName        string
+	Count           int
+	CanUpload       bool
+	UploadMutex     sync.RWMutex
+	URL             string
+	RsourcesStats   rsources.StatsCollector
 }
 
 var (

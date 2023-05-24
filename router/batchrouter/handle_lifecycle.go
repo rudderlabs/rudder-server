@@ -19,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -40,7 +41,7 @@ import (
 
 // Setup initializes the batch router
 func (brt *Handle) Setup(
-	destType string,
+	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
 	jobsDB, errorDB jobsdb.JobsDB,
 	reporting types.ReportingI,
@@ -49,9 +50,10 @@ func (brt *Handle) Setup(
 	rsourcesService rsources.JobService,
 	debugger destinationdebugger.DestinationDebugger,
 ) {
-	brt.destType = destType
-	brt.asyncdestinationmanager = asyncdestinationmanager.NewAsyncDestinationManager(brt.destType)
-	brt.logger = logger.NewLogger().Child("batchrouter").Child(destType)
+	brt.destination = destination
+	brt.destType = destination.DestinationDefinition.Name
+	brt.asyncdestinationmanager = asyncdestinationmanager.NewAsyncDestinationManager(destination)
+	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
 		Timeout:   config.GetDuration("BatchRouter.httpTimeout", 10, time.Second),
@@ -80,7 +82,7 @@ func (brt *Handle) Setup(
 	}
 	isolationMode := config.GetString("BatchRouter.isolationMode", string(defaultIsolationMode))
 	var err error
-	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destType, func(destinationID string) bool {
+	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destination.DestinationDefinition.Name, func(destinationID string) bool {
 		brt.configSubscriberMu.RLock()
 		defer brt.configSubscriberMu.RUnlock()
 		_, ok := brt.destinationsMap[destinationID]
@@ -128,11 +130,11 @@ func (brt *Handle) Setup(
 	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.uploadedRawDataJobsCache = make(map[string]map[string]bool)
-	brt.asyncDestinationStruct = make(map[string]*asyncdestinationmanager.AsyncDestinationStruct)
+	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
 
 	asyncStatTags := map[string]string{
 		"module":   "batch_router",
-		"destType": destType,
+		"destType": destination.DestinationDefinition.Name,
 	}
 	brt.asyncPollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, asyncStatTags)
 	brt.asyncFailedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, asyncStatTags)
@@ -170,7 +172,7 @@ func (brt *Handle) Setup(
 		}),
 	)
 
-	brt.logger.Infof("BRT: Batch Router started: %s", destType)
+	brt.logger.Infof("BRT: Batch Router started: %s", destination.DestinationDefinition.Name)
 
 	// waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {

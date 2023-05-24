@@ -5,7 +5,6 @@ import (
 	"context"
 	stdjson "encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -337,18 +336,18 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 }
 
 func (brt *Handle) asyncUploadWorker(ctx context.Context) {
-	resolveURL := func(base, relative string) string {
-		baseURL, err := url.Parse(base)
-		if err != nil {
-			brt.logger.Fatal(err)
-		}
-		relURL, err := url.Parse(relative)
-		if err != nil {
-			brt.logger.Fatal(err)
-		}
-		destURL := baseURL.ResolveReference(relURL).String()
-		return destURL
-	}
+	// resolveURL := func(base, relative string) string {
+	// 	baseURL, err := url.Parse(base)
+	// 	if err != nil {
+	// 		brt.logger.Fatal(err)
+	// 	}
+	// 	relURL, err := url.Parse(relative)
+	// 	if err != nil {
+	// 		brt.logger.Fatal(err)
+	// 	}
+	// 	destURL := baseURL.ResolveReference(relURL).String()
+	// 	return destURL
+	// }
 
 	if !slices.Contains(asyncDestinations, brt.destType) {
 		return
@@ -377,7 +376,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					var uploadResponse common.AsyncUploadOutput
-					uploadResponse = brt.asyncdestinationmanager.Upload(resolveURL(brt.transformerURL, brt.asyncDestinationStruct[destinationID].URL), brt.asyncDestinationStruct[destinationID].FileName, destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					uploadResponse = brt.asyncdestinationmanager.Upload(brt.destination, brt.asyncDestinationStruct)
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
 				}
@@ -458,7 +457,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 	if !ok || !brt.asyncDestinationStruct[destinationID].Exists {
 		if !ok {
-			asyncStruct := &asyncdestinationmanager.AsyncDestinationStruct{}
+			asyncStruct := &common.AsyncDestinationStruct{}
 			asyncStruct.UploadMutex.Lock()
 			defer asyncStruct.UploadMutex.Unlock()
 			brt.asyncDestinationStruct[destinationID] = asyncStruct

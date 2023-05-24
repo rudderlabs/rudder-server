@@ -18,7 +18,7 @@ import (
 
 var (
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD"}
+	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
 	warehouseDestinations     = []string{
 		"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL",
 		"AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE",
@@ -124,7 +124,7 @@ loop:
 							_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 							if !ok {
 								pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
-								brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
+								brt := batchrouterFactory.New(destination)
 								brt.Start()
 								cleanup = append(cleanup, brt.Shutdown)
 								dstToBatchRouter[destination.DestinationDefinition.Name] = brt

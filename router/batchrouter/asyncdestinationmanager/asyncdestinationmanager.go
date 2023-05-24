@@ -9,6 +9,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
@@ -18,7 +19,7 @@ import (
 )
 
 type Asyncdestinationmanager interface {
-	Upload(url string, filePath string, config map[string]interface{}, destType string, failedJobIDs []int64, importingJobIDs []int64, destinationID string) common.AsyncUploadOutput
+	Upload(destination *backendconfig.DestinationT, asyncDestStruct map[string]*common.AsyncDestinationStruct) common.AsyncUploadOutput
 	Poll(url string, payload []byte, timeout time.Duration) ([]byte, int)
 }
 
@@ -298,7 +299,8 @@ func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, i
 	return payload
 }
 
-func NewAsyncDestinationManager(destType string) Asyncdestinationmanager {
+func NewAsyncDestinationManager(destination *backendconfig.DestinationT) Asyncdestinationmanager {
+	destType := destination.DestinationDefinition.Name
 	if destType == "BING_ADS" {
 		return marketobulkupload.Manager()
 	} else if destType == "MARKETO_BULK_UPLOAD" {

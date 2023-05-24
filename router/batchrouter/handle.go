@@ -28,6 +28,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
@@ -47,7 +48,8 @@ import (
 )
 
 type Handle struct {
-	destType string
+	destType    string
+	destination *backendconfig.DestinationT
 
 	// dependencies
 
@@ -126,7 +128,7 @@ type Handle struct {
 
 	diagnosisTicker          *time.Ticker
 	uploadedRawDataJobsCache map[string]map[string]bool
-	asyncDestinationStruct   map[string]*asyncdestinationmanager.AsyncDestinationStruct
+	asyncDestinationStruct   map[string]*common.AsyncDestinationStruct
 
 	asyncPollTimeStat       stats.Measurement
 	asyncFailedJobsTimeStat stats.Measurement

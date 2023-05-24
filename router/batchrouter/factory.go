@@ -22,13 +22,13 @@ type Factory struct {
 	AdaptiveLimit    func(int64) int64
 }
 
-func (f *Factory) New(destType string) *Handle {
+func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 	r := &Handle{
 		adaptiveLimit: f.AdaptiveLimit,
 	}
 
 	r.Setup(
-		destType,
+		destination,
 		f.BackendConfig,
 		f.RouterDB,
 		f.ProcErrorDB,
