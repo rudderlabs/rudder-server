@@ -51,6 +51,7 @@ const (
 	MSSQL          = "MSSQL"
 	AZURE_SYNAPSE  = "AZURE_SYNAPSE"
 	DELTALAKE      = "DELTALAKE"
+	DELTALAKE_OLD  = "DELTALAKE"
 	S3_DATALAKE    = "S3_DATALAKE"
 	GCS_DATALAKE   = "GCS_DATALAKE"
 	AZURE_DATALAKE = "AZURE_DATALAKE"
@@ -143,11 +144,11 @@ var (
 	enableIDResolution bool
 	AWSCredsExpiryInS  int64
 
-	TimeWindowDestinations    []string = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
-	WarehouseDestinations     []string = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
-	IdentityEnabledWarehouses []string = []string{SNOWFLAKE, BQ}
-	S3PathStyleRegex                   = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
-	S3VirtualHostedRegex               = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
+	TimeWindowDestinations    = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
+	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
+	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
+	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
+	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
 )
 
 var WHDestNameMap = map[string]string{
@@ -158,6 +159,7 @@ var WHDestNameMap = map[string]string{
 	SNOWFLAKE:      "snowflake",
 	CLICKHOUSE:     "clickhouse",
 	DELTALAKE:      "deltalake",
+	DELTALAKE_OLD:  "deltalake",
 	S3_DATALAKE:    "s3_datalake",
 	GCS_DATALAKE:   "gcs_datalake",
 	AZURE_DATALAKE: "azure_datalake",

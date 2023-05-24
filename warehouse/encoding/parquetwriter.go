@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/xitongsys/parquet-go/writer"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -14,11 +15,12 @@ import (
 )
 
 const (
-	ParquetInt64           = "type=INT64, repetitiontype=OPTIONAL"
-	ParquetBoolean         = "type=BOOLEAN, repetitiontype=OPTIONAL"
-	ParquetDouble          = "type=DOUBLE, repetitiontype=OPTIONAL"
-	ParquetString          = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
-	ParquetTimestampMicros = "type=INT64, logicaltype=TIMESTAMP, logicaltype.unit=MICROS, logicaltype.isadjustedtoutc=true, repetitiontype=OPTIONAL"
+	ParquetInt64              = "type=INT64, repetitiontype=OPTIONAL"
+	ParquetBoolean            = "type=BOOLEAN, repetitiontype=OPTIONAL"
+	ParquetDouble             = "type=DOUBLE, repetitiontype=OPTIONAL"
+	ParquetString             = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
+	ParquetTimestampMicrosNew = "type=INT64, logicaltype=TIMESTAMP, logicaltype.unit=MICROS, logicaltype.isadjustedtoutc=true, repetitiontype=OPTIONAL"
+	ParquetTimestampMicros    = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
@@ -131,7 +133,11 @@ func getParquetSchema(schema model.TableSchema, destType string) ([]string, erro
 	}
 	var pSchema []string
 	for _, col := range getSortedTableColumns(schema) {
-		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), whTypeMap[schema[col]])
+		dataType := whTypeMap[schema[col]]
+		if config.GetBool(fmt.Sprintf("Warehouse.%v.useNewTimeFormat", destType), false) && schema[col] == "timestamp" {
+			dataType = ParquetTimestampMicrosNew
+		}
+		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), dataType)
 		pSchema = append(pSchema, pType)
 	}
 	return pSchema, nil
