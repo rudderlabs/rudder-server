@@ -131,6 +131,7 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
+	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_NEW_TIME_FORMAT", "true")
 
 	svcDone := make(chan struct{})
 
