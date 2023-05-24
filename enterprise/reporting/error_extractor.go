@@ -93,7 +93,7 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 				return getErrorMessageFromResponse(unmarshalledJsonI, ext.ErrorMessageKeys)
 			}
 			if len(erResStr) == 0 {
-				return "EMPTY"
+				return ""
 			}
 			return erResStr
 		// Warehouse related errors

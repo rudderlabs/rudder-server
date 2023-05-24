@@ -41,6 +41,7 @@ var ErrorDetailReportsColumns = []string{
 	"source_id",
 	"destination_definition_id",
 	"destination_id",
+	"dest_type",
 	"pu", // reportedBy
 	"reported_at",
 	"count",
@@ -48,6 +49,11 @@ var ErrorDetailReportsColumns = []string{
 	"event_type",
 	"error_code",
 	"error_message",
+}
+
+type destDetail struct {
+	DestinationDefinitionID string
+	DestType                string // destination definition name
 }
 
 type ErrorDetailReporter struct {
@@ -65,6 +71,7 @@ type ErrorDetailReporter struct {
 	mainLoopSleepInterval     time.Duration
 	maxConcurrentRequests     int
 	workspaceIDForSourceIDMap map[string]string
+	destinationIDMap          map[string]destDetail
 	srcWspMutex               sync.RWMutex
 	httpClient                *http.Client
 	clientsMapLock            sync.RWMutex
@@ -111,6 +118,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 
 		init:                      make(chan struct{}),
 		workspaceIDForSourceIDMap: make(map[string]string),
+		destinationIDMap:          make(map[string]destDetail),
 		clients:                   make(map[string]*types.Client),
 		errorDetailExtractor:      extractor,
 	}
@@ -154,6 +162,7 @@ func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConf
 	for c := range ch {
 		conf := c.Data.(map[string]backendconfig.ConfigT)
 		newWorkspaceIDForSourceIDMap := make(map[string]string)
+		newDestinationIDMap := make(map[string]destDetail)
 		newPIIReportingSettings := make(map[string]bool)
 		var newWorkspaceID string
 
@@ -161,6 +170,14 @@ func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConf
 			newWorkspaceID = workspaceID
 			for _, source := range wConfig.Sources {
 				newWorkspaceIDForSourceIDMap[source.ID] = workspaceID
+				// Reduce to destination detail based on destination-id
+				newDestinationIDMap = lo.Reduce(source.Destinations, func(agg map[string]destDetail, destination backendconfig.DestinationT, _ int) map[string]destDetail {
+					agg[destination.ID] = destDetail{
+						DestinationDefinitionID: destination.DestinationDefinition.ID,
+						DestType:                destination.DestinationDefinition.Name,
+					}
+					return agg
+				}, newDestinationIDMap)
 			}
 			newPIIReportingSettings[workspaceID] = wConfig.Settings.DataRetention.DisableReportingPII
 		}
@@ -170,6 +187,7 @@ func (edRep *ErrorDetailReporter) setup(beConfigHandle backendconfig.BackendConf
 		edRep.srcWspMutex.Lock()
 		edRep.workspaceID = newWorkspaceID
 		edRep.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
+		edRep.destinationIDMap = newDestinationIDMap
 		edRep.srcWspMutex.Unlock()
 		// r.piiReportingSettings = newPIIReportingSettings
 		edRep.onceInit.Do(func() {
@@ -200,6 +218,8 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 	for _, metric := range metrics {
 		workspaceID := edRep.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
+		destinationDetail := edRep.getDestDetail(metric.ConnectionDetails.DestinationID)
+		edRep.log.Infof("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
 
 		// extract error-message & error-code
 		errDets := edRep.extractErrorDetails(metric.StatusDetail.SampleResponse)
@@ -209,8 +229,9 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 			edRep.instanceID,
 			metric.ConnectionDetails.SourceDefinitionId,
 			metric.ConnectionDetails.SourceID,
-			metric.ConnectionDetails.DestinationDefinitionId,
+			destinationDetail.DestinationDefinitionID,
 			metric.ConnectionDetails.DestinationID,
+			destinationDetail.DestType,
 			metric.PUDetails.PU,
 			reportedAt,
 			metric.StatusDetail.Count,
@@ -273,6 +294,12 @@ func (edRep *ErrorDetailReporter) getWorkspaceID(sourceID string) string {
 	edRep.srcWspMutex.RLock()
 	defer func() { edRep.srcWspMutex.RUnlock() }()
 	return edRep.workspaceIDForSourceIDMap[sourceID]
+}
+
+func (edRep *ErrorDetailReporter) getDestDetail(destID string) destDetail {
+	edRep.srcWspMutex.RLock()
+	defer func() { edRep.srcWspMutex.RUnlock() }()
+	return edRep.destinationIDMap[destID]
 }
 
 func (edRep *ErrorDetailReporter) extractErrorDetails(sampleResponse string) errorDetails {
@@ -413,7 +440,20 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 	if !queryMin.Valid {
 		return nil, 0
 	}
-	edSelColumns := strings.Join(ErrorDetailReportsColumns, ", ")
+	edSelColumns := strings.Join([]string{"workspace_id",
+		"namespace",
+		"instance_id",
+		"source_definition_id",
+		"source_id",
+		"destination_definition_id",
+		"destination_id",
+		"pu",
+		"reported_at",
+		"count",
+		"status_code",
+		"event_type",
+		"error_code",
+		"error_message"}, ", ")
 	// sqlStatement = fmt.Sprintf(`SELECT %s FROM %s WHERE reported_at = %d`, edSelColumns, ErrorDetailReportsTable, queryMin.Int64)
 	// edRep.log.Debugf("[EdRep] sql statement: %s\n", sqlStatement)
 	var rows *sql.Rows
