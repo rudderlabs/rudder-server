@@ -440,7 +440,8 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 	if !queryMin.Valid {
 		return nil, 0
 	}
-	edSelColumns := strings.Join([]string{"workspace_id",
+	edSelColumns := strings.Join([]string{
+		"workspace_id",
 		"namespace",
 		"instance_id",
 		"source_definition_id",
@@ -453,7 +454,8 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 		"status_code",
 		"event_type",
 		"error_code",
-		"error_message"}, ", ")
+		"error_message",
+	}, ", ")
 	// sqlStatement = fmt.Sprintf(`SELECT %s FROM %s WHERE reported_at = %d`, edSelColumns, ErrorDetailReportsTable, queryMin.Int64)
 	// edRep.log.Debugf("[EdRep] sql statement: %s\n", sqlStatement)
 	var rows *sql.Rows
