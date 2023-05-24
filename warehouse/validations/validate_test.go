@@ -37,11 +37,15 @@ func setup(t *testing.T, pool *dockertest.Pool) testResource {
 		pgResource, err = resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
 
+		t.Log("db:", pgResource.DBDsn)
+
 		return nil
 	})
 	g.Go(func() error {
 		minioResource, err = destination.SetupMINIO(pool, t)
 		require.NoError(t, err)
+
+		t.Log("minio:", minioResource.Endpoint)
 
 		return nil
 	})
@@ -104,6 +108,8 @@ func TestValidator(t *testing.T) {
 
 			minioResource, err = destination.SetupMINIO(pool, t)
 			require.NoError(t, err)
+
+			t.Log("minio:", minioResource.Endpoint)
 
 			var (
 				bucket = "s3-datalake-test"

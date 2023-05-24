@@ -194,6 +194,8 @@ func TestLoadTable(t *testing.T) {
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
+				t.Log("db:", pgResource.DBDsn)
+
 				db := sqlmiddleware.New(pgResource.DB)
 
 				store := memstats.New()
@@ -319,6 +321,8 @@ func TestLoadTable(t *testing.T) {
 
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
+
+				t.Log("db:", pgResource.DBDsn)
 
 				db := sqlmiddleware.New(pgResource.DB)
 
@@ -491,6 +495,8 @@ func TestLoadUsersTable(t *testing.T) {
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
+
+			t.Log("db:", pgResource.DBDsn)
 
 			db := sqlmiddleware.New(pgResource.DB)
 

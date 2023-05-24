@@ -99,6 +99,8 @@ func TestHandleT_Track(t *testing.T) {
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
+			t.Log("db:", pgResource.DBDsn)
+
 			err = (&migrator.Migrator{
 				Handle:          pgResource.DB,
 				MigrationsTable: "wh_schema_migrations",
@@ -222,6 +224,8 @@ func TestHandleT_CronTracker(t *testing.T) {
 
 		pgResource, err := resource.SetupPostgres(pool, t)
 		require.NoError(t, err)
+
+		t.Log("db:", pgResource.DBDsn)
 
 		err = (&migrator.Migrator{
 			Handle:          pgResource.DB,

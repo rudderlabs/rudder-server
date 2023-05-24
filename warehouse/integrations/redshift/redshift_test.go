@@ -396,6 +396,8 @@ func TestRedshift_AlterColumn(t *testing.T) {
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 
+			t.Log("db:", pgResource.DBDsn)
+
 			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
