@@ -19,7 +19,7 @@ const (
 	ParquetBoolean         = "type=BOOLEAN, repetitiontype=OPTIONAL"
 	ParquetDouble          = "type=DOUBLE, repetitiontype=OPTIONAL"
 	ParquetString          = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
-	ParquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
+	ParquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL, isAdjustedToUTC=true"
 )
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
