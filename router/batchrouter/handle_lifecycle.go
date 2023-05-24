@@ -82,7 +82,7 @@ func (brt *Handle) Setup(
 	var err error
 	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destType, func(destinationID string) bool {
 		brt.configSubscriberMu.RLock()
-		defer brt.configSubscriberMu.RLock()
+		defer brt.configSubscriberMu.RUnlock()
 		_, ok := brt.destinationsMap[destinationID]
 		return ok
 	}); err != nil {

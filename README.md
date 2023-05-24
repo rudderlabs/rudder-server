@@ -1,5 +1,5 @@
 <p align="center">
-💬 Join <b><a href="https://rudderstack.com/join-rudderstack-slack-community">Join the commmunity of Data Engineers on Slack</a></b>
+📖 Just launched <b><a href="https://www.rudderstack.com/learn/">Data Learning Center</a></b> - Resources on data engineering and data infrastructure
   <br/>
  </p>
 

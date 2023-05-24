@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/samber/lo"
 
@@ -69,7 +69,6 @@ var (
 	controlPlaneClient                  *controlplane.Client
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
-	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
 	stagingFilesBatchSize               int
 	lastProcessedMarkerMap              map[string]int64
@@ -99,7 +98,6 @@ var (
 	waitForConfig                       time.Duration
 	waitForWorkerSleep                  time.Duration
 	ShouldForceSetLowerVersion          bool
-	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	asyncWh                             *jobs.AsyncJobWh
@@ -188,7 +186,6 @@ func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
 	enableTunnelling = config.GetBool("ENABLE_TUNNELLING", true)
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
-	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
@@ -206,7 +203,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
@@ -1533,11 +1529,11 @@ func getConnectionString() string {
 }
 
 func startWebHandler(ctx context.Context) error {
-	srvMux := mux.NewRouter()
+	srvMux := chi.NewRouter()
 
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
-		srvMux.HandleFunc("/health", healthHandler).Methods("GET")
+		srvMux.Get("/health", healthHandler)
 	}
 	if runningMode != DegradedMode {
 		if isMaster() {
@@ -1552,17 +1548,17 @@ func startWebHandler(ctx context.Context) error {
 			}).Handler())
 
 			// triggers upload only when there are pending events and triggerUpload is sent for a sourceId
-			srvMux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler).Methods("POST")
+			srvMux.Post("/v1/warehouse/pending-events", pendingEventsHandler)
 			// triggers uploads for a source
-			srvMux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler).Methods("POST")
-			srvMux.HandleFunc("/databricksVersion", databricksVersionHandler).Methods("GET")
+			srvMux.Post("/v1/warehouse/trigger-upload", triggerUploadHandler)
+			srvMux.Get("/databricksVersion", databricksVersionHandler)
 
 			// Warehouse Async Job end-points
-			srvMux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler).Methods("POST")          // FIXME: add degraded mode
-			srvMux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler).Methods("GET") // FIXME: add degraded mode
+			srvMux.Post("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)          // FIXME: add degraded mode
+			srvMux.Get("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // FIXME: add degraded mode
 
 			// fetch schema info
-			srvMux.HandleFunc("/v1/warehouse/fetch-tables", fetchTablesHandler).Methods("GET")
+			srvMux.Get("/v1/warehouse/fetch-tables", fetchTablesHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {

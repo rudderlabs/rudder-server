@@ -107,7 +107,6 @@ func TestMainFlow(t *testing.T) {
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := setupMainFlow(svcCtx, t)
 	sendEventsToGateway(t)
-
 	t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return webhook.RequestsCount() == 10

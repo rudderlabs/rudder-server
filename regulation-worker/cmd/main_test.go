@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -222,7 +222,7 @@ func getMultiTenantJob(w http.ResponseWriter, _ *http.Request) {
 
 func updateSingleTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
+	jobID, _ := strconv.Atoi(chi.URLParam(r, "job_id"))
 	var status statusJobSchema
 	if err := json.NewDecoder(r.Body).Decode(&status); err != nil {
 		return
@@ -247,7 +247,7 @@ func updateSingleTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 
 func updateMultiTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
+	jobID, _ := strconv.Atoi(chi.URLParam(r, "job_id"))
 	var status statusJobSchema
 	if err := json.NewDecoder(r.Body).Decode(&status); err != nil {
 		return
@@ -397,19 +397,14 @@ func verifyBatchDeletion(t *testing.T, minioConfig map[string]interface{}) {
 
 func handler(t *testing.T, minioConfig map[string]interface{}, redisAddress string) http.Handler {
 	t.Helper()
-	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getSingleTenantJob).Methods(http.MethodGet)
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateSingleTenantJobStatus).Methods(http.MethodPatch)
-	srvMux.HandleFunc("/dataplane/namespaces/{workspace_id}/regulations/workerJobs", getMultiTenantJob).Methods(http.MethodGet)
-	srvMux.HandleFunc("/dataplane/namespaces/{workspace_id}/regulations/workerJobs/{job_id}", updateMultiTenantJobStatus).Methods(http.MethodPatch)
-	srvMux.HandleFunc("/workspaceConfig", getSingleTenantWorkspaceConfig(minioConfig, redisAddress)).Methods(http.MethodGet)
-	srvMux.HandleFunc("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig(minioConfig, redisAddress)).Methods(http.MethodGet)
+	srvMux := chi.NewRouter()
 
-	srvMux.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			next.ServeHTTP(w, req)
-		})
-	})
+	srvMux.Get("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getSingleTenantJob)
+	srvMux.Patch("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateSingleTenantJobStatus)
+	srvMux.Get("/dataplane/namespaces/{workspace_id}/regulations/workerJobs", getMultiTenantJob)
+	srvMux.Patch("/dataplane/namespaces/{workspace_id}/regulations/workerJobs/{job_id}", updateMultiTenantJobStatus)
+	srvMux.Get("/workspaceConfig", getSingleTenantWorkspaceConfig(minioConfig, redisAddress))
+	srvMux.Get("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig(minioConfig, redisAddress))
 
 	return srvMux
 }

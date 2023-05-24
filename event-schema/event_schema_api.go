@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/gorilla/mux"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -307,10 +307,8 @@ func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.
 		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
 		return
 	}
-
-	vars := mux.Vars(r)
-	eventID, ok := vars["EventID"]
-	if !ok {
+	eventID := chi.URLParam(r, "EventID")
+	if eventID == "" {
 		http.Error(w, response.MakeResponse("Mandatory field: EventID missing"), 400)
 		return
 	}
@@ -366,9 +364,8 @@ func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter,
 		return
 	}
 
-	vars := mux.Vars(r)
-	eventID, ok := vars["EventID"]
-	if !ok {
+	eventID := chi.URLParam(r, "EventID")
+	if eventID == "" {
 		http.Error(w, response.MakeResponse("Mandatory field: EventID missing"), 400)
 		return
 	}
@@ -400,9 +397,8 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMetadata(w http.ResponseWrit
 		return
 	}
 
-	vars := mux.Vars(r)
-	versionID, ok := vars["VersionID"]
-	if !ok {
+	versionID := chi.URLParam(r, "VersionID")
+	if versionID == "" {
 		http.Error(w, response.MakeResponse("Mandatory field: VersionID missing"), 400)
 		return
 	}
@@ -434,9 +430,8 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 		return
 	}
 
-	vars := mux.Vars(r)
-	versionID, ok := vars["VersionID"]
-	if !ok {
+	versionID := chi.URLParam(r, "VersionID")
+	if versionID == "" {
 		http.Error(w, response.MakeResponse("Mandatory field: VersionID missing"), 400)
 		return
 	}
