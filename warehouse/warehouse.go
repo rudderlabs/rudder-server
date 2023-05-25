@@ -813,14 +813,15 @@ loop:
 		wh.Logger.Debugf(`Current inProgress namespace identifiers for %s: %v`, wh.destType, inProgressNamespaces)
 
 		uploadJobsToProcess, err := wh.getUploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
-
-		switch err {
-		case nil:
-		case context.Canceled, context.DeadlineExceeded, ErrCancellingStatement:
-			break loop
-		default:
-			wh.Logger.Errorf(`Error executing getUploadsToProcess: %v`, err)
-			panic(err)
+		if err != nil {
+			if errors.Is(err, context.Canceled) ||
+				errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(err.Error(), "pq: canceling statement due to user request") {
+				break loop
+			} else {
+				wh.Logger.Errorf(`Error executing getUploadsToProcess: %v`, err)
+				panic(err)
+			}
 		}
 
 		for _, uploadJob := range uploadJobsToProcess {
