@@ -814,7 +814,11 @@ func primaryKey(tableName string) string {
 // sortedColumnNames returns the column names in the order of sortedColumnKeys
 func (d *Deltalake) sortedColumnNames(tableSchemaInUpload model.TableSchema, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiff) string {
 	if d.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-		return strings.Join(sortedColumnKeys, ",")
+		return warehouseutils.JoinWithFormatting(sortedColumnKeys, func(_ int, value string) string {
+			columnName := value
+			columnType := dataTypesMap[tableSchemaInUpload[columnName]]
+			return fmt.Sprintf(`%s::%s`, columnName, columnType)
+		}, ",")
 	}
 
 	format := func(index int, value string) string {

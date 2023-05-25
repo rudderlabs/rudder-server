@@ -16,6 +16,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+const (
+	namespace = "rudderstack_setup_test"
+	table     = "setup_test_staging"
+)
+
 var (
 	connectionTestingFolder        string
 	pkgLogger                      logger.Logger
@@ -24,19 +29,17 @@ var (
 )
 
 var (
-	TableSchemaMap = model.TableSchema{
+	tableSchemaMap = model.TableSchema{
 		"id":  "int",
 		"val": "string",
 	}
-	PayloadMap = map[string]interface{}{
+	payloadMap = map[string]interface{}{
 		"id":  1,
 		"val": "RudderStack",
 	}
-	AlterColumnMap = model.TableSchema{
+	alterColumnMap = model.TableSchema{
 		"val_alter": "string",
 	}
-	Namespace = "rudderstack_setup_test"
-	Table     = "setup_test_staging"
 )
 
 type validationFunc struct {
