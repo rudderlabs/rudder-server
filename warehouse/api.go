@@ -826,8 +826,13 @@ func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
 func validateObjectStorage(ctx context.Context, request *ObjectStorageValidationRequest) error {
 	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
 
+	settings, err := getFileManagerSettings(ctx, request.Type, request.Config)
+	if err != nil {
+		return fmt.Errorf("unable to create file manager settings: \n%s", err.Error())
+	}
+
 	factory := &filemanager.FileManagerFactoryT{}
-	fileManager, err := factory.New(getFileManagerSettings(ctx, request.Type, request.Config))
+	fileManager, err := factory.New(settings)
 	if err != nil {
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}
@@ -875,19 +880,21 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	return nil
 }
 
-func getFileManagerSettings(ctx context.Context, provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
+func getFileManagerSettings(ctx context.Context, provider string, inputConfig map[string]interface{}) (*filemanager.SettingsT, error) {
 	settings := &filemanager.SettingsT{
 		Provider: provider,
 		Config:   inputConfig,
 	}
 
-	overrideWithEnv(ctx, settings)
-	return settings
+	if err := overrideWithEnv(ctx, settings); err != nil {
+		return nil, fmt.Errorf("overriding config with env: %w", err)
+	}
+	return settings, nil
 }
 
 // overrideWithEnv overrides the config keys in the fileManager settings
 // with fallback values pulled from env. Only supported for S3 for now.
-func overrideWithEnv(ctx context.Context, settings *filemanager.SettingsT) {
+func overrideWithEnv(ctx context.Context, settings *filemanager.SettingsT) error {
 	envConfig := filemanager.GetProviderConfigFromEnv(ctx, settings.Provider)
 
 	if settings.Provider == "S3" {
@@ -899,6 +906,7 @@ func overrideWithEnv(ctx context.Context, settings *filemanager.SettingsT) {
 		ifNotExistThenSet("externalID", envConfig["externalID"], settings.Config)
 		ifNotExistThenSet("regionHint", envConfig["regionHint"], settings.Config)
 	}
+	return ctx.Err()
 }
 
 func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap map[string]interface{}) {
