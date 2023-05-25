@@ -124,6 +124,8 @@ func TestDownloader(t *testing.T) {
 			minioResource, err = destination.SetupMINIO(pool, t)
 			require.NoError(t, err)
 
+			t.Log("minio:", minioResource.Endpoint)
+
 			conf := map[string]any{
 				"bucketName":       minioResource.BucketName,
 				"accessKeyID":      minioResource.AccessKey,

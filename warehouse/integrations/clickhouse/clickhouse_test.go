@@ -28,14 +28,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
-	"github.com/ory/dockertest/v3"
-	dc "github.com/ory/dockertest/v3/docker"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -50,7 +45,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "testdata/docker-compose.clickhouse-cluster.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
 
 	t.Cleanup(func() {
 		c.Stop(context.Background())
@@ -410,55 +405,39 @@ func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetL
 }
 
 func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
+	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
+
+	t.Cleanup(func() {
+		c.Stop(context.Background())
+	})
+	c.Start(context.Background())
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
+	minioPort := c.Port("minio", 9000)
+	clickhousePort := c.Port("clickhouse", 9000)
 
-	var (
-		minioResource *destination.MINIOResource
-		chResource    *dockertest.Resource
-		databaseName  = "rudderdb"
-		password      = "rudder-password"
-		user          = "rudder"
-		table         = "test_table"
-		workspaceID   = "test_workspace_id"
-		provider      = "MINIO"
+	bucketName := "testbucket"
+	accessKeyID := "MYACCESSKEY"
+	secretAccessKey := "MYSECRETKEY"
+	region := "us-east-1"
+	databaseName := "rudderdb"
+	password := "rudder-password"
+	user := "rudder"
+	table := "test_table"
+	workspaceID := "test_workspace_id"
+	provider := "MINIO"
+
+	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
+
+	dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+		"localhost", clickhousePort, databaseName, password, user,
 	)
 
-	g := errgroup.Group{}
-	g.Go(func() error {
-		chResource = setUpClickhouse(t, pool)
-		return nil
-	})
-	g.Go(func() error {
-		minioResource, err = destination.SetupMINIO(pool, t)
-		require.NoError(t, err)
-
-		return nil
-	})
-	require.NoError(t, g.Wait())
-
-	t.Log("Setting up ClickHouse Minio network")
-	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{
-		Name: "clickhouse-minio-network",
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-			t.Log("could not remove clickhouse minio network:", err)
-		}
-	})
-
-	for _, resourceName := range []string{chResource.Container.Name, minioResource.ResourceName} {
-		err = pool.Client.ConnectNetwork(network.ID, dc.NetworkConnectionOptions{
-			Container:      resourceName,
-			EndpointConfig: &dc.EndpointConfig{},
-		})
-		require.NoError(t, err)
-	}
+	db := connectClickhouseDB(context.Background(), t, dsn)
+	defer func() { _ = db.Close() }()
 
 	testCases := []struct {
 		name                        string
@@ -509,14 +488,14 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 					Config: map[string]any{
 						"bucketProvider":  provider,
 						"host":            "localhost",
-						"port":            chResource.GetPort("9000/tcp"),
+						"port":            strconv.Itoa(clickhousePort),
 						"database":        databaseName,
 						"user":            user,
 						"password":        password,
-						"bucketName":      minioResource.BucketName,
-						"accessKeyID":     minioResource.AccessKey,
-						"secretAccessKey": minioResource.SecretKey,
-						"endPoint":        minioResource.Endpoint,
+						"bucketName":      bucketName,
+						"accessKeyID":     accessKeyID,
+						"secretAccessKey": secretAccessKey,
+						"endPoint":        minioEndpoint,
 					},
 				},
 			}
@@ -540,7 +519,7 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 					"test_int":            "int",
 					"test_string":         "string",
 				},
-				minioPort: minioResource.Port,
+				minioPort: strconv.Itoa(minioPort),
 			}
 
 			t.Log("Preparing load files metadata")
@@ -553,13 +532,13 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			fm, err := fmFactory.New(&filemanager.SettingsT{
 				Provider: provider,
 				Config: map[string]any{
-					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKey,
-					"secretAccessKey": minioResource.SecretKey,
-					"endPoint":        minioResource.Endpoint,
+					"bucketName":      bucketName,
+					"accessKeyID":     accessKeyID,
+					"secretAccessKey": secretAccessKey,
+					"endPoint":        minioEndpoint,
 					"forcePathStyle":  true,
 					"disableSSL":      true,
-					"region":          minioResource.SiteRegion,
+					"region":          region,
 					"enableSSE":       false,
 				},
 			})
@@ -696,24 +675,32 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 }
 
 func TestClickhouse_TestConnection(t *testing.T) {
+	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+
+	t.Cleanup(func() {
+		c.Stop(context.Background())
+	})
+	c.Start(context.Background())
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
+	clickhousePort := c.Port("clickhouse", 9000)
 
-	var (
-		chResource   *dockertest.Resource
-		databaseName = "rudderdb"
-		password     = "rudder-password"
-		user         = "rudder"
-		workspaceID  = "test_workspace_id"
-		namespace    = "test_namespace"
-		provider     = "MINIO"
+	databaseName := "rudderdb"
+	password := "rudder-password"
+	user := "rudder"
+	workspaceID := "test_workspace_id"
+	namespace := "test_namespace"
+	provider := "MINIO"
+
+	dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+		"localhost", clickhousePort, databaseName, password, user,
 	)
 
-	chResource = setUpClickhouse(t, pool)
+	db := connectClickhouseDB(context.Background(), t, dsn)
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -766,7 +753,7 @@ func TestClickhouse_TestConnection(t *testing.T) {
 					Config: map[string]any{
 						"bucketProvider": provider,
 						"host":           host,
-						"port":           chResource.GetPort("9000/tcp"),
+						"port":           strconv.Itoa(clickhousePort),
 						"database":       databaseName,
 						"user":           user,
 						"password":       password,
@@ -775,7 +762,7 @@ func TestClickhouse_TestConnection(t *testing.T) {
 				},
 			}
 
-			err = ch.Setup(ctx, warehouse, &mockUploader{})
+			err := ch.Setup(ctx, warehouse, &mockUploader{})
 			require.NoError(t, err)
 
 			ch.SetConnectionTimeout(tc.timeout)
@@ -783,7 +770,7 @@ func TestClickhouse_TestConnection(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
 			defer cancel()
 
-			err := ch.TestConnection(ctx, warehouse)
+			err = ch.TestConnection(ctx, warehouse)
 			if tc.wantError != nil {
 				require.ErrorContains(t, err, tc.wantError.Error())
 				return
@@ -794,34 +781,42 @@ func TestClickhouse_TestConnection(t *testing.T) {
 }
 
 func TestClickhouse_LoadTestTable(t *testing.T) {
+	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+
+	t.Cleanup(func() {
+		c.Stop(context.Background())
+	})
+	c.Start(context.Background())
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
+	clickhousePort := c.Port("clickhouse", 9000)
 
-	var (
-		chResource   *dockertest.Resource
-		databaseName = "rudderdb"
-		password     = "rudder-password"
-		user         = "rudder"
-		workspaceID  = "test_workspace_id"
-		namespace    = "test_namespace"
-		provider     = "MINIO"
-		host         = "localhost"
-		tableName    = warehouseutils.CTStagingTablePrefix + "_test_table"
-		testColumns  = model.TableSchema{
-			"id":  "int",
-			"val": "string",
-		}
-		testPayload = map[string]any{
-			"id":  1,
-			"val": "RudderStack",
-		}
+	databaseName := "rudderdb"
+	password := "rudder-password"
+	user := "rudder"
+	workspaceID := "test_workspace_id"
+	namespace := "test_namespace"
+	provider := "MINIO"
+	host := "localhost"
+	tableName := warehouseutils.CTStagingTablePrefix + "_test_table"
+	testColumns := model.TableSchema{
+		"id":  "int",
+		"val": "string",
+	}
+	testPayload := map[string]any{
+		"id":  1,
+		"val": "RudderStack",
+	}
+
+	dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+		"localhost", clickhousePort, databaseName, password, user,
 	)
 
-	chResource = setUpClickhouse(t, pool)
+	db := connectClickhouseDB(context.Background(), t, dsn)
+	defer func() { _ = db.Close() }()
 
 	testCases := []struct {
 		name      string
@@ -857,7 +852,7 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 					Config: map[string]any{
 						"bucketProvider": provider,
 						"host":           host,
-						"port":           chResource.GetPort("9000/tcp"),
+						"port":           strconv.Itoa(clickhousePort),
 						"database":       databaseName,
 						"user":           user,
 						"password":       password,
@@ -895,24 +890,32 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 }
 
 func TestClickhouse_FetchSchema(t *testing.T) {
+	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
+
+	t.Cleanup(func() {
+		c.Stop(context.Background())
+	})
+	c.Start(context.Background())
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
+	clickhousePort := c.Port("clickhouse", 9000)
 
-	var (
-		chResource   *dockertest.Resource
-		databaseName = "rudderdb"
-		password     = "rudder-password"
-		user         = "rudder"
-		workspaceID  = "test_workspace_id"
-		namespace    = "test_namespace"
-		table        = "test_table"
+	databaseName := "rudderdb"
+	password := "rudder-password"
+	user := "rudder"
+	workspaceID := "test_workspace_id"
+	namespace := "test_namespace"
+	table := "test_table"
+
+	dsn := fmt.Sprintf("tcp://%s:%d?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
+		"localhost", clickhousePort, databaseName, password, user,
 	)
 
-	chResource = setUpClickhouse(t, pool)
+	db := connectClickhouseDB(context.Background(), t, dsn)
+	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
 
@@ -926,7 +929,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			Destination: backendconfig.DestinationT{
 				Config: map[string]any{
 					"host":     "localhost",
-					"port":     chResource.GetPort("9000/tcp"),
+					"port":     strconv.Itoa(clickhousePort),
 					"database": databaseName,
 					"user":     user,
 					"password": password,
@@ -972,7 +975,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			Destination: backendconfig.DestinationT{
 				Config: map[string]any{
 					"host":     "clickhouse",
-					"port":     chResource.GetPort("9000/tcp"),
+					"port":     strconv.Itoa(clickhousePort),
 					"database": databaseName,
 					"user":     user,
 					"password": password,
@@ -999,7 +1002,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			Destination: backendconfig.DestinationT{
 				Config: map[string]any{
 					"host":     "localhost",
-					"port":     chResource.GetPort("9000/tcp"),
+					"port":     strconv.Itoa(clickhousePort),
 					"database": "invalid_database",
 					"user":     user,
 					"password": password,
@@ -1026,7 +1029,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			Destination: backendconfig.DestinationT{
 				Config: map[string]any{
 					"host":     "localhost",
-					"port":     chResource.GetPort("9000/tcp"),
+					"port":     strconv.Itoa(clickhousePort),
 					"database": databaseName,
 					"user":     user,
 					"password": password,
@@ -1056,7 +1059,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			Destination: backendconfig.DestinationT{
 				Config: map[string]any{
 					"host":     "localhost",
-					"port":     chResource.GetPort("9000/tcp"),
+					"port":     strconv.Itoa(clickhousePort),
 					"database": databaseName,
 					"user":     user,
 					"password": password,
@@ -1087,39 +1090,6 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		})
 	})
-}
-
-func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
-	var (
-		databaseName = "rudderdb"
-		password     = "rudder-password"
-		user         = "rudder"
-	)
-
-	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "yandex/clickhouse-server",
-		Tag:        "21-alpine",
-		Env: []string{
-			fmt.Sprintf("CLICKHOUSE_DB=%s", databaseName),
-			fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", password),
-			fmt.Sprintf("CLICKHOUSE_USER=%s", user),
-		},
-	})
-	require.NoError(t, err)
-
-	dsn := fmt.Sprintf("tcp://%s:%s?compress=false&database=%s&password=%s&secure=false&skip_verify=true&username=%s",
-		"localhost", resource.GetPort("9000/tcp"), databaseName, password, user,
-	)
-
-	db := connectClickhouseDB(context.Background(), t, dsn)
-	defer func() { _ = db.Close() }()
-
-	t.Cleanup(func() {
-		if err := pool.Purge(resource); err != nil {
-			t.Log("Could not purge resource:", err)
-		}
-	})
-	return resource
 }
 
 func connectClickhouseDB(ctx context.Context, t testing.TB, dsn string) *sql.DB {

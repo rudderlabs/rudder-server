@@ -40,6 +40,8 @@ func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *resource.PostgresRes
 	pgResource, err := resource.SetupPostgres(pool, t)
 	Expect(err).To(BeNil())
 
+	t.Log("db:", pgResource.DBDsn)
+
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
 	t.Setenv("WAREHOUSE_JOBS_DB_USER", pgResource.User)
 	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
@@ -124,6 +126,8 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
+
+			t.Log("db:", pgResource.DBDsn)
 
 			err = (&migrator.Migrator{
 				Handle:          pgResource.DB,
@@ -322,6 +326,8 @@ func Test_GetNamespace(t *testing.T) {
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
+
+			t.Log("db:", pgResource.DBDsn)
 
 			err = (&migrator.Migrator{
 				Handle:          pgResource.DB,

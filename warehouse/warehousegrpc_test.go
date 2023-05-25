@@ -56,6 +56,8 @@ var _ = Describe("WarehouseGrpc", func() {
 				minioResource, err = destination.SetupMINIO(pool, cleanup)
 				Expect(err).To(BeNil())
 
+				By(fmt.Sprintf("minio:%s", minioResource.Endpoint))
+
 				initWarehouse()
 
 				err = setupDB(c, getConnectionString())
