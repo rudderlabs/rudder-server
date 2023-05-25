@@ -28,31 +28,31 @@ import (
 )
 
 type Manager interface {
-	Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) error
-	CrashRecover()
-	FetchSchema() (model.Schema, model.Schema, error)
-	CreateSchema() (err error)
-	CreateTable(tableName string, columnMap model.TableSchema) (err error)
-	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
-	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
+	Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error
+	CrashRecover(ctx context.Context)
+	FetchSchema(ctx context.Context) (model.Schema, model.Schema, error)
+	CreateSchema(ctx context.Context) (err error)
+	CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error)
+	AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
+	AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error)
 	LoadTable(ctx context.Context, tableName string) error
 	LoadUserTables(ctx context.Context) map[string]error
-	LoadIdentityMergeRulesTable() error
-	LoadIdentityMappingsTable() error
-	Cleanup()
-	IsEmpty(warehouse model.Warehouse) (bool, error)
+	LoadIdentityMergeRulesTable(ctx context.Context) error
+	LoadIdentityMappingsTable(ctx context.Context) error
+	Cleanup(ctx context.Context)
+	IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error)
 	TestConnection(ctx context.Context, warehouse model.Warehouse) error
-	DownloadIdentityRules(*misc.GZipWriter) error
+	DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZipWriter) error
 	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
-	Connect(warehouse model.Warehouse) (client.Client, error)
-	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
+	Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error)
+	LoadTestTable(ctx context.Context, location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
 	ErrorMappings() []model.JobError
 }
 
 type WarehouseDelete interface {
-	DropTable(tableName string) (err error)
-	DeleteBy(tableName []string, params warehouseutils.DeleteByParams) error
+	DropTable(ctx context.Context, tableName string) (err error)
+	DeleteBy(ctx context.Context, tableName []string, params warehouseutils.DeleteByParams) error
 }
 
 type WarehouseOperations interface {

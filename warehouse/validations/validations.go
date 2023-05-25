@@ -1,6 +1,7 @@
 package validations
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -42,7 +43,7 @@ var (
 )
 
 type validationFunc struct {
-	Func func(*backendconfig.DestinationT, string) (json.RawMessage, error)
+	Func func(context.Context, *backendconfig.DestinationT, string) (json.RawMessage, error)
 }
 
 func Init() {
@@ -53,7 +54,7 @@ func Init() {
 }
 
 // Validate the destination by running all the validation steps
-func Validate(req *model.ValidationRequest) (*model.ValidationResponse, error) {
+func Validate(ctx context.Context, req *model.ValidationRequest) (*model.ValidationResponse, error) {
 	res := &model.ValidationResponse{}
 
 	f, ok := validationFunctions()[req.Path]
@@ -61,7 +62,7 @@ func Validate(req *model.ValidationRequest) (*model.ValidationResponse, error) {
 		return res, fmt.Errorf("invalid path: %s", req.Path)
 	}
 
-	result, requestError := f.Func(req.Destination, req.Step)
+	result, requestError := f.Func(ctx, req.Destination, req.Step)
 	res.Data = string(result)
 
 	if requestError != nil {

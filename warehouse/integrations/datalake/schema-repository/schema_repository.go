@@ -1,11 +1,11 @@
 package schemarepository
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -33,12 +33,12 @@ var (
 )
 
 type SchemaRepository interface {
-	FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error)
-	CreateSchema() (err error)
-	CreateTable(tableName string, columnMap model.TableSchema) (err error)
-	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
-	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
-	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFile) error
+	FetchSchema(ctx context.Context, warehouse model.Warehouse) (model.Schema, model.Schema, error)
+	CreateSchema(ctx context.Context) (err error)
+	CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error)
+	AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
+	AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error)
+	RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error
 }
 
 func UseGlue(w *model.Warehouse) bool {
