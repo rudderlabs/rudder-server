@@ -20,7 +20,7 @@ import (
 )
 
 type Asyncdestinationmanager interface {
-	Upload(destination *backendconfig.DestinationT, asyncDestStruct map[string]*common.AsyncDestinationStruct) common.AsyncUploadOutput
+	Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput
 	Poll(url string, payload []byte, timeout time.Duration) ([]byte, int)
 }
 

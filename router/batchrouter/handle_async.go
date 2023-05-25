@@ -376,7 +376,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					var uploadResponse common.AsyncUploadOutput
-					uploadResponse = brt.asyncdestinationmanager.Upload(brt.destination, brt.asyncDestinationStruct)
+					uploadResponse = brt.asyncdestinationmanager.Upload(brt.destination, brt.asyncDestinationStruct[destinationID])
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
 				}
@@ -484,7 +484,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
 			brt.asyncDestinationStruct[destinationID].URL = gjson.Get(string(job.EventPayload), "endpoint").String()
 		} else {
-			brt.asyncDestinationStruct[destinationID].CanUpload = true
+			// brt.asyncDestinationStruct[destinationID].CanUpload = true
 			brt.logger.Debugf("BRT: Max Event Limit Reached.Stopped writing to File  %s", brt.asyncDestinationStruct[destinationID].FileName)
 			brt.asyncDestinationStruct[destinationID].URL = gjson.Get(string(job.EventPayload), "endpoint").String()
 			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job.JobID)
@@ -492,6 +492,10 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	}
 
 	_, err = file.WriteAt([]byte(jobString), int64(writeAtBytes))
+	// there can be some race condition with asyncUploadWorker
+	if brt.asyncDestinationStruct[destinationID].Count >= brt.maxEventsInABatch {
+		brt.asyncDestinationStruct[destinationID].CanUpload = true
+	}
 	if err != nil {
 		panic(fmt.Errorf("BRT: %s: file write failed : %s", brt.destType, err.Error()))
 	}

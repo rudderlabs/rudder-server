@@ -32,6 +32,10 @@ var (
 	pkgLogger logger.Logger
 )
 
+func init() {
+	pkgLogger = logger.NewLogger().Child("asyncdestinationmanager").Child("marketobulkupload")
+}
+
 func (b *MarketoBulkUploader) Poll(url string, payload []byte, timeout time.Duration) ([]byte, int) {
 	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(url, payload, timeout)
 	// resp := common.AsyncStatusResponse{
@@ -51,7 +55,7 @@ func (b *MarketoBulkUploader) Poll(url string, payload []byte, timeout time.Dura
 	return respBytes, statusCode
 }
 
-func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct map[string]*common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	fmt.Println("**********IN UPLOAD FUNCTION***********")
 	resolveURL := func(base, relative string) string {
 		fmt.Println("**********IN RESOLVE URL***********")
@@ -69,13 +73,13 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	destinationID := destination.ID
-	destinationUploadUrl := asyncDestStruct[destinationID].URL
+	destinationUploadUrl := asyncDestStruct.URL
 	url := resolveURL(transformUrl, destinationUploadUrl)
-	filePath := asyncDestStruct[destinationID].FileName
+	filePath := asyncDestStruct.FileName
 	config := destination.Config
 	destType := destination.DestinationDefinition.Name
-	failedJobIDs := asyncDestStruct[destinationID].FailedJobIDs
-	importingJobIDs := asyncDestStruct[destinationID].ImportingJobIDs
+	failedJobIDs := asyncDestStruct.FailedJobIDs
+	importingJobIDs := asyncDestStruct.ImportingJobIDs
 
 	file, err := os.Open(filePath)
 	if err != nil {
