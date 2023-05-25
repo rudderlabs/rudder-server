@@ -82,6 +82,7 @@ type Handle struct {
 	jobdDBMaxRetries             int
 	minIdleSleep                 time.Duration
 	uploadFreq                   time.Duration
+	forceHonorUploadFrequency    bool
 	readPerDestination           bool
 	disableEgress                bool
 	toAbortDestinationIDs        string
@@ -223,7 +224,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		if batchDest, ok := destinationsMap[destID]; ok {
 			var processJobs bool
 			brt.lastExecTimesMu.Lock()
-			if limitsReached { // if limits are reached, process all jobs regardless of their upload frequency
+			if limitsReached && !brt.forceHonorUploadFrequency { // if limits are reached, process all jobs regardless of their upload frequency
 				processJobs = true
 			} else { // honour upload frequency
 				lastExecTime := brt.lastExecTimes[destID]
