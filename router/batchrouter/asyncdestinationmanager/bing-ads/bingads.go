@@ -6,11 +6,11 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-type BING_ADS struct {
+type BingAdsBulkUploader struct {
 	destName string
 }
 
-func (b *BING_ADS) Upload(importingJobIDs []int64, destinationID string) common.AsyncUploadOutput {
+func (b *BingAdsBulkUploader) Upload(importingJobIDs []int64, destinationID string) common.AsyncUploadOutput {
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     importingJobIDs,
 		FailedJobIDs:        nil,
@@ -22,7 +22,7 @@ func (b *BING_ADS) Upload(importingJobIDs []int64, destinationID string) common.
 	}
 }
 
-func (b *BING_ADS) Poll() ([]byte, int) {
+func (b *BingAdsBulkUploader) Poll() ([]byte, int) {
 	resp := common.AsyncStatusResponse{
 		Success:        true,
 		StatusCode:     200,
@@ -40,7 +40,7 @@ func (b *BING_ADS) Poll() ([]byte, int) {
 	return respBytes, 200
 }
 
-func Manager() *BING_ADS {
-	bingads := &BING_ADS{destName: "BING_ADS"}
+func NewManager() *BingAdsBulkUploader {
+	bingads := &BingAdsBulkUploader{destName: "BING_ADS"}
 	return bingads
 }
