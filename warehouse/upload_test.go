@@ -364,12 +364,13 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 					pgResource, err := resource.SetupPostgres(pool, t)
 					require.NoError(t, err)
-					sqlmiddleware := sqlmiddleware.New(pgResource.DB)
+
+					t.Log("db:", pgResource.DBDsn)
 
 					rs := redshift.New()
 					redshift.WithConfig(rs, config.Default)
 
-					rs.DB = sqlmiddleware
+					rs.DB = sqlmiddleware.New(pgResource.DB)
 					rs.Namespace = testNamespace
 
 					job := &UploadJob{
@@ -432,12 +433,13 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
-			sqlmiddleware := sqlmiddleware.New(pgResource.DB)
+
+			t.Log("db:", pgResource.DBDsn)
 
 			rs := redshift.New()
 			redshift.WithConfig(rs, config.Default)
 
-			rs.DB = sqlmiddleware
+			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace
 
 			job := &UploadJob{

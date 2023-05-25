@@ -75,6 +75,8 @@ func TestArchiver(t *testing.T) {
 				pgResource, err = resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
+				t.Log("db:", pgResource.DBDsn)
+
 				err = (&migrator.Migrator{
 					Handle:          pgResource.DB,
 					MigrationsTable: "wh_schema_migrations",
@@ -92,6 +94,8 @@ func TestArchiver(t *testing.T) {
 			g.Go(func() error {
 				minioResource, err = destination.SetupMINIO(pool, t)
 				require.NoError(t, err)
+
+				t.Log("minio:", minioResource.Endpoint)
 
 				return nil
 			})
