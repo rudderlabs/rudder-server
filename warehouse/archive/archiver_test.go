@@ -3,31 +3,31 @@ package archive_test
 import (
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/compose-test/testcompose"
+
 	"github.com/golang/mock/gomock"
 	"github.com/minio/minio-go"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
-
-	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 )
 
 func TestArchiver(t *testing.T) {
@@ -61,55 +61,66 @@ func TestArchiver(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			var (
-				prefix        = "test-prefix"
-				minioResource *destination.MINIOResource
-				pgResource    *resource.PostgresResource
-			)
+			c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml"}))
 
-			pool, err := dockertest.NewPool("")
-			require.NoError(t, err)
-
-			g := errgroup.Group{}
-			g.Go(func() error {
-				pgResource, err = resource.SetupPostgres(pool, t)
-				require.NoError(t, err)
-
-				t.Log("db:", pgResource.DBDsn)
-
-				err = (&migrator.Migrator{
-					Handle:          pgResource.DB,
-					MigrationsTable: "wh_schema_migrations",
-				}).Migrate("warehouse")
-				require.NoError(t, err)
-
-				sqlStatement, err := os.ReadFile("testdata/dump.sql")
-				require.NoError(t, err)
-
-				_, err = pgResource.DB.Exec(string(sqlStatement))
-				require.NoError(t, err)
-
-				return nil
+			t.Cleanup(func() {
+				c.Stop(context.Background())
 			})
-			g.Go(func() error {
-				minioResource, err = destination.SetupMINIO(pool, t)
-				require.NoError(t, err)
+			c.Start(context.Background())
 
-				t.Log("minio:", minioResource.Endpoint)
+			minioPort := c.Port("minio", 9000)
+			postgresPort := c.Port("postgres", 5432)
 
-				return nil
-			})
-			require.NoError(t, g.Wait())
+			prefix := "test-prefix"
+			host := "localhost"
+			database := "rudderdb"
+			user := "rudder"
+			password := "rudder-password"
+			bucketName := "testbucket"
+			accessKeyID := "MYACCESSKEY"
+			secretAccessKey := "MYSECRETKEY"
+			region := "us-east-1"
+
+			minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
 
 			t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
-			t.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
+			t.Setenv("JOBS_BACKUP_BUCKET", bucketName)
 			t.Setenv("JOBS_BACKUP_PREFIX", prefix)
-			t.Setenv("MINIO_ENDPOINT", minioResource.Endpoint)
-			t.Setenv("MINIO_ACCESS_KEY_ID", minioResource.AccessKey)
-			t.Setenv("MINIO_SECRET_ACCESS_KEY", minioResource.SecretKey)
+			t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
+			t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
+			t.Setenv("MINIO_ENDPOINT", minioEndpoint)
 			t.Setenv("MINIO_SSL", "false")
 			t.Setenv("RUDDER_TMPDIR", t.TempDir())
 			t.Setenv("RSERVER_WAREHOUSE_UPLOADS_ARCHIVAL_TIME_IN_DAYS", "0")
+
+			dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				user,
+				password,
+				host,
+				strconv.Itoa(postgresPort),
+				database,
+			)
+			db, err := sql.Open("postgres", dsn)
+			require.NoError(t, err)
+			require.Eventually(t, func() bool { return db.Ping() == nil }, 5*time.Second, 100*time.Millisecond)
+
+			err = (&migrator.Migrator{
+				Handle:          db,
+				MigrationsTable: "wh_schema_migrations",
+			}).Migrate("warehouse")
+			require.NoError(t, err)
+
+			sqlStatement, err := os.ReadFile("testdata/dump.sql")
+			require.NoError(t, err)
+
+			_, err = db.Exec(string(sqlStatement))
+			require.NoError(t, err)
+
+			minioClient, err := minio.New(minioEndpoint, accessKeyID, secretAccessKey, false)
+			require.NoError(t, err)
+
+			err = minioClient.MakeBucket(bucketName, region)
+			require.NoError(t, err)
 
 			ctrl := gomock.NewController(t)
 			mockStats := mock_stats.NewMockStats(ctrl)
@@ -126,12 +137,12 @@ func TestArchiver(t *testing.T) {
 				tc.status = model.ExportedData
 			}
 
-			_, err = pgResource.DB.Exec(`
+			_, err = db.Exec(`
 				UPDATE wh_uploads SET workspace_id = $1, status = $2
 			`, tc.workspaceID, tc.status)
 			require.NoError(t, err)
 
-			_, err = pgResource.DB.Exec(`
+			_, err = db.Exec(`
 				UPDATE wh_staging_files
 				SET
 					workspace_id = $1,
@@ -143,7 +154,7 @@ func TestArchiver(t *testing.T) {
 			require.NoError(t, err)
 
 			archiver := archive.Archiver{
-				DB:          pgResource.DB,
+				DB:          db,
 				Stats:       mockStats,
 				Logger:      logger.NOP,
 				FileManager: filemanager.DefaultFileManagerFactory,
@@ -163,7 +174,7 @@ func TestArchiver(t *testing.T) {
 				warehouseutils.WarehouseStagingFilesTable,
 			} {
 				var count int
-				err := pgResource.DB.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %q`, table)).Scan(&count)
+				err := db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %q`, table)).Scan(&count)
 
 				require.NoError(t, err)
 				if tc.archived {
@@ -173,7 +184,7 @@ func TestArchiver(t *testing.T) {
 				}
 			}
 
-			contents := minioContents(t, minioResource, prefix)
+			contents := minioContents(t, minioClient, prefix)
 
 			var expectedContents map[string]string
 			jsonTestData(t, "testdata/storage.json", &expectedContents)
@@ -198,14 +209,14 @@ func TestArchiver(t *testing.T) {
 	}
 }
 
-func minioContents(t require.TestingT, dest *destination.MINIOResource, prefix string) map[string]string {
+func minioContents(t require.TestingT, minioClient *minio.Client, prefix string) map[string]string {
 	contents := make(map[string]string)
 
 	doneCh := make(chan struct{})
 	defer close(doneCh)
 
-	for objInfo := range dest.Client.ListObjectsV2(dest.BucketName, prefix, true, nil) {
-		o, err := dest.Client.GetObject(dest.BucketName, objInfo.Key, minio.GetObjectOptions{})
+	for objInfo := range minioClient.ListObjectsV2("testbucket", prefix, true, nil) {
+		o, err := minioClient.GetObject("testbucket", objInfo.Key, minio.GetObjectOptions{})
 		require.NoError(t, err)
 
 		g, err := gzip.NewReader(o)

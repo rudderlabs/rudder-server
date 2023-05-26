@@ -13,8 +13,8 @@ test: install-tools test-run test-teardown
 
 test-run: ## Run all unit tests
 	$(eval TEST_CMD = SLOW=0 go test)
-	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -vet=all --timeout=15m)
-	$(TEST_CMD) -count=10 $(TEST_OPTIONS) ./warehouse/... && touch $(TESTFILE) || true
+	$(eval TEST_OPTIONS = -p=25 -v -failfast -shuffle=on -vet=all --timeout=15m)
+	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./warehouse/... && touch $(TESTFILE) || true
 
 test-warehouse-integration:
 	$(eval TEST_PATTERN = 'TestIntegration')
@@ -77,7 +77,6 @@ lint: fmt ## Run linters on all go files
 .PHONY: fmt
 fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
-	go run .github/tools/matrixchecker/main.go
 
 .PHONY: proto
 proto: install-tools ## Generate protobuf files

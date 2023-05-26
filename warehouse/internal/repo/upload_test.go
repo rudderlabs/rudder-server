@@ -100,8 +100,6 @@ func TestUploads_Count(t *testing.T) {
 	}
 
 	t.Run("query to count with not equal filters works correctly", func(t *testing.T) {
-		t.Parallel()
-
 		count, err := repoUpload.Count(ctx, []repo.FilterBy{
 			{Key: "source_id", Value: "source_id"},
 			{Key: "metadata->>'source_task_run_id'", Value: "task_run_id"},
@@ -114,7 +112,6 @@ func TestUploads_Count(t *testing.T) {
 	})
 
 	t.Run("query to count with equal filters works correctly", func(t *testing.T) {
-		t.Parallel()
 		count, err := repoUpload.Count(ctx, []repo.FilterBy{
 			{Key: "source_id", Value: "source_id_1"},
 			{Key: "metadata->>'source_task_run_id'", Value: "task_run_id_1"},
@@ -344,8 +341,6 @@ func TestUploads_GetToProcess(t *testing.T) {
 	}
 
 	t.Run("none present", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			db         = setupDB(t)
 			repoUpload = repo.NewUploads(db)
@@ -372,8 +367,6 @@ func TestUploads_GetToProcess(t *testing.T) {
 	})
 
 	t.Run("skip identifier", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			db         = setupDB(t)
 			repoUpload = repo.NewUploads(db)
@@ -408,8 +401,6 @@ func TestUploads_GetToProcess(t *testing.T) {
 	})
 
 	t.Run("skip workspaces", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			db         = setupDB(t)
 			repoUpload = repo.NewUploads(db)
@@ -443,8 +434,6 @@ func TestUploads_GetToProcess(t *testing.T) {
 	})
 
 	t.Run("ordering by priority", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			db                = setupDB(t)
 			repoUpload        = repo.NewUploads(db)
@@ -490,8 +479,6 @@ func TestUploads_GetToProcess(t *testing.T) {
 	})
 
 	t.Run("ordering by first event at", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			db                = setupDB(t)
 			repoUpload        = repo.NewUploads(db)
@@ -537,8 +524,6 @@ func TestUploads_GetToProcess(t *testing.T) {
 	})
 
 	t.Run("allow multiple sources for jobs pickup", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			db                = setupDB(t)
 			repoUpload        = repo.NewUploads(db)
@@ -612,8 +597,6 @@ func TestUploads_GetToProcess(t *testing.T) {
 }
 
 func TestUploads_Processing(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
 
 	db := setupDB(t)
@@ -667,7 +650,6 @@ func TestUploads_Processing(t *testing.T) {
 	}
 
 	for i := range uploads {
-
 		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 		require.NoError(t, err)
 
@@ -689,8 +671,6 @@ func TestUploads_Processing(t *testing.T) {
 	}
 
 	t.Run("select destination type", func(t *testing.T) {
-		t.Parallel()
-
 		s, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{})
 		require.NoError(t, err)
 
@@ -704,8 +684,6 @@ func TestUploads_Processing(t *testing.T) {
 	})
 
 	t.Run("skip workspaces", func(t *testing.T) {
-		t.Parallel()
-
 		s, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			SkipWorkspaces: []string{"workspace_id", "workspace_id_2"},
 		})
@@ -720,8 +698,6 @@ func TestUploads_Processing(t *testing.T) {
 	})
 
 	t.Run("multiple sources", func(t *testing.T) {
-		t.Parallel()
-
 		s, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			AllowMultipleSourcesForJobsPickup: true,
 		})
@@ -851,7 +827,6 @@ func TestUploads_Delete(t *testing.T) {
 }
 
 func TestUploads_InterruptedDestinations(t *testing.T) {
-	t.Parallel()
 	db := setupDB(t)
 
 	_, err := db.Exec(`INSERT INTO wh_uploads (destination_id, source_id, in_progress, destination_type, status, namespace, schema, created_at, updated_at)
@@ -875,8 +850,6 @@ func TestUploads_InterruptedDestinations(t *testing.T) {
 }
 
 func TestUploads_PendingTableUploads(t *testing.T) {
-	t.Parallel()
-
 	const (
 		uploadID    = 1
 		namespace   = "namespace"
@@ -955,8 +928,6 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 	}
 
 	t.Run("should return pending table uploads", func(t *testing.T) {
-		t.Parallel()
-
 		repoUpload := repo.NewUploads(db)
 		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, uploadID, destID)
 		require.NoError(t, err)
@@ -984,8 +955,6 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 	})
 
 	t.Run("should return empty pending table uploads", func(t *testing.T) {
-		t.Parallel()
-
 		repoUpload := repo.NewUploads(db)
 		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, int64(-1), destID)
 		require.NoError(t, err)
@@ -993,8 +962,6 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 	})
 
 	t.Run("cancelled context", func(t *testing.T) {
-		t.Parallel()
-
 		repoUpload := repo.NewUploads(db)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()

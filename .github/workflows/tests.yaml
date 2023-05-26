@@ -28,4 +28,33 @@ jobs:
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
           TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
+      - name: Test 1
+        run: make test
+      - name: Test 2
+        run: make test
+      - name: Test 3
+        run: make test
+      - name: Test 4
+        run: make test
+      - name: Test 5
+        run: make test
+      - name: Test 6
+        run: make test
+      - name: Test 7
+        run: make test
+      - name: Test 8
+        run: make test
+      - name: Test 9
+        run: make test
+      - name: Test 10
+        run: make test
+      - name: Test 11
+        run: make test
+      - name: Test 12
+        run: make test
+      - name: Test 13
+        run: make test
+      - name: Test 14
+        run: make test
+      - name: Test 15
         run: make test

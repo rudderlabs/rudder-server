@@ -20,8 +20,6 @@ import (
 )
 
 func TestQueryWrapper(t *testing.T) {
-	t.Parallel()
-
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -57,8 +55,6 @@ func TestQueryWrapper(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
@@ -108,8 +104,6 @@ func TestQueryWrapper(t *testing.T) {
 		})
 
 		t.Run(tc.name+" with secrets", func(t *testing.T) {
-			t.Parallel()
-
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
@@ -219,8 +213,6 @@ func TestQueryWrapper(t *testing.T) {
 		})
 
 		t.Run(tc.name+" with transaction", func(t *testing.T) {
-			t.Parallel()
-
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 

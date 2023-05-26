@@ -56,8 +56,6 @@ func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetL
 }
 
 func TestDownloader(t *testing.T) {
-	t.Parallel()
-
 	misc.Init()
 
 	pool, err := dockertest.NewPool("")
@@ -118,8 +116,6 @@ func TestDownloader(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			minioResource, err := destination.SetupMINIO(pool, t)
 			require.NoError(t, err)
 
