@@ -64,7 +64,6 @@ func TestDownloader(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		minioResource *destination.MINIOResource
 		destType      = "POSTGRES"
 		provider      = "MINIO"
 		workers       = 12
@@ -121,7 +120,7 @@ func TestDownloader(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			minioResource, err = destination.SetupMINIO(pool, t)
+			minioResource, err := destination.SetupMINIO(pool, t)
 			require.NoError(t, err)
 
 			t.Log("minio:", minioResource.Endpoint)
