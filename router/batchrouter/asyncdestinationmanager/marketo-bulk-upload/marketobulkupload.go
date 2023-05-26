@@ -14,7 +14,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
@@ -36,23 +38,24 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("asyncdestinationmanager").Child("marketobulkupload")
 }
 
-func (b *MarketoBulkUploader) Poll(url string, payload []byte, timeout time.Duration) ([]byte, int) {
-	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(url, payload, timeout)
-	// resp := common.AsyncStatusResponse{
-	// 	Success:        true,
-	// 	StatusCode:     200,
-	// 	HasFailed:      false,
-	// 	HasWarning:     false,
-	// 	FailedJobsURL:  "",
-	// 	WarningJobsURL: "",
-	// }
+func (b *MarketoBulkUploader) Poll(importingJob *jobsdb.JobT, payload []byte, timeout time.Duration) ([]byte, int) {
+	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	parameters := importingJob.LastJobStatus.Parameters
+	pollUrl := gjson.GetBytes(parameters, "pollURL").String()
+	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+pollUrl, payload, timeout)
+	return bodyBytes, statusCode
+}
 
-	respBytes, err := stdjson.Marshal(bodyBytes)
-	if err != nil {
-		panic(err)
-	}
-
-	return respBytes, statusCode
+func (b *MarketoBulkUploader) FetchFailedEvents(destination *backendconfig.DestinationT, destStruct *utils.DestinationWithSources, importingList []*jobsdb.JobT, importingJob *jobsdb.JobT, asyncResponse common.AsyncStatusResponse, timeout time.Duration) ([]byte, int) {
+	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	failedJobUrl := asyncResponse.FailedJobsURL
+	parameters := importingJob.LastJobStatus.Parameters
+	importId := gjson.GetBytes(parameters, "importId").String()
+	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
+	destType := destination.DestinationDefinition.Name
+	payload := common.GenerateFailedPayload(destStruct.Destination.Config, importingList, importId, destType, csvHeaders)
+	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, common.HTTPTimeout)
+	return failedBodyBytes, statusCode
 }
 
 func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {

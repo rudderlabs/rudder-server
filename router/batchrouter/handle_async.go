@@ -35,6 +35,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 			for key := range destinationsMap {
 				if slices.Contains(asyncDestinations, brt.destType) {
 					brt.logger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
+					// below line parameterFilters eg: [{Name: "destination_id", Value: "2PriULYidWaynFpp6jeAF3ugZUc"}]
 					parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: key}}
 					job, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 						return brt.jobsDB.GetImporting(
@@ -55,9 +56,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
 						parameters := importingJob.LastJobStatus.Parameters
-						pollUrl := gjson.GetBytes(parameters, "pollURL").String()
 						importId := gjson.GetBytes(parameters, "importId").String()
-						csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 						var pollStruct common.AsyncPoll
 						pollStruct.ImportId = importId
 						pollStruct.Config = destinationsMap[key].Destination.Config
@@ -71,7 +70,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 						var bodyBytes []byte
 						var statusCode int
-						bodyBytes, statusCode = brt.asyncdestinationmanager.Poll(brt.transformerURL+pollUrl, payload, common.HTTPTimeout)
+						bodyBytes, statusCode = brt.asyncdestinationmanager.Poll(importingJob, payload, common.HTTPTimeout)
 						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 						brt.asyncPollTimeStat.Since(startPollTime)
 
@@ -125,11 +124,9 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 									}
 									brt.asyncSuccessfulJobCount.Count(len(statusList))
 								} else {
-									failedJobUrl := asyncResponse.FailedJobsURL
-									payload = asyncdestinationmanager.GenerateFailedPayload(destinationsMap[key].Destination.Config, importingList, importId, brt.destType, csvHeaders)
 									startFailedJobsPollTime := time.Now()
 									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
-									failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(brt.transformerURL+failedJobUrl, payload, asyncdestinationmanager.HTTPTimeout)
+									failedBodyBytes, statusCode := brt.asyncdestinationmanager.FetchFailedEvents(brt.destination, destinationsMap[key], importingList, importingJob, asyncResponse, asyncdestinationmanager.HTTPTimeout)
 									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs for Dest Type %v", brt.destType)
 									brt.asyncFailedJobsTimeStat.Since(startFailedJobsPollTime)
 
@@ -336,19 +333,6 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 }
 
 func (brt *Handle) asyncUploadWorker(ctx context.Context) {
-	// resolveURL := func(base, relative string) string {
-	// 	baseURL, err := url.Parse(base)
-	// 	if err != nil {
-	// 		brt.logger.Fatal(err)
-	// 	}
-	// 	relURL, err := url.Parse(relative)
-	// 	if err != nil {
-	// 		brt.logger.Fatal(err)
-	// 	}
-	// 	destURL := baseURL.ResolveReference(relURL).String()
-	// 	return destURL
-	// }
-
 	if !slices.Contains(asyncDestinations, brt.destType) {
 		return
 	}
@@ -475,7 +459,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 	brt.asyncDestinationStruct[destinationID].RsourcesStats.BeginProcessing(batchJobs.Jobs)
 	for _, job := range batchJobs.Jobs {
-		transformedData := asyncdestinationmanager.GetTransformedData(job.EventPayload)
+		transformedData := common.GetTransformedData(job.EventPayload)
 		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch {
 			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))

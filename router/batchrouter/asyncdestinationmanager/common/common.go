@@ -1,7 +1,9 @@
 package common
 
 import (
+	"encoding/json"
 	stdjson "encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -40,6 +43,7 @@ type AsyncUploadOutput struct {
 	DestinationID       string
 }
 
+// specific to marketo, need to know if bingAds also will have same fields
 type AsyncPoll struct {
 	Config   map[string]interface{} `json:"config"`
 	ImportId string                 `json:"importId"`
@@ -100,6 +104,14 @@ type AsyncDestinationStruct struct {
 	RsourcesStats   rsources.StatsCollector
 }
 
+type AsyncFailedPayload struct {
+	Config   map[string]interface{}   `json:"config"`
+	Input    []map[string]interface{} `json:"input"`
+	DestType string                   `json:"destType"`
+	ImportId string                   `json:"importId"`
+	MetaData MetaDataT                `json:"metadata"`
+}
+
 var (
 	HTTPTimeout time.Duration
 )
@@ -126,4 +138,36 @@ func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int6
 		}
 	}
 	return succesfulJobIDs, failedJobIDsTrans
+}
+
+func GetTransformedData(payload stdjson.RawMessage) string {
+	return gjson.Get(string(payload), "body.JSON").String()
+}
+
+func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
+	var failedPayloadT AsyncFailedPayload
+	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
+	index := 0
+	failedPayloadT.Config = config
+	for _, job := range jobs {
+		failedPayloadT.Input[index] = make(map[string]interface{})
+		var message map[string]interface{}
+		metadata := make(map[string]interface{})
+		err := json.Unmarshal([]byte(GetTransformedData(job.EventPayload)), &message)
+		if err != nil {
+			panic("Unmarshalling Transformer Data to JSON Failed")
+		}
+		metadata["job_id"] = job.JobID
+		failedPayloadT.Input[index]["message"] = message
+		failedPayloadT.Input[index]["metadata"] = metadata
+		index++
+	}
+	failedPayloadT.DestType = strings.ToLower(destType)
+	failedPayloadT.ImportId = importID
+	failedPayloadT.MetaData = MetaDataT{CSVHeaders: csvHeaders}
+	payload, err := json.Marshal(failedPayloadT)
+	if err != nil {
+		panic("JSON Marshal Failed" + err.Error())
+	}
+	return payload
 }

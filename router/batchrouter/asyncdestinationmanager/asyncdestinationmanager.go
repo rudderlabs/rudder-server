@@ -3,7 +3,6 @@ package asyncdestinationmanager
 import (
 	stdjson "encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	time "time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
+	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
@@ -21,7 +21,8 @@ import (
 
 type Asyncdestinationmanager interface {
 	Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput
-	Poll(url string, payload []byte, timeout time.Duration) ([]byte, int)
+	Poll(importingJob *jobsdb.JobT, payload []byte, timeout time.Duration) ([]byte, int)
+	FetchFailedEvents(*backendconfig.DestinationT, *utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse, time.Duration) ([]byte, int)
 }
 
 type AsyncDestinationStruct struct {
@@ -47,14 +48,6 @@ type AsyncUploadT struct {
 type AsyncJob struct {
 	Message  map[string]interface{} `json:"message"`
 	Metadata map[string]interface{} `json:"metadata"`
-}
-
-type AsyncFailedPayload struct {
-	Config   map[string]interface{}   `json:"config"`
-	Input    []map[string]interface{} `json:"input"`
-	DestType string                   `json:"destType"`
-	ImportId string                   `json:"importId"`
-	MetaData MetaDataT                `json:"metadata"`
 }
 
 type MetaDataT struct {
@@ -130,34 +123,6 @@ func GetMarshalledData(payload string, jobID int64) string {
 		panic("Marshalling Response Payload Failed")
 	}
 	return string(responsePayload)
-}
-
-func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
-	var failedPayloadT AsyncFailedPayload
-	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
-	index := 0
-	failedPayloadT.Config = config
-	for _, job := range jobs {
-		failedPayloadT.Input[index] = make(map[string]interface{})
-		var message map[string]interface{}
-		metadata := make(map[string]interface{})
-		err := json.Unmarshal([]byte(GetTransformedData(job.EventPayload)), &message)
-		if err != nil {
-			panic("Unmarshalling Transformer Data to JSON Failed")
-		}
-		metadata["job_id"] = job.JobID
-		failedPayloadT.Input[index]["message"] = message
-		failedPayloadT.Input[index]["metadata"] = metadata
-		index++
-	}
-	failedPayloadT.DestType = strings.ToLower(destType)
-	failedPayloadT.ImportId = importID
-	failedPayloadT.MetaData = MetaDataT{CSVHeaders: csvHeaders}
-	payload, err := json.Marshal(failedPayloadT)
-	if err != nil {
-		panic("JSON Marshal Failed" + err.Error())
-	}
-	return payload
 }
 
 func NewManager(destination *backendconfig.DestinationT) Asyncdestinationmanager {
