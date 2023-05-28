@@ -17,7 +17,7 @@ type Handler struct {
 	log                      logger.Logger
 	bucket                   string
 	db                       *jobsdb.HandleT
-	toDB                     *jobsdb.HandleT
+	toDB                     *DBHandle
 	noOfWorkers              int
 	workers                  []*SourceWorkerT
 	dumpsLoader              *dumpsLoaderHandleT
@@ -154,7 +154,7 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 	handle.initSourceWorkersChannel <- true
 }
 
-func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandleT, db, toDB *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
+func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandleT, db *jobsdb.HandleT, toDB *DBHandle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
 	handle.log = log
 	handle.db = db
 	handle.toDB = toDB

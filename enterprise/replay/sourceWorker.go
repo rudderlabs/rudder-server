@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,11 +13,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/tidwall/gjson"
@@ -110,106 +106,48 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	defer func() { _ = rawf.Close() }()
 
-	var jobs []*jobsdb.JobT
-
-	var transEvents []transformer.TransformerEventT
-	transformationVersionID := config.GetString("TRANSFORMATION_VERSION_ID", "")
+	var jobs []*MessageJob
 
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		copyLineBytes := make([]byte, len(lineBytes))
 		copy(copyLineBytes, lineBytes)
 
-		if transformationVersionID == "" {
-			timeStamp := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String()
-			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(timeStamp))
-			if err != nil {
-				worker.log.Errorf("failed to parse created at: %s", err)
-				continue
-			}
-			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
-				continue
-			}
-			job := jobsdb.JobT{
-				UUID:         uuid.New(),
-				UserID:       gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(userID)).String(),
-				Parameters:   []byte(gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(parameters)).String()),
-				CustomVal:    gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(customVal)).String(),
-				EventPayload: []byte(gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(eventPayload)).String()),
-				WorkspaceId:  gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(workspaceID)).String(),
-			}
-			jobs = append(jobs, &job)
+		timeStamp := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String()
+		createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(timeStamp))
+		if err != nil {
+			worker.log.Errorf("failed to parse created at: %s", err)
 			continue
 		}
-
-		message, ok := gjson.ParseBytes(copyLineBytes).Value().(map[string]interface{})
-		if !ok {
-			worker.log.Errorf("EventPayload not a json: %v", copyLineBytes)
+		if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
 			continue
 		}
-
-		messageID := uuid.New().String()
-
-		metadata := transformer.MetadataT{
-			MessageID:     messageID,
-			DestinationID: gjson.GetBytes(copyLineBytes, "parameters.destination_id").String(),
-		}
-
-		transformation := backendconfig.TransformationT{VersionID: config.GetString("TRANSFORMATION_VERSION_ID", "")}
-
-		transEvent := transformer.TransformerEventT{
-			Message:     message,
-			Metadata:    metadata,
-			Destination: backendconfig.DestinationT{Transformations: []backendconfig.TransformationT{transformation}},
-		}
-
-		transEvents = append(transEvents, transEvent)
-	}
-
-	if transformationVersionID != "" {
-		response := worker.transformer.Transform(context.TODO(), transEvents, integrations.GetUserTransformURL(), userTransformBatchSize)
-
-		for _, ev := range response.Events {
-			destEventJSON, err := json.Marshal(ev.Output[worker.getFieldIdentifier(eventPayload)])
+		eventPayload := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(eventPayload)).String()
+		eventsBatch := gjson.GetBytes([]byte(eventPayload), "batch").Array()
+		for _, event := range eventsBatch {
+			sdkVersion := gjson.GetBytes([]byte(event.Raw), "context.library.version").String()
+			userAgent := gjson.GetBytes([]byte(event.Raw), "context.userAgent").String()
+			anonymousID := gjson.GetBytes([]byte(event.Raw), "anonymousId").String()
+			userID := gjson.GetBytes([]byte(event.Raw), "userId").String()
+			messageID := gjson.GetBytes([]byte(event.Raw), "messageId").String()
+			sentAt := gjson.GetBytes([]byte(event.Raw), "originalTimestamp").String()
+			sentAtFormatted, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(sentAt))
 			if err != nil {
-				worker.log.Errorf("Error unmarshalling transformer output: %v", err)
+				worker.log.Errorf("failed to parse sent at: %s", err)
 				continue
 			}
-			createdAtString, ok := ev.Output[worker.getFieldIdentifier(createdAt)].(string)
-			if !ok {
-				worker.log.Errorf("Error getting created at from transformer output: %v", err)
-				continue
-			}
-			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(createdAtString))
-			if err != nil {
-				worker.log.Errorf("failed to parse created at: %s", err)
-				continue
-			}
-			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
-				continue
-			}
-			params, err := json.Marshal(ev.Output[worker.getFieldIdentifier(parameters)])
-			if err != nil {
-				worker.log.Errorf("Error unmarshalling transformer output: %v", err)
-				continue
-			}
-			job := jobsdb.JobT{
-				UUID:         uuid.New(),
-				UserID:       ev.Output[worker.getFieldIdentifier(userID)].(string),
-				Parameters:   params,
-				CustomVal:    ev.Output[worker.getFieldIdentifier(customVal)].(string),
-				EventPayload: destEventJSON,
-				WorkspaceId:  ev.Output[worker.getFieldIdentifier(workspaceID)].(string),
+			job := MessageJob{
+				UserAgent:   userAgent,
+				AnonymousID: anonymousID,
+				UserID:      userID,
+				SDKVersion:  sdkVersion,
+				MessageID:   messageID,
+				CreatedAt:   sentAtFormatted,
 			}
 			jobs = append(jobs, &job)
 		}
 
-		for _, failedEv := range response.FailedEvents {
-			worker.log.Errorf(`Event failed in transformer with err: %v`, failedEv.Error)
-		}
-
 	}
-	worker.log.Infof("brt-debug: TO_DB=%s", worker.replayHandler.toDB.Identifier())
 
 	err = worker.replayHandler.toDB.Store(ctx, jobs)
 	if err != nil {
