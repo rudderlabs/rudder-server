@@ -78,14 +78,13 @@ func NewLimiter(ctx context.Context, wg *sync.WaitGroup, name string, limit int,
 	l.stats.triggerFunc = func() <-chan time.Time {
 		return time.After(15 * time.Second)
 	}
+	for _, opt := range opts {
+		opt(l)
+	}
 	l.stats.stat = statsf
 	l.stats.waitGauge = statsf.NewTaggedStat(name+"_limiter_waiting_routines", stats.GaugeType, l.tags)
 	l.stats.activeGauge = statsf.NewTaggedStat(name+"_limiter_active_routines", stats.GaugeType, l.tags)
 	l.stats.availabilityGauge = statsf.NewTaggedStat(name+"_limiter_availability", stats.GaugeType, l.tags)
-
-	for _, opt := range opts {
-		opt(l)
-	}
 	wg.Add(1)
 	rruntime.Go(func() {
 		defer wg.Done()

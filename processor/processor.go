@@ -419,9 +419,10 @@ func (proc *Handle) Setup(
 	proc.backgroundCancel = cancel
 
 	proc.config.asyncInit = misc.NewAsyncInit(2)
-	rruntime.Go(func() {
+	g.Go(misc.WithBugsnag(func() error {
 		proc.backendConfigSubscriber(ctx)
-	})
+		return nil
+	}))
 
 	g.Go(misc.WithBugsnag(func() error {
 		proc.syncTransformerFeatureJson(ctx)

@@ -1,6 +1,7 @@
 package validations_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -58,6 +59,8 @@ func setup(t *testing.T, pool *dockertest.Pool) testResource {
 }
 
 func TestValidator(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
@@ -70,19 +73,19 @@ func TestValidator(t *testing.T) {
 		sslmode   = "disable"
 	)
 
+	ctx := context.Background()
+
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
 	t.Run("Object Storage", func(t *testing.T) {
 		t.Parallel()
 
-		tr := setup(t, pool)
-		pgResource, minioResource := tr.pgResource, tr.minioResource
-
 		t.Run("Non Datalakes", func(t *testing.T) {
-			t.Parallel()
+			tr := setup(t, pool)
+			pgResource, minioResource := tr.pgResource, tr.minioResource
 
-			v, err := validations.NewValidator(model.VerifyingObjectStorage, &backendconfig.DestinationT{
+			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.POSTGRES,
 				},
@@ -100,13 +103,11 @@ func TestValidator(t *testing.T) {
 				},
 			})
 			require.NoError(t, err)
-			require.NoError(t, v.Validate())
+			require.NoError(t, v.Validate(ctx))
 		})
 
 		t.Run("Datalakes", func(t *testing.T) {
-			t.Parallel()
-
-			minioResource, err = destination.SetupMINIO(pool, t)
+			minioResource, err := destination.SetupMINIO(pool, t)
 			require.NoError(t, err)
 
 			t.Log("minio:", minioResource.Endpoint)
@@ -118,7 +119,7 @@ func TestValidator(t *testing.T) {
 
 			_ = minioResource.Client.MakeBucket(bucket, "us-east-1")
 
-			v, err := validations.NewValidator(model.VerifyingObjectStorage, &backendconfig.DestinationT{
+			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.S3_DATALAKE,
 				},
@@ -136,15 +137,12 @@ func TestValidator(t *testing.T) {
 				},
 			})
 			require.NoError(t, err)
-			require.NoError(t, v.Validate())
+			require.NoError(t, v.Validate(ctx))
 		})
 	})
 
 	t.Run("Connections", func(t *testing.T) {
 		t.Parallel()
-
-		tr := setup(t, pool)
-		pgResource, minioResource := tr.pgResource, tr.minioResource
 
 		testCases := []struct {
 			name      string
@@ -167,7 +165,8 @@ func TestValidator(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
+				tr := setup(t, pool)
+				pgResource, minioResource := tr.pgResource, tr.minioResource
 
 				conf := map[string]interface{}{
 					"host":            pgResource.Host,
@@ -187,7 +186,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(model.VerifyingConnections, &backendconfig.DestinationT{
+				v, err := validations.NewValidator(ctx, model.VerifyingConnections, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -196,9 +195,9 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(), tc.wantError.Error())
+					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
-					require.NoError(t, v.Validate())
+					require.NoError(t, v.Validate(ctx))
 				}
 			})
 		}
@@ -206,9 +205,6 @@ func TestValidator(t *testing.T) {
 
 	t.Run("Create Schema", func(t *testing.T) {
 		t.Parallel()
-
-		tr := setup(t, pool)
-		pgResource, minioResource := tr.pgResource, tr.minioResource
 
 		var (
 			password            = "test_password"
@@ -234,17 +230,18 @@ func TestValidator(t *testing.T) {
 			},
 		}
 
-		t.Log("Creating users with no privileges")
-		for _, user := range []string{userWithNoPrivilege} {
-			_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
-			require.NoError(t, err)
-		}
-
 		for _, tc := range testCases {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
+				tr := setup(t, pool)
+				pgResource, minioResource := tr.pgResource, tr.minioResource
+
+				t.Log("Creating users with no privileges")
+				for _, user := range []string{userWithNoPrivilege} {
+					_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
+					require.NoError(t, err)
+				}
 
 				conf := map[string]interface{}{
 					"host":            pgResource.Host,
@@ -265,7 +262,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(model.VerifyingCreateSchema, &backendconfig.DestinationT{
+				v, err := validations.NewValidator(ctx, model.VerifyingCreateSchema, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -274,9 +271,9 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(), tc.wantError.Error())
+					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
-					require.NoError(t, v.Validate())
+					require.NoError(t, v.Validate(ctx))
 				}
 			})
 		}
@@ -285,36 +282,12 @@ func TestValidator(t *testing.T) {
 	t.Run("Create And Alter Table", func(t *testing.T) {
 		t.Parallel()
 
-		tr := setup(t, pool)
-		pgResource, minioResource := tr.pgResource, tr.minioResource
-
 		var (
 			password                     = "test_password"
 			userWithNoPrivilege          = "test_user_with_no_privilege"
 			userWithCreateTablePrivilege = "test_user_with_create_table_privilege"
 			userWithAlterPrivilege       = "test_user_with_alter_privilege"
 		)
-
-		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
-		require.NoError(t, err)
-
-		t.Log("Creating users with no privileges")
-		for _, user := range []string{userWithNoPrivilege, userWithCreateTablePrivilege, userWithAlterPrivilege} {
-			_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
-			require.NoError(t, err)
-		}
-
-		t.Log("Granting create table privilege to users")
-		for _, user := range []string{userWithCreateTablePrivilege, userWithAlterPrivilege} {
-			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
-			require.NoError(t, err)
-		}
-
-		t.Log("Granting insert privilege to users")
-		for _, user := range []string{userWithAlterPrivilege} {
-			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
-			require.NoError(t, err)
-		}
 
 		testCases := []struct {
 			name      string
@@ -353,6 +326,30 @@ func TestValidator(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
+				tr := setup(t, pool)
+				pgResource, minioResource := tr.pgResource, tr.minioResource
+
+				_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
+				require.NoError(t, err)
+
+				t.Log("Creating users with no privileges")
+				for _, user := range []string{userWithNoPrivilege, userWithCreateTablePrivilege, userWithAlterPrivilege} {
+					_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
+					require.NoError(t, err)
+				}
+
+				t.Log("Granting create table privilege to users")
+				for _, user := range []string{userWithCreateTablePrivilege, userWithAlterPrivilege} {
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
+					require.NoError(t, err)
+				}
+
+				t.Log("Granting insert privilege to users")
+				for _, user := range []string{userWithAlterPrivilege} {
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
+					require.NoError(t, err)
+				}
+
 				conf := map[string]interface{}{
 					"host":            pgResource.Host,
 					"port":            pgResource.Port,
@@ -372,7 +369,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
+				v, err := validations.NewValidator(ctx, model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -381,9 +378,9 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(), tc.wantError.Error())
+					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
-					require.NoError(t, v.Validate())
+					require.NoError(t, v.Validate(ctx))
 				}
 
 				_, err = pgResource.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
@@ -393,12 +390,10 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Fetch schema", func(t *testing.T) {
-		t.Parallel()
-
 		tr := setup(t, pool)
 		pgResource, minioResource := tr.pgResource, tr.minioResource
 
-		v, err := validations.NewValidator(model.VerifyingFetchSchema, &backendconfig.DestinationT{
+		v, err := validations.NewValidator(ctx, model.VerifyingFetchSchema, &backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				Name: warehouseutils.POSTGRES,
 			},
@@ -425,14 +420,11 @@ func TestValidator(t *testing.T) {
 		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s(id int, val varchar)", namespace, table))
 		require.NoError(t, err)
 
-		require.NoError(t, v.Validate())
+		require.NoError(t, v.Validate(ctx))
 	})
 
 	t.Run("Load table", func(t *testing.T) {
 		t.Parallel()
-
-		tr := setup(t, pool)
-		pgResource, minioResource := tr.pgResource, tr.minioResource
 
 		var (
 			password                     = "test_password"
@@ -440,30 +432,6 @@ func TestValidator(t *testing.T) {
 			userWithCreateTablePrivilege = "test_user_with_create_table_privilege"
 			userWithInsertPrivilege      = "test_user_with_insert_privilege"
 		)
-
-		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
-		require.NoError(t, err)
-
-		t.Log("Creating users with no privileges")
-		for _, user := range []string{userWithNoPrivilege, userWithCreateTablePrivilege, userWithInsertPrivilege} {
-			_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
-			require.NoError(t, err)
-		}
-
-		t.Log("Granting create table privilege to users")
-		for _, user := range []string{userWithCreateTablePrivilege, userWithInsertPrivilege} {
-			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
-			require.NoError(t, err)
-		}
-
-		t.Log("Granting insert privilege to users")
-		for _, user := range []string{userWithInsertPrivilege} {
-			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
-			require.NoError(t, err)
-
-			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT INSERT ON ALL TABLES IN SCHEMA %s TO %s;", namespace, user))
-			require.NoError(t, err)
-		}
 
 		testCases := []struct {
 			name      string
@@ -511,6 +479,33 @@ func TestValidator(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
+				tr := setup(t, pool)
+				pgResource, minioResource := tr.pgResource, tr.minioResource
+
+				_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
+				require.NoError(t, err)
+
+				t.Log("Creating users with no privileges")
+				for _, user := range []string{userWithNoPrivilege, userWithCreateTablePrivilege, userWithInsertPrivilege} {
+					_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
+					require.NoError(t, err)
+				}
+
+				t.Log("Granting create table privilege to users")
+				for _, user := range []string{userWithCreateTablePrivilege, userWithInsertPrivilege} {
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
+					require.NoError(t, err)
+				}
+
+				t.Log("Granting insert privilege to users")
+				for _, user := range []string{userWithInsertPrivilege} {
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
+					require.NoError(t, err)
+
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT INSERT ON ALL TABLES IN SCHEMA %s TO %s;", namespace, user))
+					require.NoError(t, err)
+				}
+
 				conf := map[string]interface{}{
 					"host":            pgResource.Host,
 					"port":            pgResource.Port,
@@ -530,7 +525,7 @@ func TestValidator(t *testing.T) {
 					conf[k] = v
 				}
 
-				v, err := validations.NewValidator(model.VerifyingLoadTable, &backendconfig.DestinationT{
+				v, err := validations.NewValidator(ctx, model.VerifyingLoadTable, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
@@ -539,9 +534,9 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(), tc.wantError.Error())
+					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
-					require.NoError(t, v.Validate())
+					require.NoError(t, v.Validate(ctx))
 				}
 
 				_, err = pgResource.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))

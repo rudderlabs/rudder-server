@@ -23,7 +23,9 @@ func TestQueryWrapper(t *testing.T) {
 	bqTestCredentials, err := bqHelper.GetBQTestCredentials()
 	require.NoError(t, err)
 
-	db, err := bigquery.Connect(context.TODO(), &bigquery.BQCredentials{
+	ctx := context.Background()
+
+	db, err := bigquery.Connect(ctx, &bigquery.BQCredentials{
 		ProjectID:   bqTestCredentials.ProjectID,
 		Credentials: bqTestCredentials.Credentials,
 	})
@@ -47,7 +49,6 @@ func TestQueryWrapper(t *testing.T) {
 	}
 
 	var (
-		ctx            = context.Background()
 		queryThreshold = 300 * time.Second
 		keysAndValues  = []any{"key1", "value2", "key2", "value2"}
 	)

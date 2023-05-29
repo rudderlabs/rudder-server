@@ -72,8 +72,8 @@ func (proc *LifecycleManager) Start() error {
 // Stop stops the processor, this is a blocking call.
 func (proc *LifecycleManager) Stop() {
 	proc.currentCancel()
-	proc.Handle.Shutdown()
 	proc.waitGroup.Wait()
+	proc.Handle.Shutdown()
 }
 
 func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {

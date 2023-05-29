@@ -46,6 +46,8 @@ var _ = Describe("WarehouseGrpc", func() {
 			)
 
 			BeforeAll(func() {
+				c = context.Background()
+
 				pool, err := dockertest.NewPool("")
 				Expect(err).To(BeNil())
 
@@ -58,7 +60,7 @@ var _ = Describe("WarehouseGrpc", func() {
 
 				initWarehouse()
 
-				err = setupDB(context.TODO(), getConnectionString())
+				err = setupDB(c, getConnectionString())
 				Expect(err).To(BeNil())
 
 				sqlStatement, err := os.ReadFile("testdata/sql/grpc_test.sql")
@@ -83,7 +85,6 @@ var _ = Describe("WarehouseGrpc", func() {
 				}
 
 				w = &warehouseGRPC{}
-				c = context.TODO()
 			})
 
 			AfterAll(func() {
@@ -549,6 +550,8 @@ var _ = Describe("WarehouseGrpc", func() {
 			)
 
 			BeforeAll(func() {
+				c = context.Background()
+
 				pool, err := dockertest.NewPool("")
 				Expect(err).To(BeNil())
 
@@ -559,7 +562,7 @@ var _ = Describe("WarehouseGrpc", func() {
 
 				initWarehouse()
 
-				err = setupDB(context.TODO(), getConnectionString())
+				err = setupDB(c, getConnectionString())
 				Expect(err).To(BeNil())
 
 				sqlStatement, err := os.ReadFile("testdata/sql/grpc_test.sql")
@@ -581,7 +584,6 @@ var _ = Describe("WarehouseGrpc", func() {
 				}
 
 				w = &warehouseGRPC{}
-				c = context.TODO()
 			})
 
 			AfterAll(func() {

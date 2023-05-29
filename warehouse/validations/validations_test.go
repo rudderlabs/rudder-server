@@ -1,6 +1,7 @@
 package validations_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -28,13 +29,15 @@ func TestValidate(t *testing.T) {
 		sslmode   = "disable"
 	)
 
+	ctx := context.Background()
+
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
 	t.Run("invalid path", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := validations.Validate(&model.ValidationRequest{
+		_, err := validations.Validate(ctx, &model.ValidationRequest{
 			Path: "invalid",
 		})
 		require.Equal(t, err, errors.New("invalid path: invalid"))
@@ -43,7 +46,7 @@ func TestValidate(t *testing.T) {
 	t.Run("steps", func(t *testing.T) {
 		t.Parallel()
 
-		res, err := validations.Validate(&model.ValidationRequest{
+		res, err := validations.Validate(ctx, &model.ValidationRequest{
 			Path: "steps",
 			Destination: &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -62,7 +65,7 @@ func TestValidate(t *testing.T) {
 		t.Run("invalid step", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(&model.ValidationRequest{
+			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "invalid",
 				Destination: &backendconfig.DestinationT{
@@ -79,7 +82,7 @@ func TestValidate(t *testing.T) {
 		t.Run("step not found", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(&model.ValidationRequest{
+			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "1000",
 				Destination: &backendconfig.DestinationT{
@@ -96,7 +99,7 @@ func TestValidate(t *testing.T) {
 		t.Run("invalid destination", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(&model.ValidationRequest{
+			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "2",
 				Destination: &backendconfig.DestinationT{
@@ -113,7 +116,7 @@ func TestValidate(t *testing.T) {
 		t.Run("step error", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(&model.ValidationRequest{
+			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Destination: &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -129,7 +132,7 @@ func TestValidate(t *testing.T) {
 		t.Run("invalid destination", func(t *testing.T) {
 			t.Parallel()
 
-			res, err := validations.Validate(&model.ValidationRequest{
+			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "2",
 				Destination: &backendconfig.DestinationT{
@@ -149,7 +152,7 @@ func TestValidate(t *testing.T) {
 			tr := setup(t, pool)
 			pgResource, minioResource := tr.pgResource, tr.minioResource
 
-			res, err := validations.Validate(&model.ValidationRequest{
+			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "",
 				Destination: &backendconfig.DestinationT{
@@ -223,7 +226,7 @@ func TestValidate(t *testing.T) {
 			for _, tc := range testCases {
 				tc := tc
 
-				res, err := validations.Validate(&model.ValidationRequest{
+				res, err := validations.Validate(ctx, &model.ValidationRequest{
 					Path: "validate",
 					Step: tc.step,
 					Destination: &backendconfig.DestinationT{

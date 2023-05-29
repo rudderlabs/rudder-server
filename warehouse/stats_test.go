@@ -35,7 +35,7 @@ var _ = Describe("Stats", Ordered, func() {
 
 		initWarehouse()
 
-		err = setupDB(context.TODO(), getConnectionString())
+		err = setupDB(context.Background(), getConnectionString())
 		Expect(err).To(BeNil())
 
 		sqlStatement, err := os.ReadFile("testdata/sql/stats_test.sql")
@@ -73,6 +73,7 @@ var _ = Describe("Stats", Ordered, func() {
 				},
 				stats:            mockStats,
 				tableUploadsRepo: repo.NewTableUploads(pgResource.DB),
+				ctx:              context.Background(),
 			}
 		})
 
@@ -102,6 +103,7 @@ var _ = Describe("Stats", Ordered, func() {
 				},
 				stats:            mockStats,
 				tableUploadsRepo: repo.NewTableUploads(pgResource.DB),
+				ctx:              context.Background(),
 			}
 		})
 
@@ -127,6 +129,7 @@ var _ = Describe("Stats", Ordered, func() {
 				Type: "POSTGRES",
 			},
 			stats: mockStats,
+			ctx:   context.Background(),
 		}
 		job.recordTableLoad("tracks", 4)
 	})
@@ -147,6 +150,7 @@ var _ = Describe("Stats", Ordered, func() {
 			},
 			dbHandle: pgResource.DB,
 			stats:    mockStats,
+			ctx:      context.Background(),
 		}
 
 		err = job.recordLoadFileGenerationTimeStat(1, 4)

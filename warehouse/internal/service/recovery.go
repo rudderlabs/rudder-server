@@ -25,7 +25,7 @@ type repo interface {
 }
 
 type destination interface {
-	CrashRecover()
+	CrashRecover(ctx context.Context)
 }
 
 type Recovery struct {
@@ -77,7 +77,7 @@ func (r *Recovery) Recover(ctx context.Context, whManager destination, wh model.
 	}
 
 	once.Do(func() {
-		whManager.CrashRecover()
+		whManager.CrashRecover(ctx)
 	})
 
 	return nil

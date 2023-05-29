@@ -630,7 +630,7 @@ func loadConfig() {
 	maxTableSizeInMB: Maximum Table size in MB
 	*/
 	config.RegisterFloat64ConfigVariable(0.8, &jobDoneMigrateThres, true, "JobsDB.jobDoneMigrateThres")
-	config.RegisterFloat64ConfigVariable(5, &jobStatusMigrateThres, true, "JobsDB.jobStatusMigrateThres")
+	config.RegisterFloat64ConfigVariable(3, &jobStatusMigrateThres, true, "JobsDB.jobStatusMigrateThres")
 	config.RegisterFloat64ConfigVariable(0.05, &jobMinRowsMigrateThres, true, "JobsDB.jobMinRowsMigrateThres")
 	config.RegisterIntConfigVariable(100000, &maxDSSize, true, 1, "JobsDB.maxDSSize")
 	config.RegisterIntConfigVariable(10, &maxMigrateOnce, true, 1, "JobsDB.maxMigrateOnce")
@@ -642,7 +642,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
-	config.RegisterDurationConfigVariable(5, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	config.RegisterDurationConfigVariable(10, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	config.RegisterBoolConfigVariable(false, &jobStatusCountMigrationCheck, true, "JobsDB.jobStatusCountMigrationCheck")
 }
 
@@ -3064,6 +3064,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 
 	var completeUnprocessedJobs JobsResult
 	var dsQueryCount int
+	var cacheHitCount int
 	var dsLimit int
 	if jd.dsLimit != nil {
 		dsLimit = *jd.dsLimit
@@ -3078,6 +3079,8 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 		}
 		if dsHit {
 			dsQueryCount++
+		} else {
+			cacheHitCount++
 		}
 		completeUnprocessedJobs.Jobs = append(completeUnprocessedJobs.Jobs, unprocessedJobs.Jobs...)
 		completeUnprocessedJobs.EventsCount += unprocessedJobs.EventsCount
@@ -3098,12 +3101,11 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 			params.PayloadSizeLimit -= unprocessedJobs.PayloadSize
 		}
 	}
-	unprocessedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-		"state":     "nonterminal",
-		"query":     "unprocessed",
-		"customVal": jd.tablePrefix,
-	})
-	unprocessedQueryTablesQueriedStat.Gauge(dsQueryCount)
+
+	statTags := tags.getStatsTags(jd.tablePrefix)
+	statTags["query"] = "unprocessed"
+	stats.Default.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
+	stats.Default.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
 	// Release lock
 	return completeUnprocessedJobs, nil
 }
@@ -3144,15 +3146,15 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 	if params.JobsLimit <= 0 {
 		return JobsResult{}, nil
 	}
-
+	tags := &statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	defer jd.getTimerStat(
 		"processed_jobs_time",
-		&statTags{
-			CustomValFilters: params.CustomValFilters,
-			StateFilters:     params.StateFilters,
-			ParameterFilters: params.ParameterFilters,
-			WorkspaceID:      params.WorkspaceID,
-		},
+		tags,
 	).RecordDuration()()
 
 	// The order of lock is very important. The migrateDSLoop
@@ -3183,6 +3185,7 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 
 	var completeProcessedJobs JobsResult
 	dsQueryCount := 0
+	cacheHitCount := 0
 	var dsLimit int
 	if jd.dsLimit != nil {
 		dsLimit = *jd.dsLimit
@@ -3197,6 +3200,8 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 		}
 		if dsHit {
 			dsQueryCount++
+		} else {
+			cacheHitCount++
 		}
 		completeProcessedJobs.Jobs = append(completeProcessedJobs.Jobs, processedJobs.Jobs...)
 		completeProcessedJobs.EventsCount += processedJobs.EventsCount
@@ -3217,12 +3222,12 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 			params.PayloadSizeLimit -= processedJobs.PayloadSize
 		}
 	}
-	processedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-		"state":     "nonterminal",
-		"query":     "processed",
-		"customVal": jd.tablePrefix,
-	})
-	processedQueryTablesQueriedStat.Gauge(dsQueryCount)
+
+	statTags := tags.getStatsTags(jd.tablePrefix)
+	statTags["query"] = "processed"
+	stats.Default.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
+	stats.Default.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
+
 	return completeProcessedJobs, nil
 }
 

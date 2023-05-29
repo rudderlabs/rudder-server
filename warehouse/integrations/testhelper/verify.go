@@ -1,6 +1,7 @@
 package testhelper
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -284,7 +285,7 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
 	require.NoError(t, WithConstantRetries(func() error {
-		response := validations.NewDestinationValidator().Validate(&destination)
+		response := validations.NewDestinationValidator().Validate(context.Background(), &destination)
 		if !response.Success {
 			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
 		}

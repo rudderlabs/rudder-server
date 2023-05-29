@@ -215,7 +215,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 		initWarehouse()
 
-		err = setupDB(context.TODO(), getConnectionString())
+		err = setupDB(context.Background(), getConnectionString())
 		Expect(err).To(BeNil())
 
 		sqlStatement, err := os.ReadFile("testdata/sql/upload_test.sql")
@@ -250,6 +250,7 @@ var _ = Describe("Upload", Ordered, func() {
 			},
 			stagingFileIDs: []int64{1, 2, 3, 4, 5},
 			dbHandle:       pgResource.DB,
+			ctx:            context.Background(),
 		}
 	})
 
@@ -259,7 +260,7 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Total rows in staging files", func() {
-		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.TODO(), job.upload)
+		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.Background(), job.upload)
 		Expect(err).To(BeNil())
 		Expect(count).To(BeEquivalentTo(5))
 	})
@@ -269,7 +270,7 @@ var _ = Describe("Upload", Ordered, func() {
 		Expect(err).To(BeNil())
 		exportingData, err := time.Parse(time.RFC3339, "2020-04-21T15:16:19.687716Z")
 		Expect(err).To(BeNil())
-		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.TODO(), job.upload.ID)).
+		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.Background(), job.upload.ID)).
 			To(BeEquivalentTo(model.Timings{
 				{
 					"exported_data":  exportedData,
@@ -281,7 +282,7 @@ var _ = Describe("Upload", Ordered, func() {
 	Describe("Staging files and load files events match", func() {
 		When("Matched", func() {
 			It("Should not send stats", func() {
-				job.matchRowsInStagingAndLoadFiles(context.TODO())
+				job.matchRowsInStagingAndLoadFiles(context.Background())
 			})
 		})
 
@@ -293,7 +294,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 				job.stats = mockStats
 				job.stagingFileIDs = []int64{1, 2}
-				job.matchRowsInStagingAndLoadFiles(context.TODO())
+				job.matchRowsInStagingAndLoadFiles(context.Background())
 			})
 		})
 	})
@@ -308,6 +309,8 @@ func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpt
 }
 
 func TestUploadJobT_UpdateTableSchema(t *testing.T) {
+	t.Parallel()
+
 	Init()
 	Init4()
 
@@ -379,9 +382,10 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 							DestinationID:   testDestinationID,
 							DestinationType: testDestinationType,
 						},
-						AlertSender: &mockAlertSender{
+						alertSender: &mockAlertSender{
 							mockError: tc.mockAlertError,
 						},
+						ctx: context.Background(),
 					}
 
 					_, err = rs.DB.Exec(
@@ -448,7 +452,8 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					DestinationID:   testDestinationID,
 					DestinationType: testDestinationType,
 				},
-				AlertSender: &mockAlertSender{},
+				alertSender: &mockAlertSender{},
+				ctx:         context.Background(),
 			}
 
 			_, err = rs.DB.Exec(
@@ -516,6 +521,8 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 }
 
 func TestUploadJobT_Aborted(t *testing.T) {
+	t.Parallel()
+
 	var (
 		minAttempts    = 3
 		minRetryWindow = 3 * time.Hour
@@ -560,9 +567,10 @@ func TestUploadJobT_Aborted(t *testing.T) {
 			t.Parallel()
 
 			job := &UploadJob{
-				MinRetryAttempts: minAttempts,
-				RetryTimeWindow:  minRetryWindow,
-				Now:              func() time.Time { return now },
+				minRetryAttempts: minAttempts,
+				retryTimeWindow:  minRetryWindow,
+				now:              func() time.Time { return now },
+				ctx:              context.Background(),
 			}
 
 			require.Equal(t, tc.expected, job.Aborted(tc.attempts, tc.startTime))
@@ -582,6 +590,8 @@ func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, int
 }
 
 func TestUploadJobT_TablesToSkip(t *testing.T) {
+	t.Parallel()
+
 	t.Run("repo error", func(t *testing.T) {
 		t.Parallel()
 
@@ -592,6 +602,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 			pendingTableUploadsRepo: &mockPendingTablesRepo{
 				err: errors.New("some error"),
 			},
+			ctx: context.Background(),
 		}
 
 		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
@@ -610,6 +621,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				ID: 1,
 			},
 			pendingTableUploadsRepo: ptRepo,
+			ctx:                     context.Background(),
 		}
 
 		for i := 0; i < 5; i++ {
@@ -676,6 +688,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 			pendingTableUploadsRepo: &mockPendingTablesRepo{
 				pendingTables: pendingTables,
 			},
+			ctx: context.Background(),
 		}
 
 		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
