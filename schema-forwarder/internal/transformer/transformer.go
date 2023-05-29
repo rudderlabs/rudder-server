@@ -21,7 +21,7 @@ import (
 
 type Transformer interface {
 	Start()
-	Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error)
+	Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error)
 	Stop()
 }
 
@@ -62,21 +62,21 @@ func (st *transformer) Stop() {
 }
 
 // Transform transforms the job into a schema message and returns the schema message along with write key
-func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {
+func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error) {
 	var eventPayload map[string]interface{}
 	if err := json.Unmarshal(job.EventPayload, &eventPayload); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	writeKey := st.getWriteKeyFromParams(job.Parameters)
 	if writeKey == "" {
-		return nil, "", fmt.Errorf("writeKey could not be found")
+		return nil, fmt.Errorf("writeKey could not be found")
 	}
 	schemaKey := st.getSchemaKeyFromJob(eventPayload, writeKey)
 	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, job.EventPayload, job.WorkspaceId, job.CreatedAt)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return schemaMessage, writeKey, nil
+	return schemaMessage, nil
 }
 
 // getSchemaKeyFromJob returns the schema key from the job based on the event type and event identifier
@@ -146,6 +146,7 @@ func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[str
 		WorkspaceID: workspaceId,
 		Key:         key,
 		Schema:      schema,
+		Hash:        proto.SchemaHash(schema),
 		ObservedAt:  timestamppb.New(observedAt),
 		Sample:      sample,
 	}, nil
