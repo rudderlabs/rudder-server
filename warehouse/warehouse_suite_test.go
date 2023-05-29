@@ -8,6 +8,7 @@ import (
 )
 
 func TestWarehouse(t *testing.T) {
+	t.Skip() // TODO: Remove this line when you have tests to run
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Warehouse Suite")
 }
