@@ -28,6 +28,8 @@ func TestQueryWrapper(t *testing.T) {
 	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 
+	t.Log("db:", pgResource.DBDsn)
+
 	testCases := []struct {
 		name               string
 		executionTimeInSec time.Duration

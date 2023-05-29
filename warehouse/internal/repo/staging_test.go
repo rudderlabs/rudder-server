@@ -1,5 +1,3 @@
-//go:build !warehouse_integration
-
 package repo_test
 
 import (
@@ -127,11 +125,6 @@ func TestStagingFileRepo(t *testing.T) {
 			expected.UpdatedAt = now
 
 			require.Equal(t, expected.StagingFile, retrieved)
-
-			schema, err := r.GetSchemaByID(ctx, id)
-			require.NoError(t, err)
-
-			require.Equal(t, expected.Schema, schema)
 		})
 	}
 
@@ -166,6 +159,8 @@ func manyStagingFiles(size int, now time.Time) []*model.StagingFile {
 }
 
 func TestStagingFileRepo_Many(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Second).UTC()
@@ -178,7 +173,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	stagingFiles := manyStagingFiles(10, now)
 	for i := range stagingFiles {
-		file := stagingFiles[i].WithSchema([]byte(`{"type": "object"}`))
+		file := stagingFiles[i].WithSchema([]byte(`{"table": {"column": "type"} }`))
 		id, err := r.Insert(ctx, &file)
 		require.NoError(t, err)
 		stagingFiles[i].ID = id
@@ -190,7 +185,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 	t.Run("GetForUploadID", func(t *testing.T) {
 		t.Parallel()
 		u := repo.NewUploads(db)
-		uploadId, err := u.CreateWithStagingFiles(context.TODO(), model.Upload{}, stagingFiles)
+		uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
 		require.NoError(t, err)
 		testcases := []struct {
 			name          string
@@ -230,6 +225,69 @@ func TestStagingFileRepo_Many(t *testing.T) {
 				require.Equal(t, tc.expected, retrieved)
 			})
 		}
+	})
+
+	t.Run("GetSchemasByIDs", func(t *testing.T) {
+		t.Run("get all", func(t *testing.T) {
+			t.Parallel()
+
+			stagingIDs := repo.StagingFileIDs(stagingFiles)
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs)
+			require.NoError(t, err)
+			require.Len(t, expectedSchemas, len(stagingFiles))
+
+			for _, es := range expectedSchemas {
+				require.EqualValues(t, model.Schema{
+					"table": model.TableSchema{
+						"column": "type",
+					},
+				}, es)
+			}
+		})
+
+		t.Run("missing id", func(t *testing.T) {
+			t.Parallel()
+
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1, 2, 3, 101, 102, 103})
+			require.EqualError(t, err, "cannot get schemas by ids: not all schemas were found")
+			require.Nil(t, expectedSchemas)
+		})
+
+		t.Run("context canceled", func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			stagingIDs := repo.StagingFileIDs(stagingFiles)
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs)
+			require.EqualError(t, err, "querying schemas: context canceled")
+			require.Nil(t, expectedSchemas)
+		})
+
+		t.Run("invalid JSON", func(t *testing.T) {
+			db := setupDB(t)
+
+			_, err := db.ExecContext(ctx, `
+				INSERT INTO wh_staging_files (
+				  location, source_id, destination_id,
+				  schema, created_at, updated_at, workspace_id
+				)
+				VALUES
+				  (
+					's3://bucket/path/to/file', 'source_id',
+					'destination_id', '1', NOW(), NOW(),
+					'workspace_id'
+				  );
+			`)
+			require.NoError(t, err)
+
+			r := repo.NewStagingFiles(db)
+
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
+			require.EqualError(t, err, "cannot get schemas by ids: unmarshal staging schema: ReadMapCB: expect { or n, but found 1, error found in #1 byte of ...|1|..., bigger context ...|1|...")
+			require.Nil(t, expectedSchemas)
+		})
 	})
 }
 
