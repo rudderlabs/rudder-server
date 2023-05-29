@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 	"github.com/rudderlabs/rudder-server/router/utils"
@@ -125,12 +126,12 @@ func GetMarshalledData(payload string, jobID int64) string {
 	return string(responsePayload)
 }
 
-func NewManager(destination *backendconfig.DestinationT) Asyncdestinationmanager {
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) Asyncdestinationmanager {
 	destType := destination.DestinationDefinition.Name
-	if destType == "BING_ADS" {
-		return marketobulkupload.NewManager()
+	if destType == "BINGADS_AUDIENCE" {
+		return bingads.NewManager(destination, backendConfig)
 	} else if destType == "MARKETO_BULK_UPLOAD" {
-		return marketobulkupload.NewManager()
+		return marketobulkupload.NewManager(destination)
 	} else {
 		panic(fmt.Errorf("batch router is not enabled for destination %s", destType))
 	}
