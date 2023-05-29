@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.1](https://github.com/rudderlabs/rudder-server/compare/v1.9.0...v1.9.1) (2023-05-29)
+
+
+### Bug Fixes
+
+* stats duplicated labels ([#3411](https://github.com/rudderlabs/rudder-server/issues/3411)) ([0beb455](https://github.com/rudderlabs/rudder-server/commit/0beb455f4065e006dcaa5ad5c94029c52872e45e))
+
+
+### Miscellaneous
+
+* batch event schema messages for faster processing ([#3406](https://github.com/rudderlabs/rudder-server/issues/3406)) ([e9f2174](https://github.com/rudderlabs/rudder-server/commit/e9f2174f83935c39f098731705be27ba803f03e2))
+
 ## [1.9.0](https://github.com/rudderlabs/rudder-server/compare/v1.8.0...v1.9.0) (2023-05-25)
 
 
