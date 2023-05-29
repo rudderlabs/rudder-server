@@ -46,10 +46,6 @@ func TestIntegration(t *testing.T) {
 	}
 
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "testdata/docker-compose.clickhouse-cluster.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
@@ -406,10 +402,6 @@ func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetL
 
 func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
@@ -676,10 +668,6 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 
 func TestClickhouse_TestConnection(t *testing.T) {
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
@@ -782,10 +770,6 @@ func TestClickhouse_TestConnection(t *testing.T) {
 
 func TestClickhouse_LoadTestTable(t *testing.T) {
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
@@ -891,10 +875,6 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 
 func TestClickhouse_FetchSchema(t *testing.T) {
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
