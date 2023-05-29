@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2](https://github.com/rudderlabs/rudder-server/compare/v1.9.1...v1.9.2) (2023-05-29)
+
+
+### Bug Fixes
+
+* jobsforwarder panics with slice bounds out of range ([#3414](https://github.com/rudderlabs/rudder-server/issues/3414)) ([99b7e62](https://github.com/rudderlabs/rudder-server/commit/99b7e62ab9763236bddb7c58918cb67eda45156d))
+
 ## [1.9.1](https://github.com/rudderlabs/rudder-server/compare/v1.9.0...v1.9.1) (2023-05-29)
 
 
