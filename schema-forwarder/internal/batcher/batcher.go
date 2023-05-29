@@ -8,6 +8,7 @@ import (
 
 // A batch of jobs that share the same schema.
 type EventSchemaMessageBatch struct {
+	Index   int
 	Message *proto.EventSchemaMessage
 	Jobs    []*jobsdb.JobT
 }
@@ -59,6 +60,7 @@ func (sb *EventSchemaMessageBatcher) GetMessageBatches() []*EventSchemaMessageBa
 	batches := make([]*EventSchemaMessageBatch, len(sb.batchOrder))
 	for i, key := range sb.batchOrder {
 		batches[i] = sb.batchIndex[key]
+		batches[i].Index = i
 	}
 	return batches
 }
