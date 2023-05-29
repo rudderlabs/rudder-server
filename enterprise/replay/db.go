@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var MessageTableName = "historic_message_id"
 
 type DBHandle struct {
-	db *sql.DB
+	db  *sql.DB
+	log logger.Logger
 }
 
 type MessageJob struct {
@@ -40,35 +41,28 @@ func (h *DBHandle) SetupTables(ctx context.Context) error {
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, MessageTableName)
 	_, err := h.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
+		h.log.Info("Error creating table: ", err)
 		return err
 	}
 	return nil
 }
 
 func (h *DBHandle) Store(ctx context.Context, jobs []*MessageJob) error {
-	tx, err := h.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("historic_message_id", "user_agent", "message_id", "workspace_id", "source_id", "sdk_version", "anonymous_id", "user_id", "created_at"))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stmt.Close() }()
+	sqlStatement := fmt.Sprintf(`INSERT INTO %q (user_agent, message_id, workspace_id, source_id, sdk_version, anonymous_id, user_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, MessageTableName)
 	for _, job := range jobs {
-		if _, err = stmt.ExecContext(ctx, job.UserAgent, job.MessageID, job.WorkspaceID, job.SourceID, job.SDKVersion, job.AnonymousID, job.UserID, job.CreatedAt); err != nil {
-			return err
+		_, err := h.db.ExecContext(ctx, sqlStatement, job.UserAgent, job.MessageID, job.WorkspaceID, job.SourceID, job.SDKVersion, job.AnonymousID, job.UserID, job.CreatedAt)
+		if err != nil {
+			h.log.Info("Error inserting row: ", err)
 		}
 	}
-	err = tx.Commit()
-	return err
+	return nil
 }
 
-func setupMessageDB(_ context.Context) (*DBHandle, error) {
+func setupMessageDB(_ context.Context, log logger.Logger) (*DBHandle, error) {
 	psqlInfo := misc.GetConnectionString()
 	sqlDB, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
 		return nil, err
 	}
-	return &DBHandle{db: sqlDB}, nil
+	return &DBHandle{db: sqlDB, log: log}, nil
 }

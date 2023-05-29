@@ -122,27 +122,31 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
 			continue
 		}
-		eventPayload := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(eventPayload)).String()
-		eventsBatch := gjson.GetBytes([]byte(eventPayload), "batch").Array()
+		eventPayloadString := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(eventPayload)).String()
+		eventsBatch := gjson.GetBytes([]byte(eventPayloadString), "batch").Array()
+		sourceId := gjson.GetBytes(copyLineBytes, "parameters.source_id").String()
+		workspaceIDString := gjson.GetBytes(copyLineBytes, "workspace_id").String()
 		for _, event := range eventsBatch {
 			sdkVersion := gjson.GetBytes([]byte(event.Raw), "context.library.version").String()
 			userAgent := gjson.GetBytes([]byte(event.Raw), "context.userAgent").String()
 			anonymousID := gjson.GetBytes([]byte(event.Raw), "anonymousId").String()
-			userID := gjson.GetBytes([]byte(event.Raw), "userId").String()
+			userIDString := gjson.GetBytes([]byte(event.Raw), "userId").String()
 			messageID := gjson.GetBytes([]byte(event.Raw), "messageId").String()
 			sentAt := gjson.GetBytes([]byte(event.Raw), "originalTimestamp").String()
 			sentAtFormatted, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(sentAt))
 			if err != nil {
-				worker.log.Errorf("failed to parse sent at: %s", err)
+				worker.log.Errorf("failed to parse sent at: %s sentAt : %s", err, sentAt)
 				continue
 			}
 			job := MessageJob{
 				UserAgent:   userAgent,
 				AnonymousID: anonymousID,
-				UserID:      userID,
+				UserID:      userIDString,
 				SDKVersion:  sdkVersion,
 				MessageID:   messageID,
 				CreatedAt:   sentAtFormatted,
+				SourceID:    sourceId,
+				WorkspaceID: workspaceIDString,
 			}
 			jobs = append(jobs, &job)
 		}
@@ -207,5 +211,5 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 }
 
 func getFormattedTimeStamp(timeStamp string) string {
-	return strings.Split(strings.TrimSuffix(timeStamp, "Z"), ".")[0]
+	return strings.Split(strings.TrimSuffix(timeStamp, "Z"), ".")[0][:19]
 }

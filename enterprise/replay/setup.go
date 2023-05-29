@@ -61,7 +61,7 @@ func setup(ctx context.Context, replayDB *jobsdb.HandleT, log logger.Logger) err
 	dumpsLoader.Setup(ctx, replayDB, tablePrefix, uploader, bucket, log)
 
 	var replayer Handler
-	toDB, err := setupMessageDB(ctx)
+	toDB, err := setupMessageDB(ctx, log)
 	if err != nil {
 		return err
 	}
