@@ -107,7 +107,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	defer func() { _ = rawf.Close() }()
 
 	var jobs []*MessageJob
-
+	var lineNumber int
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		copyLineBytes := make([]byte, len(lineBytes))
@@ -128,6 +128,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		workspaceIDString := gjson.GetBytes(copyLineBytes, "workspace_id").String()
 		for _, event := range eventsBatch {
 			sdkVersion := gjson.GetBytes([]byte(event.Raw), "context.library.version").String()
+			sdkName := gjson.GetBytes([]byte(event.Raw), "context.library.name").String()
 			userAgent := gjson.GetBytes([]byte(event.Raw), "context.userAgent").String()
 			anonymousID := gjson.GetBytes([]byte(event.Raw), "anonymousId").String()
 			userIDString := gjson.GetBytes([]byte(event.Raw), "userId").String()
@@ -143,14 +144,17 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				AnonymousID: anonymousID,
 				UserID:      userIDString,
 				SDKVersion:  sdkVersion,
+				SDKName:     sdkName,
 				MessageID:   messageID,
 				CreatedAt:   sentAtFormatted,
 				SourceID:    sourceId,
 				WorkspaceID: workspaceIDString,
+				FilePath:    filePath,
+				LineNumber:  lineNumber,
 			}
 			jobs = append(jobs, &job)
 		}
-
+		lineNumber++
 	}
 
 	err = worker.replayHandler.toDB.Store(ctx, jobs)

@@ -23,8 +23,11 @@ type MessageJob struct {
 	WorkspaceID string
 	SourceID    string
 	SDKVersion  string
+	SDKName     string
 	AnonymousID string
 	UserID      string
+	FilePath    string
+	LineNumber  int
 	CreatedAt   time.Time
 }
 
@@ -36,8 +39,11 @@ func (h *DBHandle) SetupTables(ctx context.Context) error {
 		workspace_id TEXT NOT NULL,
 		source_id TEXT NOT NULL,
 		sdk_version TEXT NOT NULL DEFAULT '',
+		sdk_name TEXT NOT NULL DEFAULT '',
 		anonymous_id TEXT NOT NULL DEFAULT '',
 		user_id TEXT NOT NULL DEFAULT '',
+		file_path TEXT NOT NULL DEFAULT '',
+		line_number INTEGER NOT NULL DEFAULT 0,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, MessageTableName)
 	_, err := h.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
@@ -48,9 +54,9 @@ func (h *DBHandle) SetupTables(ctx context.Context) error {
 }
 
 func (h *DBHandle) Store(ctx context.Context, jobs []*MessageJob) error {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q (user_agent, message_id, workspace_id, source_id, sdk_version, anonymous_id, user_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, MessageTableName)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %q (user_agent, message_id, workspace_id, source_id, sdk_version,sdk_name, anonymous_id, user_id,file_path,line_number, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,$)`, MessageTableName)
 	for _, job := range jobs {
-		_, err := h.db.ExecContext(ctx, sqlStatement, job.UserAgent, job.MessageID, job.WorkspaceID, job.SourceID, job.SDKVersion, job.AnonymousID, job.UserID, job.CreatedAt)
+		_, err := h.db.ExecContext(ctx, sqlStatement, job.UserAgent, job.MessageID, job.WorkspaceID, job.SourceID, job.SDKVersion, job.SDKName, job.AnonymousID, job.UserID, job.FilePath, job.LineNumber, job.CreatedAt)
 		if err != nil {
 			h.log.Info("Error inserting row: ", err)
 		}
