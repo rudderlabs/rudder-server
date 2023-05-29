@@ -25,7 +25,7 @@ type MarketoBulkUploader struct {
 	destName string
 }
 
-func NewManager() *MarketoBulkUploader {
+func NewManager(destination *backendconfig.DestinationT) *MarketoBulkUploader {
 	marketobulkupload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD"}
 	return marketobulkupload
 }

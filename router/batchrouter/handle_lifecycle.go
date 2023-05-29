@@ -52,7 +52,7 @@ func (brt *Handle) Setup(
 ) {
 	brt.destination = destination
 	brt.destType = destination.DestinationDefinition.Name
-	brt.asyncdestinationmanager = asyncdestinationmanager.NewManager(destination)
+	brt.asyncdestinationmanager = asyncdestinationmanager.NewManager(destination, backendConfig)
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
