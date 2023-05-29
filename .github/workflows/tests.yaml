@@ -119,17 +119,36 @@ jobs:
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST }}
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME }}
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
-          TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
-          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
-        run: make test
+        run: make test exclude=/rudder-server/warehouse
       - name: Upload coverage report
         uses: actions/upload-artifact@v3
         with:
           name: unit
           path: coverage.txt
 
+  warehouse-unit:
+    name: Warehouse Unit
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download
+      - env:
+          TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
+          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
+        run: make test package=./warehouse/...
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: warehouse-unit
+          path: coverage.txt
+
   coverage:
-    needs: [warehouse-integration, unit]
+    needs: [warehouse-integration, unit, warehouse-unit]
     runs-on: 'ubuntu-20.04'
     steps:
       - name: Checkout
@@ -157,6 +176,7 @@ jobs:
       - integration
       - warehouse-integration
       - unit
+      - warehouse-unit
     steps:
       - uses: re-actors/alls-green@v1.2.2
         with:
