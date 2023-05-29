@@ -14,7 +14,7 @@ test: install-tools test-run test-teardown
 test-run: ## Run all unit tests
 	$(eval TEST_CMD = SLOW=0 go test)
 	$(eval TEST_OPTIONS = -p=25 -v -failfast -shuffle=on -vet=all --timeout=15m)
-	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./warehouse/... && touch $(TESTFILE) || true
+	$(TEST_CMD) -count=25 $(TEST_OPTIONS) ./warehouse/... && touch $(TESTFILE) || true
 
 test-warehouse-integration:
 	$(eval TEST_PATTERN = 'TestIntegration')
