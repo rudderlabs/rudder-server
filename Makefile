@@ -12,9 +12,21 @@ mocks: install-tools ## Generate all mocks
 test: install-tools test-run test-teardown
 
 test-run: ## Run all unit tests
+ifeq ($(filter 1,$(debug) $(RUNNER_DEBUG)),)
+	$(eval TEST_CMD = SLOW=0 gotestsum --format pkgname-and-test-fails --)
+	$(eval TEST_OPTIONS = -p=25 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -coverpkg=./... -vet=all --timeout=15m)
+else
 	$(eval TEST_CMD = SLOW=0 go test)
-	$(eval TEST_OPTIONS = -p=25 -v -failfast -shuffle=on -vet=all --timeout=15m)
-	$(TEST_CMD) -count=25 $(TEST_OPTIONS) ./warehouse/... && touch $(TESTFILE) || true
+	$(eval TEST_OPTIONS = -p=25 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -coverpkg=./... -vet=all --timeout=15m)
+endif
+ifdef package
+	$(TEST_CMD) -count=25 $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
+else ifdef exclude
+	$(eval FILES = `go list ./... | egrep -iv '$(exclude)'`)
+	$(TEST_CMD) -count=25 $(TEST_OPTIONS) $(FILES) && touch $(TESTFILE) || true
+else
+	$(TEST_CMD) -count=25 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
+endif
 
 test-warehouse-integration:
 	$(eval TEST_PATTERN = 'TestIntegration')
