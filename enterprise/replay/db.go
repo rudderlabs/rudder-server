@@ -50,7 +50,7 @@ func (h *DBHandle) Store(ctx context.Context, jobs []*MessageJob) error {
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("historic_message_id", "user_agent", "message_id", "workspace_id", "source_id", "sdk_version", "anonymous_id", "user_id", "created_At"))
+	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("historic_message_id", "user_agent", "message_id", "workspace_id", "source_id", "sdk_version", "anonymous_id", "user_id", "created_at"))
 	if err != nil {
 		return err
 	}
