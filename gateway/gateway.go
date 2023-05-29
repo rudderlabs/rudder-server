@@ -730,6 +730,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			WorkspaceId:  workspaceId,
 		})
 	}
+	err = nil
 	jobData.jobs = jobs
 	return
 }
