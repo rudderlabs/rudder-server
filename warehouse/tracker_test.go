@@ -91,6 +91,8 @@ func TestHandleT_Track(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -196,6 +198,8 @@ func TestHandleT_CronTracker(t *testing.T) {
 	)
 
 	t.Run("context cancelled", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
@@ -213,6 +217,8 @@ func TestHandleT_CronTracker(t *testing.T) {
 	})
 
 	t.Run("track error", func(t *testing.T) {
+		t.Parallel()
+
 		pool, err := dockertest.NewPool("")
 		require.NoError(t, err)
 

@@ -159,6 +159,8 @@ func manyStagingFiles(size int, now time.Time) []*model.StagingFile {
 }
 
 func TestStagingFileRepo_Many(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Second).UTC()
@@ -181,6 +183,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 	}
 
 	t.Run("GetForUploadID", func(t *testing.T) {
+		t.Parallel()
 		u := repo.NewUploads(db)
 		uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
 		require.NoError(t, err)
@@ -216,6 +219,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		for _, tc := range testcases {
 			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
 				retrieved, err := r.GetForUploadID(ctx, tc.sourceID, tc.destinationID, tc.uploadId)
 				require.NoError(t, err)
 				require.Equal(t, tc.expected, retrieved)
@@ -225,6 +229,8 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	t.Run("GetSchemasByIDs", func(t *testing.T) {
 		t.Run("get all", func(t *testing.T) {
+			t.Parallel()
+
 			stagingIDs := repo.StagingFileIDs(stagingFiles)
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs)
 			require.NoError(t, err)
@@ -240,12 +246,16 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		})
 
 		t.Run("missing id", func(t *testing.T) {
+			t.Parallel()
+
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1, 2, 3, 101, 102, 103})
 			require.EqualError(t, err, "cannot get schemas by ids: not all schemas were found")
 			require.Nil(t, expectedSchemas)
 		})
 
 		t.Run("context canceled", func(t *testing.T) {
+			t.Parallel()
+
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 

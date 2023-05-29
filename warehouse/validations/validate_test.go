@@ -2,87 +2,104 @@ package validations_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"testing"
-	"time"
 
-	"github.com/minio/minio-go"
-
-	"github.com/rudderlabs/compose-test/compose"
-	"github.com/rudderlabs/compose-test/testcompose"
-
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
-func setup(t *testing.T, paths ...string) *testcompose.TestingCompose {
-	c := testcompose.New(t, compose.FilePaths(paths))
+type testResource struct {
+	minioResource *destination.MINIOResource
+	pgResource    *resource.PostgresResource
+}
 
-	t.Cleanup(func() {
-		c.Stop(context.Background())
+func setup(t *testing.T, pool *dockertest.Pool) testResource {
+	var (
+		minioResource *destination.MINIOResource
+		pgResource    *resource.PostgresResource
+		err           error
+	)
+
+	g := errgroup.Group{}
+	g.Go(func() error {
+		pgResource, err = resource.SetupPostgres(pool, t)
+		require.NoError(t, err)
+
+		t.Log("db:", pgResource.DBDsn)
+
+		return nil
 	})
-	c.Start(context.Background())
+	g.Go(func() error {
+		minioResource, err = destination.SetupMINIO(pool, t)
+		require.NoError(t, err)
 
-	return c
+		t.Log("minio:", minioResource.Endpoint)
+
+		return nil
+	})
+	require.NoError(t, g.Wait())
+
+	return testResource{
+		minioResource: minioResource,
+		pgResource:    pgResource,
+	}
 }
 
 func TestValidator(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
 	validations.Init()
 
 	var (
-		provider        = "MINIO"
-		namespace       = "test_namespace"
-		table           = "test_table"
-		sslmode         = "disable"
-		host            = "localhost"
-		database        = "rudderdb"
-		user            = "rudder"
-		password        = "rudder-password"
-		bucketName      = "testbucket"
-		region          = "us-east-1"
-		accessKeyID     = "MYACCESSKEY"
-		secretAccessKey = "MYSECRETKEY"
+		provider  = "MINIO"
+		namespace = "test_namespace"
+		table     = "test_table"
+		sslmode   = "disable"
 	)
 
 	ctx := context.Background()
 
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
 	t.Run("Object Storage", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("Non Datalakes", func(t *testing.T) {
-			c := setup(t, "../testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml")
-
-			minioPort := c.Port("minio", 9000)
-			postgresPort := c.Port("postgres", 5432)
-
-			minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
+			tr := setup(t, pool)
+			pgResource, minioResource := tr.pgResource, tr.minioResource
 
 			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.POSTGRES,
 				},
 				Config: map[string]interface{}{
-					"host":            host,
-					"port":            strconv.Itoa(postgresPort),
-					"database":        database,
-					"user":            user,
-					"password":        password,
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
 					"bucketProvider":  provider,
-					"bucketName":      bucketName,
-					"accessKeyID":     accessKeyID,
-					"secretAccessKey": secretAccessKey,
-					"endPoint":        minioEndpoint,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
 				},
 			})
 			require.NoError(t, err)
@@ -90,16 +107,17 @@ func TestValidator(t *testing.T) {
 		})
 
 		t.Run("Datalakes", func(t *testing.T) {
-			c := setup(t, "../testdata/docker-compose.minio.yml")
-
-			minioPort := c.Port("minio", 9000)
-			minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-			minioClient, err := minio.New(minioEndpoint, accessKeyID, secretAccessKey, false)
+			minioResource, err := destination.SetupMINIO(pool, t)
 			require.NoError(t, err)
 
-			err = minioClient.MakeBucket(bucketName, region)
-			require.NoError(t, err)
+			t.Log("minio:", minioResource.Endpoint)
+
+			var (
+				bucket = "s3-datalake-test"
+				region = "us-east-1"
+			)
+
+			_ = minioResource.Client.MakeBucket(bucket, "us-east-1")
 
 			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -107,10 +125,10 @@ func TestValidator(t *testing.T) {
 				},
 				Config: map[string]interface{}{
 					"region":           region,
-					"bucketName":       bucketName,
-					"accessKeyID":      accessKeyID,
-					"accessKey":        secretAccessKey,
-					"endPoint":         minioEndpoint,
+					"bucketName":       bucket,
+					"accessKeyID":      minioResource.AccessKey,
+					"accessKey":        minioResource.SecretKey,
+					"endPoint":         minioResource.Endpoint,
 					"enableSSE":        false,
 					"s3ForcePathStyle": true,
 					"disableSSL":       true,
@@ -124,6 +142,8 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Connections", func(t *testing.T) {
+		t.Parallel()
+
 		testCases := []struct {
 			name      string
 			config    map[string]interface{}
@@ -145,25 +165,21 @@ func TestValidator(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				c := setup(t, "../testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml")
-
-				minioPort := c.Port("minio", 9000)
-				postgresPort := c.Port("postgres", 5432)
-
-				minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
+				tr := setup(t, pool)
+				pgResource, minioResource := tr.pgResource, tr.minioResource
 
 				conf := map[string]interface{}{
-					"host":            host,
-					"port":            strconv.Itoa(postgresPort),
-					"database":        database,
-					"user":            user,
-					"password":        password,
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
 					"sslMode":         sslmode,
 					"bucketProvider":  provider,
-					"bucketName":      bucketName,
-					"accessKeyID":     accessKeyID,
-					"secretAccessKey": secretAccessKey,
-					"endPoint":        minioEndpoint,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
 				}
 
 				for k, v := range tc.config {
@@ -188,8 +204,10 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Create Schema", func(t *testing.T) {
+		t.Parallel()
+
 		var (
-			testPassword        = "test_password"
+			password            = "test_password"
 			userWithNoPrivilege = "test_user_with_no_privilege"
 		)
 
@@ -202,10 +220,10 @@ func TestValidator(t *testing.T) {
 				name: "with no privilege",
 				config: map[string]interface{}{
 					"user":      userWithNoPrivilege,
-					"password":  testPassword,
+					"password":  password,
 					"namespace": "test_namespace_with_no_privilege",
 				},
-				wantError: errors.New("pq: permission denied for database rudderdb"),
+				wantError: errors.New("pq: permission denied for database jobsdb"),
 			},
 			{
 				name: "with privilege",
@@ -216,43 +234,28 @@ func TestValidator(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				c := setup(t, "../testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml")
-
-				minioPort := c.Port("minio", 9000)
-				postgresPort := c.Port("postgres", 5432)
-
-				minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-					user,
-					password,
-					host,
-					strconv.Itoa(postgresPort),
-					database,
-				)
-				db, err := sql.Open("postgres", dsn)
-				require.NoError(t, err)
-				require.Eventually(t, func() bool { return db.Ping() == nil }, 5*time.Second, 100*time.Millisecond)
+				tr := setup(t, pool)
+				pgResource, minioResource := tr.pgResource, tr.minioResource
 
 				t.Log("Creating users with no privileges")
 				for _, user := range []string{userWithNoPrivilege} {
-					_, err = db.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, testPassword))
+					_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
 					require.NoError(t, err)
 				}
 
 				conf := map[string]interface{}{
-					"host":            host,
-					"port":            strconv.Itoa(postgresPort),
-					"database":        database,
-					"user":            user,
-					"password":        password,
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
 					"sslMode":         sslmode,
 					"namespace":       namespace,
 					"bucketProvider":  provider,
-					"bucketName":      bucketName,
-					"accessKeyID":     accessKeyID,
-					"secretAccessKey": secretAccessKey,
-					"endPoint":        minioEndpoint,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
 				}
 
 				for k, v := range tc.config {
@@ -277,8 +280,10 @@ func TestValidator(t *testing.T) {
 	})
 
 	t.Run("Create And Alter Table", func(t *testing.T) {
+		t.Parallel()
+
 		var (
-			testPassword                 = "test_password"
+			password                     = "test_password"
 			userWithNoPrivilege          = "test_user_with_no_privilege"
 			userWithCreateTablePrivilege = "test_user_with_create_table_privilege"
 			userWithAlterPrivilege       = "test_user_with_alter_privilege"
@@ -293,7 +298,7 @@ func TestValidator(t *testing.T) {
 				name: "no privilege",
 				config: map[string]interface{}{
 					"user":     userWithNoPrivilege,
-					"password": testPassword,
+					"password": password,
 				},
 				wantError: errors.New("create table: pq: permission denied for schema test_namespace"),
 			},
@@ -301,7 +306,7 @@ func TestValidator(t *testing.T) {
 				name: "create table privilege",
 				config: map[string]interface{}{
 					"user":     userWithCreateTablePrivilege,
-					"password": testPassword,
+					"password": password,
 				},
 				wantError: errors.New("alter table: pq: permission denied for schema test_namespace"),
 			},
@@ -309,7 +314,7 @@ func TestValidator(t *testing.T) {
 				name: "alter privilege",
 				config: map[string]interface{}{
 					"user":     userWithAlterPrivilege,
-					"password": testPassword,
+					"password": password,
 				},
 			},
 			{
@@ -321,58 +326,43 @@ func TestValidator(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				c := setup(t, "../testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml")
+				tr := setup(t, pool)
+				pgResource, minioResource := tr.pgResource, tr.minioResource
 
-				minioPort := c.Port("minio", 9000)
-				postgresPort := c.Port("postgres", 5432)
-
-				minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-					user,
-					password,
-					host,
-					strconv.Itoa(postgresPort),
-					database,
-				)
-				db, err := sql.Open("postgres", dsn)
-				require.NoError(t, err)
-				require.Eventually(t, func() bool { return db.Ping() == nil }, 5*time.Second, 100*time.Millisecond)
-
-				_, err = db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
+				_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
 				require.NoError(t, err)
 
 				t.Log("Creating users with no privileges")
 				for _, user := range []string{userWithNoPrivilege, userWithCreateTablePrivilege, userWithAlterPrivilege} {
-					_, err = db.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, testPassword))
+					_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
 					require.NoError(t, err)
 				}
 
 				t.Log("Granting create table privilege to users")
 				for _, user := range []string{userWithCreateTablePrivilege, userWithAlterPrivilege} {
-					_, err = db.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
 					require.NoError(t, err)
 				}
 
 				t.Log("Granting insert privilege to users")
 				for _, user := range []string{userWithAlterPrivilege} {
-					_, err = db.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
 					require.NoError(t, err)
 				}
 
 				conf := map[string]interface{}{
-					"host":            host,
-					"port":            strconv.Itoa(c.Port("postgres", 5432)),
-					"database":        database,
-					"user":            user,
-					"password":        password,
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
 					"sslMode":         sslmode,
 					"namespace":       namespace,
 					"bucketProvider":  provider,
-					"bucketName":      bucketName,
-					"accessKeyID":     accessKeyID,
-					"secretAccessKey": secretAccessKey,
-					"endPoint":        minioEndpoint,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
 				}
 
 				for k, v := range tc.config {
@@ -393,64 +383,51 @@ func TestValidator(t *testing.T) {
 					require.NoError(t, v.Validate(ctx))
 				}
 
-				_, err = db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
+				_, err = pgResource.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
 				require.NoError(t, err)
 			})
 		}
 	})
 
 	t.Run("Fetch schema", func(t *testing.T) {
-		c := setup(t, "../testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml")
-
-		minioPort := c.Port("minio", 9000)
-		postgresPort := c.Port("postgres", 5432)
-
-		minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			user,
-			password,
-			host,
-			strconv.Itoa(postgresPort),
-			database,
-		)
-		db, err := sql.Open("postgres", dsn)
-		require.NoError(t, err)
-		require.Eventually(t, func() bool { return db.Ping() == nil }, 5*time.Second, 100*time.Millisecond)
+		tr := setup(t, pool)
+		pgResource, minioResource := tr.pgResource, tr.minioResource
 
 		v, err := validations.NewValidator(ctx, model.VerifyingFetchSchema, &backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				Name: warehouseutils.POSTGRES,
 			},
 			Config: map[string]interface{}{
-				"host":            host,
-				"port":            strconv.Itoa(postgresPort),
-				"database":        database,
-				"user":            user,
-				"password":        password,
+				"host":            pgResource.Host,
+				"port":            pgResource.Port,
+				"database":        pgResource.Database,
+				"user":            pgResource.User,
+				"password":        pgResource.Password,
 				"sslMode":         sslmode,
 				"namespace":       namespace,
 				"bucketProvider":  provider,
-				"bucketName":      bucketName,
-				"accessKeyID":     accessKeyID,
-				"secretAccessKey": secretAccessKey,
-				"endPoint":        minioEndpoint,
+				"bucketName":      minioResource.BucketName,
+				"accessKeyID":     minioResource.AccessKey,
+				"secretAccessKey": minioResource.SecretKey,
+				"endPoint":        minioResource.Endpoint,
 			},
 		})
 		require.NoError(t, err)
 
-		_, err = db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
+		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
 		require.NoError(t, err)
 
-		_, err = db.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s(id int, val varchar)", namespace, table))
+		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s(id int, val varchar)", namespace, table))
 		require.NoError(t, err)
 
 		require.NoError(t, v.Validate(ctx))
 	})
 
 	t.Run("Load table", func(t *testing.T) {
+		t.Parallel()
+
 		var (
-			testPassword                 = "test_password"
+			password                     = "test_password"
 			userWithNoPrivilege          = "test_user_with_no_privilege"
 			userWithCreateTablePrivilege = "test_user_with_create_table_privilege"
 			userWithInsertPrivilege      = "test_user_with_insert_privilege"
@@ -474,7 +451,7 @@ func TestValidator(t *testing.T) {
 				name: "no privilege",
 				config: map[string]interface{}{
 					"user":     userWithNoPrivilege,
-					"password": testPassword,
+					"password": password,
 				},
 				wantError: errors.New("create table: pq: permission denied for schema test_namespace"),
 			},
@@ -482,7 +459,7 @@ func TestValidator(t *testing.T) {
 				name: "create table privilege",
 				config: map[string]interface{}{
 					"user":     userWithCreateTablePrivilege,
-					"password": testPassword,
+					"password": password,
 				},
 				wantError: errors.New("load test table: pq: permission denied for schema test_namespace"),
 			},
@@ -490,7 +467,7 @@ func TestValidator(t *testing.T) {
 				name: "insert privilege",
 				config: map[string]interface{}{
 					"user":     userWithInsertPrivilege,
-					"password": testPassword,
+					"password": password,
 				},
 			},
 			{
@@ -502,61 +479,46 @@ func TestValidator(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				c := setup(t, "../testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml")
+				tr := setup(t, pool)
+				pgResource, minioResource := tr.pgResource, tr.minioResource
 
-				minioPort := c.Port("minio", 9000)
-				postgresPort := c.Port("postgres", 5432)
-
-				minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-					user,
-					password,
-					host,
-					strconv.Itoa(postgresPort),
-					database,
-				)
-				db, err := sql.Open("postgres", dsn)
-				require.NoError(t, err)
-				require.Eventually(t, func() bool { return db.Ping() == nil }, 5*time.Second, 100*time.Millisecond)
-
-				_, err = db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
+				_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
 				require.NoError(t, err)
 
 				t.Log("Creating users with no privileges")
 				for _, user := range []string{userWithNoPrivilege, userWithCreateTablePrivilege, userWithInsertPrivilege} {
-					_, err = db.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, testPassword))
+					_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
 					require.NoError(t, err)
 				}
 
 				t.Log("Granting create table privilege to users")
 				for _, user := range []string{userWithCreateTablePrivilege, userWithInsertPrivilege} {
-					_, err = db.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
 					require.NoError(t, err)
 				}
 
 				t.Log("Granting insert privilege to users")
 				for _, user := range []string{userWithInsertPrivilege} {
-					_, err = db.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
 					require.NoError(t, err)
 
-					_, err = db.Exec(fmt.Sprintf("GRANT INSERT ON ALL TABLES IN SCHEMA %s TO %s;", namespace, user))
+					_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT INSERT ON ALL TABLES IN SCHEMA %s TO %s;", namespace, user))
 					require.NoError(t, err)
 				}
 
 				conf := map[string]interface{}{
-					"host":            host,
-					"port":            strconv.Itoa(postgresPort),
-					"database":        database,
-					"user":            user,
-					"password":        password,
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
 					"sslMode":         sslmode,
 					"namespace":       namespace,
 					"bucketProvider":  provider,
-					"bucketName":      bucketName,
-					"accessKeyID":     accessKeyID,
-					"secretAccessKey": secretAccessKey,
-					"endPoint":        minioEndpoint,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
 				}
 
 				for k, v := range tc.config {
@@ -577,7 +539,7 @@ func TestValidator(t *testing.T) {
 					require.NoError(t, v.Validate(ctx))
 				}
 
-				_, err = db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
+				_, err = pgResource.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
 				require.NoError(t, err)
 			})
 		}

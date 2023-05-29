@@ -57,6 +57,8 @@ func TestQueryWrapper(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 

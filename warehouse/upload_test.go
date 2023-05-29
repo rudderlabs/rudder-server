@@ -309,6 +309,8 @@ func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpt
 }
 
 func TestUploadJobT_UpdateTableSchema(t *testing.T) {
+	t.Parallel()
+
 	Init()
 	Init4()
 
@@ -322,7 +324,11 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 	)
 
 	t.Run("alter column", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("basic", func(t *testing.T) {
+			t.Parallel()
+
 			testCases := []struct {
 				name           string
 				createView     bool
@@ -354,6 +360,8 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 				tc := tc
 
 				t.Run(tc.name, func(t *testing.T) {
+					t.Parallel()
+
 					pool, err := dockertest.NewPool("")
 					require.NoError(t, err)
 
@@ -422,6 +430,8 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 		})
 
 		t.Run("process all columns", func(t *testing.T) {
+			t.Parallel()
+
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 

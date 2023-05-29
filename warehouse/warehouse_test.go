@@ -74,6 +74,8 @@ func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMe
 var _ = Describe("Warehouse", func() {})
 
 func TestUploadJob_ProcessingStats(t *testing.T) {
+	t.Parallel()
+
 	testcases := []struct {
 		name            string
 		destType        string
@@ -117,6 +119,8 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
@@ -188,6 +192,8 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 }
 
 func Test_GetNamespace(t *testing.T) {
+	t.Parallel()
+
 	testcases := []struct {
 		config      map[string]interface{}
 		source      backendconfig.SourceT
@@ -313,6 +319,8 @@ func Test_GetNamespace(t *testing.T) {
 	for _, tc := range testcases {
 		tc := tc
 		t.Run("should return namespace", func(t *testing.T) {
+			t.Parallel()
+
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 

@@ -90,6 +90,8 @@ func cloneFiles(t *testing.T, files []string) []string {
 }
 
 func TestLoadTable(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 
@@ -122,6 +124,8 @@ func TestLoadTable(t *testing.T) {
 	}
 
 	t.Run("Regular tables", func(t *testing.T) {
+		t.Parallel()
+
 		tableName := "test_table"
 
 		testCases := []struct {
@@ -189,6 +193,8 @@ func TestLoadTable(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
@@ -274,6 +280,8 @@ func TestLoadTable(t *testing.T) {
 	})
 
 	t.Run("Discards tables", func(t *testing.T) {
+		t.Parallel()
+
 		tableName := warehouseutils.DiscardsTable
 
 		testCases := []struct {
@@ -313,6 +321,8 @@ func TestLoadTable(t *testing.T) {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
@@ -388,6 +398,8 @@ func TestLoadTable(t *testing.T) {
 }
 
 func TestLoadUsersTable(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 
@@ -485,6 +497,8 @@ func TestLoadUsersTable(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
 

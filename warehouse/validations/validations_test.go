@@ -3,10 +3,9 @@ package validations_test
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strconv"
 	"testing"
 
+	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -17,27 +16,27 @@ import (
 )
 
 func TestValidate(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 	encoding.Init()
 	validations.Init()
 
 	var (
-		provider        = "MINIO"
-		namespace       = "test_namespace"
-		sslmode         = "disable"
-		host            = "localhost"
-		database        = "rudderdb"
-		user            = "rudder"
-		password        = "rudder-password"
-		bucketName      = "testbucket"
-		accessKeyID     = "MYACCESSKEY"
-		secretAccessKey = "MYSECRETKEY"
+		provider  = "MINIO"
+		namespace = "test_namespace"
+		sslmode   = "disable"
 	)
 
 	ctx := context.Background()
 
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
 	t.Run("invalid path", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := validations.Validate(ctx, &model.ValidationRequest{
 			Path: "invalid",
 		})
@@ -45,6 +44,8 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("steps", func(t *testing.T) {
+		t.Parallel()
+
 		res, err := validations.Validate(ctx, &model.ValidationRequest{
 			Path: "steps",
 			Destination: &backendconfig.DestinationT{
@@ -59,7 +60,11 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("validate", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("invalid step", func(t *testing.T) {
+			t.Parallel()
+
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "invalid",
@@ -75,6 +80,8 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("step not found", func(t *testing.T) {
+			t.Parallel()
+
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "1000",
@@ -90,6 +97,8 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("invalid destination", func(t *testing.T) {
+			t.Parallel()
+
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "2",
@@ -105,6 +114,8 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("step error", func(t *testing.T) {
+			t.Parallel()
+
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Destination: &backendconfig.DestinationT{
@@ -119,6 +130,8 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("invalid destination", func(t *testing.T) {
+			t.Parallel()
+
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Step: "2",
@@ -134,7 +147,10 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("empty step", func(t *testing.T) {
-			c := setup(t, "../testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml")
+			t.Parallel()
+
+			tr := setup(t, pool)
+			pgResource, minioResource := tr.pgResource, tr.minioResource
 
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
@@ -144,18 +160,18 @@ func TestValidate(t *testing.T) {
 						Name: warehouseutils.POSTGRES,
 					},
 					Config: map[string]interface{}{
-						"host":            host,
-						"port":            strconv.Itoa(c.Port("postgres", 5432)),
-						"database":        database,
-						"user":            user,
-						"password":        password,
+						"host":            pgResource.Host,
+						"port":            pgResource.Port,
+						"database":        pgResource.Database,
+						"user":            pgResource.User,
+						"password":        pgResource.Password,
 						"sslMode":         sslmode,
 						"namespace":       namespace,
 						"bucketProvider":  provider,
-						"bucketName":      bucketName,
-						"accessKeyID":     accessKeyID,
-						"secretAccessKey": secretAccessKey,
-						"endPoint":        fmt.Sprintf("localhost:%d", c.Port("minio", 9000)),
+						"bucketName":      minioResource.BucketName,
+						"accessKeyID":     minioResource.AccessKey,
+						"secretAccessKey": minioResource.SecretKey,
+						"endPoint":        minioResource.Endpoint,
 					},
 				},
 			})
@@ -165,7 +181,10 @@ func TestValidate(t *testing.T) {
 		})
 
 		t.Run("steps in order", func(t *testing.T) {
-			c := setup(t, "../testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml")
+			t.Parallel()
+
+			tr := setup(t, pool)
+			pgResource, minioResource := tr.pgResource, tr.minioResource
 
 			testCases := []struct {
 				name     string
@@ -207,34 +226,32 @@ func TestValidate(t *testing.T) {
 			for _, tc := range testCases {
 				tc := tc
 
-				t.Run(tc.name, func(t *testing.T) {
-					res, err := validations.Validate(ctx, &model.ValidationRequest{
-						Path: "validate",
-						Step: tc.step,
-						Destination: &backendconfig.DestinationT{
-							DestinationDefinition: backendconfig.DestinationDefinitionT{
-								Name: warehouseutils.POSTGRES,
-							},
-							Config: map[string]interface{}{
-								"host":            host,
-								"port":            strconv.Itoa(c.Port("postgres", 5432)),
-								"database":        database,
-								"user":            user,
-								"password":        password,
-								"sslMode":         sslmode,
-								"namespace":       namespace,
-								"bucketProvider":  provider,
-								"bucketName":      bucketName,
-								"accessKeyID":     accessKeyID,
-								"secretAccessKey": secretAccessKey,
-								"endPoint":        fmt.Sprintf("localhost:%d", c.Port("minio", 9000)),
-							},
+				res, err := validations.Validate(ctx, &model.ValidationRequest{
+					Path: "validate",
+					Step: tc.step,
+					Destination: &backendconfig.DestinationT{
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: warehouseutils.POSTGRES,
 						},
-					})
-					require.NoError(t, err)
-					require.Empty(t, res.Error)
-					require.Equal(t, res.Data, tc.response)
+						Config: map[string]interface{}{
+							"host":            pgResource.Host,
+							"port":            pgResource.Port,
+							"database":        pgResource.Database,
+							"user":            pgResource.User,
+							"password":        pgResource.Password,
+							"sslMode":         sslmode,
+							"namespace":       namespace,
+							"bucketProvider":  provider,
+							"bucketName":      minioResource.BucketName,
+							"accessKeyID":     minioResource.AccessKey,
+							"secretAccessKey": minioResource.SecretKey,
+							"endPoint":        minioResource.Endpoint,
+						},
+					},
 				})
+				require.NoError(t, err)
+				require.Empty(t, res.Error)
+				require.Equal(t, res.Data, tc.response)
 			}
 		})
 	})
