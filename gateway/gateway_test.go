@@ -506,7 +506,6 @@ var _ = Describe("Gateway", func() {
 
 		// common tests for all web handlers
 		It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
-			workspaceID := gateway.getWorkspaceForWriteKey(WriteKeyEnabled)
 			for handlerType, handler := range allHandlers(gateway) {
 				if !(handlerType == "batch" || handlerType == "import") {
 

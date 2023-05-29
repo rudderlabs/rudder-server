@@ -450,17 +450,22 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 				continue
 			}
-			jobBatches = append(jobBatches, jobData.jobs)
-			jobIDReqMap[jobData.jobs[0].UUID] = req
-			jobSourceTagMap[jobData.jobs[0].UUID] = sourceTag
-			for _, job := range jobData.jobs {
-				eventBatchesToRecord = append(
-					eventBatchesToRecord,
-					sourceDebugger{
-						data:     job.EventPayload,
-						writeKey: writeKey,
-					},
-				)
+			if len(jobData.jobs) > 0 {
+				jobBatches = append(jobBatches, jobData.jobs)
+				jobIDReqMap[jobData.jobs[0].UUID] = req
+				jobSourceTagMap[jobData.jobs[0].UUID] = sourceTag
+				for _, job := range jobData.jobs {
+					eventBatchesToRecord = append(
+						eventBatchesToRecord,
+						sourceDebugger{
+							data:     job.EventPayload,
+							writeKey: writeKey,
+						},
+					)
+				}
+			} else {
+				req.done <- response.InvalidJSON
+				sourceStats[sourceTag].RequestFailed(response.InvalidJSON)
 			}
 		}
 
