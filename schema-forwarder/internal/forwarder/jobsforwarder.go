@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/transformer"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/samber/lo"
 )
 
 // JobsForwarder is a forwarder that transforms and forwards jobs to a pulsar topic
@@ -129,9 +130,8 @@ func (jf *JobsForwarder) Start() error {
 						return nil //nolint:nilerr
 					}
 					toForward := append([]*batcher.EventSchemaMessageBatch{}, messageBatches...)
-					for idx, batch := range toForward {
+					for _, batch := range toForward {
 						batch := batch // can be used in a goroutine
-						idx := idx     // can be used in a goroutine
 						msg := batch.Message
 						orderKey := msg.Key.WriteKey
 						jf.pulsarProducer.SendMessageAsync(ctx, orderKey, orderKey, msg.MustMarshal(),
@@ -139,6 +139,10 @@ func (jf *JobsForwarder) Start() error {
 								if err == nil { // mark job as succeeded and remove from toRetry
 									mu.Lock()
 									defer mu.Unlock()
+
+									_, idx, _ := lo.FindIndexOf(messageBatches, func(item *batcher.EventSchemaMessageBatch) bool {
+										return item.Index == batch.Index
+									})
 									messageBatches = slices.Delete(messageBatches, idx, idx+1)
 									for _, job := range batch.Jobs {
 										statuses = append(statuses, &jobsdb.JobStatusT{
