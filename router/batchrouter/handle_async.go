@@ -27,7 +27,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(brt.pollStatusLoopSleep):
+		case <-time.After(brt.pollStatusLoopSleep): // 10 sec
 			brt.configSubscriberMu.RLock()
 			destinationsMap := brt.destinationsMap
 			brt.configSubscriberMu.RUnlock()
@@ -37,6 +37,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 					brt.logger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
 					// below line parameterFilters eg: [{Name: "destination_id", Value: "2PriULYidWaynFpp6jeAF3ugZUc"}]
 					parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: key}}
+					// job means Jobs [], LimitsReached bool, EventsCount, PayloadSize
 					job, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 						return brt.jobsDB.GetImporting(
 							ctx,
@@ -52,12 +53,17 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						brt.logger.Errorf("Error while getting job for dest type: %s, err: %v", brt.destType, err)
 						panic(err)
 					}
+					// ?? if job parameters will look same for bingAds as well
 					importingJob := job.Jobs
+					// in this importing job eventPayload resides, after file upload , transformer response
+					//, eg: "{\"body\": {\"XML\": {}, \"FORM\": {}, \"JSON\": {\"email\": \"test@kinesis.com\", \"address\": 23, \"anonymousId\": \"Test Kinesis\"}, \"JSON_ARRAY\": {}}, \"type\": \"REST\", \"files\": {}, \"method\": \"POST\", \"params\": {}, \"userId\": \"\", \"headers\": {}, \"version\": \"1\", \"endpoint\": \"/fileUpload\"}"
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
+						// parameters eg : "{\"pollURL\": \"/pollStatus\", \"importId\": \"3090\", \"metadata\": {\"csvHeader\": \"anonymousId,address,email\"}}"
 						parameters := importingJob.LastJobStatus.Parameters
 						importId := gjson.GetBytes(parameters, "importId").String()
 						var pollStruct common.AsyncPoll
+						// payload creation will be different for bingAds
 						pollStruct.ImportId = importId
 						pollStruct.Config = destinationsMap[key].Destination.Config
 						pollStruct.DestType = strings.ToLower(brt.destType)
@@ -70,7 +76,9 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 						var bodyBytes []byte
 						var statusCode int
+						// payload to be sent to poll : "{\"config\":{\"clientId\":\"01a70f1f-ff37-46fc-bdff-42e92a3f2bb3\",\"clientSecret\":\"rziQBHtZ34Vl1CE3x3OiA3n8Wr45lwar\",\"columnFieldsMapping\":[{\"from\":\"anonymousId\",\"to\":\"anonymousId\"},{\"from\":\"address\",\"to\":\"address\"},{\"from\":\"email\",\"to\":\"email\"}],\"deDuplicationField\":\"\",\"munchkinId\":\"585-AXP-425\",\"oneTrustCookieCategories\":[],\"uploadInterval\":\"10\"},\"importId\":\"3090\",\"destType\":\"marketo_bulk_upload\"}"
 						bodyBytes, statusCode = brt.asyncdestinationmanager.Poll(importingJob, payload, common.HTTPTimeout)
+						// bodyBytes eg: "{\"success\":true,\"statusCode\":200,\"hasFailed\":false,\"failedJobsURL\":\"/getFailedJobs\",\"hasWarnings\":false,\"warningJobsURL\":\"/getWarningJobs\"}"
 						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 						brt.asyncPollTimeStat.Since(startPollTime)
 
@@ -86,9 +94,13 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							if err != nil {
 								panic("JSON Unmarshal Failed" + err.Error())
 							}
+
+							// need to think if these parameters calculation can
+							// be different in bingAds and marketo
 							uploadStatus := asyncResponse.Success
 							statusCode := asyncResponse.StatusCode
 							abortedJobs := make([]*jobsdb.JobT, 0)
+							// will this be same?
 							if uploadStatus {
 								var statusList []*jobsdb.JobStatusT
 								list, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
@@ -106,9 +118,13 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 									panic(err)
 								}
 
+								// list.Jobs has parameters eg : "{\"record_id\": null, \"source_id\": \"2PuNovG1jg5F3UIUZpnhlwMhw7c\", \"event_name\": \"\", \"event_type\": \"identify\", \"message_id\": \"e686323c-f926-4e2b-b606-121e1948eafb\", \"received_at\": \"2023-05-29T19:58:14.380+05:30\", \"workspaceId\": \"1kgRLW9E68SaJx6WiHavEABeSAl\", \"transform_at\": \"processor\", \"source_job_id\": \"\", \"destination_id\": \"2PriULYidWaynFpp6jeAF3ugZUc\", \"gateway_job_id\": 5, \"source_category\": \"\", \"source_job_run_id\": \"\", \"source_task_run_id\": \"\", \"source_definition_id\": \"1b6gJdqOPOCadT3cddw8eidV591\", \"destin"
+								// list.Jobs has eventPaylaod. Eg: "{\"body\": {\"XML\": {}, \"FORM\": {}, \"JSON\": {\"email\": \"test@kinesis.com\", \"address\": 23, \"anonymousId\": \"Test Kinesis\"}, \"JSON_ARRAY\": {}}, \"type\": \"REST\", \"files\": {}, \"method\": \"POST\", \"params\": {}, \"userId\": \"\", \"headers\": {}, \"version\": \"1\", \"endpoint\": \"/fileUpload\"}"
 								importingList := list.Jobs
+								// asyncResponse eg : {Success: true, StatusCode: 200, HasFailed: false, HasWarning: false, FailedJobsURL: "/getFailedJobs", WarningJobsURL: "/getWarningJobs"}
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
+										// status eg github.com/rudderlabs/rudder-server/jobsdb.JobStatusT {JobID: 3, JobState: "succeeded", AttemptNum: 0, ExecTime: time.Time(2023-05-29T21:20:11+05:30, +252581321648){wall: 13913114914768609472, ext: 252581321648, loc: *(*time.Location)(0x105adafa0)}, RetryT...
 										status := jobsdb.JobStatusT{
 											JobID:         job.JobID,
 											JobState:      jobsdb.Succeeded.State,

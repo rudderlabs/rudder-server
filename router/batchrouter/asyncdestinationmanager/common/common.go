@@ -18,13 +18,14 @@ var (
 	AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
 )
 
+// we need to add bingAds specific fields if needs to be handy.
 type AsyncStatusResponse struct {
 	Success        bool
 	StatusCode     int
 	HasFailed      bool
 	HasWarning     bool
-	FailedJobsURL  string
-	WarningJobsURL string
+	FailedJobsURL  string // these will not be present in bingAds
+	WarningJobsURL string // these will not be present in bingAds
 }
 type AsyncUploadOutput struct {
 	Key                 string
