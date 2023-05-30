@@ -358,7 +358,7 @@ func (ch *Clickhouse) getClickHouseColumnTypeForSpecificTable(tableName, columnN
 	return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true)
 }
 
-func (*Clickhouse) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+func (*Clickhouse) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
@@ -538,7 +538,7 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 		return fmt.Sprintf(`%s %s`, name, rudderDataTypesMapToClickHouse[tableSchemaInUpload[name]])
 	}, ",")
 
-	csvObjectLocation, err := ch.Uploader.GetSampleLoadFileLocation(tableName)
+	csvObjectLocation, err := ch.Uploader.GetSampleLoadFileLocation(ctx, tableName)
 	if err != nil {
 		return fmt.Errorf("sample load file location with error: %w", err)
 	}
@@ -739,10 +739,10 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	return
 }
 
-func (ch *Clickhouse) schemaExists(schemaName string) (exists bool, err error) {
+func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exists bool, err error) {
 	var count int64
 	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = ?"
-	err = ch.DB.QueryRow(sqlStatement, schemaName).Scan(&count)
+	err = ch.DB.QueryRowContext(ctx, sqlStatement, schemaName).Scan(&count)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
 		err = nil
@@ -752,9 +752,9 @@ func (ch *Clickhouse) schemaExists(schemaName string) (exists bool, err error) {
 }
 
 // createSchema creates a database in clickhouse
-func (ch *Clickhouse) createSchema() (err error) {
+func (ch *Clickhouse) createSchema(ctx context.Context) (err error) {
 	var schemaExists bool
-	schemaExists, err = ch.schemaExists(ch.Namespace)
+	schemaExists, err = ch.schemaExists(ctx, ch.Namespace)
 	if err != nil {
 		ch.Logger.Errorf("CH: Error checking if database: %s exists: %v", ch.Namespace, err)
 		return err
@@ -767,7 +767,7 @@ func (ch *Clickhouse) createSchema() (err error) {
 	if err != nil {
 		return err
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
@@ -775,7 +775,7 @@ func (ch *Clickhouse) createSchema() (err error) {
 	}
 	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %q %s`, ch.Namespace, clusterClause)
 	ch.Logger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement)
+	_, err = dbHandle.ExecContext(ctx, sqlStatement)
 	return
 }
 
@@ -784,7 +784,7 @@ createUsersTable creates a user's table with engine AggregatingMergeTree,
 this lets us choose aggregation logic before merging records with same user id.
 current behaviour is to replace user  properties with the latest non-null values
 */
-func (ch *Clickhouse) createUsersTable(name string, columns model.TableSchema) (err error) {
+func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
 	clusterClause := ""
@@ -798,7 +798,7 @@ func (ch *Clickhouse) createUsersTable(name string, columns model.TableSchema) (
 	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	ch.Logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = ch.DB.Exec(sqlStatement)
+	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
@@ -817,7 +817,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 
 // CreateTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will the latest data if duplicate data found. This logic is handled by clickhouse
 // The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
-func (ch *Clickhouse) CreateTable(tableName string, columns model.TableSchema) (err error) {
+func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
@@ -827,7 +827,7 @@ func (ch *Clickhouse) CreateTable(tableName string, columns model.TableSchema) (
 	}
 	var sqlStatement string
 	if tableName == warehouseutils.UsersTable {
-		return ch.createUsersTable(tableName, columns)
+		return ch.createUsersTable(ctx, tableName, columns)
 	}
 	clusterClause := ""
 	engine := "ReplacingMergeTree"
@@ -851,22 +851,22 @@ func (ch *Clickhouse) CreateTable(tableName string, columns model.TableSchema) (
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v ) ENGINE = %s(%s) %s %s`, ch.Namespace, tableName, clusterClause, ch.ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
 
 	ch.Logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = ch.DB.Exec(sqlStatement)
+	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
-func (ch *Clickhouse) DropTable(tableName string) (err error) {
+func (ch *Clickhouse) DropTable(ctx context.Context, tableName string) (err error) {
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}
 	sqlStatement := fmt.Sprintf(`DROP TABLE %q.%q %s `, ch.Warehouse.Namespace, tableName, clusterClause)
-	_, err = ch.DB.Exec(sqlStatement)
+	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
-func (ch *Clickhouse) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query         string
 		queryBuilder  strings.Builder
@@ -901,19 +901,19 @@ func (ch *Clickhouse) AddColumns(tableName string, columnsInfo []warehouseutils.
 	query += ";"
 
 	ch.Logger.Infof("CH: Adding columns for destinationID: %s, tableName: %s with query: %v", ch.Warehouse.Destination.ID, tableName, query)
-	_, err = ch.DB.Exec(query)
+	_, err = ch.DB.ExecContext(ctx, query)
 	return
 }
 
-func (ch *Clickhouse) CreateSchema() (err error) {
+func (ch *Clickhouse) CreateSchema(ctx context.Context) (err error) {
 	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
 		return nil
 	}
-	err = ch.createSchema()
+	err = ch.createSchema(ctx)
 	return err
 }
 
-func (*Clickhouse) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+func (*Clickhouse) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
@@ -930,7 +930,7 @@ func (ch *Clickhouse) TestConnection(ctx context.Context, _ model.Warehouse) err
 	return nil
 }
 
-func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
@@ -942,10 +942,10 @@ func (ch *Clickhouse) Setup(warehouse model.Warehouse, uploader warehouseutils.U
 	return err
 }
 
-func (*Clickhouse) CrashRecover() {}
+func (*Clickhouse) CrashRecover(context.Context) {}
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *Clickhouse) FetchSchema() (model.Schema, model.Schema, error) {
+func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
 
@@ -960,7 +960,7 @@ func (ch *Clickhouse) FetchSchema() (model.Schema, model.Schema, error) {
 		  database = ?
 	`
 
-	rows, err := ch.DB.Query(sqlStatement, ch.Namespace)
+	rows, err := ch.DB.QueryContext(ctx, sqlStatement, ch.Namespace)
 	if errors.Is(err, sql.ErrNoRows) {
 		return schema, unrecognizedSchema, nil
 	}
@@ -1025,25 +1025,25 @@ func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) error {
 	return err
 }
 
-func (ch *Clickhouse) Cleanup() {
+func (ch *Clickhouse) Cleanup(context.Context) {
 	if ch.DB != nil {
 		_ = ch.DB.Close()
 	}
 }
 
-func (*Clickhouse) LoadIdentityMergeRulesTable() (err error) {
+func (*Clickhouse) LoadIdentityMergeRulesTable(context.Context) (err error) {
 	return
 }
 
-func (*Clickhouse) LoadIdentityMappingsTable() (err error) {
+func (*Clickhouse) LoadIdentityMappingsTable(context.Context) (err error) {
 	return
 }
 
-func (*Clickhouse) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*Clickhouse) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err error) {
 	return
 }
 
-func (*Clickhouse) IsEmpty(_ model.Warehouse) (empty bool, err error) {
+func (*Clickhouse) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -1063,7 +1063,7 @@ func (ch *Clickhouse) GetTotalCountInTable(ctx context.Context, tableName string
 	return total, err
 }
 
-func (ch *Clickhouse) Connect(warehouse model.Warehouse) (client.Client, error) {
+func (ch *Clickhouse) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -1086,7 +1086,7 @@ func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *Clickhouse) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (ch *Clickhouse) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	var columns []string
 	var recordInterface []interface{}
 
@@ -1101,17 +1101,17 @@ func (ch *Clickhouse) LoadTestTable(_, tableName string, payloadMap map[string]i
 		strings.Join(columns, ","),
 		generateArgumentString(len(columns)),
 	)
-	txn, err := ch.DB.Begin()
+	txn, err := ch.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return
 	}
 
-	stmt, err := txn.Prepare(sqlStatement)
+	stmt, err := txn.PrepareContext(ctx, sqlStatement)
 	if err != nil {
 		return
 	}
 
-	if _, err = stmt.Exec(recordInterface...); err != nil {
+	if _, err = stmt.ExecContext(ctx, recordInterface...); err != nil {
 		return
 	}
 

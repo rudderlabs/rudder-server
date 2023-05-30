@@ -25,7 +25,7 @@ type warehouseGRPC struct {
 	EnableTunnelling bool
 }
 
-func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
+func (*warehouseGRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
 	uploadsReq := UploadsReq{
 		WorkspaceID:     request.WorkspaceId,
 		SourceID:        request.SourceId,
@@ -42,11 +42,11 @@ func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRe
 		uploadsReq.SourceID,
 		uploadsReq.DestinationID,
 	)
-	res, err := uploadsReq.GetWhUploads()
+	res, err := uploadsReq.GetWhUploads(ctx)
 	return res, err
 }
 
-func (*warehouseGRPC) TriggerWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
+func (*warehouseGRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
 	uploadsReq := UploadsReq{
 		WorkspaceID:   request.WorkspaceId,
 		SourceID:      request.SourceId,
@@ -59,11 +59,11 @@ func (*warehouseGRPC) TriggerWHUploads(_ context.Context, request *proto.WHUploa
 		uploadsReq.SourceID,
 		uploadsReq.DestinationID,
 	)
-	res, err := uploadsReq.TriggerWhUploads()
+	res, err := uploadsReq.TriggerWhUploads(ctx)
 	return res, err
 }
 
-func (*warehouseGRPC) GetWHUpload(_ context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
+func (*warehouseGRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
 	uploadReq := UploadReq{
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
@@ -74,7 +74,7 @@ func (*warehouseGRPC) GetWHUpload(_ context.Context, request *proto.WHUploadRequ
 		uploadReq.WorkspaceID,
 		uploadReq.UploadId,
 	)
-	res, err := uploadReq.GetWHUpload()
+	res, err := uploadReq.GetWHUpload(ctx)
 	return res, err
 }
 
@@ -82,7 +82,7 @@ func (*warehouseGRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.Bo
 	return wrapperspb.Bool(UploadAPI.enabled), nil
 }
 
-func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
+func (*warehouseGRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
 	uploadReq := UploadReq{
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
@@ -93,7 +93,7 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 		uploadReq.WorkspaceID,
 		uploadReq.UploadId,
 	)
-	res, err := uploadReq.TriggerWHUpload()
+	res, err := uploadReq.TriggerWHUpload(ctx)
 	return res, err
 }
 
@@ -143,7 +143,7 @@ func (grpc *warehouseGRPC) Validate(ctx context.Context, req *proto.WHValidation
 		}
 	}
 
-	res, err := validations.Validate(&model.ValidationRequest{
+	res, err := validations.Validate(ctx, &model.ValidationRequest{
 		Path:        req.Path,
 		Step:        req.Step,
 		Destination: &destination,

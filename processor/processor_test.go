@@ -591,7 +591,6 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
-				nil,
 			)
 		})
 	})

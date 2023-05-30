@@ -307,7 +307,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 						destination = wh.attachSSHTunnellingInfo(ctx, destination)
 					}
 
-					namespace := wh.getNamespace(source, destination)
+					namespace := wh.getNamespace(ctx, source, destination)
 					warehouse := model.Warehouse{
 						WorkspaceID: workspaceID,
 						Source:      source,
@@ -347,10 +347,10 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					connectionsMapLock.Unlock()
 
 					if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
-						wh.setupIdentityTables(warehouse)
+						wh.setupIdentityTables(ctx, warehouse)
 						if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
 							// non-blocking populate historic identities
-							wh.populateHistoricIdentities(warehouse)
+							wh.populateHistoricIdentities(ctx, warehouse)
 						}
 					}
 				}
@@ -408,7 +408,7 @@ func deepCopy(src, dest interface{}) error {
 //  1. user set name from destinationConfig
 //  2. from existing record in wh_schemas with same source + dest combo
 //  3. convert source name
-func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT) string {
+func (wh *HandleT) getNamespace(ctx context.Context, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
 	configMap := destination.Config
 	if wh.destType == warehouseutils.CLICKHOUSE {
 		if _, ok := configMap["database"].(string); ok {
@@ -428,7 +428,7 @@ func (wh *HandleT) getNamespace(source backendconfig.SourceT, destination backen
 		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
 
-	namespace, err := wh.whSchemaRepo.GetNamespace(context.TODO(), source.ID, destination.ID)
+	namespace, err := wh.whSchemaRepo.GetNamespace(ctx, source.ID, destination.ID)
 	if err != nil {
 		pkgLogger.Errorw("getting namespace",
 			logfield.SourceID, source.ID,
@@ -571,9 +571,9 @@ func getUploadStartAfterTime() time.Time {
 	return time.Now()
 }
 
-func (wh *HandleT) getLatestUploadStatus(warehouse *model.Warehouse) (int64, string, int) {
+func (wh *HandleT) getLatestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
 	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
-		context.TODO(),
+		ctx,
 		warehouse.Type,
 		warehouse.Source.ID,
 		warehouse.Destination.ID)
@@ -597,7 +597,7 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse model.Warehouse) (e
 	}
 
 	priority := defaultUploadPriority
-	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
+	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(ctx, &warehouse)
 	if uploadStatus == model.Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgress := wh.isUploadJobInProgress(warehouse, uploadID); !inProgress {
@@ -747,7 +747,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
 
 		if !found {
-			uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+			uploadJob := wh.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 				Upload: upload,
 			}, nil)
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
@@ -765,7 +765,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		if err != nil {
 			return nil, err
 		}
-		uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+		uploadJob := wh.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 			Warehouse:    warehouse,
 			Upload:       upload,
 			StagingFiles: stagingFilesList,
@@ -863,7 +863,7 @@ func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
 
-func (wh *HandleT) Setup(whType string) error {
+func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.Logger = pkgLogger
 	wh.conf = config.Default
@@ -877,7 +877,7 @@ func (wh *HandleT) Setup(whType string) error {
 
 	wh.notifier = notifier
 	wh.destType = whType
-	wh.resetInProgressJobs()
+	wh.resetInProgressJobs(ctx)
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobID)
@@ -915,7 +915,7 @@ func (wh *HandleT) Setup(whType string) error {
 		},
 	)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
 	wh.backgroundCancel = cancel
@@ -952,7 +952,7 @@ func (wh *HandleT) Shutdown() error {
 	return wh.backgroundWait()
 }
 
-func (wh *HandleT) resetInProgressJobs() {
+func (wh *HandleT) resetInProgressJobs(ctx context.Context) {
 	sqlStatement := fmt.Sprintf(`
 		UPDATE
 		  %s
@@ -967,7 +967,7 @@ func (wh *HandleT) resetInProgressJobs() {
 		wh.destType,
 		true,
 	)
-	rows, err := wh.dbHandle.Query(sqlStatement)
+	rows, err := wh.dbHandle.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
@@ -1000,7 +1000,7 @@ func minimalConfigSubscriber(ctx context.Context) {
 							whSchemaRepo: repo.NewWHSchemas(dbHandle),
 							conf:         config.Default,
 						}
-						namespace := wh.getNamespace(source, destination)
+						namespace := wh.getNamespace(ctx, source, destination)
 
 						connectionsMapLock.Lock()
 						if _, ok := slaveConnectionsMap[destination.ID]; !ok {
@@ -1048,7 +1048,7 @@ func monitorDestRouters(ctx context.Context) error {
 
 	ch := tenantManager.WatchConfig(ctx)
 	for configData := range ch {
-		err := onConfigDataEvent(configData, dstToWhRouter)
+		err := onConfigDataEvent(ctx, configData, dstToWhRouter)
 		if err != nil {
 			return err
 		}
@@ -1062,7 +1062,7 @@ func monitorDestRouters(ctx context.Context) error {
 	return g.Wait()
 }
 
-func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter map[string]*HandleT) error {
+func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.ConfigT, dstToWhRouter map[string]*HandleT) error {
 	pkgLogger.Debug("Got config from config-backend", config)
 
 	enabledDestinations := make(map[string]bool)
@@ -1078,7 +1078,7 @@ func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter ma
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 						wh = &HandleT{}
 						wh.configSubscriberLock.Lock()
-						if err := wh.Setup(destination.DestinationDefinition.Name); err != nil {
+						if err := wh.Setup(ctx, destination.DestinationDefinition.Name); err != nil {
 							return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
 						}
 						wh.configSubscriberLock.Unlock()
@@ -1431,9 +1431,9 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
+func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion()))
+	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion(r.Context())))
 }
 
 func fetchTablesHandler(w http.ResponseWriter, r *http.Request) {

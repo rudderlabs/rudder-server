@@ -21,6 +21,9 @@ else
 endif
 ifdef package
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
+else ifdef exclude
+	$(eval FILES = `go list ./... | egrep -iv '$(exclude)'`)
+	$(TEST_CMD) -count=1 $(TEST_OPTIONS) $(FILES) && touch $(TESTFILE) || true
 else
 	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
 endif

@@ -735,7 +735,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Equal(t, 2, len(jobsDB2.getDSList()), "expected jobsDB2 to have refreshed its ds list")
 
 		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected jobsDB3 to still have a list length of 1")
-		errorsMap := jobsDB3.StoreWithRetryEach(context.Background(), generateJobs(2))
+		errorsMap := jobsDB3.StoreEachBatchRetry(context.Background(), [][]*JobT{generateJobs(2)})
 		require.Equal(t, 0, len(errorsMap))
 
 		require.Equal(t, 2, len(jobsDB3.getDSList()), "expected jobsDB3 to have refreshed its ds list")

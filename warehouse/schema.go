@@ -41,7 +41,7 @@ type stagingFileRepo interface {
 }
 
 type fetchSchemaRepo interface {
-	FetchSchema() (model.Schema, model.Schema, error)
+	FetchSchema(ctx context.Context) (model.Schema, model.Schema, error)
 }
 
 type Schema struct {
@@ -74,8 +74,8 @@ func NewSchema(
 	}
 }
 
-func (sh *Schema) updateLocalSchema(uploadId int64, updatedSchema model.Schema) error {
-	_, err := sh.schemaRepo.Insert(context.TODO(), &model.WHSchema{
+func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
+	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
 		UploadID:        uploadId,
 		SourceID:        sh.warehouse.Source.ID,
 		Namespace:       sh.warehouse.Namespace,
@@ -93,8 +93,8 @@ func (sh *Schema) updateLocalSchema(uploadId int64, updatedSchema model.Schema) 
 }
 
 // fetchSchemaFromLocal fetches schema from local
-func (sh *Schema) fetchSchemaFromLocal() error {
-	localSchema, err := sh.getLocalSchema()
+func (sh *Schema) fetchSchemaFromLocal(ctx context.Context) error {
+	localSchema, err := sh.getLocalSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching schema from local: %w", err)
 	}
@@ -104,9 +104,9 @@ func (sh *Schema) fetchSchemaFromLocal() error {
 	return nil
 }
 
-func (sh *Schema) getLocalSchema() (model.Schema, error) {
+func (sh *Schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.schemaRepo.GetForNamespace(
-		context.TODO(),
+		ctx,
 		sh.warehouse.Source.ID,
 		sh.warehouse.Destination.ID,
 		sh.warehouse.Namespace,
@@ -121,8 +121,8 @@ func (sh *Schema) getLocalSchema() (model.Schema, error) {
 }
 
 // fetchSchemaFromWarehouse fetches schema from warehouse
-func (sh *Schema) fetchSchemaFromWarehouse(repo fetchSchemaRepo) error {
-	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema()
+func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error {
+	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
@@ -157,8 +157,8 @@ func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
 	}
 }
 
-func (sh *Schema) prepareUploadSchema(stagingFiles []*model.StagingFile) error {
-	consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles)
+func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model.StagingFile) error {
+	consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(ctx, stagingFiles)
 	if err != nil {
 		return fmt.Errorf("consolidating staging files schema: %w", err)
 	}
@@ -168,12 +168,12 @@ func (sh *Schema) prepareUploadSchema(stagingFiles []*model.StagingFile) error {
 }
 
 // consolidateStagingFilesSchemaUsingWarehouseSchema consolidates staging files schema with warehouse schema
-func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(stagingFiles []*model.StagingFile) (model.Schema, error) {
+func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
 	consolidatedSchema := model.Schema{}
 	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
 	for _, batch := range batches {
 		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(
-			context.TODO(),
+			ctx,
 			repo.StagingFileIDs(batch),
 		)
 		if err != nil {

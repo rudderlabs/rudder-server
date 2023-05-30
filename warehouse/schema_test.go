@@ -303,7 +303,7 @@ type mockFetchSchemaFromWarehouse struct {
 	err                           error
 }
 
-func (m *mockFetchSchemaFromWarehouse) FetchSchema() (model.Schema, model.Schema, error) {
+func (m *mockFetchSchemaFromWarehouse) FetchSchema(context.Context) (model.Schema, model.Schema, error) {
 	return m.schemaInWarehouse, m.unrecognizedSchemaInWarehouse, m.err
 }
 
@@ -398,14 +398,16 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 				schemaRepo: mockSchemaRepo,
 			}
 
-			err := sch.updateLocalSchema(uploadID, tc.mockSchema.Schema)
+			ctx := context.Background()
+
+			err := sch.updateLocalSchema(ctx, uploadID, tc.mockSchema.Schema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tc.wantError.Error())
 			}
 
-			err = sch.fetchSchemaFromLocal()
+			err = sch.fetchSchemaFromLocal(ctx)
 			require.Equal(t, tc.wantSchema, sch.localSchema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
@@ -566,7 +568,9 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 				log: logger.NOP,
 			}
 
-			err := sh.fetchSchemaFromWarehouse(&fechSchemaRepo)
+			ctx := context.Background()
+
+			err := sh.fetchSchemaFromWarehouse(ctx, &fechSchemaRepo)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {
@@ -886,6 +890,8 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 			ID: int64(index),
 		}
 	})
+
+	ctx := context.Background()
 
 	testsCases := []struct {
 		name                string
@@ -1791,7 +1797,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 				stagingFilesSchemaPaginationSize: 2,
 			}
 
-			err := sh.prepareUploadSchema(stagingFiles)
+			err := sh.prepareUploadSchema(ctx, stagingFiles)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {

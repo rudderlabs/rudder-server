@@ -82,9 +82,8 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 
 	t.Run("Test Transform", func(t *testing.T) {
 		timeNow := time.Now()
-		eventSchemaMessage, writeKey, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
+		eventSchemaMessage, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
 		require.Nil(t, err)
-		require.Equal(t, writeKey, testdata.WriteKeyEnabled)
 		testSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
 		require.Equal(t, eventSchemaMessage.Schema, testSchemaMessage.Schema)
@@ -114,9 +113,8 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 	<-closeChan
 	t.Run("Test Transform", func(t *testing.T) {
 		timeNow := time.Now()
-		eventSchemaMessage, writeKey, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
+		eventSchemaMessage, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
 		require.Nil(t, err)
-		require.Equal(t, writeKey, testdata.WriteKeyEnabled)
 		testSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
 		require.Equal(t, eventSchemaMessage.Schema, testSchemaMessage.Schema)
@@ -133,6 +131,7 @@ func generateTestEventSchemaMessage(time time.Time) *proto.EventSchemaMessage {
 		Key:         &testdata.TestEventSchemaKey,
 		ObservedAt:  timestamppb.New(time),
 		Schema:      testdata.TrackSchema,
+		Hash:        proto.SchemaHash(testdata.TrackSchema),
 		Sample:      []byte("{}"),
 	}
 }

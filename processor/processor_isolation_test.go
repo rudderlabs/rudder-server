@@ -310,7 +310,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	require.Eventually(t, func() bool {
 		var processedJobCount int
 		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',5) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
-		return processedJobCount == len(spec.jobs)/batchSize
+		return processedJobCount == len(spec.jobs)
 	}, 300*time.Second, 1*time.Second, "all batches should be successfully processed")
 
 	var failedJobs int
