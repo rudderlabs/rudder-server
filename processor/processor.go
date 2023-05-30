@@ -14,6 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
+
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -45,8 +48,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -115,8 +116,6 @@ type Handle struct {
 		readLoopSleep             time.Duration
 		maxLoopSleep              time.Duration
 		storeTimeout              time.Duration
-		loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
-		fixedLoopSleep            time.Duration // DEPRECATED: used only on the old mainLoop
 		maxEventsToProcess        int
 		transformBatchSize        int
 		userTransformBatchSize    int
@@ -323,7 +322,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
+	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.ReportingI,
 	errorReporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
@@ -415,11 +414,7 @@ func (proc *Handle) Setup(
 		proc.eventSchemaHandler = eventschema.GetInstance()
 	}
 	if proc.config.enableDedup {
-		opts := []dedup.OptFn{}
-		if *clearDB {
-			opts = append(opts, dedup.WithClearDB())
-		}
-		proc.dedup = dedup.New(dedup.DefaultPath(), opts...)
+		proc.dedup = dedup.New(dedup.DefaultPath())
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -577,10 +572,6 @@ func (proc *Handle) loadConfig() {
 
 	config.RegisterDurationConfigVariable(1000, &proc.config.pingerSleep, true, time.Millisecond, "Processor.pingerSleep")
 	config.RegisterDurationConfigVariable(1000, &proc.config.readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
-	// DEPRECATED: used only on the old mainLoop:
-	config.RegisterDurationConfigVariable(10, &proc.config.loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
-	// DEPRECATED: used only on the old mainLoop:
-	config.RegisterDurationConfigVariable(0, &proc.config.fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &proc.config.transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &proc.config.userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	// Enable dedup of incoming events by default
