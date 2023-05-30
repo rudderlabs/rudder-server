@@ -74,10 +74,6 @@ func NewRepository(basePath string, log logger.Logger, stats stats.Stats, opts .
 	for _, opt := range opts {
 		opt(b)
 	}
-	defer func() {
-		// TODO : Remove this after badgerdb v2 is completely removed
-		_ = os.RemoveAll(path.Join(basePath, "badgerdbv3"))
-	}()
 	err := b.start()
 	return b, err
 }
