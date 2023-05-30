@@ -76,10 +76,6 @@ func TestIntegration(t *testing.T) {
 	}
 
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
