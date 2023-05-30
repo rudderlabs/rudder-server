@@ -257,7 +257,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 }
 
-func (b *BingAdsBulkUploader) Poll(url string, payload []byte, timeout time.Duration) ([]byte, int) {
+func (b *BingAdsBulkUploader) Poll(importingJob *jobsdb.JobT, payload []byte, timeout time.Duration) ([]byte, int) {
 	resp := common.AsyncStatusResponse{
 		Success:        true,
 		StatusCode:     200,
@@ -273,6 +273,9 @@ func (b *BingAdsBulkUploader) Poll(url string, payload []byte, timeout time.Dura
 	}
 
 	return respBytes, 200
+}
+func (b *BingAdsBulkUploader) FetchFailedEvents(*backendconfig.DestinationT, *utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse, time.Duration) ([]byte, int) {
+	return nil, 0
 }
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) *BingAdsBulkUploader {
@@ -290,7 +293,4 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 
 	bingads := &BingAdsBulkUploader{destName: "BING_ADS", oauthClient: oauthClient}
 	return bingads
-}
-func FetchFailedEvents(*backendconfig.DestinationT, *utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse, time.Duration) ([]byte, int) {
-	return nil, 0
 }
