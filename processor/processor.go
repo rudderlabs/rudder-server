@@ -1345,7 +1345,7 @@ type dupStatKey struct {
 	equalSize bool
 }
 
-func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedEventList [][]types.SingularEventT) *transformationMessage {
+func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -1362,9 +1362,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 
-	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
-		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
-	}
 	// Each block we receive from a client has a bunch of
 	// requests. We parse the block and take out individual
 	// requests, call the destination specific transformation
@@ -1391,16 +1388,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
 
-	for idx, batchEvent := range jobList {
+	for _, batchEvent := range jobList {
 
 		var singularEvents []types.SingularEventT
 		var ok bool
-		if parsedEventList == nil {
-			singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
-		} else {
-			singularEvents = parsedEventList[idx]
-			ok = singularEvents != nil
-		}
+		singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
 		writeKey := gjson.Get(string(batchEvent.EventPayload), "writeKey").Str
 		requestIP := gjson.Get(string(batchEvent.EventPayload), "requestIP").Str
 		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
@@ -1503,15 +1495,18 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 					continue
 				}
 
-				_, ok = groupedEventsByWriteKey[WriteKeyT(writeKey)]
-				if !ok {
+				if _, ok := groupedEventsByWriteKey[WriteKeyT(writeKey)]; !ok {
 					groupedEventsByWriteKey[WriteKeyT(writeKey)] = make([]transformer.TransformerEventT, 0)
 				}
 				shallowEventCopy := transformer.TransformerEventT{}
 				shallowEventCopy.Message = singularEvent
 				shallowEventCopy.Message["request_ip"] = requestIP
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, &backendconfig.DestinationT{})
+				enhanceWithMetadata(
+					commonMetadataFromSingularEvent,
+					&shallowEventCopy,
+					&backendconfig.DestinationT{},
+				)
 
 				// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
 				shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
@@ -2586,7 +2581,8 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 				subJobs:       unprocessedList.Jobs,
 				hasMore:       false,
 				rsourcesStats: rsourcesStats,
-			}, nil),
+			},
+			),
 		),
 	)
 	proc.stats.statLoopTime.Since(s)
@@ -2680,7 +2676,7 @@ func filterConfig(eventCopy *transformer.TransformerEventT) {
 	}
 }
 
-func (proc *Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
+func (*Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
 	return miscsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
 }
 
