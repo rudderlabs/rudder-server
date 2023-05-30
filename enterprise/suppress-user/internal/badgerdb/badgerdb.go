@@ -66,7 +66,7 @@ type Repository struct {
 func NewRepository(basePath string, log logger.Logger, stats stats.Stats, opts ...Opt) (*Repository, error) {
 	b := &Repository{
 		log:           log,
-		path:          path.Join(basePath, "badgerdbv3"),
+		path:          path.Join(basePath, "badgerdbv4"),
 		maxGoroutines: 1,
 		maxSeedWait:   10 * time.Second,
 		stats:         stats,
@@ -74,6 +74,10 @@ func NewRepository(basePath string, log logger.Logger, stats stats.Stats, opts .
 	for _, opt := range opts {
 		opt(b)
 	}
+	defer func() {
+		// TODO : Remove this after badgerdb v2 is completely removed
+		_ = os.RemoveAll(path.Join(basePath, "badgerdbv3"))
+	}()
 	err := b.start()
 	return b, err
 }

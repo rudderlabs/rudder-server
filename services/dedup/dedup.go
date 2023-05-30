@@ -43,13 +43,14 @@ func New(path string) Dedup {
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
-		WithNumMemtables(config.GetInt("BadgerDB.numMemtable", 1)).
+		WithNumMemtables(config.GetInt("BadgerDB.numMemtable", 5)).
 		WithValueThreshold(config.GetInt64("BadgerDB.valueThreshold", 1048576)).
 		WithBlockCacheSize(0).
 		WithNumVersionsToKeep(1).
 		WithNumLevelZeroTables(config.GetInt("BadgerDB.numLevelZeroTables", 5)).
 		WithNumLevelZeroTablesStall(config.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
-		WithSyncWrites(config.GetBool("BadgerDB.syncWrites", false))
+		WithSyncWrites(config.GetBool("BadgerDB.syncWrites", false)).
+		WithDetectConflicts(config.GetBool("BadgerDB.detectConflicts", false))
 
 	db := &badgerDB{
 		stats:  stats.Default,
