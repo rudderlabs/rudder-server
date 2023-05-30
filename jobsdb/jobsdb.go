@@ -465,6 +465,9 @@ type HandleT struct {
 	TriggerRefreshDS func() <-chan time.Time
 	refreshDSTimeout time.Duration
 
+	TriggerJobCleanUp func() <-chan time.Time
+	JobMaxAge         time.Duration
+
 	lifecycle struct {
 		mu      sync.Mutex
 		started bool
@@ -509,6 +512,7 @@ func (jd *HandleT) registerBackUpSettings() {
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
 	config.RegisterDurationConfigVariable(1, &jd.refreshDSTimeout, false, time.Minute, "JobsDB.refreshDS.timeout")
+	config.RegisterDurationConfigVariable(720, &jd.JobMaxAge, false, time.Hour, "JobsDB.jobMaxAge")
 	config.RegisterDurationConfigVariable(2, &jd.migrateDSTimeout, false, time.Minute, "JobsDB.migrateDS.timeout")
 
 	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
@@ -614,6 +618,7 @@ var (
 	refreshDSListLoopSleepDuration               time.Duration
 	backupCheckSleepDuration                     time.Duration
 	cacheExpiration                              time.Duration
+	jobCleanupFrequency                          time.Duration
 	backupRowsBatchSize                          int64
 	backupMaxTotalPayloadSize                    int64
 	pkgLogger                                    logger.Logger
@@ -653,6 +658,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(10, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	config.RegisterDurationConfigVariable(24, &jobCleanupFrequency, true, time.Hour, []string{"JobsDB.jobCleanupFrequency"}...)
 	config.RegisterBoolConfigVariable(false, &jobStatusCountMigrationCheck, true, "JobsDB.jobStatusCountMigrationCheck")
 }
 
@@ -765,6 +771,12 @@ func (jd *HandleT) init() {
 	if jd.TriggerRefreshDS == nil {
 		jd.TriggerRefreshDS = func() <-chan time.Time {
 			return time.After(refreshDSListLoopSleepDuration)
+		}
+	}
+
+	if jd.TriggerJobCleanUp == nil {
+		jd.TriggerJobCleanUp = func() <-chan time.Time {
+			return time.After(jobCleanupFrequency)
 		}
 	}
 
@@ -961,6 +973,7 @@ func (jd *HandleT) readerSetup(ctx context.Context, l lock.LockToken) {
 
 	jd.startBackupDSLoop(ctx)
 	jd.startMigrateDSLoop(ctx)
+	jd.startCleanupLoop(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {
 		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
@@ -993,6 +1006,7 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 
 	jd.startBackupDSLoop(ctx)
 	jd.startMigrateDSLoop(ctx)
+	jd.startCleanupLoop(ctx)
 
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)

@@ -3,7 +3,11 @@ package jobsdb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 /*
@@ -134,4 +138,97 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 		),
 	)
 	return err
+}
+
+func (jd *HandleT) startCleanupLoop(ctx context.Context) {
+	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		jd.oldJobsCleanupRoutine(ctx)
+		return nil
+	}))
+}
+
+func (jd *HandleT) oldJobsCleanupRoutine(ctx context.Context) {
+	jd.doCleanupOldJobs(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-jd.TriggerJobCleanUp():
+			jd.doCleanupOldJobs(ctx)
+		}
+	}
+}
+
+func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
+	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
+	command := func() interface{} {
+		return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
+			dsList := jd.getDSList()
+			for _, ds := range dsList {
+				if err := jd.doCleanupDSInTx(ctx, tx.Tx(), ds); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	if err, _ := jd.executeDbRequest(
+		newWriteDbRequest("clean_up_old_jobs", &tags, command),
+	).(error); err != nil {
+		jd.logger.Errorf("error cleaning up DS: %w", err)
+	}
+}
+
+func (jd *HandleT) doCleanupDSInTx(ctx context.Context, tx *Tx, ds dataSetT) error {
+	abortStatusQuery := fmt.Sprintf(
+		`with abort_jobs as (
+			select jobs.job_id, jobs.custom_val, jobs.workspace_id, jobs.created_at from 
+			%[1]q as jobs left join "v_last_%[2]s" as status on jobs.job_id = status.job_id
+			where jobs.created_at < $1 and (
+				status.job_state = ANY('{%[3]s}')
+				or
+				status.job_state is null
+			)
+		),
+		inserted_status as (
+		insert into %[2]q (job_id, job_state, attempt, error_code, error_response) 
+		(select job_id, 'aborted', 0, '0', '{"reason": "job max age exceeded"}' from abort_jobs)
+		)
+		select count(*), workspace_id, custom_val from abort_jobs group by workspace_id, custom_val`,
+		ds.JobTable,
+		ds.JobStatusTable,
+		strings.Join(validNonTerminalStates, ","),
+	)
+	rows, err := tx.QueryContext(
+		ctx,
+		abortStatusQuery,
+		time.Now().Add(-jd.JobMaxAge),
+	)
+	if err != nil {
+		jd.logger.Info("error aborting jobs after maxAge: %w", err)
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var count int
+		var workspaceID, customVal string
+		if err := rows.Scan(&count, &workspaceID, &customVal); err != nil {
+			jd.logger.Info("error scanning maxAge aborted jobs: %w", err)
+			return err
+		}
+		// may lead to negative count on gateway counters? do we even use them anywhere?
+		tx.AddSuccessListener(func() {
+			rmetrics.DecreasePendingEvents(
+				jd.tablePrefix,
+				workspaceID,
+				customVal,
+				float64(count),
+			)
+		})
+	}
+	if err := rows.Err(); err != nil {
+		jd.logger.Info("error iterating maxAge aborted jobs: %w", err)
+		return err
+	}
+	return nil
 }
