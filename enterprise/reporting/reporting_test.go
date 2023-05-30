@@ -460,6 +460,7 @@ func TestAggregationLogic(t *testing.T) {
 				SourceDefinitionId:      "src-def-1",
 				DestinationDefinitionId: "des-def-1",
 				DestinationID:           "des-1",
+				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
 				StatusCode:   200,
@@ -483,6 +484,7 @@ func TestAggregationLogic(t *testing.T) {
 				SourceDefinitionId:      "src-def-1",
 				DestinationDefinitionId: "des-def-1",
 				DestinationID:           "des-1",
+				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
 				StatusCode:   400,
@@ -506,6 +508,7 @@ func TestAggregationLogic(t *testing.T) {
 				SourceDefinitionId:      "src-def-1",
 				DestinationDefinitionId: "des-def-1",
 				DestinationID:           "des-1",
+				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
 				StatusCode:   400,
@@ -529,6 +532,7 @@ func TestAggregationLogic(t *testing.T) {
 				SourceDefinitionId:      "src-def-1",
 				DestinationDefinitionId: "des-def-1",
 				DestinationID:           "des-1",
+				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
 				StatusCode:   400,
@@ -553,6 +557,7 @@ func TestAggregationLogic(t *testing.T) {
 				SourceDefinitionId:      "src-def-1",
 				DestinationDefinitionId: "des-def-1",
 				DestinationID:           "des-1",
+				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
 				StatusCode:   500,
@@ -581,6 +586,7 @@ func TestAggregationLogic(t *testing.T) {
 				SourceDefinitionId:      dbErrs[0].SourceDefinitionId,
 				DestinationDefinitionId: dbErrs[0].DestinationDefinitionId,
 				DestinationID:           dbErrs[0].DestinationID,
+				DestType:                dbErrs[0].DestType,
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: dbErrs[0].ReportedAt,
@@ -614,6 +620,7 @@ func TestAggregationLogic(t *testing.T) {
 				SourceDefinitionId:      dbErrs[3].SourceDefinitionId,
 				DestinationDefinitionId: dbErrs[3].DestinationDefinitionId,
 				DestinationID:           dbErrs[3].DestinationID,
+				DestType:                dbErrs[3].DestType,
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: dbErrs[3].ReportedAt,
@@ -640,6 +647,7 @@ func TestAggregationLogic(t *testing.T) {
 				SourceDefinitionId:      dbErrs[4].SourceDefinitionId,
 				DestinationDefinitionId: dbErrs[4].DestinationDefinitionId,
 				DestinationID:           dbErrs[4].DestinationID,
+				DestType:                dbErrs[4].DestType,
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: dbErrs[4].ReportedAt,

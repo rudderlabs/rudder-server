@@ -422,7 +422,6 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 }
 
 func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, clientName string) ([]*types.EDReportsDB, int64) {
-	// sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ErrorDetailReportsTable, currentMs)
 	var queryMin sql.NullInt64
 	dbHandle, err := edRep.getDBHandle(clientName)
 	if err != nil {
@@ -455,9 +454,8 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 		"event_type",
 		"error_code",
 		"error_message",
+		"dest_type",
 	}, ", ")
-	// sqlStatement = fmt.Sprintf(`SELECT %s FROM %s WHERE reported_at = %d`, edSelColumns, ErrorDetailReportsTable, queryMin.Int64)
-	// edRep.log.Debugf("[EdRep] sql statement: %s\n", sqlStatement)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(`SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
@@ -484,6 +482,7 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 			"event_type",
 			"error_code",
 			"error_message",
+			"dest_type",
 		*/
 		dbEdMetric := &types.EDReportsDB{
 			EDErrorDetails:    types.EDErrorDetails{},
@@ -504,6 +503,7 @@ func (edRep *ErrorDetailReporter) getReports(ctx context.Context, currentMs int6
 			&dbEdMetric.EDErrorDetails.EventType,
 			&dbEdMetric.EDErrorDetails.ErrorCode,
 			&dbEdMetric.EDErrorDetails.ErrorMessage,
+			&dbEdMetric.EDConnectionDetails.DestType,
 		)
 		if err != nil {
 			edRep.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
@@ -525,6 +525,7 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 			report.DestinationDefinitionId,
 			report.PU,
 			fmt.Sprint(report.ReportedAt),
+			report.DestType,
 		}
 		return strings.Join(keys, groupKeyDelimitter)
 	})
@@ -546,6 +547,7 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 				DestinationDefinitionId: firstReport.DestinationDefinitionId,
 				SourceID:                firstReport.SourceID,
 				SourceDefinitionId:      firstReport.SourceDefinitionId,
+				DestType:                firstReport.DestType,
 			},
 			PU: firstReport.PU,
 			ReportMetadata: types.ReportMetadata{
