@@ -1024,7 +1024,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		return alteredSchema, fmt.Errorf("update schema: %w", err)
 	}
 
-	pkgLogger.Infow("stating load for table",
+	pkgLogger.Infow("starting load for table",
 		logfield.UploadJobID, job.upload.ID,
 		logfield.SourceID, job.warehouse.Source.ID,
 		logfield.DestinationID, job.warehouse.Destination.ID,
