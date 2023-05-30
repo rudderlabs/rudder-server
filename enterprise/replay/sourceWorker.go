@@ -215,5 +215,9 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 }
 
 func getFormattedTimeStamp(timeStamp string) string {
-	return strings.Split(strings.TrimSuffix(timeStamp, "Z"), ".")[0][:19]
+	stringsArr := strings.Split(strings.TrimSuffix(timeStamp, "Z"), ".")[0]
+	if len(stringsArr) == 19 {
+		return stringsArr
+	}
+	return timeStamp
 }
