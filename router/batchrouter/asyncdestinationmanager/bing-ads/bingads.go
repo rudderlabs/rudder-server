@@ -165,50 +165,6 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	successJobIDs := []int64{}
 
 	filePath := createZipFile(asyncDestStruct.FileName, &failedJobIds, &successJobIDs, destConfig.AudienceId)
-	// sessionConfig := bingads.SessionConfig{
-	// 	AccountId:      destConfig.CustomerAccountId,
-	// 	CustomerId:     destConfig.CustomerId,
-	// 	AccessToken:    b.accessToken,
-	// 	HTTPClient:     http.DefaultClient,
-	// 	DeveloperToken: b.developerToken,
-	// 	AccessTokenGenerator: func() (string, string, error) {
-
-	// 		refreshTokenParams := oauth.RefreshTokenParams{
-	// 			WorkspaceId: destination.WorkspaceID,
-	// 			DestDefName: destination.Name,
-	// 			AccountId:   destConfig.RudderAccountId,
-	// 		}
-	// 		statusCode, authResponse := b.oauthClient.FetchToken(&refreshTokenParams)
-	// 		if statusCode != 200 {
-	// 			return "", "", fmt.Errorf("Error in fetching access token")
-	// 		}
-	// 		secret := secretStruct{}
-	// 		err = json.Unmarshal(authResponse.Account.Secret, &secret)
-	// 		if err != nil {
-	// 			return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-	// 		}
-	// 		currentTime := time.Now()
-	// 		expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
-	// 		if err != nil {
-	// 			return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
-	// 		}
-	// 		if currentTime.After(expirationTime) {
-	// 			refreshTokenParams.Secret = authResponse.Account.Secret
-	// 			statusCode, authResponse = b.oauthClient.RefreshToken(&refreshTokenParams)
-	// 			if statusCode != 200 {
-	// 				return "", "", fmt.Errorf("Error in refreshing access token")
-	// 			}
-	// 			err = json.Unmarshal(authResponse.Account.Secret, &secret)
-	// 			if err != nil {
-	// 				return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-	// 			}
-	// 			return secret.AccessToken, secret.Developer_token, nil
-	// 		}
-	// 		return secret.AccessToken, secret.Developer_token, nil
-	// 	},
-	// }
-	// session := bingads.NewSession(sessionConfig)
-	// service := bingads.NewBulkService(session)
 	urlResp, err := b.service.GetBulkUploadUrl()
 	if err != nil {
 		if err != nil {
