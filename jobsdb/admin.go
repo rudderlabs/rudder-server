@@ -187,7 +187,7 @@ func (jd *HandleT) doCleanupDSInTx(ctx context.Context, tx *Tx, ds dataSetT) err
 			where jobs.created_at < $1 and (
 				status.job_state = ANY('{%[3]s}')
 				or
-				status.job_state is null
+				status.job_id is null
 			)
 		),
 		inserted_status as (

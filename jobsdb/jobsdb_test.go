@@ -1225,7 +1225,7 @@ func TestMaxAgeCleanup(t *testing.T) {
 	}
 
 	destinationID := strings.ToLower(rsRand.String(5))
-	t.Setenv("JobsDB.jobMaxAge", "1ns")
+	t.Setenv("RSERVER_JOBS_DB_JOB_MAX_AGE", "0")
 	triggerJobCleanup := make(chan time.Time)
 	jobsDB := &HandleT{
 		TriggerJobCleanUp: func() <-chan time.Time {
@@ -1265,6 +1265,20 @@ func TestMaxAgeCleanup(t *testing.T) {
 	triggerJobCleanup <- time.Now()
 	triggerJobCleanup <- time.Now()
 
+	abortedJobs, err := jobsDB.GetProcessed(
+		context.Background(),
+		GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			ParameterFilters: []ParameterFilterT{
+				{Name: "destination_id", Value: destinationID},
+			},
+			StateFilters: []string{Aborted.State},
+			JobsLimit:    100,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(abortedJobs.Jobs))
+
 	unprocessed, err = jobsDB.getUnprocessed(
 		context.Background(),
 		GetQueryParamsT{
@@ -1277,17 +1291,6 @@ func TestMaxAgeCleanup(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
-
-	abortedJobs, err := jobsDB.GetProcessed(
-		context.Background(),
-		GetQueryParamsT{
-			CustomValFilters: []string{customVal},
-			StateFilters:     []string{Aborted.State},
-			JobsLimit:        100,
-		},
-	)
-	require.NoError(t, err)
-	require.Equal(t, 2, len(abortedJobs.Jobs))
 }
 
 func TestConstructParameterJSONQuery(t *testing.T) {
