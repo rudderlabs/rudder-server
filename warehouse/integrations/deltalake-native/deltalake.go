@@ -156,7 +156,7 @@ func WithConfig(h *Deltalake, config *config.Config) {
 }
 
 // Setup sets up the warehouse
-func (d *Deltalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) error {
+func (d *Deltalake) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error {
 	d.Warehouse = warehouse
 	d.Namespace = warehouse.Namespace
 	d.Uploader = uploader
@@ -230,13 +230,13 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 }
 
 // CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover() {
-	d.dropDanglingStagingTables()
+func (d *Deltalake) CrashRecover(ctx context.Context) {
+	d.dropDanglingStagingTables(ctx)
 }
 
 // dropDanglingStagingTables drops dangling staging tables
-func (d *Deltalake) dropDanglingStagingTables() {
-	tableNames, err := d.fetchTables(rudderStagingTableRegex)
+func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
+	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
 	if err != nil {
 		d.Logger.Warnw("fetching tables for dropping dangling staging tables",
 			logfield.SourceID, d.Warehouse.Source.ID,
@@ -250,14 +250,14 @@ func (d *Deltalake) dropDanglingStagingTables() {
 		return
 	}
 
-	d.dropStagingTables(tableNames)
+	d.dropStagingTables(ctx, tableNames)
 }
 
 // fetchTables fetches tables from the database
-func (d *Deltalake) fetchTables(regex string) ([]string, error) {
+func (d *Deltalake) fetchTables(ctx context.Context, regex string) ([]string, error) {
 	query := fmt.Sprintf(`SHOW tables FROM %s LIKE '%s';`, d.Namespace, regex)
 
-	rows, err := d.DB.Query(query)
+	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
 		if strings.Contains(err.Error(), schemaNotFound) {
 			return nil, nil
@@ -287,9 +287,9 @@ func (d *Deltalake) fetchTables(regex string) ([]string, error) {
 }
 
 // dropStagingTables drops all the staging tables
-func (d *Deltalake) dropStagingTables(stagingTables []string) {
+func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []string) {
 	for _, stagingTable := range stagingTables {
-		err := d.dropTable(stagingTable)
+		err := d.dropTable(ctx, stagingTable)
 		if err != nil {
 			d.Logger.Warnw("dropping staging table",
 				logfield.SourceID, d.Warehouse.Source.ID,
@@ -306,10 +306,10 @@ func (d *Deltalake) dropStagingTables(stagingTables []string) {
 }
 
 // DropTable drops a table from the warehouse
-func (d *Deltalake) dropTable(table string) error {
+func (d *Deltalake) dropTable(ctx context.Context, table string) error {
 	query := fmt.Sprintf(`DROP TABLE %s.%s;`, d.Namespace, table)
 
-	_, err := d.DB.Exec(query)
+	_, err := d.DB.ExecContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("executing drop table: %w", err)
 	}
@@ -318,17 +318,17 @@ func (d *Deltalake) dropTable(table string) error {
 }
 
 // FetchSchema fetches the schema from the warehouse
-func (d *Deltalake) FetchSchema() (model.Schema, model.Schema, error) {
+func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
 	schema := make(model.Schema)
 	unrecognizedSchema := make(model.Schema)
-	tableNames, err := d.fetchTables(nonRudderStagingTableRegex)
+	tableNames, err := d.fetchTables(ctx, nonRudderStagingTableRegex)
 	if err != nil {
 		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching tables: %w", err)
 	}
 
 	// For each table, fetch the attributes
 	for _, tableName := range tableNames {
-		tableSchema, err := d.fetchTableAttributes(tableName)
+		tableSchema, err := d.fetchTableAttributes(ctx, tableName)
 		if err != nil {
 			return model.Schema{}, model.Schema{}, fmt.Errorf("fetching table attributes: %w", err)
 		}
@@ -357,12 +357,12 @@ func (d *Deltalake) FetchSchema() (model.Schema, model.Schema, error) {
 }
 
 // fetchTableAttributes fetches the attributes of a table
-func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, error) {
+func (d *Deltalake) fetchTableAttributes(ctx context.Context, tableName string) (model.TableSchema, error) {
 	tableSchema := make(model.TableSchema)
 
 	query := fmt.Sprintf(`DESCRIBE QUERY TABLE %s.%s;`, d.Namespace, tableName)
 
-	rows, err := d.DB.Query(query)
+	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("executing fetching table attributes: %w", err)
 	}
@@ -387,12 +387,12 @@ func (d *Deltalake) fetchTableAttributes(tableName string) (model.TableSchema, e
 }
 
 // CreateSchema creates a schema in the warehouse if it does not exist.
-func (d *Deltalake) CreateSchema() error {
-	if exists, err := d.schemaExists(); err != nil {
+func (d *Deltalake) CreateSchema(ctx context.Context) error {
+	if exists, err := d.schemaExists(ctx); err != nil {
 		return fmt.Errorf("checking if schema exists: %w", err)
 	} else if exists {
 		return nil
-	} else if err := d.createSchema(); err != nil {
+	} else if err := d.createSchema(ctx); err != nil {
 		return fmt.Errorf("create schema: %w", err)
 	}
 
@@ -400,11 +400,11 @@ func (d *Deltalake) CreateSchema() error {
 }
 
 // schemaExists checks if a schema exists in the warehouse.
-func (d *Deltalake) schemaExists() (bool, error) {
+func (d *Deltalake) schemaExists(ctx context.Context) (bool, error) {
 	query := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, d.Namespace)
 
 	var schema string
-	err := d.DB.QueryRow(query).Scan(&schema)
+	err := d.DB.QueryRowContext(ctx, query).Scan(&schema)
 
 	if err == sql.ErrNoRows {
 		return false, nil
@@ -416,10 +416,10 @@ func (d *Deltalake) schemaExists() (bool, error) {
 }
 
 // createSchema creates a schema in the warehouse.
-func (d *Deltalake) createSchema() error {
+func (d *Deltalake) createSchema(ctx context.Context) error {
 	query := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, d.Namespace)
 
-	_, err := d.DB.Exec(query)
+	_, err := d.DB.ExecContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("executing create schema: %w", err)
 	}
@@ -428,7 +428,7 @@ func (d *Deltalake) createSchema() error {
 }
 
 // CreateTable creates a table in the warehouse.
-func (d *Deltalake) CreateTable(tableName string, columns model.TableSchema) error {
+func (d *Deltalake) CreateTable(ctx context.Context, tableName string, columns model.TableSchema) error {
 	var partitionedSql, tableLocationSql string
 
 	tableLocationSql = d.tableLocationQuery(tableName)
@@ -452,7 +452,7 @@ func (d *Deltalake) CreateTable(tableName string, columns model.TableSchema) err
 		partitionedSql,
 	)
 
-	_, err := d.DB.Exec(query)
+	_, err := d.DB.ExecContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("creating table: %w", err)
 	}
@@ -489,7 +489,7 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 }
 
 // AddColumns adds columns to the table.
-func (d *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
+func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
 	var queryBuilder strings.Builder
 
 	queryBuilder.WriteString(fmt.Sprintf(`
@@ -507,7 +507,7 @@ func (d *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 	query := strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ");"
 
-	_, err := d.DB.Exec(query)
+	_, err := d.DB.ExecContext(ctx, query)
 
 	// Handle error in case of single column
 	if len(columnsInfo) == 1 {
@@ -535,7 +535,7 @@ func (d *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.Co
 }
 
 // AlterColumn alters a column in the warehouse
-func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+func (*Deltalake) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
@@ -572,19 +572,19 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		logfield.TableName, tableName,
 	)
 
-	if err = d.CreateTable(stagingTableName, tableSchemaAfterUpload); err != nil {
+	if err = d.CreateTable(ctx, stagingTableName, tableSchemaAfterUpload); err != nil {
 		return "", fmt.Errorf("creating staging table: %w", err)
 	}
 
 	if !skipTempTableDelete {
-		defer d.dropStagingTables([]string{stagingTableName})
+		defer d.dropStagingTables(ctx, []string{stagingTableName})
 	}
 
 	if auth, err = d.authQuery(); err != nil {
 		return "", fmt.Errorf("getting auth query: %w", err)
 	}
 
-	objectsLocation, err := d.Uploader.GetSampleLoadFileLocation(tableName)
+	objectsLocation, err := d.Uploader.GetSampleLoadFileLocation(ctx, tableName)
 	if err != nil {
 		return "", fmt.Errorf("getting sample load file location: %w", err)
 	}
@@ -958,7 +958,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	defer d.dropStagingTables([]string{identifyStagingTable})
+	defer d.dropStagingTables(ctx, []string{identifyStagingTable})
 
 	if len(usersSchemaInUpload) == 0 {
 		return map[string]error{
@@ -1034,7 +1034,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	defer d.dropStagingTables([]string{stagingTableName})
+	defer d.dropStagingTables(ctx, []string{stagingTableName})
 
 	columnKeys := append([]string{`id`}, userColNames...)
 
@@ -1171,25 +1171,25 @@ func getColumnProperties(usersSchemaInWarehouse model.TableSchema) ([]string, []
 }
 
 // LoadIdentityMergeRulesTable loads identifies merge rules tables
-func (*Deltalake) LoadIdentityMergeRulesTable() error {
+func (*Deltalake) LoadIdentityMergeRulesTable(context.Context) error {
 	return nil
 }
 
 // LoadIdentityMappingsTable loads identifies mappings table
-func (*Deltalake) LoadIdentityMappingsTable() error {
+func (*Deltalake) LoadIdentityMappingsTable(context.Context) error {
 	return nil
 }
 
 // Cleanup cleans up the warehouse
-func (d *Deltalake) Cleanup() {
+func (d *Deltalake) Cleanup(ctx context.Context) {
 	if d.DB != nil {
-		d.dropDanglingStagingTables()
+		d.dropDanglingStagingTables(ctx)
 		_ = d.DB.Close()
 	}
 }
 
 // IsEmpty checks if the warehouse is empty or not
-func (*Deltalake) IsEmpty(model.Warehouse) (bool, error) {
+func (*Deltalake) IsEmpty(context.Context, model.Warehouse) (bool, error) {
 	return false, nil
 }
 
@@ -1207,7 +1207,7 @@ func (d *Deltalake) TestConnection(ctx context.Context, _ model.Warehouse) error
 }
 
 // DownloadIdentityRules downloadchecking if schema exists identity rules
-func (*Deltalake) DownloadIdentityRules(*misc.GZipWriter) error {
+func (*Deltalake) DownloadIdentityRules(context.Context, *misc.GZipWriter) error {
 	return nil
 }
 
@@ -1233,7 +1233,7 @@ func (d *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) 
 }
 
 // Connect returns Client
-func (d *Deltalake) Connect(warehouse model.Warehouse) (warehouseclient.Client, error) {
+func (d *Deltalake) Connect(_ context.Context, warehouse model.Warehouse) (warehouseclient.Client, error) {
 	d.Warehouse = warehouse
 	d.Namespace = warehouse.Namespace
 	d.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -1251,7 +1251,7 @@ func (d *Deltalake) Connect(warehouse model.Warehouse) (warehouseclient.Client, 
 }
 
 // LoadTestTable loads the test table
-func (d *Deltalake) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) error {
+func (d *Deltalake) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) error {
 	auth, err := d.authQuery()
 	if err != nil {
 		return fmt.Errorf("auth query: %w", err)
@@ -1308,7 +1308,7 @@ func (d *Deltalake) LoadTestTable(location, tableName string, _ map[string]inter
 		)
 	}
 
-	_, err = d.DB.Exec(query)
+	_, err = d.DB.ExecContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("loading test table: %w", err)
 	}
@@ -1327,10 +1327,10 @@ func (*Deltalake) ErrorMappings() []model.JobError {
 }
 
 // DropTable drops a table in the warehouse
-func (d *Deltalake) DropTable(tableName string) error {
-	return d.dropTable(tableName)
+func (d *Deltalake) DropTable(ctx context.Context, tableName string) error {
+	return d.dropTable(ctx, tableName)
 }
 
-func (*Deltalake) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+func (*Deltalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }

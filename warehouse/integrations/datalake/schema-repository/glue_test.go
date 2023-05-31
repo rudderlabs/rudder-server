@@ -121,16 +121,18 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			warehouseutils.Init()
 			encoding.Init()
 
+			ctx := context.Background()
+
 			g, err := NewGlueSchemaRepository(warehouse)
 			g.Logger = logger.NOP
 			require.NoError(t, err)
 
 			t.Logf("Creating schema %s", testNamespace)
-			err = g.CreateSchema()
+			err = g.CreateSchema(ctx)
 			require.NoError(t, err)
 
 			t.Log("Creating already existing schema should not fail")
-			err = g.CreateSchema()
+			err = g.CreateSchema(ctx)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
@@ -142,15 +144,15 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			})
 
 			t.Logf("Creating table %s", testTable)
-			err = g.CreateTable(testTable, testColumns)
+			err = g.CreateTable(ctx, testTable, testColumns)
 			require.NoError(t, err)
 
 			t.Log("Creating already existing table should not fail")
-			err = g.CreateTable(testTable, testColumns)
+			err = g.CreateTable(ctx, testTable, testColumns)
 			require.NoError(t, err)
 
 			t.Log("Adding columns to table")
-			err = g.AddColumns(testTable, []warehouseutils.ColumnInfo{
+			err = g.AddColumns(ctx, testTable, []warehouseutils.ColumnInfo{
 				{Name: "alter_test_bool", Type: "boolean"},
 				{Name: "alter_test_string", Type: "string"},
 				{Name: "alter_test_int", Type: "int"},
@@ -178,10 +180,10 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			uploadOutput, err := fm.Upload(context.TODO(), f, fmt.Sprintf("rudder-test-payload/s3-datalake/%s/%s/", warehouseutils.RandHex(), tc.windowLayout))
+			uploadOutput, err := fm.Upload(ctx, f, fmt.Sprintf("rudder-test-payload/s3-datalake/%s/%s/", warehouseutils.RandHex(), tc.windowLayout))
 			require.NoError(t, err)
 
-			err = g.RefreshPartitions(testTable, []warehouseutils.LoadFile{
+			err = g.RefreshPartitions(ctx, testTable, []warehouseutils.LoadFile{
 				{
 					Location: uploadOutput.Location,
 				},
