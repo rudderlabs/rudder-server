@@ -61,6 +61,7 @@ func Test_Dedup(t *testing.T) {
 func Test_Dedup_Window(t *testing.T) {
 	config.Reset()
 	logger.Reset()
+	misc.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
@@ -87,6 +88,7 @@ func Test_Dedup_Window(t *testing.T) {
 func Test_Dedup_ClearDB(t *testing.T) {
 	config.Reset()
 	logger.Reset()
+	misc.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
