@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.3](https://github.com/rudderlabs/rudder-server/compare/v1.9.2...v1.9.3) (2023-05-31)
+
+
+### Bug Fixes
+
+* **batchrouter:** batchrouter stops processing events for destinations where a destType-specific config option is set [#3421](https://github.com/rudderlabs/rudder-server/issues/3421) ([f2dc53c](https://github.com/rudderlabs/rudder-server/commit/f2dc53cf6a976c09c6c9f45b0b3d846fbcd55745))
+
 ## [1.9.2](https://github.com/rudderlabs/rudder-server/compare/v1.9.1...v1.9.2) (2023-05-29)
 
 
