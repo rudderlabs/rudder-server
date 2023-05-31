@@ -158,8 +158,8 @@ func createZipFile(filePath string, failedJobIds *[]int64, successJobIds *[]int6
 func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 
 	destConfig := DestinationConfig{}
-	jsonConfig, err := json.Marshal(destination.Config)
-	err = json.Unmarshal(jsonConfig, &destConfig)
+	jsonConfig, _ := json.Marshal(destination.Config)
+	_ = json.Unmarshal(jsonConfig, &destConfig)
 
 	failedJobIds := []int64{}
 	successJobIDs := []int64{}
@@ -270,50 +270,10 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
 	if err != nil {
 		panic("BRT: Failed to poll status for bingAds" + err.Error())
 	}
-	fileAccessUrl := uploadStatusResp.ResultFileUrl
-	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "amp;", "")
-	outputDir := "/tmp"
-	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		panic(fmt.Errorf("error creating output directory: err: %w", err))
-	}
-
-	// Download the zip file
-	fileLoadResp, err := http.Get(modifiedUrl)
-	if err != nil {
-		fmt.Println("Error downloading zip file:", err)
-		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
-	}
-	defer fileLoadResp.Body.Close()
-
-	// Create a temporary file to save the downloaded zip file
-	tempFile, err := os.CreateTemp("", "downloaded_zip_*.zip")
-	if err != nil {
-		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
-	}
-	defer os.Remove(tempFile.Name())
-
-	// Save the downloaded zip file to the temporary file
-	_, err = io.Copy(tempFile, fileLoadResp.Body)
-	if err != nil {
-		panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
-	}
-
-	// Extract the contents of the zip file to the output directory
-	filePaths, err := unzip(tempFile.Name(), outputDir)
-	if err != nil {
-		panic(fmt.Errorf("BRT: Failed saving zip file extracting zip file Err: %w", err))
-	}
-
-	// extracting file paths
-	var outputPath string
-	for _, filePath := range filePaths {
-		outputPath = filePath
-	}
-
 	var resp common.AsyncStatusResponse
 	var statusCode int
 	if uploadStatusResp.PercentComplete == 100 && uploadStatusResp.RequestStatus == "completed" {
+		// all successful events, do not need to download the file.
 		resp = common.AsyncStatusResponse{
 			Success:        true,
 			StatusCode:     200,
@@ -325,6 +285,47 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
 		}
 		statusCode = 200
 	} else if uploadStatusResp.PercentComplete == 100 && uploadStatusResp.RequestStatus == "CompletedWithErrors" {
+		// the final status file needs to be downloaded
+		fileAccessUrl := uploadStatusResp.ResultFileUrl
+		modifiedUrl := strings.ReplaceAll(fileAccessUrl, "amp;", "")
+		outputDir := "/tmp"
+		// Create output directory if it doesn't exist
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			panic(fmt.Errorf("error creating output directory: err: %w", err))
+		}
+
+		// Download the zip file
+		fileLoadResp, err := http.Get(modifiedUrl)
+		if err != nil {
+			fmt.Println("Error downloading zip file:", err)
+			panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
+		}
+		defer fileLoadResp.Body.Close()
+
+		// Create a temporary file to save the downloaded zip file
+		tempFile, err := os.CreateTemp("", "downloaded_zip_*.zip")
+		if err != nil {
+			panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
+		}
+		defer os.Remove(tempFile.Name())
+
+		// Save the downloaded zip file to the temporary file
+		_, err = io.Copy(tempFile, fileLoadResp.Body)
+		if err != nil {
+			panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
+		}
+
+		// Extract the contents of the zip file to the output directory
+		filePaths, err := unzip(tempFile.Name(), outputDir)
+		if err != nil {
+			panic(fmt.Errorf("BRT: Failed saving zip file extracting zip file Err: %w", err))
+		}
+
+		// extracting file paths
+		var outputPath string
+		for _, filePath := range filePaths {
+			outputPath = filePath
+		}
 		resp = common.AsyncStatusResponse{
 			Success:        true,
 			StatusCode:     200,
@@ -336,6 +337,8 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
 		}
 		statusCode = 200
 	} else {
+		// this will include authenticaion key errors
+		// file will not be available for this case.
 		resp = common.AsyncStatusResponse{
 			Success:        false,
 			StatusCode:     400,
