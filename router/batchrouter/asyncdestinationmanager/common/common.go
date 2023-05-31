@@ -26,6 +26,7 @@ type AsyncStatusResponse struct {
 	HasWarning     bool
 	FailedJobsURL  string // these will not be present in bingAds
 	WarningJobsURL string // these will not be present in bingAds
+	OutputFilePath string
 }
 type AsyncUploadOutput struct {
 	Key                 string
@@ -112,10 +113,6 @@ type AsyncFailedPayload struct {
 	ImportId string                   `json:"importId"`
 	MetaData MetaDataT                `json:"metadata"`
 }
-
-var (
-	HTTPTimeout time.Duration
-)
 
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
 	if keyMap == nil {

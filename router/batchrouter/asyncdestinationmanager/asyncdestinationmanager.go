@@ -22,8 +22,8 @@ import (
 
 type Asyncdestinationmanager interface {
 	Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput
-	Poll(importingJob *jobsdb.JobT, payload []byte, timeout time.Duration) ([]byte, int)
-	FetchFailedEvents(*backendconfig.DestinationT, *utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse, time.Duration) ([]byte, int)
+	Poll(pollStruct common.AsyncPoll) ([]byte, int)
+	FetchFailedEvents(*utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse) ([]byte, int)
 }
 
 type AsyncDestinationStruct struct {
@@ -129,9 +129,9 @@ func GetMarshalledData(payload string, jobID int64) string {
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) Asyncdestinationmanager {
 	destType := destination.DestinationDefinition.Name
 	if destType == "BINGADS_AUDIENCE" {
-		return bingads.NewManager(destination, backendConfig)
+		return bingads.NewManager(destination, backendConfig, HTTPTimeout)
 	} else if destType == "MARKETO_BULK_UPLOAD" {
-		return marketobulkupload.NewManager(destination)
+		return marketobulkupload.NewManager(destination, HTTPTimeout)
 	} else {
 		panic(fmt.Errorf("batch router is not enabled for destination %s", destType))
 	}

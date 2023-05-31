@@ -41,12 +41,13 @@ type GetBulkUploadStatusRequest struct {
 	NS        string   `xml:"xmlns,attr"`
 	RequestId string   `xml:"RequestId"`
 }
-
 type GetBulkUploadStatusResponse struct {
-	XMLName         xml.Name `xml:"GetBulkUploadStatusResponse"`
-	NS              string   `xml:"xmlns,attr"`
-	PercentComplete int64    `xml:"PercentComplete"`
-	RequestStatus   string   `xml:"RequestStatus"`
+	XMLName         xml.Name   `xml:"GetBulkUploadStatusResponse"`
+	NS              string     `xml:"xmlns,attr"`
+	PercentComplete int64      `xml:"PercentComplete"`
+	RequestStatus   string     `xml:"RequestStatus"`
+	ResultFileUrl   string     `xml:"ResultFileUrl"`
+	Errors          ErrorsType `xml:"ErrorsType"`
 }
 
 // GetBulkUploadUrl

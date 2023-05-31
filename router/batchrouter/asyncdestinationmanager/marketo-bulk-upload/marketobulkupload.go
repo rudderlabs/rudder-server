@@ -23,10 +23,11 @@ import (
 
 type MarketoBulkUploader struct {
 	destName string
+	timeout  time.Duration
 }
 
-func NewManager(destination *backendconfig.DestinationT) *MarketoBulkUploader {
-	marketobulkupload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD"}
+func NewManager(destination *backendconfig.DestinationT, HTTPTimeout time.Duration) *MarketoBulkUploader {
+	marketobulkupload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", timeout: HTTPTimeout}
 	return marketobulkupload
 }
 
@@ -38,24 +39,26 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("asyncdestinationmanager").Child("marketobulkupload")
 }
 
-func (b *MarketoBulkUploader) Poll(importingJob *jobsdb.JobT, payload []byte, timeout time.Duration) ([]byte, int) {
+func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
+	payload, err := json.Marshal(pollStruct)
+	if err != nil {
+		panic("JSON Marshal Failed" + err.Error())
+	}
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	parameters := importingJob.LastJobStatus.Parameters
-	pollUrl := gjson.GetBytes(parameters, "pollURL").String()
-	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+pollUrl, payload, timeout)
+	pollUrl := "/pollStatus"
+	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+pollUrl, payload, b.timeout)
 	return bodyBytes, statusCode
 }
 
-func (b *MarketoBulkUploader) FetchFailedEvents(destination *backendconfig.DestinationT, destStruct *utils.DestinationWithSources, importingList []*jobsdb.JobT, importingJob *jobsdb.JobT, asyncResponse common.AsyncStatusResponse, timeout time.Duration) ([]byte, int) {
+func (b *MarketoBulkUploader) FetchFailedEvents(destStruct *utils.DestinationWithSources, importingList []*jobsdb.JobT, importingJob *jobsdb.JobT, asyncResponse common.AsyncStatusResponse) ([]byte, int) {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	failedJobUrl := asyncResponse.FailedJobsURL
 	parameters := importingJob.LastJobStatus.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
-	destType := destination.DestinationDefinition.Name
-	payload := common.GenerateFailedPayload(destStruct.Destination.Config, importingList, importId, destType, csvHeaders)
+	payload := common.GenerateFailedPayload(destStruct.Destination.Config, importingList, importId, b.destName, csvHeaders)
 	//payload eg: "{\"config\":{\"clientId\":\"01a70f1f-ff37-46fc-bdff-42e92a3f2bb3\",\"clientSecret\":\"rziQBHtZ34Vl1CE3x3OiA3n8Wr45lwar\",\"columnFieldsMapping\":[{\"from\":\"anonymousId\",\"to\":\"anonymousId\"},{\"from\":\"address\",\"to\":\"address\"},{\"from\":\"email\",\"to\":\"email\"}],\"deDuplicationField\":\"\",\"munchkinId\":\"585-AXP-425\",\"oneTrustCookieCategories\":[],\"uploadInterval\":\"10\"},\"input\":[{\"message\":{\"address\":23,\"anonymousId\":\"Test Kinesis\",\"email\":\"test@kinesis.com\"},\"metadata\":{\"job_id\":5}}],\"destType\":\"marketo_bulk_upload\",\"importId\":\"3095\""
-	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, common.HTTPTimeout)
+	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, b.timeout)
 	// failedBodyBytes eg: "{\"statusCode\":400,\"error\":\"404\"}"
 	return failedBodyBytes, statusCode
 }
@@ -124,7 +127,8 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	startTime := time.Now()
 	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
-	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, common.HTTPTimeout)
+	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, b.timeout)
+	// resp body eg: {statusCode: 200, importId: '3099', pollURL: '/pollStatus', metadata: {…}}
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
 	var bodyBytes []byte

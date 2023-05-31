@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,12 +24,17 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+const pollUrl = "https://bulk.api.bingads.microsoft.com/Api/Advertiser/CampaignManagement/v13/BulkService.svc"
+
 type BingAdsBulkUploader struct {
-	destName       string
-	accessToken    string
-	developerToken string
-	refreshToken   string
-	oauthClient    *oauth.OAuthErrResHandler
+	destName             string
+	accessToken          string
+	developerToken       string
+	refreshToken         string
+	oauthClient          *oauth.OAuthErrResHandler
+	service              *bingads.BulkService
+	destinationIDFileMap map[string]string
+	timeout              time.Duration
 }
 
 type User struct {
@@ -159,51 +165,51 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	successJobIDs := []int64{}
 
 	filePath := createZipFile(asyncDestStruct.FileName, &failedJobIds, &successJobIDs, destConfig.AudienceId)
-	sessionConfig := bingads.SessionConfig{
-		AccountId:      destConfig.CustomerAccountId,
-		CustomerId:     destConfig.CustomerId,
-		AccessToken:    b.accessToken,
-		HTTPClient:     http.DefaultClient,
-		DeveloperToken: b.developerToken,
-		AccessTokenGenerator: func() (string, string, error) {
+	// sessionConfig := bingads.SessionConfig{
+	// 	AccountId:      destConfig.CustomerAccountId,
+	// 	CustomerId:     destConfig.CustomerId,
+	// 	AccessToken:    b.accessToken,
+	// 	HTTPClient:     http.DefaultClient,
+	// 	DeveloperToken: b.developerToken,
+	// 	AccessTokenGenerator: func() (string, string, error) {
 
-			refreshTokenParams := oauth.RefreshTokenParams{
-				WorkspaceId: destination.WorkspaceID,
-				DestDefName: destination.Name,
-				AccountId:   destConfig.RudderAccountId,
-			}
-			statusCode, authResponse := b.oauthClient.FetchToken(&refreshTokenParams)
-			if statusCode != 200 {
-				return "", "", fmt.Errorf("Error in fetching access token")
-			}
-			secret := secretStruct{}
-			err = json.Unmarshal(authResponse.Account.Secret, &secret)
-			if err != nil {
-				return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-			}
-			currentTime := time.Now()
-			expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
-			if err != nil {
-				return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
-			}
-			if currentTime.After(expirationTime) {
-				refreshTokenParams.Secret = authResponse.Account.Secret
-				statusCode, authResponse = b.oauthClient.RefreshToken(&refreshTokenParams)
-				if statusCode != 200 {
-					return "", "", fmt.Errorf("Error in refreshing access token")
-				}
-				err = json.Unmarshal(authResponse.Account.Secret, &secret)
-				if err != nil {
-					return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-				}
-				return secret.AccessToken, secret.Developer_token, nil
-			}
-			return secret.AccessToken, secret.Developer_token, nil
-		},
-	}
-	session := bingads.NewSession(sessionConfig)
-	service := bingads.NewBulkService(session)
-	urlResp, err := service.GetBulkUploadUrl()
+	// 		refreshTokenParams := oauth.RefreshTokenParams{
+	// 			WorkspaceId: destination.WorkspaceID,
+	// 			DestDefName: destination.Name,
+	// 			AccountId:   destConfig.RudderAccountId,
+	// 		}
+	// 		statusCode, authResponse := b.oauthClient.FetchToken(&refreshTokenParams)
+	// 		if statusCode != 200 {
+	// 			return "", "", fmt.Errorf("Error in fetching access token")
+	// 		}
+	// 		secret := secretStruct{}
+	// 		err = json.Unmarshal(authResponse.Account.Secret, &secret)
+	// 		if err != nil {
+	// 			return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+	// 		}
+	// 		currentTime := time.Now()
+	// 		expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
+	// 		if err != nil {
+	// 			return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
+	// 		}
+	// 		if currentTime.After(expirationTime) {
+	// 			refreshTokenParams.Secret = authResponse.Account.Secret
+	// 			statusCode, authResponse = b.oauthClient.RefreshToken(&refreshTokenParams)
+	// 			if statusCode != 200 {
+	// 				return "", "", fmt.Errorf("Error in refreshing access token")
+	// 			}
+	// 			err = json.Unmarshal(authResponse.Account.Secret, &secret)
+	// 			if err != nil {
+	// 				return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+	// 			}
+	// 			return secret.AccessToken, secret.Developer_token, nil
+	// 		}
+	// 		return secret.AccessToken, secret.Developer_token, nil
+	// 	},
+	// }
+	// session := bingads.NewSession(sessionConfig)
+	// service := bingads.NewBulkService(session)
+	urlResp, err := b.service.GetBulkUploadUrl()
 	if err != nil {
 		if err != nil {
 			panic(fmt.Errorf("Error in getting bulk upload url: %v", err))
@@ -218,7 +224,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 	}
 
-	uploadBulkFileResp, err := service.UploadBulkFile(urlResp.UploadUrl, filePath)
+	uploadBulkFileResp, err := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
 	if err != nil {
 		if err != nil {
 			panic(fmt.Errorf("Error in uploading file: %v", err))
@@ -240,8 +246,10 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	// 	panic(fmt.Errorf("Error in removing zip file: %v", err))
 	// }
 
+	// success case
 	var parameters common.Parameters
 	parameters.ImportId = uploadBulkFileResp.RequestId
+	parameters.PollUrl = pollUrl
 	importParameters, err := json.Marshal(parameters)
 	if err != nil {
 		panic("Errored in Marshalling" + err.Error())
@@ -257,14 +265,131 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 }
 
-func (b *BingAdsBulkUploader) Poll(importingJob *jobsdb.JobT, payload []byte, timeout time.Duration) ([]byte, int) {
-	resp := common.AsyncStatusResponse{
-		Success:        true,
-		StatusCode:     200,
-		HasFailed:      false,
-		HasWarning:     false,
-		FailedJobsURL:  "",
-		WarningJobsURL: "",
+func unzip(zipFile, targetDir string) ([]string, error) {
+	var filePaths []string
+
+	r, err := zip.OpenReader(zipFile)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		// Open each file in the zip archive
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+
+		// Create the corresponding file in the target directory
+		path := filepath.Join(targetDir, f.Name)
+		if f.FileInfo().IsDir() {
+			// Create directories if the file is a directory
+			os.MkdirAll(path, f.Mode())
+		} else {
+			// Create the file and copy the contents
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return nil, err
+			}
+			defer file.Close()
+
+			_, err = io.Copy(file, rc)
+			if err != nil {
+				return nil, err
+			}
+
+			// Append the file path to the list
+			filePaths = append(filePaths, path)
+		}
+	}
+
+	return filePaths, nil
+}
+
+func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
+	requestId := pollStruct.ImportId
+	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
+	if err != nil {
+		panic("BRT: Failed to poll status for bingAds" + err.Error())
+	}
+	fileAccessUrl := uploadStatusResp.ResultFileUrl
+	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "amp;", "")
+	outputDir := "/tmp"
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		panic(fmt.Errorf("error creating output directory: err: %w", err))
+	}
+
+	// Download the zip file
+	fileLoadResp, err := http.Get(modifiedUrl)
+	if err != nil {
+		fmt.Println("Error downloading zip file:", err)
+		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
+	}
+	defer fileLoadResp.Body.Close()
+
+	// Create a temporary file to save the downloaded zip file
+	tempFile, err := os.CreateTemp("", "downloaded_zip_*.zip")
+	if err != nil {
+		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
+	}
+	defer os.Remove(tempFile.Name())
+
+	// Save the downloaded zip file to the temporary file
+	_, err = io.Copy(tempFile, fileLoadResp.Body)
+	if err != nil {
+		panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
+	}
+
+	// Extract the contents of the zip file to the output directory
+	filePaths, err := unzip(tempFile.Name(), outputDir)
+	if err != nil {
+		panic(fmt.Errorf("BRT: Failed saving zip file extracting zip file Err: %w", err))
+	}
+
+	// extracting file paths
+	var outputPath string
+	for _, filePath := range filePaths {
+		outputPath = filePath
+	}
+
+	var resp common.AsyncStatusResponse
+	var statusCode int
+	if uploadStatusResp.PercentComplete == 100 && uploadStatusResp.RequestStatus == "completed" {
+		resp = common.AsyncStatusResponse{
+			Success:        true,
+			StatusCode:     200,
+			HasFailed:      false,
+			HasWarning:     false,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: "",
+		}
+		statusCode = 200
+	} else if uploadStatusResp.PercentComplete == 100 && uploadStatusResp.RequestStatus == "CompletedWithErrors" {
+		resp = common.AsyncStatusResponse{
+			Success:        true,
+			StatusCode:     200,
+			HasFailed:      true,
+			HasWarning:     false,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: outputPath,
+		}
+		statusCode = 200
+	} else {
+		resp = common.AsyncStatusResponse{
+			Success:        false,
+			StatusCode:     400,
+			HasFailed:      true,
+			HasWarning:     false,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: "",
+		}
+		statusCode = 400
 	}
 
 	respBytes, err := stdjson.Marshal(resp)
@@ -272,13 +397,16 @@ func (b *BingAdsBulkUploader) Poll(importingJob *jobsdb.JobT, payload []byte, ti
 		panic(err)
 	}
 
-	return respBytes, 200
+	return respBytes, statusCode
+
 }
-func (b *BingAdsBulkUploader) FetchFailedEvents(*backendconfig.DestinationT, *utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse, time.Duration) ([]byte, int) {
+
+// To do:
+func (b *BingAdsBulkUploader) FetchFailedEvents(*utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse) ([]byte, int) {
 	return nil, 0
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) *BingAdsBulkUploader {
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, HTTPTimeout time.Duration) *BingAdsBulkUploader {
 
 	destConfig := DestinationConfig{}
 	jsonConfig, err := json.Marshal(destination.Config)
@@ -290,7 +418,48 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		panic(fmt.Errorf("Error in unmarshalling destination config: %v", err))
 	}
 	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
+	sessionConfig := bingads.SessionConfig{
+		AccountId:  destConfig.CustomerAccountId,
+		CustomerId: destConfig.CustomerId,
+		HTTPClient: http.DefaultClient,
+		AccessTokenGenerator: func() (string, string, error) {
 
-	bingads := &BingAdsBulkUploader{destName: "BING_ADS", oauthClient: oauthClient}
+			refreshTokenParams := oauth.RefreshTokenParams{
+				WorkspaceId: destination.WorkspaceID,
+				DestDefName: destination.Name,
+				AccountId:   destConfig.RudderAccountId,
+			}
+			statusCode, authResponse := oauthClient.FetchToken(&refreshTokenParams)
+			if statusCode != 200 {
+				return "", "", fmt.Errorf("Error in fetching access token")
+			}
+			secret := secretStruct{}
+			err = json.Unmarshal(authResponse.Account.Secret, &secret)
+			if err != nil {
+				return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+			}
+			currentTime := time.Now()
+			expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
+			if err != nil {
+				return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
+			}
+			if currentTime.After(expirationTime) {
+				refreshTokenParams.Secret = authResponse.Account.Secret
+				statusCode, authResponse = oauthClient.RefreshToken(&refreshTokenParams)
+				if statusCode != 200 {
+					return "", "", fmt.Errorf("Error in refreshing access token")
+				}
+				err = json.Unmarshal(authResponse.Account.Secret, &secret)
+				if err != nil {
+					return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+				}
+				return secret.AccessToken, secret.Developer_token, nil
+			}
+			return secret.AccessToken, secret.Developer_token, nil
+		},
+	}
+	session := bingads.NewSession(sessionConfig)
+
+	bingads := &BingAdsBulkUploader{destName: "BING_ADS", oauthClient: oauthClient, service: bingads.NewBulkService(session), timeout: HTTPTimeout}
 	return bingads
 }
