@@ -252,7 +252,6 @@ func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehous
 		userIDColumn    = warehouseutils.ToProviderCase(warehouseType, "user_id")
 		IDColumn        = warehouseutils.ToProviderCase(warehouseType, "id")
 	)
-	fmt.Println("consolidatedSchema before override: ", consolidatedSchema[identifiesTable])
 	if _, ok := consolidatedSchema[usersTable]; !ok {
 		return consolidatedSchema
 	}
@@ -271,7 +270,6 @@ func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehous
 	}
 	consolidatedSchema[usersTable][IDColumn] = consolidatedSchema[identifiesTable][userIDColumn]
 	delete(consolidatedSchema[usersTable], userIDColumn)
-	fmt.Println("consolidatedSchema after override: ", consolidatedSchema[identifiesTable])
 	return consolidatedSchema
 }
 
