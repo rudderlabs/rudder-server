@@ -182,6 +182,7 @@ func (sh *Schema) consolidateStagingFilesSchemaUsingWarehouseSchema(ctx context.
 
 		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
 	}
+
 	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.localSchema)
 	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type, sh.localSchema)
 	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
@@ -237,6 +238,7 @@ func consolidateWarehouseSchema(consolidatedSchema, warehouseSchema model.Schema
 			consolidatedSchema[tableName][columnName] = columnType
 		}
 	}
+
 	return consolidatedSchema
 }
 
@@ -250,7 +252,7 @@ func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehous
 		userIDColumn    = warehouseutils.ToProviderCase(warehouseType, "user_id")
 		IDColumn        = warehouseutils.ToProviderCase(warehouseType, "id")
 	)
-
+	fmt.Println("consolidatedSchema before override: ", consolidatedSchema[identifiesTable])
 	if _, ok := consolidatedSchema[usersTable]; !ok {
 		return consolidatedSchema
 	}
@@ -262,15 +264,14 @@ func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehous
 		consolidatedSchema[usersTable][k] = v
 	}
 	for k, v := range warehouseSchema[usersTable] {
-		if _, ok := consolidatedSchema[usersTable][k]; !ok {
+		if _, ok := warehouseSchema[identifiesTable][k]; !ok {
 			consolidatedSchema[usersTable][k] = v
 			consolidatedSchema[identifiesTable][k] = v
 		}
 	}
-
 	consolidatedSchema[usersTable][IDColumn] = consolidatedSchema[identifiesTable][userIDColumn]
 	delete(consolidatedSchema[usersTable], userIDColumn)
-
+	fmt.Println("consolidatedSchema after override: ", consolidatedSchema[identifiesTable])
 	return consolidatedSchema
 }
 
