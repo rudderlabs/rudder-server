@@ -81,8 +81,12 @@ func (med *ReportingMediator) Report(metrics []*types.PUReportedMetric, txn *sql
 }
 
 func (med *ReportingMediator) AddClient(ctx context.Context, c types.Config) {
-	med.reporting.AddClient(ctx, c)
-	med.errorReporting.AddClient(ctx, c)
+	rruntime.Go(func() {
+		med.reporting.AddClient(ctx, c)
+	})
+	rruntime.Go(func() {
+		med.errorReporting.AddClient(ctx, c)
+	})
 }
 
 func (med *ReportingMediator) GetReportingInstance(reporterType types.ReporterType) types.ReporterI {
