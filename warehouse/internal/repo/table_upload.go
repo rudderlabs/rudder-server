@@ -10,6 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -56,6 +57,15 @@ func NewTableUploads(db *sql.DB, opts ...Opt) *TableUploads {
 }
 
 func (repo *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames []string) error {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.tableUploadsTimeout",
+			5,
+			time.Second,
+		),
+	)
+	defer cancel()
 	var (
 		txn  *sql.Tx
 		stmt *sql.Stmt

@@ -507,6 +507,15 @@ func (notifier *PGNotifier) claim(workerID string) (claim Claim, err error) {
 }
 
 func (notifier *PGNotifier) Publish(ctx context.Context, payload MessagePayload, schema *whUtils.Schema, priority int) (ch chan []Response, err error) {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.pgNotifierPublishTimeout",
+			5,
+			time.Minute,
+		),
+	)
+	defer cancel()
 	publishStartTime := time.Now()
 	jobs := payload.Jobs
 	defer func() {

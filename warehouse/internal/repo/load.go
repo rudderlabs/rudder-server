@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	jsonstd "encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -43,6 +45,11 @@ func NewLoadFiles(db *sql.DB, opts ...Opt) *LoadFiles {
 
 // DeleteByStagingFiles deletes load files associated with stagingFileIDs.
 func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration("Warehouse.deleteLoadFilesTimeout", 60, time.Second),
+	)
+	defer cancel()
 	sqlStatement := `
 		DELETE FROM
 		  ` + loadTableName + `
@@ -59,6 +66,11 @@ func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs 
 
 // Insert loadFiles into the database.
 func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (err error) {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration("Warehouse.loadFilesInsertTimeout", 60, time.Minute),
+	)
+	defer cancel()
 	// Using transactions for bulk copying
 	txn, err := repo.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {

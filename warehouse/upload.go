@@ -247,11 +247,10 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 }
 
 func (job *UploadJob) generateUploadSchema() error {
-	err := job.schemaHandle.prepareUploadSchema(
+	if err := job.schemaHandle.prepareUploadSchema(
 		job.ctx,
 		job.stagingFiles,
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
@@ -287,14 +286,24 @@ func (job *UploadJob) initTableUploads() error {
 }
 
 func (job *UploadJob) syncRemoteSchema() (bool, error) {
-	err := job.schemaHandle.fetchSchemaFromLocal(job.ctx)
-	if err != nil {
-		return false, fmt.Errorf("fetching schema from local: %w", err)
-	}
-
-	err = job.schemaHandle.fetchSchemaFromWarehouse(job.ctx, job.whManager)
-	if err != nil {
-		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
+	if err := warehouseutils.WithTimeout(
+		job.ctx,
+		config.GetDuration(
+			"Warehouse.schemaFetchTimeout",
+			30,
+			time.Second,
+		),
+		func(ctx context.Context) error {
+			if err := job.schemaHandle.fetchSchemaFromLocal(ctx); err != nil {
+				return fmt.Errorf("fetching schema from local: %w", err)
+			}
+			if err := job.schemaHandle.fetchSchemaFromWarehouse(ctx, job.whManager); err != nil {
+				return fmt.Errorf("fetching schema from warehouse: %w", err)
+			}
+			return nil
+		},
+	); err != nil {
+		return false, err
 	}
 
 	schemaChanged := job.schemaHandle.hasSchemaChanged()
@@ -308,8 +317,17 @@ func (job *UploadJob) syncRemoteSchema() (bool, error) {
 			logfield.Namespace, job.warehouse.Namespace,
 		)
 
-		err = job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse)
-		if err != nil {
+		if err := warehouseutils.WithTimeout(
+			job.ctx,
+			config.GetDuration(
+				"Warehouse.schemaUpdateTimeout",
+				30,
+				time.Second,
+			),
+			func(ctx context.Context) error {
+				return job.schemaHandle.updateLocalSchema(ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse)
+			},
+		); err != nil {
 			return false, fmt.Errorf("updating local schema: %w", err)
 		}
 	}
@@ -396,8 +414,7 @@ func (job *UploadJob) run() (err error) {
 	}
 	defer whManager.Cleanup(job.ctx)
 
-	err = job.recovery.Recover(job.ctx, whManager, job.warehouse)
-	if err != nil {
+	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
@@ -1503,7 +1520,16 @@ type UploadColumnsOpts struct {
 }
 
 // SetUploadColumns sets any column values passed as args in UploadColumn format for WarehouseUploadsTable
-func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) (err error) {
+func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
+	ctx, cancel := context.WithTimeout(
+		job.ctx,
+		config.GetDuration(
+			"Warehouse.setUploadColumnsTimeout",
+			5,
+			time.Second,
+		),
+	)
+	defer cancel()
 	var columns string
 	values := []interface{}{job.upload.ID}
 	// setting values using syntax $n since Exec can correctly format time.Time strings
@@ -1526,12 +1552,16 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) (err error) {
 		warehouseutils.WarehouseUploadsTable,
 		columns,
 	)
-	if opts.Txn != nil {
-		_, err = opts.Txn.ExecContext(job.ctx, sqlStatement, values...)
-	} else {
-		_, err = dbHandle.ExecContext(job.ctx, sqlStatement, values...)
-	}
 
+	var txn interface {
+		ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	}
+	if opts.Txn != nil {
+		txn = opts.Txn
+	} else {
+		txn = dbHandle
+	}
+	_, err := txn.ExecContext(ctx, sqlStatement, values...)
 	return err
 }
 

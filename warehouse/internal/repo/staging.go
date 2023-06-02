@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/samber/lo"
 )
 
 const stagingTableName = warehouseutils.WarehouseStagingFilesTable
@@ -49,11 +51,7 @@ type metadataSchema struct {
 }
 
 func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
-	var stagingFileIDs []int64
-	for _, stagingFile := range stagingFiles {
-		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
-	}
-	return stagingFileIDs
+	return lo.Map(stagingFiles, func(stagingFile *model.StagingFile, _ int) int64 { return stagingFile.ID })
 }
 
 func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
@@ -461,10 +459,19 @@ func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload mod
 	return revisionIDs, nil
 }
 
-func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) (err error) {
+func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("no staging files to update")
 	}
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.setStatusTimeout",
+			5,
+			time.Minute,
+		),
+	)
+	defer cancel()
 
 	sqlStatement := `
 		UPDATE
@@ -488,10 +495,19 @@ func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status s
 		return fmt.Errorf("not all rows were updated: %d != %d", rowsAffected, len(ids))
 	}
 
-	return
+	return nil
 }
 
 func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.setStatusTimeout",
+			5,
+			time.Second,
+		),
+	)
+	defer cancel()
 	sqlStatement := `
 		UPDATE
 		` + stagingTableName + `
@@ -513,7 +529,6 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 	if err != nil {
 		return fmt.Errorf("update staging file with error: %w", err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("rows affected: %w", err)
@@ -521,6 +536,5 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 	if rowsAffected == 0 {
 		return fmt.Errorf("no rows affected")
 	}
-
 	return nil
 }
