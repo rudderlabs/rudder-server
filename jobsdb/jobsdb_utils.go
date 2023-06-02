@@ -19,12 +19,14 @@ type sqlDbOrTx interface {
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
-func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dataSetT {
+func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) ([]dataSetT, error) {
 	var datasetList []dataSetT
 
 	// Read the table names from PG
-	tableNames := mustGetAllTableNames(jd, dbHandle)
-
+	tableNames, err := getAllTableNames(dbHandle)
+	if err != nil {
+		return nil, fmt.Errorf("getAllTableNames: %w", err)
+	}
 	// Tables are of form jobs_ and job_status_. Iterate
 	// through them and sort them to produce and
 	// ordered list of datasets
@@ -63,7 +65,7 @@ func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dat
 			})
 	}
 
-	return datasetList
+	return datasetList, nil
 }
 
 /*
@@ -75,13 +77,6 @@ func sortDnumList(dnumList []string) {
 	sort.Slice(dnumList, func(i, j int) bool {
 		return dsindex.MustParse(dnumList[i]).Less(dsindex.MustParse(dnumList[j]))
 	})
-}
-
-// mustGetAllTableNames gets all table names from Postgres and panics in case of an error
-func mustGetAllTableNames(jd assertInterface, dbHandle sqlDbOrTx) []string {
-	tableNames, err := getAllTableNames(dbHandle)
-	jd.assertError(err)
-	return tableNames
 }
 
 // getAllTableNames gets all table names from Postgres

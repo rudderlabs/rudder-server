@@ -48,7 +48,7 @@ type MultiTenantJobsDB interface {
 	FailExecuting()
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
-	JournalMarkStart(opType string, opPayload json.RawMessage) int64
+	JournalMarkStart(opType string, opPayload json.RawMessage) (int64, error)
 	JournalDeleteEntry(opID int64)
 	GetPileUpCounts(context.Context) (map[string]map[string]int, error)
 }

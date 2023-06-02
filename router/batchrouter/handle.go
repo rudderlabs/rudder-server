@@ -413,7 +413,10 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 			DestinationID:   batchJobs.Connection.Destination.ID,
 			DestinationType: batchJobs.Connection.Destination.DestinationDefinition.Name,
 		})
-		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+		opID, err = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+		if err != nil {
+			panic(fmt.Errorf("BRT: Error marking start of upload operation in journal: %v", err))
+		}
 	}
 
 	startTime := time.Now()
