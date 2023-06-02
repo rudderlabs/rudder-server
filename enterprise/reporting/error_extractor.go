@@ -26,7 +26,7 @@ var (
 	emailRegex       = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
 	notWordRegex     = regexp.MustCompile(`\W+`)
 	idRegex          = regexp.MustCompile(`\b([a-zA-Z0-9-]*\d[a-zA-Z0-9-]*)\b`)
-	sRegex           = regexp.MustCompile(`\s+`)
+	spaceRegex       = regexp.MustCompile(`\s+`)
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
 	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "error", "error_message"}
@@ -251,7 +251,7 @@ func (ext *ExtractorT) CleanUpErrorMessage(errMsg string) string {
 	regexdMsg = emailRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
 	regexdMsg = notWordRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
 	regexdMsg = idRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
-	regexdMsg = sRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
+	regexdMsg = spaceRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
 
 	return regexdMsg
 }

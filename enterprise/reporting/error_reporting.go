@@ -592,7 +592,7 @@ func (edRep *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*typ
 func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName string, metric *types.EDMetric) error {
 	payload, err := json.Marshal(metric)
 	if err != nil {
-		return fmt.Errorf("marshal failure: %v", err)
+		return fmt.Errorf("marshal failure: %w", err)
 	}
 	operation := func() error {
 		uri := fmt.Sprintf("%s/recordErrors", edRep.reportingServiceURL)
@@ -622,12 +622,12 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 		respBody, err := io.ReadAll(resp.Body)
 		edRep.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
 		if err != nil {
-			edRep.log.Errorf("Reading response failed: %v", err)
+			edRep.log.Errorf("Reading response failed: %w", err)
 			return err
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
-			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+			err = fmt.Errorf(`received response: statusCode: %d error: %w`, resp.StatusCode, string(respBody))
 			edRep.log.Error(err.Error())
 		}
 		return err
