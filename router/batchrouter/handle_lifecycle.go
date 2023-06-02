@@ -141,7 +141,7 @@ func (brt *Handle) Setup(
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
 	brt.limiter.read = miscsync.NewLimiter(ctx, &limiterGroup, "brt_read",
-		getBatchRouterConfigInt(brt.destType, "Limiter.read.limit", 20),
+		getBatchRouterConfigInt("Limiter.read.limit", brt.destType, 20),
 		stats.Default,
 		miscsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.read.dynamicPeriod", 1, time.Second)),
 		miscsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
@@ -150,7 +150,7 @@ func (brt *Handle) Setup(
 		}),
 	)
 	brt.limiter.process = miscsync.NewLimiter(ctx, &limiterGroup, "brt_process",
-		getBatchRouterConfigInt(brt.destType, "Limiter.process.limit", 20),
+		getBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
 		stats.Default,
 		miscsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
 		miscsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
@@ -159,7 +159,7 @@ func (brt *Handle) Setup(
 		}),
 	)
 	brt.limiter.upload = miscsync.NewLimiter(ctx, &limiterGroup, "brt_upload",
-		getBatchRouterConfigInt(brt.destType, "Limiter.upload.limit", 50),
+		getBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
 		stats.Default,
 		miscsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.upload.dynamicPeriod", 1, time.Second)),
 		miscsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
