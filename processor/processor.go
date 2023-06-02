@@ -410,11 +410,7 @@ func (proc *Handle) Setup(
 		proc.eventSchemaHandler = eventschema.GetInstance()
 	}
 	if proc.config.enableDedup {
-		opts := []dedup.OptFn{}
-		if *clearDB {
-			opts = append(opts, dedup.WithClearDB())
-		}
-		proc.dedup = dedup.New(dedup.DefaultPath(), opts...)
+		proc.dedup = dedup.New(dedup.DefaultPath())
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
