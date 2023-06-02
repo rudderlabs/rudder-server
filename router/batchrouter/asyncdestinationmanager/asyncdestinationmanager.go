@@ -24,6 +24,7 @@ type Asyncdestinationmanager interface {
 	Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput
 	Poll(pollStruct common.AsyncPoll) ([]byte, int)
 	FetchFailedEvents(*utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse) ([]byte, int)
+	RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error)
 }
 
 type AsyncDestinationStruct struct {

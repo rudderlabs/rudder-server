@@ -212,3 +212,8 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	return uploadResponse
 
 }
+
+func RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
+	retrievedKeys, err := misc.ConvertStringInterfaceToIntArray(metadata[retrieveKeys])
+	return retrievedKeys, err
+}

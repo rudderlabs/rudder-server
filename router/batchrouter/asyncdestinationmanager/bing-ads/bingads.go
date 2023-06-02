@@ -8,9 +8,12 @@ import (
 	stdjson "encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -357,12 +360,149 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
 	}
 
 	return respBytes, statusCode
+}
 
+type Response struct {
+	Status   string      `json:"status"`
+	Metadata MetadataNew `json:"metadata"`
+}
+
+type MetadataNew struct {
+	FailedKeys    []int64           `json:"failedKeys"`
+	FailedReasons map[string]string `json:"failedReasons"`
+	WarningKeys   []string          `json:"warningKeys"`
+	SucceededKeys []string          `json:"succeededKeys"`
+}
+
+func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
+	keys := make([]int64, 0, len(clientIDErrors))
+	for key := range clientIDErrors {
+		intKey, _ := strconv.ParseInt(key, 10, 64)
+		keys = append(keys, intKey)
+	}
+	return keys
+}
+
+func getFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]string {
+	reasons := make(map[string]string)
+	for key, errors := range clientIDErrors {
+		errorList := make([]string, 0, len(errors))
+		for k := range errors {
+			errorList = append(errorList, k)
+		}
+		reasons[key] = strings.Join(errorList, ", ")
+	}
+	return reasons
 }
 
 // To do:
-func (b *BingAdsBulkUploader) FetchFailedEvents(*utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse) ([]byte, int) {
-	return nil, 0
+func (b *BingAdsBulkUploader) FetchFailedEvents(destStruct *utils.DestinationWithSources, importingList []*jobsdb.JobT, importingJob *jobsdb.JobT, asyncResponse common.AsyncStatusResponse) ([]byte, int) {
+	filePath := asyncResponse.OutputFilePath
+	// Open the CSV file
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Fatal("Error opening the CSV file:", err)
+	}
+	defer file.Close()
+
+	// Create a new CSV reader
+	reader := csv.NewReader(file)
+
+	// Read all records from the CSV file
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Fatal("Error reading CSV:", err)
+	}
+
+	// Get the column indices for "Client Id", "Error", and "Type"
+	clientIDIndex := -1
+	errorIndex := -1
+	typeIndex := -1
+	if len(records) > 0 {
+		header := records[0] // the first row is the header row
+		for i, column := range header {
+			if column == "Client Id" {
+				clientIDIndex = i
+			} else if column == "Error" {
+				errorIndex = i
+			} else if column == "Type" {
+				typeIndex = i
+			}
+		}
+	}
+
+	// Declare variables for storing data
+
+	clientIDErrors := make(map[string]map[string]struct{})
+	status := "200"
+
+	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
+	for _, record := range records[1:] {
+		if typeIndex >= 0 && typeIndex < len(record) && strings.Contains(record[typeIndex], "Error") {
+			if clientIDIndex >= 0 && clientIDIndex < len(record) {
+				clientID := strings.Split(record[clientIDIndex], "<<>>") //1<<>>clientId
+				if len(clientID) >= 2 {
+					errorSet, ok := clientIDErrors[clientID[0]]
+					if !ok {
+						errorSet = make(map[string]struct{})
+						clientIDErrors[clientID[0]] = errorSet
+					}
+					errorSet[record[errorIndex]] = struct{}{}
+					// Add the error to the client ID's errors slice
+
+				}
+			}
+		}
+	}
+
+	// Build the response struct
+	response := Response{
+		Status: status,
+		Metadata: MetadataNew{
+			FailedKeys:    getFailedKeys(clientIDErrors),
+			FailedReasons: getFailedReasons(clientIDErrors),
+			WarningKeys:   []string{},
+			SucceededKeys: []string{},
+		},
+	}
+
+	// Convert the response to JSON
+	respBytes, err := stdjson.Marshal(response)
+	if err != nil {
+		log.Fatal("Error converting to JSON:", err)
+	}
+	var failedJobsResponse map[string]interface{}
+	err = json.Unmarshal(respBytes, &failedJobsResponse)
+	if err != nil {
+		panic("JSON Unmarshal Failed" + err.Error())
+	}
+	// internalStatusCode, _ := failedJobsResponse["status"].(string)
+	metadata, _ := failedJobsResponse["metadata"].(map[string]interface{})
+	fmt.Println(metadata)
+
+	failedKeys, ok := metadata["failedKeys"].([]interface{})
+	if !ok {
+		panic("failedKeys is not an array")
+	}
+	failedKeysArr := make([]int64, len(failedKeys))
+	for index, value := range failedKeys {
+		failedKeysArr[index] = int64(value.(float64))
+	}
+	fmt.Println(failedKeysArr)
+	fmt.Println(reflect.TypeOf(failedKeysArr))
+	return respBytes, 200
+}
+
+func RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
+	retrievedKeys, ok := metadata[retrieveKeys].([]interface{})
+	if !ok {
+		panic("failedKeys is not an array")
+	}
+	retrievedKeysArr := make([]int64, len(retrievedKeys))
+	for index, value := range retrievedKeys {
+		retrievedKeysArr[index] = int64(value.(float64))
+	}
+	return retrievedKeysArr, nil
 }
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, HTTPTimeout time.Duration) *BingAdsBulkUploader {

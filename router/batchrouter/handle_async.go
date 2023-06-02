@@ -165,9 +165,10 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 										brt.logger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v with error %v", brt.destType, internalStatusCode, string(failedBodyBytes), err)
 										continue
 									}
-									failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
-									warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
-									succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(metadata["succeededKeys"])
+
+									failedKeys, errFailed := brt.asyncdestinationmanager.RetrieveImportantKeys(metadata, "failedKeys")
+									warningKeys, errWarning := brt.asyncdestinationmanager.RetrieveImportantKeys(metadata, "warningKeys")
+									succeededKeys, errSuccess := brt.asyncdestinationmanager.RetrieveImportantKeys(metadata, "succeededKeys")
 									var status *jobsdb.JobStatusT
 									if errFailed != nil || errWarning != nil || errSuccess != nil || statusCode != 200 {
 										for _, job := range importingList {
