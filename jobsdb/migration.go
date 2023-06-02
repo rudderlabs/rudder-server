@@ -153,6 +153,52 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	return err
 }
 
+// based on size of given DSs, gives a list of DSs for us to vaccum status tables
+func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
+	// get name and it's size of all tables
+	var rows *sql.Rows
+	rows, err := jd.dbHandle.QueryContext(
+		ctx,
+		`SELECT pg_total_relation_size(oid) AS size, relname
+		FROM pg_class
+		where relname = ANY(
+			SELECT tablename
+				FROM pg_catalog.pg_tables
+				WHERE schemaname NOT IN ('pg_catalog','information_schema')
+				AND tablename like $1
+		)`,
+		jd.tablePrefix+"_job%",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	tableSizes := map[string]int64{}
+	for rows.Next() {
+		var (
+			tableSize int64
+			tableName string
+		)
+		err = rows.Scan(&tableSize, &tableName)
+		if err != nil {
+			return nil, err
+		}
+		tableSizes[tableName] = tableSize
+	}
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+
+	datasets := lo.Filter(dsList,
+		func(ds dataSetT, idx int) bool {
+			tableSize := tableSizes[ds.JobStatusTable]
+			return tableSize > vaccumStatusTableThreshold
+		})
+	return datasets, nil
+}
+
 // based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
 func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
 	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
@@ -201,8 +247,13 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 }
 
 // based on an estimate cleans up the status tables
+// vaccum status table if total size exceeds vaccumStatusTableThreshold
 func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
 	toCompact, err := jd.getCleanUpCandidates(ctx, dsList)
+	if err != nil {
+		return err
+	}
+	toVaccum, err := jd.getVacuumCandidates(ctx, dsList)
 	if err != nil {
 		return err
 	}
@@ -216,6 +267,15 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 	return jd.WithTx(func(tx *Tx) error {
 		for _, statusTable := range toCompact {
 			if err := jd.cleanStatusTable(
+				ctx,
+				tx,
+				statusTable.JobStatusTable,
+			); err != nil {
+				return err
+			}
+		}
+		for _, statusTable := range toVaccum {
+			if err := jd.vaccumStatusTable(
 				ctx,
 				tx,
 				statusTable.JobStatusTable,
@@ -241,9 +301,16 @@ func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string) erro
 	}
 	_, err = tx.ExecContext(
 		ctx,
-		fmt.Sprintf(`ANALYZE %q`, table),
+		fmt.Sprintf(`VACCUM ANALYZE %q`, table),
 	)
 	return err
+}
+
+func (*HandleT) vaccumStatusTable(ctx context.Context, tx *Tx, table string) error {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACCUM FULL %[1]q`, table)); err != nil {
+		return err
+	}
+	return nil
 }
 
 // getMigrationList returns the list of datasets to migrate from,
