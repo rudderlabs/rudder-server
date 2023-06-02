@@ -30,6 +30,8 @@ func New(backendConfig backendconfig.BackendConfig, config *config.Config) Trans
 	return &transformer{
 		backendConfig:        backendConfig,
 		captureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
+		keysLimit:            config.GetInt("EventSchemas.keysLimit", 1000),
+		identifierLimit:      config.GetInt("EventSchemas.identifierLimit", 500),
 	}
 }
 
@@ -72,10 +74,14 @@ func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, e
 		return nil, fmt.Errorf("writeKey could not be found")
 	}
 	schemaKey := st.getSchemaKeyFromJob(eventPayload, writeKey)
+	if st.identifierLimit > 0 && len(schemaKey.EventIdentifier) > st.identifierLimit {
+		return nil, fmt.Errorf("event identifier size is greater than %d", st.identifierLimit)
+	}
 	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, job.EventPayload, job.WorkspaceId, job.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
+
 	return schemaMessage, nil
 }
 
@@ -137,6 +143,9 @@ func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[str
 	flattenedEvent, err := st.flattenEvent(event)
 	if err != nil {
 		return nil, err
+	}
+	if st.keysLimit > 0 && len(flattenedEvent) > st.keysLimit {
+		return nil, fmt.Errorf("event schema has more than %d keys", st.keysLimit)
 	}
 	schema := st.getSchema(flattenedEvent)
 	if st.disablePIIReporting(key.WriteKey) {
