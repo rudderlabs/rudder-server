@@ -30,8 +30,8 @@ func New(backendConfig backendconfig.BackendConfig, config *config.Config) Trans
 	return &transformer{
 		backendConfig:        backendConfig,
 		captureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
-		keysLimit:            config.GetInt("EventSchemas.keysLimit", 1000),
-		identifierLimit:      config.GetInt("EventSchemas.identifierLimit", 500),
+		keysLimit:            config.GetInt("EventSchemas.keysLimit", 500),
+		identifierLimit:      config.GetInt("EventSchemas.identifierLimit", 100),
 	}
 }
 
