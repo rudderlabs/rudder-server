@@ -122,6 +122,11 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								// list.Jobs has parameters eg : "{\"record_id\": null, \"source_id\": \"2PuNovG1jg5F3UIUZpnhlwMhw7c\", \"event_name\": \"\", \"event_type\": \"identify\", \"message_id\": \"e686323c-f926-4e2b-b606-121e1948eafb\", \"received_at\": \"2023-05-29T19:58:14.380+05:30\", \"workspaceId\": \"1kgRLW9E68SaJx6WiHavEABeSAl\", \"transform_at\": \"processor\", \"source_job_id\": \"\", \"destination_id\": \"2PriULYidWaynFpp6jeAF3ugZUc\", \"gateway_job_id\": 5, \"source_category\": \"\", \"source_job_run_id\": \"\", \"source_task_run_id\": \"\", \"source_definition_id\": \"1b6gJdqOPOCadT3cddw8eidV591\", \"destin"
 								// list.Jobs has eventPaylaod. Eg: "{\"body\": {\"XML\": {}, \"FORM\": {}, \"JSON\": {\"email\": \"test@kinesis.com\", \"address\": 23, \"anonymousId\": \"Test Kinesis\"}, \"JSON_ARRAY\": {}}, \"type\": \"REST\", \"files\": {}, \"method\": \"POST\", \"params\": {}, \"userId\": \"\", \"headers\": {}, \"version\": \"1\", \"endpoint\": \"/fileUpload\"}"
 								importingList := list.Jobs
+								var failedJobsStatus common.FetchFailedStatus
+								failedJobsStatus.FailedJobsURL = asyncResponse.FailedJobsURL
+								failedJobsStatus.Parameters = importingJob.LastJobStatus.Parameters
+								failedJobsStatus.ImportingList = importingList
+								failedJobsStatus.OutputFilePath = asyncResponse.OutputFilePath
 								// asyncResponse eg : {Success: true, StatusCode: 200, HasFailed: false, HasWarning: false, FailedJobsURL: "/getFailedJobs", WarningJobsURL: "/getWarningJobs"}
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
@@ -143,7 +148,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								} else {
 									startFailedJobsPollTime := time.Now()
 									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
-									failedBodyBytes, statusCode := brt.asyncdestinationmanager.FetchFailedEvents(destinationsMap[key], importingList, importingJob, asyncResponse)
+									failedBodyBytes, statusCode := brt.asyncdestinationmanager.FetchFailedEvents(failedJobsStatus)
 									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs for Dest Type %v", brt.destType)
 									brt.asyncFailedJobsTimeStat.Since(startFailedJobsPollTime)
 

@@ -14,20 +14,19 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
 
 type MarketoBulkUploader struct {
-	destName string
-	timeout  time.Duration
+	destName          string
+	timeout           time.Duration
+	destinationConfig map[string]interface{}
 }
 
 func NewManager(destination *backendconfig.DestinationT, HTTPTimeout time.Duration) *MarketoBulkUploader {
-	marketobulkupload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", timeout: HTTPTimeout}
+	marketobulkupload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", timeout: HTTPTimeout, destinationConfig: destination.DestinationDefinition.Config}
 	return marketobulkupload
 }
 
@@ -50,13 +49,13 @@ func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
 	return bodyBytes, statusCode
 }
 
-func (b *MarketoBulkUploader) FetchFailedEvents(destStruct *utils.DestinationWithSources, importingList []*jobsdb.JobT, importingJob *jobsdb.JobT, asyncResponse common.AsyncStatusResponse) ([]byte, int) {
+func (b *MarketoBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	failedJobUrl := asyncResponse.FailedJobsURL
-	parameters := importingJob.LastJobStatus.Parameters
+	failedJobUrl := failedJobsStatus.FailedJobsURL
+	parameters := failedJobsStatus.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
-	payload := common.GenerateFailedPayload(destStruct.Destination.Config, importingList, importId, b.destName, csvHeaders)
+	payload := common.GenerateFailedPayload(b.destinationConfig, failedJobsStatus.ImportingList, importId, b.destName, csvHeaders)
 	//payload eg: "{\"config\":{\"clientId\":\"01a70f1f-ff37-46fc-bdff-42e92a3f2bb3\",\"clientSecret\":\"rziQBHtZ34Vl1CE3x3OiA3n8Wr45lwar\",\"columnFieldsMapping\":[{\"from\":\"anonymousId\",\"to\":\"anonymousId\"},{\"from\":\"address\",\"to\":\"address\"},{\"from\":\"email\",\"to\":\"email\"}],\"deDuplicationField\":\"\",\"munchkinId\":\"585-AXP-425\",\"oneTrustCookieCategories\":[],\"uploadInterval\":\"10\"},\"input\":[{\"message\":{\"address\":23,\"anonymousId\":\"Test Kinesis\",\"email\":\"test@kinesis.com\"},\"metadata\":{\"job_id\":5}}],\"destType\":\"marketo_bulk_upload\",\"importId\":\"3095\""
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, b.timeout)
 	// failedBodyBytes eg: "{\"statusCode\":400,\"error\":\"404\"}"

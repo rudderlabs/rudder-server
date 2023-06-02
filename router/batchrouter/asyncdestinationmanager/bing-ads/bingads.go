@@ -12,17 +12,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/bingads_sdk"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/rudderlabs/rudder-server/router/utils"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -70,6 +67,18 @@ type secretStruct struct {
 	RefreshToken    string
 	Developer_token string
 	ExpirationDate  string
+}
+
+type Response struct {
+	Status   string      `json:"status"`
+	Metadata MetadataNew `json:"metadata"`
+}
+
+type MetadataNew struct {
+	FailedKeys    []int64           `json:"failedKeys"`
+	FailedReasons map[string]string `json:"failedReasons"`
+	WarningKeys   []string          `json:"warningKeys"`
+	SucceededKeys []string          `json:"succeededKeys"`
 }
 
 /*
@@ -362,18 +371,6 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
 	return respBytes, statusCode
 }
 
-type Response struct {
-	Status   string      `json:"status"`
-	Metadata MetadataNew `json:"metadata"`
-}
-
-type MetadataNew struct {
-	FailedKeys    []int64           `json:"failedKeys"`
-	FailedReasons map[string]string `json:"failedReasons"`
-	WarningKeys   []string          `json:"warningKeys"`
-	SucceededKeys []string          `json:"succeededKeys"`
-}
-
 func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
 	keys := make([]int64, 0, len(clientIDErrors))
 	for key := range clientIDErrors {
@@ -395,9 +392,8 @@ func getFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 	return reasons
 }
 
-// To do:
-func (b *BingAdsBulkUploader) FetchFailedEvents(destStruct *utils.DestinationWithSources, importingList []*jobsdb.JobT, importingJob *jobsdb.JobT, asyncResponse common.AsyncStatusResponse) ([]byte, int) {
-	filePath := asyncResponse.OutputFilePath
+func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
+	filePath := failedJobsStatus.OutputFilePath
 	// Open the CSV file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -471,25 +467,6 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(destStruct *utils.DestinationWit
 	if err != nil {
 		log.Fatal("Error converting to JSON:", err)
 	}
-	var failedJobsResponse map[string]interface{}
-	err = json.Unmarshal(respBytes, &failedJobsResponse)
-	if err != nil {
-		panic("JSON Unmarshal Failed" + err.Error())
-	}
-	// internalStatusCode, _ := failedJobsResponse["status"].(string)
-	metadata, _ := failedJobsResponse["metadata"].(map[string]interface{})
-	fmt.Println(metadata)
-
-	failedKeys, ok := metadata["failedKeys"].([]interface{})
-	if !ok {
-		panic("failedKeys is not an array")
-	}
-	failedKeysArr := make([]int64, len(failedKeys))
-	for index, value := range failedKeys {
-		failedKeysArr[index] = int64(value.(float64))
-	}
-	fmt.Println(failedKeysArr)
-	fmt.Println(reflect.TypeOf(failedKeysArr))
 	return respBytes, 200
 }
 

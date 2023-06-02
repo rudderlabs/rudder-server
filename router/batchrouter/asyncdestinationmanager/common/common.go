@@ -114,6 +114,13 @@ type AsyncFailedPayload struct {
 	MetaData MetaDataT                `json:"metadata"`
 }
 
+type FetchFailedStatus struct {
+	FailedJobsURL  string
+	Parameters     stdjson.RawMessage
+	ImportingList  []*jobsdb.JobT
+	OutputFilePath string
+}
+
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
 	if keyMap == nil {
 		return []int64{}, importingJobIDs
