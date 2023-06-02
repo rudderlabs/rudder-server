@@ -194,7 +194,7 @@ func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) (
 	datasets := lo.Filter(dsList,
 		func(ds dataSetT, idx int) bool {
 			tableSize := tableSizes[ds.JobStatusTable]
-			return tableSize > vaccumStatusTableThreshold
+			return tableSize > vaccumFullStatusTableThreshold
 		})
 	return datasets, nil
 }
@@ -247,13 +247,13 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 }
 
 // based on an estimate cleans up the status tables
-// vaccum status table if total size exceeds vaccumStatusTableThreshold
 func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
 	toCompact, err := jd.getCleanUpCandidates(ctx, dsList)
 	if err != nil {
 		return err
 	}
-	toVaccum, err := jd.getVacuumCandidates(ctx, dsList)
+	// vaccum status table if total size exceeds vaccumFullStatusTableThreshold in the toCompact list
+	toVaccum, err := jd.getVacuumCandidates(ctx, toCompact)
 	if err != nil {
 		return err
 	}
@@ -289,19 +289,27 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 
 // cleanStatusTable deletes all rows except for the latest status for each job
 func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string) error {
-	_, err := tx.ExecContext(
+	deletedJobsQuery := fmt.Sprintf(`WITH deleted AS (DELETE FROM %[1]q
+		WHERE NOT id = ANY(
+		   SELECT DISTINCT ON (job_id) id from "%[1]s" ORDER BY job_id ASC, id DESC
+	   ) RETURNING *) SELECT count(*) FROM deleted;`, table)
+
+	var numJobStatusDeleted int64
+	var err error
+	if err = tx.QueryRowContext(
 		ctx,
-		fmt.Sprintf(`DELETE FROM %[1]q
-			 			WHERE NOT id = ANY(
-							SELECT DISTINCT ON (job_id) id from "%[1]s" ORDER BY job_id ASC, id DESC
-						)`, table),
-	)
-	if err != nil {
+		deletedJobsQuery,
+	).Scan(&numJobStatusDeleted); err != nil {
 		return err
+	}
+
+	query := fmt.Sprintf(`ANALYZE %q`, table)
+	if numJobStatusDeleted > vaccumAnalyzeStatusTableThreshold {
+		query = fmt.Sprintf(`VACCUM ANALYZE %q`, table)
 	}
 	_, err = tx.ExecContext(
 		ctx,
-		fmt.Sprintf(`VACCUM ANALYZE %q`, table),
+		query,
 	)
 	return err
 }
