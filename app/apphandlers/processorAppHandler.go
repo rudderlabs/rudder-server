@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
@@ -20,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
+	"github.com/gorilla/mux"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
@@ -112,12 +112,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	reporting := a.app.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 	g.Go(misc.WithBugsnag(func() error {
-		reporting.ReportingInstance.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
-		return nil
-	}))
-	// Error detail reporting go-routine
-	g.Go(misc.WithBugsnag(func() error {
-		reporting.ErrorReportingInstance.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
+		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
 		return nil
 	}))
 
@@ -134,9 +129,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	defer destinationHandle.Stop()
 
-	reportingI := a.app.Features().Reporting.GetReportingInstance(types.Report)
-	errorReporting := a.app.Features().Reporting.GetReportingInstance(types.ErrorDetailReport)
-
+	reportingI := a.app.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
@@ -235,7 +228,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		rsourcesService,
 		destinationHandle,
 		transformationhandle,
-		errorReporting,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := throttler.New(stats.Default)
@@ -244,7 +236,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
-		ErrorReporting:   errorReporting,
 		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         tenantRouterDB,
@@ -310,7 +301,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.HandleT) error {
 	// Port where Processor health handler is running
 	a.log.Infof("Starting in %d", a.config.http.webPort)
-	srvMux := chi.NewMux()
+	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/health", app.LivenessHandler(db))
 	srvMux.HandleFunc("/", app.LivenessHandler(db))
 	srv := &http.Server{

@@ -14,9 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
-
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -30,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -48,6 +44,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -81,7 +79,6 @@ type Handle struct {
 	eventSchemaHandler        types.EventSchemasI
 	dedup                     dedup.Dedup
 	reporting                 types.ReportingI
-	errorReporting            types.ReportingI
 	reportingEnabled          bool
 	multitenantI              multitenant.MultiTenantI
 	backgroundWait            func() error
@@ -116,6 +113,8 @@ type Handle struct {
 		readLoopSleep             time.Duration
 		maxLoopSleep              time.Duration
 		storeTimeout              time.Duration
+		loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
+		fixedLoopSleep            time.Duration // DEPRECATED: used only on the old mainLoop
 		maxEventsToProcess        int
 		transformBatchSize        int
 		userTransformBatchSize    int
@@ -322,14 +321,11 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.ReportingI,
-	errorReporting types.ReportingI,
+	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
 	proc.reporting = reporting
-	proc.errorReporting = errorReporting
-
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -414,7 +410,11 @@ func (proc *Handle) Setup(
 		proc.eventSchemaHandler = eventschema.GetInstance()
 	}
 	if proc.config.enableDedup {
-		proc.dedup = dedup.New(dedup.DefaultPath())
+		opts := []dedup.OptFn{}
+		if *clearDB {
+			opts = append(opts, dedup.WithClearDB())
+		}
+		proc.dedup = dedup.New(dedup.DefaultPath(), opts...)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -424,10 +424,9 @@ func (proc *Handle) Setup(
 	proc.backgroundCancel = cancel
 
 	proc.config.asyncInit = misc.NewAsyncInit(2)
-	g.Go(misc.WithBugsnag(func() error {
+	rruntime.Go(func() {
 		proc.backendConfigSubscriber(ctx)
-		return nil
-	}))
+	})
 
 	g.Go(misc.WithBugsnag(func() error {
 		proc.syncTransformerFeatureJson(ctx)
@@ -550,6 +549,8 @@ func (proc *Handle) loadConfig() {
 	defaultSubJobSize := 2000
 	defaultMaxEventsToProcess := 10000
 	defaultPayloadLimit := 100 * bytesize.MB
+	defaultReadLoopSleepMs := int64(200)
+	defaultMaxLoopSleeppMs := int64(5000)
 
 	defaultIsolationMode := isolation.ModeSource
 	if config.IsSet("WORKSPACE_NAMESPACE") {
@@ -561,17 +562,23 @@ func (proc *Handle) loadConfig() {
 		defaultSubJobSize = 400
 		defaultMaxEventsToProcess = 2000
 		defaultPayloadLimit = 20 * bytesize.MB
+		defaultReadLoopSleepMs = 10
+		defaultMaxLoopSleeppMs = 2000
 	}
 
 	config.RegisterInt64ConfigVariable(defaultPayloadLimit, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterBoolConfigVariable(true, &proc.config.enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterIntConfigVariable(0, &proc.config.pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterIntConfigVariable(defaultSubJobSize, &proc.config.subJobSize, false, 1, "Processor.subJobSize")
-	config.RegisterDurationConfigVariable(10000, &proc.config.maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(defaultMaxLoopSleeppMs, &proc.config.maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(5, &proc.config.storeTimeout, true, time.Minute, "Processor.storeTimeout")
 
 	config.RegisterDurationConfigVariable(1000, &proc.config.pingerSleep, true, time.Millisecond, "Processor.pingerSleep")
-	config.RegisterDurationConfigVariable(1000, &proc.config.readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
+	config.RegisterDurationConfigVariable(defaultReadLoopSleepMs, &proc.config.readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
+	// DEPRECATED: used only on the old mainLoop:
+	config.RegisterDurationConfigVariable(10, &proc.config.loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
+	// DEPRECATED: used only on the old mainLoop:
+	config.RegisterDurationConfigVariable(0, &proc.config.fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &proc.config.transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &proc.config.userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	// Enable dedup of incoming events by default
@@ -1350,7 +1357,7 @@ type dupStatKey struct {
 	equalSize bool
 }
 
-func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
+func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedEventList [][]types.SingularEventT) *transformationMessage {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -1367,6 +1374,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 
+	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
+		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
+	}
 	// Each block we receive from a client has a bunch of
 	// requests. We parse the block and take out individual
 	// requests, call the destination specific transformation
@@ -1393,11 +1403,16 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
 
-	for _, batchEvent := range jobList {
+	for idx, batchEvent := range jobList {
 
 		var singularEvents []types.SingularEventT
 		var ok bool
-		singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
+		if parsedEventList == nil {
+			singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
+		} else {
+			singularEvents = parsedEventList[idx]
+			ok = singularEvents != nil
+		}
 		writeKey := gjson.Get(string(batchEvent.EventPayload), "writeKey").Str
 		requestIP := gjson.Get(string(batchEvent.EventPayload), "requestIP").Str
 		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
@@ -1500,18 +1515,15 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 					continue
 				}
 
-				if _, ok := groupedEventsByWriteKey[WriteKeyT(writeKey)]; !ok {
+				_, ok = groupedEventsByWriteKey[WriteKeyT(writeKey)]
+				if !ok {
 					groupedEventsByWriteKey[WriteKeyT(writeKey)] = make([]transformer.TransformerEventT, 0)
 				}
 				shallowEventCopy := transformer.TransformerEventT{}
 				shallowEventCopy.Message = singularEvent
 				shallowEventCopy.Message["request_ip"] = requestIP
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-				enhanceWithMetadata(
-					commonMetadataFromSingularEvent,
-					&shallowEventCopy,
-					&backendconfig.DestinationT{},
-				)
+				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, &backendconfig.DestinationT{})
 
 				// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
 				shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
@@ -1973,8 +1985,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				proc.reporting.Report(in.reportMetrics, tx.SqlTx())
 			}
 
-			proc.errorReporting.Report(in.reportMetrics, tx.SqlTx())
-
 			return nil
 		})
 	}, proc.sendRetryUpdateStats)
@@ -2044,15 +2054,14 @@ func (proc *Handle) transformSrcDest(
 	destination := &eventList[0].Destination
 	workspaceID := eventList[0].Metadata.WorkspaceID
 	commonMetaData := &transformer.MetadataT{
-		SourceID:             sourceID,
-		SourceType:           eventList[0].Metadata.SourceType,
-		SourceCategory:       eventList[0].Metadata.SourceCategory,
-		WorkspaceID:          workspaceID,
-		Namespace:            config.GetKubeNamespace(),
-		InstanceID:           misc.GetInstanceID(),
-		DestinationID:        destID,
-		DestinationType:      destination.DestinationDefinition.Name,
-		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
+		SourceID:        sourceID,
+		SourceType:      eventList[0].Metadata.SourceType,
+		SourceCategory:  eventList[0].Metadata.SourceCategory,
+		WorkspaceID:     workspaceID,
+		Namespace:       config.GetKubeNamespace(),
+		InstanceID:      misc.GetInstanceID(),
+		DestinationID:   destID,
+		DestinationType: destination.DestinationDefinition.Name,
 	}
 
 	reportMetrics := make([]*types.PUReportedMetric, 0)
@@ -2588,8 +2597,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 				subJobs:       unprocessedList.Jobs,
 				hasMore:       false,
 				rsourcesStats: rsourcesStats,
-			},
-			),
+			}, nil),
 		),
 	)
 	proc.stats.statLoopTime.Since(s)
@@ -2683,7 +2691,7 @@ func filterConfig(eventCopy *transformer.TransformerEventT) {
 	}
 }
 
-func (*Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
+func (proc *Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
 	return miscsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
 }
 

@@ -1,19 +1,16 @@
 package router
 
 import (
-	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type Factory struct {
 	Reporting        reporter
-	ErrorReporting   reporter
 	Multitenant      tenantStats
 	BackendConfig    backendconfig.BackendConfig
 	RouterDB         jobsdb.MultiTenantJobsDB
@@ -26,11 +23,8 @@ type Factory struct {
 }
 
 func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
-	reportingEnabled := false
-	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &reportingEnabled, false, "Reporting.enabled")
 	r := &HandleT{
 		Reporting:        f.Reporting,
-		ErrorReporting:   f.ErrorReporting,
 		MultitenantI:     f.Multitenant,
 		throttlerFactory: f.ThrottlerFactory,
 		adaptiveLimit:    f.AdaptiveLimit,

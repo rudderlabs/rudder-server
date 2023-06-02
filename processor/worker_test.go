@@ -12,12 +12,13 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWorkerPool(t *testing.T) {
-	run := func(t *testing.T, pipelining, limitsReached bool) {
+	run := func(t *testing.T, pipelining bool) {
 		wh := &mockWorkerHandle{
 			pipelining: pipelining,
 			log:        logger.NOP,
@@ -29,7 +30,6 @@ func TestWorkerPool(t *testing.T) {
 				transformed int
 				stored      int
 			}{},
-			limitsReached: limitsReached,
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -79,21 +79,11 @@ func TestWorkerPool(t *testing.T) {
 	}
 
 	t.Run("work without pipelining", func(t *testing.T) {
-		t.Run("limits not reached", func(t *testing.T) {
-			run(t, false, false)
-		})
-		t.Run("limits reached", func(t *testing.T) {
-			run(t, false, true)
-		})
+		run(t, false)
 	})
 
 	t.Run("work with pipelining", func(t *testing.T) {
-		t.Run("limits not reached", func(t *testing.T) {
-			run(t, true, false)
-		})
-		t.Run("limits reached", func(t *testing.T) {
-			run(t, true, true)
-		})
+		run(t, true)
 	})
 }
 
@@ -153,8 +143,6 @@ type mockWorkerHandle struct {
 		transform utilsync.Limiter
 		store     utilsync.Limiter
 	}
-
-	limitsReached bool
 }
 
 func (m *mockWorkerHandle) validate(t *testing.T) {
@@ -196,7 +184,7 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(key string) bool {
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
 		m.Store(key,
 			m.transformations(key,
-				m.processJobsForDest(key, subJob),
+				m.processJobsForDest(key, subJob, nil),
 			),
 		)
 	}
@@ -228,9 +216,8 @@ func (m *mockWorkerHandle) getJobs(partition string) jobsdb.JobsResult {
 		})
 	}
 	return jobsdb.JobsResult{
-		Jobs:          jobs,
-		EventsCount:   m.loopEvents,
-		LimitsReached: m.limitsReached,
+		Jobs:        jobs,
+		EventsCount: m.loopEvents,
 	}
 }
 
@@ -256,7 +243,7 @@ func (*mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources
 	}
 }
 
-func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
+func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob, _ [][]types.SingularEventT) *transformationMessage {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin(partition)()
 	}
