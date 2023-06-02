@@ -1001,3 +1001,9 @@ func ReadAsBool(key string, config map[string]interface{}) bool {
 	}
 	return false
 }
+
+func WithTimeout(ctx context.Context, timeout time.Duration, function func(context.Context) error) error {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return function(ctxWithTimeout)
+}

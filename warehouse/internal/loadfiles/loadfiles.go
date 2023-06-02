@@ -118,17 +118,10 @@ func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 
 // CreateLoadFiles for the staging files that have not been successfully processed.
 func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job *model.UploadJob) (int64, int64, error) {
-	stagingFiles := job.StagingFiles
-
-	var toProcessStagingFiles []*model.StagingFile
-	// skip processing staging files marked succeeded
-	for _, stagingFile := range stagingFiles {
-		if stagingFile.Status != warehouseutils.StagingFileSucceededState {
-			toProcessStagingFiles = append(toProcessStagingFiles, stagingFile)
-		}
-	}
-
-	return lf.createFromStaging(ctx, job, toProcessStagingFiles)
+	return lf.createFromStaging(ctx, job, lo.Filter(
+		job.StagingFiles, func(stagingFile *model.StagingFile, _ int) bool {
+			return stagingFile.Status != warehouseutils.StagingFileSucceededState
+		}))
 }
 
 // ForceCreateLoadFiles creates load files for the staging files, regardless if they are already successfully processed.
@@ -160,22 +153,29 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		return 0, 0, fmt.Errorf("populating destination revision ID: %w", err)
 	}
 
+	// Delete previous load files for the staging files
 	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
-	err = lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs)
-	if err != nil {
+	if err := lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs); err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
 	}
 
-	err = lf.StageRepo.SetStatuses(ctx, stagingFileIDs, warehouseutils.StagingFileExecutingState)
-	if err != nil {
+	// Set staging file status to executing
+	if err := lf.StageRepo.SetStatuses(
+		ctx,
+		stagingFileIDs,
+		warehouseutils.StagingFileExecutingState,
+	); err != nil {
 		return 0, 0, fmt.Errorf("set staging file status to executing: %w", err)
 	}
 
 	defer func() {
 		// ensure that if there is an error, we set the staging file status to failed
 		if err != nil {
-			errStatus := lf.StageRepo.SetStatuses(ctx, stagingFileIDs, warehouseutils.StagingFileFailedState)
-			if errStatus != nil {
+			if errStatus := lf.StageRepo.SetStatuses(
+				ctx,
+				stagingFileIDs,
+				warehouseutils.StagingFileFailedState,
+			); errStatus != nil {
 				err = fmt.Errorf("%w, and also: %v", err, errStatus)
 			}
 		}
@@ -184,8 +184,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	var g errgroup.Group
 
 	var sampleError error
-	chunks := lo.Chunk(toProcessStagingFiles, publishBatchSize)
-	for _, chunk := range chunks {
+	for _, chunk := range lo.Chunk(toProcessStagingFiles, publishBatchSize) {
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range chunk {
@@ -294,12 +293,10 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 				return nil
 			}
 
-			err = lf.LoadRepo.Insert(ctx, loadFiles)
-			if err != nil {
+			if err = lf.LoadRepo.Insert(ctx, loadFiles); err != nil {
 				return fmt.Errorf("inserting load files: %w", err)
 			}
-			err = lf.StageRepo.SetStatuses(ctx, successfulStagingFileIDs, warehouseutils.StagingFileSucceededState)
-			if err != nil {
+			if err = lf.StageRepo.SetStatuses(ctx, successfulStagingFileIDs, warehouseutils.StagingFileSucceededState); err != nil {
 				return fmt.Errorf("setting staging file status to succeeded: %w", err)
 			}
 			return nil

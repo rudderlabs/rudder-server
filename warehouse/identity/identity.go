@@ -463,7 +463,15 @@ func (idr *Identity) processMergeRules(fileNames []string) (err error) {
 		}
 		totalMappingRecords += count
 		if idx%1000 == 0 {
-			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namespace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.warehouse.Namespace, idr.warehouse.Type, idr.warehouse.Destination.ID)
+			pkgLogger.Infof(
+				`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namespace: %s, Destination: %s:%s`,
+				idx+1,
+				len(ruleIDs),
+				totalMappingRecords,
+				idr.warehouse.Namespace,
+				idr.warehouse.Type,
+				idr.warehouse.Destination.ID,
+			)
 		}
 	}
 	mappingsFileGzWriter.CloseGZ()
