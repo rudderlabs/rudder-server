@@ -493,7 +493,7 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(destStruct *utils.DestinationWit
 	return respBytes, 200
 }
 
-func RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
+func (b *BingAdsBulkUploader) RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
 	retrievedKeys, ok := metadata[retrieveKeys].([]interface{})
 	if !ok {
 		panic("failedKeys is not an array")
