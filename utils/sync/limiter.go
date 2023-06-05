@@ -3,6 +3,7 @@ package sync
 import (
 	"container/heap"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -68,6 +69,9 @@ var WithLimiterTags = func(tags stats.Tags) func(*limiter) {
 
 // NewLimiter creates a new limiter
 func NewLimiter(ctx context.Context, wg *sync.WaitGroup, name string, limit int, statsf stats.Stats, opts ...func(*limiter)) Limiter {
+	if limit <= 0 {
+		panic(fmt.Errorf("limit for %q needs to be greater than 0", name))
+	}
 	l := &limiter{
 		name:     name,
 		limit:    limit,

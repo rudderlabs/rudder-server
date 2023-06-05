@@ -19,5 +19,7 @@ type transformer struct {
 	sourceWriteKeyMap       map[string]string // map of sourceID to writeKey
 	newPIIReportingSettings map[string]bool   // map of writeKey to PII protection enabled setting
 
+	keysLimit            int
+	identifierLimit      int
 	captureNilAsUnknowns bool // if true, nil values will be captured as unknowns
 }

@@ -7,6 +7,125 @@ on:
       - "release/*"
   pull_request:
 jobs:
+  integration:
+    name: Integrations
+    runs-on: 'ubuntu-20.04'
+    strategy:
+      matrix:
+        FEATURES: [ oss ,enterprise ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download # Not required, used to segregate module download vs test times
+
+      - name: Integration test for enterprise
+        if: matrix.FEATURES == 'enterprise'
+        run: go test -v ./integration_test/docker_test/docker_test.go -count 1
+        env:
+          ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
+
+      - name: Integration test for oss
+        if: matrix.FEATURES == 'oss'
+        run: go test -v ./integration_test/docker_test/docker_test.go -count 1
+        env:
+          RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
+
+  warehouse-integration:
+    name: Warehouse Service Integration
+    runs-on: 'ubuntu-20.04'
+    strategy:
+      fail-fast: false
+      matrix:
+        destination: [ bigquery, clickhouse, datalake, deltalake, deltalake-native, mssql, azure-synapse, postgres, postgres-legacy, redshift, snowflake ]
+        include:
+          - package: warehouse/integrations/bigquery
+            destination: bigquery
+          - package: warehouse/integrations/clickhouse
+            destination: clickhouse
+          - package: warehouse/integrations/datalake
+            destination: datalake
+          - package: warehouse/integrations/deltalake-native
+            destination: deltalake
+            useNative: false
+          - package: warehouse/integrations/deltalake-native
+            destination: deltalake-native
+            useNative: true
+          - package: warehouse/integrations/mssql
+            destination: mssql
+          - package: warehouse/integrations/azure-synapse
+            destination: azure-synapse
+          - package: warehouse/integrations/postgres
+            destination: postgres
+            useLegacy: false
+          - package: warehouse/integrations/postgres
+            destination: postgres-legacy
+            useLegacy: true
+          - package: warehouse/integrations/redshift
+            destination: redshift
+          - package: warehouse/integrations/snowflake
+            destination: snowflake
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: rudderlabs
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
+        run: make test-warehouse package=./${{ matrix.package }}/...
+        env:
+          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
+          DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
+          REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}
+          SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
+          SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
+          RSERVER_WAREHOUSE_POSTGRES_USE_LEGACY: ${{ matrix.useLegacy }}
+          RSERVER_WAREHOUSE_DELTALAKE_USE_NATIVE: ${{ matrix.useNative }}
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.destination }}
+          path: coverage.txt
+
+  unit:
+    name: Unit
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+
+      - run: go version
+      - run: go mod download # Not required, used to segregate module download vs test times
+      - env:
+          TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
+          TEST_KAFKA_CONFLUENT_CLOUD_KEY: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_KEY }}
+          TEST_KAFKA_CONFLUENT_CLOUD_SECRET: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_SECRET }}
+          TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST }}
+          TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME }}
+          TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
+        run: make test exclude=/rudder-server/warehouse
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: unit
+          path: coverage.txt
+
   warehouse-unit:
     name: Warehouse Unit
     runs-on: 'ubuntu-20.04'
@@ -27,3 +146,54 @@ jobs:
         with:
           name: warehouse-unit
           path: coverage.txt
+
+  coverage:
+    needs: [warehouse-integration, unit, warehouse-unit]
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - name: Download coverage reports
+        uses: actions/download-artifact@v3
+      - name: Merge Coverage
+        run: |
+          go install github.com/wadey/gocovmerge@latest
+          gocovmerge */coverage.txt > coverage.txt
+      - uses: codecov/codecov-action@v3
+        with:
+          fail_ci_if_error: true
+          files: ./coverage.txt
+
+  all-tests-successful:
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - integration
+      - warehouse-integration
+      - unit
+      - warehouse-unit
+    steps:
+      - uses: re-actors/alls-green@v1.2.2
+        with:
+          jobs: ${{ toJSON(needs) }}
+
+  warehouse-unit-regression:
+    name: Warehouse Unit Regression
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download
+      - env:
+          TEST_S3_DATALAKE_CREDENTIALS: ${{ secrets.TEST_S3_DATALAKE_CREDENTIALS }}
+          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
+        run: make test-warehouse-regression
