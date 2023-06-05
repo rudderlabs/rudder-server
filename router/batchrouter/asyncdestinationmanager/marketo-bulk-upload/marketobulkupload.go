@@ -159,7 +159,8 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 		var parameters common.Parameters
 		parameters.ImportId = responseStruct.ImportId
-		parameters.PollUrl = responseStruct.PollUrl
+		url := responseStruct.PollUrl
+		parameters.PollUrl = &url
 		metaDataString, ok := responseStruct.Metadata["csvHeader"].(string)
 		if !ok {
 			parameters.MetaData = common.MetaDataT{CSVHeaders: ""}
