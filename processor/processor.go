@@ -81,7 +81,6 @@ type Handle struct {
 	eventSchemaHandler        types.EventSchemasI
 	dedup                     dedup.Dedup
 	reporting                 types.ReportingI
-	errorReporting            types.ReportingI
 	reportingEnabled          bool
 	multitenantI              multitenant.MultiTenantI
 	backgroundWait            func() error
