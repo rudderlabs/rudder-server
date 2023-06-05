@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	jsoniter "github.com/json-iterator/go"
@@ -565,6 +566,15 @@ func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destination
 
 // PendingTableUploads returns a list of pending table uploads for a given upload.
 func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.getPendingTableUploadsTimeout",
+			15,
+			time.Second,
+		),
+	)
+	defer cancel()
 	pendingTableUploads := make([]model.PendingTableUpload, 0)
 
 	rows, err := uploads.db.QueryContext(ctx, `

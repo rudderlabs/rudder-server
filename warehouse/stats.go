@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -247,14 +248,21 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 }
 
 func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
+	ctx, cancel := context.WithTimeout(job.ctx, config.GetDuration(
+		"Warehouse.loadFileGenerationTimeStatTimeout",
+		15,
+		time.Second,
+	))
+	defer cancel()
 	stmt := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM (f2.created_at - f1.created_at))::integer as delta
 		FROM (SELECT created_at FROM %[1]s WHERE id=%[2]d) f1
 		CROSS JOIN
 		(SELECT created_at FROM %[1]s WHERE id=%[3]d) f2
 	`, warehouseutils.WarehouseLoadFilesTable, startID, endID)
 	var timeTakenInS time.Duration
-	err = job.dbHandle.QueryRowContext(job.ctx, stmt).Scan(&timeTakenInS)
+	err = job.dbHandle.QueryRowContext(ctx, stmt).Scan(&timeTakenInS)
 	if err != nil {
+		pkgLogger.Errorf("[WH]: Failed to generate load file generation time stat: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.timerStat("load_file_generation_time").SendTiming(timeTakenInS * time.Second)

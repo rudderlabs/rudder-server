@@ -473,22 +473,31 @@ func (job *UploadJob) run() (err error) {
 			// generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
 			generateAll := hasSchemaChanged || slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 			var startLoadFileID, endLoadFileID int64
-			if generateAll {
-				startLoadFileID, endLoadFileID, err = job.loadfile.ForceCreateLoadFiles(job.ctx, job.DTO())
-			} else {
-				startLoadFileID, endLoadFileID, err = job.loadfile.CreateLoadFiles(job.ctx, job.DTO())
-			}
-			if err != nil {
+			if err = warehouseutils.WithTimeout(
+				job.ctx,
+				config.GetDuration(
+					"Warehouse.loadFileGenerationTimeout",
+					60,
+					time.Minute,
+				),
+				func(ctx context.Context) error {
+					var err error
+					if generateAll {
+						startLoadFileID, endLoadFileID, err = job.loadfile.ForceCreateLoadFiles(ctx, job.DTO())
+					} else {
+						startLoadFileID, endLoadFileID, err = job.loadfile.CreateLoadFiles(ctx, job.DTO())
+					}
+					return err
+				},
+			); err != nil {
 				break
 			}
 
-			err = job.setLoadFileIDs(startLoadFileID, endLoadFileID)
-			if err != nil {
+			if err = job.setLoadFileIDs(startLoadFileID, endLoadFileID); err != nil {
 				break
 			}
 
-			err = job.matchRowsInStagingAndLoadFiles(job.ctx)
-			if err != nil {
+			if err = job.matchRowsInStagingAndLoadFiles(job.ctx); err != nil {
 				break
 			}
 
@@ -499,13 +508,12 @@ func (job *UploadJob) run() (err error) {
 		case model.UpdatedTableUploadsCounts:
 			newStatus = nextUploadState.failed
 			for tableName := range job.upload.UploadSchema {
-				err = job.tableUploadsRepo.PopulateTotalEventsFromStagingFileIDs(
+				if err = job.tableUploadsRepo.PopulateTotalEventsFromStagingFileIDs(
 					job.ctx,
 					job.upload.ID,
 					tableName,
 					job.stagingFileIDs,
-				)
-				if err != nil {
+				); err != nil {
 					err = fmt.Errorf("populate table uploads total events from staging file: %w", err)
 					break
 				}
@@ -518,8 +526,17 @@ func (job *UploadJob) run() (err error) {
 		case model.CreatedRemoteSchema:
 			newStatus = nextUploadState.failed
 			if len(job.schemaHandle.schemaInWarehouse) == 0 {
-				err = whManager.CreateSchema(job.ctx)
-				if err != nil {
+				if err = warehouseutils.WithTimeout(
+					job.ctx,
+					config.GetDuration(
+						"Warehouse.createRemoteSchemaTimeout",
+						30,
+						time.Second,
+					),
+					func(ctx context.Context) error {
+						return whManager.CreateSchema(ctx)
+					},
+				); err != nil {
 					break
 				}
 			}
@@ -1283,8 +1300,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 	errorMap := make(map[string]error)
 	// var generated bool
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
-		err := job.resolveIdentities(populateHistoricIdentities)
-		if err != nil {
+		if err := job.resolveIdentities(populateHistoricIdentities); err != nil {
 			pkgLogger.Errorf(` ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
 			return job.processLoadTableResponse(errorMap)
@@ -1455,21 +1471,30 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
-		txn, err := dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
-		if err != nil {
-			return err
-		}
-		uploadColumnOpts.Txn = txn
-		err = job.setUploadColumns(uploadColumnOpts)
-		if err != nil {
-			return err
-		}
+		return warehouseutils.WithTimeout(
+			job.ctx,
+			config.GetDuration(
+				"Warehouse.setUploadStatusTimeout",
+				15,
+				time.Second,
+			),
+			func(ctx context.Context) error {
+				txn, err := dbHandle.BeginTx(ctx, &sql.TxOptions{})
+				if err != nil {
+					return err
+				}
+				uploadColumnOpts.Txn = txn
+				err = job.setUploadColumns(uploadColumnOpts)
+				if err != nil {
+					return err
+				}
+				if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
+					application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
+				}
+				return txn.Commit()
 
-		if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
-			application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
-		}
-		err = txn.Commit()
-		return err
+			},
+		)
 	}
 	return job.setUploadColumns(uploadColumnOpts)
 }
@@ -1574,15 +1599,25 @@ func (job *UploadJob) triggerUploadNow() (err error) {
 		{Column: "updated_at", Value: job.now()},
 	}
 
-	txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
-	if err != nil {
-		panic(err)
-	}
-	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
-	if err != nil {
-		panic(err)
-	}
-	err = txn.Commit()
+	err = warehouseutils.WithTimeout(
+		job.ctx,
+		config.GetDuration(
+			"Warehouse.triggerUploadTimeout",
+			15,
+			time.Second,
+		),
+		func(ctx context.Context) error {
+			txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
+			if err != nil {
+				panic(err)
+			}
+			err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+			if err != nil {
+				panic(err)
+			}
+			return txn.Commit()
+		},
+	)
 
 	job.upload.Status = newJobState
 	return err
@@ -1702,74 +1737,84 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		{Column: "updated_at", Value: job.now()},
 	}
 
-	txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
-	if err != nil {
-		return "", fmt.Errorf("unable to start transaction: %w", err)
-	}
+	if err = warehouseutils.WithTimeout(
+		job.ctx,
+		config.GetDuration(
+			"Warehouse.setUploadErrorTimeout",
+			15,
+			time.Second,
+		),
+		func(ctx context.Context) error {
+			txn, err := job.dbHandle.BeginTx(ctx, &sql.TxOptions{})
+			if err != nil {
+				return fmt.Errorf("unable to start transaction: %w", err)
+			}
+			err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+			if err != nil {
+				return fmt.Errorf("unable to change upload columns: %w", err)
+			}
+			inputCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(ctx, upload)
+			outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(ctx, job.upload.ID, []string{
+				warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
+			})
 
-	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
-	if err != nil {
-		return "", fmt.Errorf("unable to change upload columns: %w", err)
-	}
-
-	inputCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(job.ctx, upload)
-	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
-		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
-	})
-	failCount := inputCount - outputCount
-	reportingStatus := jobsdb.Failed.State
-	if state == model.Aborted {
-		reportingStatus = jobsdb.Aborted.State
-	}
-
-	reportingMetrics := []*types.PUReportedMetric{{
-		ConnectionDetails: types.ConnectionDetails{
-			SourceID:        job.upload.SourceID,
-			DestinationID:   job.upload.DestinationID,
-			SourceTaskRunID: job.upload.SourceTaskRunID,
-			SourceJobID:     job.upload.SourceJobID,
-			SourceJobRunID:  job.upload.SourceJobRunID,
+			failCount := inputCount - outputCount
+			reportingStatus := jobsdb.Failed.State
+			if state == model.Aborted {
+				reportingStatus = jobsdb.Aborted.State
+			}
+			reportingMetrics := []*types.PUReportedMetric{{
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:        job.upload.SourceID,
+					DestinationID:   job.upload.DestinationID,
+					SourceTaskRunID: job.upload.SourceTaskRunID,
+					SourceJobID:     job.upload.SourceJobID,
+					SourceJobRunID:  job.upload.SourceJobRunID,
+				},
+				PUDetails: types.PUDetails{
+					InPU:       types.BATCH_ROUTER,
+					PU:         types.WAREHOUSE,
+					TerminalPU: true,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:         reportingStatus,
+					StatusCode:     400, // TODO: Change this to error specific code
+					Count:          failCount,
+					SampleEvent:    []byte("{}"),
+					SampleResponse: string(serializedErr),
+				},
+			}}
+			if outputCount > 0 {
+				reportingMetrics = append(reportingMetrics, &types.PUReportedMetric{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        job.upload.SourceID,
+						DestinationID:   job.upload.DestinationID,
+						SourceTaskRunID: job.upload.SourceTaskRunID,
+						SourceJobID:     job.upload.SourceJobID,
+						SourceJobRunID:  job.upload.SourceJobRunID,
+					},
+					PUDetails: types.PUDetails{
+						InPU:       types.BATCH_ROUTER,
+						PU:         types.WAREHOUSE,
+						TerminalPU: true,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         jobsdb.Succeeded.State,
+						StatusCode:     400, // TODO: Change this to error specific code
+						Count:          failCount,
+						SampleEvent:    []byte("{}"),
+						SampleResponse: string(serializedErr),
+					},
+				})
+			}
+			if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
+				application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
+			}
+			return txn.Commit()
 		},
-		PUDetails: types.PUDetails{
-			InPU:       types.BATCH_ROUTER,
-			PU:         types.WAREHOUSE,
-			TerminalPU: true,
-		},
-		StatusDetail: &types.StatusDetail{
-			Status:         reportingStatus,
-			StatusCode:     400, // TODO: Change this to error specific code
-			Count:          failCount,
-			SampleEvent:    []byte("{}"),
-			SampleResponse: string(serializedErr),
-		},
-	}}
-	if outputCount > 0 {
-		reportingMetrics = append(reportingMetrics, &types.PUReportedMetric{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:        job.upload.SourceID,
-				DestinationID:   job.upload.DestinationID,
-				SourceTaskRunID: job.upload.SourceTaskRunID,
-				SourceJobID:     job.upload.SourceJobID,
-				SourceJobRunID:  job.upload.SourceJobRunID,
-			},
-			PUDetails: types.PUDetails{
-				InPU:       types.BATCH_ROUTER,
-				PU:         types.WAREHOUSE,
-				TerminalPU: true,
-			},
-			StatusDetail: &types.StatusDetail{
-				Status:         jobsdb.Succeeded.State,
-				StatusCode:     400, // TODO: Change this to error specific code
-				Count:          failCount,
-				SampleEvent:    []byte("{}"),
-				SampleResponse: string(serializedErr),
-			},
-		})
+	); err != nil {
+		return "", fmt.Errorf("unable to set upload's job: %d status: %w", job.upload.ID, err)
 	}
-	if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
-		application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
-	}
-	err = txn.Commit()
 
 	job.upload.Status = state
 	job.upload.Error = serializedErr
@@ -1820,6 +1865,16 @@ func (job *UploadJob) getAttemptNumber() int {
 }
 
 func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
+	ctx, cancel := context.WithTimeout(
+		job.ctx,
+		config.GetDuration(
+			"Warehouse.getLoadFilesTimeout",
+			15,
+			time.Second,
+		),
+	)
+	defer cancel()
+
 	loadFilesMap = make(map[tableNameT]bool)
 
 	sourceID := job.warehouse.Source.ID
@@ -1846,7 +1901,7 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 		job.upload.LoadFileStartID,
 		job.upload.LoadFileEndID,
 	}
-	rows, err := dbHandle.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
+	rows, err := dbHandle.QueryContext(ctx, sqlStatement, sqlStatementArgs...)
 	if err == sql.ErrNoRows {
 		err = nil
 		return

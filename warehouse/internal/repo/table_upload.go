@@ -61,7 +61,7 @@ func (repo *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames
 		ctx,
 		config.GetDuration(
 			"Warehouse.tableUploadsTimeout",
-			5,
+			15,
 			time.Second,
 		),
 	)
@@ -124,6 +124,15 @@ func (repo *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]
 }
 
 func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadID int64, tableName string) (model.TableUpload, error) {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.getTableUploadsTimeout",
+			15,
+			time.Second,
+		),
+	)
+	defer cancel()
 	query := `SELECT ` + tableUploadColumns + ` FROM ` + tableUploadTableName + `
 	WHERE
 		wh_upload_id = $1 AND
@@ -199,6 +208,15 @@ func (*TableUploads) parseRows(rows *sql.Rows) ([]model.TableUpload, error) {
 }
 
 func (repo *TableUploads) PopulateTotalEventsFromStagingFileIDs(ctx context.Context, uploadId int64, tableName string, stagingFileIDs []int64) error {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.tableUploadsTimeout",
+			15,
+			time.Second,
+		),
+	)
+	defer cancel()
 	subQuery := `
 		WITH row_numbered_load_files as (
 		  SELECT
