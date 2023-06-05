@@ -85,20 +85,6 @@ func (mr *MockReportingIMockRecorder) AddClient(arg0, arg1 interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddClient", reflect.TypeOf((*MockReportingI)(nil).AddClient), arg0, arg1)
 }
 
-// IsPIIReportingDisabled mocks base method.
-func (m *MockReportingI) IsPIIReportingDisabled(arg0 string) bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsPIIReportingDisabled", arg0)
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// IsPIIReportingDisabled indicates an expected call of IsPIIReportingDisabled.
-func (mr *MockReportingIMockRecorder) IsPIIReportingDisabled(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPIIReportingDisabled", reflect.TypeOf((*MockReportingI)(nil).IsPIIReportingDisabled), arg0)
-}
-
 // Report mocks base method.
 func (m *MockReportingI) Report(arg0 []*types.PUReportedMetric, arg1 *sql.Tx) {
 	m.ctrl.T.Helper()
