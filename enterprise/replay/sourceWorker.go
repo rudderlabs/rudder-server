@@ -137,7 +137,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			sentAt := gjson.GetBytes([]byte(event.Raw), "originalTimestamp").String()
 			sentAtFormatted, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(sentAt))
 			if err != nil {
-				worker.log.Errorf("failed to parse sent at: %s sentAt : %s", err, sentAt)
+				worker.log.Errorf("failed to parse sent at: %s sentAt : %s", err, event.Raw)
 				continue
 			}
 			job := MessageJob{
