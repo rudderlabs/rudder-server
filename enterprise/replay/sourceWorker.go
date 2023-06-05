@@ -135,7 +135,14 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			userIDString := gjson.GetBytes([]byte(event.Raw), "userId").String()
 			messageID := gjson.GetBytes([]byte(event.Raw), "messageId").String()
 			sentAt := gjson.GetBytes([]byte(event.Raw), "originalTimestamp").String()
-			sentAtFormatted, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(sentAt))
+			var sentAtFormatted time.Time
+			var err error
+			if sentAt != "" {
+				sentAtFormatted, err = time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(sentAt))
+			} else {
+				sentAt := gjson.GetBytes([]byte(event.Raw), "timestamp").String()
+				sentAtFormatted, err = time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(sentAt))
+			}
 			if err != nil {
 				worker.log.Errorf("failed to parse sent at: %s sentAt : %s", err, event.Raw)
 				continue
