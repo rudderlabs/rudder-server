@@ -82,7 +82,8 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	err = worker.uploader.Download(ctx, file, filePath)
 	if err != nil {
-		panic(err) // failed to download
+		worker.log.Errorf("failed to download file: %s", err)
+		continue // failed to download
 	}
 	worker.log.Debugf("file downloaded at %s", path)
 	defer func() { _ = file.Close() }()
