@@ -877,7 +877,10 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 
 	wh.notifier = notifier
 	wh.destType = whType
-	wh.resetInProgressJobs(ctx)
+	err := wh.resetInProgressJobs(ctx)
+	if err != nil {
+		return err
+	}
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobID)
@@ -952,7 +955,7 @@ func (wh *HandleT) Shutdown() error {
 	return wh.backgroundWait()
 }
 
-func (wh *HandleT) resetInProgressJobs(ctx context.Context) {
+func (wh *HandleT) resetInProgressJobs(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`
 		UPDATE
 		  %s
@@ -967,13 +970,8 @@ func (wh *HandleT) resetInProgressJobs(ctx context.Context) {
 		wh.destType,
 		true,
 	)
-	rows, err := wh.dbHandle.QueryContext(ctx, sqlStatement)
-	if err != nil {
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
-	}
-	if rows.Err() != nil {
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, rows.Err()))
-	}
+	_, err := wh.dbHandle.ExecContext(ctx, sqlStatement)
+	return err
 }
 
 func minimalConfigSubscriber(ctx context.Context) {

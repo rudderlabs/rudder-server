@@ -256,6 +256,9 @@ func (notifier *PGNotifier) trackUploadBatch(ctx context.Context, batchID string
 						Error:  jobError.String,
 					})
 				}
+				if rows.Err() != nil {
+					panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", stmt, rows.Err()))
+				}
 				_ = rows.Close()
 				*ch <- responses
 				pkgLogger.Infof("PgNotifier: Completed processing all files  in batch: %s", batchID)

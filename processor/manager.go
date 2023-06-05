@@ -50,7 +50,7 @@ func (proc *LifecycleManager) Start() error {
 
 	proc.Handle.Setup(
 		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB, proc.esDB,
-		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
+		proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())

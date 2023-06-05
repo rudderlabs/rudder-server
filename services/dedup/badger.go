@@ -4,8 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dgraph-io/badger/v2"
-	"github.com/dgraph-io/badger/v2/options"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -20,6 +19,7 @@ type badgerDB struct {
 	gcDone   chan struct{}
 	path     string
 	clearDB  bool
+	opts     badger.Options
 }
 
 func (d *badgerDB) Get(key string) (int64, bool) {
@@ -69,32 +69,10 @@ func (d *badgerDB) Close() {
 	_ = d.badgerDB.Close()
 }
 
-func (d *badgerDB) start(memOptimized bool) {
+func (d *badgerDB) start() {
 	var err error
 
-	opts := badger.
-		DefaultOptions(d.path).
-		WithTruncate(true).
-		WithLogger(d.logger).
-		// Disable compression - Set options.Compression = options.None.
-		// This means we won’t allocate memory for decompression
-		// (this can be a lot in case of ZSTD decompression).
-		// In our case, compression is not useful since we are storing messageIDs with high entropy.
-		WithCompression(options.None)
-
-	if memOptimized {
-		// Memory usage optimizations:
-		// Inspired by https://github.com/dgraph-io/badger/issues/1304#issuecomment-630078745
-		// With modifications to ensure no performance degradation for dedup.
-		opts.TableLoadingMode = options.FileIO
-		opts.ValueLogLoadingMode = options.FileIO
-		opts.NumMemtables = 3
-		opts.MaxTableSize = 16 << 20
-		opts.NumLevelZeroTables = 1
-		opts.NumLevelZeroTablesStall = 2
-		opts.KeepL0InMemory = false
-	}
-	d.badgerDB, err = badger.Open(opts)
+	d.badgerDB, err = badger.Open(d.opts)
 	if err != nil {
 		panic(err)
 	}
@@ -132,9 +110,9 @@ func (d *badgerDB) gcLoop() {
 			continue
 		}
 		statName := "dedup"
-		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge((lsmSize))
-		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge((vlogSize))
-		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge((totSize))
+		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge(lsmSize)
+		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge(vlogSize)
+		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge(totSize)
 
 	}
 }
