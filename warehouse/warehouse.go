@@ -1692,7 +1692,7 @@ func Start(ctx context.Context, app app.App) error {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			reporting.ReportingInstance.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WarehouseReportingClient})
+			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WarehouseReportingClient})
 			return nil
 		}))
 	}

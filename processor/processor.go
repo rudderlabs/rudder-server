@@ -323,12 +323,10 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
 	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.ReportingI,
-	errorReporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
 	proc.reporting = reporting
-	proc.errorReporting = errorReporting
 
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
@@ -1972,8 +1970,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			if proc.isReportingEnabled() {
 				proc.reporting.Report(in.reportMetrics, tx.SqlTx())
 			}
-
-			proc.errorReporting.Report(in.reportMetrics, tx.SqlTx())
 
 			return nil
 		})

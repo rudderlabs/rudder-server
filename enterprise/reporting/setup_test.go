@@ -21,20 +21,23 @@ func TestFeatureSetup(t *testing.T) {
 		EnterpriseToken: "dummy-token",
 	}
 	instanceA := f.Setup(&backendconfig.NOOP{})
-	instanceB := f.GetReportingInstance(types.Report)
+	mstInstA := f.GetReportingInstance()
+	instanceB := mstInstA.GetReportingInstance(types.Report)
 
-	instanceC := f.Setup(&backendconfig.NOOP{})
-	instanceD := f.GetReportingInstance(types.Report)
+	mstInstanceC := f.Setup(&backendconfig.NOOP{})
+	instanceC := mstInstanceC.GetReportingInstance(types.Report)
+	instanceD := f.Setup(&backendconfig.NOOP{}).GetReportingInstance(types.Report)
 
-	require.Equal(t, instanceA.ReportingInstance, instanceB)
-	require.Equal(t, instanceB, instanceC.ReportingInstance)
-	require.Equal(t, instanceC.ReportingInstance, instanceD)
+	require.Equal(t, instanceA.GetReportingInstance(types.Report), instanceB)
+	require.Equal(t, instanceB, instanceC)
+	require.Equal(t, instanceC, instanceD)
 
 	f = &Factory{}
-	instanceE := f.Setup(&backendconfig.NOOP{})
-	instanceF := f.GetReportingInstance(types.Report)
-	require.Equal(t, instanceE.ReportingInstance, instanceF)
-	require.NotEqual(t, instanceE.ReportingInstance, backendconfig.NOOP{})
+	mstE := f.Setup(&backendconfig.NOOP{})
+	instanceE := f.Setup(&backendconfig.NOOP{}).GetReportingInstance(types.Report)
+	instanceF := mstE.GetReportingInstance(types.Report)
+	require.Equal(t, instanceE, instanceF)
+	require.NotEqual(t, instanceE, backendconfig.NOOP{})
 }
 
 func TestSetupForNoop(t *testing.T) {
@@ -78,8 +81,8 @@ func TestSetupForNoop(t *testing.T) {
 				}
 			}
 			f.Setup(&backendconfig.NOOP{})
-			instance := f.GetReportingInstance(types.ErrorDetailReport)
-			require.Equal(t, instance, &NOOP{})
+			instance := f.GetReportingInstance()
+			require.Equal(t, instance.GetReportingInstance(types.ErrorDetailReport), &NOOP{})
 		})
 
 	}
