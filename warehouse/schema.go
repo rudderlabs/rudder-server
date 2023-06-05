@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"time"
 
 	"golang.org/x/exp/slices"
 
@@ -158,6 +159,15 @@ func (sh *Schema) skipDeprecatedColumns(schema model.Schema) {
 }
 
 func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model.StagingFile) error {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.schemaGenerationTimeout",
+			30,
+			time.Second,
+		),
+	)
+	defer cancel()
 	consolidatedSchema, err := sh.consolidateStagingFilesSchemaUsingWarehouseSchema(ctx, stagingFiles)
 	if err != nil {
 		return fmt.Errorf("consolidating staging files schema: %w", err)
