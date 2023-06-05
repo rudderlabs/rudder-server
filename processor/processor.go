@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/backup"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
@@ -140,7 +141,11 @@ type Handle struct {
 
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
+
+	jobBackupEnabled  bool
+	postProcessStatus func(string) string
 }
+
 type processorStats struct {
 	statGatewayDBR                stats.Measurement
 	statGatewayDBW                stats.Measurement
@@ -481,6 +486,20 @@ func (proc *Handle) Start(ctx context.Context) error {
 		return nil
 	})
 
+	if !proc.jobBackupEnabled {
+		proc.postProcessStatus = func(string) string {
+			return jobsdb.Succeeded.State
+		}
+	} else {
+		proc.postProcessStatus = func(workspace string) string {
+			prefs, err := proc.fileuploader.GetStoragePreferences(workspace)
+			if err == nil && prefs.Backup("gw") {
+				return jobsdb.ToBackup.State
+			}
+			return jobsdb.Succeeded.State
+		}
+	}
+
 	// pinger loop
 	g.Go(misc.WithBugsnag(func() error {
 		proc.logger.Info("Starting pinger loop")
@@ -504,7 +523,13 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Async init group done")
 
 		h := &workerHandleAdapter{proc}
-		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, h) }, proc.logger)
+		pool := workerpool.New(
+			ctx,
+			func(partition string) workerpool.Worker {
+				return newProcessorWorker(partition, h)
+			},
+			proc.logger,
+		)
 		defer pool.Shutdown()
 		for {
 			select {
@@ -514,6 +539,33 @@ func (proc *Handle) Start(ctx context.Context) error {
 			}
 			for _, partition := range proc.activePartitions(ctx) {
 				pool.PingWorker(partition)
+			}
+		}
+	}))
+
+	// backup loop
+	g.Go(misc.WithBugsnag(func() error {
+		if !proc.jobBackupEnabled {
+			return nil
+		}
+		proc.backendConfig.WaitForConfig(ctx)
+		proc.logger.Info("Starting backup loop")
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(config.GetDuration("Processor.backupLoopSleep", 1, time.Minute)):
+				backup.Backup(
+					ctx,
+					jobsdb.GetQueryParamsT{
+						CustomValFilters: []string{proc.config.GWCustomVal},
+						StateFilters:     []string{jobsdb.ToBackup.State},
+						JobsLimit:        config.GetInt("Processor.backupJobsLimit", 10000),
+						EventsLimit:      config.GetInt("Processor.backupEventsLimit", 100000),
+					},
+					proc.gatewayDB,
+					proc.fileuploader,
+				)
 			}
 		}
 	}))
@@ -1540,7 +1592,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		// Mark the batch event as processed
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
-			JobState:      jobsdb.Succeeded.State,
+			JobState:      proc.postProcessStatus(batchEvent.WorkspaceId),
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),

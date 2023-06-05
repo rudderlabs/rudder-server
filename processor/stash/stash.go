@@ -168,7 +168,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
 		preferences, err := st.fileuploader.GetStoragePreferences(workspaceID)
 		if err != nil {
-			st.logger.Errorf("Skipping Storing errors for workspace: %s since no storage preferences are found", workspaceID)
+			st.logger.Errorf("Skipping Storing errors for workspace: %s - error finding storage preferences: %w", workspaceID, err)
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsForWorkspace,
 				errorOutput: StoreErrorOutputT{

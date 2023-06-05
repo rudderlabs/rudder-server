@@ -119,3 +119,9 @@ func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
 		l.Handle.adaptiveLimit = adaptiveLimitFunction
 	}
 }
+
+func WithBackup(backupEnabled bool) Opts {
+	return func(l *LifecycleManager) {
+		l.Handle.jobBackupEnabled = backupEnabled
+	}
+}

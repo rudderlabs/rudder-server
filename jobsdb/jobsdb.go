@@ -555,6 +555,7 @@ var (
 	Executing = jobStateT{isValid: true, isTerminal: false, State: "executing"}
 	Waiting   = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
 	Importing = jobStateT{isValid: true, isTerminal: false, State: "importing"}
+	ToBackup  = jobStateT{isValid: true, isTerminal: false, State: "to_backup"}
 
 	// Valid, Terminal
 	Succeeded = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
@@ -959,7 +960,6 @@ func (jd *HandleT) readerSetup(ctx context.Context, l lock.LockToken) {
 		return nil
 	}))
 
-	jd.startBackupDSLoop(ctx)
 	jd.startMigrateDSLoop(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {

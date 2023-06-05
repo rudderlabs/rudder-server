@@ -137,9 +137,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
-		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 	)
 	defer gwDBForProcessor.Close()
@@ -226,6 +224,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		destinationHandle,
 		transformationhandle,
 		processor.WithAdaptiveLimit(adaptiveLimit),
+		processor.WithBackup(!a.config.enableReplay), // don't want backup if replay server
 	)
 	throttlerFactory, err := rtThrottler.New(stats.Default)
 	if err != nil {

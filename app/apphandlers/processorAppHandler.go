@@ -234,6 +234,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		destinationHandle,
 		transformationhandle,
 		proc.WithAdaptiveLimit(adaptiveLimit),
+		proc.WithBackup(true),
 	)
 	throttlerFactory, err := throttler.New(stats.Default)
 	if err != nil {
