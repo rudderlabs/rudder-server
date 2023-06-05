@@ -1067,7 +1067,6 @@ func (jd *HandleT) refreshDSRangeList(l lock.LockToken) {
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
 		// Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
 		row := jd.dbHandle.QueryRow(sqlStatement)
-		jd.assertError(row.Err())
 
 		err := row.Scan(&minID, &maxID)
 		jd.assertError(err)
