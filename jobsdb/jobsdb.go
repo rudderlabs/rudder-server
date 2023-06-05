@@ -604,8 +604,8 @@ func init() {
 var (
 	maxDSSize, maxMigrateOnce, maxMigrateDSProbe int
 	maxTableSize                                 int64
-	vaccumFullStatusTableThreshold               int64
-	vaccumAnalyzeStatusTableThreshold            int64
+	vacuumFullStatusTableThreshold               int64
+	vacuumAnalyzeStatusTableThreshold            int64
 	jobDoneMigrateThres, jobStatusMigrateThres   float64
 	jobMinRowsMigrateThres                       float64
 	migrateDSLoopSleepDuration                   time.Duration
@@ -644,8 +644,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
 	config.RegisterInt64ConfigVariable(300, &maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
 	config.RegisterInt64ConfigVariable(10000, &backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
-	config.RegisterInt64ConfigVariable(500, &vaccumFullStatusTableThreshold, true, 1000000, "JobsDB.vaccumFullStatusTableThresholdInMB")
-	config.RegisterInt64ConfigVariable(30000, &vaccumAnalyzeStatusTableThreshold, true, 1, "JobsDB.vaccumAnalyzeStatusTableThreshold")
+	config.RegisterInt64ConfigVariable(500*bytesize.MB, &vacuumFullStatusTableThreshold, true, 1, "JobsDB.vacuumFullStatusTableThreshold")
+	config.RegisterInt64ConfigVariable(30000, &vacuumAnalyzeStatusTableThreshold, true, 1, "JobsDB.vacuumAnalyzeStatusTableThreshold")
 	config.RegisterInt64ConfigVariable(64*bytesize.MB, &backupMaxTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
 	config.RegisterDurationConfigVariable(30, &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)

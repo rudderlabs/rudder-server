@@ -153,13 +153,13 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	return err
 }
 
-// based on size of given DSs, gives a list of DSs for us to vaccum status tables
-func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
+// based on size of given DSs, gives a list of DSs for us to vacuum status tables
+func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) (map[string]struct{}, error) {
 	// get name and it's size of all tables
 	var rows *sql.Rows
 	rows, err := jd.dbHandle.QueryContext(
 		ctx,
-		`SELECT pg_total_relation_size(oid) AS size, relname
+		`SELECT pg_relation_size(oid) AS size, relname
 		FROM pg_class
 		where relname = ANY(
 			SELECT tablename
@@ -194,9 +194,13 @@ func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) (
 	datasets := lo.Filter(dsList,
 		func(ds dataSetT, idx int) bool {
 			tableSize := tableSizes[ds.JobStatusTable]
-			return tableSize > vaccumFullStatusTableThreshold
+			return tableSize > vacuumFullStatusTableThreshold
 		})
-	return datasets, nil
+	toVacuum := map[string]struct{}{}
+	for _, ds := range datasets {
+		toVacuum[ds.JobStatusTable] = struct{}{}
+	}
+	return toVacuum, nil
 }
 
 // based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
@@ -252,8 +256,8 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 	if err != nil {
 		return err
 	}
-	// vaccum status table if total size exceeds vaccumFullStatusTableThreshold in the toCompact list
-	toVaccum, err := jd.getVacuumCandidates(ctx, toCompact)
+	// vacuum status table if total size exceeds vacuumFullStatusTableThreshold in the toCompact list
+	toVacuum, err := jd.getVacuumCandidates(ctx, toCompact)
 	if err != nil {
 		return err
 	}
@@ -266,21 +270,27 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 
 	return jd.WithTx(func(tx *Tx) error {
 		for _, statusTable := range toCompact {
+			table := statusTable.JobStatusTable
+			// clean up and vacuum if not present in toVacuum
+			_, ok := toVacuum[table]
 			if err := jd.cleanStatusTable(
 				ctx,
 				tx,
-				statusTable.JobStatusTable,
+				table,
+				!ok,
 			); err != nil {
 				return err
 			}
-		}
-		for _, statusTable := range toVaccum {
-			if err := jd.vaccumStatusTable(
-				ctx,
-				tx,
-				statusTable.JobStatusTable,
-			); err != nil {
-				return err
+
+			// vacuum full if present in toVacuum
+			if ok {
+				if err := jd.vacuumFullStatusTable(
+					ctx,
+					tx,
+					table,
+				); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -288,24 +298,26 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 }
 
 // cleanStatusTable deletes all rows except for the latest status for each job
-func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string) error {
-	deletedJobsQuery := fmt.Sprintf(`WITH deleted AS (DELETE FROM %[1]q
-		WHERE NOT id = ANY(
-		   SELECT DISTINCT ON (job_id) id from "%[1]s" ORDER BY job_id ASC, id DESC
-	   ) RETURNING *) SELECT count(*) FROM deleted;`, table)
-
-	var numJobStatusDeleted int64
-	var err error
-	if err = tx.QueryRowContext(
+func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) error {
+	result, err := tx.ExecContext(
 		ctx,
-		deletedJobsQuery,
-	).Scan(&numJobStatusDeleted); err != nil {
+		fmt.Sprintf(`DELETE FROM %[1]q
+						WHERE NOT id = ANY(
+							SELECT DISTINCT ON (job_id) id from "%[1]s" ORDER BY job_id ASC, id DESC
+						)`, table),
+	)
+	if err != nil {
+		return err
+	}
+
+	numJobStatusDeleted, err := result.RowsAffected()
+	if err != nil {
 		return err
 	}
 
 	query := fmt.Sprintf(`ANALYZE %q`, table)
-	if numJobStatusDeleted > vaccumAnalyzeStatusTableThreshold {
-		query = fmt.Sprintf(`VACCUM ANALYZE %q`, table)
+	if numJobStatusDeleted > vacuumAnalyzeStatusTableThreshold && canBeVacuumed {
+		query = fmt.Sprintf(`VACUUM ANALYZE %q`, table)
 	}
 	_, err = tx.ExecContext(
 		ctx,
@@ -314,8 +326,8 @@ func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string) erro
 	return err
 }
 
-func (*HandleT) vaccumStatusTable(ctx context.Context, tx *Tx, table string) error {
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACCUM FULL %[1]q`, table)); err != nil {
+func (*HandleT) vacuumFullStatusTable(ctx context.Context, tx *Tx, table string) error {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
 		return err
 	}
 	return nil
