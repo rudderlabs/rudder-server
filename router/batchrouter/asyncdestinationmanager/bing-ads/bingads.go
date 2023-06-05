@@ -24,8 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-const pollUrl = "https://bulk.api.bingads.microsoft.com/Api/Advertiser/CampaignManagement/v13/BulkService.svc"
-
 type BingAdsBulkUploader struct {
 	destName             string
 	accessToken          string
@@ -78,7 +76,7 @@ type MetadataNew struct {
 	FailedKeys    []int64           `json:"failedKeys"`
 	FailedReasons map[string]string `json:"failedReasons"`
 	WarningKeys   []string          `json:"warningKeys"`
-	SucceededKeys []string          `json:"succeededKeys"`
+	SucceededKeys []int64           `json:"succeededKeys"`
 }
 
 /*
@@ -217,7 +215,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	// success case
 	var parameters common.Parameters
 	parameters.ImportId = uploadBulkFileResp.RequestId
-	parameters.PollUrl = pollUrl
+	// parameters.PollUrl = pollUrl
 	importParameters, err := json.Marshal(parameters)
 	if err != nil {
 		panic("Errored in Marshalling" + err.Error())
@@ -276,7 +274,7 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 	return filePaths, nil
 }
 
-func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
+func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int) {
 	requestId := pollStruct.ImportId
 	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
 	if err != nil {
@@ -362,13 +360,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
 		}
 		statusCode = 400
 	}
-
-	respBytes, err := stdjson.Marshal(resp)
-	if err != nil {
-		panic(err)
-	}
-
-	return respBytes, statusCode
+	return resp, statusCode
 }
 
 func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
@@ -390,6 +382,25 @@ func getFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 		reasons[key] = strings.Join(errorList, ", ")
 	}
 	return reasons
+}
+
+// filtering out failed jobIds from the total array of jobIds
+// in order to get jobIds of the successful jobs
+func getSuccessKeys(failedEventList, initialEventList []int64) []int64 {
+	successfulEvents := make([]int64, 0)
+
+	lookup := make(map[int64]bool)
+	for _, element := range failedEventList {
+		lookup[element] = true
+	}
+
+	for _, element := range initialEventList {
+		if !lookup[element] {
+			successfulEvents = append(successfulEvents, element)
+		}
+	}
+
+	return successfulEvents
 }
 
 func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
@@ -451,6 +462,14 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 		}
 	}
 
+	// considering importing jobs are the primary list of jobs sent
+	// making an array of those jobIds
+	importList := failedJobsStatus.ImportingList
+	var initialEventList []int64
+	for _, job := range importList {
+		initialEventList = append(initialEventList, job.JobID)
+	}
+
 	// Build the response struct
 	response := Response{
 		Status: status,
@@ -458,7 +477,7 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 			FailedKeys:    getFailedKeys(clientIDErrors),
 			FailedReasons: getFailedReasons(clientIDErrors),
 			WarningKeys:   []string{},
-			SucceededKeys: []string{},
+			SucceededKeys: getSuccessKeys(getFailedKeys(clientIDErrors), initialEventList),
 		},
 	}
 

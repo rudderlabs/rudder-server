@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	stdjson "encoding/json"
-	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -38,7 +37,7 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("asyncdestinationmanager").Child("marketobulkupload")
 }
 
-func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
+func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int) {
 	payload, err := json.Marshal(pollStruct)
 	if err != nil {
 		panic("JSON Marshal Failed" + err.Error())
@@ -46,7 +45,12 @@ func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) ([]byte, int) {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	pollUrl := "/pollStatus"
 	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+pollUrl, payload, b.timeout)
-	return bodyBytes, statusCode
+	var asyncResponse common.AsyncStatusResponse
+	err = json.Unmarshal(bodyBytes, &asyncResponse)
+	if err != nil {
+		panic("JSON Unmarshal Failed" + err.Error())
+	}
+	return asyncResponse, statusCode
 }
 
 func (b *MarketoBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
@@ -63,9 +67,7 @@ func (b *MarketoBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 }
 
 func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
-	fmt.Println("**********IN UPLOAD FUNCTION***********")
 	resolveURL := func(base, relative string) string {
-		fmt.Println("**********IN RESOLVE URL***********")
 		// var logger logger.Logger
 		baseURL, _ := url.Parse(base)
 		// if err != nil {
