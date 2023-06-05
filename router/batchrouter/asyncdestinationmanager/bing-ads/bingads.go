@@ -42,7 +42,7 @@ type User struct {
 	HashedEmail string `json:"hashedEmail"`
 }
 type Message struct {
-	UploadList []User `json:"uploadList"`
+	List []User `json:"List"`
 }
 type Metadata struct {
 	JobID int64 `json:"job_id"`
@@ -119,10 +119,10 @@ func createZipFile(filePath string, failedJobIds *[]int64, successJobIds *[]int6
 		if err != nil {
 			panic(err)
 		}
-		marshaledUploadlist, err := json.Marshal(data.Message.UploadList)
+		marshaledUploadlist, err := json.Marshal(data.Message.List)
 		size = size + len([]byte(marshaledUploadlist))
 		if size < 104857600 {
-			for _, uploadData := range data.Message.UploadList {
+			for _, uploadData := range data.Message.List {
 				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, uploadData.Email, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			}
 			*successJobIds = append(*successJobIds, data.Metadata.JobID)

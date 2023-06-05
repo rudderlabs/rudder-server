@@ -132,6 +132,7 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	} else if destType == "MARKETO_BULK_UPLOAD" {
 		return marketobulkupload.NewManager(destination, HTTPTimeout)
 	} else {
+		return nil
 		panic(fmt.Errorf("batch router is not enabled for destination %s", destType))
 	}
 }
