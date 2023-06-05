@@ -448,6 +448,19 @@ func (proc *Handle) Setup(
 			}
 		}
 	}))
+	if !proc.jobBackupEnabled {
+		proc.postProcessStatus = func(string) string {
+			return jobsdb.Succeeded.State
+		}
+	} else {
+		proc.postProcessStatus = func(workspace string) string {
+			prefs, err := proc.fileuploader.GetStoragePreferences(workspace)
+			if err == nil && prefs.Backup("gw") {
+				return jobsdb.ToBackup.State
+			}
+			return jobsdb.Succeeded.State
+		}
+	}
 
 	proc.transformer.Setup()
 	proc.crashRecover()
@@ -485,20 +498,6 @@ func (proc *Handle) Start(ctx context.Context) error {
 		limiterGroup.Wait()
 		return nil
 	})
-
-	if !proc.jobBackupEnabled {
-		proc.postProcessStatus = func(string) string {
-			return jobsdb.Succeeded.State
-		}
-	} else {
-		proc.postProcessStatus = func(workspace string) string {
-			prefs, err := proc.fileuploader.GetStoragePreferences(workspace)
-			if err == nil && prefs.Backup("gw") {
-				return jobsdb.ToBackup.State
-			}
-			return jobsdb.Succeeded.State
-		}
-	}
 
 	// pinger loop
 	g.Go(misc.WithBugsnag(func() error {
