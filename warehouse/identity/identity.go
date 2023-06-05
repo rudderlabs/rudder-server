@@ -149,6 +149,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 		if err != nil {
 			return
 		}
+		defer tableRows.Close()
 
 		for tableRows.Next() {
 			var mergePropType, mergePropVal string
@@ -158,6 +159,9 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 			}
 			row := []string{mergePropType, mergePropVal, newID, currentTimeString}
 			rows = append(rows, row)
+		}
+		if err = tableRows.Err(); err != nil {
+			return
 		}
 
 		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, misc.SingleQuoteLiteralJoin(rudderIDs[1:]))
@@ -317,6 +321,10 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 		}
 		ids = append(ids, id)
 	}
+	if err = rows.Err(); err != nil {
+		pkgLogger.Errorf(`IDR: Error reading rows from %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
+		return
+	}
 	pkgLogger.Debugf(`IDR: Number of merge rules inserted for uploadID %v : %v`, idr.uploadID, len(ids))
 	return ids, nil
 }
@@ -360,6 +368,9 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *m
 			}
 			rowString, _ := eventLoader.WriteToString()
 			gzWriter.WriteGZ(rowString)
+		}
+		if err = rows.Err(); err != nil {
+			return
 		}
 
 		offset += batchSize

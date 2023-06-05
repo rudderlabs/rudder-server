@@ -454,6 +454,9 @@ func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload mod
 		}
 		revisionIDs = append(revisionIDs, revisionID)
 	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate destination revisionID: %w", err)
+	}
 
 	return revisionIDs, nil
 }

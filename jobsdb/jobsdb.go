@@ -1066,14 +1066,12 @@ func (jd *HandleT) refreshDSRangeList(l lock.LockToken) {
 		jd.assert(ds.Index != "", "ds.Index is empty")
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
 		// Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
-		rows, err := jd.dbHandle.Query(sqlStatement)
+		row := jd.dbHandle.QueryRow(sqlStatement)
+		jd.assertError(row.Err())
+
+		err := row.Scan(&minID, &maxID)
 		jd.assertError(err)
-		for rows.Next() {
-			err := rows.Scan(&minID, &maxID)
-			jd.assertError(err)
-			break
-		}
-		_ = rows.Close()
+
 		jd.logger.Debug(sqlStatement, minID, maxID)
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
@@ -1261,7 +1259,7 @@ func (jd *HandleT) computeNewIdxForAppend(l lock.LockToken) string {
 }
 
 func (jd *HandleT) doComputeNewIdxForAppend(dList []dataSetT) string {
-	newDSIdx := ""
+	var newDSIdx string
 	if len(dList) == 0 {
 		newDSIdx = "1"
 	} else {
@@ -1845,6 +1843,9 @@ func (jd *HandleT) GetActiveWorkspaces(ctx context.Context, customVal string) ([
 		}
 		workspaceIds = append(workspaceIds, workspaceId)
 	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
 	return workspaceIds, nil
 }
 
@@ -1885,6 +1886,9 @@ func (jd *HandleT) GetDistinctParameterValues(ctx context.Context, parameterName
 			return nil, err
 		}
 		values = append(values, value)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
 	}
 	return values, nil
 }
@@ -2105,6 +2109,9 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 		payloadSize = runningPayloadSize
 		eventCount = runningEventCount
 	}
+	if err := rows.Err(); err != nil {
+		return JobsResult{}, false, err
+	}
 	if !limitsReached &&
 		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
 		(params.EventsLimit > 0 && eventCount >= params.EventsLimit) || // we reached the events limit
@@ -2213,9 +2220,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 		return JobsResult{}, false, err
 	}
 	defer func() { _ = rows.Close() }()
-	if err != nil {
-		return JobsResult{}, false, err
-	}
 	var runningEventCount int
 	var runningPayloadSize int64
 
@@ -2247,6 +2251,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 		payloadSize = runningPayloadSize
 		eventCount = runningEventCount
 
+	}
+	if err := rows.Err(); err != nil {
+		return JobsResult{}, false, err
 	}
 	if !limitsReached &&
 		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
@@ -2575,6 +2582,9 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 		jd.assertError(err)
 		count++
 	}
+	if err = rows.Err(); err != nil {
+		jd.assertError(err)
+	}
 	return
 }
 
@@ -2620,6 +2630,9 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		jd.assertError(err)
 		jd.assert(!opDone, "opDone is true")
 		count++
+	}
+	if err = rows.Err(); err != nil {
+		jd.assertError(err)
 	}
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
 

@@ -865,9 +865,12 @@ func (pg *Postgres) dropDanglingStagingTables(ctx context.Context) bool {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
+	}
+	if err := rows.Err(); err != nil {
+		panic(fmt.Errorf("iterate result from query: %s\nwith Error : %w", sqlStatement, err))
 	}
 	pg.logger.Infof("WH: PG: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
@@ -1069,6 +1072,10 @@ func (pg *Postgres) handleExecContext(ctx context.Context, e *QueryParams) (err 
 				return
 			}
 			response = append(response, s)
+		}
+		if err = rows.Err(); err != nil {
+			err = fmt.Errorf("[WH][POSTGRES] Error occurred while processing destination revisionID query %+v with err: %w", e, err)
+			return
 		}
 		pg.logger.Infof(fmt.Sprintf(`[WH][POSTGRES] Execution Query plan for statement: %s is %s`, sqlStatement, strings.Join(response, `
 `)))
