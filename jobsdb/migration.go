@@ -261,10 +261,9 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 	if err != nil {
 		return err
 	}
-	toVacuumFullMap := map[string]struct{}{}
-	for _, table := range toVacuumFull {
-		toVacuumFullMap[table] = struct{}{}
-	}
+	toVacuumFullMap := lo.Associate(toVacuumFull, func(k string) (string, struct{}) {
+		return k, struct{}{}
+	})
 	start := time.Now()
 	defer stats.Default.NewTaggedStat(
 		"jobsdb_compact_status_tables",
