@@ -284,11 +284,7 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 
 			// vacuum full if present in toVacuum
 			if ok {
-				if err := jd.vacuumFullStatusTable(
-					ctx,
-					tx,
-					table,
-				); err != nil {
+				if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
 					return err
 				}
 			}
@@ -324,13 +320,6 @@ func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string, canB
 		query,
 	)
 	return err
-}
-
-func (*HandleT) vacuumFullStatusTable(ctx context.Context, tx *Tx, table string) error {
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
-		return err
-	}
-	return nil
 }
 
 // getMigrationList returns the list of datasets to migrate from,
