@@ -21,7 +21,7 @@ type ReportingMediator struct {
 	errorReporting  types.ReporterI
 }
 
-func (med *ReportingMediator) formReportInstance(backendConfig backendconfig.BackendConfig) types.ReporterI {
+func (med *ReportingMediator) createReportInstance(backendConfig backendconfig.BackendConfig) types.ReporterI {
 	med.log.Debug("Forming reporting instance")
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	if !reportingEnabled || med.enterpriseToken == "" {
@@ -34,7 +34,7 @@ func (med *ReportingMediator) formReportInstance(backendConfig backendconfig.Bac
 	return reportingHandle
 }
 
-func (med *ReportingMediator) formErrorReportInstance(backendConfig backendconfig.BackendConfig) types.ReporterI {
+func (med *ReportingMediator) createErrorReportInstance(backendConfig backendconfig.BackendConfig) types.ReporterI {
 	med.log.Debug("Forming error reporting instance")
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	errorReportingEnabled := config.GetBool("Reporting.errorReporting.enabled", false)
@@ -58,8 +58,8 @@ func NewReportingMediator(log logger.Logger, enterpriseToken string) *ReportingM
 
 func (med *ReportingMediator) Setup(backendConfig backendconfig.BackendConfig) *ReportingMediator {
 	med.once.Do(func() {
-		med.reporting = med.formReportInstance(backendConfig)
-		med.errorReporting = med.formErrorReportInstance(backendConfig)
+		med.reporting = med.createReportInstance(backendConfig)
+		med.errorReporting = med.createErrorReportInstance(backendConfig)
 	})
 	return med
 }
