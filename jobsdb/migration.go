@@ -281,12 +281,11 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 			); err != nil {
 				return err
 			}
-
-			// vacuum full if present in toVacuum
-			if ok {
-				if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
-					return err
-				}
+		}
+		// vacuum full if present in toVacuum
+		for table := range toVacuum {
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
+				return err
 			}
 		}
 		return nil

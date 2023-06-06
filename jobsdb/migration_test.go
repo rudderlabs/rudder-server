@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/stretchr/testify/require"
 )
 
@@ -197,8 +198,8 @@ func TestMigration(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 10, count)
 
-	vacuumFullStatusTableThreshold = 8 * 1024 // 8KB is common value for toast size in postgres
-	toVacuum, err := jobDB.getVacuumCandidates(context.Background(), dsList)
+	vacuumFullStatusTableThreshold = 8 * bytesize.KB // 8KB is common value for toast size in postgres
+	toVacuum, err := jobDB.getVacuumFullCandidates(context.Background(), dsList)
 	require.NoError(t, err)
 	require.EqualValues(t, 4, len(dsList))   // total 4 DSs
 	require.EqualValues(t, 2, len(toVacuum)) // 2 DSs to vacuum since 2nd and 4th DSs have status tables with no entries
