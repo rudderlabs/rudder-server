@@ -253,7 +253,7 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 	if err != nil {
 		return err
 	}
-	// vacuum status table if total size exceeds vacuumFullStatusTableThreshold in the toCompact list
+
 	toVacuum, err := jd.getVacuumCandidates(ctx, dsList)
 	if err != nil {
 		return err
