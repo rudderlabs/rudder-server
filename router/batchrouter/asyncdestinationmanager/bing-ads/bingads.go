@@ -282,7 +282,8 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 	}
 	var resp common.AsyncStatusResponse
 	var statusCode int
-	if uploadStatusResp.PercentComplete == 100 && uploadStatusResp.RequestStatus == "completed" {
+	var allSuccessPercentage int = 100
+	if uploadStatusResp.PercentComplete == int64(allSuccessPercentage) && uploadStatusResp.RequestStatus == "Completed" {
 		// all successful events, do not need to download the file.
 		resp = common.AsyncStatusResponse{
 			Success:        true,
@@ -294,7 +295,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 			OutputFilePath: "",
 		}
 		statusCode = 200
-	} else if uploadStatusResp.PercentComplete == 100 && uploadStatusResp.RequestStatus == "CompletedWithErrors" {
+	} else if uploadStatusResp.PercentComplete == int64(allSuccessPercentage) && uploadStatusResp.RequestStatus == "CompletedWithErrors" {
 		// the final status file needs to be downloaded
 		fileAccessUrl := uploadStatusResp.ResultFileUrl
 		modifiedUrl := strings.ReplaceAll(fileAccessUrl, "amp;", "")
@@ -519,38 +520,40 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		HTTPClient: http.DefaultClient,
 		AccessTokenGenerator: func() (string, string, error) {
 
-			refreshTokenParams := oauth.RefreshTokenParams{
-				WorkspaceId: destination.WorkspaceID,
-				DestDefName: destination.Name,
-				AccountId:   destConfig.RudderAccountId,
-			}
-			statusCode, authResponse := oauthClient.FetchToken(&refreshTokenParams)
-			if statusCode != 200 {
-				return "", "", fmt.Errorf("Error in fetching access token")
-			}
-			secret := secretStruct{}
-			err = json.Unmarshal(authResponse.Account.Secret, &secret)
-			if err != nil {
-				return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-			}
-			currentTime := time.Now()
-			expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
-			if err != nil {
-				return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
-			}
-			if currentTime.After(expirationTime) {
-				refreshTokenParams.Secret = authResponse.Account.Secret
-				statusCode, authResponse = oauthClient.RefreshToken(&refreshTokenParams)
-				if statusCode != 200 {
-					return "", "", fmt.Errorf("Error in refreshing access token")
-				}
-				err = json.Unmarshal(authResponse.Account.Secret, &secret)
-				if err != nil {
-					return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-				}
-				return secret.AccessToken, secret.Developer_token, nil
-			}
-			return secret.AccessToken, secret.Developer_token, nil
+			// refreshTokenParams := oauth.RefreshTokenParams{
+			// 	WorkspaceId: destination.WorkspaceID,
+			// 	DestDefName: destination.Name,
+			// 	AccountId:   destConfig.RudderAccountId,
+			// }
+			// statusCode, authResponse := oauthClient.FetchToken(&refreshTokenParams)
+			// if statusCode != 200 {
+			// 	return "", "", fmt.Errorf("Error in fetching access token")
+			// }
+			// secret := secretStruct{}
+			// err = json.Unmarshal(authResponse.Account.Secret, &secret)
+			// if err != nil {
+			// 	return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+			// }
+			// currentTime := time.Now()
+			// expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
+			// if err != nil {
+			// 	return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
+			// }
+			// if currentTime.After(expirationTime) {
+			// 	refreshTokenParams.Secret = authResponse.Account.Secret
+			// 	statusCode, authResponse = oauthClient.RefreshToken(&refreshTokenParams)
+			// 	if statusCode != 200 {
+			// 		return "", "", fmt.Errorf("Error in refreshing access token")
+			// 	}
+			// 	err = json.Unmarshal(authResponse.Account.Secret, &secret)
+			// 	if err != nil {
+			// 		return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+			// 	}
+			// 	return secret.AccessToken, secret.Developer_token, nil
+			// }
+
+			accessToken := "eyJhbGciOiJSU0EtT0FFUCIsImVuYyI6IkExMjhDQkMtSFMyNTYiLCJ4NXQiOiI3bE1qTHIxMzdvZXF5eUlBWUpKSC1rSTNGb2siLCJ6aXAiOiJERUYifQ.Ltzf49NjI5OJ00TDp67TY8yIm0BoXa506q3LQveX6pfcmcSb5cjHA0N0PpT1gt62nXi5sIMTC5r-we4nqF1RywxtxrxJzIwHnEIB_RRkTqQmt7sSmNrY8KLUHj5r5dnN4zqkBOyIrCQpR_pgc5ZYMMWHY-R855Eqnb4rGLAdT8FijjlM-uwHn0wM3hE42PSUtZVUAGlhFNSsKEPUSaUy68E9iJ0zw30Jme6RHiO8BHJCNVXazAzf-4uWuxs1BG1pnQs3PV0GpvPI3f7A4mXDOzYTFakanFmDINJ0DixHEno0V4LzWJjpwCfh5jPHfb7sNRfaYp0AuSQukRwx9AVxiQ.wuAvCMsIhDuTmkAUvEIFzQ.ALvUwKwuzMS9dtz_s2-HGA81n9xB5CpcWOWWhW2qSoHsIqXn6Q-0XcqBcBX6z9feGsvNHgKJ6UDq5guCbpkuleTxxHewt6NJMv8agf5SZjXhJIu-hkcsDTegRCBNTCZ3H2_lU1KFbVJuIn1nVMjBw-UvsugiMK6M7DsjfnUA0PnhY5gKwvJIPiXqo2Ys4E9cc-aXPGM-_BqNO651OXT5SUXpgL0FDcW2VRry5iN_SMRmNCOf7y4K6IVRnxrWiWxnVqFnNyuCovsl-i2QBWnsvKrZi4xCbrsfBnzmzOnhI40NbIPGf42HGXLXwlZ7EYg8KJSvjuaxuiJjBlVyzqZPkH7C7LbgXzvOUKlzhDY1C6T3Db2oiDQ6UwEVK66X3maE-NduuRPDTEsuagkfTJ6266INIJAa9uiI5DcAKrzKgxXwBRuKIIlZnFhNuL_WiyIMGF6fpfBa4eb4O2jl-yw-FLR5ab8ITq07-PwWEtTosX6T18X1lkGIImIo3WIU2zNcMW429NevP4iQRpswGSA9D08WeHDaHxb33Jd0JE0HJogKvhiw9zJFY8DM10Rr8c7W8PO2JDw-xAz7tv4xckOtd7fx3CRa0bzY3y1h7gEG7e_DnSsPPjuwvrn8ixNdbBQA7CRbBqEuJF4XvDhSlrvJKHhYa6x0xt3IVWrr2K3jEFmm4ehjAOozGPrdEqxuOSB67U881cjh-ux21tO11_OpQ4l2vnlZ3gJWlXUampnqcaa7NcD7BDkQ5AodWIV3tm9WHfljSxCOwL7S34RUeBQ-7f_oqU-hDmq7hBrlC81AVoSH9StdKd2JGnmkZMjZe_JD8c2bzCaOrGfvmLq7zBCsX2f0t3SzhzfPGsa3dNkDHL1Y6EnzyYBdivmFUXC2fvFEPlH21cx2iGPOfIrDymToV-74XZIe-riCnzODG5rO8iKp-BYh0zFw6n51nSPSa9u6Co_JUW0udCF6pQk11ZiPy8JFjLr25zjoaSvVkZK5u0AIqjD_tfLHEJtv5wdIcpeTlsI8iy2zGhm5Cw0iRVqa-JgixXM1i8BFKaabQ66y_DoGqxKKIgoxdOupFvAcLweoHO_vlYeQ81qzTQ5VfgxfHSQnYhLV3zSxnm7PLLzhrfJwOY_HIscvzPBBprl2Go2ZvN_K7tLXEbqKMo1MhbqDLFW7syhqtG6kgZL7D3Cgp21LLjQ5XgK864JHkrqeRTo4JvEUd0zoWKxYnW8lzclBADnKicahnjucjIlUU_ljrBwHi0Md7A9l2et1e9DJaN7vQYP_wZYGvBho-4TAe_qmVpytsytDswpNOMPh4n9Kdw-spFtgvqRgoZhJA-87sRwwPL4dDcMFGE4h1z5WNNUBU-HTJNp2sl5XisYrGK7_2o8.J417TDU5G0RQD3oeNxq6ng"
+			return accessToken, "11943F5Y90255615", nil
 		},
 	}
 	session := bingads.NewSession(sessionConfig)
