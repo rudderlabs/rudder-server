@@ -159,7 +159,7 @@ func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) (
 	var rows *sql.Rows
 	rows, err := jd.dbHandle.QueryContext(
 		ctx,
-		`SELECT pg_relation_size(oid) AS size, relname
+		`SELECT pg_table_size(oid) AS size, relname
 		FROM pg_class
 		where relname = ANY(
 			SELECT tablename
@@ -167,7 +167,7 @@ func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) (
 				WHERE schemaname NOT IN ('pg_catalog','information_schema')
 				AND tablename like $1
 		)`,
-		jd.tablePrefix+"_job%",
+		jd.tablePrefix+"_job_status%",
 	)
 	if err != nil {
 		return nil, err
@@ -191,14 +191,11 @@ func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) (
 		return nil, err
 	}
 
-	datasets := lo.Filter(dsList,
-		func(ds dataSetT, idx int) bool {
-			tableSize := tableSizes[ds.JobStatusTable]
-			return tableSize > vacuumFullStatusTableThreshold
-		})
 	toVacuum := map[string]struct{}{}
-	for _, ds := range datasets {
-		toVacuum[ds.JobStatusTable] = struct{}{}
+	for _, ds := range dsList {
+		if tableSizes[ds.JobStatusTable] > vacuumFullStatusTableThreshold {
+			toVacuum[ds.JobStatusTable] = struct{}{}
+		}
 	}
 	return toVacuum, nil
 }
@@ -257,7 +254,7 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 		return err
 	}
 	// vacuum status table if total size exceeds vacuumFullStatusTableThreshold in the toCompact list
-	toVacuum, err := jd.getVacuumCandidates(ctx, toCompact)
+	toVacuum, err := jd.getVacuumCandidates(ctx, dsList)
 	if err != nil {
 		return err
 	}

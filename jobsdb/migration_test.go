@@ -197,7 +197,7 @@ func TestMigration(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 10, count)
 
-	vacuumFullStatusTableThreshold = 0
+	vacuumFullStatusTableThreshold = 8 * 1024 // 8KB is common value for toast size in postgres
 	toVacuum, err := jobDB.getVacuumCandidates(context.Background(), dsList)
 	require.NoError(t, err)
 	require.EqualValues(t, 4, len(dsList))   // total 4 DSs
