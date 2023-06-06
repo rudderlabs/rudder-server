@@ -43,7 +43,7 @@ func (brt *Handle) Setup(
 	destType string,
 	backendConfig backendconfig.BackendConfig,
 	jobsDB, errorDB jobsdb.JobsDB,
-	reporting types.ReportingI,
+	reporting types.Reporting,
 	multitenantStat multitenant.MultiTenantI,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,

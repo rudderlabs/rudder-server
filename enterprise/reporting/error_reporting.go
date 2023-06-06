@@ -76,7 +76,7 @@ type ErrorDetailReporter struct {
 	httpClient                *http.Client
 	clientsMapLock            sync.RWMutex
 
-	errorDetailExtractor *ExtractorT
+	errorDetailExtractor *ExtractorHandle
 
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement

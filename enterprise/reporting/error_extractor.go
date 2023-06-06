@@ -32,17 +32,17 @@ var (
 	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "error", "error_message"}
 )
 
-type ExtractorT struct {
+type ExtractorHandle struct {
 	log              logger.Logger
 	ErrorMessageKeys []string // the keys where in we may have error message
 }
 
-func NewErrorDetailExtractor(log logger.Logger) *ExtractorT {
+func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
 
-	extractor := &ExtractorT{
+	extractor := &ExtractorHandle{
 		ErrorMessageKeys: defaultErrorMessageKeys,
 		log:              log.Child("ErrorDetailExtractor"),
 	}
@@ -58,7 +58,7 @@ func checkForGoMapOrList(value interface{}) bool {
 	return false
 }
 
-func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
+func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
 	if !IsJSON(jsonStr) {
 		return jsonStr
 	}
@@ -110,7 +110,7 @@ func (ext *ExtractorT) getSimpleMessage(jsonStr string) string {
 	return ""
 }
 
-func (ext *ExtractorT) GetErrorMessage(sampleResponse string) string {
+func (ext *ExtractorHandle) GetErrorMessage(sampleResponse string) string {
 	// jsonResp := ext.getJsonResponse(sampleResponse)
 	return ext.getSimpleMessage(sampleResponse)
 }
@@ -244,7 +244,7 @@ func IsJSON(s string) bool {
 	return ((parsedBytesResult.IsObject() && isEndingFlowerBrace) || (parsedBytesResult.IsArray() && isEndingArrBrace))
 }
 
-func (ext *ExtractorT) CleanUpErrorMessage(errMsg string) string {
+func (ext *ExtractorHandle) CleanUpErrorMessage(errMsg string) string {
 	var regexdMsg string
 	regexdMsg = urlRegex.ReplaceAllLiteralString(errMsg, spaceStr)
 	regexdMsg = ipRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)

@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/utils/types/mock_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types UserSuppression,ReportingI
+//go:generate mockgen -destination=../../mocks/utils/types/mock_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types UserSuppression,Reporting
 
 package types
 
@@ -17,8 +17,8 @@ const (
 )
 
 type ReportingInstances struct {
-	ReportingInstance      ReportingI
-	ErrorReportingInstance ReportingI
+	ReportingInstance      Reporting
+	ErrorReportingInstance Reporting
 }
 
 // SingularEventT single event structrue
@@ -56,21 +56,21 @@ type ConfigEnvI interface {
 	ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte)
 }
 
-// ReportingI is interface to report metrics
-type ReportingI interface {
+// Reporting is interface to report metrics
+type Reporting interface {
 	WaitForSetup(ctx context.Context, clientName string) error
 	Report(metrics []*PUReportedMetric, txn *sql.Tx)
 	AddClient(ctx context.Context, c Config)
 }
 
 // FacadeInterface for reporting
-type MasterReportingI interface {
-	ReportingI
-	GetReportingInstance(reporterType ReporterType) ReporterI
+type MasterReporting interface {
+	Reporting
+	GetReportingInstance(reporterType ReporterType) Reporter
 }
 
-type ReporterI interface {
-	ReportingI
+type Reporter interface {
+	Reporting
 	IsPIIReportingDisabled(string) bool
 }
 

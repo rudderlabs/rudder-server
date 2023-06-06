@@ -81,7 +81,7 @@ type Handle struct {
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
 	dedup                     dedup.Dedup
-	reporting                 types.ReportingI
+	reporting                 types.Reporting
 	reportingEnabled          bool
 	multitenantI              multitenant.MultiTenantI
 	backgroundWait            func() error
@@ -323,7 +323,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.ReportingI,
+	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.Reporting,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {

@@ -17,11 +17,11 @@ type ReportingMediator struct {
 	log             logger.Logger
 	once            sync.Once
 	enterpriseToken string
-	reporting       types.ReporterI
-	errorReporting  types.ReporterI
+	reporting       types.Reporter
+	errorReporting  types.Reporter
 }
 
-func (med *ReportingMediator) createReportInstance(backendConfig backendconfig.BackendConfig) types.ReporterI {
+func (med *ReportingMediator) createReportInstance(backendConfig backendconfig.BackendConfig) types.Reporter {
 	med.log.Debug("Forming reporting instance")
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	if !reportingEnabled || med.enterpriseToken == "" {
@@ -34,7 +34,7 @@ func (med *ReportingMediator) createReportInstance(backendConfig backendconfig.B
 	return reportingHandle
 }
 
-func (med *ReportingMediator) createErrorReportInstance(backendConfig backendconfig.BackendConfig) types.ReporterI {
+func (med *ReportingMediator) createErrorReportInstance(backendConfig backendconfig.BackendConfig) types.Reporter {
 	med.log.Debug("Forming error reporting instance")
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	errorReportingEnabled := config.GetBool("Reporting.errorReporting.enabled", false)
@@ -89,9 +89,9 @@ func (med *ReportingMediator) AddClient(ctx context.Context, c types.Config) {
 	})
 }
 
-func (med *ReportingMediator) GetReportingInstance(reporterType types.ReporterType) types.ReporterI {
+func (med *ReportingMediator) GetReportingInstance(reporterType types.ReporterType) types.Reporter {
 	// Inner fn
-	returnReportingI := func(repI types.ReporterI) types.ReporterI {
+	returnReportingI := func(repI types.Reporter) types.Reporter {
 		if repI == nil {
 			panic(fmt.Errorf("reporting instance not initialised. You should call Setup before GetReportingInstance"))
 		}
