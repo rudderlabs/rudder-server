@@ -13,7 +13,6 @@ import (
 
 type Factory struct {
 	Reporting        reporter
-	ErrorReporting   reporter
 	Multitenant      tenantStats
 	BackendConfig    backendconfig.BackendConfig
 	RouterDB         jobsdb.MultiTenantJobsDB
@@ -30,7 +29,6 @@ func (f *Factory) New(destination *backendconfig.DestinationT, identifier string
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &reportingEnabled, false, "Reporting.enabled")
 	r := &HandleT{
 		Reporting:        f.Reporting,
-		ErrorReporting:   f.ErrorReporting,
 		MultitenantI:     f.Multitenant,
 		throttlerFactory: f.ThrottlerFactory,
 		adaptiveLimit:    f.AdaptiveLimit,

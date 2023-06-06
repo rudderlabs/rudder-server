@@ -90,7 +90,7 @@ type EDConnectionDetails struct {
 	DestinationID           string `json:"destinationId"`
 	SourceDefinitionId      string `json:"sourceDefinitionId"`
 	DestinationDefinitionId string `json:"destinationDefinitionId"`
-	DestType                string `json:"destType"`
+	DestType                string `json:"destinationDefinitionName"`
 }
 
 type EDInstanceDetails struct {

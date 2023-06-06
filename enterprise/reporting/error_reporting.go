@@ -627,7 +627,7 @@ func (edRep *ErrorDetailReporter) sendMetric(ctx context.Context, clientName str
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
-			err = fmt.Errorf(`received response: statusCode: %d error: %w`, resp.StatusCode, string(respBody))
+			err = fmt.Errorf(`received response: statusCode: %d error: %v`, resp.StatusCode, string(respBody))
 			edRep.log.Error(err.Error())
 		}
 		return err
