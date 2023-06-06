@@ -194,3 +194,21 @@ func (brt *Handle) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT)
 		}
 	}
 }
+
+// pipelineDelayStats reports the delay of the pipeline as a range:
+//
+// - max - time elapsed since the first job was created
+//
+// - min - time elapsed since the last job was created
+func (brt *Handle) pipelineDelayStats(partition string, first, last *jobsdb.JobT) {
+	var firstJobDelay float64
+	var lastJobDelay float64
+	if first != nil {
+		firstJobDelay = time.Since(first.CreatedAt).Seconds()
+	}
+	if last != nil {
+		lastJobDelay = time.Since(last.CreatedAt).Seconds()
+	}
+	stats.Default.NewTaggedStat("pipeline_delay_min_seconds", stats.GaugeType, stats.Tags{"destType": brt.destType, "partition": partition, "module": "batch_router"}).Gauge(lastJobDelay)
+	stats.Default.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"destType": brt.destType, "partition": partition, "module": "batch_router"}).Gauge(firstJobDelay)
+}

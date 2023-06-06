@@ -145,6 +145,9 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 		}
 	}
 
+	var firstJob *jobsdb.JobT
+	var lastJob *jobsdb.JobT
+
 	timeOut := rt.reloadableConfig.routerTimeout
 	timeElapsed := time.Since(lastQueryRunTime)
 	if timeElapsed < timeOut {
@@ -170,6 +173,7 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destType, pickupMap)
 
 	if !iterator.HasNext() {
+		rt.pipelineDelayStats(partition, nil, nil)
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destType)
 		_ = misc.SleepCtx(ctx, rt.reloadableConfig.readSleep)
 		return 0, false
@@ -190,6 +194,11 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 			return 0, false
 		}
 		job := iterator.Next()
+
+		if firstJob == nil {
+			firstJob = job
+		}
+		lastJob = job
 		if slot := rt.findWorkerSlot(workers, job, blockedOrderKeys); slot != nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
@@ -232,6 +241,7 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 
 	pickupCount = len(reservedJobs)
 	limitsReached = iteratorStats.LimitsReached
+	rt.pipelineDelayStats(partition, firstJob, lastJob)
 	return
 }
 

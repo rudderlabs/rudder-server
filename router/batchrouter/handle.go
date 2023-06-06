@@ -180,6 +180,9 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	var jobs []*jobsdb.JobT
 	limit := brt.jobQueryBatchSize
 
+	var firstJob *jobsdb.JobT
+	var lastJob *jobsdb.JobT
+
 	brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "getJobs", "destType": brt.destType, "partition": partition})
 	queryStart := time.Now()
 	queryParams := jobsdb.GetQueryParamsT{
@@ -217,6 +220,11 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	sort.Slice(jobs, func(i, j int) bool {
 		return jobs[i].JobID < jobs[j].JobID
 	})
+	if len(jobs) > 0 {
+		firstJob = jobs[0]
+		lastJob = jobs[len(jobs)-1]
+	}
+	brt.pipelineDelayStats(partition, firstJob, lastJob)
 	jobsByDesID := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
 		return gjson.GetBytes(job.Parameters, "destination_id").String()
 	})
@@ -241,6 +249,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 			brt.logger.Errorf("BRT: %s: Destination %s not found in destinationsMap", brt.destType, destID)
 		}
 	}
+
 	return
 }
 

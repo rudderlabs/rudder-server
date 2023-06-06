@@ -129,3 +129,21 @@ func (rt *Handle) sendQueryRetryStats(attempt int) {
 	rt.logger.Warnf("Timeout during query jobs in router module, attempt %d", attempt)
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
 }
+
+// pipelineDelayStats reports the delay of the pipeline as a range:
+//
+// - max - time elapsed since the first job was created
+//
+// - min - time elapsed since the last job was created
+func (rt *Handle) pipelineDelayStats(partition string, first, last *jobsdb.JobT) {
+	var firstJobDelay float64
+	var lastJobDelay float64
+	if first != nil {
+		firstJobDelay = time.Since(first.CreatedAt).Seconds()
+	}
+	if last != nil {
+		lastJobDelay = time.Since(last.CreatedAt).Seconds()
+	}
+	stats.Default.NewTaggedStat("pipeline_delay_min_seconds", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition, "module": "router"}).Gauge(lastJobDelay)
+	stats.Default.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition, "module": "router"}).Gauge(firstJobDelay)
+}

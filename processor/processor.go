@@ -2540,6 +2540,14 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	dbReadTime := time.Since(s)
 	defer proc.stats.statDBR.SendTiming(dbReadTime)
 
+	var firstJob *jobsdb.JobT
+	var lastJob *jobsdb.JobT
+	if len(unprocessedList.Jobs) > 0 {
+		firstJob = unprocessedList.Jobs[0]
+		lastJob = unprocessedList.Jobs[len(unprocessedList.Jobs)-1]
+	}
+	proc.pipelineDelayStats(partition, firstJob, lastJob)
+
 	// check if there is work to be done
 	if len(unprocessedList.Jobs) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
@@ -2773,4 +2781,22 @@ func deniedConsentCategories(se types.SingularEventT) []string {
 		)
 	}
 	return nil
+}
+
+// pipelineDelayStats reports the delay of the pipeline as a range:
+//
+// - max - time elapsed since the first job was created
+//
+// - min - time elapsed since the last job was created
+func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.JobT) {
+	var firstJobDelay float64
+	var lastJobDelay float64
+	if first != nil {
+		firstJobDelay = time.Since(first.CreatedAt).Seconds()
+	}
+	if last != nil {
+		lastJobDelay = time.Since(last.CreatedAt).Seconds()
+	}
+	proc.statsFactory.NewTaggedStat("pipeline_delay_min_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(lastJobDelay)
+	proc.statsFactory.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(firstJobDelay)
 }
