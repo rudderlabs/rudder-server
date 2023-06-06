@@ -372,15 +372,6 @@ func (repo *StagingFiles) countPending(ctx context.Context, query string, value 
 }
 
 func (repo *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model.Upload) (int64, error) {
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.totalEventsTimeout",
-			5,
-			time.Second,
-		),
-	)
-	defer cancel()
 	var total sql.NullInt64
 
 	err := repo.db.QueryRowContext(ctx, `

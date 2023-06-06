@@ -255,7 +255,7 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Total rows in load files", func() {
-		count := job.getTotalRowsInLoadFiles()
+		count := job.getTotalRowsInLoadFiles(context.Background())
 		Expect(count).To(BeEquivalentTo(5))
 	})
 

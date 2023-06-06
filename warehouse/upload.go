@@ -313,17 +313,7 @@ func (job *UploadJob) syncRemoteSchema() (bool, error) {
 			logfield.Namespace, job.warehouse.Namespace,
 		)
 
-		if err := warehouseutils.WithTimeout(
-			job.ctx,
-			config.GetDuration(
-				"Warehouse.schemaUpdateTimeout",
-				30,
-				time.Second,
-			),
-			func(ctx context.Context) error {
-				return job.schemaHandle.updateLocalSchema(ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse)
-			},
-		); err != nil {
+		if err := job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse); err != nil {
 			return false, fmt.Errorf("updating local schema: %w", err)
 		}
 	}
@@ -331,7 +321,7 @@ func (job *UploadJob) syncRemoteSchema() (bool, error) {
 	return schemaChanged, nil
 }
 
-func (job *UploadJob) getTotalRowsInLoadFiles() int64 {
+func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
 	var total sql.NullInt64
 
 	sqlStatement := fmt.Sprintf(`
@@ -361,7 +351,7 @@ func (job *UploadJob) getTotalRowsInLoadFiles() int64 {
 		misc.IntArrayToString(job.stagingFileIDs, ","),
 		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
 	)
-	err := dbHandle.QueryRowContext(job.ctx, sqlStatement).Scan(&total)
+	err := dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
 	}
@@ -369,11 +359,20 @@ func (job *UploadJob) getTotalRowsInLoadFiles() int64 {
 }
 
 func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.totalEventsCheckTimeout",
+			15,
+			time.Second,
+		),
+	)
+	defer cancel()
 	rowsInStagingFiles, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(ctx, job.upload)
 	if err != nil {
 		return fmt.Errorf("total rows: %w", err)
 	}
-	rowsInLoadFiles := job.getTotalRowsInLoadFiles()
+	rowsInLoadFiles := job.getTotalRowsInLoadFiles(ctx)
 	if (rowsInStagingFiles != rowsInLoadFiles) || rowsInStagingFiles == 0 || rowsInLoadFiles == 0 {
 		pkgLogger.Errorf(`Error: Rows count mismatch between staging and load files for upload:%d. rowsInStagingFiles: %d, rowsInLoadFiles: %d`, job.upload.ID, rowsInStagingFiles, rowsInLoadFiles)
 		job.guageStat("warehouse_staging_load_file_events_count_mismatched").Gauge(rowsInStagingFiles - rowsInLoadFiles)
@@ -802,10 +801,19 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 }
 
 func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiff) (err error) {
+	ctx, cancel := context.WithTimeout(
+		job.ctx,
+		config.GetDuration(
+			"Warehouse.updateTableSchemaTimeout",
+			15,
+			time.Minute,
+		),
+	)
+	defer cancel()
 	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	if tableSchemaDiff.TableToBeCreated {
-		err = job.whManager.CreateTable(job.ctx, tName, tableSchemaDiff.ColumnMap)
+		err = job.whManager.CreateTable(ctx, tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
 			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
 			return err
@@ -814,18 +822,18 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseu
 		return nil
 	}
 
-	if err = job.addColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
+	if err = job.addColumnsToWarehouse(ctx, tName, tableSchemaDiff.ColumnMap); err != nil {
 		return fmt.Errorf("adding columns to warehouse: %w", err)
 	}
 
-	if err = job.alterColumnsToWarehouse(tName, tableSchemaDiff.AlteredColumnMap); err != nil {
+	if err = job.alterColumnsToWarehouse(ctx, tName, tableSchemaDiff.AlteredColumnMap); err != nil {
 		return fmt.Errorf("altering columns to warehouse: %w", err)
 	}
 
 	return nil
 }
 
-func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap model.TableSchema) error {
+func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) error {
 	if job.DisableAlter {
 		pkgLogger.Debugw("skipping alter columns to warehouse",
 			logfield.SourceID, job.warehouse.Source.ID,
@@ -838,12 +846,11 @@ func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap model.Tab
 		)
 		return nil
 	}
-
 	var responseToAlerta []model.AlterTableResponse
 	var errs []error
 
 	for columnName, columnType := range columnsMap {
-		res, err := job.whManager.AlterColumn(job.ctx, tName, columnName, columnType)
+		res, err := job.whManager.AlterColumn(ctx, tName, columnName, columnType)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -875,7 +882,7 @@ func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap model.Tab
 		query := strings.Join(queries, "\n")
 		pkgLogger.Infof("altering dependent columns: %s", query)
 
-		err := job.alertSender.SendAlert(job.ctx, "warehouse-column-changes",
+		err := job.alertSender.SendAlert(ctx, "warehouse-column-changes",
 			alerta.SendAlertOpts{
 				Severity:    alerta.SeverityCritical,
 				Priority:    alerta.PriorityP1,
@@ -900,7 +907,7 @@ func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap model.Tab
 	return nil
 }
 
-func (job *UploadJob) addColumnsToWarehouse(tName string, columnsMap model.TableSchema) (err error) {
+func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) (err error) {
 	pkgLogger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	destType := job.upload.DestinationType
@@ -920,7 +927,7 @@ func (job *UploadJob) addColumnsToWarehouse(tName string, columnsMap model.Table
 
 	chunks := lo.Chunk(columnsToAdd, columnsBatchSize)
 	for _, chunk := range chunks {
-		err = job.whManager.AddColumns(job.ctx, tName, chunk)
+		err = job.whManager.AddColumns(ctx, tName, chunk)
 		if err != nil {
 			err = fmt.Errorf("failed to add columns for table %s in namespace %s of destination %s:%s with error: %w", tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID, err)
 			break
@@ -1268,7 +1275,19 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 		return []error{}, nil
 	}
 
-	errorMap := job.whManager.LoadUserTables(job.ctx)
+	var errorMap map[string]error
+	_ = warehouseutils.WithTimeout(
+		job.ctx,
+		config.GetDuration(
+			"Warehouse.loadUsersTablesTimeout",
+			15,
+			time.Minute,
+		),
+		func(ctx context.Context) error {
+			errorMap = job.whManager.LoadUserTables(ctx)
+			return nil
+		},
+	)
 
 	if alteredIdentitySchema || alteredUserSchema {
 		pkgLogger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
@@ -1749,8 +1768,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			if err != nil {
 				return fmt.Errorf("unable to start transaction: %w", err)
 			}
-			err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
-			if err != nil {
+			if err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn}); err != nil {
 				return fmt.Errorf("unable to change upload columns: %w", err)
 			}
 			inputCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(ctx, upload)
