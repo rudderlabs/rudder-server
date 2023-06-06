@@ -119,7 +119,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 // backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
 func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	if err := jd.WithTx(func(tx *Tx) error {
-		return jd.cleanStatusTable(ctx, tx, backupDSRange.ds.JobStatusTable)
+		return jd.cleanStatusTable(ctx, tx, backupDSRange.ds.JobStatusTable, true)
 	}); err != nil {
 		return fmt.Errorf("error while cleaning status table: %w", err)
 	}
