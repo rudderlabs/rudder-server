@@ -544,6 +544,9 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 			}
 			offset++
 		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("error while iterating rows: %w", err)
+		}
 		return nil
 	}
 

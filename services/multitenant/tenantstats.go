@@ -273,7 +273,7 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 			break
 		}
 
-		pickUpCount := 0
+		var pickUpCount int
 		if t.routerTenantLatencyStat[destType][workspaceKey].Value() == 0 {
 			pickUpCount = misc.MinInt(pendingEvents-workspacePickUpCount[workspaceKey], runningJobCount)
 		} else {

@@ -1104,9 +1104,12 @@ func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) bool {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
+	}
+	if err := rows.Err(); err != nil {
+		panic(fmt.Errorf("iterate result from query: %s\nwith Error : %w", sqlStatement, err))
 	}
 	rs.Logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
