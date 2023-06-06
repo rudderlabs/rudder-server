@@ -225,15 +225,20 @@ type JobsDB interface {
 	//    })
 	StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error
 
-	// StoreWithRetryEach tries to store all the provided jobs to the database and returns the job uuids which failed
-	StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[uuid.UUID]string
+	// StoreEachBatchRetry tries to store all the provided job batches to the database
+	//
+	// returns the uuids of first job of each failed batch
+	StoreEachBatchRetry(ctx context.Context, jobBatches [][]*JobT) map[uuid.UUID]string
 
-	// StoreWithRetryEachInTx tries to store all the provided jobs to the database and returns the job uuids which failed, using an existing transaction.
+	// StoreEachBatchRetryInTx tries to store all the provided job batches to the database, using an existing transaction.
+	//
+	// returns the uuids of first job of each failed batch
+	//
 	// Please ensure that you are using an StoreSafeTx, e.g.
 	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
-	//	      jobsdb.StoreWithRetryEachInTx(ctx, tx, jobList)
+	//	      jobsdb.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
 	//    })
-	StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) (map[uuid.UUID]string, error)
+	StoreEachBatchRetryInTx(ctx context.Context, tx StoreSafeTx, jobBatches [][]*JobT) (map[uuid.UUID]string, error)
 
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
 	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
@@ -599,6 +604,8 @@ func init() {
 var (
 	maxDSSize, maxMigrateOnce, maxMigrateDSProbe int
 	maxTableSize                                 int64
+	vacuumFullStatusTableThreshold               int64
+	vacuumAnalyzeStatusTableThreshold            int64
 	jobDoneMigrateThres, jobStatusMigrateThres   float64
 	jobMinRowsMigrateThres                       float64
 	migrateDSLoopSleepDuration                   time.Duration
@@ -637,6 +644,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
 	config.RegisterInt64ConfigVariable(300, &maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
 	config.RegisterInt64ConfigVariable(10000, &backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
+	config.RegisterInt64ConfigVariable(500*bytesize.MB, &vacuumFullStatusTableThreshold, true, 1, "JobsDB.vacuumFullStatusTableThreshold")
+	config.RegisterInt64ConfigVariable(30000, &vacuumAnalyzeStatusTableThreshold, true, 1, "JobsDB.vacuumAnalyzeStatusTableThreshold")
 	config.RegisterInt64ConfigVariable(64*bytesize.MB, &backupMaxTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
 	config.RegisterDurationConfigVariable(30, &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
@@ -1061,14 +1070,11 @@ func (jd *HandleT) refreshDSRangeList(l lock.LockToken) {
 		jd.assert(ds.Index != "", "ds.Index is empty")
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
 		// Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
-		rows, err := jd.dbHandle.Query(sqlStatement)
+		row := jd.dbHandle.QueryRow(sqlStatement)
+
+		err := row.Scan(&minID, &maxID)
 		jd.assertError(err)
-		for rows.Next() {
-			err := rows.Scan(&minID, &maxID)
-			jd.assertError(err)
-			break
-		}
-		_ = rows.Close()
+
 		jd.logger.Debug(sqlStatement, minID, maxID)
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
@@ -1256,7 +1262,7 @@ func (jd *HandleT) computeNewIdxForAppend(l lock.LockToken) string {
 }
 
 func (jd *HandleT) doComputeNewIdxForAppend(dList []dataSetT) string {
-	newDSIdx := ""
+	var newDSIdx string
 	if len(dList) == 0 {
 		newDSIdx = "1"
 	} else {
@@ -1726,73 +1732,6 @@ func (jd *HandleT) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 	}
 }
 
-func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) (
-	errorMessagesMap map[uuid.UUID]string,
-	staleDs error,
-) {
-	const (
-		savepointSql = "SAVEPOINT storeWithRetryEach"
-		rollbackSql  = "ROLLBACK TO " + savepointSql
-	)
-
-	failAll := func(err error) map[uuid.UUID]string {
-		errorMessagesMap = make(map[uuid.UUID]string, len(jobList))
-		for i := range jobList {
-			errorMessagesMap[jobList[i].UUID] = err.Error()
-		}
-		return errorMessagesMap
-	}
-	defer jd.getTimerStat("store_jobs_retry_each", nil).RecordDuration()()
-
-	_, err := tx.ExecContext(ctx, savepointSql)
-	if err != nil {
-		return failAll(err), nil
-	}
-	err = jd.internalStoreJobsInTx(ctx, tx, ds, jobList)
-	if err == nil {
-		return
-	}
-	if errors.Is(err, errStaleDsList) {
-		return nil, err
-	}
-	_, err = tx.ExecContext(ctx, rollbackSql)
-	if err != nil {
-		return failAll(err), nil
-	}
-	jd.logger.Errorf("Copy In command failed with error %v", err)
-	errorMessagesMap = make(map[uuid.UUID]string)
-
-	var txErr error
-	for _, job := range jobList {
-
-		if txErr != nil { // stop trying treat all remaining as failed
-			errorMessagesMap[job.UUID] = txErr.Error()
-			continue
-		}
-
-		// savepoint
-		_, txErr = tx.ExecContext(ctx, savepointSql)
-		if txErr != nil {
-			errorMessagesMap[job.UUID] = txErr.Error()
-			continue
-		}
-
-		// try to store
-		err := jd.storeJob(ctx, tx, ds, job)
-		if err != nil {
-			if errors.Is(err, errStaleDsList) {
-				return nil, err
-			}
-			errorMessagesMap[job.UUID] = err.Error()
-			// rollback to savepoint
-			_, txErr = tx.ExecContext(ctx, rollbackSql)
-		}
-
-	}
-
-	return
-}
-
 var cacheParameterFilters = []string{"source_id", "destination_id"}
 
 func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]int, error) {
@@ -1907,6 +1846,9 @@ func (jd *HandleT) GetActiveWorkspaces(ctx context.Context, customVal string) ([
 		}
 		workspaceIds = append(workspaceIds, workspaceId)
 	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
 	return workspaceIds, nil
 }
 
@@ -1947,6 +1889,9 @@ func (jd *HandleT) GetDistinctParameterValues(ctx context.Context, parameterName
 			return nil, err
 		}
 		values = append(values, value)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
 	}
 	return values, nil
 }
@@ -2006,36 +1951,6 @@ func (jd *HandleT) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, job
 		}
 	}
 	return err
-}
-
-func (jd *HandleT) storeJob(ctx context.Context, tx *Tx, ds dataSetT, job *JobT) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
-	stmt, err := tx.PrepareContext(ctx, sqlStatement)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stmt.Close() }()
-	job.sanitizeJson()
-	_, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
-	if err == nil {
-		tx.AddSuccessListener(func() {
-			jd.invalidateCacheForJobs(ds, []*JobT{job})
-		})
-		return
-	}
-	pqErr, ok := err.(*pq.Error)
-	if ok {
-		errCode := string(pqErr.Code)
-		if errCode == pgErrorCodeTableReadonly {
-			return errStaleDsList
-		}
-		if _, ok := dbInvalidJsonErrors[errCode]; ok {
-			return errors.New("invalid JSON")
-		}
-	}
-
-	return
 }
 
 type JobsResult struct {
@@ -2197,6 +2112,9 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 		payloadSize = runningPayloadSize
 		eventCount = runningEventCount
 	}
+	if err := rows.Err(); err != nil {
+		return JobsResult{}, false, err
+	}
 	if !limitsReached &&
 		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
 		(params.EventsLimit > 0 && eventCount >= params.EventsLimit) || // we reached the events limit
@@ -2305,9 +2223,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 		return JobsResult{}, false, err
 	}
 	defer func() { _ = rows.Close() }()
-	if err != nil {
-		return JobsResult{}, false, err
-	}
 	var runningEventCount int
 	var runningPayloadSize int64
 
@@ -2339,6 +2254,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 		payloadSize = runningPayloadSize
 		eventCount = runningEventCount
 
+	}
+	if err := rows.Err(); err != nil {
+		return JobsResult{}, false, err
 	}
 	if !limitsReached &&
 		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
@@ -2453,8 +2371,8 @@ while functions which don't update the DS structure (as in list of DS or
 ranges within DS can take the read lock) as they can run in paralle.
 
 The drawback with this approach is that migrating a DS can take a long
-time and can potentially block the StoreJob() call. Blocking StoreJob()
-is bad since user ACK won't be sent unless StoreJob() returns.
+time and can potentially block the jobs/job-batch store call. Blocking jobs store
+is bad since user ACK won't be sent unless jobs store returns.
 
 To handle this, we separate out the locks into dsListLock and dsMigrationLock.
 Store() only needs to access the last element of dsList and is not
@@ -2667,6 +2585,9 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 		jd.assertError(err)
 		count++
 	}
+	if err = rows.Err(); err != nil {
+		jd.assertError(err)
+	}
 	return
 }
 
@@ -2712,6 +2633,9 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		jd.assertError(err)
 		jd.assert(!opDone, "opDone is true")
 		count++
+	}
+	if err = rows.Err(); err != nil {
+		jd.assertError(err)
 	}
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
 
@@ -2950,17 +2874,24 @@ func (jd *HandleT) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*Job
 	return storeCmd()
 }
 
-func (jd *HandleT) StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[uuid.UUID]string {
+func (jd *HandleT) StoreEachBatchRetry(
+	ctx context.Context,
+	jobBatches [][]*JobT,
+) map[uuid.UUID]string {
 	var res map[uuid.UUID]string
 	_ = jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 		var err error
-		res, err = jd.StoreWithRetryEachInTx(ctx, tx, jobList)
+		res, err = jd.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
 		return err
 	})
 	return res
 }
 
-func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) (map[uuid.UUID]string, error) {
+func (jd *HandleT) StoreEachBatchRetryInTx(
+	ctx context.Context,
+	tx StoreSafeTx,
+	jobBatches [][]*JobT,
+) (map[uuid.UUID]string, error) {
 	var (
 		err error
 		res map[uuid.UUID]string
@@ -2968,19 +2899,96 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 	storeCmd := func() error {
 		command := func() interface{} {
 			dsList := jd.getDSList()
-			res, err = jd.internalStoreWithRetryEachInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
+			res, err = jd.internalStoreEachBatchRetryInTx(
+				ctx,
+				tx.Tx(),
+				dsList[len(dsList)-1],
+				jobBatches,
+			)
 			return res
 		}
-		res, _ = jd.executeDbRequest(newWriteDbRequest("store_retry_each", nil, command)).(map[uuid.UUID]string)
+		res, _ = jd.executeDbRequest(
+			newWriteDbRequest("store_each_batch_retry", nil, command),
+		).(map[uuid.UUID]string)
 		return err
 	}
-
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
 		_ = jd.inStoreSafeCtx(ctx, storeCmd)
 		return res, err
 	}
 	_ = storeCmd()
 	return res, err
+}
+
+func (jd *HandleT) internalStoreEachBatchRetryInTx(
+	ctx context.Context,
+	tx *Tx,
+	ds dataSetT,
+	jobBatches [][]*JobT) (
+	errorMessagesMap map[uuid.UUID]string, err error,
+) {
+	const (
+		savepointSql = "SAVEPOINT storeBatchWithRetryEach"
+		rollbackSql  = "ROLLBACK TO " + savepointSql
+	)
+
+	failAll := func(err error) map[uuid.UUID]string {
+		errorMessagesMap = make(map[uuid.UUID]string, len(jobBatches))
+		for i := range jobBatches {
+			errorMessagesMap[jobBatches[i][0].UUID] = err.Error()
+		}
+		return errorMessagesMap
+	}
+	defer jd.getTimerStat("store_jobs_retry_each_batch", nil).RecordDuration()()
+	_, err = tx.ExecContext(ctx, savepointSql)
+	if err != nil {
+		return failAll(err), nil
+	}
+	err = jd.doStoreJobsInTx(ctx, tx, ds, lo.Flatten(jobBatches))
+	if err == nil {
+		tx.AddSuccessListener(func() {
+			jd.invalidateCacheForJobs(ds, lo.Flatten(jobBatches))
+		})
+		return
+	}
+	if errors.Is(err, errStaleDsList) {
+		return nil, err
+	}
+	_, err = tx.ExecContext(ctx, rollbackSql)
+	if err != nil {
+		return failAll(err), nil
+	}
+
+	// retry storing each batch separately
+	errorMessagesMap = make(map[uuid.UUID]string)
+	var txErr error
+	for _, jobBatch := range jobBatches {
+		if txErr != nil { // stop trying treat all remaining as failed
+			errorMessagesMap[jobBatch[0].UUID] = txErr.Error()
+			continue
+		}
+		// savepoint
+		_, txErr = tx.ExecContext(ctx, savepointSql)
+		if txErr != nil {
+			errorMessagesMap[jobBatch[0].UUID] = txErr.Error()
+			continue
+		}
+
+		err = jd.doStoreJobsInTx(ctx, tx, ds, jobBatch)
+		if err != nil {
+			if errors.Is(err, errStaleDsList) {
+				return nil, err
+			}
+			errorMessagesMap[jobBatch[0].UUID] = err.Error()
+			// rollback to savepoint
+			_, txErr = tx.ExecContext(ctx, rollbackSql)
+			continue
+		}
+		tx.AddSuccessListener(func() {
+			jd.invalidateCacheForJobs(ds, jobBatch)
+		})
+	}
+	return
 }
 
 /*

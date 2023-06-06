@@ -4,9 +4,12 @@ package dedup
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -15,23 +18,9 @@ import (
 
 type OptFn func(*badgerDB)
 
-// WithWindow sets the window for deduplication
-func WithWindow(d time.Duration) OptFn {
-	return func(dht *badgerDB) {
-		dht.window = &d
-	}
-}
-
-// WithClearDB clears the DB on startup
-func WithClearDB() OptFn {
-	return func(dht *badgerDB) {
-		dht.clearDB = true
-	}
-}
-
 // DefaultPath returns the default path for the deduplication service's badger DB
 func DefaultPath() string {
-	badgerPathName := "/badgerdbv2"
+	badgerPathName := "/badgerdbv4"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
@@ -40,10 +29,29 @@ func DefaultPath() string {
 }
 
 // New creates a new deduplication service. The service needs to be closed after use.
-func New(path string, fns ...OptFn) Dedup {
+func New(path string) Dedup {
 	var dedupWindow time.Duration
 	config.RegisterDurationConfigVariable(3600, &dedupWindow, true, time.Second, []string{"Dedup.dedupWindow", "Dedup.dedupWindowInS"}...)
 	log := logger.NewLogger().Child("dedup")
+	defer func() {
+		// TODO : Remove this after badgerdb v2 is completely removed
+		tmpDirPath, _ := misc.CreateTMPDIR()
+		_ = os.RemoveAll(fmt.Sprintf(`%v%v`, tmpDirPath, "/badgerdbv2"))
+	}()
+	badgerOpts := badger.
+		DefaultOptions(path).
+		WithCompression(options.None).
+		WithIndexCacheSize(16 << 20). // 16mb
+		WithNumGoroutines(1).
+		WithNumMemtables(config.GetInt("BadgerDB.numMemtable", 5)).
+		WithValueThreshold(config.GetInt64("BadgerDB.valueThreshold", 1048576)).
+		WithBlockCacheSize(0).
+		WithNumVersionsToKeep(1).
+		WithNumLevelZeroTables(config.GetInt("BadgerDB.numLevelZeroTables", 5)).
+		WithNumLevelZeroTablesStall(config.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
+		WithSyncWrites(config.GetBool("BadgerDB.syncWrites", false)).
+		WithDetectConflicts(config.GetBool("BadgerDB.detectConflicts", false))
+
 	db := &badgerDB{
 		stats:  stats.Default,
 		logger: loggerForBadger{log},
@@ -51,13 +59,9 @@ func New(path string, fns ...OptFn) Dedup {
 		gcDone: make(chan struct{}),
 		close:  make(chan struct{}),
 		window: &dedupWindow,
+		opts:   badgerOpts,
 	}
-	for _, fn := range fns {
-		fn(db)
-	}
-	db.start(config.GetBool("Dedup.memOptimized", true))
-	log.Info("Setting up dedup")
-
+	db.start()
 	return &dedup{
 		badgerDB: db,
 		cache:    make(map[string]int64),

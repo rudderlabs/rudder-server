@@ -67,13 +67,17 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 		}
 		result.Values = append(result.Values, stringRow)
 	}
+	if err = rows.Err(); err != nil {
+		return result, err
+	}
+
 	return result, err
 }
 
 func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	query := cl.BQ.Query(statement)
-	context := context.Background()
-	it, err := query.Read(context)
+	ctx := context.Background()
+	it, err := query.Read(ctx)
 	if err != nil {
 		return
 	}
@@ -101,7 +105,7 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 }
 
 func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
-	executeResponse, err := cl.DeltalakeClient.Client.ExecuteQuery(cl.DeltalakeClient.Context, &proto.ExecuteQueryRequest{
+	executeResponse, err := cl.DeltalakeClient.Client.ExecuteQuery(context.TODO(), &proto.ExecuteQueryRequest{
 		Config:       cl.DeltalakeClient.CredConfig,
 		SqlStatement: statement,
 		Identifier:   cl.DeltalakeClient.CredIdentifier,
@@ -130,10 +134,10 @@ func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, er
 func (cl *Client) Close() {
 	switch cl.Type {
 	case BQClient:
-		cl.BQ.Close()
+		_ = cl.BQ.Close()
 	case DeltalakeClient:
-		cl.DeltalakeClient.Close()
+		cl.DeltalakeClient.Close(context.TODO())
 	default:
-		cl.SQL.Close()
+		_ = cl.SQL.Close()
 	}
 }

@@ -256,6 +256,9 @@ func (notifier *PGNotifier) trackUploadBatch(ctx context.Context, batchID string
 						Error:  jobError.String,
 					})
 				}
+				if rows.Err() != nil {
+					panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", stmt, rows.Err()))
+				}
 				_ = rows.Close()
 				*ch <- responses
 				pkgLogger.Infof("PgNotifier: Completed processing all files  in batch: %s", batchID)
@@ -714,6 +717,10 @@ func (notifier *PGNotifier) RunMaintenanceWorker(ctx context.Context) error {
 			}
 			ids = append(ids, id)
 		}
+		if err := rows.Err(); err != nil {
+			panic(err)
+		}
+
 		_ = rows.Close()
 		pkgLogger.Debugf("PgNotifier: Re-triggered job ids: %v", ids)
 

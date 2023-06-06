@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -78,7 +79,7 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 	if err != nil {
 		return err
 	}
-	client, err := whManager.Connect(warehouse)
+	client, err := whManager.Connect(context.TODO(), warehouse)
 	if err != nil {
 		return err
 	}
@@ -109,7 +110,7 @@ func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Config
 	pkgLogger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
 	destinationValidator := validations.NewDestinationValidator()
-	res := destinationValidator.Validate(&warehouse.Destination)
+	res := destinationValidator.Validate(context.TODO(), &warehouse.Destination)
 
 	reply.Valid = res.Success
 	reply.Error = res.Error

@@ -103,10 +103,10 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 	}
 
 	var firstEventAt, lastEventAt time.Time
-	if ok := files[0].FirstEventAt.IsZero(); !ok {
+	if !files[0].FirstEventAt.IsZero() {
 		firstEventAt = files[0].FirstEventAt
 	}
-	if ok := files[len(files)-1].LastEventAt.IsZero(); !ok {
+	if !files[len(files)-1].LastEventAt.IsZero() {
 		lastEventAt = files[len(files)-1].LastEventAt
 	}
 
@@ -342,6 +342,9 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 			return nil, err
 		}
 		uploadJobs = append(uploadJobs, upload)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return uploadJobs, nil
