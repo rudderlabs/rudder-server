@@ -154,7 +154,7 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 }
 
 // based on size of given DSs, gives a list of DSs for us to vacuum full status tables
-func (jd *HandleT) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) (map[string]struct{}, error) {
+func (jd *HandleT) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) ([]string, error) {
 	// get name and it's size of all tables
 	var rows *sql.Rows
 	rows, err := jd.dbHandle.QueryContext(
@@ -166,7 +166,7 @@ func (jd *HandleT) getVacuumFullCandidates(ctx context.Context, dsList []dataSet
 				FROM pg_catalog.pg_tables
 				WHERE schemaname NOT IN ('pg_catalog','information_schema')
 				AND tablename like $1
-		)`,
+		) order by relname;`,
 		jd.tablePrefix+"_job_status%",
 	)
 	if err != nil {
@@ -191,13 +191,13 @@ func (jd *HandleT) getVacuumFullCandidates(ctx context.Context, dsList []dataSet
 		return nil, err
 	}
 
-	toVacuum := map[string]struct{}{}
+	toVacuumFull := []string{}
 	for _, ds := range dsList {
 		if tableSizes[ds.JobStatusTable] > vacuumFullStatusTableThreshold {
-			toVacuum[ds.JobStatusTable] = struct{}{}
+			toVacuumFull = append(toVacuumFull, ds.JobStatusTable)
 		}
 	}
-	return toVacuum, nil
+	return toVacuumFull, nil
 }
 
 // based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
@@ -257,9 +257,13 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 		return err
 	}
 
-	toVacuum, err := jd.getVacuumFullCandidates(ctx, dsList)
+	toVacuumFull, err := jd.getVacuumFullCandidates(ctx, dsList)
 	if err != nil {
 		return err
+	}
+	toVacuumFullMap := map[string]struct{}{}
+	for _, table := range toVacuumFull {
+		toVacuumFullMap[table] = struct{}{}
 	}
 	start := time.Now()
 	defer stats.Default.NewTaggedStat(
@@ -271,8 +275,8 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 	return jd.WithTx(func(tx *Tx) error {
 		for _, statusTable := range toCompact {
 			table := statusTable.JobStatusTable
-			// clean up and vacuum if not present in toVacuum
-			_, ok := toVacuum[table]
+			// clean up and vacuum if not present in toVacuumFullMap
+			_, ok := toVacuumFullMap[table]
 			if err := jd.cleanStatusTable(
 				ctx,
 				tx,
@@ -282,8 +286,8 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 				return err
 			}
 		}
-		// vacuum full if present in toVacuum
-		for table := range toVacuum {
+		// vacuum full if present in toVacuumFull
+		for _, table := range toVacuumFull {
 			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
 				return err
 			}
