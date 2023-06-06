@@ -73,21 +73,21 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 
 			opID, err := jd.JournalMarkStart(backupDSOperation, opPayload)
 			if err != nil {
-				return fmt.Errorf("[JobsDB] :: Failed to mark start of backup operation. Err: %w", err)
+				return fmt.Errorf("mark start of backup operation: %w", err)
 			}
 			err = jd.backupDS(ctx, backupDSRange)
 			if err != nil {
-				return fmt.Errorf("[JobsDB] :: Failed to backup dataset. Err: %w", err)
+				return fmt.Errorf("backup dataset: %w", err)
 			}
 			err = jd.JournalMarkDone(opID)
 			if err != nil {
-				return fmt.Errorf("[JobsDB] :: Failed to mark end of backup operation. Err: %w", err)
+				return fmt.Errorf("mark end of backup operation: %w", err)
 			}
 
 			// drop dataset after successfully uploading both jobs and jobs_status to s3
 			opID, err = jd.JournalMarkStart(backupDropDSOperation, opPayload)
 			if err != nil {
-				return fmt.Errorf("[JobsDB] :: Failed to mark start of drop backup operation. Err: %w", err)
+				return fmt.Errorf("mark start of drop backup operation: %w", err)
 			}
 			// Currently, we retry uploading a table for some time & if it fails. We only drop that table & not all `pre_drop` tables.
 			// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
@@ -95,11 +95,11 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
 			err = jd.dropDS(backupDS)
 			if err != nil {
-				return fmt.Errorf("[JobsDB] :: Failed to drop dataset. Err: %w", err)
+				return fmt.Errorf(" drop dataset: %w", err)
 			}
 			err = jd.JournalMarkDone(opID)
 			if err != nil {
-				return fmt.Errorf("[JobsDB] :: Failed to mark end of drop backup operation. Err: %w", err)
+				return fmt.Errorf("mark end of drop backup operation: %w", err)
 			}
 			return nil
 		}
