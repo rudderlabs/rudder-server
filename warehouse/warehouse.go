@@ -573,8 +573,12 @@ func getUploadStartAfterTime() time.Time {
 
 func (wh *HandleT) getLatestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
 	uploadID, status, priority, err := wh.warehouseDBHandle.GetLatestUploadStatus(
+<<<<<<< Updated upstream
 		ctx,
 		warehouse.Type,
+=======
+		context.TODO(),
+>>>>>>> Stashed changes
 		warehouse.Source.ID,
 		warehouse.Destination.ID)
 	if err != nil {
