@@ -118,6 +118,13 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
 }
 
+func isJobTerminated(status int) bool {
+	if status == http.StatusTooManyRequests {
+		return false
+	}
+	return status >= http.StatusOK && status < http.StatusInternalServerError
+}
+
 func loadConfig() {
 	config.RegisterIntConfigVariable(200, &maxConcurrency, false, 1, "Processor.maxConcurrency")
 	config.RegisterIntConfigVariable(100, &maxHTTPConnections, false, 1, "Processor.maxHTTPConnections")
@@ -390,6 +397,9 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 				return reqErr
 			}
 			defer func() { httputil.CloseResponse(resp) }()
+			if !isJobTerminated(resp.StatusCode) {
+				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
+			}
 			respData, reqErr = io.ReadAll(resp.Body)
 			return reqErr
 		},
