@@ -153,8 +153,8 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	return err
 }
 
-// based on size of given DSs, gives a list of DSs for us to vacuum status tables
-func (jd *HandleT) getVacuumCandidates(ctx context.Context, dsList []dataSetT) (map[string]struct{}, error) {
+// based on size of given DSs, gives a list of DSs for us to vacuum full status tables
+func (jd *HandleT) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) (map[string]struct{}, error) {
 	// get name and it's size of all tables
 	var rows *sql.Rows
 	rows, err := jd.dbHandle.QueryContext(
@@ -254,7 +254,7 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 		return err
 	}
 
-	toVacuum, err := jd.getVacuumCandidates(ctx, dsList)
+	toVacuum, err := jd.getVacuumFullCandidates(ctx, dsList)
 	if err != nil {
 		return err
 	}
