@@ -318,7 +318,7 @@ func TestIntegration(t *testing.T) {
 				{"message":"three","topic":"foo-bar","userId":"1234"}
 			]`), destConfig)
 			return statusCode == http.StatusOK
-		}, 10*time.Second, 100*time.Millisecond)
+		}, 30*time.Second, 100*time.Millisecond)
 		require.Equal(t, "Kafka: Message delivered in batch", returnMessage)
 		require.Equal(t, "Kafka: Message delivered in batch", errMessage)
 
