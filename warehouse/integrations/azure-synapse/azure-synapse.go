@@ -697,6 +697,9 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) bool {
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
+	if err := rows.Err(); err != nil {
+		panic(fmt.Errorf("iterating result from query: %s\nwith Error : %w", sqlStatement, err))
+	}
 	as.Logger.Infof("WH: SYNAPSE: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {

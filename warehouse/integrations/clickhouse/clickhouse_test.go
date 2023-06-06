@@ -621,6 +621,7 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 						require.Fail(t, fmt.Sprintf("table %s column %s is of Nullable type even when disableNullable is set to true", tableName, columnName))
 					}
 				}
+				require.NoError(t, rows.Err())
 			}
 
 			t.Log("Loading data into table")

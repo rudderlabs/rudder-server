@@ -343,6 +343,9 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 		}
 		uploadJobs = append(uploadJobs, upload)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return uploadJobs, nil
 }

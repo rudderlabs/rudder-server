@@ -153,7 +153,7 @@ func killDanglingDBConnections(db *sql.DB) error {
 							AND APPLICATION_NAME = CURRENT_SETTING('APPLICATION_NAME')
 							AND APPLICATION_NAME <> ''`)
 	if err != nil {
-		return fmt.Errorf("error occurred when querying pg_stat_activity table for terminating dangling connections: %w", err)
+		return fmt.Errorf("querying pg_stat_activity table for terminating dangling connections: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -172,9 +172,12 @@ func killDanglingDBConnections(db *sql.DB) error {
 		var row danglingConnRow
 		err := rows.Scan(&row.pid, &row.queryStart, &row.waitEventType, &row.waitEvent, &row.state, &row.query, &row.terminated)
 		if err != nil {
-			return fmt.Errorf("error occurred when scanning pg_stat_activity table for terminating dangling connections: %w", err)
+			return fmt.Errorf("scanning pg_stat_activity table for terminating dangling connections: %w", err)
 		}
 		dangling = append(dangling, &row)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating pg_stat_activity table for terminating dangling connections: %w", err)
 	}
 
 	if len(dangling) > 0 {

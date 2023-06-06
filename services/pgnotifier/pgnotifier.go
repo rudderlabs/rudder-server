@@ -717,6 +717,10 @@ func (notifier *PGNotifier) RunMaintenanceWorker(ctx context.Context) error {
 			}
 			ids = append(ids, id)
 		}
+		if err := rows.Err(); err != nil {
+			panic(err)
+		}
+
 		_ = rows.Close()
 		pkgLogger.Debugf("PgNotifier: Re-triggered job ids: %v", ids)
 
