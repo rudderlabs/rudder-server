@@ -311,6 +311,15 @@ func (repo *TableUploads) TotalExportedEvents(ctx context.Context, uploadId int6
 }
 
 func (repo *TableUploads) Set(ctx context.Context, uploadId int64, tableName string, options TableUploadSetOptions) error {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.tableUploadsTimeout",
+			15,
+			time.Minute,
+		),
+	)
+	defer cancel()
 	var (
 		query     string
 		queryArgs []any

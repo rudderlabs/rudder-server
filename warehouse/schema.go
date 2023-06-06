@@ -76,6 +76,15 @@ func NewSchema(
 }
 
 func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
+	ctx, cancel := context.WithTimeout(
+		ctx,
+		config.GetDuration(
+			"Warehouse.schemaUpdateTimeout",
+			30,
+			time.Second,
+		),
+	)
+	defer cancel()
 	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
 		UploadID:        uploadId,
 		SourceID:        sh.warehouse.Source.ID,
