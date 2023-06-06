@@ -945,6 +945,9 @@ func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response 
 	}
 
 	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, -1, err
+	}
 	defer func() { httputil.CloseResponse(resp) }()
 
 	pkgLogger.Debugf("Post request: Successful %s", string(body))

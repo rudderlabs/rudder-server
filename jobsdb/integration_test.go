@@ -1090,6 +1090,9 @@ func TestCreateDS(t *testing.T) {
 				require.NoError(t, err)
 				tableNames = append(tableNames, tableName)
 			}
+			if err = tables.Err(); err != nil {
+				require.NoError(t, err)
+			}
 			require.Equal(t, len(tableNames), 2, `should find two tables`)
 			require.Equal(t, tableNames[0], prefix+"_jobs_-2")
 			require.Equal(t, tableNames[1], prefix+"_jobs_-1")
@@ -1401,6 +1404,7 @@ func getPayloadSize(t *testing.T, jobsDB JobsDB, job *JobT) (int64, error) {
 			require.NoError(t, err)
 			tables = append(tables, table)
 		}
+		require.NoError(t, rows.Err())
 		_ = rows.Close()
 
 		for _, table := range tables {

@@ -12,11 +12,10 @@ Ping returns health check for pg database
 func (jd *HandleT) Ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	rows, err := jd.dbHandle.QueryContext(ctx, `SELECT 'Rudder DB Health Check'::text as message`)
+	_, err := jd.dbHandle.ExecContext(ctx, `SELECT 'Rudder DB Health Check'::text as message`)
 	if err != nil {
 		return err
 	}
-	_ = rows.Close()
 	return nil
 }
 

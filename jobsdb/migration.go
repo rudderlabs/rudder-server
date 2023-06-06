@@ -233,6 +233,9 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 		}
 		estimates[tableName] = estimate
 	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
 
 	datasets := lo.Filter(dsList,
 		func(ds dataSetT, idx int) bool {

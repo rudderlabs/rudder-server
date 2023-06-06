@@ -291,6 +291,10 @@ func (a *Archiver) Do(ctx context.Context) error {
 			stagingFileIDs = append(stagingFileIDs, stagingFileID)
 			stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
 		}
+		if err := stagingFileRows.Err(); err != nil {
+			txn.Rollback()
+			return fmt.Errorf("iterating staging file rows: %w", err)
+		}
 		stagingFileRows.Close()
 
 		var storedStagingFilesLocation string
@@ -333,7 +337,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 				warehouseutils.WarehouseStagingFilesTable,
 				misc.IntArrayToString(stagingFileIDs, ","),
 			)
-			_, err = txn.QueryContext(ctx, stmt)
+			_, err = txn.ExecContext(ctx, stmt)
 			if err != nil {
 				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 				txn.Rollback()
@@ -368,6 +372,10 @@ func (a *Archiver) Do(ctx context.Context) error {
 						return fmt.Errorf("scanning load file location: %w", err)
 					}
 					loadLocations = append(loadLocations, loc)
+				}
+				if err := loadLocationRows.Err(); err != nil {
+					txn.Rollback()
+					return fmt.Errorf("iterating load file location: %w", err)
 				}
 				loadLocationRows.Close()
 				var paths []string

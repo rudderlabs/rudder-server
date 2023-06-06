@@ -440,6 +440,9 @@ func (eventOrderMethods) countDrainedJobs(db *sql.DB) int {
 				tables = append(tables, table)
 			}
 		}
+		if err = rows.Err(); err != nil {
+			panic(err)
+		}
 	}
 	for _, table := range tables {
 		var dsCount int

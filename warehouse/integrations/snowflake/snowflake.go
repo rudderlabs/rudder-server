@@ -1151,6 +1151,9 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 				csvWriter.Flush()
 				_ = gzWriter.WriteGZ(buff.String())
 			}
+			if err = rows.Err(); err != nil {
+				return
+			}
 
 			offset += batchSize
 			if offset >= totalRows {
