@@ -2412,7 +2412,9 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		var releaseDsListLock chan<- lock.LockToken
 		addNewDS := func() error {
 			defer func() {
-				releaseDsListLock <- dsListLock
+				if releaseDsListLock != nil && dsListLock != nil {
+					releaseDsListLock <- dsListLock
+				}
 			}()
 			// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
 			// start a transaction
