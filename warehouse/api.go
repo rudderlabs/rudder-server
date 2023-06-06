@@ -464,6 +464,11 @@ func (tableUploadReq TableUploadReq) GetWhTableUploads(ctx context.Context) ([]*
 		}
 		tableUploads = append(tableUploads, &tableUpload)
 	}
+	if err = rows.Err(); err != nil {
+		tableUploadReq.API.log.Errorf(err.Error())
+		return []*proto.WHTable{}, err
+	}
+
 	return tableUploads, nil
 }
 
@@ -649,6 +654,10 @@ func (uploadsReq *UploadsReq) getUploadsFromDB(ctx context.Context, isMultiWorks
 		upload.Tables = make([]*proto.WHTable, 0)
 		uploads = append(uploads, &upload)
 	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
 	return uploads, totalUploadCount, err
 }
 

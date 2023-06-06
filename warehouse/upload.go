@@ -1834,6 +1834,9 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 		}
 		loadFilesMap[tableNameT(tableName)] = true
 	}
+	if err = rows.Err(); err != nil {
+		err = fmt.Errorf("interate distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
+	}
 	return
 }
 
@@ -1920,6 +1923,9 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehous
 			Location: location,
 			Metadata: metadata,
 		})
+	}
+	if err = rows.Err(); err != nil {
+		panic(fmt.Errorf("iterate query results: %s\nwith Error : %w", sqlStatement, err))
 	}
 	return
 }

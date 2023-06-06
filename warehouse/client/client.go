@@ -67,6 +67,10 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 		}
 		result.Values = append(result.Values, stringRow)
 	}
+	if err = rows.Err(); err != nil {
+		return result, err
+	}
+
 	return result, err
 }
 

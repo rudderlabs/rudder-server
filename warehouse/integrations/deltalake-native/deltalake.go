@@ -905,6 +905,8 @@ func (d *Deltalake) partitionQuery(ctx context.Context, tableName string) (strin
 	}
 	defer func() { _ = rows.Close() }()
 
+	_ = rows.Err() // ignore error
+
 	partitionColumns, err := rows.Columns()
 	if err != nil {
 		return "", fmt.Errorf("scanning partition columns: %w", err)

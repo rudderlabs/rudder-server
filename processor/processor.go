@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -140,6 +141,7 @@ type Handle struct {
 	}
 
 	adaptiveLimit func(int64) int64
+	storePlocker  kit_sync.PartitionLocker
 }
 type processorStats struct {
 	statGatewayDBR                stats.Measurement
@@ -350,6 +352,7 @@ func (proc *Handle) Setup(
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
+	proc.storePlocker = *kit_sync.NewPartitionLocker()
 
 	// Stats
 	proc.statsFactory = stats.Default
@@ -1735,6 +1738,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
 	var batchDestJobs []*jobsdb.JobT
 	var destJobs []*jobsdb.JobT
+	routerDestIDs := make(map[string]struct{})
 
 	destProcStart := time.Now()
 
@@ -1765,7 +1769,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	for o := range chOut {
 		destJobs = append(destJobs, o.destJobs...)
 		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
-
+		routerDestIDs = lo.Assign(routerDestIDs, o.routerDestIDs)
 		in.reportMetrics = append(in.reportMetrics, o.reportMetrics...)
 		for k, v := range o.errorsPerDestID {
 			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], v...)
@@ -1778,6 +1782,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	// this tells us how many transformations we are doing per second.
 	transformationsThroughput := throughputPerSecond(in.totalEvents, destProcTime)
 	proc.stats.transformationsThroughput.Count(transformationsThroughput)
+
 	return &storeMessage{
 		in.statusList,
 		destJobs,
@@ -1785,6 +1790,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 
 		procErrorJobsByDestID,
 		in.procErrorJobs,
+		lo.Keys(routerDestIDs),
 
 		in.reportMetrics,
 		in.sourceDupStats,
@@ -1803,6 +1809,7 @@ type storeMessage struct {
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	procErrorJobs         []*jobsdb.JobT
+	routerDestIDs         []string
 
 	reportMetrics    []*types.PUReportedMetric
 	sourceDupStats   map[dupStatKey]int
@@ -1854,6 +1861,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	if proc.limiter.store != nil {
 		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
+
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	beforeStoreStatus := time.Now()
 	// XX: Need to do this in a transaction
@@ -1896,41 +1904,50 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}
 
 	if len(destJobs) > 0 {
-		err := misc.RetryWithNotify(
-			context.Background(),
-			proc.jobsDBCommandTimeout,
-			proc.jobdDBMaxRetries,
-			func(ctx context.Context) error {
-				return proc.routerDB.WithStoreSafeTx(
-					ctx,
-					func(tx jobsdb.StoreSafeTx) error {
-						err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
-						if err != nil {
-							return fmt.Errorf("storing router jobs: %w", err)
-						}
+		func() {
+			// Only one goroutine can store to a router destination at a time, otherwise we may have different transactions
+			// committing at different timestamps which can cause events with lower jobIDs to appear after events with higher ones.
+			// For that purpose, before storing, we lock the relevant destination IDs (in sorted order to avoid deadlocks).
+			if len(in.routerDestIDs) > 0 {
+				destIDs := lo.Uniq(in.routerDestIDs)
+				slices.Sort(destIDs)
+				for _, destID := range destIDs {
+					proc.storePlocker.Lock(destID)
+					defer proc.storePlocker.Unlock(destID)
+				}
+			}
+			err := misc.RetryWithNotify(
+				context.Background(),
+				proc.jobsDBCommandTimeout,
+				proc.jobdDBMaxRetries,
+				func(ctx context.Context) error {
+					return proc.routerDB.WithStoreSafeTx(
+						ctx,
+						func(tx jobsdb.StoreSafeTx) error {
+							err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
+							if err != nil {
+								return fmt.Errorf("storing router jobs: %w", err)
+							}
 
-						// rsources stats
-						err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
-						if err != nil {
-							return fmt.Errorf("publishing rsources stats for router: %w", err)
-						}
-						return nil
-					})
-			}, proc.sendRetryStoreStats)
-		if err != nil {
-			panic(err)
-		}
-		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-
-		proc.multitenantI.ReportProcLoopAddStats(
-			getJobCountsByWorkspaceDestType(destJobs),
-			"rt",
-		)
-		proc.stats.statDestNumOutputEvents.Count(len(destJobs))
-		proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
-		proc.stats.statDBWriteRouterPayloadBytes.Observe(
-			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
-		)
+							// rsources stats
+							err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
+							if err != nil {
+								return fmt.Errorf("publishing rsources stats for router: %w", err)
+							}
+							return nil
+						})
+				}, proc.sendRetryStoreStats)
+			if err != nil {
+				panic(err)
+			}
+			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+			proc.multitenantI.ReportProcLoopAddStats(getJobCountsByWorkspaceDestType(destJobs), "rt")
+			proc.stats.statDestNumOutputEvents.Count(len(destJobs))
+			proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
+			proc.stats.statDBWriteRouterPayloadBytes.Observe(
+				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
+			)
+		}()
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
@@ -2021,6 +2038,7 @@ type transformSrcDestOutput struct {
 	destJobs        []*jobsdb.JobT
 	batchDestJobs   []*jobsdb.JobT
 	errorsPerDestID map[string][]*jobsdb.JobT
+	routerDestIDs   map[string]struct{}
 }
 
 func (proc *Handle) transformSrcDest(
@@ -2053,6 +2071,7 @@ func (proc *Handle) transformSrcDest(
 	reportMetrics := make([]*types.PUReportedMetric, 0)
 	batchDestJobs := make([]*jobsdb.JobT, 0)
 	destJobs := make([]*jobsdb.JobT, 0)
+	routerDestIDs := make(map[string]struct{})
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
 
 	proc.config.configSubscriberLock.RLock()
@@ -2166,6 +2185,7 @@ func (proc *Handle) transformSrcDest(
 			batchDestJobs:   batchDestJobs,
 			errorsPerDestID: procErrorJobsByDestID,
 			reportMetrics:   reportMetrics,
+			routerDestIDs:   routerDestIDs,
 		}
 	}
 
@@ -2230,6 +2250,7 @@ func (proc *Handle) transformSrcDest(
 			batchDestJobs:   batchDestJobs,
 			errorsPerDestID: procErrorJobsByDestID,
 			reportMetrics:   reportMetrics,
+			routerDestIDs:   routerDestIDs,
 		}
 	}
 
@@ -2376,6 +2397,7 @@ func (proc *Handle) transformSrcDest(
 				batchDestJobs = append(batchDestJobs, &newJob)
 			} else {
 				destJobs = append(destJobs, &newJob)
+				routerDestIDs[destID] = struct{}{}
 			}
 		}
 	})
@@ -2384,6 +2406,7 @@ func (proc *Handle) transformSrcDest(
 		batchDestJobs:   batchDestJobs,
 		errorsPerDestID: procErrorJobsByDestID,
 		reportMetrics:   reportMetrics,
+		routerDestIDs:   routerDestIDs,
 	}
 }
 

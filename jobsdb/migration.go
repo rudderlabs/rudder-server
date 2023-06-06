@@ -153,6 +153,53 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	return err
 }
 
+// based on size of given DSs, gives a list of DSs for us to vacuum full status tables
+func (jd *HandleT) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) ([]string, error) {
+	// get name and it's size of all tables
+	var rows *sql.Rows
+	rows, err := jd.dbHandle.QueryContext(
+		ctx,
+		`SELECT pg_table_size(oid) AS size, relname
+		FROM pg_class
+		where relname = ANY(
+			SELECT tablename
+				FROM pg_catalog.pg_tables
+				WHERE schemaname NOT IN ('pg_catalog','information_schema')
+				AND tablename like $1
+		) order by relname;`,
+		jd.tablePrefix+"_job_status%",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	tableSizes := map[string]int64{}
+	for rows.Next() {
+		var (
+			tableSize int64
+			tableName string
+		)
+		err = rows.Scan(&tableSize, &tableName)
+		if err != nil {
+			return nil, err
+		}
+		tableSizes[tableName] = tableSize
+	}
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+
+	toVacuumFull := []string{}
+	for _, ds := range dsList {
+		if tableSizes[ds.JobStatusTable] > vacuumFullStatusTableThreshold {
+			toVacuumFull = append(toVacuumFull, ds.JobStatusTable)
+		}
+	}
+	return toVacuumFull, nil
+}
+
 // based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
 func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
 	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
@@ -186,6 +233,9 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 		}
 		estimates[tableName] = estimate
 	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
 
 	datasets := lo.Filter(dsList,
 		func(ds dataSetT, idx int) bool {
@@ -206,6 +256,14 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 	if err != nil {
 		return err
 	}
+
+	toVacuumFull, err := jd.getVacuumFullCandidates(ctx, dsList)
+	if err != nil {
+		return err
+	}
+	toVacuumFullMap := lo.Associate(toVacuumFull, func(k string) (string, struct{}) {
+		return k, struct{}{}
+	})
 	start := time.Now()
 	defer stats.Default.NewTaggedStat(
 		"jobsdb_compact_status_tables",
@@ -215,11 +273,21 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 
 	return jd.WithTx(func(tx *Tx) error {
 		for _, statusTable := range toCompact {
+			table := statusTable.JobStatusTable
+			// clean up and vacuum if not present in toVacuumFullMap
+			_, ok := toVacuumFullMap[table]
 			if err := jd.cleanStatusTable(
 				ctx,
 				tx,
-				statusTable.JobStatusTable,
+				table,
+				!ok,
 			); err != nil {
+				return err
+			}
+		}
+		// vacuum full if present in toVacuumFull
+		for _, table := range toVacuumFull {
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
 				return err
 			}
 		}
@@ -228,20 +296,30 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 }
 
 // cleanStatusTable deletes all rows except for the latest status for each job
-func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string) error {
-	_, err := tx.ExecContext(
+func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) error {
+	result, err := tx.ExecContext(
 		ctx,
 		fmt.Sprintf(`DELETE FROM %[1]q
-			 			WHERE NOT id = ANY(
+						WHERE NOT id = ANY(
 							SELECT DISTINCT ON (job_id) id from "%[1]s" ORDER BY job_id ASC, id DESC
 						)`, table),
 	)
 	if err != nil {
 		return err
 	}
+
+	numJobStatusDeleted, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf(`ANALYZE %q`, table)
+	if numJobStatusDeleted > vacuumAnalyzeStatusTableThreshold && canBeVacuumed {
+		query = fmt.Sprintf(`VACUUM ANALYZE %q`, table)
+	}
 	_, err = tx.ExecContext(
 		ctx,
-		fmt.Sprintf(`ANALYZE %q`, table),
+		query,
 	)
 	return err
 }
