@@ -1010,6 +1010,24 @@ func (rt *HandleT) Setup(
 	rt.backgroundWait = g.Wait
 	rt.initWorkers()
 
+	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
+	// can always detect a stuck router
+	g.Go(misc.WithBugsnag(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(15 * time.Second):
+				stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+					"module":   "router",
+					"destType": rt.destName,
+					"state":    jobsdb.Executing.State,
+					"code":     "0",
+				}).Count(0)
+			}
+		}
+	}))
+
 	g.Go(misc.WithBugsnag(func() error {
 		rt.collectMetrics(ctx)
 		return nil

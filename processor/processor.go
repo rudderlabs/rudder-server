@@ -432,6 +432,19 @@ func (proc *Handle) Setup(
 		return nil
 	}))
 
+	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
+	// can always detect a stuck processor
+	g.Go(misc.WithBugsnag(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(15 * time.Second):
+				proc.stats.statGatewayDBW.Count(0)
+			}
+		}
+	}))
+
 	proc.transformer.Setup()
 	proc.crashRecover()
 }

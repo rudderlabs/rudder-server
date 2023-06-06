@@ -179,6 +179,24 @@ func (brt *Handle) Setup(
 
 	brt.crashRecover()
 
+	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
+	// can always detect a stuck batch router
+	brt.backgroundGroup.Go(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(15 * time.Second):
+				stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+					"module":   "batch_router",
+					"destType": brt.destType,
+					"state":    jobsdb.Executing.State,
+					"code":     "0",
+				}).Count(0)
+			}
+		}
+	})
+
 	brt.backgroundGroup.Go(func() error {
 		limiterGroup.Wait()
 		return nil
