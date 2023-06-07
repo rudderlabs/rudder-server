@@ -85,12 +85,12 @@ func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
 			return ""
 		case responseKey:
 			if IsJSON(erResStr) {
-				var unmarshalledJsonI interface{}
-				unmarshalledErr := json.Unmarshal([]byte(erResStr), &unmarshalledJsonI)
+				var unmarshalledJson interface{}
+				unmarshalledErr := json.Unmarshal([]byte(erResStr), &unmarshalledJson)
 				if unmarshalledErr != nil {
 					return erResStr
 				}
-				return getErrorMessageFromResponse(unmarshalledJsonI, ext.ErrorMessageKeys)
+				return getErrorMessageFromResponse(unmarshalledJson, ext.ErrorMessageKeys)
 			}
 			if len(erResStr) == 0 {
 				return ""
@@ -111,7 +111,6 @@ func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
 }
 
 func (ext *ExtractorHandle) GetErrorMessage(sampleResponse string) string {
-	// jsonResp := ext.getJsonResponse(sampleResponse)
 	return ext.getSimpleMessage(sampleResponse)
 }
 
