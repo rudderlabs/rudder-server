@@ -207,11 +207,11 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 	}
 
-	// Remove the zip file after uploading it
-	// err = os.Remove(filePath)
-	// if err != nil {
-	// 	panic(fmt.Errorf("Error in removing zip file: %v", err))
-	// }
+	//Remove the zip file after uploading it
+	err = os.Remove(filePath)
+	if err != nil {
+		panic(fmt.Errorf("Error in removing zip file: %v", err))
+	}
 
 	// success case
 	var parameters common.Parameters
