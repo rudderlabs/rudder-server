@@ -219,7 +219,7 @@ func (edRep *ErrorDetailReporter) Report(metrics []*types.PUReportedMetric, txn 
 		workspaceID := edRep.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
 		destinationDetail := edRep.getDestDetail(metric.ConnectionDetails.DestinationID)
-		edRep.log.Infof("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
+		edRep.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
 
 		// extract error-message & error-code
 		errDets := edRep.extractErrorDetails(metric.StatusDetail.SampleResponse)
