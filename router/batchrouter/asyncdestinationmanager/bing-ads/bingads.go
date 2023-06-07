@@ -216,11 +216,11 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 	}
 
-	// Remove the zip file after uploading it
-	// err = os.Remove(filePath)
-	// if err != nil {
-	// 	panic(fmt.Errorf("Error in removing zip file: %v", err))
-	// }
+	//Remove the zip file after uploading it
+	err = os.Remove(filePath)
+	if err != nil {
+		panic(fmt.Errorf("Error in removing zip file: %v", err))
+	}
 
 	// success case
 	var parameters common.Parameters
@@ -374,6 +374,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 	return resp, statusCode
 }
 
+// create array of failed job Ids from clientIDErrors
 func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
 	keys := make([]int64, 0, len(clientIDErrors))
 	for key := range clientIDErrors {
@@ -383,6 +384,7 @@ func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
 	return keys
 }
 
+// get the list of unique error messages for a particular jobId.
 func getFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]string {
 	reasons := make(map[string]string)
 	for key, errors := range clientIDErrors {
@@ -432,12 +434,11 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 		log.Fatal("Error reading CSV:", err)
 	}
 
-	// Get the column indices for "Client Id", "Error", and "Type"
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := -1
 	if len(records) > 0 {
-		header := records[0] // the first row is the header row
+		header := records[0]
 		for i, column := range header {
 			if column == "Client Id" {
 				clientIDIndex = i
@@ -455,18 +456,20 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	status := "200"
 
 	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
+	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
 	for _, record := range records[1:] {
 		if typeIndex >= 0 && typeIndex < len(record) && strings.Contains(record[typeIndex], "Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
-				clientID := strings.Split(record[clientIDIndex], "<<>>") //1<<>>clientId
+				// expecting the client ID is present as jobId<<>>clientId
+				clientID := strings.Split(record[clientIDIndex], "<<>>")
 				if len(clientID) >= 2 {
 					errorSet, ok := clientIDErrors[clientID[0]]
 					if !ok {
 						errorSet = make(map[string]struct{})
+						// making the structure as jobId: [error1, error2]
 						clientIDErrors[clientID[0]] = errorSet
 					}
 					errorSet[record[errorIndex]] = struct{}{}
-					// Add the error to the client ID's errors slice
 
 				}
 			}
@@ -497,9 +500,16 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	if err != nil {
 		log.Fatal("Error converting to JSON:", err)
 	}
+
+	// remove the file after the response has been written
+	err = os.Remove(filePath)
+	if err != nil {
+		panic(err)
+	}
 	return respBytes, 200
 }
 
+// retrieves jobIds from metadata based on requirements, eg: successKeys, warningKeys, failedKeys
 func (b *BingAdsBulkUploader) RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
 	retrievedKeys, ok := metadata[retrieveKeys].([]interface{})
 	if !ok {

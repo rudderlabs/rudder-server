@@ -2,7 +2,6 @@ package asyncdestinationmanager
 
 import (
 	stdjson "encoding/json"
-	"fmt"
 	"sync"
 	time "time"
 
@@ -131,8 +130,6 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		return bingads.NewManager(destination, backendConfig, HTTPTimeout)
 	} else if destType == "MARKETO_BULK_UPLOAD" {
 		return marketobulkupload.NewManager(destination, HTTPTimeout)
-	} else {
-		return nil
-		panic(fmt.Errorf("batch router is not enabled for destination %s", destType))
 	}
+	return nil
 }
