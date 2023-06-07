@@ -3,6 +3,8 @@ package bingads_sdk
 import (
 	"encoding/xml"
 	"net/http"
+
+	"golang.org/x/oauth2"
 )
 
 var (
@@ -59,8 +61,7 @@ type Session struct {
 	Username       string
 	Password       string
 	HTTPClient     HttpClient
-	AccessToken    string
-	TokenGenerator func() (string, string, error)
+	TokenSource    oauth2.TokenSource
 }
 
 type HttpClient interface {
