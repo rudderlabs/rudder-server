@@ -63,8 +63,8 @@ type Reporting interface {
 	AddClient(ctx context.Context, c Config)
 }
 
-// FacadeInterface for reporting
-type MasterReporting interface {
+// ReportingFactory for reporting
+type ReportingFactory interface {
 	Reporting
 	GetReportingInstance(reporterType ReporterType) Reporter
 }

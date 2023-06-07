@@ -13,11 +13,11 @@ type Factory struct {
 	EnterpriseToken   string
 	Log               logger.Logger
 	once              sync.Once
-	reportingInstance types.MasterReporting
+	reportingInstance types.ReportingFactory
 }
 
 // Setup initializes Suppress User feature
-func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.MasterReporting {
+func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.ReportingFactory {
 	if m.Log == nil {
 		m.Log = logger.NewLogger().Child("enterprise").Child("reporting")
 	}
@@ -29,7 +29,7 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.MasterR
 	return m.reportingInstance
 }
 
-func (m *Factory) GetReportingInstance() types.MasterReporting {
+func (m *Factory) GetReportingInstance() types.ReportingFactory {
 	if m.reportingInstance == nil {
 		panic(fmt.Errorf("reporting instance not initialised. You should call Setup before GetReportingInstance"))
 	}
