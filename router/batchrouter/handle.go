@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -89,6 +90,7 @@ type Handle struct {
 	warehouseServiceMaxRetryTime time.Duration
 	transformerURL               string
 	datePrefixOverride           string
+	customDatePrefix             string
 
 	// state
 
@@ -398,7 +400,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	default:
 		datePrefixLayout = time.Now().Format("2006-01-02")
 	}
-	keyPrefixes := []string{folderName, batchJobs.Connection.Source.ID, datePrefixLayout}
+	keyPrefixes := []string{folderName, batchJobs.Connection.Source.ID, brt.customDatePrefix + datePrefixLayout}
 
 	_, fileName := filepath.Split(gzipFilePath)
 	var (
