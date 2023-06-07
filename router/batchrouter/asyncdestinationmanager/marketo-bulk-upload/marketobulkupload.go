@@ -22,10 +22,12 @@ type MarketoBulkUploader struct {
 	destName          string
 	timeout           time.Duration
 	destinationConfig map[string]interface{}
+	TransformUrl      string
+	PollUrl           string
 }
 
 func NewManager(destination *backendconfig.DestinationT, HTTPTimeout time.Duration) *MarketoBulkUploader {
-	marketobulkupload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", timeout: HTTPTimeout, destinationConfig: destination.DestinationDefinition.Config}
+	marketobulkupload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", timeout: HTTPTimeout, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
 	return marketobulkupload
 }
 
@@ -42,9 +44,7 @@ func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 	if err != nil {
 		panic("JSON Marshal Failed" + err.Error())
 	}
-	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	pollUrl := "/pollStatus"
-	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+pollUrl, payload, b.timeout)
+	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, b.timeout)
 	var asyncResponse common.AsyncStatusResponse
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
@@ -80,10 +80,9 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		destURL := baseURL.ResolveReference(relURL).String()
 		return destURL
 	}
-	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	destinationID := destination.ID
 	destinationUploadUrl := asyncDestStruct.URL
-	url := resolveURL(transformUrl, destinationUploadUrl)
+	url := resolveURL(b.TransformUrl, destinationUploadUrl)
 	filePath := asyncDestStruct.FileName
 	config := destination.Config
 	destType := destination.DestinationDefinition.Name
