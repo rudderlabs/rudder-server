@@ -423,12 +423,11 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 		log.Fatal("Error reading CSV:", err)
 	}
 
-	// Get the column indices for "Client Id", "Error", and "Type"
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := -1
 	if len(records) > 0 {
-		header := records[0] // the first row is the header row
+		header := records[0]
 		for i, column := range header {
 			if column == "Client Id" {
 				clientIDIndex = i
@@ -446,18 +445,20 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	status := "200"
 
 	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
+	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
 	for _, record := range records[1:] {
 		if typeIndex >= 0 && typeIndex < len(record) && strings.Contains(record[typeIndex], "Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
-				clientID := strings.Split(record[clientIDIndex], "<<>>") //1<<>>clientId
+				// expecting the client ID is present as jobId<<>>clientId
+				clientID := strings.Split(record[clientIDIndex], "<<>>")
 				if len(clientID) >= 2 {
 					errorSet, ok := clientIDErrors[clientID[0]]
 					if !ok {
 						errorSet = make(map[string]struct{})
+						// making the structure as jobId: [error1, error2]
 						clientIDErrors[clientID[0]] = errorSet
 					}
 					errorSet[record[errorIndex]] = struct{}{}
-					// Add the error to the client ID's errors slice
 
 				}
 			}

@@ -24,8 +24,8 @@ type AsyncStatusResponse struct {
 	StatusCode     int
 	HasFailed      bool
 	HasWarning     bool
-	FailedJobsURL  string // these will not be present in bingAds
-	WarningJobsURL string // these will not be present in bingAds
+	FailedJobsURL  string
+	WarningJobsURL string
 	OutputFilePath string
 }
 type AsyncUploadOutput struct {
