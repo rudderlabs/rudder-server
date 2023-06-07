@@ -30,10 +30,19 @@ type BingAdsBulkUploader struct {
 	accessToken          string
 	developerToken       string
 	refreshToken         string
-	oauthClient          *oauth.OAuthErrResHandler
-	service              *bingads.BulkService
+	oauthClient          oauth.Authorizer
+	service              bingads.BulkServiceI
 	destinationIDFileMap map[string]string
 	timeout              time.Duration
+}
+
+func NewBingAdsBulkUploader(oauthClient oauth.Authorizer, service bingads.BulkServiceI, timeout time.Duration) *BingAdsBulkUploader {
+	return &BingAdsBulkUploader{
+		destName:    "BING_ADS",
+		oauthClient: oauthClient,
+		service:     service,
+		timeout:     timeout,
+	}
 }
 
 type User struct {
@@ -85,7 +94,7 @@ This function create zip file from the text file created by the batchrouter
 It takes the text file path as input and returns the zip file path
 The maximum size of the zip file is 100MB, if the size of the zip file exceeds 100MB then the job is marked as failed
 */
-func createZipFile(filePath string, failedJobIds *[]int64, successJobIds *[]int64, audienceId string) string {
+var CreateZipFile = func(filePath string, failedJobIds *[]int64, successJobIds *[]int64, audienceId string) string {
 
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
@@ -175,13 +184,13 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	failedJobIds := []int64{}
 	successJobIDs := []int64{}
 
-	filePath := createZipFile(asyncDestStruct.FileName, &failedJobIds, &successJobIDs, destConfig.AudienceId)
 	urlResp, err := b.service.GetBulkUploadUrl()
+
 	if err != nil {
-		if err != nil {
-			panic(fmt.Errorf("Error in getting bulk upload url: %v", err))
-		}
+		panic(fmt.Errorf("Error in getting bulk upload url: %v", err))
 	}
+
+	filePath := CreateZipFile(asyncDestStruct.FileName, &failedJobIds, &successJobIDs, destConfig.AudienceId)
 	if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
