@@ -489,6 +489,12 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	if err != nil {
 		log.Fatal("Error converting to JSON:", err)
 	}
+
+	// remove the file after the response has been written
+	err = os.Remove(filePath)
+	if err != nil {
+		panic(err)
+	}
 	return respBytes, 200
 }
 
