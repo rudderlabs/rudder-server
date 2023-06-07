@@ -3,7 +3,6 @@ package reporting
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -17,11 +16,11 @@ type ReportingMediator struct {
 	log             logger.Logger
 	once            sync.Once
 	enterpriseToken string
-	reporting       types.Reporter
-	errorReporting  types.Reporter
+	reporting       types.Reporting
+	errorReporting  types.Reporting
 }
 
-func (med *ReportingMediator) createReportInstance(backendConfig backendconfig.BackendConfig) types.Reporter {
+func (med *ReportingMediator) createReportInstance(backendConfig backendconfig.BackendConfig) types.Reporting {
 	med.log.Debug("Forming reporting instance")
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	if !reportingEnabled || med.enterpriseToken == "" {
@@ -34,7 +33,7 @@ func (med *ReportingMediator) createReportInstance(backendConfig backendconfig.B
 	return reportingHandle
 }
 
-func (med *ReportingMediator) createErrorReportInstance(backendConfig backendconfig.BackendConfig) types.Reporter {
+func (med *ReportingMediator) createErrorReportInstance(backendConfig backendconfig.BackendConfig) types.Reporting {
 	med.log.Debug("Forming error reporting instance")
 	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	errorReportingEnabled := config.GetBool("Reporting.errorReporting.enabled", false)
@@ -87,21 +86,4 @@ func (med *ReportingMediator) AddClient(ctx context.Context, c types.Config) {
 	rruntime.Go(func() {
 		med.errorReporting.AddClient(ctx, c)
 	})
-}
-
-func (med *ReportingMediator) GetReportingInstance(reporterType types.ReporterType) types.Reporter {
-	// Inner fn
-	returnReportingI := func(repI types.Reporter) types.Reporter {
-		if repI == nil {
-			panic(fmt.Errorf("reporting instance not initialised. You should call Setup before GetReportingInstance"))
-		}
-		return repI
-	}
-	switch reporterType {
-	case types.ErrorDetailReport:
-		return returnReportingI(med.errorReporting)
-	case types.Report:
-		return returnReportingI(med.reporting)
-	}
-	panic(fmt.Errorf("valid reporter type is not provided"))
 }

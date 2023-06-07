@@ -30,8 +30,8 @@ Reporting Feature
 
 // ReportingFeature handles reporting statuses / errors to reporting service
 type ReportingFeature interface {
-	Setup(backendConfig backendconfig.BackendConfig) types.ReportingFactory
-	GetReportingInstance() types.ReportingFactory
+	Setup(backendConfig backendconfig.BackendConfig) types.Reporting
+	GetReportingInstance() types.Reporting
 }
 
 /*********************************

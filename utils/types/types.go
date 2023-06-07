@@ -63,16 +63,5 @@ type Reporting interface {
 	AddClient(ctx context.Context, c Config)
 }
 
-// ReportingFactory for reporting
-type ReportingFactory interface {
-	Reporting
-	GetReportingInstance(reporterType ReporterType) Reporter
-}
-
-type Reporter interface {
-	Reporting
-	IsPIIReportingDisabled(string) bool
-}
-
 // ConfigT simple map config structure
 type ConfigT map[string]interface{}
