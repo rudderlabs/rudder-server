@@ -504,10 +504,10 @@ func (idr *Identity) processMergeRules(fileNames []string) (err error) {
 // 2. Append to local identity merge rules table
 // 3. Apply each merge rule and update local identity mapping table
 // 4. Upload the diff of each table to load files for both tables
-func (idr *Identity) Resolve() (err error) {
+func (idr *Identity) Resolve(ctx context.Context) (err error) {
 	var loadFileNames []string
 	defer misc.RemoveFilePaths(loadFileNames...)
-	loadFileNames, err = idr.downloader.Download(idr.ctx, idr.whMergeRulesTable())
+	loadFileNames, err = idr.downloader.Download(ctx, idr.whMergeRulesTable())
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Failed to download load files for %s with error: %v`, idr.mergeRulesTable(), err)
 		return
@@ -516,11 +516,11 @@ func (idr *Identity) Resolve() (err error) {
 	return idr.processMergeRules(loadFileNames)
 }
 
-func (idr *Identity) ResolveHistoricIdentities() (err error) {
+func (idr *Identity) ResolveHistoricIdentities(ctx context.Context) (err error) {
 	var loadFileNames []string
 	defer misc.RemoveFilePaths(loadFileNames...)
 	gzWriter, path := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMergeRulesTmp))
-	err = idr.warehouseManager.DownloadIdentityRules(idr.ctx, &gzWriter)
+	err = idr.warehouseManager.DownloadIdentityRules(ctx, &gzWriter)
 	gzWriter.CloseGZ()
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)

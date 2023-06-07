@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/samber/lo"
 )
 
 const MAX_CHARACTER_LIMIT = 65535
@@ -56,17 +57,5 @@ func NewSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader) (
 
 // LoadFileBatching batches load files for refresh partitions
 func LoadFileBatching(files []warehouseutils.LoadFile, batchSize int) [][]warehouseutils.LoadFile {
-	fileBatches := make([][]warehouseutils.LoadFile, 0, len(files)/batchSize+1)
-
-	for len(files) > 0 {
-		cut := batchSize
-		if len(files) < cut {
-			cut = len(files)
-		}
-
-		fileBatches = append(fileBatches, files[0:cut])
-		files = files[cut:]
-	}
-
-	return fileBatches
+	return lo.Chunk(files, batchSize)
 }
