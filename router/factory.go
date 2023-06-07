@@ -25,8 +25,6 @@ type Factory struct {
 }
 
 func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
-	reportingEnabled := false
-	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &reportingEnabled, false, "Reporting.enabled")
 	r := &HandleT{
 		Reporting:        f.Reporting,
 		MultitenantI:     f.Multitenant,
