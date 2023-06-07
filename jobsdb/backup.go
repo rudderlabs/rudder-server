@@ -103,12 +103,9 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			}
 			return nil
 		}
-		if err := loop(); err != nil {
+		if err := loop(); err != nil && ctx.Err() == nil {
 			if !jd.skipMaintenanceError {
-				if ctx.Err() == nil {
-					panic(err)
-				}
-				return
+				panic(err)
 			}
 			jd.logger.Errorf("[JobsDB] :: Failed to backup dataset. Err: %s", err.Error())
 		}

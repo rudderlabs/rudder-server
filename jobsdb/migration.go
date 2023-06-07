@@ -47,8 +47,8 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			}
 			return nil
 		}
-		if err := migrate(); err != nil {
-			if !jd.skipMaintenanceError && ctx.Err() == nil {
+		if err := migrate(); err != nil && ctx.Err() == nil {
+			if !jd.skipMaintenanceError {
 				panic(err)
 			}
 			jd.logger.Errorw("Failed to migrate ds", "error", err)
