@@ -19,10 +19,10 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
@@ -232,7 +232,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("JobsDB.enableWriterQueue", false)
 
 	// find free port for gateway http server to listen on
-	httpPortInt, err := kit_helper.GetFreePort()
+	httpPortInt, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	gatewayPort = strconv.Itoa(httpPortInt)
 
@@ -301,7 +301,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 			resp, err := client.Do(req)
 			require.NoError(t, err, "should be able to send the request to gateway")
 			require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
-			func() { kit_httputil.CloseResponse(resp) }()
+			func() { kithttputil.CloseResponse(resp) }()
 			return nil
 		})
 	}

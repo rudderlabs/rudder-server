@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -98,10 +98,10 @@ type Handle struct {
 	transDebugger             transformationdebugger.TransformationDebugger
 	isolationStrategy         isolation.Strategy
 	limiter                   struct {
-		read       kit_sync.Limiter
-		preprocess kit_sync.Limiter
-		transform  kit_sync.Limiter
-		store      kit_sync.Limiter
+		read       kitsync.Limiter
+		preprocess kitsync.Limiter
+		transform  kitsync.Limiter
+		store      kitsync.Limiter
 	}
 	config struct {
 		isolationMode             isolation.Mode
@@ -139,7 +139,7 @@ type Handle struct {
 	}
 
 	adaptiveLimit func(int64) int64
-	storePlocker  kit_sync.PartitionLocker
+	storePlocker  kitsync.PartitionLocker
 }
 type processorStats struct {
 	statGatewayDBR                stats.Measurement
@@ -349,7 +349,7 @@ func (proc *Handle) Setup(
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
-	proc.storePlocker = *kit_sync.NewPartitionLocker()
+	proc.storePlocker = *kitsync.NewPartitionLocker()
 
 	// Stats
 	proc.statsFactory = stats.Default
@@ -460,22 +460,22 @@ func (proc *Handle) Start(ctx context.Context) error {
 	// limiters
 	s := proc.statsFactory
 	var limiterGroup sync.WaitGroup
-	proc.limiter.read = kit_sync.NewLimiter(ctx, &limiterGroup, "proc_read",
+	proc.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "proc_read",
 		config.GetInt("Processor.Limiter.read.limit", 50),
 		s,
-		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
-	proc.limiter.preprocess = kit_sync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
+	proc.limiter.preprocess = kitsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
 		config.GetInt("Processor.Limiter.preprocess.limit", 50),
 		s,
-		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
-	proc.limiter.transform = kit_sync.NewLimiter(ctx, &limiterGroup, "proc_transform",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+	proc.limiter.transform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
 		config.GetInt("Processor.Limiter.transform.limit", 50),
 		s,
-		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.store = kit_sync.NewLimiter(ctx, &limiterGroup, "proc_store",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
+	proc.limiter.store = kitsync.NewLimiter(ctx, &limiterGroup, "proc_store",
 		config.GetInt("Processor.Limiter.store.limit", 50),
 		s,
-		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
 	g.Go(func() error {
 		limiterGroup.Wait()
 		return nil
@@ -2719,8 +2719,8 @@ func filterConfig(eventCopy *transformer.TransformerEventT) {
 	}
 }
 
-func (*Handle) getLimiterPriority(partition string) kit_sync.LimiterPriorityValue {
-	return kit_sync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
+func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue {
+	return kitsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
 }
 
 func (proc *Handle) filterDestinations(

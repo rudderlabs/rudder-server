@@ -22,8 +22,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
-	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -109,11 +109,11 @@ func Test_RouterThrottling(t *testing.T) {
 		"workspaceId": workspaceID,
 	})
 
-	httpPort, err := kit_helper.GetFreePort()
+	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := kit_helper.GetFreePort()
+	httpAdminPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
-	debugPort, err := kit_helper.GetFreePort()
+	debugPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
 	require.NoError(t, err)
@@ -207,7 +207,7 @@ func Test_RouterThrottling(t *testing.T) {
 		resp, err := client.Do(req)
 		require.NoError(t, err, "should be able to send the request to gateway")
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		func() { kit_httputil.CloseResponse(resp) }()
+		func() { kithttputil.CloseResponse(resp) }()
 	}
 
 	require.Eventuallyf(t,

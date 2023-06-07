@@ -17,7 +17,7 @@ import (
 
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/rudderlabs/compose-test/testcompose"
-	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
@@ -86,7 +86,7 @@ func TestIntegration(t *testing.T) {
 	jobsDBPort := c.Port("jobsDb", 5432)
 	databricksConnectorPort := c.Port("databricks-connector", 50051)
 
-	httpPort, err := kit_helper.GetFreePort()
+	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()

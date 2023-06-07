@@ -25,7 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -109,9 +109,9 @@ type Handle struct {
 	encounteredMergeRuleMap   map[string]map[string]bool
 
 	limiter struct {
-		read    kit_sync.Limiter
-		process kit_sync.Limiter
-		upload  kit_sync.Limiter
+		read    kitsync.Limiter
+		process kitsync.Limiter
+		upload  kitsync.Limiter
 	}
 
 	lastExecTimesMu sync.RWMutex

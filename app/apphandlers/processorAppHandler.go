@@ -20,7 +20,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 
-	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
@@ -315,5 +315,5 @@ func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Han
 		MaxHeaderBytes:    a.config.http.MaxHeaderBytes,
 	}
 
-	return kit_httputil.ListenAndServe(ctx, srv)
+	return kithttputil.ListenAndServe(ctx, srv)
 }

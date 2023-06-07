@@ -9,7 +9,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
-	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 )
 
 type TransformerResource struct {
@@ -56,7 +56,7 @@ func SetupTransformer(pool *dockertest.Pool, d Cleaner) (*TransformerResource, e
 		if err != nil {
 			return err
 		}
-		defer func() { kit_httputil.CloseResponse(resp) }()
+		defer func() { kithttputil.CloseResponse(resp) }()
 		if resp.StatusCode != 200 {
 			return errors.New(resp.Status)
 		}

@@ -19,7 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 
 	"github.com/rudderlabs/compose-test/testcompose"
-	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
@@ -52,7 +52,7 @@ func TestIntegration(t *testing.T) {
 	postgresPort := c.Port("postgres", 5432)
 	sshPort := c.Port("ssh-server", 2222)
 
-	httpPort, err := kit_helper.GetFreePort()
+	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()

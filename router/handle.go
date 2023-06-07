@@ -15,7 +15,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -100,10 +100,10 @@ type Handle struct {
 	startEnded                     chan struct{}
 
 	limiter struct {
-		pickup    kit_sync.Limiter
-		transform kit_sync.Limiter
-		batch     kit_sync.Limiter
-		process   kit_sync.Limiter
+		pickup    kitsync.Limiter
+		transform kitsync.Limiter
+		batch     kitsync.Limiter
+		process   kitsync.Limiter
 		stats     struct {
 			pickup    *partition.Stats
 			transform *partition.Stats

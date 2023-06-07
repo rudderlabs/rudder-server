@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/isolation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -72,12 +72,12 @@ func isolationMode(destType string, config *config.Config) isolation.Mode {
 	return isolation.Mode(config.GetString("Router.isolationMode", string(defaultIsolationMode)))
 }
 
-func LimiterPriorityValueFrom(v, max int) kit_sync.LimiterPriorityValue {
+func LimiterPriorityValueFrom(v, max int) kitsync.LimiterPriorityValue {
 	if v <= 0 {
-		return kit_sync.LimiterPriorityValueLow
+		return kitsync.LimiterPriorityValueLow
 	}
 	if v > max {
-		return kit_sync.LimiterPriorityValueHigh
+		return kitsync.LimiterPriorityValueHigh
 	}
-	return kit_sync.LimiterPriorityValue(int(math.Ceil(float64(kit_sync.LimiterPriorityValueHigh) * float64(v) / float64(max))))
+	return kitsync.LimiterPriorityValue(int(math.Ceil(float64(kitsync.LimiterPriorityValueHigh) * float64(v) / float64(max))))
 }

@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	kit_httputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -28,7 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ory/dockertest/v3"
-	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -148,7 +148,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("Router.maxStatusUpdateWait", "10ms")
 
 			// find free port for gateway http server to listen on
-			httpPortInt, err := kit_helper.GetFreePort()
+			httpPortInt, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 			gatewayPort = strconv.Itoa(httpPortInt)
 
@@ -235,7 +235,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 					resp, err := client.Do(req)
 					require.NoError(t, err, "should be able to send the request to gateway")
 					require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
-					func() { kit_httputil.CloseResponse(resp) }()
+					func() { kithttputil.CloseResponse(resp) }()
 				}
 			}()
 

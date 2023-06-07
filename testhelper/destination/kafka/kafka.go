@@ -10,7 +10,7 @@ import (
 	dc "github.com/ory/dockertest/v3/docker"
 	"golang.org/x/sync/errgroup"
 
-	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
@@ -169,7 +169,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 		})
 	}
 
-	zookeeperPortInt, err := kit_helper.GetFreePort()
+	zookeeperPortInt, err := kithelper.GetFreePort()
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func Setup(pool *dockertest.Pool, cln destination.Cleaner, opts ...Option) (*Res
 	containers := make([]*dockertest.Resource, c.brokers)
 	for i := uint(0); i < c.brokers; i++ {
 		i := i
-		localhostPortInt, err := kit_helper.GetFreePort()
+		localhostPortInt, err := kithelper.GetFreePort()
 		if err != nil {
 			return nil, err
 		}

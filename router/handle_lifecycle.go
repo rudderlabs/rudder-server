@@ -10,7 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -158,45 +158,45 @@ func (rt *Handle) Setup(
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("Router.Limiter.statsPeriod", 15, time.Second)
-	rt.limiter.pickup = kit_sync.NewLimiter(ctx, &limiterGroup, "rt_pickup",
+	rt.limiter.pickup = kitsync.NewLimiter(ctx, &limiterGroup, "rt_pickup",
 		getRouterConfigInt(rt.destType, "Limiter.pickup.limit", 100),
 		stats.Default,
-		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.pickup.dynamicPeriod", 1, time.Second)),
-		kit_sync.WithLimiterTags(map[string]string{"destType": rt.destType}),
-		kit_sync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.pickup.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
+		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
 		}),
 	)
 	rt.limiter.stats.pickup = partition.NewStats()
 
-	rt.limiter.transform = kit_sync.NewLimiter(ctx, &limiterGroup, "rt_transform",
+	rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterGroup, "rt_transform",
 		getRouterConfigInt(rt.destType, "Limiter.transform.limit", 200),
 		stats.Default,
-		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.transform.dynamicPeriod", 1, time.Second)),
-		kit_sync.WithLimiterTags(map[string]string{"destType": rt.destType}),
-		kit_sync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.transform.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
+		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
 		}),
 	)
 	rt.limiter.stats.transform = partition.NewStats()
 
-	rt.limiter.batch = kit_sync.NewLimiter(ctx, &limiterGroup, "rt_batch",
+	rt.limiter.batch = kitsync.NewLimiter(ctx, &limiterGroup, "rt_batch",
 		getRouterConfigInt(rt.destType, "Limiter.batch.limit", 200),
 		stats.Default,
-		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.batch.dynamicPeriod", 1, time.Second)),
-		kit_sync.WithLimiterTags(map[string]string{"destType": rt.destType}),
-		kit_sync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.batch.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
+		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
 		}),
 	)
 	rt.limiter.stats.batch = partition.NewStats()
 
-	rt.limiter.process = kit_sync.NewLimiter(ctx, &limiterGroup, "rt_process",
+	rt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "rt_process",
 		getRouterConfigInt(rt.destType, "Limiter.process.limit", 200),
 		stats.Default,
-		kit_sync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.process.dynamicPeriod", 1, time.Second)),
-		kit_sync.WithLimiterTags(map[string]string{"destType": rt.destType}),
-		kit_sync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.process.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
+		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
 		}),
 	)

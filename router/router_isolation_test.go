@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kit_helper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -192,9 +192,9 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	defer mockCBE.Close()
 
 	t.Logf("Preparing the necessary configuration")
-	gatewayPort, err := kit_helper.GetFreePort()
+	gatewayPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
-	adminPort, err := kit_helper.GetFreePort()
+	adminPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	config.Set("Gateway.webPort", gatewayPort)
 	config.Set("Gateway.adminWebPort", adminPort)
