@@ -7,7 +7,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/stretchr/testify/require"
@@ -21,21 +20,18 @@ func TestFeatureSetup(t *testing.T) {
 		EnterpriseToken: "dummy-token",
 	}
 	instanceA := f.Setup(&backendconfig.NOOP{})
-	mstInstA := f.GetReportingInstance()
-	instanceB := mstInstA.GetReportingInstance(types.Report)
+	instanceB := f.GetReportingInstance()
 
-	mstInstanceC := f.Setup(&backendconfig.NOOP{})
-	instanceC := mstInstanceC.GetReportingInstance(types.Report)
-	instanceD := f.Setup(&backendconfig.NOOP{}).GetReportingInstance(types.Report)
+	instanceC := f.Setup(&backendconfig.NOOP{})
+	instanceD := f.GetReportingInstance()
 
-	require.Equal(t, instanceA.GetReportingInstance(types.Report), instanceB)
+	require.Equal(t, instanceA, instanceB)
 	require.Equal(t, instanceB, instanceC)
 	require.Equal(t, instanceC, instanceD)
 
 	f = &Factory{}
-	mstE := f.Setup(&backendconfig.NOOP{})
-	instanceE := f.Setup(&backendconfig.NOOP{}).GetReportingInstance(types.Report)
-	instanceF := mstE.GetReportingInstance(types.Report)
+	instanceE := f.Setup(&backendconfig.NOOP{})
+	instanceF := f.GetReportingInstance()
 	require.Equal(t, instanceE, instanceF)
 	require.NotEqual(t, instanceE, backendconfig.NOOP{})
 }
@@ -80,9 +76,8 @@ func TestSetupForNoop(t *testing.T) {
 					EnterpriseToken: "dummy-token",
 				}
 			}
-			f.Setup(&backendconfig.NOOP{})
-			instance := f.GetReportingInstance()
-			require.Equal(t, instance.GetReportingInstance(types.ErrorDetailReport), &NOOP{})
+			med := NewReportingMediator(logger.NOP, f.EnterpriseToken)
+			require.Equal(t, med.createErrorReportInstance(&backendconfig.NOOP{}), &NOOP{})
 		})
 
 	}

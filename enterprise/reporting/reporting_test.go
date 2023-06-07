@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
@@ -254,12 +255,10 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 		return configCh
 	})
 
-	f := &Factory{
-		EnterpriseToken: "dummy-token",
-	}
-	f.Setup(config)
-	mstReporting := f.GetReportingInstance()
-	reporting := mstReporting.GetReportingInstance(types.Report)
+	reporting := NewFromEnvConfig(logger.NOP)
+	rruntime.Go(func() {
+		reporting.setup(config)
+	})
 
 	var reportingDisabled bool
 
