@@ -9,18 +9,6 @@ import (
 	"time"
 )
 
-type ReporterType string
-
-const (
-	ErrorDetailReport ReporterType = "error_detail_report"
-	Report            ReporterType = "report" // normal report
-)
-
-type ReportingInstances struct {
-	ReportingInstance      Reporting
-	ErrorReportingInstance Reporting
-}
-
 // SingularEventT single event structrue
 type SingularEventT map[string]interface{}
 
