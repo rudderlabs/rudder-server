@@ -104,6 +104,7 @@ type UploadJob struct {
 	RefreshPartitionBatchSize int
 	RetryTimeWindow           time.Duration
 	MinRetryAttempts          int
+	DisableAlter              bool
 
 	ErrorHandler ErrorHandler
 }
@@ -193,6 +194,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		RefreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
 		RetryTimeWindow:           retryTimeWindow,
 		MinRetryAttempts:          minRetryAttempts,
+		DisableAlter:              config.GetBool("Warehouse.disableAlter", false),
 
 		AlertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
@@ -781,6 +783,19 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseu
 }
 
 func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap model.TableSchema) error {
+	if job.DisableAlter {
+		pkgLogger.Debugw("skipping alter columns to warehouse",
+			logfield.SourceID, job.warehouse.Source.ID,
+			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, job.warehouse.Destination.ID,
+			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, job.warehouse.WorkspaceID,
+			logfield.TableName, tName,
+			"columns", columnsMap,
+		)
+		return nil
+	}
+
 	var responseToAlerta []model.AlterTableResponse
 	var errs []error
 
