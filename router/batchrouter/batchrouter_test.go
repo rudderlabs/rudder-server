@@ -48,7 +48,8 @@ const (
 
 var testTimeout = 10 * time.Second
 
-var s3DestinationDefinition = backendconfig.DestinationDefinitionT{ID: S3DestinationDefinitionID, Name: "S3", DisplayName: "S3", Config: nil, ResponseRules: nil}
+// var s3DestinationDefinition = backendconfig.DestinationDefinitionT{ID: S3DestinationDefinitionID, Name: "S3", DisplayName: "S3", Config: nil, ResponseRules: nil}
+var s3DestinationDefinition = backendconfig.DestinationT{ID: S3DestinationDefinitionID, Name: "S3", Config: nil}
 
 var workspaceID = `workspaceID`
 
@@ -60,7 +61,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
-			Destinations: []backendconfig.DestinationT{{ID: S3DestinationID, Name: "s3 dest", DestinationDefinition: s3DestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+			Destinations: []backendconfig.DestinationT{{ID: S3DestinationID, Name: "s3 dest", DestinationDefinition: s3DestinationDefinition.DestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 		},
 	},
 }
@@ -166,7 +167,7 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			batchrouter.Setup(&s3DestinationDefinition, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 		})
 	})
 
@@ -179,7 +180,7 @@ var _ = Describe("BatchRouter", func() {
 
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &Handle{}
-			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			batchrouter.Setup(&s3DestinationDefinition, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			batchrouter.readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
