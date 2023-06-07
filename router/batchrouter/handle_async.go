@@ -77,8 +77,13 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 						var bodyBytes []byte
 						var statusCode int
+						var pollResp common.AsyncStatusResponse
 						// payload to be sent to poll : "{\"config\":{\"clientId\":\"01a70f1f-ff37-46fc-bdff-42e92a3f2bb3\",\"clientSecret\":\"rziQBHtZ34Vl1CE3x3OiA3n8Wr45lwar\",\"columnFieldsMapping\":[{\"from\":\"anonymousId\",\"to\":\"anonymousId\"},{\"from\":\"address\",\"to\":\"address\"},{\"from\":\"email\",\"to\":\"email\"}],\"deDuplicationField\":\"\",\"munchkinId\":\"585-AXP-425\",\"oneTrustCookieCategories\":[],\"uploadInterval\":\"10\"},\"importId\":\"3090\",\"destType\":\"marketo_bulk_upload\"}"
-						bodyBytes, statusCode = brt.asyncdestinationmanager.Poll(pollStruct)
+						pollResp, statusCode = brt.asyncdestinationmanager.Poll(pollStruct)
+						bodyBytes, err := stdjson.Marshal(pollResp)
+						if err != nil {
+							panic(err)
+						}
 						// bodyBytes eg: "{\"success\":true,\"statusCode\":200,\"hasFailed\":false,\"failedJobsURL\":\"/getFailedJobs\",\"hasWarnings\":false,\"warningJobsURL\":\"/getWarningJobs\"}"
 						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 						brt.asyncPollTimeStat.Since(startPollTime)

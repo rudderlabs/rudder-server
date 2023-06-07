@@ -20,7 +20,7 @@ import (
 
 type Asyncdestinationmanager interface {
 	Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput
-	Poll(pollStruct common.AsyncPoll) ([]byte, int)
+	Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int)
 	FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int)
 	RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error)
 }

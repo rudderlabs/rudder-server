@@ -88,7 +88,7 @@ type MetaDataT struct {
 }
 type Parameters struct {
 	ImportId string    `json:"importId"`
-	PollUrl  string    `json:"pollURL"`
+	PollUrl  *string   `json:"pollURL"`
 	MetaData MetaDataT `json:"metadata"`
 }
 
