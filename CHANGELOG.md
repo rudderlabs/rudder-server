@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.4](https://github.com/rudderlabs/rudder-server/compare/v1.9.3...v1.9.4) (2023-06-06)
+
+
+### Miscellaneous
+
+* add resp body status check ([#3446](https://github.com/rudderlabs/rudder-server/issues/3446)) ([b251b21](https://github.com/rudderlabs/rudder-server/commit/b251b217787b0b2c919378a40c950b8ea719d7be))
+
 ## [1.9.3](https://github.com/rudderlabs/rudder-server/compare/v1.9.2...v1.9.3) (2023-05-31)
 
 
