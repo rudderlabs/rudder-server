@@ -355,8 +355,7 @@ func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
 		misc.IntArrayToString(job.stagingFileIDs, ","),
 		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
 	)
-	err := dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
+	if err := dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
 	}
 	return total.Int64
@@ -798,43 +797,54 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 		job.whManager,
 		downloader.NewDownloader(&job.warehouse, job, 8),
 	)
-	if populateHistoricIdentities {
-		return idr.ResolveHistoricIdentities()
-	}
-	return idr.Resolve()
+	return warehouseutils.WithTimeout(
+		job.ctx,
+		config.GetDuration(
+			"Warehouse.resolveIdentitiesTimeout",
+			5,
+			time.Minute,
+		),
+		func(ctx context.Context) error {
+			if populateHistoricIdentities {
+				return idr.ResolveHistoricIdentities(ctx)
+			}
+			return idr.Resolve(ctx)
+
+		},
+	)
 }
 
 func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiff) (err error) {
-	ctx, cancel := context.WithTimeout(
+	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	return warehouseutils.WithTimeout(
 		job.ctx,
 		config.GetDuration(
 			"Warehouse.updateTableSchemaTimeout",
 			15,
 			time.Minute,
 		),
+		func(ctx context.Context) error {
+			if tableSchemaDiff.TableToBeCreated {
+				err = job.whManager.CreateTable(ctx, tName, tableSchemaDiff.ColumnMap)
+				if err != nil {
+					pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
+					return err
+				}
+				job.counterStat("tables_added").Increment()
+				return nil
+			}
+
+			if err = job.addColumnsToWarehouse(ctx, tName, tableSchemaDiff.ColumnMap); err != nil {
+				return fmt.Errorf("adding columns to warehouse: %w", err)
+			}
+
+			if err = job.alterColumnsToWarehouse(ctx, tName, tableSchemaDiff.AlteredColumnMap); err != nil {
+				return fmt.Errorf("altering columns to warehouse: %w", err)
+			}
+
+			return nil
+		},
 	)
-	defer cancel()
-	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
-
-	if tableSchemaDiff.TableToBeCreated {
-		err = job.whManager.CreateTable(ctx, tName, tableSchemaDiff.ColumnMap)
-		if err != nil {
-			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
-			return err
-		}
-		job.counterStat("tables_added").Increment()
-		return nil
-	}
-
-	if err = job.addColumnsToWarehouse(ctx, tName, tableSchemaDiff.ColumnMap); err != nil {
-		return fmt.Errorf("adding columns to warehouse: %w", err)
-	}
-
-	if err = job.alterColumnsToWarehouse(ctx, tName, tableSchemaDiff.AlteredColumnMap); err != nil {
-		return fmt.Errorf("altering columns to warehouse: %w", err)
-	}
-
-	return nil
 }
 
 func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) error {
@@ -1322,7 +1332,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 	errorMap := make(map[string]error)
 	// var generated bool
-	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
+	if generated, _ := job.areIdentityTablesLoadFilesGenerated(job.ctx); !generated {
 		if err := job.resolveIdentities(populateHistoricIdentities); err != nil {
 			pkgLogger.Errorf(` ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
@@ -1958,7 +1968,7 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 	return
 }
 
-func (job *UploadJob) areIdentityTablesLoadFilesGenerated() (bool, error) {
+func (job *UploadJob) areIdentityTablesLoadFilesGenerated(ctx context.Context) (bool, error) {
 	var (
 		mergeRulesTable = warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable)
 		mappingsTable   = warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
@@ -1966,13 +1976,13 @@ func (job *UploadJob) areIdentityTablesLoadFilesGenerated() (bool, error) {
 		err             error
 	)
 
-	if tu, err = job.tableUploadsRepo.GetByUploadIDAndTableName(job.ctx, job.upload.ID, mergeRulesTable); err != nil {
+	if tu, err = job.tableUploadsRepo.GetByUploadIDAndTableName(ctx, job.upload.ID, mergeRulesTable); err != nil {
 		return false, fmt.Errorf("table upload not found for merge rules table: %w", err)
 	}
 	if tu.Location == "" {
 		return false, fmt.Errorf("merge rules location not found: %w", err)
 	}
-	if tu, err = job.tableUploadsRepo.GetByUploadIDAndTableName(job.ctx, job.upload.ID, mappingsTable); err != nil {
+	if tu, err = job.tableUploadsRepo.GetByUploadIDAndTableName(ctx, job.upload.ID, mappingsTable); err != nil {
 		return false, fmt.Errorf("table upload not found for mappings table: %w", err)
 	}
 	if tu.Location == "" {
@@ -2229,17 +2239,29 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 
 	// Refresh partitions if exists
 	for tableName := range job.upload.UploadSchema {
-		loadFiles := job.GetLoadFilesMetadata(job.ctx, warehouseutils.GetLoadFilesOptions{
-			Table:   tableName,
-			StartID: loadFileStartID,
-			EndID:   loadFileEndID,
-		})
-		batches := schemarepository.LoadFileBatching(loadFiles, job.refreshPartitionBatchSize)
-
-		for _, batch := range batches {
-			if err = repository.RefreshPartitions(job.ctx, tableName, batch); err != nil {
-				return fmt.Errorf("refresh partitions: %w", err)
-			}
+		if err = warehouseutils.WithTimeout(
+			job.ctx,
+			config.GetDuration(
+				"Warehouse.refreshPartitionsTimeout",
+				15,
+				time.Second,
+			),
+			func(ctx context.Context) error {
+				loadFiles := job.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{
+					Table:   tableName,
+					StartID: loadFileStartID,
+					EndID:   loadFileEndID,
+				})
+				batches := schemarepository.LoadFileBatching(loadFiles, job.refreshPartitionBatchSize)
+				for _, batch := range batches {
+					if err = repository.RefreshPartitions(ctx, tableName, batch); err != nil {
+						return fmt.Errorf("refresh partitions: %w", err)
+					}
+				}
+				return nil
+			},
+		); err != nil {
+			return err
 		}
 	}
 
