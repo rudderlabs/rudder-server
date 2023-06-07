@@ -41,6 +41,7 @@ type GetBulkUploadStatusRequest struct {
 	NS        string   `xml:"xmlns,attr"`
 	RequestId string   `xml:"RequestId"`
 }
+
 type GetBulkUploadStatusResponse struct {
 	XMLName         xml.Name   `xml:"GetBulkUploadStatusResponse"`
 	NS              string     `xml:"xmlns,attr"`
@@ -121,13 +122,13 @@ func (c *BulkService) UploadBulkFile(url string, filename string) (*UploadBulkFi
 		return nil, err
 	}
 
-	accessToken, developerToken, err := c.Session.TokenGenerator()
+	token, err := c.Session.TokenSource.Token()
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("AuthenticationToken", accessToken)
-	req.Header.Add("DeveloperToken", developerToken)
+	req.Header.Set("AuthenticationToken", token.AccessToken)
+	req.Header.Add("DeveloperToken", c.Session.DeveloperToken)
 	req.Header.Add("CustomerId", c.Session.CustomerId)
 	req.Header.Add("AccountId", c.Session.AccountId)
 

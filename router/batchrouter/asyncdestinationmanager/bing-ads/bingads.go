@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"golang.org/x/oauth2"
 )
 
 const pollUrl = "https://bulk.api.bingads.microsoft.com/Api/Advertiser/CampaignManagement/v13/BulkService.svc"
@@ -482,6 +483,65 @@ func (b *BingAdsBulkUploader) RetrieveImportantKeys(metadata map[string]interfac
 	return retrievedKeysArr, nil
 }
 
+type TokenSource struct {
+	accessToken     string
+	WorkspaceID     string
+	DestinationName string
+	AccountID       string
+	backendconfig   backendconfig.BackendConfig
+}
+
+func (ts *TokenSource) generateToken() (string, string, error) {
+
+	refreshTokenParams := oauth.RefreshTokenParams{
+		WorkspaceId: ts.WorkspaceID,
+		DestDefName: ts.DestinationName,
+		AccountId:   ts.AccountID,
+	}
+	oauthClient := oauth.NewOAuthErrorHandler(ts.backendconfig)
+	statusCode, authResponse := oauthClient.FetchToken(&refreshTokenParams)
+	if statusCode != 200 {
+		return "", "", fmt.Errorf("Error in fetching access token")
+	}
+	secret := secretStruct{}
+	err := json.Unmarshal(authResponse.Account.Secret, &secret)
+	if err != nil {
+		return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+	}
+	currentTime := time.Now()
+	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
+	if err != nil {
+		return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
+	}
+	if currentTime.After(expirationTime) {
+		refreshTokenParams.Secret = authResponse.Account.Secret
+		statusCode, authResponse = oauthClient.RefreshToken(&refreshTokenParams)
+		if statusCode != 200 {
+			return "", "", fmt.Errorf("Error in refreshing access token")
+		}
+		err = json.Unmarshal(authResponse.Account.Secret, &secret)
+		if err != nil {
+			return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+		}
+		return secret.AccessToken, secret.Developer_token, nil
+	}
+	return secret.AccessToken, secret.Developer_token, nil
+
+}
+func (ts *TokenSource) Token() (*oauth2.Token, error) {
+	accessToken, _, err := ts.generateToken()
+	if err != nil {
+		return nil, fmt.Errorf("Error occured while generating the accessToken")
+	}
+	ts.accessToken = accessToken
+
+	token := &oauth2.Token{
+		AccessToken: ts.accessToken,
+		Expiry:      time.Now().Add(time.Hour), // Set the token expiry time
+	}
+	return token, nil
+}
+
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, HTTPTimeout time.Duration) *BingAdsBulkUploader {
 
 	destConfig := DestinationConfig{}
@@ -493,46 +553,21 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	if err != nil {
 		panic(fmt.Errorf("Error in unmarshalling destination config: %v", err))
 	}
+
+	tokenSource := TokenSource{
+		WorkspaceID:     destination.WorkspaceID,
+		DestinationName: destination.Name,
+		AccountID:       destConfig.RudderAccountId,
+		backendconfig:   backendConfig,
+	}
+	_, developerToken, _ := tokenSource.generateToken()
 	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
 	sessionConfig := bingads.SessionConfig{
-		AccountId:  destConfig.CustomerAccountId,
-		CustomerId: destConfig.CustomerId,
-		HTTPClient: http.DefaultClient,
-		AccessTokenGenerator: func() (string, string, error) {
-
-			refreshTokenParams := oauth.RefreshTokenParams{
-				WorkspaceId: destination.WorkspaceID,
-				DestDefName: destination.Name,
-				AccountId:   destConfig.RudderAccountId,
-			}
-			statusCode, authResponse := oauthClient.FetchToken(&refreshTokenParams)
-			if statusCode != 200 {
-				return "", "", fmt.Errorf("Error in fetching access token")
-			}
-			secret := secretStruct{}
-			err = json.Unmarshal(authResponse.Account.Secret, &secret)
-			if err != nil {
-				return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-			}
-			currentTime := time.Now()
-			expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
-			if err != nil {
-				return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
-			}
-			if currentTime.After(expirationTime) {
-				refreshTokenParams.Secret = authResponse.Account.Secret
-				statusCode, authResponse = oauthClient.RefreshToken(&refreshTokenParams)
-				if statusCode != 200 {
-					return "", "", fmt.Errorf("Error in refreshing access token")
-				}
-				err = json.Unmarshal(authResponse.Account.Secret, &secret)
-				if err != nil {
-					return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-				}
-				return secret.AccessToken, secret.Developer_token, nil
-			}
-			return secret.AccessToken, secret.Developer_token, nil
-		},
+		DeveloperToken: developerToken,
+		AccountId:      destConfig.CustomerAccountId,
+		CustomerId:     destConfig.CustomerId,
+		HTTPClient:     http.DefaultClient,
+		TokenSource:    &tokenSource,
 	}
 	session := bingads.NewSession(sessionConfig)
 
