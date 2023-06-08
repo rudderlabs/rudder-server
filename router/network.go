@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../mocks/router/mock_network.go -package mock_network github.com/rudderlabs/rudder-server/router NetHandleI
+//go:generate mockgen -destination=../mocks/router/mock_network.go -package mock_network github.com/rudderlabs/rudder-server/router NetHandle
 
 package router
 
@@ -23,20 +23,17 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
-var contentTypeRegex *regexp.Regexp
+var contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
 
-func init() {
-	contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
-}
-
-// NetHandleT is the wrapper holding private variables
-type NetHandleT struct {
-	httpClient sysUtils.HTTPClientI
-	logger     logger.Logger
+// netHandle is the wrapper holding private variables
+type netHandle struct {
+	disableEgress bool
+	httpClient    sysUtils.HTTPClientI
+	logger        logger.Logger
 }
 
 // Network interface
-type NetHandleI interface {
+type NetHandle interface {
 	SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse
 }
 
@@ -60,8 +57,8 @@ func handleQueryParam(param interface{}) string {
 
 // SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 // this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
-	if disableEgress {
+func (network *netHandle) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
+	if network.disableEgress {
 		return &utils.SendPostResponse{
 			StatusCode:   200,
 			ResponseBody: []byte("200: outgoing disabled"),
@@ -214,7 +211,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 }
 
 // Setup initializes the module
-func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) {
+func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
 	// Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport

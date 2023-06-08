@@ -42,7 +42,7 @@ func (mj *MultiTenantLegacy) GetAllJobs(ctx context.Context, pickup map[string]i
 
 	list = append(list, toRetry.Jobs...)
 	if toRetry.LimitsReached {
-		return &GetAllJobsResult{Jobs: list, More: mtoken}, nil
+		return &GetAllJobsResult{Jobs: list, More: mtoken, LimitsReached: true}, nil
 	}
 	updateParams(&params, toRetry, mtoken.waitingAfterJobID)
 
@@ -56,7 +56,7 @@ func (mj *MultiTenantLegacy) GetAllJobs(ctx context.Context, pickup map[string]i
 	}
 	list = append(list, waiting.Jobs...)
 	if waiting.LimitsReached {
-		return &GetAllJobsResult{Jobs: list, More: mtoken}, nil
+		return &GetAllJobsResult{Jobs: list, More: mtoken, LimitsReached: true}, nil
 	}
 	updateParams(&params, waiting, mtoken.unprocessedAfterJobID)
 
@@ -69,7 +69,7 @@ func (mj *MultiTenantLegacy) GetAllJobs(ctx context.Context, pickup map[string]i
 		mtoken.unprocessedAfterJobID = &unprocessedAfterJobID
 	}
 	list = append(list, unprocessed.Jobs...)
-	return &GetAllJobsResult{Jobs: list, More: mtoken}, nil
+	return &GetAllJobsResult{Jobs: list, More: mtoken, LimitsReached: unprocessed.LimitsReached}, nil
 }
 
 func updateParams(params *GetQueryParamsT, jobs JobsResult, nextAfterJobID *int64) {

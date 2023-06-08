@@ -1908,7 +1908,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehous
 	pkgLogger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
 	rows, err := dbHandle.QueryContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -1917,7 +1917,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehous
 		var metadata json.RawMessage
 		err := rows.Scan(&location, &metadata)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		loadFiles = append(loadFiles, warehouseutils.LoadFile{
 			Location: location,
