@@ -670,7 +670,6 @@ func (pg *Postgres) loadUserTables(ctx context.Context) (errorMap map[string]err
 	// tags
 	tags := stats.Tags{
 		"workspaceId": pg.Warehouse.WorkspaceID,
-		"namespace":   pg.Namespace,
 		"destId":      pg.Warehouse.Destination.ID,
 		"tableName":   warehouseutils.UsersTable,
 	}

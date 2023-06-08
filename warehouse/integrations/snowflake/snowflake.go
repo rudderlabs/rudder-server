@@ -569,7 +569,6 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		"destID":      sf.Warehouse.Destination.ID,
 		"destType":    sf.Warehouse.Destination.DestinationDefinition.Name,
 		"workspaceId": sf.Warehouse.WorkspaceID,
-		"namespace":   sf.Namespace,
 		"tableName":   tableName,
 	}).Count(int(updated))
 
@@ -932,7 +931,6 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 		"destID":      sf.Warehouse.Destination.ID,
 		"destType":    sf.Warehouse.Destination.DestinationDefinition.Name,
 		"workspaceId": sf.Warehouse.WorkspaceID,
-		"namespace":   sf.Namespace,
 		"tableName":   warehouseutils.UsersTable,
 	}).Count(int(updated))
 
