@@ -67,3 +67,9 @@ type Session struct {
 type HttpClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
+
+type BulkServiceI interface {
+	GetBulkUploadUrl() (*GetBulkUploadUrlResponse, error)
+	GetBulkUploadStatus(requestId string) (*GetBulkUploadStatusResponse, error)
+	UploadBulkFile(url string, filename string) (*UploadBulkFileResponse, error)
+}
