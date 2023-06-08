@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -27,11 +28,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ory/dockertest/v3"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -148,7 +148,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("Router.maxStatusUpdateWait", "10ms")
 
 			// find free port for gateway http server to listen on
-			httpPortInt, err := kitHelper.GetFreePort()
+			httpPortInt, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 			gatewayPort = strconv.Itoa(httpPortInt)
 
@@ -235,7 +235,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 					resp, err := client.Do(req)
 					require.NoError(t, err, "should be able to send the request to gateway")
 					require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
-					func() { httputil.CloseResponse(resp) }()
+					func() { kithttputil.CloseResponse(resp) }()
 				}
 			}()
 
@@ -282,7 +282,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 }
 
 // Using a struct to keep main_test package clean and
-// avoid method collisions with other tests
+// avoid function collisions with other tests
 // TODO: Move server's Run() out of main package
 type eventOrderMethods struct{}
 
@@ -444,6 +444,7 @@ func (eventOrderMethods) countDrainedJobs(db *sql.DB) int {
 			panic(err)
 		}
 	}
+
 	for _, table := range tables {
 		var dsCount int
 		_ = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE error_code = '%s'`, table, strconv.Itoa(utils.DRAIN_ERROR_CODE))).Scan(&count)

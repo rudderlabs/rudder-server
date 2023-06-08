@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
@@ -21,6 +20,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
@@ -235,6 +235,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
+		Logger:           logger.NewLogger().Child("router"),
 		Reporting:        reportingI,
 		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
@@ -257,7 +258,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Debugger:         destinationHandle,
 		AdaptiveLimit:    adaptiveLimit,
 	}
-	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
+	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 
 	dm := cluster.Dynamic{
 		Provider:         modeProvider,
@@ -314,5 +315,5 @@ func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Han
 		MaxHeaderBytes:    a.config.http.MaxHeaderBytes,
 	}
 
-	return httputil.ListenAndServe(ctx, srv)
+	return kithttputil.ListenAndServe(ctx, srv)
 }

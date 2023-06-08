@@ -103,10 +103,7 @@ func getAllTableNames(dbHandle sqlDbOrTx) ([]string, error) {
 		}
 		tableNames = append(tableNames, tbName)
 	}
-	if err = rows.Err(); err != nil {
-		return tableNames, err
-	}
-	return tableNames, nil
+	return tableNames, rows.Err()
 }
 
 // checkValidJobState Function to check validity of states

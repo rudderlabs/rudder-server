@@ -18,11 +18,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kit_sync "github.com/rudderlabs/rudder-go-kit/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -40,10 +41,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/samber/lo"
@@ -99,10 +98,10 @@ type Handle struct {
 	transDebugger             transformationdebugger.TransformationDebugger
 	isolationStrategy         isolation.Strategy
 	limiter                   struct {
-		read       miscsync.Limiter
-		preprocess miscsync.Limiter
-		transform  miscsync.Limiter
-		store      miscsync.Limiter
+		read       kitsync.Limiter
+		preprocess kitsync.Limiter
+		transform  kitsync.Limiter
+		store      kitsync.Limiter
 	}
 	config struct {
 		isolationMode             isolation.Mode
@@ -140,7 +139,7 @@ type Handle struct {
 	}
 
 	adaptiveLimit func(int64) int64
-	storePlocker  kit_sync.PartitionLocker
+	storePlocker  kitsync.PartitionLocker
 }
 type processorStats struct {
 	statGatewayDBR                stats.Measurement
@@ -350,7 +349,7 @@ func (proc *Handle) Setup(
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
-	proc.storePlocker = *kit_sync.NewPartitionLocker()
+	proc.storePlocker = *kitsync.NewPartitionLocker()
 
 	// Stats
 	proc.statsFactory = stats.Default
@@ -461,22 +460,22 @@ func (proc *Handle) Start(ctx context.Context) error {
 	// limiters
 	s := proc.statsFactory
 	var limiterGroup sync.WaitGroup
-	proc.limiter.read = miscsync.NewLimiter(ctx, &limiterGroup, "proc_read",
+	proc.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "proc_read",
 		config.GetInt("Processor.Limiter.read.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
-	proc.limiter.preprocess = miscsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
+	proc.limiter.preprocess = kitsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
 		config.GetInt("Processor.Limiter.preprocess.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
-	proc.limiter.transform = miscsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+	proc.limiter.transform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
 		config.GetInt("Processor.Limiter.transform.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.store = miscsync.NewLimiter(ctx, &limiterGroup, "proc_store",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
+	proc.limiter.store = kitsync.NewLimiter(ctx, &limiterGroup, "proc_store",
 		config.GetInt("Processor.Limiter.store.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
 	g.Go(func() error {
 		limiterGroup.Wait()
 		return nil
@@ -2541,6 +2540,14 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	dbReadTime := time.Since(s)
 	defer proc.stats.statDBR.SendTiming(dbReadTime)
 
+	var firstJob *jobsdb.JobT
+	var lastJob *jobsdb.JobT
+	if len(unprocessedList.Jobs) > 0 {
+		firstJob = unprocessedList.Jobs[0]
+		lastJob = unprocessedList.Jobs[len(unprocessedList.Jobs)-1]
+	}
+	proc.pipelineDelayStats(partition, firstJob, lastJob)
+
 	// check if there is work to be done
 	if len(unprocessedList.Jobs) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
@@ -2712,8 +2719,8 @@ func filterConfig(eventCopy *transformer.TransformerEventT) {
 	}
 }
 
-func (*Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
-	return miscsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
+func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue {
+	return kitsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
 }
 
 func (proc *Handle) filterDestinations(
@@ -2774,4 +2781,22 @@ func deniedConsentCategories(se types.SingularEventT) []string {
 		)
 	}
 	return nil
+}
+
+// pipelineDelayStats reports the delay of the pipeline as a range:
+//
+// - max - time elapsed since the first job was created
+//
+// - min - time elapsed since the last job was created
+func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.JobT) {
+	var firstJobDelay float64
+	var lastJobDelay float64
+	if first != nil {
+		firstJobDelay = time.Since(first.CreatedAt).Seconds()
+	}
+	if last != nil {
+		lastJobDelay = time.Since(last.CreatedAt).Seconds()
+	}
+	proc.statsFactory.NewTaggedStat("pipeline_delay_min_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(lastJobDelay)
+	proc.statsFactory.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(firstJobDelay)
 }

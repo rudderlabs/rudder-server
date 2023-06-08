@@ -40,11 +40,11 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -2585,9 +2585,7 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 		jd.assertError(err)
 		count++
 	}
-	if err = rows.Err(); err != nil {
-		jd.assertError(err)
-	}
+	jd.assertError(rows.Err())
 	return
 }
 
@@ -2634,9 +2632,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		jd.assert(!opDone, "opDone is true")
 		count++
 	}
-	if err = rows.Err(); err != nil {
-		jd.assertError(err)
-	}
+	jd.assertError(rows.Err())
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
 
 	if count == 0 {

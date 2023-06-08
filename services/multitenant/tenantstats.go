@@ -21,6 +21,7 @@ import (
 
 var pkgLogger logger.Logger
 
+// TODO: delete this once we remove the old fair pickup algorithm
 type Stats struct {
 	routerJobCountMutex sync.RWMutex
 	// routerInputRates: dbPrefix, workspace, desType, measurement
