@@ -603,7 +603,6 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 
 func (r *HandleT) getTags(clientName string) stats.Tags {
 	return stats.Tags{
-		"namespace":   r.namespace,
 		"workspaceId": r.workspaceID,
 		"instanceId":  r.instanceID,
 		"clientName":  clientName,

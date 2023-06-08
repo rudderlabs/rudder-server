@@ -56,7 +56,7 @@ type testContext struct {
 	mockBatchRouterJobsDB *mocksJobsDB.MockJobsDB
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB    *mocksJobsDB.MockJobsDB
-	MockReportingI        *mockReportingTypes.MockReportingI
+	MockReportingI        *mockReportingTypes.MockReporting
 	MockDedup             *mockDedup.MockDedup
 	MockMultitenantHandle *mocksMultitenant.MockMultiTenantI
 	MockRsourcesService   *rsources.MockJobService
@@ -84,7 +84,7 @@ func (c *testContext) Setup() {
 			close(ch)
 			return ch
 		})
-	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
+	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 }
@@ -1820,7 +1820,7 @@ var _ = Describe("Static Function Tests", func() {
 		It("Should update metric maps", func() {
 			proc := NewHandle(nil)
 			proc.reportingEnabled = true
-			proc.reporting = &mockReportingTypes.MockReportingI{}
+			proc.reporting = &mockReportingTypes.MockReporting{}
 
 			inputEvent := &transformer.TransformerResponseT{
 				Metadata: transformer.MetadataT{

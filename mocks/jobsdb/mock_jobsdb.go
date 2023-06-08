@@ -236,12 +236,27 @@ func (mr *MockJobsDBMockRecorder) JournalDeleteEntry(arg0 interface{}) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JournalDeleteEntry", reflect.TypeOf((*MockJobsDB)(nil).JournalDeleteEntry), arg0)
 }
 
+// JournalMarkDone mocks base method.
+func (m *MockJobsDB) JournalMarkDone(arg0 int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "JournalMarkDone", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// JournalMarkDone indicates an expected call of JournalMarkDone.
+func (mr *MockJobsDBMockRecorder) JournalMarkDone(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JournalMarkDone", reflect.TypeOf((*MockJobsDB)(nil).JournalMarkDone), arg0)
+}
+
 // JournalMarkStart mocks base method.
-func (m *MockJobsDB) JournalMarkStart(arg0 string, arg1 json.RawMessage) int64 {
+func (m *MockJobsDB) JournalMarkStart(arg0 string, arg1 json.RawMessage) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "JournalMarkStart", arg0, arg1)
 	ret0, _ := ret[0].(int64)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // JournalMarkStart indicates an expected call of JournalMarkStart.

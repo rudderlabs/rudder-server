@@ -18,10 +18,10 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/profiler"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/admin/profiler"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -33,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
@@ -223,14 +222,11 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return nil
 	})
 
-	// Start profiler
-	g.Go(func() error {
-		p := &profiler.Profiler{}
-		if err := p.StartServer(ctx); err != nil {
-			return fmt.Errorf("profiler server routine: %w", err)
-		}
-		return nil
-	})
+	if config.GetBool("Profiler.Enabled", true) {
+		g.Go(func() error {
+			return profiler.StartServer(ctx, config.GetInt("Profiler.Port", 7777))
+		})
+	}
 
 	misc.AppStartTime = time.Now().Unix()
 
@@ -349,7 +345,6 @@ func runAllInit() {
 	kafka.Init()
 	customdestinationmanager.Init()
 	routertransformer.Init()
-	router.Init()
 	gateway.Init()
 	integrations.Init()
 	alert.Init()

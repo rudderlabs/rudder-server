@@ -682,7 +682,6 @@ func (rs *Redshift) loadTable(ctx context.Context, tableName string, tableSchema
 			"destID":      rs.Warehouse.Destination.ID,
 			"destType":    rs.Warehouse.Destination.DestinationDefinition.Name,
 			"workspaceId": rs.Warehouse.WorkspaceID,
-			"namespace":   rs.Namespace,
 			"tableName":   tableName,
 		}).Count(int(rowsAffected))
 	}

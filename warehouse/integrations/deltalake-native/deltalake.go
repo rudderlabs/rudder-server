@@ -755,7 +755,6 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		"destID":      d.Warehouse.Destination.ID,
 		"destType":    d.Warehouse.Destination.DestinationDefinition.Name,
 		"workspaceId": d.Warehouse.WorkspaceID,
-		"namespace":   d.Namespace,
 		"tableName":   tableName,
 	}).Count(int(updated))
 
@@ -1129,7 +1128,6 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		"destID":      d.Warehouse.Destination.ID,
 		"destType":    d.Warehouse.Destination.DestinationDefinition.Name,
 		"workspaceId": d.Warehouse.WorkspaceID,
-		"namespace":   d.Namespace,
 		"tableName":   warehouseutils.UsersTable,
 	}).Count(int(updated))
 

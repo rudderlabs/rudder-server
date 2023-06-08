@@ -33,6 +33,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/chiware"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
@@ -49,7 +50,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
-	rs_httputil "github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -1386,7 +1386,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
 
-	return rs_httputil.ListenAndServe(ctx, gateway.httpWebServer)
+	return kithttputil.ListenAndServe(ctx, gateway.httpWebServer)
 }
 
 func (gateway *HandleT) StartWebHandlerLegacy(ctx context.Context) error {
@@ -1484,7 +1484,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		ReadHeaderTimeout: ReadHeaderTimeout,
 	}
 
-	return rs_httputil.ListenAndServe(ctx, srv)
+	return kithttputil.ListenAndServe(ctx, srv)
 }
 
 // Gets the config from config backend and extracts enabled writekeys

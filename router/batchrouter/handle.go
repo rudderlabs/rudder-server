@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -39,7 +40,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -56,7 +56,7 @@ type Handle struct {
 	jobsDB             jobsdb.JobsDB
 	errorDB            jobsdb.JobsDB
 	multitenantI       multitenant.MultiTenantI
-	reporting          types.ReportingI
+	reporting          types.Reporting
 	backendConfig      backendconfig.BackendConfig
 	fileManagerFactory filemanager.FileManagerFactory
 	transientSources   transientsource.Service
@@ -109,9 +109,9 @@ type Handle struct {
 	encounteredMergeRuleMap   map[string]map[string]bool
 
 	limiter struct {
-		read    miscsync.Limiter
-		process miscsync.Limiter
-		upload  miscsync.Limiter
+		read    kitsync.Limiter
+		process kitsync.Limiter
+		upload  kitsync.Limiter
 	}
 
 	lastExecTimesMu sync.RWMutex
@@ -180,6 +180,9 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	var jobs []*jobsdb.JobT
 	limit := brt.jobQueryBatchSize
 
+	var firstJob *jobsdb.JobT
+	var lastJob *jobsdb.JobT
+
 	brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "getJobs", "destType": brt.destType, "partition": partition})
 	queryStart := time.Now()
 	queryParams := jobsdb.GetQueryParamsT{
@@ -217,6 +220,11 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	sort.Slice(jobs, func(i, j int) bool {
 		return jobs[i].JobID < jobs[j].JobID
 	})
+	if len(jobs) > 0 {
+		firstJob = jobs[0]
+		lastJob = jobs[len(jobs)-1]
+	}
+	brt.pipelineDelayStats(partition, firstJob, lastJob)
 	jobsByDesID := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
 		return gjson.GetBytes(job.Parameters, "destination_id").String()
 	})
@@ -241,6 +249,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 			brt.logger.Errorf("BRT: %s: Destination %s not found in destinationsMap", brt.destType, destID)
 		}
 	}
+
 	return
 }
 
@@ -413,7 +422,10 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 			DestinationID:   batchJobs.Connection.Destination.ID,
 			DestinationType: batchJobs.Connection.Destination.DestinationDefinition.Name,
 		})
-		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+		opID, err = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+		if err != nil {
+			panic(fmt.Errorf("BRT: Error marking start of upload operation in journal: %v", err))
+		}
 	}
 
 	startTime := time.Now()
