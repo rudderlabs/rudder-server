@@ -6,10 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/go-chi/chi/v5"
-	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-go-kit/gorillaware"
 	"io"
 	"math"
 	"net/http"
@@ -21,6 +17,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/bugsnag/bugsnag-go/v2"
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
+	"github.com/rudderlabs/rudder-go-kit/gorillaware"
 
 	"golang.org/x/sync/errgroup"
 
@@ -1464,7 +1465,7 @@ func (gateway *HandleT) StartWebHandlerLegacy(ctx context.Context) error {
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
 
-	return rs_httputil.ListenAndServe(ctx, gateway.httpWebServer)
+	return kithttputil.ListenAndServe(ctx, gateway.httpWebServer)
 }
 
 // StartAdminHandler for Admin Operations

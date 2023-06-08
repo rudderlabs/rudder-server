@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +15,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -1248,10 +1249,16 @@ func TestWarehouseProxy(t *testing.T) {
 			payload: `{"source_id": "1", "task_run_id":"2"}`,
 		},
 		{
-			name:    "job status successful request",
+			name:    "jobs",
 			url:     "/v1/warehouse/jobs",
 			code:    http.StatusOK,
-			payload: `{"source_id": "1", "task_run_id":"2"}`,
+			payload: `{"source_id": "1", "type":"2", "channel": "3", "start_time": "4", "end_time": "5"}`,
+		},
+		{
+			name:    "trigger upload",
+			url:     "/v1/warehouse/trigger-upload",
+			code:    http.StatusOK,
+			payload: `{"source_id": "1", "destination_id":"2"}`,
 		},
 	}
 
