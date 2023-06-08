@@ -159,7 +159,7 @@ func (rt *Handle) Setup(
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("Router.Limiter.statsPeriod", 15, time.Second)
 	rt.limiter.pickup = kitsync.NewLimiter(ctx, &limiterGroup, "rt_pickup",
-		getRouterConfigInt(rt.destType, "Limiter.pickup.limit", 100),
+		getRouterConfigInt("Limiter.pickup.limit", rt.destType, 100),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.pickup.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
@@ -170,7 +170,7 @@ func (rt *Handle) Setup(
 	rt.limiter.stats.pickup = partition.NewStats()
 
 	rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterGroup, "rt_transform",
-		getRouterConfigInt(rt.destType, "Limiter.transform.limit", 200),
+		getRouterConfigInt("Limiter.transform.limit", rt.destType, 200),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.transform.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
@@ -181,7 +181,7 @@ func (rt *Handle) Setup(
 	rt.limiter.stats.transform = partition.NewStats()
 
 	rt.limiter.batch = kitsync.NewLimiter(ctx, &limiterGroup, "rt_batch",
-		getRouterConfigInt(rt.destType, "Limiter.batch.limit", 200),
+		getRouterConfigInt("Limiter.batch.limit", rt.destType, 200),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.batch.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
@@ -192,7 +192,7 @@ func (rt *Handle) Setup(
 	rt.limiter.stats.batch = partition.NewStats()
 
 	rt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "rt_process",
-		getRouterConfigInt(rt.destType, "Limiter.process.limit", 200),
+		getRouterConfigInt("Limiter.process.limit", rt.destType, 200),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.process.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
