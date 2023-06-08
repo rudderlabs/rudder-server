@@ -8,7 +8,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/samber/lo"
 )
 
 /*
@@ -164,15 +163,12 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
 	command := func() interface{} {
 		return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
-			dsList := lo.FilterMap(jd.getDSRangeList(), func(dsRange dataSetRangeT, _ int) (dataSetT, bool) {
-				return dsRange.ds,
-					time.Now().Add(-jd.JobMaxAge).After(
-						time.Unix(dsRange.startTime*int64(time.Millisecond), 0),
-					)
-			})
-			for _, ds := range dsList {
-				if err := jd.doCleanupDSInTx(ctx, tx.Tx(), ds); err != nil {
-					return err
+			for _, dsRange := range jd.getDSRangeList() {
+				if time.Now().Add(-jd.JobMaxAge).
+					After(time.Unix(dsRange.startTime*int64(time.Millisecond), 0)) {
+					if err := jd.doCleanupDSInTx(ctx, tx.Tx(), dsRange.ds); err != nil {
+						return err
+					}
 				}
 			}
 			return nil
