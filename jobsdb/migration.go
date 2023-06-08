@@ -273,11 +273,7 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 
 // based on an estimate cleans up the status tables
 func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
-	toCompact, err := jd.getCleanUpCandidates(ctx, dsList)
-	if err != nil {
-		return err
-	}
-
+	var toVacuum []string
 	toVacuumFull, err := jd.getVacuumFullCandidates(ctx, dsList)
 	if err != nil {
 		return err
@@ -285,6 +281,10 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 	toVacuumFullMap := lo.Associate(toVacuumFull, func(k string) (string, struct{}) {
 		return k, struct{}{}
 	})
+	toCompact, err := jd.getCleanUpCandidates(ctx, dsList)
+	if err != nil {
+		return err
+	}
 	start := time.Now()
 	defer stats.Default.NewTaggedStat(
 		"jobsdb_compact_status_tables",
@@ -292,32 +292,43 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 		stats.Tags{"customVal": jd.tablePrefix},
 	).Since(start)
 
-	return jd.WithTx(func(tx *Tx) error {
+	if err := jd.WithTx(func(tx *Tx) error {
 		for _, statusTable := range toCompact {
 			table := statusTable.JobStatusTable
 			// clean up and vacuum if not present in toVacuumFullMap
 			_, ok := toVacuumFullMap[table]
-			if err := jd.cleanStatusTable(
-				ctx,
-				tx,
-				table,
-				!ok,
-			); err != nil {
+			vacuum, err := jd.cleanStatusTable(ctx, tx, table, !ok)
+			if err != nil {
 				return err
 			}
-		}
-		// vacuum full if present in toVacuumFull
-		for _, table := range toVacuumFull {
-			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
-				return err
+			if vacuum {
+				toVacuum = append(toVacuum, table)
 			}
 		}
+
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// vacuum full
+	for _, table := range toVacuumFull {
+		jd.logger.Infof("vacuuming full %q", table)
+		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
+			return err
+		}
+	}
+	// vacuum analyze
+	for _, table := range toVacuum {
+		jd.logger.Infof("vacuuming %q", table)
+		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // cleanStatusTable deletes all rows except for the latest status for each job
-func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) error {
+func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) (vacuum bool, err error) {
 	result, err := tx.ExecContext(
 		ctx,
 		fmt.Sprintf(`DELETE FROM %[1]q
@@ -326,23 +337,21 @@ func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string, canB
 						)`, table),
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	numJobStatusDeleted, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	query := fmt.Sprintf(`ANALYZE %q`, table)
 	if numJobStatusDeleted > vacuumAnalyzeStatusTableThreshold && canBeVacuumed {
-		query = fmt.Sprintf(`VACUUM ANALYZE %q`, table)
+		vacuum = true
+	} else {
+		_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, table))
 	}
-	_, err = tx.ExecContext(
-		ctx,
-		query,
-	)
-	return err
+
+	return
 }
 
 // getMigrationList returns the list of datasets to migrate from,
