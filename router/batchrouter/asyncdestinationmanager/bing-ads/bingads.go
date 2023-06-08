@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/bingads_sdk"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -34,6 +35,7 @@ type BingAdsBulkUploader struct {
 	service              bingads.BulkServiceI
 	destinationIDFileMap map[string]string
 	timeout              time.Duration
+	logger               logger.Logger
 }
 
 func NewBingAdsBulkUploader(oauthClient oauth.Authorizer, service bingads.BulkServiceI, timeout time.Duration) *BingAdsBulkUploader {
@@ -42,6 +44,7 @@ func NewBingAdsBulkUploader(oauthClient oauth.Authorizer, service bingads.BulkSe
 		oauthClient: oauthClient,
 		service:     service,
 		timeout:     timeout,
+		logger:      logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
 	}
 }
 
@@ -94,8 +97,10 @@ This function create zip file from the text file created by the batchrouter
 It takes the text file path as input and returns the zip file path
 The maximum size of the zip file is 100MB, if the size of the zip file exceeds 100MB then the job is marked as failed
 */
-var CreateZipFile = func(filePath string, failedJobIds *[]int64, successJobIds *[]int64, audienceId string) string {
 
+var CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64) {
+	failedJobIds := []int64{}
+	successJobIds := []int64{}
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -133,9 +138,9 @@ var CreateZipFile = func(filePath string, failedJobIds *[]int64, successJobIds *
 			for _, uploadData := range data.Message.List {
 				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, uploadData.Email, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			}
-			*successJobIds = append(*successJobIds, data.Metadata.JobID)
+			successJobIds = append(successJobIds, data.Metadata.JobID)
 		} else {
-			*failedJobIds = append(*failedJobIds, data.Metadata.JobID)
+			failedJobIds = append(failedJobIds, data.Metadata.JobID)
 		}
 
 	}
@@ -172,7 +177,7 @@ var CreateZipFile = func(filePath string, failedJobIds *[]int64, successJobIds *
 		panic(err)
 	}
 
-	return zipFilePath
+	return zipFilePath, successJobIds, failedJobIds
 }
 
 func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
@@ -181,16 +186,18 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	jsonConfig, _ := json.Marshal(destination.Config)
 	_ = json.Unmarshal(jsonConfig, &destConfig)
 
-	failedJobIds := []int64{}
-	successJobIDs := []int64{}
-
 	urlResp, err := b.service.GetBulkUploadUrl()
 
 	if err != nil {
-		panic(fmt.Errorf("Error in getting bulk upload url: %v", err))
+		b.logger.Error("Error in getting bulk upload url: %v", err)
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+			FailedReason:  `unable to get bulk upload url`,
+			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: destination.ID,
+		}
 	}
 
-	filePath := CreateZipFile(asyncDestStruct.FileName, &failedJobIds, &successJobIDs, destConfig.AudienceId)
 	if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -199,11 +206,17 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			DestinationID: destination.ID,
 		}
 	}
+	filePath, successJobIDs, failedJobIds := CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
 
 	uploadBulkFileResp, err := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
+
 	if err != nil {
-		if err != nil {
-			panic(fmt.Errorf("Error in uploading file: %v", err))
+		b.logger.Error("Error in uploading the bulk file: %v", err)
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+			FailedReason:  `unable to upload bulk file`,
+			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: destination.ID,
 		}
 	}
 
@@ -219,7 +232,8 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	//Remove the zip file after uploading it
 	err = os.Remove(filePath)
 	if err != nil {
-		panic(fmt.Errorf("Error in removing zip file: %v", err))
+		b.logger.Error("Error in removing zip file: %v", err)
+		//To do add an alert here
 	}
 
 	// success case
@@ -228,7 +242,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	// parameters.PollUrl = pollUrl
 	importParameters, err := json.Marshal(parameters)
 	if err != nil {
-		panic("Errored in Marshalling" + err.Error())
+		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     successJobIDs,
