@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.5](https://github.com/rudderlabs/rudder-server/compare/v1.9.4...v1.9.5) (2023-06-07)
+
+
+### Bug Fixes
+
+* flag for warehouse altering ([#3460](https://github.com/rudderlabs/rudder-server/issues/3460)) ([472d310](https://github.com/rudderlabs/rudder-server/commit/472d3102fd04e91da2e832737dbb42ba2671dc3c))
+
 ## [1.9.4](https://github.com/rudderlabs/rudder-server/compare/v1.9.3...v1.9.4) (2023-06-06)
 
 
