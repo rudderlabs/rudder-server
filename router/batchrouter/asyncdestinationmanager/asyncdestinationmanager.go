@@ -3,13 +3,13 @@ package asyncdestinationmanager
 import (
 	stdjson "encoding/json"
 	"sync"
-	time "time"
+ "time"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
+    "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bingads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -125,10 +125,10 @@ func GetMarshalledData(payload string, jobID int64) string {
 }
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) Asyncdestinationmanager {
-	destType := destination.DestinationDefinition.Name
-	if destType == "BINGADS_AUDIENCE" {
+	switch destination.DestinationDefinition.Name {
+    case "BINGADS_AUDIENCE":
 		return bingads.NewManager(destination, backendConfig, HTTPTimeout)
-	} else if destType == "MARKETO_BULK_UPLOAD" {
+	case "MARKETO_BULK_UPLOAD": 
 		return marketobulkupload.NewManager(destination, HTTPTimeout)
 	}
 	return nil
