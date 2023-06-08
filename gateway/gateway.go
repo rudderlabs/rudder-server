@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bugsnag/bugsnag-go/v2"
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
+	"github.com/rudderlabs/rudder-go-kit/gorillaware"
 	"io"
 	"math"
 	"net/http"
@@ -20,8 +24,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/rs/cors"
@@ -1362,6 +1364,84 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		gateway.rsourcesService,
 		gateway.logger.Child("rsources"))
 	srvMux.Mount("/v1/job-status", WithContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
+
+	c := cors.New(cors.Options{
+		AllowOriginFunc:  reflectOrigin,
+		AllowCredentials: true,
+		AllowedHeaders:   []string{"*"},
+		MaxAge:           900, // 15 mins
+	})
+	if diagnostics.EnableServerStartedMetric {
+		Diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
+			diagnostics.ServerStarted: time.Now(),
+		})
+	}
+	gateway.httpWebServer = &http.Server{
+		Addr:              ":" + strconv.Itoa(webPort),
+		Handler:           c.Handler(bugsnag.Handler(srvMux)),
+		ReadTimeout:       ReadTimeout,
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		WriteTimeout:      WriteTimeout,
+		IdleTimeout:       IdleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
+	}
+
+	return rs_httputil.ListenAndServe(ctx, gateway.httpWebServer)
+}
+
+func (gateway *HandleT) StartWebHandlerLegacy(ctx context.Context) error {
+	gateway.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", webPort)
+	gateway.backendConfig.WaitForConfig(ctx)
+	gateway.logger.Infof("WebHandler Starting on %d", webPort)
+	component := "gateway"
+	srvMux := mux.NewRouter()
+	srvMux.Use(
+		gorillaware.StatMiddleware(ctx, srvMux, stats.Default, component),
+		middleware.LimitConcurrentRequests(maxConcurrentRequests),
+		middleware.UncompressMiddleware,
+	)
+	internalMux := srvMux.PathPrefix("/internal").Subrouter() // mux for internal endpoints
+
+	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/track", gateway.webTrackHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/page", gateway.webPageHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/screen", gateway.webScreenHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
+	srvMux.HandleFunc("/health", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
+	srvMux.HandleFunc("/", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
+	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
+	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
+	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
+	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
+	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
+	srvMux.PathPrefix("/v1/warehouse").Handler(http.HandlerFunc(warehouseHandler)).Methods("GET", "POST")
+	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
+	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
+
+	// internal endpoints
+	internalMux.HandleFunc("/v1/extract", gateway.webExtractHandler).Methods("POST")
+
+	if enableEventSchemasFeature {
+		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-versions", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models/json-schemas", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas))).Methods("GET")
+	}
+
+	srvMux.HandleFunc("/v1/warehouse/pending-events", gateway.whProxy.ServeHTTP).Methods("POST")
+
+	// rudder-sources new APIs
+	rsourcesHandler := rsources_http.NewHandler(
+		gateway.rsourcesService,
+		gateway.logger.Child("rsources"))
+	srvMux.PathPrefix("/v1/job-status").Handler(WithContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,

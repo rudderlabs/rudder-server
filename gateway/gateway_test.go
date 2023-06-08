@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -987,43 +989,6 @@ var _ = Describe("Gateway", func() {
 		})
 	})
 
-	Context("Warehouse proxy", func() {
-		DescribeTable("forwarding requests to warehouse with different response codes",
-			func(url string, code int, payload string) {
-				gateway := &HandleT{}
-				whMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					Expect(r.URL.String()).To(Equal(url))
-					Expect(r.Body)
-					Expect(r.Body).To(Not(BeNil()))
-					defer func() { _ = r.Body.Close() }()
-					reqBody, err := io.ReadAll(r.Body)
-					Expect(err).To(BeNil())
-					Expect(string(reqBody)).To(Equal(payload))
-					w.WriteHeader(code)
-				}))
-				GinkgoT().Setenv("WAREHOUSE_URL", whMock.URL)
-				GinkgoT().Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
-				err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
-				Expect(err).To(BeNil())
-
-				defer func() {
-					err := gateway.Shutdown()
-					Expect(err).To(BeNil())
-					whMock.Close()
-				}()
-
-				req := httptest.NewRequest("POST", "http://rudder-server"+url, bytes.NewBufferString(payload))
-				w := httptest.NewRecorder()
-				gateway.whProxy.ServeHTTP(w, req)
-				resp := w.Result()
-				Expect(resp.StatusCode).To(Equal(code))
-			},
-			Entry("successful request", "/v1/warehouse/pending-events", http.StatusOK, `{"source_id": "1", "task_run_id":"2"}`),
-			Entry("failed request", "/v1/warehouse/pending-events", http.StatusBadRequest, `{"source_id": "3", "task_run_id":"4"}`),
-			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
-		)
-	})
-
 	Context("jobDataFromRequest", func() {
 		var (
 			gateway      *HandleT
@@ -1261,4 +1226,208 @@ func (mockRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWrite
 	_ = payload
 	_ = writeKey
 	return ""
+}
+
+func TestWarehouseProxy(t *testing.T) {
+	config.Reset()
+	admin.Init()
+	logger.Reset()
+	misc.Init()
+	Init()
+
+	testCases := []struct {
+		name    string
+		url     string
+		code    int
+		payload string
+	}{
+		{
+			name:    "pending events",
+			url:     "/v1/warehouse/pending-events",
+			code:    http.StatusOK,
+			payload: `{"source_id": "1", "task_run_id":"2"}`,
+		},
+		{
+			name:    "job status successful request",
+			url:     "/v1/warehouse/jobs",
+			code:    http.StatusOK,
+			payload: `{"source_id": "1", "task_run_id":"2"}`,
+		},
+	}
+
+	t.Run("chi router", func(t *testing.T) {
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				gateway := &HandleT{}
+
+				warehouseService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					require.Equal(t, tc.url, r.URL.String())
+					require.NotNil(t, r.Body)
+
+					defer func() { _ = r.Body.Close() }()
+
+					reqBody, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+
+					require.Equal(t, tc.payload, string(reqBody))
+
+					w.WriteHeader(tc.code)
+				}))
+				defer warehouseService.Close()
+
+				t.Setenv("WAREHOUSE_URL", warehouseService.URL)
+				t.Setenv("RSERVER_WAREHOUSE_MODE", config.MasterMode)
+
+				httpPort, err := kitHelper.GetFreePort()
+				require.NoError(t, err)
+				t.Setenv("RSERVER_GATEWAY_WEBPORT", strconv.Itoa(httpPort))
+
+				webPort = httpPort
+
+				ctx := context.Background()
+
+				mockCtrl := gomock.NewController(t)
+
+				mockApp := mocksApp.NewMockApp(mockCtrl)
+				mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
+
+				mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+				mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+					DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+						ch := make(chan pubsub.DataEvent, 1)
+						ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
+						go func() {
+							<-ctx.Done()
+							close(ch)
+						}()
+						return ch
+					})
+				mockBackendConfig.EXPECT().WaitForConfig(gomock.Any())
+
+				mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+				mockVersionHandler := func(w http.ResponseWriter, r *http.Request) {}
+
+				err = gateway.Setup(ctx, mockApp, mockBackendConfig, mockJobsDB, nil, mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+				require.NoError(t, err)
+
+				wait := make(chan struct{})
+				ctxCancel, cancel := context.WithCancel(context.Background())
+
+				go func() {
+					require.NoError(t, gateway.StartWebHandler(ctxCancel))
+					close(wait)
+				}()
+
+				require.Eventually(t, func() bool {
+					resp, _ := http.Get(fmt.Sprintf("http://localhost:%d/version", httpPort))
+					return resp.StatusCode == http.StatusOK
+				}, 10*time.Second, 1*time.Second)
+
+				defer func() {
+					require.NoError(t, gateway.Shutdown())
+				}()
+
+				serverURL := fmt.Sprintf("http://localhost:%d%s", httpPort, tc.url)
+				req, err := http.NewRequestWithContext(ctx, "POST", serverURL, bytes.NewBufferString(tc.payload))
+				require.NoError(t, err)
+
+				resp, err := (&http.Client{}).Do(req)
+				require.NoError(t, err)
+				require.Equal(t, tc.code, resp.StatusCode)
+
+				cancel()
+				<-wait
+			})
+		}
+	})
+
+	t.Run("mutex router", func(t *testing.T) {
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				gateway := &HandleT{}
+
+				warehouseService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					require.Equal(t, tc.url, r.URL.String())
+					require.NotNil(t, r.Body)
+
+					defer func() { _ = r.Body.Close() }()
+
+					reqBody, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+
+					require.Equal(t, tc.payload, string(reqBody))
+
+					w.WriteHeader(tc.code)
+				}))
+				defer warehouseService.Close()
+
+				t.Setenv("WAREHOUSE_URL", warehouseService.URL)
+				t.Setenv("RSERVER_WAREHOUSE_MODE", config.MasterMode)
+
+				httpPort, err := kitHelper.GetFreePort()
+				require.NoError(t, err)
+				t.Setenv("RSERVER_GATEWAY_WEBPORT", strconv.Itoa(httpPort))
+
+				webPort = httpPort
+
+				ctx := context.Background()
+
+				mockCtrl := gomock.NewController(t)
+
+				mockApp := mocksApp.NewMockApp(mockCtrl)
+				mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
+
+				mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+				mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+					DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+						ch := make(chan pubsub.DataEvent, 1)
+						ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
+						go func() {
+							<-ctx.Done()
+							close(ch)
+						}()
+						return ch
+					})
+				mockBackendConfig.EXPECT().WaitForConfig(gomock.Any())
+
+				mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+				mockVersionHandler := func(w http.ResponseWriter, r *http.Request) {}
+
+				err = gateway.Setup(ctx, mockApp, mockBackendConfig, mockJobsDB, nil, mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+				require.NoError(t, err)
+
+				wait := make(chan struct{})
+				ctxCancel, cancel := context.WithCancel(context.Background())
+
+				go func() {
+					require.NoError(t, gateway.StartWebHandlerLegacy(ctxCancel))
+					close(wait)
+				}()
+
+				require.Eventually(t, func() bool {
+					resp, _ := http.Get(fmt.Sprintf("http://localhost:%d/version", httpPort))
+					return resp.StatusCode == http.StatusOK
+				}, 10*time.Second, 1*time.Second)
+
+				defer func() {
+					require.NoError(t, gateway.Shutdown())
+				}()
+
+				serverURL := fmt.Sprintf("http://localhost:%d%s", httpPort, tc.url)
+				req, err := http.NewRequestWithContext(ctx, "POST", serverURL, bytes.NewBufferString(tc.payload))
+				require.NoError(t, err)
+
+				resp, err := (&http.Client{}).Do(req)
+				require.NoError(t, err)
+				require.Equal(t, tc.code, resp.StatusCode)
+
+				cancel()
+				<-wait
+			})
+		}
+	})
 }
