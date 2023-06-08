@@ -98,7 +98,7 @@ func createZipFile(filePath string, failedJobIds *[]int64, successJobIds *[]int6
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	textFile, err := os.Open(filePath)
 	if err != nil {
-		panic(err)
+		"", fmt.Errorf("open file: %w")
 	}
 	defer textFile.Close()
 	csvFile, err := os.Create(csvFilePath)
