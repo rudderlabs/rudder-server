@@ -103,7 +103,7 @@ func createZipFile(filePath string, failedJobIds *[]int64, successJobIds *[]int6
 	defer textFile.Close()
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		panic(err)
+		"", fmt.Errorf("open file: %w")
 	}
 	csvWriter := csv.NewWriter(csvFile)
 	csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
