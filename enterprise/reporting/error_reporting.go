@@ -322,7 +322,6 @@ func (edRep *ErrorDetailReporter) getDBHandle(clientName string) (*sql.DB, error
 func (edRep *ErrorDetailReporter) getTags(clientName string) stats.Tags {
 	return stats.Tags{
 		"workspaceID": edRep.workspaceID,
-		"namespace":   edRep.namespace,
 		"clientName":  clientName,
 		"instanceId":  edRep.instanceID,
 	}
