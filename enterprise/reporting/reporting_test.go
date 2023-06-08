@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -12,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/require"
@@ -235,18 +235,10 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 	config := mock_backendconfig.NewMockBackendConfig(ctrl)
 
 	configCh := make(chan pubsub.DataEvent)
-
-	var ready sync.WaitGroup
-	ready.Add(2)
-
-	var reportingSettings sync.WaitGroup
-	reportingSettings.Add(1)
-
 	config.EXPECT().Subscribe(
 		gomock.Any(),
 		gomock.Eq(backendconfig.TopicBackendConfig),
 	).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-		ready.Done()
 		go func() {
 			<-ctx.Done()
 			close(configCh)
@@ -256,21 +248,33 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 	})
 
 	reporting := NewFromEnvConfig(logger.NOP)
-	rruntime.Go(func() {
-		reporting.setup(config)
-	})
-
-	var reportingDisabled bool
-
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
-		ready.Done()
-		reportingDisabled = reporting.IsPIIReportingDisabled("testWorkspaceId-1")
-		reportingSettings.Done()
+		reporting.setup(config)
+		wg.Done()
 	}()
 
-	// When the config backend has not published any event yet
-	ready.Wait()
-	Expect(reportingDisabled).To(BeFalse())
+	defer func() {
+		close(configCh)
+		wg.Wait()
+	}()
+
+	configCh <- pubsub.DataEvent{
+		Data: map[string]backendconfig.ConfigT{
+			"testWorkspaceId-1": {
+				WorkspaceID: "testWorkspaceId-1",
+				Settings: backendconfig.Settings{
+					DataRetention: backendconfig.DataRetention{
+						DisableReportingPII: false,
+					},
+				},
+			},
+		},
+		Topic: string(backendconfig.TopicBackendConfig),
+	}
+
+	Expect(reporting.IsPIIReportingDisabled("testWorkspaceId-1")).To(BeFalse())
 
 	configCh <- pubsub.DataEvent{
 		Data: map[string]backendconfig.ConfigT{
@@ -286,8 +290,9 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
 
-	reportingSettings.Wait()
-	Expect(reportingDisabled).To(BeTrue())
+	Eventually(func() bool {
+		return reporting.IsPIIReportingDisabled("testWorkspaceId-1")
+	}).WithTimeout(time.Second).Should(BeTrue())
 }
 
 type getValTc struct {
