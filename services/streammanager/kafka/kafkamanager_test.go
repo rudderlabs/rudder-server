@@ -1037,8 +1037,8 @@ func TestSendMessage(t *testing.T) {
 			"some-topic",
 		)
 		require.Equal(t, 400, sc)
-		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\" error occurred.", res)
-		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\"", err)
+		require.Equal(t, `unable to serialize event with schemaId "schemaId001" and messageId message001: unable convert the event to native from textual, with error: cannot decode textual record "kafkaAvroTest.myrecord": cannot decode textual map: cannot determine codec: "data" error occurred.`, res)
+		require.Equal(t, `unable to serialize event with schemaId "schemaId001" and messageId message001: unable convert the event to native from textual, with error: cannot decode textual record "kafkaAvroTest.myrecord": cannot decode textual map: cannot determine codec: "data"`, err)
 	})
 }
 
