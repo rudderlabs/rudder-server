@@ -946,8 +946,8 @@ github.com/d2g/dhcp4client v1.0.0/go.mod h1:j0hNfjhrt2SxUOw55nL0ATM/z4Yt3t2Kd1mW
 github.com/d2g/dhcp4server v0.0.0-20181031114812-7d4a0a7f59a5/go.mod h1:Eo87+Kg/IX2hfWJfwxMzLyuSZyxSoAug2nGa1G2QAi8=
 github.com/danieljoos/wincred v1.1.2 h1:QLdCxFs1/Yl4zduvBdcHB8goaYk9RARS2SgLLRuAyr0=
 github.com/danieljoos/wincred v1.1.2/go.mod h1:GijpziifJoIBfYh+S7BbkdUTU4LfM+QnGqR5Vl2tAx0=
-github.com/databricks/databricks-sql-go v1.2.0 h1:5zpSCjnnxZrCL1G7dWpKSTVD980r5eFMTySdw/MOm1Q=
-github.com/databricks/databricks-sql-go v1.2.0/go.mod h1:uWAen7OSbki0RJg4Maynrz9Ag/gaZmnLmibllxqwqDg=
+github.com/databricks/databricks-sql-go v1.3.0 h1:kSIvEHFcEZAXH7etUNJYLRTQ+MDIkQlc1LYM/0JZT7g=
+github.com/databricks/databricks-sql-go v1.3.0/go.mod h1:uWAen7OSbki0RJg4Maynrz9Ag/gaZmnLmibllxqwqDg=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
