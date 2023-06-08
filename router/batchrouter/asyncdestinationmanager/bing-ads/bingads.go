@@ -85,7 +85,7 @@ This function create zip file from the text file created by the batchrouter
 It takes the text file path as input and returns the zip file path
 The maximum size of the zip file is 100MB, if the size of the zip file exceeds 100MB then the job is marked as failed
 */
-func createZipFile(filePath string, failedJobIds *[]int64, successJobIds *[]int64, audienceId string) string {
+func createZipFile(filePath string, failedJobIDs *[]int64, successJobIds *[]int64, audienceID string) string {
 
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
