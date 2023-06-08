@@ -107,6 +107,16 @@ func (m *MyMockFunction) CreateZipFile(input string) string {
 	return args.String(0)
 }
 
+func (m *MyMockFunction) Unzip(zipFile, targetDir string) ([]string, error) {
+	// Define the arguments you expect to receive in the function call
+	args := m.Called(zipFile, targetDir)
+	// Extract the individual return values from the args
+	strSlice := args.Get(0).([]string)
+	err := args.Error(1)
+	// Return the mocked result and error
+	return strSlice, err
+}
+
 func TestBingAdsClientCreation(t *testing.T) {
 	// mockFn := &MyMockFunction{}
 	// mockFn.On("CreateZipFile").Return("42")
@@ -142,4 +152,44 @@ func TestBingAdsClientCreation(t *testing.T) {
 	recieved.ImportingParameters = stdjson.RawMessage{}
 
 	assert.Equal(t, recieved, expected)
+}
+
+func TestBingAdsPoll(t *testing.T) {
+	_UnzipFile := bingads.Unzip
+	defer func() {
+		bingads.Unzip = _UnzipFile
+	}()
+	bingads.Unzip = func(zipFile, targetDir string) ([]string, error) {
+		filePaths := []string{
+			"/path/to/file1.csv",
+		}
+		return filePaths, nil
+	}
+	ctrl := gomock.NewController(t)
+	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
+
+	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
+	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+		PercentComplete: int64(100),
+		RequestStatus:   "Completed",
+		ResultFileUrl:   "http://dummyurl.com",
+	}, nil)
+	pollStruct := common.AsyncPoll{
+		ImportId: "dummyRequestId123",
+	}
+	expectedResp := common.AsyncStatusResponse{
+		Success:        true,
+		StatusCode:     200,
+		HasFailed:      false,
+		HasWarning:     false,
+		FailedJobsURL:  "",
+		WarningJobsURL: "",
+		OutputFilePath: "",
+	}
+	expectedStatus := 200
+	recievedResponse, RecievedStatus := bulkUploader.Poll(pollStruct)
+
+	assert.Equal(t, recievedResponse, expectedResp)
+	assert.Equal(t, RecievedStatus, expectedStatus)
 }
