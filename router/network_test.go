@@ -46,7 +46,7 @@ var _ = Describe("Network", func() {
 
 	Context("Send requests", func() {
 		It("should successfully send the request to google analytics", func() {
-			network := &NetHandleT{}
+			network := &netHandle{}
 			network.logger = logger.NewLogger().Child("network")
 			network.httpClient = c.mockHTTPClient
 
@@ -100,7 +100,7 @@ var _ = Describe("Network", func() {
 		})
 
 		It("should respect ctx cancelation", func() {
-			network := &NetHandleT{}
+			network := &netHandle{}
 			network.logger = logger.NewLogger().Child("network")
 			network.httpClient = &http.Client{}
 
@@ -121,7 +121,7 @@ var _ = Describe("Network", func() {
 
 	Context("Verify response bodies are propagated/filtered based on the response's content-type", func() {
 		const mockResponseBody = `[{"full_name": "mock-repo"}]`
-		var network *NetHandleT
+		var network *netHandle
 		var requestParams integrations.PostParametersT
 		var mockResponse http.Response
 		var mockResponseContentType func(contentType string) = func(contentType string) {
@@ -131,7 +131,7 @@ var _ = Describe("Network", func() {
 		}
 
 		BeforeEach(func() {
-			network = &NetHandleT{}
+			network = &netHandle{}
 			network.logger = logger.NewLogger().Child("network")
 			network.httpClient = c.mockHTTPClient
 

@@ -6,8 +6,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/mem"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/utils/mem"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -16,7 +16,7 @@ type AdaptiveLimiterFunc func(int64) int64
 // SetupAdaptiveLimiter creates a new AdaptiveLimiter, starts its RunLoop in a goroutine and periodically collects statistics.
 func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimiterFunc {
 	var freeMem FreeMemory
-	if config.GetBool("AdaptivePayloadLimiter.enabled", false) {
+	if config.GetBool("AdaptivePayloadLimiter.enabled", true) {
 		freeMem = func() (float64, error) {
 			s, err := mem.Get()
 			if err != nil {

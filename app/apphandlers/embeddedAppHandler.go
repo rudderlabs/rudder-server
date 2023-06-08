@@ -232,6 +232,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
+		Logger:           logger.NewLogger().Child("router"),
 		Reporting:        reportingI,
 		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
@@ -254,7 +255,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		Debugger:         destinationHandle,
 		AdaptiveLimit:    adaptiveLimit,
 	}
-	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
+	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 
 	dm := cluster.Dynamic{
 		Provider:        modeProvider,

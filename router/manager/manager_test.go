@@ -167,13 +167,13 @@ func initRouter() {
 	jobsdb.Init()
 	jobsdb.Init2()
 	archiver.Init()
-	router.Init()
 }
 
 func TestRouterManager(t *testing.T) {
 	RegisterTestingT(t)
 	initRouter()
-	pkgLogger = logger.NewLogger().Child("router")
+	config.Set("Router.isolationMode", "none")
+	defer config.Reset()
 	c := make(chan bool)
 	once := sync.Once{}
 
@@ -214,6 +214,7 @@ func TestRouterManager(t *testing.T) {
 	defer errDB.Close()
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
+		Logger:           logger.NOP,
 		Reporting:        &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
@@ -231,7 +232,7 @@ func TestRouterManager(t *testing.T) {
 		TransientSources: transientsource.NewEmptyService(),
 		RsourcesService:  mockRsourcesService,
 	}
-	r := New(rtFactory, brtFactory, mockBackendConfig)
+	r := New(rtFactory, brtFactory, mockBackendConfig, logger.NewLogger())
 
 	for i := 0; i < 5; i++ {
 		require.NoError(t, rtDB.Start())
