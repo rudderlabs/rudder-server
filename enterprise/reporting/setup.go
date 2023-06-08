@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -15,37 +13,23 @@ type Factory struct {
 	EnterpriseToken   string
 	Log               logger.Logger
 	once              sync.Once
-	reportingInstance types.ReportingI
+	reportingInstance types.Reporting
 }
 
 // Setup initializes Suppress User feature
-func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.ReportingI {
+func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Reporting {
 	if m.Log == nil {
 		m.Log = logger.NewLogger().Child("enterprise").Child("reporting")
 	}
+	mediator := NewReportingMediator(m.Log, m.EnterpriseToken)
 	m.once.Do(func() {
-		reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
-		if !reportingEnabled {
-			m.reportingInstance = &NOOP{}
-			return
-		}
-
-		if m.EnterpriseToken == "" {
-			m.reportingInstance = &NOOP{}
-			return
-		}
-
-		h := NewFromEnvConfig(m.Log)
-		rruntime.Go(func() {
-			h.setup(backendConfig)
-		})
-		m.reportingInstance = h
+		mediator.Setup(backendConfig)
+		m.reportingInstance = mediator
 	})
-
 	return m.reportingInstance
 }
 
-func (m *Factory) GetReportingInstance() types.ReportingI {
+func (m *Factory) GetReportingInstance() types.Reporting {
 	if m.reportingInstance == nil {
 		panic(fmt.Errorf("reporting instance not initialised. You should call Setup before GetReportingInstance"))
 	}

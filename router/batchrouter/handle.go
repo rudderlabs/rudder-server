@@ -56,7 +56,7 @@ type Handle struct {
 	jobsDB             jobsdb.JobsDB
 	errorDB            jobsdb.JobsDB
 	multitenantI       multitenant.MultiTenantI
-	reporting          types.ReportingI
+	reporting          types.Reporting
 	backendConfig      backendconfig.BackendConfig
 	fileManagerFactory filemanager.FileManagerFactory
 	transientSources   transientsource.Service
