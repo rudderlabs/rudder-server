@@ -167,7 +167,6 @@ func initJobsDB() {
 	jobsdb.Init()
 	jobsdb.Init2()
 	archiver.Init()
-	router.Init()
 	Init()
 }
 
@@ -223,6 +222,7 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
+		Logger:           logger.NOP,
 		Reporting:        &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
@@ -240,7 +240,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		TransientSources: transientsource.NewEmptyService(),
 		RsourcesService:  mockRsourcesService,
 	}
-	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig)
+	router := routermanager.New(rtFactory, brtFactory, mockBackendConfig, logger.NewLogger())
 
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(
 		ctx context.Context, topic backendConfig.Topic,
