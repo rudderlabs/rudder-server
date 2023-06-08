@@ -93,7 +93,7 @@ func createZipFile(filePath string, failedJobIds *[]int64, successJobIds *[]int6
 	if err != nil {
 		panic(err)
 	}
-	path := fmt.Sprintf("%v%v", tmpDirPath+localTmpDirName, fmt.Sprintf("%v", uuid.String()))
+	path := path.Join(tmpDirPath, localTmpDirName, uuid.String()) 
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	textFile, err := os.Open(filePath)
