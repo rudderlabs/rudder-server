@@ -1090,9 +1090,7 @@ func TestCreateDS(t *testing.T) {
 				require.NoError(t, err)
 				tableNames = append(tableNames, tableName)
 			}
-			if err = tables.Err(); err != nil {
-				require.NoError(t, err)
-			}
+			require.NoError(t, tables.Err())
 			require.Equal(t, len(tableNames), 2, `should find two tables`)
 			require.Equal(t, tableNames[0], prefix+"_jobs_-2")
 			require.Equal(t, tableNames[1], prefix+"_jobs_-1")

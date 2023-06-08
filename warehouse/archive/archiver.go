@@ -293,7 +293,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 		}
 		if err := stagingFileRows.Err(); err != nil {
 			txn.Rollback()
-			return fmt.Errorf("iterating staging file rows: %w", err)
+			return fmt.Errorf("iterating staging file ids: %w", err)
 		}
 		stagingFileRows.Close()
 
@@ -375,7 +375,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 				}
 				if err := loadLocationRows.Err(); err != nil {
 					txn.Rollback()
-					return fmt.Errorf("iterating load file location: %w", err)
+					return fmt.Errorf("iterating load file locations: %w", err)
 				}
 				loadLocationRows.Close()
 				var paths []string

@@ -400,7 +400,9 @@ func TestRefreshDSList(t *testing.T) {
 	}))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
 	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
-		require.Equal(t, 2, len(jobsDB.refreshDSList(l)), "after refreshing the ds list jobsDB should have a ds list size of 2")
+		dsList, err := jobsDB.refreshDSList(l)
+		require.NoError(t, err)
+		require.Equal(t, 2, len(dsList), "after refreshing the ds list jobsDB should have a ds list size of 2")
 	})
 }
 

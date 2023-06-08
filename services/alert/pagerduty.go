@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 var (
@@ -44,7 +44,7 @@ func (ops *PagerDuty) Alert(message string) {
 	}
 
 	body, err := io.ReadAll(resp.Body)
-	defer func() { httputil.CloseResponse(resp) }()
+	defer func() { kithttputil.CloseResponse(resp) }()
 	if err != nil {
 		pkgLogger.Errorf("Alert: Failed to read response body: %s", err.Error())
 		return

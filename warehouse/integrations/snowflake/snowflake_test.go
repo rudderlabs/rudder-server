@@ -17,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	"github.com/rudderlabs/compose-test/testcompose"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	snowflakedb "github.com/snowflakedb/gosnowflake"
@@ -99,7 +99,7 @@ func TestIntegration(t *testing.T) {
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 
-	httpPort, err := kitHelper.GetFreePort()
+	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()
