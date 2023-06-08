@@ -35,16 +35,24 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		start := time.Now()
-		jd.logger.Debugw("Start", "operation", "migrateDSLoop")
-		timeoutCtx, cancel := context.WithTimeout(ctx, jd.migrateDSTimeout)
-		err := jd.doMigrateDS(timeoutCtx)
-		cancel()
-		if err != nil {
-			jd.logger.Errorf("Failed to migrate ds: %v", err)
+		migrate := func() error {
+			start := time.Now()
+			jd.logger.Debugw("Start", "operation", "migrateDSLoop")
+			timeoutCtx, cancel := context.WithTimeout(ctx, jd.migrateDSTimeout)
+			defer cancel()
+			err := jd.doMigrateDS(timeoutCtx)
+			stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+			if err != nil {
+				return fmt.Errorf("failed to migrate ds: %w", err)
+			}
+			return nil
 		}
-		stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
-
+		if err := migrate(); err != nil && ctx.Err() == nil {
+			if !jd.skipMaintenanceError {
+				panic(err)
+			}
+			jd.logger.Errorw("Failed to migrate ds", "error", err)
+		}
 	}
 }
 
@@ -59,14 +67,16 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 		return err
 	}
 
-	migrateFrom, pendingJobsCount, insertBeforeDS := jd.getMigrationList(dsList)
-
+	migrateFrom, pendingJobsCount, insertBeforeDS, err := jd.getMigrationList(dsList)
+	if err != nil {
+		return fmt.Errorf("could not get migration list: %w", err)
+	}
 	if len(migrateFrom) == 0 {
 		return nil
 	}
 	var l lock.LockToken
 	var lockChan chan<- lock.LockToken
-	err := jd.WithTx(func(tx *Tx) error {
+	err = jd.WithTx(func(tx *Tx) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 			// Take the lock and run actual migration
 			if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
@@ -75,17 +85,24 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 			defer jd.dsMigrationLock.Unlock()
 			// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
 			// the pending jobs count cannot change after the dsMigrationLock is acquired
-			if migrateFrom, pendingJobsCount, insertBeforeDS = jd.getMigrationList(dsList); len(migrateFrom) == 0 {
+			migrateFrom, pendingJobsCount, insertBeforeDS, err = jd.getMigrationList(dsList)
+			if err != nil {
+				return fmt.Errorf("could not get migration list: %w", err)
+			}
+			if len(migrateFrom) == 0 {
 				return nil
 			}
 
 			if pendingJobsCount > 0 { // migrate incomplete jobs
 				var destination dataSetT
-				err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-					destination = newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS))
+				if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+					dsIdx, err := jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS)
+					if err != nil {
+						return fmt.Errorf("computing new index for intra-node migration: %w", err)
+					}
+					destination = newDataSet(jd.tablePrefix, dsIdx)
 					return nil
-				})
-				if err != nil {
+				}); err != nil {
 					return err
 				}
 
@@ -95,16 +112,17 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to marshal journal payload: %w", err)
 				}
+
 				opID, err := jd.JournalMarkStartInTx(tx, migrateCopyOperation, opPayload)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to mark journal start: %w", err)
 				}
 
 				err = jd.addDSInTx(tx, destination)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to add dataset: %w", err)
 				}
 
 				totalJobsMigrated := 0
@@ -113,42 +131,46 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 					jd.logger.Infof("[[ migrateDSLoop ]]: Migrate: %v to: %v", source, destination)
 					noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source, destination)
 					if err != nil {
-						return err
+						return fmt.Errorf("failed to migrate jobs: %w", err)
 					}
 					totalJobsMigrated += noJobsMigrated
 				}
-				err = jd.journalMarkDoneInTx(tx, opID)
-				if err != nil {
-					return err
+				if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
+					return fmt.Errorf("failed to mark journal done: %w", err)
 				}
 				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
 			}
 
 			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to marshal journal payload: %w", err)
 			}
 			opID, err := jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to mark journal start: %w", err)
 			}
 			// acquire an async lock, as this needs to be released after the transaction commits
 			l, lockChan, err = jd.dsListLock.AsyncLockWithCtx(ctx)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to acquire lock: %w", err)
 			}
-			err = jd.postMigrateHandleDS(tx, migrateFrom)
-			if err != nil {
-				return err
+			if err = jd.postMigrateHandleDS(tx, migrateFrom); err != nil {
+				return fmt.Errorf("failed to post migrate handle ds: %w", err)
 			}
-			return jd.journalMarkDoneInTx(tx, opID)
+			if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
+				return fmt.Errorf("failed to mark journal done: %w", err)
+			}
+			return nil
 		})
 	})
 	if l != nil {
+		defer func() { lockChan <- l }()
 		if err == nil {
-			jd.refreshDSRangeList(l)
+			if err = jd.refreshDSRangeList(l); err != nil {
+				return fmt.Errorf("failed to refresh ds range list: %w", err)
+			}
 		}
-		lockChan <- l
+
 	}
 	return err
 }
@@ -227,8 +249,7 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 			estimate  float64
 			tableName string
 		)
-		err = rows.Scan(&estimate, &tableName)
-		if err != nil {
+		if err = rows.Scan(&estimate, &tableName); err != nil {
 			return nil, err
 		}
 		estimates[tableName] = estimate
@@ -336,7 +357,7 @@ func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string, canB
 // getMigrationList returns the list of datasets to migrate from,
 // the number of unfinished jobs contained in these datasets
 // and the dataset before which the new (migrated) dataset that will hold these jobs needs to be created
-func (jd *HandleT) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT) {
+func (jd *HandleT) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
 	var (
 		liveDSCount, migrateDSProbeCount int
 		// we don't want `maxDSSize` value to change, during dsList loop
@@ -360,7 +381,11 @@ func (jd *HandleT) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, 
 			break
 		}
 
-		migrate, isSmall, recordsLeft := jd.checkIfMigrateDS(ds)
+		migrate, isSmall, recordsLeft, migrateErr := jd.checkIfMigrateDS(ds)
+		if migrateErr != nil {
+			err = migrateErr
+			return
+		}
 		jd.logger.Debugf(
 			"[[ migrateDSLoop ]]: Migrate check %v, is small: %v, records left: %d, ds: %v",
 			migrate, isSmall, recordsLeft, ds,
@@ -433,12 +458,14 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 	return int(numJobsMigrated), nil
 }
 
-func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) string { // Within the node
+func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) (string, error) { // Within the node
 	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
-	dList := jd.refreshDSList(l)
+	dList, err := jd.refreshDSList(l)
+	if err != nil {
+		return "", fmt.Errorf("refreshDSList: %w", err)
+	}
 	jd.logger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
 	newDSIdx := ""
-	var err error
 	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 	for idx, ds := range dList {
 		if ds.Index == insertBeforeDS.Index {
@@ -447,7 +474,7 @@ func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBe
 			jd.assertError(err)
 		}
 	}
-	return newDSIdx
+	return newDSIdx, nil
 }
 
 func (jd *HandleT) postMigrateHandleDS(tx *Tx, migrateFrom []dataSetT) error {
@@ -491,7 +518,7 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 // We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
 // Or when the job_status table gets too big because of lots of retries/failures
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
-	migrate, small bool, recordsLeft int,
+	migrate, small bool, recordsLeft int, err error,
 ) {
 	defer jd.getTimerStat(
 		"migration_ds_check",
@@ -500,26 +527,26 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	var delCount, totalCount, statusCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&totalCount)
-	jd.assertError(err)
+	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&totalCount); err != nil {
+		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobTable, err)
+	}
 
 	// Jobs which have either succeeded or expired
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
                                       from %q
                                       WHERE job_state IN ('%s')`,
 		ds.JobStatusTable, strings.Join(validTerminalStates, "', '"))
-	row = jd.dbHandle.QueryRow(sqlStatement)
-	err = row.Scan(&delCount)
-	jd.assertError(err)
+	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&delCount); err != nil {
+		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobStatusTable, err)
+	}
 
 	if jobStatusCountMigrationCheck {
 		// Total number of job status. If this table grows too big (e.g. a lot of retries)
 		// we migrate to a new table and get rid of old job status
 		sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobStatusTable)
-		row = jd.dbHandle.QueryRow(sqlStatement)
-		err = row.Scan(&statusCount)
-		jd.assertError(err)
+		if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&statusCount); err != nil {
+			return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobStatusTable, err)
+		}
 	}
 
 	recordsLeft = totalCount - delCount
@@ -527,12 +554,12 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	if jd.MinDSRetentionPeriod > 0 {
 		var maxCreatedAt time.Time
 		sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
-		row = jd.dbHandle.QueryRow(sqlStatement)
-		err = row.Scan(&maxCreatedAt)
-		jd.assertError(err)
+		if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&maxCreatedAt); err != nil {
+			return false, false, 0, fmt.Errorf("error getting max created_at from %s: %w", ds.JobTable, err)
+		}
 
 		if time.Since(maxCreatedAt) < jd.MinDSRetentionPeriod {
-			return false, false, recordsLeft
+			return false, false, recordsLeft, nil
 		}
 	}
 
@@ -543,15 +570,11 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 										FROM %q
 										WHERE job_state = ANY($1) and exec_time < $2)`,
 			ds.JobStatusTable)
-		stmt, err := jd.dbHandle.Prepare(sqlStatement)
-		jd.assertError(err)
-		defer func() { _ = stmt.Close() }()
-
-		row = stmt.QueryRow(pq.Array(validTerminalStates), time.Now().Add(-1*jd.MaxDSRetentionPeriod))
-		err = row.Scan(&terminalJobsExist)
-		jd.assertError(err)
+		if err = jd.dbHandle.QueryRow(sqlStatement, pq.Array(validTerminalStates), time.Now().Add(-1*jd.MaxDSRetentionPeriod)).Scan(&terminalJobsExist); err != nil {
+			return false, false, 0, fmt.Errorf("checking terminalJobsExist %s: %w", ds.JobStatusTable, err)
+		}
 		if terminalJobsExist {
-			return true, false, recordsLeft
+			return true, false, recordsLeft, nil
 		}
 	}
 
@@ -561,12 +584,12 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	}
 
 	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres || (float64(statusCount)/float64(totalCount) > jobStatusMigrateThres) {
-		return true, isSmall(), recordsLeft
+		return true, isSmall(), recordsLeft, nil
 	}
 
 	if isSmall() {
-		return true, true, recordsLeft
+		return true, true, recordsLeft, nil
 	}
 
-	return false, false, recordsLeft
+	return false, false, recordsLeft, nil
 }
