@@ -21,22 +21,19 @@ var campaignns = "https://bingads.microsoft.com/CampaignManagement/v13"
 
 // FIXME: namespace
 func (b *Session) sendRequest(body interface{}, endpoint, soapAction, ns string) ([]byte, error) {
-
-	accessToken, developerToken, err := b.TokenGenerator()
-	if err != nil {
-		return nil, err
-	}
-
 	header := RequestHeader{
 		BingNS:            ns,
 		Action:            soapAction,
 		CustomerAccountId: b.AccountId,
 		CustomerId:        b.CustomerId,
-		DeveloperToken:    developerToken,
+		DeveloperToken:    b.DeveloperToken,
 	}
-	if accessToken != "" {
-		token := accessToken
-		header.AuthenticationToken = token
+	if b.TokenSource != nil {
+		token, err := b.TokenSource.Token()
+		if err != nil {
+			return nil, err
+		}
+		header.AuthenticationToken = token.AccessToken
 	} else {
 		header.Username = b.Username
 		header.Password = b.Password
@@ -115,14 +112,13 @@ func (b *Session) sendRequest(body interface{}, endpoint, soapAction, ns string)
 }
 
 type SessionConfig struct {
-	OAuth2Config         *oauth2.Config
-	OAuth2Token          *oauth2.Token
-	AccountId            string
-	CustomerId           string
-	DeveloperToken       string
-	HTTPClient           HttpClient
-	AccessToken          string
-	AccessTokenGenerator func() (string, string, error)
+	OAuth2Config   *oauth2.Config
+	OAuth2Token    *oauth2.Token
+	AccountId      string
+	CustomerId     string
+	DeveloperToken string
+	HTTPClient     HttpClient
+	TokenSource    oauth2.TokenSource
 }
 
 func NewSession(config SessionConfig) *Session {
@@ -132,7 +128,6 @@ func NewSession(config SessionConfig) *Session {
 		CustomerId:     config.CustomerId,
 		DeveloperToken: config.DeveloperToken,
 		HTTPClient:     config.HTTPClient,
-		AccessToken:    config.AccessToken,
-		TokenGenerator: config.AccessTokenGenerator,
+		TokenSource:    config.TokenSource,
 	}
 }

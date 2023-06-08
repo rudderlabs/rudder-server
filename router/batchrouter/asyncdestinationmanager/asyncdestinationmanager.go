@@ -2,7 +2,6 @@ package asyncdestinationmanager
 
 import (
 	stdjson "encoding/json"
-	"fmt"
 	"sync"
 	time "time"
 
@@ -10,11 +9,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
-	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
@@ -22,8 +19,9 @@ import (
 
 type Asyncdestinationmanager interface {
 	Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput
-	Poll(importingJob *jobsdb.JobT, payload []byte, timeout time.Duration) ([]byte, int)
-	FetchFailedEvents(*backendconfig.DestinationT, *utils.DestinationWithSources, []*jobsdb.JobT, *jobsdb.JobT, common.AsyncStatusResponse, time.Duration) ([]byte, int)
+	Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int)
+	FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int)
+	RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error)
 }
 
 type AsyncDestinationStruct struct {
@@ -129,10 +127,9 @@ func GetMarshalledData(payload string, jobID int64) string {
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) Asyncdestinationmanager {
 	destType := destination.DestinationDefinition.Name
 	if destType == "BINGADS_AUDIENCE" {
-		return bingads.NewManager(destination, backendConfig)
+		return bingads.NewManager(destination, backendConfig, HTTPTimeout)
 	} else if destType == "MARKETO_BULK_UPLOAD" {
-		return marketobulkupload.NewManager(destination)
-	} else {
-		panic(fmt.Errorf("batch router is not enabled for destination %s", destType))
+		return marketobulkupload.NewManager(destination, HTTPTimeout)
 	}
+	return nil
 }

@@ -18,6 +18,7 @@ var (
 	AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
 )
 
+// we need to add bingAds specific fields if needs to be handy.
 type AsyncStatusResponse struct {
 	Success        bool
 	StatusCode     int
@@ -25,6 +26,7 @@ type AsyncStatusResponse struct {
 	HasWarning     bool
 	FailedJobsURL  string
 	WarningJobsURL string
+	OutputFilePath string
 }
 type AsyncUploadOutput struct {
 	Key                 string
@@ -86,7 +88,7 @@ type MetaDataT struct {
 }
 type Parameters struct {
 	ImportId string    `json:"importId"`
-	PollUrl  string    `json:"pollURL"`
+	PollUrl  *string   `json:"pollURL"`
 	MetaData MetaDataT `json:"metadata"`
 }
 
@@ -112,9 +114,12 @@ type AsyncFailedPayload struct {
 	MetaData MetaDataT                `json:"metadata"`
 }
 
-var (
-	HTTPTimeout time.Duration
-)
+type FetchFailedStatus struct {
+	FailedJobsURL  string
+	Parameters     stdjson.RawMessage
+	ImportingList  []*jobsdb.JobT
+	OutputFilePath string
+}
 
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
 	if keyMap == nil {
