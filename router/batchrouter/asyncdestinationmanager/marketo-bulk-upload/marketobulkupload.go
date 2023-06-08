@@ -60,7 +60,7 @@ func (b *MarketoBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 	payload := common.GenerateFailedPayload(b.destinationConfig, failedJobsStatus.ImportingList, importId, b.destName, csvHeaders)
-	//payload eg: "{\"config\":{\"clientId\":\"01a70f1f-ff37-46fc-bdff-42e92a3f2bb3\",\"clientSecret\":\"rziQBHtZ34Vl1CE3x3OiA3n8Wr45lwar\",\"columnFieldsMapping\":[{\"from\":\"anonymousId\",\"to\":\"anonymousId\"},{\"from\":\"address\",\"to\":\"address\"},{\"from\":\"email\",\"to\":\"email\"}],\"deDuplicationField\":\"\",\"munchkinId\":\"585-AXP-425\",\"oneTrustCookieCategories\":[],\"uploadInterval\":\"10\"},\"input\":[{\"message\":{\"address\":23,\"anonymousId\":\"Test Kinesis\",\"email\":\"test@kinesis.com\"},\"metadata\":{\"job_id\":5}}],\"destType\":\"marketo_bulk_upload\",\"importId\":\"3095\""
+	//payload eg: "{\"config\":{\"clientId\":\"*****************\",\"clientSecret\":\"*********\",\"columnFieldsMapping\":[{\"from\":\"anonymousId\",\"to\":\"anonymousId\"},{\"from\":\"address\",\"to\":\"address\"},{\"from\":\"email\",\"to\":\"email\"}],\"deDuplicationField\":\"\",\"munchkinId\":\"585-AXP-425\",\"oneTrustCookieCategories\":[],\"uploadInterval\":\"10\"},\"input\":[{\"message\":{\"address\":23,\"anonymousId\":\"Test Kinesis\",\"email\":\"test@kinesis.com\"},\"metadata\":{\"job_id\":5}}],\"destType\":\"marketo_bulk_upload\",\"importId\":\"3095\""
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, b.timeout)
 	// failedBodyBytes eg: "{\"statusCode\":400,\"error\":\"404\"}"
 	return failedBodyBytes, statusCode
