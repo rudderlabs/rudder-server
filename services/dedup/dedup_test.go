@@ -117,7 +117,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	logger.Reset()
 	misc.Init()
 
-  dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
+	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
 	defer os.RemoveAll(dbPath)
 	os.RemoveAll(dbPath)
 	d := dedup.New(dbPath)
