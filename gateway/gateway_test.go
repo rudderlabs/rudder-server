@@ -12,8 +12,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
+
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -341,6 +344,7 @@ var _ = Describe("Gateway", func() {
 			gateway    *HandleT
 			statsStore *memstats.Store
 			whServer   *httptest.Server
+			serverURL  string
 		)
 
 		BeforeEach(func() {
@@ -348,9 +352,18 @@ var _ = Describe("Gateway", func() {
 				w.WriteHeader(http.StatusOK)
 				_, _ = io.WriteString(w, "OK")
 			}))
-			url, err := url.Parse(whServer.URL)
+			WHURL := whServer.URL
+			parsedURL, err := url.Parse(WHURL)
 			Expect(err).To(BeNil())
-			config.Set("Warehouse.webPort", url.Port())
+			whPort := parsedURL.Port()
+			GinkgoT().Setenv("RSERVER_WAREHOUSE_WEB_PORT", whPort)
+
+			serverPort, err := kithelper.GetFreePort()
+			Expect(err).To(BeNil())
+			serverURL = fmt.Sprintf("http://localhost:%d", serverPort)
+			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
+
+			loadConfig()
 
 			gateway = &HandleT{}
 			err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
@@ -376,11 +389,10 @@ var _ = Describe("Gateway", func() {
 
 			return validDataWithProperty
 		}
-		verifyEndpoing := func(endpoints []string, method string) {
+		verifyEndpoint := func(endpoints []string, method string) {
 			client := &http.Client{}
-			baseURL := "http://localhost:8080"
 			for _, ep := range endpoints {
-				url := baseURL + ep
+				url := fmt.Sprintf("%s%s", serverURL, ep)
 				var req *http.Request
 				var err error
 				if ep == "/beacon/v1/batch" {
@@ -409,17 +421,27 @@ var _ = Describe("Gateway", func() {
 			})
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
 			var err error
+			wait := make(chan struct{})
 			ctx, cancel := context.WithCancel(context.Background())
 			go func() {
 				err = gateway.StartWebHandler(ctx)
 				Expect(err).To(BeNil())
+				close(wait)
 			}()
-			getEndpoing, postEndpoints, deleteEndpoints := getEndpointMethodMap()
+			Eventually(func() bool {
+				resp, err := http.Get(fmt.Sprintf("%s/version", serverURL))
+				if err != nil {
+					return false
+				}
+				return resp.StatusCode == http.StatusOK
+			}, time.Second*10, time.Second).Should(BeTrue())
 
-			verifyEndpoing(getEndpoing, http.MethodGet)
-			verifyEndpoing(postEndpoints, http.MethodPost)
-			verifyEndpoing(deleteEndpoints, http.MethodDelete)
+			getEndpoint, postEndpoints, deleteEndpoints := endpointsToVerify()
+			verifyEndpoint(getEndpoint, http.MethodGet)
+			verifyEndpoint(postEndpoints, http.MethodPost)
+			verifyEndpoint(deleteEndpoints, http.MethodDelete)
 			cancel()
+			<-wait
 		})
 	})
 
@@ -976,43 +998,6 @@ var _ = Describe("Gateway", func() {
 		})
 	})
 
-	Context("Warehouse proxy", func() {
-		DescribeTable("forwarding requests to warehouse with different response codes",
-			func(url string, code int, payload string) {
-				gateway := &HandleT{}
-				whMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					Expect(r.URL.String()).To(Equal(url))
-					Expect(r.Body)
-					Expect(r.Body).To(Not(BeNil()))
-					defer func() { _ = r.Body.Close() }()
-					reqBody, err := io.ReadAll(r.Body)
-					Expect(err).To(BeNil())
-					Expect(string(reqBody)).To(Equal(payload))
-					w.WriteHeader(code)
-				}))
-				GinkgoT().Setenv("WAREHOUSE_URL", whMock.URL)
-				GinkgoT().Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
-				err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
-				Expect(err).To(BeNil())
-
-				defer func() {
-					err := gateway.Shutdown()
-					Expect(err).To(BeNil())
-					whMock.Close()
-				}()
-
-				req := httptest.NewRequest("POST", "http://rudder-server"+url, bytes.NewBufferString(payload))
-				w := httptest.NewRecorder()
-				gateway.whProxy.ServeHTTP(w, req)
-				resp := w.Result()
-				Expect(resp.StatusCode).To(Equal(code))
-			},
-			Entry("successful request", "/v1/warehouse/pending-events", http.StatusOK, `{"source_id": "1", "task_run_id":"2"}`),
-			Entry("failed request", "/v1/warehouse/pending-events", http.StatusBadRequest, `{"source_id": "3", "task_run_id":"4"}`),
-			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
-		)
-	})
-
 	Context("jobDataFromRequest", func() {
 		var (
 			gateway      *HandleT
@@ -1150,19 +1135,19 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 }
 
 // return all endpoints as key and method as value
-func getEndpointMethodMap() (getEndpoints, postEndpoints, deleteEndpoints []string) {
-	getEndpoints = []string{
+func endpointsToVerify() ([]string, []string, []string) {
+	getEndpoints := []string{
 		"/version",
 		"/robots.txt",
 		"/pixel/v1/track",
 		"/pixel/v1/page",
-		"/v1/warehouse",
 		"/v1/webhook",
 		"/v1/job-status/123",
 		"/v1/job-status/123/failed-records",
+		"/v1/warehouse/jobs/status",
 	}
 
-	postEndpoints = []string{
+	postEndpoints := []string{
 		"/v1/batch",
 		"/v1/identify",
 		"/v1/track",
@@ -1174,16 +1159,18 @@ func getEndpointMethodMap() (getEndpoints, postEndpoints, deleteEndpoints []stri
 		"/v1/import",
 		"/v1/audiencelist",
 		"/v1/webhook",
-		"/v1/warehouse",
 		"/beacon/v1/batch",
 		"/internal/v1/extract",
 		"/v1/warehouse/pending-events",
+		"/v1/warehouse/trigger-upload",
+		"/v1/warehouse/jobs",
+		"/v1/warehouse/fetch-tables",
 	}
 
-	deleteEndpoints = []string{
+	deleteEndpoints := []string{
 		"/v1/job-status/1234",
 	}
-	return
+	return getEndpoints, postEndpoints, deleteEndpoints
 }
 
 func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {

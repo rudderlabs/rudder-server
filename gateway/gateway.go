@@ -901,21 +901,6 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
-func warehouseHandler(w http.ResponseWriter, r *http.Request) {
-	origin, err := url.Parse(misc.GetWarehouseURL())
-	if err != nil {
-		http.Error(w, err.Error(), 404)
-		return
-	}
-	// gateway.logger.LogRequest(r)
-	director := func(req *http.Request) {
-		req.URL.Scheme = "http"
-		req.URL.Host = origin.Host
-	}
-	proxy := &httputil.ReverseProxy{Director: director}
-	proxy.ServeHTTP(w, r)
-}
-
 // ProcessRequest throws a webRequest into the queue and waits for the response before returning
 func (*RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	done := make(chan string, 1)
@@ -1272,11 +1257,17 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		r.Post("/screen", gateway.webScreenHandler)
 		r.Post("/track", gateway.webTrackHandler)
 		r.Post("/webhook", gateway.webhookHandler.RequestHandler)
-		r.Post("/warehouse", warehouseHandler)
-		r.Post("/warehouse/pending-events", gateway.whProxy.ServeHTTP)
 
 		r.Get("/webhook", gateway.webhookHandler.RequestHandler)
-		r.Get("/warehouse", warehouseHandler)
+
+		r.Route("/warehouse", func(r chi.Router) {
+			r.Post("/pending-events", gateway.whProxy.ServeHTTP)
+			r.Post("/trigger-upload", gateway.whProxy.ServeHTTP)
+			r.Post("/jobs", gateway.whProxy.ServeHTTP)
+			r.Post("/fetch-tables", gateway.whProxy.ServeHTTP)
+
+			r.Get("/jobs/status", gateway.whProxy.ServeHTTP)
+		})
 	})
 
 	srvMux.Get("/health", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB)))
