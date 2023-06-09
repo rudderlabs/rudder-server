@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.6](https://github.com/rudderlabs/rudder-server/compare/v1.9.5...v1.9.6) (2023-06-09)
+
+
+### Bug Fixes
+
+* warehouse proxy endpoints ([#3476](https://github.com/rudderlabs/rudder-server/issues/3476)) ([fda977f](https://github.com/rudderlabs/rudder-server/commit/fda977f9e440aaa21337ff620c8fb8fe68385b2a))
+
 ## [1.9.5](https://github.com/rudderlabs/rudder-server/compare/v1.9.4...v1.9.5) (2023-06-07)
 
 
