@@ -344,12 +344,24 @@ var Unzip = func(zipFile, targetDir string) ([]string, error) {
 
 func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int) {
 	requestId := pollStruct.ImportId
-	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
-	if err != nil {
-		panic("BRT: Failed to poll status for bingAds" + err.Error())
-	}
 	var resp common.AsyncStatusResponse
 	var statusCode int
+	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
+	if err != nil {
+		// panic("BRT: Failed to poll status for bingAds" + err.Error())
+		resp = common.AsyncStatusResponse{
+			Success:        false,
+			StatusCode:     400,
+			HasFailed:      true,
+			HasWarning:     false,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: "",
+		}
+		// needs to be retried
+		statusCode = 500
+		return resp, statusCode
+	}
 	var allSuccessPercentage int = 100
 	if uploadStatusResp.PercentComplete == int64(allSuccessPercentage) && uploadStatusResp.RequestStatus == "Completed" {
 		// all successful events, do not need to download the file.
@@ -433,7 +445,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 }
 
 // create array of failed job Ids from clientIDErrors
-func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
+func GetFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
 	keys := make([]int64, 0, len(clientIDErrors))
 	for key := range clientIDErrors {
 		intKey, _ := strconv.ParseInt(key, 10, 64)
@@ -443,7 +455,7 @@ func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
 }
 
 // get the list of unique error messages for a particular jobId.
-func getFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]string {
+func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]string {
 	reasons := make(map[string]string)
 	for key, errors := range clientIDErrors {
 		errorList := make([]string, 0, len(errors))
@@ -457,7 +469,7 @@ func getFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 
 // filtering out failed jobIds from the total array of jobIds
 // in order to get jobIds of the successful jobs
-func getSuccessKeys(failedEventList, initialEventList []int64) []int64 {
+func GetSuccessKeys(failedEventList, initialEventList []int64) []int64 {
 	successfulEvents := make([]int64, 0)
 
 	lookup := make(map[int64]bool)
@@ -474,14 +486,24 @@ func getSuccessKeys(failedEventList, initialEventList []int64) []int64 {
 	return successfulEvents
 }
 
-func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
-	filePath := failedJobsStatus.OutputFilePath
+var ReadPollResults = func(filePath string) [][]string {
 	// Open the CSV file
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatal("Error opening the CSV file:", err)
 	}
-	defer file.Close()
+	// defer file.Close() and remove
+	defer func() {
+		err := file.Close()
+		if err != nil {
+			log.Fatal("Error closing the CSV file:", err)
+		}
+		// remove the file after the response has been written
+		err = os.Remove(filePath)
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	// Create a new CSV reader
 	reader := csv.NewReader(file)
@@ -491,7 +513,10 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	if err != nil {
 		log.Fatal("Error reading CSV:", err)
 	}
+	return records
+}
 
+var ProcessPollStatusData = func(records [][]string) map[string]map[string]struct{} {
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := -1
@@ -511,7 +536,6 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	// Declare variables for storing data
 
 	clientIDErrors := make(map[string]map[string]struct{})
-	status := "200"
 
 	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
@@ -533,6 +557,14 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 			}
 		}
 	}
+	return clientIDErrors
+}
+
+func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
+	filePath := failedJobsStatus.OutputFilePath
+	records := ReadPollResults(filePath)
+	status := "200"
+	clientIDErrors := ProcessPollStatusData(records)
 
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
@@ -546,10 +578,10 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	response := Response{
 		Status: status,
 		Metadata: MetadataNew{
-			FailedKeys:    getFailedKeys(clientIDErrors),
-			FailedReasons: getFailedReasons(clientIDErrors),
+			FailedKeys:    GetFailedKeys(clientIDErrors),
+			FailedReasons: GetFailedReasons(clientIDErrors),
 			WarningKeys:   []string{},
-			SucceededKeys: getSuccessKeys(getFailedKeys(clientIDErrors), initialEventList),
+			SucceededKeys: GetSuccessKeys(GetFailedKeys(clientIDErrors), initialEventList),
 		},
 	}
 
@@ -559,11 +591,11 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 		log.Fatal("Error converting to JSON:", err)
 	}
 
-	// remove the file after the response has been written
-	err = os.Remove(filePath)
-	if err != nil {
-		panic(err)
-	}
+	// // remove the file after the response has been written
+	// err = os.Remove(filePath)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	return respBytes, 200
 }
 
