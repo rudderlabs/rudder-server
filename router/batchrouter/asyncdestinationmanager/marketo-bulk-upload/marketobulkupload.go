@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -60,9 +61,7 @@ func (b *MarketoBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 	payload := common.GenerateFailedPayload(b.destinationConfig, failedJobsStatus.ImportingList, importId, b.destName, csvHeaders)
-	//payload eg: "{\"config\":{\"clientId\":\"01a70f1f-ff37-46fc-bdff-42e92a3f2bb3\",\"clientSecret\":\"rziQBHtZ34Vl1CE3x3OiA3n8Wr45lwar\",\"columnFieldsMapping\":[{\"from\":\"anonymousId\",\"to\":\"anonymousId\"},{\"from\":\"address\",\"to\":\"address\"},{\"from\":\"email\",\"to\":\"email\"}],\"deDuplicationField\":\"\",\"munchkinId\":\"585-AXP-425\",\"oneTrustCookieCategories\":[],\"uploadInterval\":\"10\"},\"input\":[{\"message\":{\"address\":23,\"anonymousId\":\"Test Kinesis\",\"email\":\"test@kinesis.com\"},\"metadata\":{\"job_id\":5}}],\"destType\":\"marketo_bulk_upload\",\"importId\":\"3095\""
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, b.timeout)
-	// failedBodyBytes eg: "{\"statusCode\":400,\"error\":\"404\"}"
 	return failedBodyBytes, statusCode
 }
 
@@ -105,11 +104,11 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 		input = append(input, tempJob)
 	}
-	var uploadT common.AsyncUploadT
-	uploadT.Input = input
-	uploadT.Config = config
-	uploadT.DestType = strings.ToLower(destType)
-	payload, err := json.Marshal(uploadT)
+	payload, err := json.Marshal(common.AsyncUploadT{
+		Input:    input,
+		Config:   config,
+		DestType: strings.ToLower(destType),
+	})
 	if err != nil {
 		panic("BRT: JSON Marshal Failed " + err.Error())
 	}
@@ -125,32 +124,29 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	})
 
 	startTime := time.Now()
-	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
+	payloadSizeStat.Observe(float64(len(payload)))
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, b.timeout)
-	// resp body eg: {statusCode: 200, importId: '3099', pollURL: '/pollStatus', metadata: {…}}
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
 	var bodyBytes []byte
-	var httpFailed bool
 	var statusCode string
 	if statusCodeHTTP != 200 {
 		bodyBytes = []byte(`"error" : "HTTP Call to Transformer Returned Non 200"`)
-		httpFailed = true
-	} else {
-		bodyBytes = responseBody
-		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
-	}
-
-	var uploadResponse common.AsyncUploadOutput
-	if httpFailed {
-		uploadResponse = common.AsyncUploadOutput{
+		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
 			FailedReason:  string(bodyBytes),
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
-	} else if statusCode == "200" {
+	}
+
+	bodyBytes = responseBody
+	statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
+
+	var uploadResponse common.AsyncUploadOutput
+	switch statusCode {
+	case "200":
 		var responseStruct common.UploadStruct
 		err := json.Unmarshal(bodyBytes, &responseStruct)
 		if err != nil {
@@ -181,7 +177,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID:       destinationID,
 		}
-	} else if statusCode == "400" {
+	case "400":
 		var responseStruct common.UploadStruct
 		err := json.Unmarshal(bodyBytes, &responseStruct)
 		if err != nil {
@@ -202,14 +198,44 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID: destinationID,
 		}
-	} else {
+	default:
 		uploadResponse = common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
 			FailedReason:  string(bodyBytes),
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
+
 	}
+	// else if statusCode == "400" {
+	// 	var responseStruct common.UploadStruct
+	// 	err := json.Unmarshal(bodyBytes, &responseStruct)
+	// 	if err != nil {
+	// 		panic("Incorrect Response from Transformer: " + err.Error())
+	// 	}
+	// 	eventsAbortedStat := stats.Default.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
+	// 		"module":   "batch_router",
+	// 		"destType": destType,
+	// 	})
+	// 	abortedJobIDs, failedJobIDsTrans := common.CleanUpData(responseStruct.Metadata, importingJobIDs)
+	// 	eventsAbortedStat.Count(len(abortedJobIDs))
+	// 	uploadResponse = common.AsyncUploadOutput{
+	// 		AbortJobIDs:   abortedJobIDs,
+	// 		FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
+	// 		FailedReason:  `{"error":"Jobs flowed over the prescribed limit"}`,
+	// 		AbortReason:   string(bodyBytes),
+	// 		AbortCount:    len(importingJobIDs),
+	// 		FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
+	// 		DestinationID: destinationID,
+	// 	}
+	// } else {
+	// 	uploadResponse = common.AsyncUploadOutput{
+	// 		FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+	// 		FailedReason:  string(bodyBytes),
+	// 		FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+	// 		DestinationID: destinationID,
+	// 	}
+	// }
 	return uploadResponse
 
 }
