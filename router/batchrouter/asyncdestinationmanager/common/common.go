@@ -120,6 +120,21 @@ type FetchFailedStatus struct {
 	OutputFilePath string
 }
 
+type EventStatMeta struct {
+	FailedKeys    []int64
+	ErrFailed     error
+	WarningKeys   []int64
+	ErrWarning    error
+	SucceededKeys []int64
+	ErrSuccess    error
+	FailedReasons map[string]string
+}
+
+type EventStatResponse struct {
+	Status   string        `json:"status"`
+	Metadata EventStatMeta `json:"metadata"`
+}
+
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
 	if keyMap == nil {
 		return []int64{}, importingJobIDs

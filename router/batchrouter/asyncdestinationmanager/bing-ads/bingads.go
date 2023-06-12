@@ -86,7 +86,7 @@ type Response struct {
 type MetadataNew struct {
 	FailedKeys    []int64           `json:"failedKeys"`
 	FailedReasons map[string]string `json:"failedReasons"`
-	WarningKeys   []string          `json:"warningKeys"`
+	WarningKeys   []int64           `json:"warningKeys"`
 	SucceededKeys []int64           `json:"succeededKeys"`
 }
 
@@ -595,7 +595,7 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	return bingads, nil
 }
 
-func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
+func (b *BingAdsBulkUploader) FetchEventsStat(failedJobsStatus common.FetchFailedStatus) (common.EventStatResponse, int) {
 	// Function implementation
 	filePath := failedJobsStatus.OutputFilePath
 	records := ReadPollResults(filePath)
@@ -616,30 +616,26 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 		Metadata: MetadataNew{
 			FailedKeys:    GetFailedKeys(clientIDErrors),
 			FailedReasons: GetFailedReasons(clientIDErrors),
-			WarningKeys:   []string{},
+			WarningKeys:   []int64{},
 			SucceededKeys: GetSuccessKeys(GetFailedKeys(clientIDErrors), initialEventList),
 		},
 	}
 
-	// Convert the response to JSON
-	respBytes, err := stdjson.Marshal(response)
-	if err != nil {
-		log.Fatal("Error converting to JSON:", err)
+	// Build the response body
+	eventStatsResponse := common.EventStatResponse{
+		Status: response.Status,
+		Metadata: common.EventStatMeta{
+			FailedKeys:    response.Metadata.FailedKeys,
+			ErrFailed:     nil,
+			WarningKeys:   response.Metadata.WarningKeys,
+			ErrWarning:    nil,
+			SucceededKeys: response.Metadata.SucceededKeys,
+			ErrSuccess:    nil,
+			FailedReasons: GetFailedReasons(clientIDErrors),
+		},
 	}
-	return respBytes, 200
-}
 
-// retrieves jobIds from metadata based on requirements, eg: successKeys, warningKeys, failedKeys
-func (b *BingAdsBulkUploader) RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
-	retrievedKeys, ok := metadata[retrieveKeys].([]interface{})
-	if !ok {
-		panic("failedKeys is not an array")
-	}
-	retrievedKeysArr := make([]int64, len(retrievedKeys))
-	for index, value := range retrievedKeys {
-		retrievedKeysArr[index] = int64(value.(float64))
-	}
-	return retrievedKeysArr, nil
+	return eventStatsResponse, 200
 }
 
 // filtering out failed jobIds from the total array of jobIds

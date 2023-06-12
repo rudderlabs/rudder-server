@@ -387,22 +387,25 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 			},
 		},
 	}
-	Response := bingads.Response{
+	expectedResp := common.EventStatResponse{
 		Status: "200",
-		Metadata: bingads.MetadataNew{
+		Metadata: common.EventStatMeta{
 			FailedKeys: []int64{1, 2},
+			ErrFailed:  nil,
 			FailedReasons: map[string]string{
 				"1": "error1",
 				"2": "error1, error2",
 			},
-			WarningKeys:   []string{},
+			WarningKeys:   []int64{},
+			ErrWarning:    nil,
 			SucceededKeys: []int64{3},
+			ErrSuccess:    nil,
 		},
 	}
 	// Convert the response to JSON
-	expectedResp, _ := stdjson.Marshal(Response)
+	// expectedResp, _ := stdjson.Marshal(Response)
 	expectedStatus := 200
-	recievedResponse, RecievedStatus := bulkUploader.FetchFailedEvents(failedJobsStatus)
+	recievedResponse, RecievedStatus := bulkUploader.FetchEventsStat(failedJobsStatus)
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
 }

@@ -25,6 +25,7 @@ type MarketoBulkUploader struct {
 	destinationConfig map[string]interface{}
 	TransformUrl      string
 	PollUrl           string
+	logger            logger.Logger
 }
 
 func NewManager(destination *backendconfig.DestinationT, HTTPTimeout time.Duration) (*MarketoBulkUploader, error) {
@@ -55,7 +56,7 @@ func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 	return asyncResponse, statusCode
 }
 
-func (b *MarketoBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
+func (b *MarketoBulkUploader) FetchEventsStat(failedJobsStatus common.FetchFailedStatus) (common.EventStatResponse, int) {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	failedJobUrl := failedJobsStatus.FailedJobsURL
 	parameters := failedJobsStatus.Parameters
@@ -63,7 +64,37 @@ func (b *MarketoBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 	payload := common.GenerateFailedPayload(b.destinationConfig, failedJobsStatus.ImportingList, importId, b.destName, csvHeaders)
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, b.timeout)
-	return failedBodyBytes, statusCode
+	if statusCode != 200 {
+		return common.EventStatResponse{}, statusCode
+	}
+	var failedJobsResponse map[string]interface{}
+	_ = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
+
+	internalStatusCode, _ := failedJobsResponse["status"].(string)
+	metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
+	if !ok {
+		//TODO
+		pkgLogger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", internalStatusCode, string(failedBodyBytes))
+		return common.EventStatResponse{}, statusCode
+	}
+
+	failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
+	warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
+	succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(metadata["succeededKeys"])
+
+	// Build the response body
+	eventStatsResponse := common.EventStatResponse{
+		Status: internalStatusCode,
+		Metadata: common.EventStatMeta{
+			FailedKeys:    failedKeys,
+			ErrFailed:     errFailed,
+			WarningKeys:   warningKeys,
+			ErrWarning:    errWarning,
+			SucceededKeys: succeededKeys,
+			ErrSuccess:    errSuccess,
+		},
+	}
+	return eventStatsResponse, statusCode
 }
 
 func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
@@ -208,40 +239,6 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 
 	}
-	// else if statusCode == "400" {
-	// 	var responseStruct common.UploadStruct
-	// 	err := json.Unmarshal(bodyBytes, &responseStruct)
-	// 	if err != nil {
-	// 		panic("Incorrect Response from Transformer: " + err.Error())
-	// 	}
-	// 	eventsAbortedStat := stats.Default.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
-	// 		"module":   "batch_router",
-	// 		"destType": destType,
-	// 	})
-	// 	abortedJobIDs, failedJobIDsTrans := common.CleanUpData(responseStruct.Metadata, importingJobIDs)
-	// 	eventsAbortedStat.Count(len(abortedJobIDs))
-	// 	uploadResponse = common.AsyncUploadOutput{
-	// 		AbortJobIDs:   abortedJobIDs,
-	// 		FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
-	// 		FailedReason:  `{"error":"Jobs flowed over the prescribed limit"}`,
-	// 		AbortReason:   string(bodyBytes),
-	// 		AbortCount:    len(importingJobIDs),
-	// 		FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
-	// 		DestinationID: destinationID,
-	// 	}
-	// } else {
-	// 	uploadResponse = common.AsyncUploadOutput{
-	// 		FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-	// 		FailedReason:  string(bodyBytes),
-	// 		FailedCount:   len(failedJobIDs) + len(importingJobIDs),
-	// 		DestinationID: destinationID,
-	// 	}
-	// }
 	return uploadResponse
 
-}
-
-func (b *MarketoBulkUploader) RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
-	retrievedKeys, err := misc.ConvertStringInterfaceToIntArray(metadata[retrieveKeys])
-	return retrievedKeys, err
 }
