@@ -298,7 +298,6 @@ func (repo *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinat
 		AND destination_id = $3
 	ORDER BY
 		id ASC;`
-
 	rows, err := repo.db.QueryContext(ctx, query, uploadId, sourceID, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying staging files: %w", err)
