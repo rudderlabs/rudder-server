@@ -239,7 +239,6 @@ func (pg *Postgres) loadTable(
 			"destID":       pg.Warehouse.Destination.ID,
 			"destType":     pg.Warehouse.Destination.DestinationDefinition.Name,
 			"workspaceId":  pg.Warehouse.WorkspaceID,
-			"namespace":    pg.Namespace,
 			"tableName":    tableName,
 			"rowsAffected": fmt.Sprintf("%d", rowsAffected),
 		})

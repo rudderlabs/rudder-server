@@ -1,15 +1,23 @@
 package router
 
 import (
+	"context"
+	"database/sql"
+	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type Factory struct {
+	Logger           logger.Logger
 	Reporting        reporter
 	Multitenant      tenantStats
 	BackendConfig    backendconfig.BackendConfig
@@ -22,19 +30,20 @@ type Factory struct {
 	AdaptiveLimit    func(int64) int64
 }
 
-func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
-	r := &HandleT{
+func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
+	r := &Handle{
 		Reporting:        f.Reporting,
 		MultitenantI:     f.Multitenant,
 		throttlerFactory: f.ThrottlerFactory,
 		adaptiveLimit:    f.AdaptiveLimit,
 	}
-	destConfig := getRouterConfig(destination, identifier)
 	r.Setup(
+		destination.DestinationDefinition,
+		f.Logger,
+		config.Default,
 		f.BackendConfig,
 		f.RouterDB,
 		f.ProcErrorDB,
-		destConfig,
 		f.TransientSources,
 		f.RsourcesService,
 		f.Debugger,
@@ -42,18 +51,16 @@ func (f *Factory) New(destination *backendconfig.DestinationT, identifier string
 	return r
 }
 
-type destinationConfig struct {
-	name          string
-	responseRules map[string]interface{}
-	config        map[string]interface{}
-	destinationID string
+type reporter interface {
+	WaitForSetup(ctx context.Context, clientName string) error
+	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
 }
 
-func getRouterConfig(destination *backendconfig.DestinationT, identifier string) destinationConfig {
-	return destinationConfig{
-		name:          destination.DestinationDefinition.Name,
-		destinationID: identifier,
-		config:        destination.DestinationDefinition.Config,
-		responseRules: destination.DestinationDefinition.ResponseRules,
-	}
+type tenantStats interface {
+	CalculateSuccessFailureCounts(workspace, destType string, isSuccess, isDrained bool)
+	GetRouterPickupJobs(
+		destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int,
+	) map[string]int
+	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
+	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
 }

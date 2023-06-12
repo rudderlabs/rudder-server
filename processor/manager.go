@@ -30,7 +30,7 @@ type LifecycleManager struct {
 	esDB             *jobsdb.HandleT
 	clearDB          *bool
 	MultitenantStats multitenant.MultiTenantI // need not initialize again
-	ReportingI       types.ReportingI         // need not initialize again
+	ReportingI       types.Reporting          // need not initialize again
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
 	transientSources transientsource.Service
@@ -84,7 +84,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb, esDB *jobsdb.HandleT,
-	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
+	tenantDB multitenant.MultiTenantI, reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 	opts ...Opts,
 ) *LifecycleManager {

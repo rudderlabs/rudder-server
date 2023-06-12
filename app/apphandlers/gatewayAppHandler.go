@@ -79,9 +79,11 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer gatewayDB.Close()
+
 	if err := gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gatewayDB: %w", err)
 	}

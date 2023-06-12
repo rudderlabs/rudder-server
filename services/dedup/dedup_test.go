@@ -21,6 +21,7 @@ func Test_Dedup(t *testing.T) {
 	config.Reset()
 	logger.Reset()
 	misc.Init()
+
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
@@ -114,6 +115,7 @@ func Test_Dedup_ClearDB(t *testing.T) {
 func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	config.Reset()
 	logger.Reset()
+	misc.Init()
 
 	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
 	defer os.RemoveAll(dbPath)
@@ -134,6 +136,8 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 func Benchmark_Dedup(b *testing.B) {
 	config.Reset()
 	logger.Reset()
+	misc.Init()
+
 	dbPath := path.Join("./testdata", "tmp", rand.String(10), "/DB_Benchmark_Dedup")
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer func() { _ = os.RemoveAll(dbPath) }()

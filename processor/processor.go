@@ -18,10 +18,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -39,10 +41,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/samber/lo"
@@ -79,7 +79,7 @@ type Handle struct {
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
 	dedup                     dedup.Dedup
-	reporting                 types.ReportingI
+	reporting                 types.Reporting
 	reportingEnabled          bool
 	multitenantI              multitenant.MultiTenantI
 	backgroundWait            func() error
@@ -98,10 +98,10 @@ type Handle struct {
 	transDebugger             transformationdebugger.TransformationDebugger
 	isolationStrategy         isolation.Strategy
 	limiter                   struct {
-		read       miscsync.Limiter
-		preprocess miscsync.Limiter
-		transform  miscsync.Limiter
-		store      miscsync.Limiter
+		read       kitsync.Limiter
+		preprocess kitsync.Limiter
+		transform  kitsync.Limiter
+		store      kitsync.Limiter
 	}
 	config struct {
 		isolationMode             isolation.Mode
@@ -139,6 +139,7 @@ type Handle struct {
 	}
 
 	adaptiveLimit func(int64) int64
+	storePlocker  kitsync.PartitionLocker
 }
 type processorStats struct {
 	statGatewayDBR                stats.Measurement
@@ -320,7 +321,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.ReportingI,
+	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.Reporting,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
@@ -348,6 +349,7 @@ func (proc *Handle) Setup(
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
 	}
+	proc.storePlocker = *kitsync.NewPartitionLocker()
 
 	// Stats
 	proc.statsFactory = stats.Default
@@ -429,6 +431,19 @@ func (proc *Handle) Setup(
 		return nil
 	}))
 
+	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
+	// can always detect a stuck processor
+	g.Go(misc.WithBugsnag(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(15 * time.Second):
+				proc.stats.statGatewayDBW.Count(0)
+			}
+		}
+	}))
+
 	proc.transformer.Setup()
 	proc.crashRecover()
 }
@@ -445,22 +460,22 @@ func (proc *Handle) Start(ctx context.Context) error {
 	// limiters
 	s := proc.statsFactory
 	var limiterGroup sync.WaitGroup
-	proc.limiter.read = miscsync.NewLimiter(ctx, &limiterGroup, "proc_read",
+	proc.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "proc_read",
 		config.GetInt("Processor.Limiter.read.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
-	proc.limiter.preprocess = miscsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
+	proc.limiter.preprocess = kitsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
 		config.GetInt("Processor.Limiter.preprocess.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
-	proc.limiter.transform = miscsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+	proc.limiter.transform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
 		config.GetInt("Processor.Limiter.transform.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.store = miscsync.NewLimiter(ctx, &limiterGroup, "proc_store",
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
+	proc.limiter.store = kitsync.NewLimiter(ctx, &limiterGroup, "proc_store",
 		config.GetInt("Processor.Limiter.store.limit", 50),
 		s,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
 	g.Go(func() error {
 		limiterGroup.Wait()
 		return nil
@@ -1733,6 +1748,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
 	var batchDestJobs []*jobsdb.JobT
 	var destJobs []*jobsdb.JobT
+	routerDestIDs := make(map[string]struct{})
 
 	destProcStart := time.Now()
 
@@ -1763,7 +1779,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	for o := range chOut {
 		destJobs = append(destJobs, o.destJobs...)
 		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
-
+		routerDestIDs = lo.Assign(routerDestIDs, o.routerDestIDs)
 		in.reportMetrics = append(in.reportMetrics, o.reportMetrics...)
 		for k, v := range o.errorsPerDestID {
 			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], v...)
@@ -1776,6 +1792,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	// this tells us how many transformations we are doing per second.
 	transformationsThroughput := throughputPerSecond(in.totalEvents, destProcTime)
 	proc.stats.transformationsThroughput.Count(transformationsThroughput)
+
 	return &storeMessage{
 		in.statusList,
 		destJobs,
@@ -1783,6 +1800,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 
 		procErrorJobsByDestID,
 		in.procErrorJobs,
+		lo.Keys(routerDestIDs),
 
 		in.reportMetrics,
 		in.sourceDupStats,
@@ -1801,6 +1819,7 @@ type storeMessage struct {
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	procErrorJobs         []*jobsdb.JobT
+	routerDestIDs         []string
 
 	reportMetrics    []*types.PUReportedMetric
 	sourceDupStats   map[dupStatKey]int
@@ -1852,6 +1871,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	if proc.limiter.store != nil {
 		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
+
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	beforeStoreStatus := time.Now()
 	// XX: Need to do this in a transaction
@@ -1894,41 +1914,50 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}
 
 	if len(destJobs) > 0 {
-		err := misc.RetryWithNotify(
-			context.Background(),
-			proc.jobsDBCommandTimeout,
-			proc.jobdDBMaxRetries,
-			func(ctx context.Context) error {
-				return proc.routerDB.WithStoreSafeTx(
-					ctx,
-					func(tx jobsdb.StoreSafeTx) error {
-						err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
-						if err != nil {
-							return fmt.Errorf("storing router jobs: %w", err)
-						}
+		func() {
+			// Only one goroutine can store to a router destination at a time, otherwise we may have different transactions
+			// committing at different timestamps which can cause events with lower jobIDs to appear after events with higher ones.
+			// For that purpose, before storing, we lock the relevant destination IDs (in sorted order to avoid deadlocks).
+			if len(in.routerDestIDs) > 0 {
+				destIDs := lo.Uniq(in.routerDestIDs)
+				slices.Sort(destIDs)
+				for _, destID := range destIDs {
+					proc.storePlocker.Lock(destID)
+					defer proc.storePlocker.Unlock(destID)
+				}
+			}
+			err := misc.RetryWithNotify(
+				context.Background(),
+				proc.jobsDBCommandTimeout,
+				proc.jobdDBMaxRetries,
+				func(ctx context.Context) error {
+					return proc.routerDB.WithStoreSafeTx(
+						ctx,
+						func(tx jobsdb.StoreSafeTx) error {
+							err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
+							if err != nil {
+								return fmt.Errorf("storing router jobs: %w", err)
+							}
 
-						// rsources stats
-						err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
-						if err != nil {
-							return fmt.Errorf("publishing rsources stats for router: %w", err)
-						}
-						return nil
-					})
-			}, proc.sendRetryStoreStats)
-		if err != nil {
-			panic(err)
-		}
-		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-
-		proc.multitenantI.ReportProcLoopAddStats(
-			getJobCountsByWorkspaceDestType(destJobs),
-			"rt",
-		)
-		proc.stats.statDestNumOutputEvents.Count(len(destJobs))
-		proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
-		proc.stats.statDBWriteRouterPayloadBytes.Observe(
-			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
-		)
+							// rsources stats
+							err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
+							if err != nil {
+								return fmt.Errorf("publishing rsources stats for router: %w", err)
+							}
+							return nil
+						})
+				}, proc.sendRetryStoreStats)
+			if err != nil {
+				panic(err)
+			}
+			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+			proc.multitenantI.ReportProcLoopAddStats(getJobCountsByWorkspaceDestType(destJobs), "rt")
+			proc.stats.statDestNumOutputEvents.Count(len(destJobs))
+			proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
+			proc.stats.statDBWriteRouterPayloadBytes.Observe(
+				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
+			)
+		}()
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
@@ -2019,6 +2048,7 @@ type transformSrcDestOutput struct {
 	destJobs        []*jobsdb.JobT
 	batchDestJobs   []*jobsdb.JobT
 	errorsPerDestID map[string][]*jobsdb.JobT
+	routerDestIDs   map[string]struct{}
 }
 
 func (proc *Handle) transformSrcDest(
@@ -2051,6 +2081,7 @@ func (proc *Handle) transformSrcDest(
 	reportMetrics := make([]*types.PUReportedMetric, 0)
 	batchDestJobs := make([]*jobsdb.JobT, 0)
 	destJobs := make([]*jobsdb.JobT, 0)
+	routerDestIDs := make(map[string]struct{})
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
 
 	proc.config.configSubscriberLock.RLock()
@@ -2164,6 +2195,7 @@ func (proc *Handle) transformSrcDest(
 			batchDestJobs:   batchDestJobs,
 			errorsPerDestID: procErrorJobsByDestID,
 			reportMetrics:   reportMetrics,
+			routerDestIDs:   routerDestIDs,
 		}
 	}
 
@@ -2228,6 +2260,7 @@ func (proc *Handle) transformSrcDest(
 			batchDestJobs:   batchDestJobs,
 			errorsPerDestID: procErrorJobsByDestID,
 			reportMetrics:   reportMetrics,
+			routerDestIDs:   routerDestIDs,
 		}
 	}
 
@@ -2374,6 +2407,7 @@ func (proc *Handle) transformSrcDest(
 				batchDestJobs = append(batchDestJobs, &newJob)
 			} else {
 				destJobs = append(destJobs, &newJob)
+				routerDestIDs[destID] = struct{}{}
 			}
 		}
 	})
@@ -2382,6 +2416,7 @@ func (proc *Handle) transformSrcDest(
 		batchDestJobs:   batchDestJobs,
 		errorsPerDestID: procErrorJobsByDestID,
 		reportMetrics:   reportMetrics,
+		routerDestIDs:   routerDestIDs,
 	}
 }
 
@@ -2504,6 +2539,14 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	}
 	dbReadTime := time.Since(s)
 	defer proc.stats.statDBR.SendTiming(dbReadTime)
+
+	var firstJob *jobsdb.JobT
+	var lastJob *jobsdb.JobT
+	if len(unprocessedList.Jobs) > 0 {
+		firstJob = unprocessedList.Jobs[0]
+		lastJob = unprocessedList.Jobs[len(unprocessedList.Jobs)-1]
+	}
+	proc.pipelineDelayStats(partition, firstJob, lastJob)
 
 	// check if there is work to be done
 	if len(unprocessedList.Jobs) == 0 {
@@ -2676,8 +2719,8 @@ func filterConfig(eventCopy *transformer.TransformerEventT) {
 	}
 }
 
-func (*Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
-	return miscsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
+func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue {
+	return kitsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
 }
 
 func (proc *Handle) filterDestinations(
@@ -2738,4 +2781,22 @@ func deniedConsentCategories(se types.SingularEventT) []string {
 		)
 	}
 	return nil
+}
+
+// pipelineDelayStats reports the delay of the pipeline as a range:
+//
+// - max - time elapsed since the first job was created
+//
+// - min - time elapsed since the last job was created
+func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.JobT) {
+	var firstJobDelay float64
+	var lastJobDelay float64
+	if first != nil {
+		firstJobDelay = time.Since(first.CreatedAt).Seconds()
+	}
+	if last != nil {
+		lastJobDelay = time.Since(last.CreatedAt).Seconds()
+	}
+	proc.statsFactory.NewTaggedStat("pipeline_delay_min_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(lastJobDelay)
+	proc.statsFactory.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(firstJobDelay)
 }

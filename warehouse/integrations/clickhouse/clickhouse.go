@@ -189,7 +189,6 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 		"destination": warehouse.Destination.ID,
 		"destType":    warehouse.Type,
 		"source":      warehouse.Source.ID,
-		"namespace":   warehouse.Namespace,
 		"identifier":  warehouse.Identifier,
 		"tableName":   tableName,
 	}

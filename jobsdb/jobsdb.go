@@ -40,11 +40,11 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -296,7 +296,8 @@ type JobsDB interface {
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalDeleteEntry(opID int64)
-	JournalMarkStart(opType string, opPayload json.RawMessage) int64
+	JournalMarkStart(opType string, opPayload json.RawMessage) (int64, error)
+	JournalMarkDone(opID int64) error
 }
 
 /*
@@ -429,17 +430,18 @@ type HandleT struct {
 	statNewDSPeriod               stats.Measurement
 	newDSCreationTime             time.Time
 	invalidCacheKeyStat           stats.Measurement
-	isStatNewDSPeriodInitialized  bool
 	statDropDSPeriod              stats.Measurement
 	dsDropTime                    time.Time
 	unionQueryTime                stats.Measurement
-	isStatDropDSPeriodInitialized bool
 	logger                        logger.Logger
 	writeCapacity                 chan struct{}
 	readCapacity                  chan struct{}
 	enableWriterQueue             bool
 	enableReaderQueue             bool
 	clearAll                      bool
+	skipMaintenanceError          bool
+	isStatNewDSPeriodInitialized  bool
+	isStatDropDSPeriodInitialized bool
 	dsLimit                       *int
 	maxReaders                    int
 	maxWriters                    int
@@ -460,7 +462,6 @@ type HandleT struct {
 	TriggerAddNewDS  func() <-chan time.Time
 	TriggerMigrateDS func() <-chan time.Time
 	migrateDSTimeout time.Duration
-
 	TriggerRefreshDS func() <-chan time.Time
 	refreshDSTimeout time.Duration
 
@@ -604,6 +605,8 @@ func init() {
 var (
 	maxDSSize, maxMigrateOnce, maxMigrateDSProbe int
 	maxTableSize                                 int64
+	vacuumFullStatusTableThreshold               int64
+	vacuumAnalyzeStatusTableThreshold            int64
 	jobDoneMigrateThres, jobStatusMigrateThres   float64
 	jobMinRowsMigrateThres                       float64
 	migrateDSLoopSleepDuration                   time.Duration
@@ -642,6 +645,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
 	config.RegisterInt64ConfigVariable(300, &maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
 	config.RegisterInt64ConfigVariable(10000, &backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
+	config.RegisterInt64ConfigVariable(500*bytesize.MB, &vacuumFullStatusTableThreshold, true, 1, "JobsDB.vacuumFullStatusTableThreshold")
+	config.RegisterInt64ConfigVariable(30000, &vacuumAnalyzeStatusTableThreshold, true, 1, "JobsDB.vacuumAnalyzeStatusTableThreshold")
 	config.RegisterInt64ConfigVariable(64*bytesize.MB, &backupMaxTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
 	config.RegisterDurationConfigVariable(30, &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
@@ -675,6 +680,12 @@ func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 func WithDSLimit(limit *int) OptsFunc {
 	return func(jd *HandleT) {
 		jd.dsLimit = limit
+	}
+}
+
+func WithSkipMaintenanceErr(ignore bool) OptsFunc {
+	return func(jd *HandleT) {
+		jd.skipMaintenanceError = ignore
 	}
 }
 
@@ -809,7 +820,8 @@ func (jd *HandleT) init() {
 					// doesn't return the full list of datasets, only the rightmost two.
 					// But we need to run the schema migration against all datasets, no matter
 					// whether jobsdb is a writer or not.
-					datasets := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+					datasets, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+					jd.assertError(err)
 
 					datasetIndices := make([]string, 0)
 					for _, dataset := range datasets {
@@ -836,7 +848,8 @@ func (jd *HandleT) init() {
 				jd.runAlwaysChangesets(templateData)
 
 				// finally refresh the dataset list to make sure [datasetList] field is populated
-				jd.refreshDSList(l)
+				_, err := jd.refreshDSList(l)
+				jd.assertError(err)
 			})
 			return nil
 		})
@@ -938,11 +951,9 @@ func (jd *HandleT) readerSetup(ctx context.Context, l lock.LockToken) {
 	// This is a thread-safe operation.
 	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
-
-	jd.refreshDSRangeList(l)
+	jd.assertError(jd.refreshDSRangeList(l))
 
 	g := jd.backgroundGroup
-
 	g.Go(misc.WithBugsnag(func() error {
 		jd.refreshDSListLoop(ctx)
 		return nil
@@ -962,8 +973,8 @@ func (jd *HandleT) writerSetup(ctx context.Context, l lock.LockToken) {
 	// This is a thread-safe operation.
 	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
+	jd.assertError(jd.refreshDSRangeList(l))
 
-	jd.refreshDSRangeList(l)
 	// If no DS present, add one
 	if len(jd.getDSList()) == 0 {
 		jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
@@ -1027,11 +1038,15 @@ func (jd *HandleT) getDSList() []dataSetT {
 }
 
 // refreshDSList refreshes the ds list from the database
-func (jd *HandleT) refreshDSList(l lock.LockToken) []dataSetT {
-	jd.assert(l != nil, "cannot refresh DS list without a valid lock token")
+func (jd *HandleT) refreshDSList(l lock.LockToken) ([]dataSetT, error) {
+	if l == nil {
+		return nil, fmt.Errorf("cannot refresh DS list without a valid lock token")
+	}
+	var err error
 	// Reset the global list
-	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
-
+	if jd.datasetList, err = getDSList(jd, jd.dbHandle, jd.tablePrefix); err != nil {
+		return nil, fmt.Errorf("getDSList %w", err)
+	}
 	// report table count metrics before shrinking the datasetList
 	jd.statTableCount.Gauge(len(jd.datasetList))
 	jd.statDSCount.Gauge(len(jd.datasetList))
@@ -1045,7 +1060,7 @@ func (jd *HandleT) refreshDSList(l lock.LockToken) []dataSetT {
 		}
 	}
 
-	return jd.datasetList
+	return jd.datasetList, nil
 }
 
 func (jd *HandleT) getDSRangeList() []dataSetRangeT {
@@ -1053,25 +1068,34 @@ func (jd *HandleT) getDSRangeList() []dataSetRangeT {
 }
 
 // refreshDSRangeList first refreshes the DS list and then calculate the DS range list
-func (jd *HandleT) refreshDSRangeList(l lock.LockToken) {
-	var minID, maxID sql.NullInt64
+func (jd *HandleT) refreshDSRangeList(l lock.LockToken) error {
 	var prevMax int64
 
 	// At this point we must have write-locked dsListLock
-	dsList := jd.refreshDSList(l)
-
+	dsList, err := jd.refreshDSList(l)
+	if err != nil {
+		return fmt.Errorf("refreshDSList %w", err)
+	}
 	jd.datasetRangeList = nil
 
 	for idx, ds := range dsList {
 		jd.assert(ds.Index != "", "ds.Index is empty")
-		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
-		// Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
-		row := jd.dbHandle.QueryRow(sqlStatement)
 
-		err := row.Scan(&minID, &maxID)
-		jd.assertError(err)
+		getIndex := func() (sql.NullInt64, sql.NullInt64, error) {
+			var minID, maxID sql.NullInt64
+			sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
+			row := jd.dbHandle.QueryRow(sqlStatement)
+			if err := row.Scan(&minID, &maxID); err != nil {
+				return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
+			}
+			jd.logger.Debug(sqlStatement, minID, maxID)
+			return minID, maxID, nil
+		}
+		minID, maxID, err := getIndex()
+		if err != nil {
+			return err
+		}
 
-		jd.logger.Debug(sqlStatement, minID, maxID)
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
@@ -1097,6 +1121,7 @@ func (jd *HandleT) refreshDSRangeList(l lock.LockToken) {
 			prevMax = maxID.Int64
 		}
 	}
+	return nil
 }
 
 func (jd *HandleT) getTableRowCount(jobTable string) int {
@@ -1203,10 +1228,12 @@ func newDataSet(tablePrefix, dsIdx string) dataSetT {
 
 func (jd *HandleT) addNewDS(l lock.LockToken, ds dataSetT) {
 	err := jd.WithTx(func(tx *Tx) error {
-		return jd.addNewDSInTx(tx, l, jd.refreshDSList(l), ds)
+		dsList, err := jd.refreshDSList(l)
+		jd.assertError(err)
+		return jd.addNewDSInTx(tx, l, dsList, ds)
 	})
 	jd.assertError(err)
-	jd.refreshDSRangeList(l)
+	jd.assertError(jd.refreshDSRangeList(l))
 }
 
 // NOTE: If addNewDSInTx is directly called, make sure to explicitly call refreshDSRangeList(l) to update the DS list in cache, once transaction has completed.
@@ -1246,14 +1273,9 @@ func (jd *HandleT) addDSInTx(tx *Tx, ds dataSetT) error {
 	return jd.createDSInTx(tx, ds)
 }
 
-// mustDropDS drops a dataset and panics if it fails to do so
-func (jd *HandleT) mustDropDS(ds dataSetT) {
-	err := jd.dropDS(ds)
-	jd.assertError(err)
-}
-
 func (jd *HandleT) computeNewIdxForAppend(l lock.LockToken) string {
-	dList := jd.refreshDSList(l)
+	dList, err := jd.refreshDSList(l)
+	jd.assertError(err)
 	return jd.doComputeNewIdxForAppend(dList)
 }
 
@@ -1603,17 +1625,21 @@ func (jd *HandleT) dropAllBackupDS() error {
 
 func (jd *HandleT) dropAllDS(l lock.LockToken) error {
 	var err error
-	dList := jd.refreshDSList(l)
+	dList, err := jd.refreshDSList(l)
+	if err != nil {
+		return fmt.Errorf("refreshDSList: %w", err)
+	}
 	for _, ds := range dList {
 		if err = jd.dropDS(ds); err != nil {
-			return err
+			return fmt.Errorf("dropDS: %w", err)
 		}
 	}
 
 	// Update the lists
-	jd.refreshDSRangeList(l)
-
-	return err
+	if err = jd.refreshDSRangeList(l); err != nil {
+		return fmt.Errorf("refreshDSRangeList: %w", err)
+	}
+	return nil
 }
 
 func (jd *HandleT) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
@@ -1649,7 +1675,10 @@ func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 		if err != nil && errors.Is(err, errStaleDsList) {
 			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-				_ = jd.refreshDSList(l)
+				_, err = jd.refreshDSList(l)
+				if err != nil {
+					return fmt.Errorf("refreshing ds list: %w", err)
+				}
 				return nil
 			}); err != nil {
 				return err
@@ -2383,57 +2412,75 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 			return
 		case <-jd.TriggerAddNewDS():
 		}
-
-		// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
 		var dsListLock lock.LockToken
 		var releaseDsListLock chan<- lock.LockToken
-		// start a transaction
-		err := jd.WithTx(func(tx *Tx) error {
-			return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
-				return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
-					var err error
-					// We acquire the list lock only after we have acquired the advisory lock.
-					// We will release the list lock after the transaction ends, that's why we need to use an async lock
-					dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
-					if err != nil {
-						return err
-					}
-					// refresh ds list
-					var dsList []dataSetT
-					var nextDSIdx string
-					// make sure we are operating on the latest version of the list
-					dsList = getDSList(jd, tx, jd.tablePrefix)
-					latestDS := dsList[len(dsList)-1]
-					full, err := jd.checkIfFullDSInTx(tx, latestDS)
-					if err != nil {
-						return fmt.Errorf("error while checking if DS is full: %w", err)
-					}
-					// checkIfFullDS is true for last DS in the list
-					if full {
-						if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
-							return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+		addNewDS := func() error {
+			defer func() {
+				if releaseDsListLock != nil && dsListLock != nil {
+					releaseDsListLock <- dsListLock
+				}
+			}()
+			// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
+			// start a transaction
+			err := jd.WithTx(func(tx *Tx) error {
+				return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
+					return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
+						var err error
+						// We acquire the list lock only after we have acquired the advisory lock.
+						// We will release the list lock after the transaction ends, that's why we need to use an async lock
+						dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+						if err != nil {
+							return err
 						}
+						// refresh ds list
+						var dsList []dataSetT
+						var nextDSIdx string
+						// make sure we are operating on the latest version of the list
+						dsList, err = getDSList(jd, tx, jd.tablePrefix)
+						if err != nil {
+							return fmt.Errorf("getDSList: %w", err)
+						}
+						latestDS := dsList[len(dsList)-1]
+						full, err := jd.checkIfFullDSInTx(tx, latestDS)
+						if err != nil {
+							return fmt.Errorf("checkIfFullDSInTx: %w", err)
+						}
+						// checkIfFullDS is true for last DS in the list
+						if full {
+							if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+							}
 
-						nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
-						jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-						if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
-							return fmt.Errorf("error adding new DS: %w", err)
-						}
+							nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
+							jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
+							if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
+								return fmt.Errorf("error adding new DS: %w", err)
+							}
 
-						// previous DS should become read only
-						if err = setReadonlyDsInTx(tx, latestDS); err != nil {
-							return fmt.Errorf("error making dataset read only: %w", err)
+							// previous DS should become read only
+							if err = setReadonlyDsInTx(tx, latestDS); err != nil {
+								return fmt.Errorf("error making dataset read only: %w", err)
+							}
 						}
-					}
-					return nil
+						return nil
+					})
 				})
 			})
-		})
-		jd.assertError(err)
-
-		// to get the updated DS list in the cache after createDS transaction has been committed.
-		jd.refreshDSRangeList(dsListLock)
-		releaseDsListLock <- dsListLock
+			if err != nil {
+				return fmt.Errorf("addNewDSLoop: %w", err)
+			}
+			// to get the updated DS list in the cache after createDS transaction has been committed.
+			if err = jd.refreshDSRangeList(dsListLock); err != nil {
+				return fmt.Errorf("refreshDSRangeList: %w", err)
+			}
+			return nil
+		}
+		if err := addNewDS(); err != nil {
+			if !jd.skipMaintenanceError && ctx.Err() == nil {
+				panic(err)
+			}
+			jd.logger.Errorw("addNewDSLoop", "error", err)
+		}
 	}
 }
 
@@ -2462,18 +2509,29 @@ func (jd *HandleT) refreshDSListLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		start := time.Now()
-		jd.logger.Debugw("Start", "operation", "refreshDSListLoop")
-		timeoutCtx, cancel := context.WithTimeout(ctx, jd.refreshDSTimeout)
-		err := jd.dsListLock.WithLockInCtx(timeoutCtx, func(l lock.LockToken) error {
-			jd.refreshDSRangeList(l)
+		refresh := func() error {
+			jd.logger.Debugw("Start", "operation", "refreshDSListLoop")
+
+			timeoutCtx, cancel := context.WithTimeout(ctx, jd.refreshDSTimeout)
+			defer cancel()
+
+			start := time.Now()
+			err := jd.dsListLock.WithLockInCtx(timeoutCtx, func(l lock.LockToken) error {
+				return jd.refreshDSRangeList(l)
+			})
+			stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+			if err != nil {
+				return fmt.Errorf("refreshDSRangeList: %w", err)
+			}
+
 			return nil
-		})
-		cancel()
-		if err != nil {
-			jd.logger.Errorf("Failed to refresh ds list: %v", err)
 		}
-		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+		if err := refresh(); err != nil {
+			if !jd.skipMaintenanceError && ctx.Err() == nil {
+				panic(err)
+			}
+			jd.logger.Errorw("refreshDSListLoop", "error", err)
+		}
 	}
 }
 
@@ -2508,15 +2566,13 @@ func (jd *HandleT) dropJournal() {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
+func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) (int64, error) {
 	var opID int64
-	err := jd.WithTx(func(tx *Tx) error {
+	return opID, jd.WithTx(func(tx *Tx) error {
 		var err error
 		opID, err = jd.JournalMarkStartInTx(tx, opType, opPayload)
 		return err
 	})
-	jd.assertError(err)
-	return opID
 }
 
 func (jd *HandleT) JournalMarkStartInTx(tx *Tx, opType string, opPayload json.RawMessage) (int64, error) {
@@ -2536,11 +2592,10 @@ func (jd *HandleT) JournalMarkStartInTx(tx *Tx, opType string, opPayload json.Ra
 }
 
 // JournalMarkDone marks the end of a journal action
-func (jd *HandleT) JournalMarkDone(opID int64) {
-	err := jd.WithTx(func(tx *Tx) error {
+func (jd *HandleT) JournalMarkDone(opID int64) error {
+	return jd.WithTx(func(tx *Tx) error {
 		return jd.journalMarkDoneInTx(tx, opID)
 	})
-	jd.assertError(err)
 }
 
 // JournalMarkDoneInTx marks the end of a journal action in a transaction
@@ -2581,9 +2636,7 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 		jd.assertError(err)
 		count++
 	}
-	if err = rows.Err(); err != nil {
-		jd.assertError(err)
-	}
+	jd.assertError(rows.Err())
 	return
 }
 
@@ -2630,9 +2683,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		jd.assert(!opDone, "opDone is true")
 		count++
 	}
-	if err = rows.Err(); err != nil {
-		jd.assertError(err)
-	}
+	jd.assertError(rows.Err())
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
 
 	if count == 0 {
