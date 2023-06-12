@@ -105,11 +105,11 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 		input = append(input, tempJob)
 	}
-	var uploadT common.AsyncUploadT
-	uploadT.Input = input
-	uploadT.Config = config
-	uploadT.DestType = strings.ToLower(destType)
-	payload, err := json.Marshal(uploadT)
+	payload, err := json.Marshal(common.AsyncUploadT{
+	        Input: input,
+	        Config: config,
+	        DestType: strings.ToLower(destType),
+	})
 	if err != nil {
 		panic("BRT: JSON Marshal Failed " + err.Error())
 	}
@@ -119,13 +119,13 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		"destType": destType,
 	})
 
-	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
+	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.Histogram, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
 
 	startTime := time.Now()
-	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
+	payloadSizeStat.Observe(len(payload))
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, b.timeout)
 	// resp body eg: {statusCode: 200, importId: '3099', pollURL: '/pollStatus', metadata: {…}}
@@ -136,21 +136,20 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	var statusCode string
 	if statusCodeHTTP != 200 {
 		bodyBytes = []byte(`"error" : "HTTP Call to Transformer Returned Non 200"`)
-		httpFailed = true
-	} else {
-		bodyBytes = responseBody
-		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
-	}
-
-	var uploadResponse common.AsyncUploadOutput
-	if httpFailed {
-		uploadResponse = common.AsyncUploadOutput{
+	        return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
 			FailedReason:  string(bodyBytes),
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
-	} else if statusCode == "200" {
+	} 
+	
+	bodyBytes = responseBody
+	statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
+
+	var uploadResponse common.AsyncUploadOutput
+         switch statusCode {
+         case "200":
 		var responseStruct common.UploadStruct
 		err := json.Unmarshal(bodyBytes, &responseStruct)
 		if err != nil {
