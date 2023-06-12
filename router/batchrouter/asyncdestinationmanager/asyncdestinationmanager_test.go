@@ -432,7 +432,6 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 	expectedResp, _ := stdjson.Marshal(Response)
 	expectedStatus := 200
 	recievedResponse, RecievedStatus := bulkUploader.FetchFailedEvents(failedJobsStatus)
-
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
 }

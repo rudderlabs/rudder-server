@@ -26,9 +26,9 @@ type MarketoBulkUploader struct {
 	PollUrl           string
 }
 
-func NewManager(destination *backendconfig.DestinationT, HTTPTimeout time.Duration) *MarketoBulkUploader {
-	marketobulkupload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", timeout: HTTPTimeout, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
-	return marketobulkupload
+func NewManager(destination *backendconfig.DestinationT, HTTPTimeout time.Duration) (*MarketoBulkUploader, error) {
+	marketoBulkUpload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", timeout: HTTPTimeout, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
+	return marketoBulkUpload, nil
 }
 
 var (
