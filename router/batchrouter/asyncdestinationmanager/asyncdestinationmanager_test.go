@@ -10,110 +10,33 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/bingads"
-	mock_oauth "github.com/rudderlabs/rudder-server/mocks/services/oauth"
 	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/bingads_sdk"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/oauth2"
 )
 
-type secretStruct struct {
-	AccessToken     string
-	RefreshToken    string
-	Developer_token string
-	ExpirationDate  string
-}
-
-type TokenSource struct {
-	accessToken     string
-	WorkspaceID     string
-	DestinationName string
-	AccountID       string
-	backendconfig   backendconfig.BackendConfig
-	oauthClient     *mock_oauth.MockAuthorizer
-}
-
-func (ts *TokenSource) generateToken() (string, string, error) {
-
-	refreshTokenParams := oauth.RefreshTokenParams{
-		WorkspaceId: ts.WorkspaceID,
-		DestDefName: ts.DestinationName,
-		AccountId:   ts.AccountID,
-	}
-
-	statusCode, authResponse := ts.oauthClient.FetchToken(&refreshTokenParams)
-	if statusCode != 200 {
-		return "", "", fmt.Errorf("Error in fetching access token")
-	}
-	secret := secretStruct{}
-	err := json.Unmarshal(authResponse.Account.Secret, &secret)
-	if err != nil {
-		return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-	}
-	currentTime := time.Now()
-	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
-	if err != nil {
-		return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
-	}
-	if currentTime.After(expirationTime) {
-		refreshTokenParams.Secret = authResponse.Account.Secret
-		statusCode, authResponse = ts.oauthClient.RefreshToken(&refreshTokenParams)
-		if statusCode != 200 {
-			return "", "", fmt.Errorf("Error in refreshing access token")
-		}
-		err = json.Unmarshal(authResponse.Account.Secret, &secret)
-		if err != nil {
-			return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-		}
-		return secret.AccessToken, secret.Developer_token, nil
-	}
-	return secret.AccessToken, secret.Developer_token, nil
-
-}
-func (ts *TokenSource) Token() (*oauth2.Token, error) {
-	accessToken, _, err := ts.generateToken()
-	if err != nil {
-		return nil, fmt.Errorf("Error occured while generating the accessToken")
-	}
-	ts.accessToken = accessToken
-
-	token := &oauth2.Token{
-		AccessToken: ts.accessToken,
-		Expiry:      time.Now().Add(time.Hour), // Set the token expiry time
-	}
-	return token, nil
-}
-
-type DestinationConfig struct {
-	AudienceId               string   `json:"audienceId"`
-	CustomerAccountId        string   `json:"customerAccountId"`
-	CustomerId               string   `json:"customerId"`
-	OneTrustCookieCategories []string `json:"oneTrustCookieCategories"`
-	RudderAccountId          string   `json:"rudderAccountId"`
-}
-
 var destination = backendconfig.DestinationT{
-	Name: "BingAds",
+	Name: "BingAdsAudience",
 }
 
+// Success scenario
 func TestBingAdsUploadSuccessCase(t *testing.T) {
 	_CreateZipFile := bingads.CreateZipFile
 	defer func() {
 		bingads.CreateZipFile = _CreateZipFile
 	}()
-	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64) {
+	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64, error) {
 		successJobIds := []int64{1, 2}
 		failedJobIds := []int64{3}
-		return "randomZipFile.path", successJobIds, failedJobIds
+		return "randomZipFile.path", successJobIds, failedJobIds, nil
 	}
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
+	// oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 		UploadUrl: "http://localhost/upload",
 		RequestId: misc.FastUUID().URN(),
@@ -147,41 +70,15 @@ func TestBingAdsUploadFailedGetBulkUploadUrl(t *testing.T) {
 	defer func() {
 		bingads.CreateZipFile = _CreateZipFile
 	}()
-	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64) {
+	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64, error) {
 		successJobIds := []int64{1, 2}
 		failedJobIds := []int64{3}
-		return "randomZipFile.path", successJobIds, failedJobIds
-
+		return "randomZipFile.path", successJobIds, failedJobIds, nil
 	}
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
-
-	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
-		PercentComplete: int64(100),
-		RequestStatus:   "Completed",
-		ResultFileUrl:   "http://dummyurl.com",
-	}, nil)
-	pollStruct := common.AsyncPoll{
-		ImportId: "dummyRequestId123",
-	}
-	expectedResp := common.AsyncStatusResponse{
-		Success:        true,
-		StatusCode:     200,
-		HasFailed:      false,
-		HasWarning:     false,
-		FailedJobsURL:  "",
-		WarningJobsURL: "",
-		OutputFilePath: "",
-	}
-	expectedStatus := 200
-	recievedResponse, RecievedStatus := bulkUploader.Poll(pollStruct)
-
-	assert.Equal(t, recievedResponse, expectedResp)
-	assert.Equal(t, RecievedStatus, expectedStatus)
-
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
 
 	asyncDestination := common.AsyncDestinationStruct{
@@ -204,16 +101,15 @@ func TestBingAdsUploadEmptyGetBulkUploadUrl(t *testing.T) {
 	defer func() {
 		bingads.CreateZipFile = _CreateZipFile
 	}()
-	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64) {
+	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64, error) {
 		successJobIds := []int64{1, 2}
 		failedJobIds := []int64{3}
-		return "randomZipFile.path", successJobIds, failedJobIds
+		return "randomZipFile.path", successJobIds, failedJobIds, nil
 	}
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 		UploadUrl: "",
 		RequestId: "",
@@ -239,16 +135,15 @@ func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
 	defer func() {
 		bingads.CreateZipFile = _CreateZipFile
 	}()
-	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64) {
+	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64, error) {
 		successJobIds := []int64{1, 2}
 		failedJobIds := []int64{3}
-		return "randomZipFile.path", successJobIds, failedJobIds
+		return "randomZipFile.path", successJobIds, failedJobIds, nil
 	}
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 		UploadUrl: "http://localhost/upload",
 		RequestId: misc.FastUUID().URN(),
@@ -273,9 +168,9 @@ func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
 func TestBingAdsPollSuccessCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
+	// oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 		PercentComplete: int64(100),
@@ -303,9 +198,9 @@ func TestBingAdsPollSuccessCase(t *testing.T) {
 func TestBingAdsPollFailureCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
+	// oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
 	pollStruct := common.AsyncPoll{
@@ -340,9 +235,9 @@ func TestBingAdsPollPartialFailureCase(t *testing.T) {
 	}
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
+	// oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 		PercentComplete: int64(100),
@@ -398,9 +293,9 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 	}
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
+	// oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(oauthClient, bingAdsService, 10*time.Second)
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 
 	failedJobsStatus := common.FetchFailedStatus{
 		OutputFilePath: "/path/to/file1.csv",
@@ -435,4 +330,35 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
+}
+func TestBingAdsUploadFailedWhileTransformingFile(t *testing.T) {
+	_CreateZipFile := bingads.CreateZipFile
+	defer func() {
+		bingads.CreateZipFile = _CreateZipFile
+	}()
+	bingads.CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64, error) {
+		return "", nil, nil, fmt.Errorf("Error in creating zip file")
+	}
+	ctrl := gomock.NewController(t)
+	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+
+	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
+	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+		UploadUrl: "http://localhost/upload",
+		RequestId: misc.FastUUID().URN(),
+	}, nil)
+
+	asyncDestination := common.AsyncDestinationStruct{
+		ImportingJobIDs: []int64{1, 2, 3},
+		FailedJobIDs:    []int64{},
+		FileName:        "randomFileName.txt",
+	}
+	expected := common.AsyncUploadOutput{
+		FailedJobIDs:  []int64{1, 2, 3},
+		FailedReason:  `got error while transforming the file. Error in creating zip file`,
+		FailedCount:   3,
+		DestinationID: destination.ID,
+	}
+	recieved := bulkUploader.Upload(&destination, &asyncDestination)
+	assert.Equal(t, recieved, expected)
 }
