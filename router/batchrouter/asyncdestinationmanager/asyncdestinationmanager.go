@@ -3,7 +3,7 @@ package asyncdestinationmanager
 import (
 	stdjson "encoding/json"
 	"sync"
-	time "time"
+ "time"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -132,4 +132,5 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		return marketobulkupload.NewManager(destination, HTTPTimeout)
 	}
 	return nil, nil
+
 }

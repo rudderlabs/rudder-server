@@ -24,6 +24,7 @@ import (
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/oauth2"
+
 )
 
 type BingAdsBulkUploader struct {
@@ -41,6 +42,7 @@ func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration)
 		timeout:  timeout,
 		logger:   logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
 	}
+
 }
 
 type User struct {
@@ -96,7 +98,7 @@ var CreateZipFile = func(filePath string, audienceId string) (string, []int64, [
 	if err != nil {
 		return "", nil, nil, err
 	}
-	path := fmt.Sprintf("%v%v", tmpDirPath+localTmpDirName, fmt.Sprintf("%v", uuid.String()))
+	path := path.Join(tmpDirPath, localTmpDirName, uuid.String()) 
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	textFile, err := os.Open(filePath)
@@ -124,6 +126,7 @@ var CreateZipFile = func(filePath string, audienceId string) (string, []int64, [
 		marshaledUploadlist, err := json.Marshal(data.Message.List)
 		size = size + len([]byte(marshaledUploadlist))
 		if size < 104857600 {
+
 			for _, uploadData := range data.Message.List {
 				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, uploadData.Email, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			}
@@ -211,7 +214,6 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 
 	uploadBulkFileResp, err := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
-
 	if err != nil {
 		b.logger.Error("Error in uploading the bulk file: %v", err)
 		return common.AsyncUploadOutput{
@@ -258,6 +260,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 }
 
 var Unzip = func(zipFile, targetDir string) ([]string, error) {
+
 	var filePaths []string
 
 	r, err := zip.OpenReader(zipFile)
@@ -439,8 +442,30 @@ func GetSuccessKeys(failedEventList, initialEventList []int64) []int64 {
 		if !lookup[element] {
 			successfulEvents = append(successfulEvents, element)
 		}
-	}
 
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		// Open each file in the zip archive
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+
+		// Create the corresponding file in the target directory
+		path := filepath.Join(targetDir, f.Name)
+		if f.FileInfo().IsDir() {
+			// Create directories if the file is a directory
+			os.MkdirAll(path, f.Mode())
+		} else {
+			// Create the file and copy the contents
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return nil, err
+			}
+			defer file.Close()
 	return successfulEvents
 }
 
@@ -523,6 +548,7 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	records := ReadPollResults(filePath)
 	status := "200"
 	clientIDErrors := ProcessPollStatusData(records)
+
 
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
@@ -654,4 +680,4 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 
 	bingads := &BingAdsBulkUploader{destName: "BingAdsAudience", service: bingads.NewBulkService(session), timeout: HTTPTimeout}
 	return bingads, nil
-}
+
