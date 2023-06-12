@@ -298,50 +298,6 @@ var Unzip = func(zipFile, targetDir string) ([]string, error) {
 	return filePaths, nil
 }
 
-// This function unzips the poll status file downloaded
-// func Unzip(zipFile, targetDir string) ([]string, error) {
-// 	var filePaths []string
-
-// 	r, err := zip.OpenReader(zipFile)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer r.Close()
-
-// 	for _, f := range r.File {
-// 		// Open each file in the zip archive
-// 		rc, err := f.Open()
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		defer rc.Close()
-
-// 		// Create the corresponding file in the target directory
-// 		path := filepath.Join(targetDir, f.Name)
-// 		if f.FileInfo().IsDir() {
-// 			// Create directories if the file is a directory
-// 			os.MkdirAll(path, f.Mode())
-// 		} else {
-// 			// Create the file and copy the contents
-// 			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-// 			if err != nil {
-// 				return nil, err
-// 			}
-// 			defer file.Close()
-
-// 			_, err = io.Copy(file, rc)
-// 			if err != nil {
-// 				return nil, err
-// 			}
-
-// 			// Append the file path to the list
-// 			filePaths = append(filePaths, path)
-// 		}
-// 	}
-
-// 	return filePaths, nil
-// }
-
 func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int) {
 	requestId := pollStruct.ImportId
 	var resp common.AsyncStatusResponse
@@ -590,12 +546,6 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	if err != nil {
 		log.Fatal("Error converting to JSON:", err)
 	}
-
-	// // remove the file after the response has been written
-	// err = os.Remove(filePath)
-	// if err != nil {
-	// 	panic(err)
-	// }
 	return respBytes, 200
 }
 
