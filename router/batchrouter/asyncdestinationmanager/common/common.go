@@ -45,7 +45,6 @@ type AsyncUploadOutput struct {
 	DestinationID       string
 }
 
-// specific to marketo, need to know if bingAds also will have same fields
 type AsyncPoll struct {
 	Config   map[string]interface{} `json:"config"`
 	ImportId string                 `json:"importId"`
