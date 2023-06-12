@@ -448,6 +448,7 @@ func (proc *Handle) Setup(
 			}
 		}
 	}))
+
 	if !proc.jobBackupEnabled {
 		proc.postProcessStatus = func(string) string {
 			return jobsdb.Succeeded.State
@@ -553,17 +554,21 @@ func (proc *Handle) Start(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(config.GetDuration("Processor.backupLoopSleep", 1, time.Minute)):
+			case <-time.After(config.GetDuration("Processor.backupLoopSleep", 5, time.Second)):
 				backup.Backup(
 					ctx,
-					jobsdb.GetQueryParamsT{
-						CustomValFilters: []string{proc.config.GWCustomVal},
-						StateFilters:     []string{jobsdb.ToBackup.State},
-						JobsLimit:        config.GetInt("Processor.backupJobsLimit", 10000),
-						EventsLimit:      config.GetInt("Processor.backupEventsLimit", 100000),
+					backup.BackupContext{
+						QueryParams: jobsdb.GetQueryParamsT{
+							CustomValFilters: []string{proc.config.GWCustomVal},
+							StateFilters:     []string{jobsdb.ToBackup.State},
+							JobsLimit:        config.GetInt("Processor.backupJobsLimit", 10000),
+							EventsLimit:      config.GetInt("Processor.backupEventsLimit", 100000),
+							PayloadSizeLimit: config.GetInt64("Processor.backupPayloadSizeLimit", 128*bytesize.MB),
+						},
+						Queue:                proc.gatewayDB,
+						FileUploaderProvider: proc.fileuploader,
 					},
-					proc.gatewayDB,
-					proc.fileuploader,
+					proc.logger,
 				)
 			}
 		}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/samber/lo"
 
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -85,15 +86,14 @@ func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Hand
 		return objects[i].SortIndex < objects[j].SortIndex
 	})
 
-	var jobs []*jobsdb.JobT
-	for _, object := range objects {
-		jobs = append(jobs, object.Job)
-	}
+	jobs := lo.Map(objects, func(object OrderedJobs, _ int) *jobsdb.JobT {
+		return object.Job
+	})
 
 	log.Info("Total dumps count : ", len(objects))
 	err := dbHandle.Store(ctx, jobs)
 	if err != nil {
-		panic(fmt.Errorf("Failed to write dumps locations to DB with error: %w", err))
+		panic(fmt.Errorf("failed to write dumps locations to DB with error: %w", err))
 	}
 }
 
