@@ -43,6 +43,7 @@ func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration)
 		timeout:  timeout,
 		logger:   logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
 	}
+
 }
 
 type User struct {
@@ -213,7 +214,6 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 
 	uploadBulkFileResp, err := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
-
 	if err != nil {
 		b.logger.Error("Error in uploading the bulk file: %v", err)
 		return common.AsyncUploadOutput{
@@ -260,6 +260,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 }
 
 var Unzip = func(zipFile, targetDir string) ([]string, error) {
+
 	var filePaths []string
 
 	r, err := zip.OpenReader(zipFile)
@@ -427,25 +428,6 @@ func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 	return reasons
 }
 
-// filtering out failed jobIds from the total array of jobIds
-// in order to get jobIds of the successful jobs
-func GetSuccessKeys(failedEventList, initialEventList []int64) []int64 {
-	successfulEvents := make([]int64, 0)
-
-	lookup := make(map[int64]bool)
-	for _, element := range failedEventList {
-		lookup[element] = true
-	}
-
-	for _, element := range initialEventList {
-		if !lookup[element] {
-			successfulEvents = append(successfulEvents, element)
-		}
-	}
-
-	return successfulEvents
-}
-
 var ReadPollResults = func(filePath string) [][]string {
 	// Open the CSV file
 	file, err := os.Open(filePath)
@@ -520,52 +502,6 @@ var ProcessPollStatusData = func(records [][]string) map[string]map[string]struc
 	return clientIDErrors
 }
 
-func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
-	filePath := failedJobsStatus.OutputFilePath
-	records := ReadPollResults(filePath)
-	status := "200"
-	clientIDErrors := ProcessPollStatusData(records)
-
-	// considering importing jobs are the primary list of jobs sent
-	// making an array of those jobIds
-	importList := failedJobsStatus.ImportingList
-	var initialEventList []int64
-	for _, job := range importList {
-		initialEventList = append(initialEventList, job.JobID)
-	}
-
-	// Build the response struct
-	response := Response{
-		Status: status,
-		Metadata: MetadataNew{
-			FailedKeys:    GetFailedKeys(clientIDErrors),
-			FailedReasons: GetFailedReasons(clientIDErrors),
-			WarningKeys:   []string{},
-			SucceededKeys: GetSuccessKeys(GetFailedKeys(clientIDErrors), initialEventList),
-		},
-	}
-
-	// Convert the response to JSON
-	respBytes, err := stdjson.Marshal(response)
-	if err != nil {
-		log.Fatal("Error converting to JSON:", err)
-	}
-	return respBytes, 200
-}
-
-// retrieves jobIds from metadata based on requirements, eg: successKeys, warningKeys, failedKeys
-func (b *BingAdsBulkUploader) RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
-	retrievedKeys, ok := metadata[retrieveKeys].([]interface{})
-	if !ok {
-		panic("failedKeys is not an array")
-	}
-	retrievedKeysArr := make([]int64, len(retrievedKeys))
-	for index, value := range retrievedKeys {
-		retrievedKeysArr[index] = int64(value.(float64))
-	}
-	return retrievedKeysArr, nil
-}
-
 type tokenSource struct {
 	accessToken     string
 	workspaceID     string
@@ -610,6 +546,7 @@ func (ts *tokenSource) generateToken() (string, string, error) {
 	return secret.AccessToken, secret.Developer_token, nil
 
 }
+
 func (ts *tokenSource) Token() (*oauth2.Token, error) {
 	accessToken, _, err := ts.generateToken()
 	if err != nil {
@@ -656,4 +593,70 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 
 	bingads := &BingAdsBulkUploader{destName: "BingAdsAudience", service: bingads.NewBulkService(session), timeout: HTTPTimeout}
 	return bingads, nil
+}
+
+func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
+	// Function implementation
+	filePath := failedJobsStatus.OutputFilePath
+	records := ReadPollResults(filePath)
+	status := "200"
+	clientIDErrors := ProcessPollStatusData(records)
+
+	// considering importing jobs are the primary list of jobs sent
+	// making an array of those jobIds
+	importList := failedJobsStatus.ImportingList
+	var initialEventList []int64
+	for _, job := range importList {
+		initialEventList = append(initialEventList, job.JobID)
+	}
+
+	// Build the response struct
+	response := Response{
+		Status: status,
+		Metadata: MetadataNew{
+			FailedKeys:    GetFailedKeys(clientIDErrors),
+			FailedReasons: GetFailedReasons(clientIDErrors),
+			WarningKeys:   []string{},
+			SucceededKeys: GetSuccessKeys(GetFailedKeys(clientIDErrors), initialEventList),
+		},
+	}
+
+	// Convert the response to JSON
+	respBytes, err := stdjson.Marshal(response)
+	if err != nil {
+		log.Fatal("Error converting to JSON:", err)
+	}
+	return respBytes, 200
+}
+
+// retrieves jobIds from metadata based on requirements, eg: successKeys, warningKeys, failedKeys
+func (b *BingAdsBulkUploader) RetrieveImportantKeys(metadata map[string]interface{}, retrieveKeys string) ([]int64, error) {
+	retrievedKeys, ok := metadata[retrieveKeys].([]interface{})
+	if !ok {
+		panic("failedKeys is not an array")
+	}
+	retrievedKeysArr := make([]int64, len(retrievedKeys))
+	for index, value := range retrievedKeys {
+		retrievedKeysArr[index] = int64(value.(float64))
+	}
+	return retrievedKeysArr, nil
+}
+
+// filtering out failed jobIds from the total array of jobIds
+// in order to get jobIds of the successful jobs
+func GetSuccessKeys(failedEventList, initialEventList []int64) []int64 {
+	successfulEvents := make([]int64, 0)
+
+	lookup := make(map[int64]bool)
+	for _, element := range failedEventList {
+		lookup[element] = true
+	}
+
+	for _, element := range initialEventList {
+		if !lookup[element] {
+			successfulEvents = append(successfulEvents, element)
+		}
+
+	}
+	return successfulEvents
 }

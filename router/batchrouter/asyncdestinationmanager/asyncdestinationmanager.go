@@ -132,4 +132,5 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		return marketobulkupload.NewManager(destination, HTTPTimeout)
 	}
 	return nil, nil
+
 }
