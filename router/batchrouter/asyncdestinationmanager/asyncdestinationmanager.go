@@ -124,12 +124,12 @@ func GetMarshalledData(payload string, jobID int64) string {
 	return string(responsePayload)
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) Asyncdestinationmanager {
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (Asyncdestinationmanager, error) {
 	destType := destination.DestinationDefinition.Name
 	if destType == "BINGADS_AUDIENCE" {
 		return bingads.NewManager(destination, backendConfig, HTTPTimeout)
 	} else if destType == "MARKETO_BULK_UPLOAD" {
 		return marketobulkupload.NewManager(destination, HTTPTimeout)
 	}
-	return nil
+	return nil, nil
 }
