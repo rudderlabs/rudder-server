@@ -23,6 +23,7 @@ import (
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/oauth2"
+	"github.com/rudderlabs/rudder-server/utils/bytesize"
 )
 
 type BingAdsBulkUploader struct {
@@ -120,7 +121,7 @@ func createZipFile(filePath string, failedJobIDs *[]int64, successJobIds *[]int6
 		}
 		marshaledUploadlist, err := json.Marshal(data.Message.List)
 		size = size + len([]byte(marshaledUploadlist))
-		if size < 104857600 {
+		if size < 100*bytesize.MB {
 			for _, uploadData := range data.Message.List {
 				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, uploadData.Email, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			}
