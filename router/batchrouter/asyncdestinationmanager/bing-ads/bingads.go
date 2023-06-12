@@ -11,30 +11,39 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/bingads_sdk"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
+	bytesize "github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/oauth2"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 )
 
 type BingAdsBulkUploader struct {
 	destName             string
-	accessToken          string
-	developerToken       string
-	refreshToken         string
-	oauthClient          *oauth.OAuthErrResHandler
-	service              *bingads.BulkService
+	service              bingads.BulkServiceI
 	destinationIDFileMap map[string]string
 	timeout              time.Duration
+	logger               logger.Logger
+}
+
+func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration) *BingAdsBulkUploader {
+	return &BingAdsBulkUploader{
+		destName: "BING_ADS",
+		service:  service,
+		timeout:  timeout,
+		logger:   logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
+	}
+
 }
 
 type User struct {
@@ -81,30 +90,26 @@ type MetadataNew struct {
 	SucceededKeys []int64           `json:"succeededKeys"`
 }
 
-/*
-This function create zip file from the text file created by the batchrouter
-It takes the text file path as input and returns the zip file path
-The maximum size of the zip file is 100MB, if the size of the zip file exceeds 100MB then the job is marked as failed
-*/
-func createZipFile(filePath string, failedJobIDs *[]int64, successJobIds *[]int64, audienceID string) string {
-
+var CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64, error) {
+	failedJobIds := []int64{}
+	successJobIds := []int64{}
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		panic(err)
+		return "", nil, nil, err
 	}
-	path := path.Join(tmpDirPath, localTmpDirName, uuid.String()) 
+	path := path.Join(tmpDirPath, localTmpDirName, uuid.String())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	textFile, err := os.Open(filePath)
 	if err != nil {
-		"", fmt.Errorf("open file: %w")
+		return "", nil, nil, err
 	}
 	defer textFile.Close()
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		"", fmt.Errorf("open file: %w")
+		return "", nil, nil, err
 	}
 	csvWriter := csv.NewWriter(csvFile)
 	csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
@@ -117,17 +122,17 @@ func createZipFile(filePath string, failedJobIDs *[]int64, successJobIds *[]int6
 		var data Data
 		err := json.Unmarshal([]byte(line), &data)
 		if err != nil {
-			panic(err)
+			return "", nil, nil, err
 		}
 		marshaledUploadlist, err := json.Marshal(data.Message.List)
 		size = size + len([]byte(marshaledUploadlist))
-		if size < 100*bytesize.MB {
+		if int64(size) < 100*bytesize.MB {
 			for _, uploadData := range data.Message.List {
 				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, uploadData.Email, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			}
-			*successJobIds = append(*successJobIds, data.Metadata.JobID)
+			successJobIds = append(successJobIds, data.Metadata.JobID)
 		} else {
-			*failedJobIds = append(*failedJobIds, data.Metadata.JobID)
+			failedJobIds = append(failedJobIds, data.Metadata.JobID)
 		}
 
 	}
@@ -136,7 +141,7 @@ func createZipFile(filePath string, failedJobIDs *[]int64, successJobIds *[]int6
 	// Create the ZIP file and add the CSV file to it
 	zipFile, err := os.Create(zipFilePath)
 	if err != nil {
-		panic(err)
+		return "", nil, nil, err
 	}
 	defer zipFile.Close()
 
@@ -144,45 +149,52 @@ func createZipFile(filePath string, failedJobIDs *[]int64, successJobIds *[]int6
 
 	csvFileInZip, err := zipWriter.Create(filepath.Base(csvFilePath))
 	if err != nil {
-		panic(err)
+		return "", nil, nil, err
 	}
 
 	csvFile.Seek(0, 0)
 	_, err = io.Copy(csvFileInZip, csvFile)
 	if err != nil {
-		panic(err)
+		return "", nil, nil, err
 	}
 
 	// Close the ZIP writer
 	err = zipWriter.Close()
 	if err != nil {
-		panic(err)
+		return "", nil, nil, err
 	}
 	// Remove the csv file after creating the zip file
 	err = os.Remove(csvFilePath)
 	if err != nil {
-		panic(err)
+		return "", nil, nil, err
 	}
 
-	return zipFilePath
+	return zipFilePath, successJobIds, failedJobIds, nil
 }
 
+/*
+This function create zip file from the text file created by the batchrouter
+It takes the text file path as input and returns the zip file path
+The maximum size of the zip file is 100MB, if the size of the zip file exceeds 100MB then the job is marked as failed
+*/
 func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 
 	destConfig := DestinationConfig{}
 	jsonConfig, _ := json.Marshal(destination.Config)
 	_ = json.Unmarshal(jsonConfig, &destConfig)
 
-	failedJobIds := []int64{}
-	successJobIDs := []int64{}
-
-	filePath := createZipFile(asyncDestStruct.FileName, &failedJobIds, &successJobIDs, destConfig.AudienceId)
 	urlResp, err := b.service.GetBulkUploadUrl()
+
 	if err != nil {
-		if err != nil {
-			panic(fmt.Errorf("Error in getting bulk upload url: %v", err))
+		b.logger.Error("Error in getting bulk upload url: %v", err)
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+			FailedReason:  `unable to get bulk upload url`,
+			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: destination.ID,
 		}
 	}
+
 	if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -191,11 +203,24 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			DestinationID: destination.ID,
 		}
 	}
+	filePath, successJobIDs, failedJobIds, err := CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
+	if err != nil {
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+			FailedReason:  fmt.Sprintf("got error while transforming the file. %v", err.Error()),
+			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: destination.ID,
+		}
+	}
 
 	uploadBulkFileResp, err := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
 	if err != nil {
-		if err != nil {
-			panic(fmt.Errorf("Error in uploading file: %v", err))
+		b.logger.Error("Error in uploading the bulk file: %v", err)
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+			FailedReason:  `unable to upload bulk file`,
+			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: destination.ID,
 		}
 	}
 
@@ -211,7 +236,8 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	//Remove the zip file after uploading it
 	err = os.Remove(filePath)
 	if err != nil {
-		panic(fmt.Errorf("Error in removing zip file: %v", err))
+		b.logger.Error("Error in removing zip file: %v", err)
+		//To do add an alert here
 	}
 
 	// success case
@@ -220,7 +246,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	// parameters.PollUrl = pollUrl
 	importParameters, err := json.Marshal(parameters)
 	if err != nil {
-		panic("Errored in Marshalling" + err.Error())
+		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     successJobIDs,
@@ -233,7 +259,8 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 }
 
-func unzip(zipFile, targetDir string) ([]string, error) {
+var Unzip = func(zipFile, targetDir string) ([]string, error) {
+
 	var filePaths []string
 
 	r, err := zip.OpenReader(zipFile)
@@ -278,12 +305,24 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 
 func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int) {
 	requestId := pollStruct.ImportId
-	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
-	if err != nil {
-		panic("BRT: Failed to poll status for bingAds" + err.Error())
-	}
 	var resp common.AsyncStatusResponse
 	var statusCode int
+	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
+	if err != nil {
+		// panic("BRT: Failed to poll status for bingAds" + err.Error())
+		resp = common.AsyncStatusResponse{
+			Success:        false,
+			StatusCode:     400,
+			HasFailed:      true,
+			HasWarning:     false,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: "",
+		}
+		// needs to be retried
+		statusCode = 500
+		return resp, statusCode
+	}
 	var allSuccessPercentage int = 100
 	if uploadStatusResp.PercentComplete == int64(allSuccessPercentage) && uploadStatusResp.RequestStatus == "Completed" {
 		// all successful events, do not need to download the file.
@@ -329,7 +368,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 		}
 
 		// Extract the contents of the zip file to the output directory
-		filePaths, err := unzip(tempFile.Name(), outputDir)
+		filePaths, err := Unzip(tempFile.Name(), outputDir)
 		if err != nil {
 			panic(fmt.Errorf("BRT: Failed saving zip file extracting zip file Err: %w", err))
 		}
@@ -367,7 +406,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 }
 
 // create array of failed job Ids from clientIDErrors
-func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
+func GetFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
 	keys := make([]int64, 0, len(clientIDErrors))
 	for key := range clientIDErrors {
 		intKey, _ := strconv.ParseInt(key, 10, 64)
@@ -377,7 +416,7 @@ func getFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
 }
 
 // get the list of unique error messages for a particular jobId.
-func getFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]string {
+func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]string {
 	reasons := make(map[string]string)
 	for key, errors := range clientIDErrors {
 		errorList := make([]string, 0, len(errors))
@@ -389,33 +428,24 @@ func getFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 	return reasons
 }
 
-// filtering out failed jobIds from the total array of jobIds
-// in order to get jobIds of the successful jobs
-func getSuccessKeys(failedEventList, initialEventList []int64) []int64 {
-	successfulEvents := make([]int64, 0)
-
-	lookup := make(map[int64]bool)
-	for _, element := range failedEventList {
-		lookup[element] = true
-	}
-
-	for _, element := range initialEventList {
-		if !lookup[element] {
-			successfulEvents = append(successfulEvents, element)
-		}
-	}
-
-	return successfulEvents
-}
-
-func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
-	filePath := failedJobsStatus.OutputFilePath
+var ReadPollResults = func(filePath string) [][]string {
 	// Open the CSV file
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatal("Error opening the CSV file:", err)
 	}
-	defer file.Close()
+	// defer file.Close() and remove
+	defer func() {
+		err := file.Close()
+		if err != nil {
+			log.Fatal("Error closing the CSV file:", err)
+		}
+		// remove the file after the response has been written
+		err = os.Remove(filePath)
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	// Create a new CSV reader
 	reader := csv.NewReader(file)
@@ -425,7 +455,10 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	if err != nil {
 		log.Fatal("Error reading CSV:", err)
 	}
+	return records
+}
 
+var ProcessPollStatusData = func(records [][]string) map[string]map[string]struct{} {
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := -1
@@ -445,7 +478,6 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	// Declare variables for storing data
 
 	clientIDErrors := make(map[string]map[string]struct{})
-	status := "200"
 
 	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
@@ -467,6 +499,108 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 			}
 		}
 	}
+	return clientIDErrors
+}
+
+type tokenSource struct {
+	accessToken     string
+	workspaceID     string
+	destinationName string
+	accountID       string
+	oauthClient     oauth.Authorizer
+}
+
+func (ts *tokenSource) generateToken() (string, string, error) {
+
+	refreshTokenParams := oauth.RefreshTokenParams{
+		WorkspaceId: ts.workspaceID,
+		DestDefName: ts.destinationName,
+		AccountId:   ts.accountID,
+	}
+	statusCode, authResponse := ts.oauthClient.FetchToken(&refreshTokenParams)
+	if statusCode != 200 {
+		return "", "", fmt.Errorf("Error in fetching access token")
+	}
+	secret := secretStruct{}
+	err := json.Unmarshal(authResponse.Account.Secret, &secret)
+	if err != nil {
+		return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+	}
+	currentTime := time.Now()
+	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
+	if err != nil {
+		return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
+	}
+	if currentTime.After(expirationTime) {
+		refreshTokenParams.Secret = authResponse.Account.Secret
+		statusCode, authResponse = ts.oauthClient.RefreshToken(&refreshTokenParams)
+		if statusCode != 200 {
+			return "", "", fmt.Errorf("Error in refreshing access token")
+		}
+		err = json.Unmarshal(authResponse.Account.Secret, &secret)
+		if err != nil {
+			return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+		}
+		return secret.AccessToken, secret.Developer_token, nil
+	}
+	return secret.AccessToken, secret.Developer_token, nil
+
+}
+
+func (ts *tokenSource) Token() (*oauth2.Token, error) {
+	accessToken, _, err := ts.generateToken()
+	if err != nil {
+		return nil, fmt.Errorf("Error occured while generating the accessToken")
+	}
+	ts.accessToken = accessToken
+
+	token := &oauth2.Token{
+		AccessToken: ts.accessToken,
+		Expiry:      time.Now().Add(time.Hour), // Set the token expiry time
+	}
+	return token, nil
+}
+
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, HTTPTimeout time.Duration) (*BingAdsBulkUploader, error) {
+
+	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
+	destConfig := DestinationConfig{}
+	jsonConfig, err := json.Marshal(destination.Config)
+	if err != nil {
+		return nil, fmt.Errorf("Error in marshalling destination config: %v", err)
+	}
+	err = json.Unmarshal(jsonConfig, &destConfig)
+	if err != nil {
+		return nil, fmt.Errorf("Error in unmarshalling destination config: %v", err)
+	}
+
+	// oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
+	tokenSource := tokenSource{
+		workspaceID:     destination.WorkspaceID,
+		destinationName: destination.Name,
+		accountID:       destConfig.RudderAccountId,
+		oauthClient:     oauthClient,
+	}
+	_, developerToken, _ := tokenSource.generateToken()
+	sessionConfig := bingads.SessionConfig{
+		DeveloperToken: developerToken,
+		AccountId:      destConfig.CustomerAccountId,
+		CustomerId:     destConfig.CustomerId,
+		HTTPClient:     http.DefaultClient,
+		TokenSource:    &tokenSource,
+	}
+	session := bingads.NewSession(sessionConfig)
+
+	bingads := &BingAdsBulkUploader{destName: "BingAdsAudience", service: bingads.NewBulkService(session), timeout: HTTPTimeout}
+	return bingads, nil
+}
+
+func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFailedStatus) ([]byte, int) {
+	// Function implementation
+	filePath := failedJobsStatus.OutputFilePath
+	records := ReadPollResults(filePath)
+	status := "200"
+	clientIDErrors := ProcessPollStatusData(records)
 
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
@@ -480,10 +614,10 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	response := Response{
 		Status: status,
 		Metadata: MetadataNew{
-			FailedKeys:    getFailedKeys(clientIDErrors),
-			FailedReasons: getFailedReasons(clientIDErrors),
+			FailedKeys:    GetFailedKeys(clientIDErrors),
+			FailedReasons: GetFailedReasons(clientIDErrors),
 			WarningKeys:   []string{},
-			SucceededKeys: getSuccessKeys(getFailedKeys(clientIDErrors), initialEventList),
+			SucceededKeys: GetSuccessKeys(GetFailedKeys(clientIDErrors), initialEventList),
 		},
 	}
 
@@ -491,12 +625,6 @@ func (b *BingAdsBulkUploader) FetchFailedEvents(failedJobsStatus common.FetchFai
 	respBytes, err := stdjson.Marshal(response)
 	if err != nil {
 		log.Fatal("Error converting to JSON:", err)
-	}
-
-	// remove the file after the response has been written
-	err = os.Remove(filePath)
-	if err != nil {
-		panic(err)
 	}
 	return respBytes, 200
 }
@@ -514,94 +642,21 @@ func (b *BingAdsBulkUploader) RetrieveImportantKeys(metadata map[string]interfac
 	return retrievedKeysArr, nil
 }
 
-type TokenSource struct {
-	accessToken     string
-	WorkspaceID     string
-	DestinationName string
-	AccountID       string
-	backendconfig   backendconfig.BackendConfig
-}
+// filtering out failed jobIds from the total array of jobIds
+// in order to get jobIds of the successful jobs
+func GetSuccessKeys(failedEventList, initialEventList []int64) []int64 {
+	successfulEvents := make([]int64, 0)
 
-func (ts *TokenSource) generateToken() (string, string, error) {
+	lookup := make(map[int64]bool)
+	for _, element := range failedEventList {
+		lookup[element] = true
+	}
 
-	refreshTokenParams := oauth.RefreshTokenParams{
-		WorkspaceId: ts.WorkspaceID,
-		DestDefName: ts.DestinationName,
-		AccountId:   ts.AccountID,
-	}
-	oauthClient := oauth.NewOAuthErrorHandler(ts.backendconfig)
-	statusCode, authResponse := oauthClient.FetchToken(&refreshTokenParams)
-	if statusCode != 200 {
-		return "", "", fmt.Errorf("Error in fetching access token")
-	}
-	secret := secretStruct{}
-	err := json.Unmarshal(authResponse.Account.Secret, &secret)
-	if err != nil {
-		return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-	}
-	currentTime := time.Now()
-	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
-	if err != nil {
-		return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
-	}
-	if currentTime.After(expirationTime) {
-		refreshTokenParams.Secret = authResponse.Account.Secret
-		statusCode, authResponse = oauthClient.RefreshToken(&refreshTokenParams)
-		if statusCode != 200 {
-			return "", "", fmt.Errorf("Error in refreshing access token")
+	for _, element := range initialEventList {
+		if !lookup[element] {
+			successfulEvents = append(successfulEvents, element)
 		}
-		err = json.Unmarshal(authResponse.Account.Secret, &secret)
-		if err != nil {
-			return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
-		}
-		return secret.AccessToken, secret.Developer_token, nil
-	}
-	return secret.AccessToken, secret.Developer_token, nil
 
-}
-func (ts *TokenSource) Token() (*oauth2.Token, error) {
-	accessToken, _, err := ts.generateToken()
-	if err != nil {
-		return nil, fmt.Errorf("Error occured while generating the accessToken")
 	}
-	ts.accessToken = accessToken
-
-	token := &oauth2.Token{
-		AccessToken: ts.accessToken,
-		Expiry:      time.Now().Add(time.Hour), // Set the token expiry time
-	}
-	return token, nil
-}
-
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, HTTPTimeout time.Duration) *BingAdsBulkUploader {
-
-	destConfig := DestinationConfig{}
-	jsonConfig, err := json.Marshal(destination.Config)
-	if err != nil {
-		panic(fmt.Errorf("Error in marshalling destination config: %v", err))
-	}
-	err = json.Unmarshal(jsonConfig, &destConfig)
-	if err != nil {
-		panic(fmt.Errorf("Error in unmarshalling destination config: %v", err))
-	}
-
-	tokenSource := TokenSource{
-		WorkspaceID:     destination.WorkspaceID,
-		DestinationName: destination.Name,
-		AccountID:       destConfig.RudderAccountId,
-		backendconfig:   backendConfig,
-	}
-	_, developerToken, _ := tokenSource.generateToken()
-	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
-	sessionConfig := bingads.SessionConfig{
-		DeveloperToken: developerToken,
-		AccountId:      destConfig.CustomerAccountId,
-		CustomerId:     destConfig.CustomerId,
-		HTTPClient:     http.DefaultClient,
-		TokenSource:    &tokenSource,
-	}
-	session := bingads.NewSession(sessionConfig)
-
-	bingads := &BingAdsBulkUploader{destName: "BING_ADS", oauthClient: oauthClient, service: bingads.NewBulkService(session), timeout: HTTPTimeout}
-	return bingads
+	return successfulEvents
 }
