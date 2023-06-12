@@ -108,6 +108,7 @@ func (brt *Handle) Setup(
 	config.RegisterDurationConfigVariable(3, &brt.warehouseServiceMaxRetryTime, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
 	brt.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	config.RegisterStringConfigVariable("", &brt.datePrefixOverride, true, "BatchRouter.datePrefixOverride")
+	config.RegisterStringConfigVariable("", &brt.customDatePrefix, true, "BatchRouter.customDatePrefix")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)
