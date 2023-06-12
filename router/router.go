@@ -15,10 +15,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -405,6 +406,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 		return false
 	}
 
+	stats.Default.NewTaggedStat("router_throttling_count", stats.CountType, stats.Tags{"destType": rt.destName}).Count(1)
 	throttler := rt.throttlerFactory.Get(rt.destName, parameters.DestinationID)
 	throttlingCost := rt.getThrottlingCost(job)
 
