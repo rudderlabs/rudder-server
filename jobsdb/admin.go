@@ -148,7 +148,6 @@ func (jd *HandleT) startCleanupLoop(ctx context.Context) {
 }
 
 func (jd *HandleT) oldJobsCleanupRoutine(ctx context.Context) {
-	jd.doCleanupOldJobs(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -193,9 +192,11 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 			}
 			if len(unprocessed.Jobs) > 0 {
 				unprocessedAfterJobID = &(unprocessed.Jobs[len(unprocessed.Jobs)-1].JobID)
-				unprocessedJobsToCleanup := lo.Filter(unprocessed.Jobs, func(job *JobT, _ int) bool {
-					return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge))
-				})
+				unprocessedJobsToCleanup := lo.Filter(
+					unprocessed.Jobs,
+					func(job *JobT, _ int) bool {
+						return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge))
+					})
 				jobsToCleanup = append(jobsToCleanup, unprocessedJobsToCleanup...)
 				if len(unprocessedJobsToCleanup) < batchSize {
 					queryUnprocessed = false
