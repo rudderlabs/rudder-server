@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/bingads_sdk"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	bytesize "github.com/rudderlabs/rudder-server/utils/bytesize"
