@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,7 +63,7 @@ func Backup(
 			panic(err)
 		}
 		// pathPrefix := strings.TrimPrefix("gw_jobs", preDropTablePrefix)
-		pathPrefix := "gw_jobs" //TODO: remove
+		pathPrefix := "gw_jobs" // TODO: remove
 		path := fmt.Sprintf(
 			"%v%v.%v.%v.%v.%v.%v.gz",
 			tmpDirPath+backupPathDirName,
@@ -74,9 +75,13 @@ func Backup(
 			workspaceID,
 		)
 
-		err = WriteJobsToFile(wJobs, path)
+		err = WriteGWJobsToFile(wJobs, path)
 		if err != nil {
-			panic(err)
+			log.Errorf("backup Error: Error writing jobs to file: %w for workspace %s",
+				err,
+				workspaceID,
+			)
+			continue
 		}
 
 		// upload file
@@ -84,28 +89,48 @@ func Backup(
 		var output filemanager.UploadOutput
 		fileUploader, err := backupContext.FileUploaderProvider.GetFileManager(workspaceID)
 		if err != nil {
-			panic(err)
+			log.Errorf("backup Error: Error getting file uploader: %w", err)
+			continue
 		}
-		bo := backoff.NewExponentialBackOff()
-		bo.MaxInterval = time.Minute
-		bo.MaxElapsedTime = config.GetDuration("backup.maxRetryTime", 5, time.Minute)
-		boRetries := backoff.WithMaxRetries(bo, uint64(config.GetInt64("backup.maxRetries", 3)))
-		boCtx := backoff.WithContext(boRetries, ctx)
-		file, err := os.Open(path)
-		if err != nil {
-			panic(err)
+
+		{
+			bo := backoff.NewExponentialBackOff()
+			bo.MaxInterval = time.Minute
+			bo.MaxElapsedTime = config.GetDuration(
+				"backup.maxRetryTime",
+				5,
+				time.Minute,
+			)
+			boRetries := backoff.WithMaxRetries(
+				bo,
+				uint64(config.GetInt64("backup.maxRetries", 3)),
+			)
+			boCtx := backoff.WithContext(boRetries, ctx)
+			file, err := os.Open(path)
+			if err != nil {
+				panic(err)
+			}
+			defer func() { _ = file.Close() }()
+			backup := func() error {
+				output, err = fileUploader.Upload(ctx, file, pathPrefixes...)
+				return err
+			}
+			if err = backoff.Retry(backup, boCtx); err != nil {
+				log.Errorf("backup Error: Error uploading file: %w for workspace %s",
+					err,
+					workspaceID,
+				)
+				continue
+			}
+			log.Infof(
+				"[JobsDB] :: Backed up table at %s for workspaceId %s",
+				output.Location,
+				workspaceID,
+			)
 		}
-		defer func() { _ = file.Close() }()
-		backup := func() error {
-			output, err = fileUploader.Upload(ctx, file, pathPrefixes...)
-			return err
-		}
-		if err = backoff.Retry(backup, boCtx); err != nil {
-			panic(err)
-		}
-		log.Infof("[JobsDB] :: Backed up table at %s for workspaceId %s", output.Location, workspaceID)
+
 		// 3. Update the job status in the jobsdb
-		err = backupContext.Queue.UpdateJobStatus(
+		if err = backupContext.Queue.UpdateJobStatus(
 			ctx,
 			lo.Map(
 				wJobs,
@@ -128,12 +153,14 @@ func Backup(
 			),
 			nil,
 			nil,
-		)
+		); err != nil {
+			panic(err)
+		}
 	}
 }
 
 // Writes a list of jobs to a .gz file at given path
-func WriteJobsToFile(jobs []*jobsdb.JobT, path string) error {
+func WriteGWJobsToFile(jobs []*jobsdb.JobT, path string) error {
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
@@ -147,11 +174,29 @@ func WriteJobsToFile(jobs []*jobsdb.JobT, path string) error {
 
 	// gzWriter.Write([]byte(jobs[0].Headings()))
 	for _, item := range jobs {
-		err = gzWriter.WriteGZ(item.ToCSV())
+		_, err = gzWriter.Write(mashalGWJob(item))
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// TODO: pass this to backup
+func mashalGWJob(job *jobsdb.JobT) []byte {
+	jobMap := map[string]interface{}{
+		"job_id":        job.JobID,
+		"workspace_id":  job.WorkspaceId,
+		"uuid":          job.UUID.String(),
+		"user_id":       job.UserID,
+		"parameters":    job.Parameters,
+		"custom_val":    job.CustomVal,
+		"event_payload": job.EventPayload,
+		"event_count":   job.EventCount,
+		"created_at":    job.CreatedAt,
+		"expires_at":    job.ExpireAt,
+	}
+	jobBytes, _ := json.Marshal(jobMap)
+	return append(jobBytes, '\n')
 }

@@ -385,7 +385,37 @@ type JobT struct {
 }
 
 func (job *JobT) String() string {
-	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
+	return fmt.Sprintf(
+		"JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d",
+		job.JobID,
+		job.UserID,
+		job.CreatedAt,
+		job.ExpireAt,
+		job.CustomVal,
+		string(job.Parameters),
+		string(job.EventPayload),
+		job.EventCount,
+	)
+}
+
+func (job *JobT) Headings() string {
+	return "job_id,workspace_id,uuid,user_id,parameters,custom_val,event_payload,event_count,created_at,expire_at"
+}
+
+func (job *JobT) ToCSV() string {
+	return fmt.Sprintf(
+		"%d,%s,%s,%s,%s,%s,%s,%d,%s,%s\n",
+		job.JobID,
+		job.WorkspaceId,
+		job.UUID.String(),
+		job.UserID,
+		job.Parameters,
+		job.CustomVal,
+		job.EventPayload,
+		job.EventCount,
+		job.CreatedAt,
+		job.ExpireAt,
+	)
 }
 
 func (job *JobT) sanitizeJson() {
@@ -576,6 +606,7 @@ var jobStates = []jobStateT{
 	Aborted,
 	Migrated,
 	Importing,
+	ToBackup,
 }
 
 // OwnerType for this jobsdb instance
