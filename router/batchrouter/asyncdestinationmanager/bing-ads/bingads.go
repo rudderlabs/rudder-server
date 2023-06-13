@@ -78,18 +78,6 @@ type secretStruct struct {
 	ExpirationDate  string
 }
 
-type Response struct {
-	Status   string      `json:"status"`
-	Metadata MetadataNew `json:"metadata"`
-}
-
-type MetadataNew struct {
-	FailedKeys    []int64           `json:"failedKeys"`
-	FailedReasons map[string]string `json:"failedReasons"`
-	WarningKeys   []int64           `json:"warningKeys"`
-	SucceededKeys []int64           `json:"succeededKeys"`
-}
-
 var CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64, error) {
 	failedJobIds := []int64{}
 	successJobIds := []int64{}
@@ -241,7 +229,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 
 	// success case
-	var parameters common.Parameters
+	var parameters common.ImportParameters
 	parameters.ImportId = uploadBulkFileResp.RequestId
 	// parameters.PollUrl = pollUrl
 	importParameters, err := json.Marshal(parameters)
@@ -303,14 +291,14 @@ var Unzip = func(zipFile, targetDir string) ([]string, error) {
 	return filePaths, nil
 }
 
-func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int) {
-	requestId := pollStruct.ImportId
-	var resp common.AsyncStatusResponse
+func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
+	requestId := pollInput.ImportId
+	var resp common.PollStatusResponse
 	var statusCode int
 	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
 	if err != nil {
 		// panic("BRT: Failed to poll status for bingAds" + err.Error())
-		resp = common.AsyncStatusResponse{
+		resp = common.PollStatusResponse{
 			Success:        false,
 			StatusCode:     400,
 			HasFailed:      true,
@@ -326,7 +314,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 	var allSuccessPercentage int = 100
 	if uploadStatusResp.PercentComplete == int64(allSuccessPercentage) && uploadStatusResp.RequestStatus == "Completed" {
 		// all successful events, do not need to download the file.
-		resp = common.AsyncStatusResponse{
+		resp = common.PollStatusResponse{
 			Success:        true,
 			StatusCode:     200,
 			HasFailed:      false,
@@ -378,7 +366,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 		for _, filePath := range filePaths {
 			outputPath = filePath
 		}
-		resp = common.AsyncStatusResponse{
+		resp = common.PollStatusResponse{
 			Success:        true,
 			StatusCode:     200,
 			HasFailed:      true,
@@ -391,7 +379,7 @@ func (b *BingAdsBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 	} else {
 		// this will include authenticaion key errors
 		// file will not be available for this case.
-		resp = common.AsyncStatusResponse{
+		resp = common.PollStatusResponse{
 			Success:        false,
 			StatusCode:     400,
 			HasFailed:      true,
@@ -595,7 +583,7 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	return bingads, nil
 }
 
-func (b *BingAdsBulkUploader) FetchEventsStat(failedJobsStatus common.FetchFailedStatus) (common.EventStatResponse, int) {
+func (b *BingAdsBulkUploader) GetUploadStats(failedJobsStatus common.FetchUploadJobStatus) (common.EventStatResponse, int) {
 	// Function implementation
 	filePath := failedJobsStatus.OutputFilePath
 	records := ReadPollResults(filePath)
@@ -610,26 +598,15 @@ func (b *BingAdsBulkUploader) FetchEventsStat(failedJobsStatus common.FetchFaile
 		initialEventList = append(initialEventList, job.JobID)
 	}
 
-	// Build the response struct
-	response := Response{
-		Status: status,
-		Metadata: MetadataNew{
-			FailedKeys:    GetFailedKeys(clientIDErrors),
-			FailedReasons: GetFailedReasons(clientIDErrors),
-			WarningKeys:   []int64{},
-			SucceededKeys: GetSuccessKeys(GetFailedKeys(clientIDErrors), initialEventList),
-		},
-	}
-
 	// Build the response body
 	eventStatsResponse := common.EventStatResponse{
-		Status: response.Status,
+		Status: status,
 		Metadata: common.EventStatMeta{
-			FailedKeys:    response.Metadata.FailedKeys,
+			FailedKeys:    GetFailedKeys(clientIDErrors),
 			ErrFailed:     nil,
-			WarningKeys:   response.Metadata.WarningKeys,
+			WarningKeys:   []int64{},
 			ErrWarning:    nil,
-			SucceededKeys: response.Metadata.SucceededKeys,
+			SucceededKeys: GetSuccessKeys(GetFailedKeys(clientIDErrors), initialEventList),
 			ErrSuccess:    nil,
 			FailedReasons: GetFailedReasons(clientIDErrors),
 		},

@@ -56,18 +56,18 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						importingJob := importingJob[0]
 						parameters := importingJob.LastJobStatus.Parameters
 						importId := gjson.GetBytes(parameters, "importId").String()
-						var pollStruct common.AsyncPoll
-						pollStruct.ImportId = importId
-						pollStruct.Config = destinationsMap[key].Destination.Config
-						pollStruct.DestType = strings.ToLower(brt.destType)
+						var pollInput common.AsyncPoll
+						pollInput.ImportId = importId
+						pollInput.Config = destinationsMap[key].Destination.Config
+						pollInput.DestType = strings.ToLower(brt.destType)
 
 						startPollTime := time.Now()
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
-						var bodyBytes []byte
+						var pollRespBytes []byte
 						var statusCode int
-						var pollResp common.AsyncStatusResponse
-						pollResp, statusCode = brt.asyncdestinationmanager.Poll(pollStruct)
-						bodyBytes, err := stdjson.Marshal(pollResp)
+						var pollResp common.PollStatusResponse
+						pollResp, statusCode = brt.asyncdestinationmanager.Poll(pollInput)
+						pollRespBytes, err := stdjson.Marshal(pollResp)
 						if err != nil {
 							panic(err)
 						}
@@ -78,21 +78,18 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							panic("HTTP Request Failed" + err.Error())
 						}
 						if statusCode == 200 {
-							var asyncResponse common.AsyncStatusResponse
+							var asyncResponse common.PollStatusResponse
 							if err != nil {
 								panic("Read Body Failed" + err.Error())
 							}
-							err = json.Unmarshal(bodyBytes, &asyncResponse)
+							err = json.Unmarshal(pollRespBytes, &asyncResponse)
 							if err != nil {
 								panic("JSON Unmarshal Failed" + err.Error())
 							}
 
-							// need to think if these parameters calculation can
-							// be different in bingAds and marketo
 							uploadStatus := asyncResponse.Success
 							statusCode := asyncResponse.StatusCode
 							abortedJobs := make([]*jobsdb.JobT, 0)
-							// when we can mark upload status as false?
 							if uploadStatus {
 								var statusList []*jobsdb.JobStatusT
 								list, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
@@ -110,11 +107,11 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 									panic(err)
 								}
 								importingList := list.Jobs
-								var failedJobsStatus common.FetchFailedStatus
-								failedJobsStatus.FailedJobsURL = asyncResponse.FailedJobsURL
-								failedJobsStatus.Parameters = importingJob.LastJobStatus.Parameters
-								failedJobsStatus.ImportingList = importingList
-								failedJobsStatus.OutputFilePath = asyncResponse.OutputFilePath
+								var GetUploadStatsInput common.FetchUploadJobStatus
+								GetUploadStatsInput.FailedJobsURL = asyncResponse.FailedJobsURL
+								GetUploadStatsInput.Parameters = importingJob.LastJobStatus.Parameters
+								GetUploadStatsInput.ImportingList = importingList
+								GetUploadStatsInput.OutputFilePath = asyncResponse.OutputFilePath
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -134,23 +131,23 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								} else {
 									startFailedJobsPollTime := time.Now()
 									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
-									eventStatsResponse, statusCode := brt.asyncdestinationmanager.FetchEventsStat(failedJobsStatus)
+									uploadStatsResp, statusCode := brt.asyncdestinationmanager.GetUploadStats(GetUploadStatsInput)
 									brt.asyncFailedJobsTimeStat.Since(startFailedJobsPollTime)
 
 									if statusCode != 200 {
 										continue
 									}
 
-									statsRespBytes, _ := stdjson.Marshal(eventStatsResponse)
+									uploadStatsRespInBytes, _ := stdjson.Marshal(uploadStatsResp)
 
-									internalStatusCode := eventStatsResponse.Status
+									internalStatusCode := uploadStatsResp.Status
 									if internalStatusCode != "200" {
-										brt.logger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v and body %v", brt.destType, internalStatusCode, string(statsRespBytes))
+										brt.logger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v and body %v", brt.destType, internalStatusCode, string(uploadStatsRespInBytes))
 										continue
 									}
 
 									var status *jobsdb.JobStatusT
-									if eventStatsResponse.Metadata.ErrFailed != nil || eventStatsResponse.Metadata.ErrWarning != nil || eventStatsResponse.Metadata.ErrSuccess != nil || statusCode != 200 {
+									if uploadStatsResp.Metadata.ErrFailed != nil || uploadStatsResp.Metadata.ErrWarning != nil || uploadStatsResp.Metadata.ErrSuccess != nil || statusCode != 200 {
 										for _, job := range importingList {
 											jobID := job.JobID
 											status = &jobsdb.JobStatusT{
@@ -185,7 +182,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 									}
 									for _, job := range importingList {
 										jobID := job.JobID
-										if slices.Contains(append(eventStatsResponse.Metadata.SucceededKeys, eventStatsResponse.Metadata.WarningKeys...), jobID) {
+										if slices.Contains(append(uploadStatsResp.Metadata.SucceededKeys, uploadStatsResp.Metadata.WarningKeys...), jobID) {
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
 												JobState:      jobsdb.Succeeded.State,
@@ -197,8 +194,8 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 												JobParameters: job.Parameters,
 												WorkspaceId:   job.WorkspaceId,
 											}
-										} else if slices.Contains(eventStatsResponse.Metadata.FailedKeys, job.JobID) {
-											errorResp, _ := json.Marshal(ErrorResponse{Error: gjson.GetBytes(statsRespBytes, fmt.Sprintf("Metadata.FailedReasons.%v", job.JobID)).String()})
+										} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, job.JobID) {
+											errorResp, _ := json.Marshal(ErrorResponse{Error: gjson.GetBytes(uploadStatsRespInBytes, fmt.Sprintf("Metadata.FailedReasons.%v", job.JobID)).String()})
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
 												JobState:      jobsdb.Aborted.State,

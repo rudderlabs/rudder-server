@@ -42,13 +42,13 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("asyncdestinationmanager").Child("marketobulkupload")
 }
 
-func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int) {
-	payload, err := json.Marshal(pollStruct)
+func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
+	payload, err := json.Marshal(pollInput)
 	if err != nil {
 		panic("JSON Marshal Failed" + err.Error())
 	}
 	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, b.timeout)
-	var asyncResponse common.AsyncStatusResponse
+	var asyncResponse common.PollStatusResponse
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
 		panic("JSON Unmarshal Failed" + err.Error())
@@ -56,7 +56,7 @@ func (b *MarketoBulkUploader) Poll(pollStruct common.AsyncPoll) (common.AsyncSta
 	return asyncResponse, statusCode
 }
 
-func (b *MarketoBulkUploader) FetchEventsStat(failedJobsStatus common.FetchFailedStatus) (common.EventStatResponse, int) {
+func (b *MarketoBulkUploader) GetUploadStats(failedJobsStatus common.FetchUploadJobStatus) (common.EventStatResponse, int) {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	failedJobUrl := failedJobsStatus.FailedJobsURL
 	parameters := failedJobsStatus.Parameters
@@ -184,7 +184,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		if err != nil {
 			panic("Incorrect Response from Transformer: " + err.Error())
 		}
-		var parameters common.Parameters
+		var parameters common.ImportParameters
 		parameters.ImportId = responseStruct.ImportId
 		url := responseStruct.PollUrl
 		parameters.PollUrl = &url

@@ -19,7 +19,7 @@ var (
 )
 
 // we need to add bingAds specific fields if needs to be handy.
-type AsyncStatusResponse struct {
+type PollStatusResponse struct {
 	Success        bool
 	StatusCode     int
 	HasFailed      bool
@@ -85,7 +85,7 @@ type UploadStruct struct {
 type MetaDataT struct {
 	CSVHeaders string `json:"csvHeader"`
 }
-type Parameters struct {
+type ImportParameters struct {
 	ImportId string    `json:"importId"`
 	PollUrl  *string   `json:"pollURL"`
 	MetaData MetaDataT `json:"metadata"`
@@ -113,7 +113,7 @@ type AsyncFailedPayload struct {
 	MetaData MetaDataT                `json:"metadata"`
 }
 
-type FetchFailedStatus struct {
+type FetchUploadJobStatus struct {
 	FailedJobsURL  string
 	Parameters     stdjson.RawMessage
 	ImportingList  []*jobsdb.JobT

@@ -253,10 +253,10 @@ func TestBingAdsPollSuccessCase(t *testing.T) {
 		RequestStatus:   "Completed",
 		ResultFileUrl:   "http://dummyurl.com",
 	}, nil)
-	pollStruct := common.AsyncPoll{
+	pollInput := common.AsyncPoll{
 		ImportId: "dummyRequestId123",
 	}
-	expectedResp := common.AsyncStatusResponse{
+	expectedResp := common.PollStatusResponse{
 		Success:        true,
 		StatusCode:     200,
 		HasFailed:      false,
@@ -266,7 +266,7 @@ func TestBingAdsPollSuccessCase(t *testing.T) {
 		OutputFilePath: "",
 	}
 	expectedStatus := 200
-	recievedResponse, RecievedStatus := bulkUploader.Poll(pollStruct)
+	recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
 
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
@@ -279,10 +279,10 @@ func TestBingAdsPollFailureCase(t *testing.T) {
 	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
-	pollStruct := common.AsyncPoll{
+	pollInput := common.AsyncPoll{
 		ImportId: "dummyRequestId123",
 	}
-	expectedResp := common.AsyncStatusResponse{
+	expectedResp := common.PollStatusResponse{
 		Success:        false,
 		StatusCode:     400,
 		HasFailed:      true,
@@ -292,7 +292,7 @@ func TestBingAdsPollFailureCase(t *testing.T) {
 		OutputFilePath: "",
 	}
 	expectedStatus := 500
-	recievedResponse, RecievedStatus := bulkUploader.Poll(pollStruct)
+	recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
 
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
@@ -320,10 +320,10 @@ func TestBingAdsPollPartialFailureCase(t *testing.T) {
 		RequestStatus:   "CompletedWithErrors",
 		ResultFileUrl:   "http://dummyurl.com",
 	}, nil)
-	pollStruct := common.AsyncPoll{
+	pollInput := common.AsyncPoll{
 		ImportId: "dummyRequestId123",
 	}
-	expectedResp := common.AsyncStatusResponse{
+	expectedResp := common.PollStatusResponse{
 		Success:        true,
 		StatusCode:     200,
 		HasFailed:      true,
@@ -333,7 +333,7 @@ func TestBingAdsPollPartialFailureCase(t *testing.T) {
 		OutputFilePath: "/path/to/file1.csv",
 	}
 	expectedStatus := 200
-	recievedResponse, RecievedStatus := bulkUploader.Poll(pollStruct)
+	recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
 
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
@@ -373,7 +373,7 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 
 	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 
-	failedJobsStatus := common.FetchFailedStatus{
+	failedJobsStatus := common.FetchUploadJobStatus{
 		OutputFilePath: "/path/to/file1.csv",
 		ImportingList: []*jobsdb.JobT{
 			{
@@ -405,7 +405,7 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 	// Convert the response to JSON
 	// expectedResp, _ := stdjson.Marshal(Response)
 	expectedStatus := 200
-	recievedResponse, RecievedStatus := bulkUploader.FetchEventsStat(failedJobsStatus)
+	recievedResponse, RecievedStatus := bulkUploader.GetUploadStats(failedJobsStatus)
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
 }

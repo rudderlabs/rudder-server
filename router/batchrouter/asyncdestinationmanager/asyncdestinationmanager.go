@@ -19,8 +19,8 @@ import (
 
 type Asyncdestinationmanager interface {
 	Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput
-	Poll(pollStruct common.AsyncPoll) (common.AsyncStatusResponse, int)
-	FetchEventsStat(failedJobsStatus common.FetchFailedStatus) (common.EventStatResponse, int)
+	Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int)
+	GetUploadStats(failedJobsStatus common.FetchUploadJobStatus) (common.EventStatResponse, int)
 }
 
 type AsyncDestinationStruct struct {
