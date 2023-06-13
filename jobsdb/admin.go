@@ -172,6 +172,8 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 			"jobsdb.cleanupRetryInterval",
 			10, time.Second,
 		)
+
+		numJobsCleaned = 0
 	)
 
 	for {
@@ -184,7 +186,9 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 			})
 			if err != nil {
 				jd.logger.Errorf("error getting unprocessed jobs to cleanup: %w", err)
-				time.Sleep(cleanupRetryInterval)
+				if err = misc.SleepCtx(ctx, cleanupRetryInterval); err != nil {
+					return
+				}
 				continue
 			}
 			if len(unprocessed.Jobs) > 0 {
@@ -209,7 +213,9 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 			})
 			if err != nil {
 				jd.logger.Errorf("error getting processed jobs to cleanup: %w", err)
-				time.Sleep(cleanupRetryInterval)
+				if err = misc.SleepCtx(ctx, cleanupRetryInterval); err != nil {
+					return
+				}
 				continue
 			}
 			if len(processed.Jobs) > 0 {
@@ -242,8 +248,14 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 		}
 		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
 			jd.logger.Errorf("error updating job status for cleanup: %w", err)
-			time.Sleep(cleanupRetryInterval)
+			if err = misc.SleepCtx(ctx, cleanupRetryInterval); err != nil {
+				return
+			}
+			processedAfterJobID = nil
+			unprocessedAfterJobID = nil
 			continue
 		}
+		numJobsCleaned += len(jobsToCleanup)
 	}
+	jd.logger.Infof("cleaned up %d old jobs", numJobsCleaned)
 }
