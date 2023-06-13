@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -47,6 +48,37 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resps); err != nil {
 		panic(err)
 	}
+}
+
+func TestTransformerTimeoutAbort(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	config.Set("HttpClient.procTransformer.timeout", 1)
+	config.Set("Processor.maxRetry", 1)
+	config.Set("Processor.Transformer.abortOnTimeout", true)
+	transformer.Init()
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("apiVersion", "2")
+		time.Sleep(time.Second * 2)
+	}))
+
+	defer svr.Close()
+
+	tr := transformer.NewTransformer()
+	tr.Setup()
+	events := make([]transformer.TransformerEventT, 1)
+
+	events[0] = transformer.TransformerEventT{
+		Metadata: transformer.MetadataT{
+			MessageID: "messageID-1",
+		},
+		Message: map[string]interface{}{
+			"src-key-1": "messageID-1",
+		},
+	}
+	rsp := tr.Transform(context.TODO(), events, svr.URL, 1)
+	require.Equal(t, transformer.TransformerRequestTimeoutAbort, rsp.FailedEvents[0].StatusCode, "actual response code different than expected")
+
 }
 
 func Test_Transformer(t *testing.T) {

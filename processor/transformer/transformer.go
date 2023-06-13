@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"runtime/trace"
 	"strconv"
@@ -34,8 +35,9 @@ const (
 )
 
 const (
-	StatusCPDown              = 809
-	TransformerRequestFailure = 909
+	StatusCPDown                   = 809
+	TransformerRequestFailure      = 909
+	TransformerRequestTimeoutAbort = 919
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -96,6 +98,7 @@ type HandleT struct {
 // Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
+
 	Transform(ctx context.Context, clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
@@ -409,7 +412,10 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			trans.logger.Warnf("JS HTTP connection error: URL: %v Error: %+v after %v tries", url, err, retryCount)
 		})
 	if err != nil {
-		if config.GetBool("Processor.Transformer.failOnError", false) {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() && config.GetBool("Processor.Transformer.abortOnTimeout", false) {
+			trans.logger.Errorf("JS HTTP connection timeout error: %w", err)
+			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeoutAbort
+		} else if config.GetBool("Processor.Transformer.failOnError", false) {
 			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
 		} else {
 			panic(err)
