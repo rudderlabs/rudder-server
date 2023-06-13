@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -24,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 )
 
 // worker a structure to define a worker for sending events to sinks
@@ -673,6 +674,11 @@ func (w *worker) processDestinationJobs() {
 
 		routerJobResponse.status = &status
 
+		statusEnhanceStat := stats.Default.NewTaggedStat("router_status_enhance", stats.TimerType, stats.Tags{
+			"destType":      w.rt.destName,
+			"destinationId": destinationJobMetadata.DestinationID,
+		})
+		statusEnhanceStart := time.Now()
 		if !isJobTerminated(respStatusCode) {
 			orderKey := jobOrderKey(destinationJobMetadata.UserID, destinationJobMetadata.DestinationID)
 			if prevFailedJobID, ok := jobOrderKeyToJobIDMap[orderKey]; ok {
@@ -695,6 +701,7 @@ func (w *worker) processDestinationJobs() {
 		status.AttemptNum++
 		status.ErrorResponse = routerutils.EnhanceJSON(routerutils.EmptyPayload, "response", routerJobResponse.respBody)
 		status.ErrorCode = strconv.Itoa(respStatusCode)
+		statusEnhanceStat.Since(statusEnhanceStart)
 
 		w.postStatusOnResponseQ(respStatusCode, destinationJob.Message, respContentType, destinationJobMetadata, &status, routerJobResponse.errorAt)
 
