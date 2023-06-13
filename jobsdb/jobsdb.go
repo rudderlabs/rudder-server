@@ -3127,7 +3127,8 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	}
 	for idx, ds := range dsList {
 		if params.AfterJobID != nil {
-			if idx < len(dsRangeList) {
+			if idx < len(dsRangeList) { // ranges are not stored for the last ds
+				// so the following condition cannot be applied the last ds
 				if *params.AfterJobID > dsRangeList[idx].maxJobID {
 					continue
 				}
@@ -3256,7 +3257,8 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 	}
 	for idx, ds := range dsList {
 		if params.AfterJobID != nil {
-			if idx < len(dsRangeList) {
+			if idx < len(dsRangeList) { // ranges are not stored for the last ds
+				// so the following condition cannot be applied the last ds
 				if *params.AfterJobID > dsRangeList[idx].maxJobID {
 					continue
 				}
