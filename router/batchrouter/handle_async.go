@@ -35,9 +35,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 			for key := range destinationsMap {
 				if slices.Contains(asyncDestinations, brt.destType) {
 					brt.logger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
-					// below line parameterFilters eg: [{Name: "destination_id", Value: "2PriULYidWaynFpp6jeAF3ugZUc"}]
 					parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: key}}
-					// job means Jobs [], LimitsReached bool, EventsCount, PayloadSize
 					job, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 						return brt.jobsDB.GetImporting(
 							ctx,
@@ -53,38 +51,26 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						brt.logger.Errorf("Error while getting job for dest type: %s, err: %v", brt.destType, err)
 						panic(err)
 					}
-					// ?? if job parameters will look same for bingAds as well
 					importingJob := job.Jobs
-					// in this importing job eventPayload resides, after file upload , transformer response
-					//, eg: "{\"body\": {\"XML\": {}, \"FORM\": {}, \"JSON\": {\"email\": \"test@kinesis.com\", \"address\": 23, \"anonymousId\": \"Test Kinesis\"}, \"JSON_ARRAY\": {}}, \"type\": \"REST\", \"files\": {}, \"method\": \"POST\", \"params\": {}, \"userId\": \"\", \"headers\": {}, \"version\": \"1\", \"endpoint\": \"/fileUpload\"}"
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
-						// fields needs to be added
-						// parameters eg : "{\"pollURL\": \"/pollStatus\", \"importId\": \"3090\", \"metadata\": {\"csvHeader\": \"anonymousId,address,email\"}}" <-- response of
-						// transformer fileupload.js file
 						parameters := importingJob.LastJobStatus.Parameters
 						importId := gjson.GetBytes(parameters, "importId").String()
-						var pollStruct common.AsyncPoll
-						pollStruct.ImportId = importId
-						pollStruct.Config = destinationsMap[key].Destination.Config
-						pollStruct.DestType = strings.ToLower(brt.destType)
-						// payload, err := json.Marshal(pollStruct)
-						// if err != nil {
-						// 	panic("JSON Marshal Failed" + err.Error())
-						// }
+						var pollInput common.AsyncPoll
+						pollInput.ImportId = importId
+						pollInput.Config = destinationsMap[key].Destination.Config
+						pollInput.DestType = strings.ToLower(brt.destType)
 
 						startPollTime := time.Now()
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
-						var bodyBytes []byte
+						var pollRespBytes []byte
 						var statusCode int
-						var pollResp common.AsyncStatusResponse
-						// payload to be sent to poll : "{\"config\":{\"clientId\":\"01a70f1f-ff37-46fc-bdff-42e92a3f2bb3\",\"clientSecret\":\"rziQBHtZ34Vl1CE3x3OiA3n8Wr45lwar\",\"columnFieldsMapping\":[{\"from\":\"anonymousId\",\"to\":\"anonymousId\"},{\"from\":\"address\",\"to\":\"address\"},{\"from\":\"email\",\"to\":\"email\"}],\"deDuplicationField\":\"\",\"munchkinId\":\"585-AXP-425\",\"oneTrustCookieCategories\":[],\"uploadInterval\":\"10\"},\"importId\":\"3090\",\"destType\":\"marketo_bulk_upload\"}"
-						pollResp, statusCode = brt.asyncdestinationmanager.Poll(pollStruct)
-						bodyBytes, err := stdjson.Marshal(pollResp)
+						var pollResp common.PollStatusResponse
+						pollResp, statusCode = brt.asyncdestinationmanager.Poll(pollInput)
+						pollRespBytes, err := stdjson.Marshal(pollResp)
 						if err != nil {
 							panic(err)
 						}
-						// bodyBytes eg: "{\"success\":true,\"statusCode\":200,\"hasFailed\":false,\"failedJobsURL\":\"/getFailedJobs\",\"hasWarnings\":false,\"warningJobsURL\":\"/getWarningJobs\"}"
 						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 						brt.asyncPollTimeStat.Since(startPollTime)
 
@@ -92,21 +78,18 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							panic("HTTP Request Failed" + err.Error())
 						}
 						if statusCode == 200 {
-							var asyncResponse common.AsyncStatusResponse
+							var asyncResponse common.PollStatusResponse
 							if err != nil {
 								panic("Read Body Failed" + err.Error())
 							}
-							err = json.Unmarshal(bodyBytes, &asyncResponse)
+							err = json.Unmarshal(pollRespBytes, &asyncResponse)
 							if err != nil {
 								panic("JSON Unmarshal Failed" + err.Error())
 							}
 
-							// need to think if these parameters calculation can
-							// be different in bingAds and marketo
 							uploadStatus := asyncResponse.Success
 							statusCode := asyncResponse.StatusCode
 							abortedJobs := make([]*jobsdb.JobT, 0)
-							// when we can mark upload status as false?
 							if uploadStatus {
 								var statusList []*jobsdb.JobStatusT
 								list, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
@@ -123,19 +106,14 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								if err != nil {
 									panic(err)
 								}
-
-								// list.Jobs has parameters eg : "{\"record_id\": null, \"source_id\": \"2PuNovG1jg5F3UIUZpnhlwMhw7c\", \"event_name\": \"\", \"event_type\": \"identify\", \"message_id\": \"e686323c-f926-4e2b-b606-121e1948eafb\", \"received_at\": \"2023-05-29T19:58:14.380+05:30\", \"workspaceId\": \"1kgRLW9E68SaJx6WiHavEABeSAl\", \"transform_at\": \"processor\", \"source_job_id\": \"\", \"destination_id\": \"2PriULYidWaynFpp6jeAF3ugZUc\", \"gateway_job_id\": 5, \"source_category\": \"\", \"source_job_run_id\": \"\", \"source_task_run_id\": \"\", \"source_definition_id\": \"1b6gJdqOPOCadT3cddw8eidV591\", \"destin"
-								// list.Jobs has eventPaylaod. Eg: "{\"body\": {\"XML\": {}, \"FORM\": {}, \"JSON\": {\"email\": \"test@kinesis.com\", \"address\": 23, \"anonymousId\": \"Test Kinesis\"}, \"JSON_ARRAY\": {}}, \"type\": \"REST\", \"files\": {}, \"method\": \"POST\", \"params\": {}, \"userId\": \"\", \"headers\": {}, \"version\": \"1\", \"endpoint\": \"/fileUpload\"}"
 								importingList := list.Jobs
-								var failedJobsStatus common.FetchFailedStatus
-								failedJobsStatus.FailedJobsURL = asyncResponse.FailedJobsURL
-								failedJobsStatus.Parameters = importingJob.LastJobStatus.Parameters
-								failedJobsStatus.ImportingList = importingList
-								failedJobsStatus.OutputFilePath = asyncResponse.OutputFilePath
-								// asyncResponse eg : {Success: true, StatusCode: 200, HasFailed: false, HasWarning: false, FailedJobsURL: "/getFailedJobs", WarningJobsURL: "/getWarningJobs"}
+								var GetUploadStatsInput common.FetchUploadJobStatus
+								GetUploadStatsInput.FailedJobsURL = asyncResponse.FailedJobsURL
+								GetUploadStatsInput.Parameters = importingJob.LastJobStatus.Parameters
+								GetUploadStatsInput.ImportingList = importingList
+								GetUploadStatsInput.OutputFilePath = asyncResponse.OutputFilePath
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
-										// status eg github.com/rudderlabs/rudder-server/jobsdb.JobStatusT {JobID: 3, JobState: "succeeded", AttemptNum: 0, ExecTime: time.Time(2023-05-29T21:20:11+05:30, +252581321648){wall: 13913114914768609472, ext: 252581321648, loc: *(*time.Location)(0x105adafa0)}, RetryT...
 										status := jobsdb.JobStatusT{
 											JobID:         job.JobID,
 											JobState:      jobsdb.Succeeded.State,
@@ -153,34 +131,23 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								} else {
 									startFailedJobsPollTime := time.Now()
 									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
-									failedBodyBytes, statusCode := brt.asyncdestinationmanager.FetchFailedEvents(failedJobsStatus)
-									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs for Dest Type %v", brt.destType)
+									uploadStatsResp, statusCode := brt.asyncdestinationmanager.GetUploadStats(GetUploadStatsInput)
 									brt.asyncFailedJobsTimeStat.Since(startFailedJobsPollTime)
 
 									if statusCode != 200 {
 										continue
 									}
-									var failedJobsResponse map[string]interface{}
-									err = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
-									if err != nil {
-										panic("JSON Unmarshal Failed" + err.Error())
-									}
-									internalStatusCode, ok := failedJobsResponse["status"].(string)
-									if internalStatusCode != "200" || !ok {
-										brt.logger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v and body %v", brt.destType, internalStatusCode, string(failedBodyBytes))
-										continue
-									}
-									metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
-									if !ok {
-										brt.logger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v with error %v", brt.destType, internalStatusCode, string(failedBodyBytes), err)
+
+									uploadStatsRespInBytes, _ := stdjson.Marshal(uploadStatsResp)
+
+									internalStatusCode := uploadStatsResp.Status
+									if internalStatusCode != "200" {
+										brt.logger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v and body %v", brt.destType, internalStatusCode, string(uploadStatsRespInBytes))
 										continue
 									}
 
-									failedKeys, errFailed := brt.asyncdestinationmanager.RetrieveImportantKeys(metadata, "failedKeys")
-									warningKeys, errWarning := brt.asyncdestinationmanager.RetrieveImportantKeys(metadata, "warningKeys")
-									succeededKeys, errSuccess := brt.asyncdestinationmanager.RetrieveImportantKeys(metadata, "succeededKeys")
 									var status *jobsdb.JobStatusT
-									if errFailed != nil || errWarning != nil || errSuccess != nil || statusCode != 200 {
+									if uploadStatsResp.Metadata.ErrFailed != nil || uploadStatsResp.Metadata.ErrWarning != nil || uploadStatsResp.Metadata.ErrSuccess != nil || statusCode != 200 {
 										for _, job := range importingList {
 											jobID := job.JobID
 											status = &jobsdb.JobStatusT{
@@ -215,7 +182,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 									}
 									for _, job := range importingList {
 										jobID := job.JobID
-										if slices.Contains(append(succeededKeys, warningKeys...), jobID) {
+										if slices.Contains(append(uploadStatsResp.Metadata.SucceededKeys, uploadStatsResp.Metadata.WarningKeys...), jobID) {
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
 												JobState:      jobsdb.Succeeded.State,
@@ -227,8 +194,8 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 												JobParameters: job.Parameters,
 												WorkspaceId:   job.WorkspaceId,
 											}
-										} else if slices.Contains(failedKeys, job.JobID) {
-											errorResp, _ := json.Marshal(ErrorResponse{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
+										} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, job.JobID) {
+											errorResp, _ := json.Marshal(ErrorResponse{Error: gjson.GetBytes(uploadStatsRespInBytes, fmt.Sprintf("Metadata.FailedReasons.%v", job.JobID)).String()})
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
 												JobState:      jobsdb.Aborted.State,
