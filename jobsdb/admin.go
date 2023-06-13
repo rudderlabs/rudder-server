@@ -3,11 +3,11 @@ package jobsdb
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/samber/lo"
 )
 
 /*
@@ -160,77 +160,90 @@ func (jd *HandleT) oldJobsCleanupRoutine(ctx context.Context) {
 }
 
 func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
-	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
-	command := func() interface{} {
-		return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
-			for _, dsRange := range jd.getDSRangeList() {
-				if time.Now().Add(-jd.JobMaxAge).
-					After(time.Unix(dsRange.startTime*int64(time.Millisecond), 0)) {
-					if err := jd.doCleanupDSInTx(ctx, tx.Tx(), dsRange.ds); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
-		})
-	}
-	if err, _ := jd.executeDbRequest(
-		newWriteDbRequest("clean_up_old_jobs", &tags, command),
-	).(error); err != nil {
-		jd.logger.Errorf("error cleaning up DS: %w", err)
-	}
-}
+	var (
+		queryUnprocessed = true
+		queryProcessed   = true
 
-func (jd *HandleT) doCleanupDSInTx(ctx context.Context, tx *Tx, ds dataSetT) error {
-	abortStatusQuery := fmt.Sprintf(
-		`with abort_jobs as (
-			select jobs.job_id, jobs.custom_val, jobs.workspace_id, jobs.created_at from 
-			%[1]q as jobs left join "v_last_%[2]s" as status on jobs.job_id = status.job_id
-			where jobs.created_at < $1 and (
-				status.job_state = ANY('{%[3]s}')
-				or
-				status.job_id is null
-			)
-		),
-		inserted_status as (
-		insert into %[2]q (job_id, job_state, attempt, error_code, error_response) 
-		(select job_id, 'aborted', 0, '0', '{"reason": "job max age exceeded"}' from abort_jobs)
+		unprocessedAfterJobID *int64
+		processedAfterJobID   *int64
+
+		batchSize            = config.GetInt("jobsdb.cleanupBatchSize", 100)
+		cleanupRetryInterval = config.GetDuration(
+			"jobsdb.cleanupRetryInterval",
+			10, time.Second,
 		)
-		select count(*), workspace_id, custom_val from abort_jobs group by workspace_id, custom_val`,
-		ds.JobTable,
-		ds.JobStatusTable,
-		strings.Join(validNonTerminalStates, ","),
 	)
-	rows, err := tx.QueryContext(
-		ctx,
-		abortStatusQuery,
-		time.Now().Add(-jd.JobMaxAge),
-	)
-	if err != nil {
-		jd.logger.Info("error aborting jobs after maxAge: %w", err)
-		return err
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var count int
-		var workspaceID, customVal string
-		if err := rows.Scan(&count, &workspaceID, &customVal); err != nil {
-			jd.logger.Info("error scanning maxAge aborted jobs: %w", err)
-			return err
+
+	for {
+		var jobsToCleanup = make([]*JobT, 0)
+		if queryUnprocessed {
+			unprocessed, err := jd.GetUnprocessed(ctx, GetQueryParamsT{
+				IgnoreCustomValFiltersInQuery: true,
+				JobsLimit:                     batchSize,
+				AfterJobID:                    unprocessedAfterJobID,
+			})
+			if err != nil {
+				jd.logger.Errorf("error getting unprocessed jobs to cleanup: %w", err)
+				time.Sleep(cleanupRetryInterval)
+				continue
+			}
+			if len(unprocessed.Jobs) > 0 {
+				unprocessedAfterJobID = &(unprocessed.Jobs[len(unprocessed.Jobs)-1].JobID)
+				unprocessedJobsToCleanup := lo.Filter(unprocessed.Jobs, func(job *JobT, _ int) bool {
+					return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge))
+				})
+				jobsToCleanup = append(jobsToCleanup, unprocessedJobsToCleanup...)
+				if len(unprocessedJobsToCleanup) < batchSize {
+					queryUnprocessed = false
+				}
+			} else {
+				queryUnprocessed = false
+			}
 		}
-		// may lead to negative count on gateway counters? do we even use them anywhere?
-		tx.AddSuccessListener(func() {
-			rmetrics.DecreasePendingEvents(
-				jd.tablePrefix,
-				workspaceID,
-				customVal,
-				float64(count),
-			)
-		})
+
+		if queryProcessed {
+			processed, err := jd.GetProcessed(ctx, GetQueryParamsT{
+				IgnoreCustomValFiltersInQuery: true,
+				JobsLimit:                     batchSize,
+				AfterJobID:                    processedAfterJobID,
+			})
+			if err != nil {
+				jd.logger.Errorf("error getting processed jobs to cleanup: %w", err)
+				time.Sleep(cleanupRetryInterval)
+				continue
+			}
+			if len(processed.Jobs) > 0 {
+				processedAfterJobID = &(processed.Jobs[len(processed.Jobs)-1].JobID)
+				processedJobsToCleanup := lo.Filter(processed.Jobs, func(job *JobT, _ int) bool {
+					return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge))
+				})
+				jobsToCleanup = append(jobsToCleanup, processedJobsToCleanup...)
+				if len(processedJobsToCleanup) < batchSize {
+					queryProcessed = false
+				}
+			} else {
+				queryProcessed = false
+			}
+		}
+
+		if len(jobsToCleanup) == 0 {
+			break
+		}
+
+		statusList := make([]*JobStatusT, 0)
+		for _, job := range jobsToCleanup {
+			statusList = append(statusList, &JobStatusT{
+				JobID:         job.JobID,
+				JobState:      Aborted.State,
+				ErrorCode:     "0",
+				AttemptNum:    job.LastJobStatus.AttemptNum,
+				ErrorResponse: []byte(`{"reason": "job max age exceeded"}`),
+			})
+		}
+		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
+			jd.logger.Errorf("error updating job status for cleanup: %w", err)
+			time.Sleep(cleanupRetryInterval)
+			continue
+		}
 	}
-	if err := rows.Err(); err != nil {
-		jd.logger.Info("error iterating maxAge aborted jobs: %w", err)
-		return err
-	}
-	return nil
 }
