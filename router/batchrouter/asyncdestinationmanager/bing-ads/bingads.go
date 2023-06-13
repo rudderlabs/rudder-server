@@ -583,23 +583,23 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	return bingads, nil
 }
 
-func (b *BingAdsBulkUploader) GetUploadStats(failedJobsStatus common.FetchUploadJobStatus) (common.EventStatResponse, int) {
+func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
 	// Function implementation
-	filePath := failedJobsStatus.OutputFilePath
+	filePath := UploadStatsInput.OutputFilePath
 	records := ReadPollResults(filePath)
 	status := "200"
 	clientIDErrors := ProcessPollStatusData(records)
 
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
-	importList := failedJobsStatus.ImportingList
+	importList := UploadStatsInput.ImportingList
 	var initialEventList []int64
 	for _, job := range importList {
 		initialEventList = append(initialEventList, job.JobID)
 	}
 
 	// Build the response body
-	eventStatsResponse := common.EventStatResponse{
+	eventStatsResponse := common.GetUploadStatsResponse{
 		Status: status,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    GetFailedKeys(clientIDErrors),

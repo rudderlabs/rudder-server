@@ -244,7 +244,6 @@ func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
 func TestBingAdsPollSuccessCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	// oauthClient := mock_oauth.NewMockAuthorizer(ctrl)
 
 	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 
@@ -339,7 +338,7 @@ func TestBingAdsPollPartialFailureCase(t *testing.T) {
 	assert.Equal(t, RecievedStatus, expectedStatus)
 }
 
-func TestBingAdsFetchFailedEvents(t *testing.T) {
+func TestBingAdsGetUploadStats(t *testing.T) {
 	_ReadCSVFile := bingads.ReadPollResults
 	_ProcessStatusPollData := bingads.ProcessPollStatusData
 	defer func() {
@@ -373,7 +372,7 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 
 	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
 
-	failedJobsStatus := common.FetchUploadJobStatus{
+	UploadStatsInput := common.FetchUploadJobStatus{
 		OutputFilePath: "/path/to/file1.csv",
 		ImportingList: []*jobsdb.JobT{
 			{
@@ -387,7 +386,7 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 			},
 		},
 	}
-	expectedResp := common.EventStatResponse{
+	expectedResp := common.GetUploadStatsResponse{
 		Status: "200",
 		Metadata: common.EventStatMeta{
 			FailedKeys: []int64{1, 2},
@@ -405,7 +404,7 @@ func TestBingAdsFetchFailedEvents(t *testing.T) {
 	// Convert the response to JSON
 	// expectedResp, _ := stdjson.Marshal(Response)
 	expectedStatus := 200
-	recievedResponse, RecievedStatus := bulkUploader.GetUploadStats(failedJobsStatus)
+	recievedResponse, RecievedStatus := bulkUploader.GetUploadStats(UploadStatsInput)
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
 }

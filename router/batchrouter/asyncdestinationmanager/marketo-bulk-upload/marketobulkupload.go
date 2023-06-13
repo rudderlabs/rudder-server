@@ -56,16 +56,16 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 	return asyncResponse, statusCode
 }
 
-func (b *MarketoBulkUploader) GetUploadStats(failedJobsStatus common.FetchUploadJobStatus) (common.EventStatResponse, int) {
+func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	failedJobUrl := failedJobsStatus.FailedJobsURL
-	parameters := failedJobsStatus.Parameters
+	failedJobUrl := UploadStatsInput.FailedJobsURL
+	parameters := UploadStatsInput.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
-	payload := common.GenerateFailedPayload(b.destinationConfig, failedJobsStatus.ImportingList, importId, b.destName, csvHeaders)
+	payload := common.GenerateFailedPayload(b.destinationConfig, UploadStatsInput.ImportingList, importId, b.destName, csvHeaders)
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, b.timeout)
 	if statusCode != 200 {
-		return common.EventStatResponse{}, statusCode
+		return common.GetUploadStatsResponse{}, statusCode
 	}
 	var failedJobsResponse map[string]interface{}
 	_ = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
@@ -75,7 +75,7 @@ func (b *MarketoBulkUploader) GetUploadStats(failedJobsStatus common.FetchUpload
 	if !ok {
 		//TODO
 		pkgLogger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", internalStatusCode, string(failedBodyBytes))
-		return common.EventStatResponse{}, statusCode
+		return common.GetUploadStatsResponse{}, statusCode
 	}
 
 	failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
@@ -83,7 +83,7 @@ func (b *MarketoBulkUploader) GetUploadStats(failedJobsStatus common.FetchUpload
 	succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(metadata["succeededKeys"])
 
 	// Build the response body
-	eventStatsResponse := common.EventStatResponse{
+	eventStatsResponse := common.GetUploadStatsResponse{
 		Status: internalStatusCode,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    failedKeys,

@@ -130,7 +130,7 @@ type EventStatMeta struct {
 	FailedReasons map[string]string
 }
 
-type EventStatResponse struct {
+type GetUploadStatsResponse struct {
 	Status   string        `json:"status"`
 	Metadata EventStatMeta `json:"metadata"`
 }
