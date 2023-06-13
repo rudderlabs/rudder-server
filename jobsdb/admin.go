@@ -175,7 +175,7 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 	)
 
 	for {
-		var jobsToCleanup = make([]*JobT, 0)
+		jobsToCleanup := make([]*JobT, 0)
 		if queryUnprocessed {
 			unprocessed, err := jd.GetUnprocessed(ctx, GetQueryParamsT{
 				IgnoreCustomValFiltersInQuery: true,
