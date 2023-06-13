@@ -17,7 +17,7 @@ import (
 
 	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/rudderlabs/compose-test/testcompose"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
@@ -76,10 +76,6 @@ func TestIntegration(t *testing.T) {
 	}
 
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
@@ -90,7 +86,7 @@ func TestIntegration(t *testing.T) {
 	jobsDBPort := c.Port("jobsDb", 5432)
 	databricksConnectorPort := c.Port("databricks-connector", 50051)
 
-	httpPort, err := kitHelper.GetFreePort()
+	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()

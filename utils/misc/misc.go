@@ -35,15 +35,14 @@ import (
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -931,26 +930,6 @@ func GetNodeID() string {
 	return nodeID
 }
 
-// MakeRetryablePostRequest is Util function to make a post request.
-func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
-	backendURL := fmt.Sprintf("%s%s", url, endpoint)
-	dataJSON, err := json.Marshal(data)
-	if err != nil {
-		return nil, -1, err
-	}
-
-	resp, err := retryablehttp.Post(backendURL, "application/json", dataJSON)
-	if err != nil {
-		return nil, -1, err
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	defer func() { httputil.CloseResponse(resp) }()
-
-	pkgLogger.Debugf("Post request: Successful %s", string(body))
-	return body, resp.StatusCode, nil
-}
-
 // GetMD5UUID hashes the given string into md5 and returns it as auuid
 func GetMD5UUID(str string) (uuid.UUID, error) {
 	// To maintain backward compatibility, we are using md5 hash of the string
@@ -1289,7 +1268,7 @@ func Unique(stringSlice []string) []string {
 }
 
 func UseFairPickup() bool {
-	return config.GetBool("JobsDB.fairPickup", false) || config.GetBool("EnableMultitenancy", false)
+	return config.GetBool("JobsDB.fairPickup", false) && config.GetString("Router.isolationMode", "default") == "none"
 }
 
 // MapLookup returns the value of the key in the map, or nil if the key is not present.
@@ -1328,7 +1307,7 @@ func GetDiskUsageOfFile(path string) (int64, error) {
 	var stat syscall.Stat_t
 	err := syscall.Stat(path, &stat)
 	if err != nil {
-		return 0, fmt.Errorf("Unable to get file size %w", err)
+		return 0, fmt.Errorf("unable to get file size %w", err)
 	}
 	return int64(stat.Blksize) * stat.Blocks / 8, nil //nolint:unconvert // In amd64 architecture stat.Blksize is int64 whereas in arm64 it is int32
 }

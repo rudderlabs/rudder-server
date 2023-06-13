@@ -1,6 +1,7 @@
 package main_test
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -367,9 +368,11 @@ func verifyBatchDeletion(t *testing.T, minioConfig map[string]interface{}) {
 
 	filePtr, err := os.Open(goldenFileList[0])
 	require.NoError(t, err, "batch verification failed")
-	goldenFile, err := io.ReadAll(filePtr)
+	gzipReader, err := gzip.NewReader(filePtr)
 	require.NoError(t, err, "batch verification failed")
-	require.NoError(t, filePtr.Close())
+	defer func() { _ = gzipReader.Close() }()
+	goldenFile, err := io.ReadAll(gzipReader)
+	require.NoError(t, err, "batch verification failed")
 
 	var fmFactory filemanager.FileManagerFactoryT
 	fm, err := fmFactory.New(&filemanager.SettingsT{
@@ -389,9 +392,11 @@ func verifyBatchDeletion(t *testing.T, minioConfig map[string]interface{}) {
 
 	filePtr, err = os.Open(DownloadedFileName)
 	require.NoError(t, err, "batch verification failed")
-	downloadedFile, err := io.ReadAll(filePtr)
+	defer func() { _ = filePtr.Close() }()
+	gzipReader, err = gzip.NewReader(filePtr)
 	require.NoError(t, err, "batch verification failed")
-	require.NoError(t, filePtr.Close())
+	downloadedFile, err := io.ReadAll(gzipReader)
+	require.NoError(t, err, "batch verification failed")
 	require.Equal(t, string(goldenFile), string(downloadedFile), "downloaded file different than golden file")
 }
 

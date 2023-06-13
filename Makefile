@@ -14,13 +14,16 @@ test: install-tools test-run test-teardown
 test-run: ## Run all unit tests
 ifeq ($(filter 1,$(debug) $(RUNNER_DEBUG)),)
 	$(eval TEST_CMD = SLOW=0 gotestsum --format pkgname-and-test-fails --)
-	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=count -coverpkg=./... -vet=all --timeout=15m)
+	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -coverpkg=./... -vet=all --timeout=15m)
 else
 	$(eval TEST_CMD = SLOW=0 go test)
-	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=count -coverpkg=./... -vet=all --timeout=15m)
+	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -coverpkg=./... -vet=all --timeout=15m)
 endif
 ifdef package
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
+else ifdef exclude
+	$(eval FILES = `go list ./... | egrep -iv '$(exclude)'`)
+	$(TEST_CMD) -count=1 $(TEST_OPTIONS) $(FILES) && touch $(TESTFILE) || true
 else
 	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
 endif
@@ -76,11 +79,11 @@ install-tools:
 	go install mvdan.cc/gofumpt@latest
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
-	go install gotest.tools/gotestsum@v1.8.2
+	go install gotest.tools/gotestsum@v1.10.0
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files
-	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.51.2 bash -e -c \
+	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.52 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
 .PHONY: fmt

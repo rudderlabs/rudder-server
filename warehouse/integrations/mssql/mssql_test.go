@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	"github.com/rudderlabs/compose-test/testcompose"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -34,10 +34,6 @@ func TestIntegration(t *testing.T) {
 	}
 
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
@@ -49,7 +45,7 @@ func TestIntegration(t *testing.T) {
 	minioPort := c.Port("minio", 9000)
 	mssqlPort := c.Port("mssql", 1433)
 
-	httpPort, err := kitHelper.GetFreePort()
+	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()

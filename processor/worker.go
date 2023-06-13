@@ -70,7 +70,7 @@ func (w *worker) start() {
 		defer close(w.channel.transform)
 		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
 		for jobs := range w.channel.preprocess {
-			w.channel.transform <- w.handle.processJobsForDest(w.partition, jobs, nil)
+			w.channel.transform <- w.handle.processJobsForDest(w.partition, jobs)
 		}
 	})
 

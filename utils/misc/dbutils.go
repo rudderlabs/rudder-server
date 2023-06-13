@@ -46,11 +46,10 @@ func ReplaceDB(dbName, targetName string) {
 
 	// Killing sessions on the db
 	sqlStatement := fmt.Sprintf("SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid();", dbName)
-	rows, err := db.Query(sqlStatement)
+	_, err = db.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
-	rows.Close()
 
 	renameDBStatement := fmt.Sprintf(`ALTER DATABASE %q RENAME TO %q`,
 		dbName, targetName)

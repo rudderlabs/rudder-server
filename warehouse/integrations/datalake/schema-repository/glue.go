@@ -1,6 +1,7 @@
 package schemarepository
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -57,7 +58,7 @@ func NewGlueSchemaRepository(wh model.Warehouse) (*GlueSchemaRepository, error) 
 	return &gl, nil
 }
 
-func (gl *GlueSchemaRepository) FetchSchema(warehouse model.Warehouse) (model.Schema, model.Schema, error) {
+func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model.Warehouse) (model.Schema, model.Schema, error) {
 	schema := model.Schema{}
 	unrecognizedSchema := model.Schema{}
 	var err error
@@ -72,7 +73,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse model.Warehouse) (model.Sc
 			getTablesInput.NextToken = getTablesOutput.NextToken
 		}
 
-		getTablesOutput, err = gl.GlueClient.GetTables(getTablesInput)
+		getTablesOutput, err = gl.GlueClient.GetTablesWithContext(ctx, getTablesInput)
 		if err != nil {
 			if _, ok := err.(*glue.EntityNotFoundException); ok {
 				gl.Logger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
@@ -112,8 +113,8 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse model.Warehouse) (model.Sc
 	return schema, unrecognizedSchema, err
 }
 
-func (gl *GlueSchemaRepository) CreateSchema() (err error) {
-	_, err = gl.GlueClient.CreateDatabase(&glue.CreateDatabaseInput{
+func (gl *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
+	_, err = gl.GlueClient.CreateDatabaseWithContext(ctx, &glue.CreateDatabaseInput{
 		DatabaseInput: &glue.DatabaseInput{
 			Name: &gl.Namespace,
 		},
@@ -125,7 +126,7 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 	return
 }
 
-func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
+func (gl *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
 	partitionKeys, err := gl.partitionColumns()
 	if err != nil {
 		return fmt.Errorf("partition keys: %w", err)
@@ -145,7 +146,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap model.Ta
 	// add storage descriptor to create table request
 	input.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, columnMap)
 
-	_, err = gl.GlueClient.CreateTable(&input)
+	_, err = gl.GlueClient.CreateTableWithContext(ctx, &input)
 	if err != nil {
 		_, ok := err.(*glue.AlreadyExistsException)
 		if ok {
@@ -155,7 +156,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap model.Ta
 	return
 }
 
-func (gl *GlueSchemaRepository) updateTable(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (gl *GlueSchemaRepository) updateTable(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	updateTableInput := glue.UpdateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
 		TableInput: &glue.TableInput{
@@ -164,7 +165,7 @@ func (gl *GlueSchemaRepository) updateTable(tableName string, columnsInfo []ware
 	}
 
 	// fetch schema from glue
-	schema, _, err := gl.FetchSchema(gl.Warehouse)
+	schema, _, err := gl.FetchSchema(ctx, gl.Warehouse)
 	if err != nil {
 		return err
 	}
@@ -190,16 +191,16 @@ func (gl *GlueSchemaRepository) updateTable(tableName string, columnsInfo []ware
 	updateTableInput.TableInput.PartitionKeys = partitionKeys
 
 	// update table
-	_, err = gl.GlueClient.UpdateTable(&updateTableInput)
+	_, err = gl.GlueClient.UpdateTableWithContext(ctx, &updateTableInput)
 	return
 }
 
-func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	return gl.updateTable(tableName, columnsInfo)
+func (gl *GlueSchemaRepository) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	return gl.updateTable(ctx, tableName, columnsInfo)
 }
 
-func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, gl.updateTable(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
+func (gl *GlueSchemaRepository) AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, gl.updateTable(ctx, tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
 }
 
 func getGlueClient(wh model.Warehouse) (*glue.Glue, error) {
@@ -250,7 +251,7 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 // RefreshPartitions takes a tableName and a list of loadFiles and refreshes all the
 // partitions that are modified by the path in those loadFiles. It returns any error
 // reported by Glue
-func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFile) error {
+func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error {
 	gl.Logger.Infof("Refreshing partitions for table: %s", tableName)
 
 	// Skip if time window layout is not defined
@@ -299,7 +300,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	// partitions) changes in Glue tables (since the number of versions of a Glue table
 	// is limited)
 	for location, partition := range locationsToPartition {
-		_, err := gl.GlueClient.GetPartition(&glue.GetPartitionInput{
+		_, err := gl.GlueClient.GetPartitionWithContext(ctx, &glue.GetPartitionInput{
 			DatabaseName:    aws.String(gl.Namespace),
 			PartitionValues: partition.Values,
 			TableName:       aws.String(tableName),
@@ -320,13 +321,13 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	}
 
 	// Updating table partitions with empty columns to create partition keys if not created
-	if err = gl.updateTable(tableName, []warehouseutils.ColumnInfo{}); err != nil {
+	if err = gl.updateTable(ctx, tableName, []warehouseutils.ColumnInfo{}); err != nil {
 		return fmt.Errorf("update table: %w", err)
 	}
 
 	gl.Logger.Debugf("Refreshing %d partitions", len(partitionInputs))
 
-	if _, err = gl.GlueClient.BatchCreatePartition(&glue.BatchCreatePartitionInput{
+	if _, err = gl.GlueClient.BatchCreatePartitionWithContext(ctx, &glue.BatchCreatePartitionInput{
 		DatabaseName:       aws.String(gl.Namespace),
 		PartitionInputList: partitionInputs,
 		TableName:          aws.String(tableName),

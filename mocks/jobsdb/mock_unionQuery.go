@@ -60,6 +60,21 @@ func (mr *MockMultiTenantJobsDBMockRecorder) FailExecuting() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailExecuting", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).FailExecuting))
 }
 
+// GetActiveWorkspaces mocks base method.
+func (m *MockMultiTenantJobsDB) GetActiveWorkspaces(arg0 context.Context, arg1 string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetActiveWorkspaces", arg0, arg1)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetActiveWorkspaces indicates an expected call of GetActiveWorkspaces.
+func (mr *MockMultiTenantJobsDBMockRecorder) GetActiveWorkspaces(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActiveWorkspaces", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetActiveWorkspaces), arg0, arg1)
+}
+
 // GetAllJobs mocks base method.
 func (m *MockMultiTenantJobsDB) GetAllJobs(arg0 context.Context, arg1 map[string]int, arg2 jobsdb.GetQueryParamsT, arg3 int, arg4 jobsdb.MoreToken) (*jobsdb.GetAllJobsResult, error) {
 	m.ctrl.T.Helper()
@@ -73,6 +88,21 @@ func (m *MockMultiTenantJobsDB) GetAllJobs(arg0 context.Context, arg1 map[string
 func (mr *MockMultiTenantJobsDBMockRecorder) GetAllJobs(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllJobs", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetAllJobs), arg0, arg1, arg2, arg3, arg4)
+}
+
+// GetDistinctParameterValues mocks base method.
+func (m *MockMultiTenantJobsDB) GetDistinctParameterValues(arg0 context.Context, arg1 string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetDistinctParameterValues", arg0, arg1)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetDistinctParameterValues indicates an expected call of GetDistinctParameterValues.
+func (mr *MockMultiTenantJobsDBMockRecorder) GetDistinctParameterValues(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDistinctParameterValues", reflect.TypeOf((*MockMultiTenantJobsDB)(nil).GetDistinctParameterValues), arg0, arg1)
 }
 
 // GetJournalEntries mocks base method.
@@ -117,11 +147,12 @@ func (mr *MockMultiTenantJobsDBMockRecorder) JournalDeleteEntry(arg0 interface{}
 }
 
 // JournalMarkStart mocks base method.
-func (m *MockMultiTenantJobsDB) JournalMarkStart(arg0 string, arg1 json.RawMessage) int64 {
+func (m *MockMultiTenantJobsDB) JournalMarkStart(arg0 string, arg1 json.RawMessage) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "JournalMarkStart", arg0, arg1)
 	ret0, _ := ret[0].(int64)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // JournalMarkStart indicates an expected call of JournalMarkStart.

@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/utils/types/mock_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types UserSuppression,ReportingI
+//go:generate mockgen -destination=../../mocks/utils/types/mock_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types UserSuppression,Reporting
 
 package types
 
@@ -44,12 +44,11 @@ type ConfigEnvI interface {
 	ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte)
 }
 
-// ReportingI is interface to report metrics
-type ReportingI interface {
+// Reporting is interface to report metrics
+type Reporting interface {
 	WaitForSetup(ctx context.Context, clientName string) error
-	AddClient(ctx context.Context, c Config)
 	Report(metrics []*PUReportedMetric, txn *sql.Tx)
-	IsPIIReportingDisabled(string) bool
+	AddClient(ctx context.Context, c Config)
 }
 
 // ConfigT simple map config structure

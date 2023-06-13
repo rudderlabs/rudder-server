@@ -21,6 +21,7 @@ import (
 
 var pkgLogger logger.Logger
 
+// TODO: delete this once we remove the old fair pickup algorithm
 type Stats struct {
 	routerJobCountMutex sync.RWMutex
 	// routerInputRates: dbPrefix, workspace, desType, measurement
@@ -273,7 +274,7 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 			break
 		}
 
-		pickUpCount := 0
+		var pickUpCount int
 		if t.routerTenantLatencyStat[destType][workspaceKey].Value() == 0 {
 			pickUpCount = misc.MinInt(pendingEvents-workspacePickUpCount[workspaceKey], runningJobCount)
 		} else {

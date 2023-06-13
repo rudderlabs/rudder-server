@@ -1090,6 +1090,7 @@ func TestCreateDS(t *testing.T) {
 				require.NoError(t, err)
 				tableNames = append(tableNames, tableName)
 			}
+			require.NoError(t, tables.Err())
 			require.Equal(t, len(tableNames), 2, `should find two tables`)
 			require.Equal(t, tableNames[0], prefix+"_jobs_-2")
 			require.Equal(t, tableNames[1], prefix+"_jobs_-1")
@@ -1146,7 +1147,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 		WorkspaceId:  defaultWorkspaceID,
 		EventCount:   1,
 	}
-	errMap := jobDB.StoreWithRetryEach(context.Background(), []*JobT{&sampleTestJob})
+	errMap := jobDB.StoreEachBatchRetry(context.Background(), [][]*JobT{{&sampleTestJob}})
 	for _, val := range errMap {
 		require.Equal(t, "", val)
 	}
@@ -1401,6 +1402,7 @@ func getPayloadSize(t *testing.T, jobsDB JobsDB, job *JobT) (int64, error) {
 			require.NoError(t, err)
 			tables = append(tables, table)
 		}
+		require.NoError(t, rows.Err())
 		_ = rows.Close()
 
 		for _, table := range tables {

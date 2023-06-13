@@ -99,6 +99,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Category: sourceType2,
 			},
+			WorkspaceID: WorkspaceID,
 		},
 	},
 }
@@ -271,7 +272,7 @@ var _ = Describe("Gateway Enterprise", func() {
 			).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(
+			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
@@ -464,7 +465,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
-		assertJobMetadata := func(job *jobsdb.JobT, batchLength int) {
+		assertJobMetadata := func(job *jobsdb.JobT) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
@@ -485,7 +486,7 @@ var _ = Describe("Gateway", func() {
 			Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 100*time.Millisecond))
 			Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
 			Expect(requestIP.String()).To(Equal(TestRemoteAddress))
-			Expect(batch.Array()).To(HaveLen(batchLength))
+			Expect(batch.Array()).To(HaveLen(1)) // each batch split into multiple batches of 1 event
 		}
 
 		createValidBody := func(customProperty, customValue string) []byte {
@@ -518,7 +519,6 @@ var _ = Describe("Gateway", func() {
 
 		// common tests for all web handlers
 		It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
-			workspaceID := getWorkspaceID(WriteKeyEnabled)
 			for handlerType, handler := range allHandlers(gateway) {
 				if !(handlerType == "batch" || handlerType == "import") {
 
@@ -533,7 +533,7 @@ var _ = Describe("Gateway", func() {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.
-						EXPECT().StoreWithRetryEachInTx(
+						EXPECT().StoreEachBatchRetryInTx(
 						gomock.Any(),
 						gomock.Any(),
 						gomock.Any(),
@@ -542,24 +542,26 @@ var _ = Describe("Gateway", func() {
 							func(
 								ctx context.Context,
 								tx jobsdb.StoreSafeTx,
-								jobs []*jobsdb.JobT,
+								jobBatches [][]*jobsdb.JobT,
 							) (map[uuid.UUID]string, error) {
-								for _, job := range jobs {
-									// each call should be included in a separate batch, with a separate batch_id
-									assertJobMetadata(job, 1)
+								for _, batch := range jobBatches {
+									for _, job := range batch {
+										// each call should be included in a separate batch, with a separate batch_id
+										assertJobMetadata(job)
 
-									responseData := []byte(job.EventPayload)
-									payload := gjson.GetBytes(responseData, "batch.0")
+										responseData := []byte(job.EventPayload)
+										payload := gjson.GetBytes(responseData, "batch.0")
 
-									assertJobBatchItem(payload)
+										assertJobBatchItem(payload)
 
-									messageType := payload.Get("type")
-									Expect(messageType.String()).To(Equal(handlerType))
-									Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
+										messageType := payload.Get("type")
+										Expect(messageType.String()).To(Equal(handlerType))
+										Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
+									}
 								}
 								c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
 
-								return jobsToEmptyErrors(ctx, tx, jobs)
+								return jobsToEmptyErrors(ctx, tx, jobBatches)
 							}).
 						Times(1)
 
@@ -578,7 +580,7 @@ var _ = Describe("Gateway", func() {
 								map[string]string{
 									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-									"workspaceId": workspaceID,
+									"workspaceId": gateway.getWorkspaceForWriteKey(WriteKeyEnabled),
 									"writeKey":    WriteKeyEnabled,
 									"reqType":     handlerType,
 									"sourceType":  sourceType2,
@@ -619,7 +621,7 @@ var _ = Describe("Gateway", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(context.Context, interface{}, interface{}) { tFunc() })
 
@@ -860,7 +862,7 @@ var _ = Describe("Gateway", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
+			c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
 
 			for handlerType, handler := range extractHandlers {
 				var body string
@@ -943,7 +945,7 @@ var _ = Describe("Gateway", func() {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.
-						EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+						EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 						DoAndReturn(jobsToJobsdbErrors).
 						Times(1)
 
@@ -1025,7 +1027,7 @@ var _ = Describe("Gateway", func() {
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
 			Expect(errors.New(response.InvalidJSON)).To(Equal(err))
-			Expect(jobData.job).To(BeNil())
+			Expect(jobData.jobs).To(BeNil())
 		})
 
 		It("drops non-identifiable requests if userID and anonID are not present in the request payload", func() {
@@ -1038,7 +1040,7 @@ var _ = Describe("Gateway", func() {
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
-			Expect(jobData.job).To(BeNil())
+			Expect(jobData.jobs).To(BeNil())
 		})
 
 		It("accepts events with non-string type anonymousId and/or userId", func() {
@@ -1189,15 +1191,15 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 }
 
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ []*jobsdb.JobT) (map[uuid.UUID]string, error) {
+func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ [][]*jobsdb.JobT) (map[uuid.UUID]string, error) {
 	return make(map[uuid.UUID]string), nil
 }
 
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
+func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs [][]*jobsdb.JobT) (map[uuid.UUID]string, error) {
 	errorsMap := make(map[uuid.UUID]string, len(jobs))
-	for _, job := range jobs {
-		errorsMap[job.UUID] = "tx error"
+	for _, batch := range jobs {
+		errorsMap[batch[0].UUID] = "tx error"
 	}
 
 	return errorsMap, nil
