@@ -13,9 +13,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -183,7 +183,7 @@ func (nc *namespaceConfig) makeHTTPRequest(req *http.Request) ([]byte, error) {
 		return nil, err
 	}
 
-	defer func() { httputil.CloseResponse(resp) }()
+	defer func() { kithttputil.CloseResponse(resp) }()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

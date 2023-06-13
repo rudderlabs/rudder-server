@@ -16,4 +16,6 @@ message EventSchemaMessage {
   google.protobuf.Timestamp observedAt = 4;
   bytes sample = 5;
   bytes correlationID = 6;
+  string hash = 7;
+  int64 batchCount = 8; 
 }

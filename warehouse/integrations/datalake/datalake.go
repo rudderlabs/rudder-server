@@ -40,7 +40,7 @@ func New() *Datalake {
 	}
 }
 
-func (d *Datalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	d.Warehouse = warehouse
 	d.Uploader = uploader
 
@@ -49,30 +49,30 @@ func (d *Datalake) Setup(warehouse model.Warehouse, uploader warehouseutils.Uplo
 	return err
 }
 
-func (*Datalake) CrashRecover() {}
+func (*Datalake) CrashRecover(context.Context) {}
 
-func (d *Datalake) FetchSchema() (model.Schema, model.Schema, error) {
-	return d.SchemaRepository.FetchSchema(d.Warehouse)
+func (d *Datalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+	return d.SchemaRepository.FetchSchema(ctx, d.Warehouse)
 }
 
-func (d *Datalake) CreateSchema() (err error) {
-	return d.SchemaRepository.CreateSchema()
+func (d *Datalake) CreateSchema(ctx context.Context) (err error) {
+	return d.SchemaRepository.CreateSchema(ctx)
 }
 
-func (d *Datalake) CreateTable(tableName string, columnMap model.TableSchema) (err error) {
-	return d.SchemaRepository.CreateTable(tableName, columnMap)
+func (d *Datalake) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
+	return d.SchemaRepository.CreateTable(ctx, tableName, columnMap)
 }
 
-func (*Datalake) DropTable(_ string) (err error) {
+func (*Datalake) DropTable(context.Context, string) (err error) {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (d *Datalake) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	return d.SchemaRepository.AddColumns(tableName, columnsInfo)
+func (d *Datalake) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	return d.SchemaRepository.AddColumns(ctx, tableName, columnsInfo)
 }
 
-func (d *Datalake) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
-	return d.SchemaRepository.AlterColumn(tableName, columnName, columnType)
+func (d *Datalake) AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error) {
+	return d.SchemaRepository.AlterColumn(ctx, tableName, columnName, columnType)
 }
 
 func (d *Datalake) LoadTable(_ context.Context, tableName string) error {
@@ -80,7 +80,7 @@ func (d *Datalake) LoadTable(_ context.Context, tableName string) error {
 	return nil
 }
 
-func (*Datalake) DeleteBy([]string, warehouseutils.DeleteByParams) (err error) {
+func (*Datalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) (err error) {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
@@ -95,20 +95,20 @@ func (d *Datalake) LoadUserTables(context.Context) map[string]error {
 	return errorMap
 }
 
-func (d *Datalake) LoadIdentityMergeRulesTable() error {
+func (d *Datalake) LoadIdentityMergeRulesTable(context.Context) error {
 	d.Logger.Infof("Skipping load for identity merge rules : %s is a datalake destination", d.Warehouse.Destination.ID)
 	return nil
 }
 
-func (d *Datalake) LoadIdentityMappingsTable() error {
+func (d *Datalake) LoadIdentityMappingsTable(context.Context) error {
 	d.Logger.Infof("Skipping load for identity mappings : %s is a datalake destination", d.Warehouse.Destination.ID)
 	return nil
 }
 
-func (*Datalake) Cleanup() {
+func (*Datalake) Cleanup(context.Context) {
 }
 
-func (*Datalake) IsEmpty(_ model.Warehouse) (bool, error) {
+func (*Datalake) IsEmpty(context.Context, model.Warehouse) (bool, error) {
 	return false, nil
 }
 
@@ -116,7 +116,7 @@ func (*Datalake) TestConnection(context.Context, model.Warehouse) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (*Datalake) DownloadIdentityRules(*misc.GZipWriter) error {
+func (*Datalake) DownloadIdentityRules(context.Context, *misc.GZipWriter) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
@@ -124,11 +124,11 @@ func (*Datalake) GetTotalCountInTable(context.Context, string) (int64, error) {
 	return 0, nil
 }
 
-func (*Datalake) Connect(_ model.Warehouse) (client.Client, error) {
+func (*Datalake) Connect(context.Context, model.Warehouse) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 
-func (*Datalake) LoadTestTable(_, _ string, _ map[string]interface{}, _ string) error {
+func (*Datalake) LoadTestTable(context.Context, string, string, map[string]interface{}, string) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 

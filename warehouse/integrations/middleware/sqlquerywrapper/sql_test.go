@@ -28,6 +28,8 @@ func TestQueryWrapper(t *testing.T) {
 	pgResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 
+	t.Log("db:", pgResource.DBDsn)
+
 	testCases := []struct {
 		name               string
 		executionTimeInSec time.Duration
@@ -92,16 +94,16 @@ func TestQueryWrapper(t *testing.T) {
 			_, err = qw.ExecContext(ctx, query)
 			require.NoError(t, err)
 
-			_, err = qw.Query(query)
+			_, err = qw.Query(query) //nolint:rowserrcheck
 			require.NoError(t, err)
 
-			_, err = qw.QueryContext(ctx, query)
+			_, err = qw.QueryContext(ctx, query) //nolint:rowserrcheck
 			require.NoError(t, err)
 
-			_ = qw.QueryRow(query)
+			_ = qw.QueryRow(query) //nolint:rowserrcheck
 			require.NoError(t, err)
 
-			_ = qw.QueryRowContext(ctx, query)
+			_ = qw.QueryRowContext(ctx, query) //nolint:rowserrcheck
 			require.NoError(t, err)
 		})
 
@@ -278,10 +280,10 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_, err = tx.Query(query)
+				_, err = tx.Query(query) // nolint:rowserrcheck
 				require.NoError(t, err)
 
-				err = tx.Commit()
+				err = tx.Commit() // nolint:rowserrcheck
 				require.NoError(t, err)
 			})
 
@@ -289,7 +291,7 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_, err = tx.QueryContext(ctx, query)
+				_, err = tx.QueryContext(ctx, query) // nolint:rowserrcheck
 				require.NoError(t, err)
 
 				err = tx.Commit()

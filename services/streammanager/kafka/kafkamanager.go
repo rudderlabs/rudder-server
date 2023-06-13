@@ -589,7 +589,7 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 		marshalledMsg, err := json.Marshal(message)
 		if err != nil {
 			kafkaStats.jsonSerializationMsgErr.Increment()
-			pkgLogger.Errorf("unable to marshal message of index:%d", i)
+			pkgLogger.Errorf("unable to marshal message at index %d", i)
 			continue
 		}
 		codecs := p.getCodecs()
@@ -597,19 +597,22 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 			schemaId, _ := data["schemaId"].(string)
 			if schemaId == "" {
 				kafkaStats.avroSerializationErr.Increment()
-				pkgLogger.Errorf("schemaId is not available for the event with index:%d", i)
+				pkgLogger.Errorf("schemaId is not available for the event at index %d", i)
 				continue
 			}
 			codec, ok := codecs[schemaId]
 			if !ok {
 				kafkaStats.avroSerializationErr.Increment()
-				pkgLogger.Errorf("unable to find schema with schemaId: %v", schemaId)
+				pkgLogger.Errorf("unable to find schema with schemaId %q", schemaId)
 				continue
 			}
 			marshalledMsg, err = serializeAvroMessage(schemaId, p.getEmbedAvroSchemaID(), marshalledMsg, *codec)
 			if err != nil {
 				kafkaStats.avroSerializationErr.Increment()
-				pkgLogger.Errorf("unable to serialize the event of index: %d, with error: %s", i, err)
+				pkgLogger.Errorf(
+					"unable to serialize the event with schemaId %q at index %d: %s",
+					schemaId, i, err,
+				)
 				continue
 			}
 		}
@@ -722,11 +725,14 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 		}
 		codec, ok := codecs[schemaId]
 		if !ok {
-			return makeErrorResponse(fmt.Errorf("unable to find schema with schemaId: %v", schemaId))
+			return makeErrorResponse(fmt.Errorf("unable to find schema with ID %v", schemaId))
 		}
 		value, err = serializeAvroMessage(schemaId, p.getEmbedAvroSchemaID(), value, *codec)
 		if err != nil {
-			return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
+			return makeErrorResponse(fmt.Errorf(
+				"unable to serialize event with schemaId %q and messageId %s: %s",
+				schemaId, messageId, err,
+			))
 		}
 	}
 

@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  zookeeper:
+    image: zookeeper:3.5
+    healthcheck:
+      test: nc -z localhost 2181 || exit 1
+      interval: 1s
+      retries: 25
+  clickhouse01:
+    image: yandex/clickhouse-server:21-alpine
+    ports:
+      - "9000"
+    volumes:
+      - ./cluster/clickhouse01:/etc/clickhouse-server
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  clickhouse02:
+    image: yandex/clickhouse-server:21-alpine
+    ports:
+      - "9000"
+    volumes:
+      - ./cluster/clickhouse02:/etc/clickhouse-server
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  clickhouse03:
+    image: yandex/clickhouse-server:21-alpine
+    ports:
+      - "9000"
+    volumes:
+      - ./cluster/clickhouse03:/etc/clickhouse-server
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  clickhouse04:
+    image: yandex/clickhouse-server:21-alpine
+    ports:
+      - "9000"
+    volumes:
+      - ./cluster/clickhouse04:/etc/clickhouse-server
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25

@@ -11,7 +11,7 @@ import (
 )
 
 type Factory struct {
-	Reporting        types.ReportingI
+	Reporting        types.Reporting
 	Multitenant      multitenant.MultiTenantI
 	BackendConfig    backendconfig.BackendConfig
 	RouterDB         jobsdb.JobsDB

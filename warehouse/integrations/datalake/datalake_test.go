@@ -16,7 +16,7 @@ import (
 
 	"github.com/minio/minio-go/v6"
 	"github.com/rudderlabs/compose-test/testcompose"
-	kitHelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -65,10 +65,6 @@ func TestIntegration(t *testing.T) {
 	}
 
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
-
-	t.Cleanup(func() {
-		c.Stop(context.Background())
-	})
 	c.Start(context.Background())
 
 	misc.Init()
@@ -80,7 +76,7 @@ func TestIntegration(t *testing.T) {
 	minioPort := c.Port("minio", 9000)
 	azurePort := c.Port("azure", 10000)
 
-	httpPort, err := kitHelper.GetFreePort()
+	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	workspaceID := warehouseutils.RandHex()

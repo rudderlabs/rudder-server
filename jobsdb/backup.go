@@ -51,44 +51,73 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		jd.logger.Debugf("backupDSLoop backup enabled %s", jd.tablePrefix)
-		backupDSRange := jd.getBackupDSRange()
-		// check if non-empty dataset is present to back up
-		// else continue
-		sleepMultiplier = 1
-		if (dataSetRangeT{} == *backupDSRange) {
-			// sleep for more duration if no dataset is found
-			sleepMultiplier = 6
-			continue
+		loop := func() error {
+			jd.logger.Debugf("backupDSLoop backup enabled %s", jd.tablePrefix)
+			backupDSRange, err := jd.getBackupDSRange()
+			if err != nil {
+				return fmt.Errorf("[JobsDB] :: Failed to get backup dataset range. Err: %w", err)
+			}
+			// check if non-empty dataset is present to back up
+			// else continue
+			sleepMultiplier = 1
+			if (dataSetRangeT{} == *backupDSRange) {
+				// sleep for more duration if no dataset is found
+				sleepMultiplier = 6
+				return nil
+			}
+
+			backupDS := backupDSRange.ds
+
+			opPayload, err := json.Marshal(&backupDS)
+			jd.assertError(err)
+
+			opID, err := jd.JournalMarkStart(backupDSOperation, opPayload)
+			if err != nil {
+				return fmt.Errorf("mark start of backup operation: %w", err)
+			}
+			err = jd.backupDS(ctx, backupDSRange)
+			if err != nil {
+				return fmt.Errorf("backup dataset: %w", err)
+			}
+			err = jd.JournalMarkDone(opID)
+			if err != nil {
+				return fmt.Errorf("mark end of backup operation: %w", err)
+			}
+
+			// drop dataset after successfully uploading both jobs and jobs_status to s3
+			opID, err = jd.JournalMarkStart(backupDropDSOperation, opPayload)
+			if err != nil {
+				return fmt.Errorf("mark start of drop backup operation: %w", err)
+			}
+			// Currently, we retry uploading a table for some time & if it fails. We only drop that table & not all `pre_drop` tables.
+			// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
+			// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
+			// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
+			err = jd.dropDS(backupDS)
+			if err != nil {
+				return fmt.Errorf(" drop dataset: %w", err)
+			}
+			err = jd.JournalMarkDone(opID)
+			if err != nil {
+				return fmt.Errorf("mark end of drop backup operation: %w", err)
+			}
+			return nil
+		}
+		if err := loop(); err != nil && ctx.Err() == nil {
+			if !jd.skipMaintenanceError {
+				panic(err)
+			}
+			jd.logger.Errorf("[JobsDB] :: Failed to backup dataset. Err: %s", err.Error())
 		}
 
-		backupDS := backupDSRange.ds
-
-		opPayload, err := json.Marshal(&backupDS)
-		jd.assertError(err)
-
-		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
-		err = jd.backupDS(ctx, backupDSRange)
-		if err != nil {
-			jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
-		}
-		jd.JournalMarkDone(opID)
-
-		// drop dataset after successfully uploading both jobs and jobs_status to s3
-		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
-		// Currently, we retry uploading a table for some time & if it fails. We only drop that table & not all `pre_drop` tables.
-		// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
-		// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
-		// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
-		jd.mustDropDS(backupDS)
-		jd.JournalMarkDone(opID)
 	}
 }
 
 // backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
 func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	if err := jd.WithTx(func(tx *Tx) error {
-		return jd.cleanStatusTable(ctx, tx, backupDSRange.ds.JobStatusTable)
+		_, err := jd.cleanStatusTable(ctx, tx, backupDSRange.ds.JobStatusTable, false)
+		return err
 	}); err != nil {
 		return fmt.Errorf("error while cleaning status table: %w", err)
 	}
@@ -544,6 +573,9 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 			}
 			offset++
 		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("error while iterating rows: %w", err)
+		}
 		return nil
 	}
 
@@ -615,13 +647,15 @@ func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file 
 	return output, err
 }
 
-func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
+func (jd *HandleT) getBackupDSRange() (*dataSetRangeT, error) {
 	var backupDS dataSetT
 	var backupDSRange dataSetRangeT
 
 	// Read the table names from PG
-	tableNames := mustGetAllTableNames(jd, jd.dbHandle)
-
+	tableNames, err := getAllTableNames(jd.dbHandle)
+	if err != nil {
+		return nil, fmt.Errorf("getAllTableNames: %w", err)
+	}
 	// We check for job_status because that is renamed after job
 	var dnumList []string
 	for _, t := range tableNames {
@@ -632,7 +666,7 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 		}
 	}
 	if len(dnumList) == 0 {
-		return &backupDSRange
+		return &backupDSRange, nil
 	}
 	jd.statPreDropTableCount.Gauge(len(dnumList))
 
@@ -647,14 +681,18 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	var minID, maxID sql.NullInt64
 	jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) from %q`, backupDS.JobTable)
 	row := jd.dbHandle.QueryRow(jobIDSQLStatement)
-	err := row.Scan(&minID, &maxID)
-	jd.assertError(err)
+	err = row.Scan(&minID, &maxID)
+	if err != nil {
+		return nil, fmt.Errorf("getting min and max job_id: %w", err)
+	}
 
 	var minCreatedAt, maxCreatedAt time.Time
 	jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) from %q`, backupDS.JobTable)
 	row = jd.dbHandle.QueryRow(jobTimeSQLStatement)
 	err = row.Scan(&minCreatedAt, &maxCreatedAt)
-	jd.assertError(err)
+	if err != nil {
+		return nil, fmt.Errorf("getting min and max created_at: %w", err)
+	}
 
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,
@@ -663,5 +701,5 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 		endTime:   maxCreatedAt.UnixNano() / int64(time.Millisecond),
 		ds:        backupDS,
 	}
-	return &backupDSRange
+	return &backupDSRange, nil
 }

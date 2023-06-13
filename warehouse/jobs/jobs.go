@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"context"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -14,11 +15,11 @@ func (*WhAsyncJob) GetSchemaInWarehouse() model.Schema {
 	return model.Schema{}
 }
 
-func (*WhAsyncJob) GetLocalSchema() (model.Schema, error) {
+func (*WhAsyncJob) GetLocalSchema(context.Context) (model.Schema, error) {
 	return model.Schema{}, nil
 }
 
-func (*WhAsyncJob) UpdateLocalSchema(model.Schema) error {
+func (*WhAsyncJob) UpdateLocalSchema(context.Context, model.Schema) error {
 	return nil
 }
 
@@ -30,15 +31,15 @@ func (*WhAsyncJob) GetTableSchemaInUpload(string) model.TableSchema {
 	return model.TableSchema{}
 }
 
-func (*WhAsyncJob) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+func (*WhAsyncJob) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
 
-func (*WhAsyncJob) GetSampleLoadFileLocation(string) (string, error) {
+func (*WhAsyncJob) GetSampleLoadFileLocation(context.Context, string) (string, error) {
 	return "", nil
 }
 
-func (*WhAsyncJob) GetSingleLoadFile(string) (warehouseutils.LoadFile, error) {
+func (*WhAsyncJob) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
 	return warehouseutils.LoadFile{}, nil
 }
 
