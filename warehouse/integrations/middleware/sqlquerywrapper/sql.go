@@ -29,6 +29,7 @@ type DB struct {
 	slowQueryThreshold time.Duration
 	rollbackThreshold  time.Duration
 	commitThreshold    time.Duration
+	queryTimeout       time.Duration
 	secretsRegex       map[string]string
 }
 
@@ -61,6 +62,12 @@ func WithSecretsRegex(secretsRegex map[string]string) Opt {
 	}
 }
 
+func WithTimeout(timeout time.Duration) Opt {
+	return func(s *DB) {
+		s.queryTimeout = timeout
+	}
+}
+
 func New(db *sql.DB, opts ...Opt) *DB {
 	s := &DB{
 		DB:                 db,
@@ -69,6 +76,7 @@ func New(db *sql.DB, opts ...Opt) *DB {
 		rollbackThreshold:  30 * time.Second,
 		commitThreshold:    30 * time.Second,
 		logger:             rslogger.NOP,
+		queryTimeout:       1 * time.Hour,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -77,42 +85,42 @@ func New(db *sql.DB, opts ...Opt) *DB {
 }
 
 func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
-	startedAt := time.Now()
-	result, err := db.DB.Exec(query, args...)
-	db.logQuery(query, db.since(startedAt))
-	return result, err
+	return db.ExecContext(context.Background(), query, args...)
 }
 
 func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
 	startedAt := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, db.queryTimeout)
+	defer cancel()
+
 	result, err := db.DB.ExecContext(ctx, query, args...)
 	db.logQuery(query, db.since(startedAt))
 	return result, err
 }
 
 func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	startedAt := time.Now()
-	rows, err := db.DB.Query(query, args...)
-	db.logQuery(query, db.since(startedAt))
-	return rows, err
+	return db.QueryContext(context.Background(), query, args...)
 }
 
 func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	startedAt := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, db.queryTimeout)
+	defer cancel()
+
 	rows, err := db.DB.QueryContext(ctx, query, args...)
 	db.logQuery(query, db.since(startedAt))
 	return rows, err
 }
 
 func (db *DB) QueryRow(query string, args ...interface{}) *sql.Row {
-	startedAt := time.Now()
-	row := db.DB.QueryRow(query, args...)
-	db.logQuery(query, db.since(startedAt))
-	return row
+	return db.QueryRowContext(context.Background(), query, args...)
 }
 
 func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
 	startedAt := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, db.queryTimeout)
+	defer cancel()
+
 	row := db.DB.QueryRowContext(ctx, query, args...)
 	db.logQuery(query, db.since(startedAt))
 	return row
