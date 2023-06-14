@@ -85,6 +85,7 @@ type reloadableConfig struct {
 	payloadLimit                            int64
 	routerTimeout                           time.Duration
 	retryTimeWindow                         time.Duration
+	pickupFlushInterval                     time.Duration
 	maxDSQuerySize                          int
 	jobIteratorMaxQueries                   int
 	jobIteratorDiscardedPercentageTolerance int
