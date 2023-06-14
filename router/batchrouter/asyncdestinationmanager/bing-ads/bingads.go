@@ -34,51 +34,29 @@ type BingAdsBulkUploader struct {
 	destinationIDFileMap map[string]string
 	timeout              time.Duration
 	logger               logger.Logger
+	utils                BingAdsUtils
 }
 
-func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration) *BingAdsBulkUploader {
+func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration, utils BingAdsUtils) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
 		destName: "BING_ADS",
 		service:  service,
 		timeout:  timeout,
 		logger:   logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
+		utils:    utils,
 	}
-
 }
 
-type User struct {
-	Email       string `json:"email"`
-	HashedEmail string `json:"hashedEmail"`
-}
-type Message struct {
-	List []User `json:"List"`
-}
-type Metadata struct {
-	JobID int64 `json:"job_id"`
+type BingAdsUtils interface {
+	CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error)
+	Unzip(zipFile, targetDir string) ([]string, error)
+	ReadPollResults(filePath string) [][]string
+	ProcessPollStatusData(records [][]string) map[string]map[string]struct{}
 }
 
-// This struct represent each line of the text file created by the batchrouter
-type Data struct {
-	Message  Message  `json:"message"`
-	Metadata Metadata `json:"metadata"`
-}
+type BingAdsUtilsImpl struct{}
 
-type DestinationConfig struct {
-	AudienceId               string   `json:"audienceId"`
-	CustomerAccountId        string   `json:"customerAccountId"`
-	CustomerId               string   `json:"customerId"`
-	OneTrustCookieCategories []string `json:"oneTrustCookieCategories"`
-	RudderAccountId          string   `json:"rudderAccountId"`
-}
-
-type secretStruct struct {
-	AccessToken     string
-	RefreshToken    string
-	Developer_token string
-	ExpirationDate  string
-}
-
-var CreateZipFile = func(filePath string, audienceId string) (string, []int64, []int64, error) {
+func (b *BingAdsUtilsImpl) CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error) {
 	failedJobIds := []int64{}
 	successJobIds := []int64{}
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
@@ -160,6 +138,156 @@ var CreateZipFile = func(filePath string, audienceId string) (string, []int64, [
 	return zipFilePath, successJobIds, failedJobIds, nil
 }
 
+func (b *BingAdsUtilsImpl) Unzip(zipFile, targetDir string) ([]string, error) {
+
+	var filePaths []string
+
+	r, err := zip.OpenReader(zipFile)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		// Open each file in the zip archive
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+
+		// Create the corresponding file in the target directory
+		path := filepath.Join(targetDir, f.Name)
+		if f.FileInfo().IsDir() {
+			// Create directories if the file is a directory
+			os.MkdirAll(path, f.Mode())
+		} else {
+			// Create the file and copy the contents
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return nil, err
+			}
+			defer file.Close()
+
+			_, err = io.Copy(file, rc)
+			if err != nil {
+				return nil, err
+			}
+
+			// Append the file path to the list
+			filePaths = append(filePaths, path)
+		}
+	}
+
+	return filePaths, nil
+}
+
+func (b *BingAdsUtilsImpl) ReadPollResults(filePath string) [][]string {
+	// Open the CSV file
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Fatal("Error opening the CSV file:", err)
+	}
+	// defer file.Close() and remove
+	defer func() {
+		err := file.Close()
+		if err != nil {
+			log.Fatal("Error closing the CSV file:", err)
+		}
+		// remove the file after the response has been written
+		err = os.Remove(filePath)
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	// Create a new CSV reader
+	reader := csv.NewReader(file)
+
+	// Read all records from the CSV file
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Fatal("Error reading CSV:", err)
+	}
+	return records
+}
+
+func (b *BingAdsUtilsImpl) ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
+	clientIDIndex := -1
+	errorIndex := -1
+	typeIndex := -1
+	if len(records) > 0 {
+		header := records[0]
+		for i, column := range header {
+			if column == "Client Id" {
+				clientIDIndex = i
+			} else if column == "Error" {
+				errorIndex = i
+			} else if column == "Type" {
+				typeIndex = i
+			}
+		}
+	}
+
+	// Declare variables for storing data
+
+	clientIDErrors := make(map[string]map[string]struct{})
+
+	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
+	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
+	for _, record := range records[1:] {
+		if typeIndex >= 0 && typeIndex < len(record) && strings.Contains(record[typeIndex], "Error") {
+			if clientIDIndex >= 0 && clientIDIndex < len(record) {
+				// expecting the client ID is present as jobId<<>>clientId
+				clientID := strings.Split(record[clientIDIndex], "<<>>")
+				if len(clientID) >= 2 {
+					errorSet, ok := clientIDErrors[clientID[0]]
+					if !ok {
+						errorSet = make(map[string]struct{})
+						// making the structure as jobId: [error1, error2]
+						clientIDErrors[clientID[0]] = errorSet
+					}
+					errorSet[record[errorIndex]] = struct{}{}
+
+				}
+			}
+		}
+	}
+	return clientIDErrors
+}
+
+type User struct {
+	Email       string `json:"email"`
+	HashedEmail string `json:"hashedEmail"`
+}
+type Message struct {
+	List []User `json:"List"`
+}
+type Metadata struct {
+	JobID int64 `json:"job_id"`
+}
+
+// This struct represent each line of the text file created by the batchrouter
+type Data struct {
+	Message  Message  `json:"message"`
+	Metadata Metadata `json:"metadata"`
+}
+
+type DestinationConfig struct {
+	AudienceId               string   `json:"audienceId"`
+	CustomerAccountId        string   `json:"customerAccountId"`
+	CustomerId               string   `json:"customerId"`
+	OneTrustCookieCategories []string `json:"oneTrustCookieCategories"`
+	RudderAccountId          string   `json:"rudderAccountId"`
+}
+
+type secretStruct struct {
+	AccessToken     string
+	RefreshToken    string
+	Developer_token string
+	ExpirationDate  string
+}
+
 /*
 This function create zip file from the text file created by the batchrouter
 It takes the text file path as input and returns the zip file path
@@ -191,7 +319,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			DestinationID: destination.ID,
 		}
 	}
-	filePath, successJobIDs, failedJobIds, err := CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
+	filePath, successJobIDs, failedJobIds, err := b.utils.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -245,50 +373,6 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobIds),
 		DestinationID:       destination.ID,
 	}
-}
-
-var Unzip = func(zipFile, targetDir string) ([]string, error) {
-
-	var filePaths []string
-
-	r, err := zip.OpenReader(zipFile)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		// Open each file in the zip archive
-		rc, err := f.Open()
-		if err != nil {
-			return nil, err
-		}
-		defer rc.Close()
-
-		// Create the corresponding file in the target directory
-		path := filepath.Join(targetDir, f.Name)
-		if f.FileInfo().IsDir() {
-			// Create directories if the file is a directory
-			os.MkdirAll(path, f.Mode())
-		} else {
-			// Create the file and copy the contents
-			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-			if err != nil {
-				return nil, err
-			}
-			defer file.Close()
-
-			_, err = io.Copy(file, rc)
-			if err != nil {
-				return nil, err
-			}
-
-			// Append the file path to the list
-			filePaths = append(filePaths, path)
-		}
-	}
-
-	return filePaths, nil
 }
 
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
@@ -354,9 +438,9 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		if err != nil {
 			panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
 		}
-
+		//utilImpl := BingAdsUtilsImpl{}
 		// Extract the contents of the zip file to the output directory
-		filePaths, err := Unzip(tempFile.Name(), outputDir)
+		filePaths, err := b.utils.Unzip(tempFile.Name(), outputDir)
 		if err != nil {
 			panic(fmt.Errorf("BRT: Failed saving zip file extracting zip file Err: %w", err))
 		}
@@ -414,80 +498,6 @@ func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 		reasons[key] = strings.Join(errorList, ", ")
 	}
 	return reasons
-}
-
-var ReadPollResults = func(filePath string) [][]string {
-	// Open the CSV file
-	file, err := os.Open(filePath)
-	if err != nil {
-		log.Fatal("Error opening the CSV file:", err)
-	}
-	// defer file.Close() and remove
-	defer func() {
-		err := file.Close()
-		if err != nil {
-			log.Fatal("Error closing the CSV file:", err)
-		}
-		// remove the file after the response has been written
-		err = os.Remove(filePath)
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	// Create a new CSV reader
-	reader := csv.NewReader(file)
-
-	// Read all records from the CSV file
-	records, err := reader.ReadAll()
-	if err != nil {
-		log.Fatal("Error reading CSV:", err)
-	}
-	return records
-}
-
-var ProcessPollStatusData = func(records [][]string) map[string]map[string]struct{} {
-	clientIDIndex := -1
-	errorIndex := -1
-	typeIndex := -1
-	if len(records) > 0 {
-		header := records[0]
-		for i, column := range header {
-			if column == "Client Id" {
-				clientIDIndex = i
-			} else if column == "Error" {
-				errorIndex = i
-			} else if column == "Type" {
-				typeIndex = i
-			}
-		}
-	}
-
-	// Declare variables for storing data
-
-	clientIDErrors := make(map[string]map[string]struct{})
-
-	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
-	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
-	for _, record := range records[1:] {
-		if typeIndex >= 0 && typeIndex < len(record) && strings.Contains(record[typeIndex], "Error") {
-			if clientIDIndex >= 0 && clientIDIndex < len(record) {
-				// expecting the client ID is present as jobId<<>>clientId
-				clientID := strings.Split(record[clientIDIndex], "<<>>")
-				if len(clientID) >= 2 {
-					errorSet, ok := clientIDErrors[clientID[0]]
-					if !ok {
-						errorSet = make(map[string]struct{})
-						// making the structure as jobId: [error1, error2]
-						clientIDErrors[clientID[0]] = errorSet
-					}
-					errorSet[record[errorIndex]] = struct{}{}
-
-				}
-			}
-		}
-	}
-	return clientIDErrors
 }
 
 type tokenSource struct {
@@ -579,16 +589,19 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	}
 	session := bingads.NewSession(sessionConfig)
 
-	bingads := &BingAdsBulkUploader{destName: "BingAdsAudience", service: bingads.NewBulkService(session), timeout: HTTPTimeout}
+	bingAdsUtilsImpl := BingAdsUtilsImpl{}
+	//bingads := &BingAdsBulkUploader{destName: "BingAdsAudience", service: bingads.NewBulkService(session), timeout: HTTPTimeout}
+	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), HTTPTimeout, &bingAdsUtilsImpl)
 	return bingads, nil
 }
 
 func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
 	// Function implementation
 	filePath := UploadStatsInput.OutputFilePath
-	records := ReadPollResults(filePath)
+	// utilImpl := BingAdsUtilsImpl{}
+	records := b.utils.ReadPollResults(filePath)
 	status := "200"
-	clientIDErrors := ProcessPollStatusData(records)
+	clientIDErrors := b.utils.ProcessPollStatusData(records)
 
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
@@ -597,7 +610,6 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	for _, job := range importList {
 		initialEventList = append(initialEventList, job.JobID)
 	}
-
 	// Build the response body
 	eventStatsResponse := common.GetUploadStatsResponse{
 		Status: status,
