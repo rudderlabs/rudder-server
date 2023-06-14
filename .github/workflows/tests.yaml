@@ -119,13 +119,114 @@ jobs:
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_HOST }}
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME }}
           TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
-        run: make test exclude=/rudder-server/warehouse
+        run: make test exclude=/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|suppression-backup-service|warehouse)
       - name: Upload coverage report
         uses: actions/upload-artifact@v3
         with:
           name: unit
           path: coverage.txt
-
+  jobsdb-unit:
+    name: JobsDB Unit
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download
+      - run: make test package=./jobsdb/...
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: jobsdb-unit
+          path: coverage.txt
+  integration-unit:
+    name: Integration Unit
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download
+      - run: make test package=./integration_test/...
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: integration-unit
+          path: coverage.txt
+  processor-unit:
+    name: Processor Unit
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download
+      - run: make test package=./processor/...
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: processor-unit
+          path: coverage.txt
+  regulation-worker-unit:
+    name: Regulation Worker Unit
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download
+      - run: make test package=./regulation-worker/...
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: regulation-worker-unit
+          path: coverage.txt
+  router-unit:
+    name: Router Unit
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download
+      - run: make test package=./router/...
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: router-unit
+          path: coverage.txt
+  suppression-backup-service-unit:
+    name: Suppression Backup Service Unit
+    runs-on: 'ubuntu-20.04'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '~1.20.3'
+          check-latest: true
+      - run: go version
+      - run: go mod download
+      - run: make test package=./suppression-backup-service/...
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: suppression-backup-service-unit
+          path: coverage.txt
   warehouse-unit:
     name: Warehouse Unit
     runs-on: 'ubuntu-20.04'
@@ -148,8 +249,17 @@ jobs:
           path: coverage.txt
 
   coverage:
-    needs: [warehouse-integration, unit, warehouse-unit]
     runs-on: 'ubuntu-20.04'
+    needs: 
+     - warehouse-integration
+     - unit
+     - jobsdb-unit
+     - integration-unit
+     - processor-unit
+     - regulation-worker-unit
+     - router-unit
+     - suppression-backup-service-unit
+     - warehouse-unit
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -176,6 +286,12 @@ jobs:
       - integration
       - warehouse-integration
       - unit
+      - jobsdb-unit
+      - integration-unit
+      - processor-unit
+      - regulation-worker-unit
+      - router-unit
+      - suppression-backup-service-unit
       - warehouse-unit
     steps:
       - uses: re-actors/alls-green@v1.2.2
