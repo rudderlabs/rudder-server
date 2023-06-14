@@ -56,6 +56,7 @@ func Backup(
 	workspaceJobsMap := lo.GroupBy(jobs.Jobs, func(job *jobsdb.JobT) string {
 		return job.WorkspaceId
 	})
+	statusList := make([]*jobsdb.JobStatusT, 0)
 	for workspaceID, wJobs := range workspaceJobsMap {
 		// write to file
 		backupPathDirName := "/rudder-s3-dumps/"
@@ -126,61 +127,63 @@ func Backup(
 				)
 				continue
 			}
-			log.Infof(
+			log.Debugf(
 				"[JobsDB] :: Backed up table at %s for workspaceId %s",
 				output.Location,
 				workspaceID,
 			)
 		}
 
-		// 3. Update jobs status
-		if err = misc.RetryWithNotify(
-			ctx,
-			config.GetDuration("backup.updateStatusTimeout", 60, time.Second),
-			config.GetInt("backup.updateStatusRetries", 3),
-			func(ctx context.Context) error {
-				return backupContext.Queue.UpdateJobStatus(
-					ctx,
-					lo.Map(
-						wJobs,
-						func(job *jobsdb.JobT, _ int) *jobsdb.JobStatusT {
-							js := &jobsdb.JobStatusT{
-								JobID:         job.JobID,
-								ExecTime:      time.Now(),
-								RetryTime:     time.Now(),
-								ErrorCode:     "",
-								ErrorResponse: successfulBackupResponse, // check
-								Parameters:    []byte(`{}`),             // check
-								JobParameters: job.Parameters,
-							}
-							switch job.LastJobStatus.ErrorCode {
-							case "200", "0":
-								js.JobState = jobsdb.Succeeded.State
-							default:
-								js.JobState = jobsdb.Aborted.State
-							}
-							return js
-						},
-					),
-					nil,
-					nil,
-				)
+		statuses := lo.Map(
+			wJobs,
+			func(job *jobsdb.JobT, _ int) *jobsdb.JobStatusT {
+				js := &jobsdb.JobStatusT{
+					JobID:         job.JobID,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					ErrorCode:     "",
+					ErrorResponse: successfulBackupResponse, // check
+					Parameters:    []byte(`{}`),             // check
+					JobParameters: job.Parameters,
+				}
+				switch job.LastJobStatus.ErrorCode {
+				case "200", "0":
+					js.JobState = jobsdb.Succeeded.State
+				default:
+					js.JobState = jobsdb.Aborted.State
+				}
+				return js
 			},
-			func(attempt int) {
-				log.Infof(
-					"backup Error: Error updating job status: %w for workspace %s, retrying %d",
-					err,
-					workspaceID,
-					attempt,
-				)
-			},
-		); err != nil {
-			log.Errorf("backup Error: Error updating job status: %w for workspace %s",
-				err,
-				workspaceID,
-			)
-		}
+		)
+		statusList = append(statusList, statuses...)
 	}
+
+	// 3. Update jobs status
+	if err = misc.RetryWithNotify(
+		ctx,
+		config.GetDuration("backup.updateStatusTimeout", 60, time.Second),
+		config.GetInt("backup.updateStatusRetries", 3),
+		func(ctx context.Context) error {
+			return backupContext.Queue.UpdateJobStatus(
+				ctx,
+				statusList,
+				nil,
+				nil,
+			)
+		},
+		func(attempt int) {
+			log.Infof(
+				"backup Error: Error updating job status: %w, retrying %d",
+				err,
+				attempt,
+			)
+		},
+	); err != nil {
+		log.Errorf("backup Error: Error updating job status: %w",
+			err,
+		)
+	}
+
 }
 
 // Writes a list of jobs to a .gz file at given path
