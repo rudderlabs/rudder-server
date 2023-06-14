@@ -30,7 +30,7 @@ type LifecycleManager struct {
 	esDB             *jobsdb.HandleT
 	clearDB          *bool
 	MultitenantStats multitenant.MultiTenantI // need not initialize again
-	ReportingI       types.ReportingI         // need not initialize again
+	ReportingI       types.Reporting          // need not initialize again
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
 	transientSources transientsource.Service
@@ -50,7 +50,7 @@ func (proc *LifecycleManager) Start() error {
 
 	proc.Handle.Setup(
 		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB, proc.esDB,
-		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
+		proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -72,8 +72,8 @@ func (proc *LifecycleManager) Start() error {
 // Stop stops the processor, this is a blocking call.
 func (proc *LifecycleManager) Stop() {
 	proc.currentCancel()
-	proc.Handle.Shutdown()
 	proc.waitGroup.Wait()
+	proc.Handle.Shutdown()
 }
 
 func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
@@ -84,7 +84,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb, esDB *jobsdb.HandleT,
-	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
+	tenantDB multitenant.MultiTenantI, reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 	opts ...Opts,
 ) *LifecycleManager {

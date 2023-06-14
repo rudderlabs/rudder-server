@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -28,9 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -44,7 +44,7 @@ func (brt *Handle) Setup(
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
 	jobsDB, errorDB jobsdb.JobsDB,
-	reporting types.ReportingI,
+	reporting types.Reporting,
 	multitenantStat multitenant.MultiTenantI,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
@@ -107,13 +107,14 @@ func (brt *Handle) Setup(
 	config.RegisterDurationConfigVariable(600, &brt.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.BatchRouter.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterIntConfigVariable(2, &brt.jobdDBMaxRetries, true, 1, []string{"JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(2, &brt.minIdleSleep, true, time.Second, []string{"BatchRouter.minIdleSleep"}...)
-	// TODO: Revert
-	config.RegisterDurationConfigVariable(5, &brt.uploadFreq, true, time.Second, []string{"BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq"}...)
+	config.RegisterDurationConfigVariable(30, &brt.uploadFreq, true, time.Second, []string{"BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq"}...)
+	config.RegisterBoolConfigVariable(false, &brt.forceHonorUploadFrequency, true, "BatchRouter.forceHonorUploadFrequency")
 	config.RegisterBoolConfigVariable(false, &brt.disableEgress, false, "disableEgress")
 	config.RegisterStringConfigVariable("", &brt.toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	config.RegisterDurationConfigVariable(3, &brt.warehouseServiceMaxRetryTime, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
 	brt.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	config.RegisterStringConfigVariable("", &brt.datePrefixOverride, true, "BatchRouter.datePrefixOverride")
+	config.RegisterStringConfigVariable("", &brt.customDatePrefix, true, "BatchRouter.customDatePrefix")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)
@@ -147,30 +148,30 @@ func (brt *Handle) Setup(
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
-	brt.limiter.read = miscsync.NewLimiter(ctx, &limiterGroup, "brt_read",
-		getBatchRouterConfigInt(brt.destType, "Limiter.read.limit", 20),
+	brt.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "brt_read",
+		getBatchRouterConfigInt("Limiter.read.limit", brt.destType, 20),
 		stats.Default,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.read.dynamicPeriod", 1, time.Second)),
-		miscsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
-		miscsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.read.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
+		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
 		}),
 	)
-	brt.limiter.process = miscsync.NewLimiter(ctx, &limiterGroup, "brt_process",
-		getBatchRouterConfigInt(brt.destType, "Limiter.process.limit", 20),
+	brt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "brt_process",
+		getBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
 		stats.Default,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
-		miscsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
-		miscsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
+		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
 		}),
 	)
-	brt.limiter.upload = miscsync.NewLimiter(ctx, &limiterGroup, "brt_upload",
-		getBatchRouterConfigInt(brt.destType, "Limiter.upload.limit", 50),
+	brt.limiter.upload = kitsync.NewLimiter(ctx, &limiterGroup, "brt_upload",
+		getBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
 		stats.Default,
-		miscsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.upload.dynamicPeriod", 1, time.Second)),
-		miscsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
-		miscsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.upload.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
+		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
 		}),
 	)
@@ -184,6 +185,24 @@ func (brt *Handle) Setup(
 	}
 
 	brt.crashRecover()
+
+	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
+	// can always detect a stuck batch router
+	brt.backgroundGroup.Go(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(15 * time.Second):
+				stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+					"module":   "batch_router",
+					"destType": brt.destType,
+					"state":    jobsdb.Executing.State,
+					"code":     "0",
+				}).Count(0)
+			}
+		}
+	})
 
 	brt.backgroundGroup.Go(func() error {
 		limiterGroup.Wait()

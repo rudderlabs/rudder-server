@@ -3,6 +3,7 @@ package transformer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -23,7 +25,9 @@ import (
 func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 	schemaTransformer := transformer{
-		backendConfig: mockBackendConfig,
+		backendConfig:   mockBackendConfig,
+		identifierLimit: 10000,
+		keysLimit:       10000,
 	}
 	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
@@ -82,9 +86,8 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 
 	t.Run("Test Transform", func(t *testing.T) {
 		timeNow := time.Now()
-		eventSchemaMessage, writeKey, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
+		eventSchemaMessage, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
 		require.Nil(t, err)
-		require.Equal(t, writeKey, testdata.WriteKeyEnabled)
 		testSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
 		require.Equal(t, eventSchemaMessage.Schema, testSchemaMessage.Schema)
@@ -92,6 +95,31 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		require.Equal(t, eventSchemaMessage.WorkspaceID, testSchemaMessage.WorkspaceID)
 		require.Equal(t, eventSchemaMessage.Key, testSchemaMessage.Key)
 		require.Equal(t, eventSchemaMessage.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
+	})
+
+	t.Run("Test Transform limits", func(t *testing.T) {
+		event1 := generateTestJob(t, time.Now())
+		event1.EventPayload = []byte(fmt.Sprintf(`{"type": "track", "event": %q}`, rand.String(schemaTransformer.identifierLimit+1)))
+
+		e, err := schemaTransformer.Transform(event1)
+		require.Nil(t, e)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "event identifier size is greater than")
+
+		event2 := generateTestJob(t, time.Now())
+		payload := map[string]string{
+			"type": "identify",
+		}
+		for i := 0; i < schemaTransformer.keysLimit; i++ {
+			payload[fmt.Sprintf("key-%d", i)] = "value"
+		}
+		event2.EventPayload, err = json.Marshal(payload)
+		require.NoError(t, err)
+
+		e, err = schemaTransformer.Transform(event2)
+		require.Nil(t, e)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "event schema has more than")
 	})
 }
 
@@ -114,9 +142,8 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 	<-closeChan
 	t.Run("Test Transform", func(t *testing.T) {
 		timeNow := time.Now()
-		eventSchemaMessage, writeKey, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
+		eventSchemaMessage, err := schemaTransformer.Transform(generateTestJob(t, timeNow))
 		require.Nil(t, err)
-		require.Equal(t, writeKey, testdata.WriteKeyEnabled)
 		testSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
 		require.Equal(t, eventSchemaMessage.Schema, testSchemaMessage.Schema)
@@ -133,6 +160,7 @@ func generateTestEventSchemaMessage(time time.Time) *proto.EventSchemaMessage {
 		Key:         &testdata.TestEventSchemaKey,
 		ObservedAt:  timestamppb.New(time),
 		Schema:      testdata.TrackSchema,
+		Hash:        proto.SchemaHash(testdata.TrackSchema),
 		Sample:      []byte("{}"),
 	}
 }

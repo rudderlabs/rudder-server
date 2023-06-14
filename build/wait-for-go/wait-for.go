@@ -28,7 +28,6 @@ func canConnect(host, port, protocol string) bool {
 				fmt.Println("UDP error:", err)
 				if err != nil {
 					_ = conn.Close()
-					conn = nil
 					return false
 				}
 			}

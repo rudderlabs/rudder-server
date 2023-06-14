@@ -21,7 +21,7 @@ import (
 
 type Transformer interface {
 	Start()
-	Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error)
+	Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error)
 	Stop()
 }
 
@@ -30,6 +30,8 @@ func New(backendConfig backendconfig.BackendConfig, config *config.Config) Trans
 	return &transformer{
 		backendConfig:        backendConfig,
 		captureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
+		keysLimit:            config.GetInt("EventSchemas.keysLimit", 500),
+		identifierLimit:      config.GetInt("EventSchemas.identifierLimit", 100),
 	}
 }
 
@@ -62,21 +64,25 @@ func (st *transformer) Stop() {
 }
 
 // Transform transforms the job into a schema message and returns the schema message along with write key
-func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, string, error) {
+func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error) {
 	var eventPayload map[string]interface{}
 	if err := json.Unmarshal(job.EventPayload, &eventPayload); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	writeKey := st.getWriteKeyFromParams(job.Parameters)
 	if writeKey == "" {
-		return nil, "", fmt.Errorf("writeKey could not be found")
+		return nil, fmt.Errorf("writeKey could not be found")
 	}
 	schemaKey := st.getSchemaKeyFromJob(eventPayload, writeKey)
+	if st.identifierLimit > 0 && len(schemaKey.EventIdentifier) > st.identifierLimit {
+		return nil, fmt.Errorf("event identifier size is greater than %d", st.identifierLimit)
+	}
 	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, job.EventPayload, job.WorkspaceId, job.CreatedAt)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return schemaMessage, writeKey, nil
+
+	return schemaMessage, nil
 }
 
 // getSchemaKeyFromJob returns the schema key from the job based on the event type and event identifier
@@ -138,6 +144,9 @@ func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[str
 	if err != nil {
 		return nil, err
 	}
+	if st.keysLimit > 0 && len(flattenedEvent) > st.keysLimit {
+		return nil, fmt.Errorf("event schema has more than %d keys", st.keysLimit)
+	}
 	schema := st.getSchema(flattenedEvent)
 	if st.disablePIIReporting(key.WriteKey) {
 		sample = []byte("{}") // redact event
@@ -146,6 +155,7 @@ func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[str
 		WorkspaceID: workspaceId,
 		Key:         key,
 		Schema:      schema,
+		Hash:        proto.SchemaHash(schema),
 		ObservedAt:  timestamppb.New(observedAt),
 		Sample:      sample,
 	}, nil

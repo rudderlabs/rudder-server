@@ -13,14 +13,15 @@ import (
 
 	pulsarType "github.com/apache/pulsar-client-go/pulsar"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/batcher"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/transformer"
-	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
 )
@@ -92,88 +93,12 @@ func (jf *JobsForwarder) Start() error {
 					jf.terminalErrFn(err) // we are signaling to shutdown the app
 					return err
 				}
-				var mu sync.Mutex // protects statuses and retryJobs
+				var mu sync.Mutex // protects statuses and toRetry
 				var statuses []*jobsdb.JobStatusT
-				toRetry := append([]*jobsdb.JobT{}, jobs...)
-
-				jobDone := func(job *jobsdb.JobT) {
-					_, idx, _ := lo.FindIndexOf(toRetry, func(j *jobsdb.JobT) bool {
-						return j.JobID == job.JobID
-					})
-					toRetry = slices.Delete(toRetry, idx, idx+1)
-				}
-
-				// try to forward toRetry jobs to pulsar. Succeeded or invalid jobs are removed from toRetry
-				tryForwardJobs := func() error {
-					if ctx.Err() != nil { // we are shutting down
-						return nil //nolint:nilerr
-					}
-					toForward := append([]*jobsdb.JobT{}, toRetry...)
-					for _, job := range toForward {
-						job := job // job can be used in a goroutine
-						msg, orderKey, err := jf.transformer.Transform(job)
-						if err != nil { // mark job as aborted and remove from toRetry
-							mu.Lock()
-							jobDone(job)
-							errorResponse, _ := json.Marshal(map[string]string{"transform_error": err.Error()})
-							statuses = append(statuses, &jobsdb.JobStatusT{
-								JobID:         job.JobID,
-								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-								JobState:      jobsdb.Aborted.State,
-								ExecTime:      time.Now(),
-								RetryTime:     time.Now(),
-								ErrorCode:     "400",
-								Parameters:    []byte(`{}`),
-								JobParameters: job.Parameters,
-								ErrorResponse: errorResponse,
-							})
-							jf.stat.NewTaggedStat("schema_forwarder_jobs", stats.CountType, stats.Tags{"state": "invalid"}).Increment()
-							mu.Unlock()
-							continue
-						}
-						if !bytes.Equal(msg.Sample, []byte("{}")) && // if the sample is not an empty json object (redacted) and
-							(len(msg.Sample) > int(jf.maxSampleSize) || // sample is too big or
-								!jf.sampler.Sample(msg.Key.String())) { // sample should be skipped
-							msg.Sample = nil // by setting to sample to nil we are instructing the schema worker to keep the previous sample
-						}
-						jf.pulsarProducer.SendMessageAsync(ctx, orderKey, orderKey, msg.MustMarshal(),
-							func(_ pulsarType.MessageID, _ *pulsarType.ProducerMessage, err error) {
-								if err == nil { // mark job as succeeded and remove from toRetry
-									mu.Lock()
-									defer mu.Unlock()
-									jobDone(job)
-									statuses = append(statuses, &jobsdb.JobStatusT{
-										JobID:         job.JobID,
-										AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-										JobState:      jobsdb.Succeeded.State,
-										ExecTime:      time.Now(),
-										Parameters:    []byte(`{}`),
-										JobParameters: job.Parameters,
-									})
-									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Increment()
-								} else {
-									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "failed"}).Increment()
-									jf.log.Errorf("failed to forward job %s: %v", job.JobID, err)
-								}
-							})
-					}
-					if err := jf.pulsarProducer.Flush(); err != nil {
-						return fmt.Errorf("failed to flush pulsar producer: %w", err)
-					}
-					if len(toRetry) > 0 {
-						return fmt.Errorf("failed to forward %d jobs", len(toRetry))
-					}
-					return nil
-				}
-
-				// Retry to forward the jobs batch to pulsar until there are no more jobs to retry or until maxRetryElapsedTime is reached
-				expB := backoff.NewExponentialBackOff()
-				expB.InitialInterval = jf.initialRetryInterval
-				expB.MaxInterval = jf.maxRetryInterval
-				expB.MaxElapsedTime = jf.maxRetryElapsedTime
-				if err = backoff.Retry(tryForwardJobs, backoff.WithContext(expB, ctx)); err != nil {
-					for _, job := range toRetry { // mark all to retry jobs as aborted
-						errorResponse, _ := json.Marshal(map[string]string{"error": err.Error()})
+				schemaBatcher := batcher.NewEventSchemaMessageBatcher(jf.transformer)
+				for _, job := range jobs {
+					if err := schemaBatcher.Add(job); err != nil { // mark job as aborted
+						errorResponse, _ := json.Marshal(map[string]string{"transform_error": err.Error()})
 						statuses = append(statuses, &jobsdb.JobStatusT{
 							JobID:         job.JobID,
 							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -185,8 +110,92 @@ func (jf *JobsForwarder) Start() error {
 							JobParameters: job.Parameters,
 							ErrorResponse: errorResponse,
 						})
+						jf.stat.NewTaggedStat("schema_forwarder_jobs", stats.CountType, stats.Tags{"state": "invalid"}).Increment()
+						continue
 					}
-					jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "abort"}).Count(len(toRetry))
+				}
+				messageBatches := schemaBatcher.GetMessageBatches()
+				for _, messageBatch := range messageBatches {
+					if !bytes.Equal(messageBatch.Message.Sample, []byte("{}")) && // if the sample is not an empty json object (redacted) and
+						(len(messageBatch.Message.Sample) > int(jf.maxSampleSize) || // sample is too big or
+							!jf.sampler.Sample(messageBatch.Message.Key.String())) { // sample should be skipped
+						messageBatch.Message.Sample = nil // by setting to sample to nil we are instructing the schema worker to keep the previous sample
+					}
+				}
+				jf.stat.NewStat("schema_forwarder_batch_size", stats.CountType).Count(len(messageBatches))
+
+				// try to forward messageBatches to pulsar. Succeeded jobs are removed from messageBatches
+				tryForward := func() error {
+					if ctx.Err() != nil { // we are shutting down
+						return nil //nolint:nilerr
+					}
+					toForward := append([]*batcher.EventSchemaMessageBatch{}, messageBatches...)
+					for _, batch := range toForward {
+						batch := batch // can be used in a goroutine
+						msg := batch.Message
+						orderKey := msg.Key.WriteKey
+						jf.pulsarProducer.SendMessageAsync(ctx, orderKey, orderKey, msg.MustMarshal(),
+							func(_ pulsarType.MessageID, _ *pulsarType.ProducerMessage, err error) {
+								if err == nil { // mark job as succeeded and remove from toRetry
+									mu.Lock()
+									defer mu.Unlock()
+
+									_, idx, _ := lo.FindIndexOf(messageBatches, func(item *batcher.EventSchemaMessageBatch) bool {
+										return item.Index == batch.Index
+									})
+									messageBatches = slices.Delete(messageBatches, idx, idx+1)
+									for _, job := range batch.Jobs {
+										statuses = append(statuses, &jobsdb.JobStatusT{
+											JobID:         job.JobID,
+											AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+											JobState:      jobsdb.Succeeded.State,
+											ExecTime:      time.Now(),
+											Parameters:    []byte(`{}`),
+											JobParameters: job.Parameters,
+										})
+									}
+
+									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Count(len(batch.Jobs))
+								} else {
+									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "failed"}).Count(len(batch.Jobs))
+									jf.log.Errorf("failed to forward %d jobs : %v", len(batch.Jobs), err)
+								}
+							})
+					}
+					if err := jf.pulsarProducer.Flush(); err != nil {
+						return fmt.Errorf("failed to flush pulsar producer: %w", err)
+					}
+					if len(messageBatches) > 0 {
+						return fmt.Errorf("failed to forward %d jobs", len(messageBatches))
+					}
+					return nil
+				}
+
+				// Retry to forward the batches to pulsar until there are no more messageBatches to retry or until maxRetryElapsedTime is reached
+				expB := backoff.NewExponentialBackOff()
+				expB.InitialInterval = jf.initialRetryInterval
+				expB.MaxInterval = jf.maxRetryInterval
+				expB.MaxElapsedTime = jf.maxRetryElapsedTime
+				if err = backoff.Retry(tryForward, backoff.WithContext(expB, ctx)); err != nil {
+					errorResponse, _ := json.Marshal(map[string]string{"error": err.Error()})
+					var abortedCount int
+					for _, schemaBatch := range messageBatches { // mark all messageBatches left over as aborted
+						for _, job := range schemaBatch.Jobs {
+							statuses = append(statuses, &jobsdb.JobStatusT{
+								JobID:         job.JobID,
+								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+								JobState:      jobsdb.Aborted.State,
+								ExecTime:      time.Now(),
+								RetryTime:     time.Now(),
+								ErrorCode:     "400",
+								Parameters:    []byte(`{}`),
+								JobParameters: job.Parameters,
+								ErrorResponse: errorResponse,
+							})
+							abortedCount++
+						}
+					}
+					jf.stat.NewTaggedStat("schema_forwarder_jobs", stats.CountType, stats.Tags{"state": "abort"}).Count(abortedCount)
 				}
 				if err := jf.MarkJobStatuses(ctx, statuses); err != nil {
 					if ctx.Err() != nil { // we are shutting down

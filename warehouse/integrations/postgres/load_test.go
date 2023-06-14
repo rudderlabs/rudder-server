@@ -39,23 +39,25 @@ type mockUploader struct {
 	schema model.Schema
 }
 
-func (*mockUploader) GetSchemaInWarehouse() model.Schema        { return model.Schema{} }
-func (*mockUploader) GetLocalSchema() (model.Schema, error)     { return model.Schema{}, nil }
-func (*mockUploader) UpdateLocalSchema(_ model.Schema) error    { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool           { return false }
-func (*mockUploader) UseRudderStorage() bool                    { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time        { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                   { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Time{}, time.Time{} }
-func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
+func (*mockUploader) GetSchemaInWarehouse() model.Schema { return model.Schema{} }
+func (*mockUploader) GetLocalSchema(context.Context) (model.Schema, error) {
+	return model.Schema{}, nil
+}
+func (*mockUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
+func (*mockUploader) UseRudderStorage() bool                                { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                               { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
+func (*mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
 	return []warehouseutils.LoadFile{}
 }
 
-func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFile, error) {
+func (*mockUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
 	return warehouseutils.LoadFile{}, nil
 }
 
-func (*mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
+func (*mockUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
 	return "", nil
 }
 
@@ -88,6 +90,8 @@ func cloneFiles(t *testing.T, files []string) []string {
 }
 
 func TestLoadTable(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 
@@ -193,6 +197,8 @@ func TestLoadTable(t *testing.T) {
 
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
+
+				t.Log("db:", pgResource.DBDsn)
 
 				db := sqlmiddleware.New(pgResource.DB)
 
@@ -320,6 +326,8 @@ func TestLoadTable(t *testing.T) {
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
+				t.Log("db:", pgResource.DBDsn)
+
 				db := sqlmiddleware.New(pgResource.DB)
 
 				store := memstats.New()
@@ -390,6 +398,8 @@ func TestLoadTable(t *testing.T) {
 }
 
 func TestLoadUsersTable(t *testing.T) {
+	t.Parallel()
+
 	misc.Init()
 	warehouseutils.Init()
 
@@ -491,6 +501,8 @@ func TestLoadUsersTable(t *testing.T) {
 
 			pgResource, err := resource.SetupPostgres(pool, t)
 			require.NoError(t, err)
+
+			t.Log("db:", pgResource.DBDsn)
 
 			db := sqlmiddleware.New(pgResource.DB)
 

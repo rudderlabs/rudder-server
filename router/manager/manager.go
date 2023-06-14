@@ -2,10 +2,6 @@ package manager
 
 import (
 	"context"
-	"fmt"
-	"sync"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -23,17 +19,15 @@ var (
 		"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL",
 		"AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE",
 	}
-	pkgLogger = logger.NewLogger().Child("router")
 )
 
 type LifecycleManager struct {
-	rt                   *router.Factory
-	brt                  *batchrouter.Factory
-	BackendConfig        backendconfig.BackendConfig
-	currentCancel        context.CancelFunc
-	waitGroup            *errgroup.Group
-	isolateRouterMap     map[string]bool
-	isolateRouterMapLock sync.RWMutex
+	logger        logger.Logger
+	rt            *router.Factory
+	brt           *batchrouter.Factory
+	backendConfig backendconfig.BackendConfig
+	currentCancel context.CancelFunc
+	waitGroup     *errgroup.Group
 }
 
 // Start starts a Router, this is not a blocking call.
@@ -59,36 +53,22 @@ func (r *LifecycleManager) Stop() {
 
 // New creates a new Router instance
 func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
-	backendConfig backendconfig.BackendConfig,
+	backendConfig backendconfig.BackendConfig, logger logger.Logger,
 ) *LifecycleManager {
-	isolateMap := make(map[string]bool)
 	return &LifecycleManager{
-		rt:               rtFactory,
-		brt:              brtFactory,
-		BackendConfig:    backendConfig,
-		isolateRouterMap: isolateMap,
+		logger:        logger,
+		rt:            rtFactory,
+		brt:           brtFactory,
+		backendConfig: backendConfig,
 	}
-}
-
-func (r *LifecycleManager) RouterIdentifier(destinationID, destinationType string) string {
-	r.isolateRouterMapLock.Lock()
-	defer r.isolateRouterMapLock.Unlock()
-	if _, ok := r.isolateRouterMap[destinationType]; !ok {
-		r.isolateRouterMap[destinationType] = config.GetBool(fmt.Sprintf("Router.%s.isolateDestID", destinationType), false)
-	}
-
-	if r.isolateRouterMap[destinationType] {
-		return destinationID
-	}
-	return destinationType
 }
 
 // Gets the config from config backend and extracts enabled write-keys
 func (r *LifecycleManager) monitorDestRouters(
 	ctx context.Context, routerFactory *router.Factory, batchrouterFactory *batchrouter.Factory,
 ) {
-	ch := r.BackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-	dstToRouter := make(map[string]*router.HandleT)
+	ch := r.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
+	dstToRouter := make(map[string]*router.Handle)
 	dstToBatchRouter := make(map[string]*batchrouter.Handle)
 	cleanup := make([]func(), 0)
 
@@ -104,11 +84,11 @@ loop:
 	for {
 		select {
 		case <-ctx.Done():
-			pkgLogger.Infof("Router monitor stopped Context Cancelled")
+			r.logger.Infof("Router monitor stopped Context Cancelled")
 			break loop
 		case data, open := <-ch:
 			if !open {
-				pkgLogger.Infof("Router monitor stopped, Config Channel Closed")
+				r.logger.Infof("Router monitor stopped, Config Channel Closed")
 				break loop
 			}
 			config := data.Data.(map[string]backendconfig.ConfigT)
@@ -123,21 +103,20 @@ loop:
 							slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 							_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 							if !ok {
-								pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
+								r.logger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
 								brt := batchrouterFactory.New(destination)
 								brt.Start()
 								cleanup = append(cleanup, brt.Shutdown)
 								dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 							}
 						} else {
-							routerIdentifier := r.RouterIdentifier(destination.ID, destination.DestinationDefinition.Name)
-							_, ok := dstToRouter[routerIdentifier]
+							_, ok := dstToRouter[destination.DestinationDefinition.Name]
 							if !ok {
-								pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
-								rt := routerFactory.New(destination, routerIdentifier)
+								r.logger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
+								rt := routerFactory.New(destination)
 								rt.Start()
 								cleanup = append(cleanup, rt.Shutdown)
-								dstToRouter[routerIdentifier] = rt
+								dstToRouter[destination.DestinationDefinition.Name] = rt
 							}
 						}
 					}

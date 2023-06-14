@@ -93,12 +93,24 @@ func (wp *workerPool) PingWorker(partition string) {
 
 // Shutdown stops all workers in the pull and waits for them to stop
 func (wp *workerPool) Shutdown() {
-	wp.logger.Info("Shutting down worker pool")
+	wp.logger.Info("shutting down worker pool")
+	start := time.Now()
+	var wg sync.WaitGroup
+	wg.Add(len(wp.workers))
 	for _, w := range wp.workers {
-		w.Stop()
+		w := w
+		go func() {
+			wstart := time.Now()
+			w.Stop()
+			wg.Done()
+			wp.logger.Debugf("worker %s stopped in %s", w.partition, time.Since(wstart))
+		}()
 	}
+	wg.Wait()
+	wp.logger.Infof("all workers stopped in %s", time.Since(start))
 	wp.lifecycle.cancel()
 	wp.lifecycle.wg.Wait()
+	wp.logger.Info("worker pool was shut down successfully")
 }
 
 // Size returns the number of workers in the pool
@@ -114,7 +126,7 @@ func (wp *workerPool) worker(partition string) *internalWorker {
 	defer wp.workersMu.Unlock()
 	w, ok := wp.workers[partition]
 	if !ok {
-		wp.logger.Infof("Adding worker in the pool for partition: %s", partition)
+		wp.logger.Infof("adding worker in the pool for partition: %q", partition)
 		w = newInternalWorker(partition, wp.logger, wp.supplier(partition))
 		wp.workers[partition] = w
 	}
@@ -136,10 +148,10 @@ func (wp *workerPool) startCleanupLoop() {
 			for partition, w := range wp.workers {
 				idleTime := w.IdleSince()
 				if !idleTime.IsZero() && time.Since(idleTime) > wp.idleTimeout {
-					wp.logger.Infof("Destroying idle worker for partition: %s", partition)
+					wp.logger.Infof("destroying idle worker for partition: %q", partition)
 					w.Stop()
 					delete(wp.workers, partition)
-					wp.logger.Infof("Removed idle worker from pool for partition: %s", partition)
+					wp.logger.Infof("removed idle worker from pool for partition: %q", partition)
 				}
 			}
 			wp.workersMu.Unlock()

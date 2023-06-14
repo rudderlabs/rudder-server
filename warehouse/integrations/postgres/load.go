@@ -223,7 +223,7 @@ func (pg *Postgres) loadTable(
 			logfield.Query, query,
 		)
 
-		result, err := txn.Exec(query)
+		result, err := txn.ExecContext(ctx, query)
 		if err != nil {
 			return loadTableResponse{}, fmt.Errorf("deleting from original table for dedup: %w", err)
 		}
@@ -239,7 +239,6 @@ func (pg *Postgres) loadTable(
 			"destID":       pg.Warehouse.Destination.ID,
 			"destType":     pg.Warehouse.Destination.DestinationDefinition.Name,
 			"workspaceId":  pg.Warehouse.WorkspaceID,
-			"namespace":    pg.Namespace,
 			"tableName":    tableName,
 			"rowsAffected": fmt.Sprintf("%d", rowsAffected),
 		})

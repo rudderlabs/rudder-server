@@ -67,7 +67,7 @@ func (w *internalWorker) start() {
 			} else {
 				w.logger.Debugf("worker %q didn't produce any work", w.partition)
 				if err := misc.SleepCtx(w.lifecycle.ctx, exponentialSleep.Next(w.delegate.SleepDurations())); err != nil {
-					w.logger.Infof("ping loop stopped for worker %q due to: %v", w.partition, err)
+					w.logger.Debugf("worker %q sleep interrupted: %v", w.partition, err)
 					return
 				}
 				w.setIdleSince(time.Now())
@@ -107,7 +107,6 @@ func (w *internalWorker) IdleSince() time.Time {
 
 // Stop stops the worker and waits until all its goroutines have stopped
 func (w *internalWorker) Stop() {
-	w.logger.Infof("stopping worker %q", w.partition)
 	w.lifecycle.stoppedMu.Lock()
 	if w.lifecycle.stopped {
 		w.lifecycle.stoppedMu.Unlock()
@@ -115,8 +114,13 @@ func (w *internalWorker) Stop() {
 	}
 	w.lifecycle.stopped = true
 	w.lifecycle.stoppedMu.Unlock()
+
+	start := time.Now()
 	w.lifecycle.cancel()
 	w.lifecycle.wg.Wait()
+	w.logger.Debugf("worker %q ping loop stopped in : %s", w.partition, time.Since(start))
+
+	start = time.Now()
 	w.delegate.Stop()
-	w.logger.Debugf("Stopped worker: %s", w.partition)
+	w.logger.Debugf("worker %q delegate stopped in : %s", w.partition, time.Since(start))
 }

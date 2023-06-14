@@ -1,6 +1,7 @@
 package validations
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -15,6 +16,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+const (
+	namespace = "rudderstack_setup_test"
+	table     = "setup_test_staging"
+)
+
 var (
 	connectionTestingFolder        string
 	pkgLogger                      logger.Logger
@@ -23,23 +29,21 @@ var (
 )
 
 var (
-	TableSchemaMap = model.TableSchema{
+	tableSchemaMap = model.TableSchema{
 		"id":  "int",
 		"val": "string",
 	}
-	PayloadMap = map[string]interface{}{
+	payloadMap = map[string]interface{}{
 		"id":  1,
 		"val": "RudderStack",
 	}
-	AlterColumnMap = model.TableSchema{
+	alterColumnMap = model.TableSchema{
 		"val_alter": "string",
 	}
-	Namespace = "rudderstack_setup_test"
-	Table     = "setup_test_staging"
 )
 
 type validationFunc struct {
-	Func func(*backendconfig.DestinationT, string) (json.RawMessage, error)
+	Func func(context.Context, *backendconfig.DestinationT, string) (json.RawMessage, error)
 }
 
 func Init() {
@@ -50,7 +54,7 @@ func Init() {
 }
 
 // Validate the destination by running all the validation steps
-func Validate(req *model.ValidationRequest) (*model.ValidationResponse, error) {
+func Validate(ctx context.Context, req *model.ValidationRequest) (*model.ValidationResponse, error) {
 	res := &model.ValidationResponse{}
 
 	f, ok := validationFunctions()[req.Path]
@@ -58,7 +62,7 @@ func Validate(req *model.ValidationRequest) (*model.ValidationResponse, error) {
 		return res, fmt.Errorf("invalid path: %s", req.Path)
 	}
 
-	result, requestError := f.Func(req.Destination, req.Step)
+	result, requestError := f.Func(ctx, req.Destination, req.Step)
 	res.Data = string(result)
 
 	if requestError != nil {
