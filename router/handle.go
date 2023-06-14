@@ -188,6 +188,31 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 	var reservedJobs []reservedJob
 	blockedOrderKeys := make(map[string]struct{})
 
+	flushTime := time.Now()
+	shouldFlush := func() bool {
+		return len(statusList) > 0 && time.Since(flushTime) > rt.reloadableConfig.pickupFlushInterval
+	}
+	flush := func() {
+		flushTime = time.Now()
+		// Mark the jobs as executing
+		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) error {
+			return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
+		}, rt.sendRetryUpdateStats)
+		if err != nil {
+			rt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destType, err)
+			panic(err)
+		}
+
+		rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
+		assignedTime := time.Now()
+		for _, reservedJob := range reservedJobs {
+			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime})
+		}
+		pickupCount += len(reservedJobs)
+		reservedJobs = nil
+		statusList = nil
+	}
+
 	// Identify jobs which can be processed
 	for iterator.HasNext() {
 		if ctx.Err() != nil {
@@ -215,6 +240,9 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 			}
 			statusList = append(statusList, &status)
 			reservedJobs = append(reservedJobs, reservedJob{slot: slot, job: job})
+			if shouldFlush() {
+				flush()
+			}
 		} else {
 			stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error()}).Increment()
 			iterator.Discard(job)
@@ -229,22 +257,7 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 	stats.Default.NewTaggedStat("router_iterator_stats_total_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.TotalJobs)
 	stats.Default.NewTaggedStat("router_iterator_stats_discarded_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.DiscardedJobs)
 
-	// Mark the jobs as executing
-	err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) error {
-		return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
-	}, rt.sendRetryUpdateStats)
-	if err != nil {
-		rt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destType, err)
-		panic(err)
-	}
-
-	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
-	assignedTime := time.Now()
-	for _, reservedJob := range reservedJobs {
-		reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime})
-	}
-
-	pickupCount = len(reservedJobs)
+	flush()
 	limitsReached = iteratorStats.LimitsReached
 	rt.pipelineDelayStats(partition, firstJob, lastJob)
 	return
