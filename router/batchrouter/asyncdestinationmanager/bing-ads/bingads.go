@@ -305,7 +305,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		b.logger.Error("Error in getting bulk upload url: %v", err)
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  `unable to get bulk upload url`,
+			FailedReason:  `{"error" : "unable to get bulk upload url"}`,
 			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
 			DestinationID: destination.ID,
 		}
@@ -314,7 +314,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  `getting empty string in upload url or request id`,
+			FailedReason:  `{"error" : "getting empty string in upload url or request id"}`,
 			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
 			DestinationID: destination.ID,
 		}
@@ -329,12 +329,18 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 	}
 
-	uploadBulkFileResp, err := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
+	uploadBulkFileResp, errorDuringUpload := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
+
+	err = os.Remove(filePath)
 	if err != nil {
+		b.logger.Error("Error in removing zip file: %v", err)
+		//To do add an alert here
+	}
+	if errorDuringUpload != nil {
 		b.logger.Error("Error in uploading the bulk file: %v", err)
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  `unable to upload bulk file`,
+			FailedReason:  `{"error" : "unable to upload bulk file"}`,
 			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
 			DestinationID: destination.ID,
 		}
@@ -343,18 +349,13 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	if uploadBulkFileResp.RequestId == "" || uploadBulkFileResp.TrackingId == "" {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  `getting empty string in tracking id or request id`,
+			FailedReason:  `{"error" : "getting empty string in tracking id or request id"}`,
 			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
 			DestinationID: destination.ID,
 		}
 	}
 
 	//Remove the zip file after uploading it
-	err = os.Remove(filePath)
-	if err != nil {
-		b.logger.Error("Error in removing zip file: %v", err)
-		//To do add an alert here
-	}
 
 	// success case
 	var parameters common.ImportParameters
