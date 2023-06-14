@@ -1,2 +1,2 @@
-ALTER TABLE wh_schemas
-DROP COLUMN mergedschema;
+ALTER TABLE wh_uploads
+DROP COLUMN IF EXISTS mergedschema;
