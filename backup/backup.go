@@ -17,9 +17,7 @@ import (
 	"github.com/samber/lo"
 )
 
-var (
-	successfulBackupResponse = []byte(`{"status": "backup successful"}`)
-)
+var successfulBackupResponse = []byte(`{"status": "backup successful"}`)
 
 type jobQueue interface {
 	GetProcessed(
@@ -201,7 +199,7 @@ func writeJobsToFile(
 	if err != nil {
 		panic(err)
 	}
-	defer gzWriter.CloseGZ()
+	defer func() { _ = gzWriter.CloseGZ() }()
 
 	// gzWriter.Write([]byte(jobs[0].Headings()))
 	for _, item := range jobs {

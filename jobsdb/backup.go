@@ -430,14 +430,14 @@ func getFailedOnlyBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string
 }
 
 func getJobsBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
-	var params GetQueryParamsT
-	var filters []string
-	if params.WorkspaceID != "" {
-		filters = append(filters, fmt.Sprintf("workspace_id = '%s'", params.WorkspaceID))
-	}
-	if params.AfterJobID != nil {
-		filters = append(filters, fmt.Sprintf("job_id > %d", *params.AfterJobID))
-	}
+	// var params GetQueryParamsT
+	// var filters []string
+	// if params.WorkspaceID != "" {
+	// 	filters = append(filters, fmt.Sprintf("workspace_id = '%s'", params.WorkspaceID))
+	// }
+	// if params.AfterJobID != nil {
+	// 	filters = append(filters, fmt.Sprintf("job_id > %d", *params.AfterJobID))
+	// }
 
 	return func(offSet int64) string {
 		return fmt.Sprintf(`
