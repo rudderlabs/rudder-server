@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
@@ -56,13 +57,39 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 	return asyncResponse, statusCode
 }
 
+func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
+	var failedPayloadT common.AsyncFailedPayload
+	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
+	failedPayloadT.Config = config
+	for index, job := range jobs {
+		failedPayloadT.Input[index] = make(map[string]interface{})
+		var message map[string]interface{}
+		metadata := make(map[string]interface{})
+		err := json.Unmarshal([]byte(common.GetTransformedData(job.EventPayload)), &message)
+		if err != nil {
+			panic("Unmarshalling Transformer Data to JSON Failed")
+		}
+		metadata["job_id"] = job.JobID
+		failedPayloadT.Input[index]["message"] = message
+		failedPayloadT.Input[index]["metadata"] = metadata
+	}
+	failedPayloadT.DestType = strings.ToLower(destType)
+	failedPayloadT.ImportId = importID
+	failedPayloadT.MetaData = common.MetaDataT{CSVHeaders: csvHeaders}
+	payload, err := json.Marshal(failedPayloadT)
+	if err != nil {
+		panic("JSON Marshal Failed" + err.Error())
+	}
+	return payload
+}
+
 func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	failedJobUrl := UploadStatsInput.FailedJobsURL
 	parameters := UploadStatsInput.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
-	payload := common.GenerateFailedPayload(b.destinationConfig, UploadStatsInput.ImportingList, importId, b.destName, csvHeaders)
+	payload := GenerateFailedPayload(b.destinationConfig, UploadStatsInput.ImportingList, importId, b.destName, csvHeaders)
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, b.timeout)
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{}, statusCode
@@ -95,6 +122,30 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 		},
 	}
 	return eventStatsResponse, statusCode
+}
+
+func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
+	if keyMap == nil {
+		return []int64{}, importingJobIDs
+	}
+
+	_, ok := keyMap["successfulJobs"].([]interface{})
+	var succesfulJobIDs, failedJobIDsTrans []int64
+	var err error
+	if ok {
+		succesfulJobIDs, err = misc.ConvertStringInterfaceToIntArray(keyMap["successfulJobs"])
+		if err != nil {
+			failedJobIDsTrans = importingJobIDs
+		}
+	}
+	_, ok = keyMap["unsuccessfulJobs"].([]interface{})
+	if ok {
+		failedJobIDsTrans, err = misc.ConvertStringInterfaceToIntArray(keyMap["unsuccessfulJobs"])
+		if err != nil {
+			failedJobIDsTrans = importingJobIDs
+		}
+	}
+	return succesfulJobIDs, failedJobIDsTrans
 }
 
 func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
@@ -198,7 +249,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		if err != nil {
 			panic("Errored in Marshalling" + err.Error())
 		}
-		successfulJobIDs, failedJobIDsTrans := common.CleanUpData(responseStruct.Metadata, importingJobIDs)
+		successfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
 
 		uploadResponse = common.AsyncUploadOutput{
 			ImportingJobIDs:     successfulJobIDs,
@@ -219,7 +270,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			"module":   "batch_router",
 			"destType": destType,
 		})
-		abortedJobIDs, failedJobIDsTrans := common.CleanUpData(responseStruct.Metadata, importingJobIDs)
+		abortedJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = common.AsyncUploadOutput{
 			AbortJobIDs:   abortedJobIDs,

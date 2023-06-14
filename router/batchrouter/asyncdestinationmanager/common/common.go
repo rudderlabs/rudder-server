@@ -1,16 +1,13 @@
 package common
 
 import (
-	"encoding/json"
 	stdjson "encoding/json"
-	"strings"
 	"sync"
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
 
@@ -135,58 +132,6 @@ type GetUploadStatsResponse struct {
 	Metadata EventStatMeta `json:"metadata"`
 }
 
-func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
-	if keyMap == nil {
-		return []int64{}, importingJobIDs
-	}
-
-	_, ok := keyMap["successfulJobs"].([]interface{})
-	var succesfulJobIDs, failedJobIDsTrans []int64
-	var err error
-	if ok {
-		succesfulJobIDs, err = misc.ConvertStringInterfaceToIntArray(keyMap["successfulJobs"])
-		if err != nil {
-			failedJobIDsTrans = importingJobIDs
-		}
-	}
-	_, ok = keyMap["unsuccessfulJobs"].([]interface{})
-	if ok {
-		failedJobIDsTrans, err = misc.ConvertStringInterfaceToIntArray(keyMap["unsuccessfulJobs"])
-		if err != nil {
-			failedJobIDsTrans = importingJobIDs
-		}
-	}
-	return succesfulJobIDs, failedJobIDsTrans
-}
-
 func GetTransformedData(payload stdjson.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
-}
-
-func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
-	var failedPayloadT AsyncFailedPayload
-	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
-	index := 0
-	failedPayloadT.Config = config
-	for _, job := range jobs {
-		failedPayloadT.Input[index] = make(map[string]interface{})
-		var message map[string]interface{}
-		metadata := make(map[string]interface{})
-		err := json.Unmarshal([]byte(GetTransformedData(job.EventPayload)), &message)
-		if err != nil {
-			panic("Unmarshalling Transformer Data to JSON Failed")
-		}
-		metadata["job_id"] = job.JobID
-		failedPayloadT.Input[index]["message"] = message
-		failedPayloadT.Input[index]["metadata"] = metadata
-		index++
-	}
-	failedPayloadT.DestType = strings.ToLower(destType)
-	failedPayloadT.ImportId = importID
-	failedPayloadT.MetaData = MetaDataT{CSVHeaders: csvHeaders}
-	payload, err := json.Marshal(failedPayloadT)
-	if err != nil {
-		panic("JSON Marshal Failed" + err.Error())
-	}
-	return payload
 }

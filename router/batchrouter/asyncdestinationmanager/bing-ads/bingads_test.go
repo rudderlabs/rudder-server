@@ -1,6 +1,7 @@
-package asyncdestinationmanager
+package bingads
 
 import (
+	"encoding/json"
 	stdjson "encoding/json"
 	"fmt"
 	"testing"
@@ -12,20 +13,14 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/bingads"
 	mock_oauth "github.com/rudderlabs/rudder-server/mocks/services/oauth"
-	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
+
+	// bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/oauth2"
 )
-
-type secretStruct struct {
-	AccessToken     string
-	RefreshToken    string
-	Developer_token string
-	ExpirationDate  string
-}
 
 type TokenSource struct {
 	accessToken     string
@@ -87,14 +82,6 @@ func (ts *TokenSource) Token() (*oauth2.Token, error) {
 	return token, nil
 }
 
-type DestinationConfig struct {
-	AudienceId               string   `json:"audienceId"`
-	CustomerAccountId        string   `json:"customerAccountId"`
-	CustomerId               string   `json:"customerId"`
-	OneTrustCookieCategories []string `json:"oneTrustCookieCategories"`
-	RudderAccountId          string   `json:"rudderAccountId"`
-}
-
 var destination = backendconfig.DestinationT{
 	Name: "BingAds",
 }
@@ -107,7 +94,7 @@ func TestBingAdsUploadSuccessCase(t *testing.T) {
 
 	bingAdsUtilImpl.EXPECT().CreateZipFile(gomock.Any(), gomock.Any()).Return("randomZipFile.path", []int64{1, 2}, []int64{3}, nil)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 		UploadUrl: "http://localhost/upload",
 		RequestId: misc.FastUUID().URN(),
@@ -142,7 +129,7 @@ func TestBingAdsUploadFailedGetBulkUploadUrl(t *testing.T) {
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	bingAdsUtilImpl := mock_bulkservice.NewMockBingAdsUtils(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
 
 	asyncDestination := common.AsyncDestinationStruct{
@@ -166,7 +153,7 @@ func TestBingAdsUploadEmptyGetBulkUploadUrl(t *testing.T) {
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	bingAdsUtilImpl := mock_bulkservice.NewMockBingAdsUtils(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 		UploadUrl: "",
 		RequestId: "",
@@ -194,7 +181,7 @@ func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
 
 	bingAdsUtilImpl.EXPECT().CreateZipFile(gomock.Any(), gomock.Any()).Return("randomZipFile.path", []int64{1, 2}, []int64{3}, nil)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 		UploadUrl: "http://localhost/upload",
 		RequestId: misc.FastUUID().URN(),
@@ -221,7 +208,7 @@ func TestBingAdsPollSuccessCase(t *testing.T) {
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	bingAdsUtilsImpl := mock_bulkservice.NewMockBingAdsUtils(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilsImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilsImpl)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 		PercentComplete: int64(100),
@@ -251,7 +238,7 @@ func TestBingAdsPollFailureCase(t *testing.T) {
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	bingAdsUtilsImpl := mock_bulkservice.NewMockBingAdsUtils(ctrl)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilsImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilsImpl)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
 	pollInput := common.AsyncPoll{
@@ -280,7 +267,7 @@ func TestBingAdsPollPartialFailureCase(t *testing.T) {
 
 	bingAdsUtilsImpl.EXPECT().Unzip(gomock.Any(), gomock.Any()).Return([]string{"/path/to/file1.csv"}, nil)
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilsImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilsImpl)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 		PercentComplete: int64(100),
@@ -328,7 +315,7 @@ func TestBingAdsGetUploadStats(t *testing.T) {
 		},
 	})
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
 
 	UploadStatsInput := common.FetchUploadJobStatus{
 		OutputFilePath: "/path/to/file1.csv",
@@ -372,7 +359,7 @@ func TestBingAdsUploadFailedWhileTransformingFile(t *testing.T) {
 
 	bingAdsUtilImpl.EXPECT().CreateZipFile(gomock.Any(), gomock.Any()).Return("", nil, nil, fmt.Errorf("Error in creating zip file"))
 
-	bulkUploader := bingads.NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, bingAdsUtilImpl)
 	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 		UploadUrl: "http://localhost/upload",
 		RequestId: misc.FastUUID().URN(),

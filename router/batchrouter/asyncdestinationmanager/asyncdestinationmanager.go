@@ -1,7 +1,6 @@
 package asyncdestinationmanager
 
 import (
-	stdjson "encoding/json"
 	"sync"
 	"time"
 
@@ -13,8 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/gjson"
 )
 
 type Asyncdestinationmanager interface {
@@ -78,34 +75,6 @@ func loadConfig() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("asyncDestinationManager")
-}
-
-func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
-	if keyMap == nil {
-		return []int64{}, importingJobIDs
-	}
-
-	_, ok := keyMap["successfulJobs"].([]interface{})
-	var succesfulJobIDs, failedJobIDsTrans []int64
-	var err error
-	if ok {
-		succesfulJobIDs, err = misc.ConvertStringInterfaceToIntArray(keyMap["successfulJobs"])
-		if err != nil {
-			failedJobIDsTrans = importingJobIDs
-		}
-	}
-	_, ok = keyMap["unsuccessfulJobs"].([]interface{})
-	if ok {
-		failedJobIDsTrans, err = misc.ConvertStringInterfaceToIntArray(keyMap["unsuccessfulJobs"])
-		if err != nil {
-			failedJobIDsTrans = importingJobIDs
-		}
-	}
-	return succesfulJobIDs, failedJobIDsTrans
-}
-
-func GetTransformedData(payload stdjson.RawMessage) string {
-	return gjson.Get(string(payload), "body.JSON").String()
 }
 
 func GetMarshalledData(payload string, jobID int64) string {
