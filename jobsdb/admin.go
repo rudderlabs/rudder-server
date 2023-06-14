@@ -142,12 +142,12 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 
 func (jd *HandleT) startCleanupLoop(ctx context.Context) {
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		jd.oldJobsCleanupRoutine(ctx)
+		jd.oldJobsCleanupLoop(ctx)
 		return nil
 	}))
 }
 
-func (jd *HandleT) oldJobsCleanupRoutine(ctx context.Context) {
+func (jd *HandleT) oldJobsCleanupLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -160,12 +160,6 @@ func (jd *HandleT) oldJobsCleanupRoutine(ctx context.Context) {
 
 func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 	var (
-		queryUnprocessed = true
-		queryProcessed   = true
-
-		unprocessedAfterJobID *int64
-		processedAfterJobID   *int64
-
 		batchSize            = config.GetInt("jobsdb.cleanupBatchSize", 100)
 		cleanupRetryInterval = config.GetDuration(
 			"jobsdb.cleanupRetryInterval",
@@ -173,70 +167,105 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 		)
 
 		numJobsCleaned = 0
+
+		jq = jobQuery{
+			queryUnprocessed:      true,
+			queryProcessed:        true,
+			unprocessedAfterJobID: nil,
+			processedAfterJobID:   nil,
+		}
 	)
 
 	for {
-		jobsToCleanup := make([]*JobT, 0)
-		if queryUnprocessed {
-			unprocessed, err := jd.GetUnprocessed(ctx, GetQueryParamsT{
-				IgnoreCustomValFiltersInQuery: true,
-				JobsLimit:                     batchSize,
-				AfterJobID:                    unprocessedAfterJobID,
-			})
-			if err != nil {
-				jd.logger.Errorf("error getting unprocessed jobs to cleanup: %w", err)
-				if err = misc.SleepCtx(ctx, cleanupRetryInterval); err != nil {
-					return
-				}
-				continue
+		res, err := jd.doCleanup(ctx, jq, batchSize)
+		if err != nil {
+			jd.logger.Errorf("error while cleaning up old jobs: %w", err)
+			if err := misc.SleepCtx(ctx, cleanupRetryInterval); err != nil {
+				return
 			}
-			if len(unprocessed.Jobs) > 0 {
-				unprocessedAfterJobID = &(unprocessed.Jobs[len(unprocessed.Jobs)-1].JobID)
-				unprocessedJobsToCleanup := lo.Filter(
-					unprocessed.Jobs,
-					func(job *JobT, _ int) bool {
-						return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge))
-					})
-				jobsToCleanup = append(jobsToCleanup, unprocessedJobsToCleanup...)
-				if len(unprocessedJobsToCleanup) < batchSize {
-					queryUnprocessed = false
-				}
-			} else {
-				queryUnprocessed = false
-			}
+			continue
 		}
-
-		if queryProcessed {
-			processed, err := jd.GetProcessed(ctx, GetQueryParamsT{
-				IgnoreCustomValFiltersInQuery: true,
-				JobsLimit:                     batchSize,
-				AfterJobID:                    processedAfterJobID,
-			})
-			if err != nil {
-				jd.logger.Errorf("error getting processed jobs to cleanup: %w", err)
-				if err = misc.SleepCtx(ctx, cleanupRetryInterval); err != nil {
-					return
-				}
-				continue
-			}
-			if len(processed.Jobs) > 0 {
-				processedAfterJobID = &(processed.Jobs[len(processed.Jobs)-1].JobID)
-				processedJobsToCleanup := lo.Filter(processed.Jobs, func(job *JobT, _ int) bool {
-					return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge))
-				})
-				jobsToCleanup = append(jobsToCleanup, processedJobsToCleanup...)
-				if len(processedJobsToCleanup) < batchSize {
-					queryProcessed = false
-				}
-			} else {
-				queryProcessed = false
-			}
+		if res.numUnprocessed < batchSize {
+			jq.queryUnprocessed = false
 		}
-
-		if len(jobsToCleanup) == 0 {
+		if res.numProcessed < batchSize {
+			jq.queryProcessed = false
+		}
+		jq.unprocessedAfterJobID = res.unprocessedAfterJobID
+		jq.processedAfterJobID = res.processedAfterJobID
+		numJobsCleaned += res.numProcessed + res.numUnprocessed
+		if !jq.queryUnprocessed && !jq.queryProcessed {
 			break
 		}
+	}
+	jd.logger.Infof("cleaned up %d old jobs", numJobsCleaned)
+}
 
+type cleanupResult struct {
+	numProcessed   int
+	numUnprocessed int
+
+	unprocessedAfterJobID *int64
+	processedAfterJobID   *int64
+}
+
+type jobQuery struct {
+	queryUnprocessed bool
+	queryProcessed   bool
+
+	unprocessedAfterJobID *int64
+	processedAfterJobID   *int64
+}
+
+func (jd *HandleT) doCleanup(ctx context.Context, jq jobQuery, batchSize int) (cleanupResult, error) {
+	var (
+		jobsToCleanup = make([]*JobT, 0)
+		res           cleanupResult
+	)
+
+	if jq.queryUnprocessed {
+		unprocessed, err := jd.GetUnprocessed(ctx, GetQueryParamsT{
+			IgnoreCustomValFiltersInQuery: true,
+			JobsLimit:                     batchSize,
+			AfterJobID:                    jq.unprocessedAfterJobID,
+		})
+		if err != nil {
+			return cleanupResult{}, err
+		}
+
+		if len(unprocessed.Jobs) > 0 {
+			res.unprocessedAfterJobID = &(unprocessed.Jobs[len(unprocessed.Jobs)-1].JobID)
+			unprocessedJobsToCleanup := lo.Filter(
+				unprocessed.Jobs,
+				func(job *JobT, _ int) bool {
+					return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge))
+				})
+			jobsToCleanup = append(jobsToCleanup, unprocessedJobsToCleanup...)
+			res.numUnprocessed = len(unprocessedJobsToCleanup)
+		}
+	}
+
+	if jq.queryProcessed {
+		processed, err := jd.GetProcessed(ctx, GetQueryParamsT{
+			IgnoreCustomValFiltersInQuery: true,
+			JobsLimit:                     batchSize,
+			AfterJobID:                    jq.processedAfterJobID,
+		})
+		if err != nil {
+			return cleanupResult{}, err
+		}
+
+		if len(processed.Jobs) > 0 {
+			res.processedAfterJobID = &(processed.Jobs[len(processed.Jobs)-1].JobID)
+			processedJobsToCleanup := lo.Filter(processed.Jobs, func(job *JobT, _ int) bool {
+				return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge))
+			})
+			jobsToCleanup = append(jobsToCleanup, processedJobsToCleanup...)
+			res.numProcessed = len(processedJobsToCleanup)
+		}
+	}
+
+	if len(jobsToCleanup) > 0 {
 		statusList := make([]*JobStatusT, 0)
 		for _, job := range jobsToCleanup {
 			statusList = append(statusList, &JobStatusT{
@@ -248,15 +277,9 @@ func (jd *HandleT) doCleanupOldJobs(ctx context.Context) {
 			})
 		}
 		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
-			jd.logger.Errorf("error updating job status for cleanup: %w", err)
-			if err = misc.SleepCtx(ctx, cleanupRetryInterval); err != nil {
-				return
-			}
-			processedAfterJobID = nil
-			unprocessedAfterJobID = nil
-			continue
+			return cleanupResult{}, err
 		}
-		numJobsCleaned += len(jobsToCleanup)
 	}
-	jd.logger.Infof("cleaned up %d old jobs", numJobsCleaned)
+
+	return res, nil
 }
