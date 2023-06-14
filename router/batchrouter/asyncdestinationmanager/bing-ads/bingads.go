@@ -19,11 +19,11 @@ import (
 
 	"github.com/google/uuid"
 	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
+	bytesize "github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
-	bytesize "github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/oauth2"
 )

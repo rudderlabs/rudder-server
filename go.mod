@@ -100,15 +100,9 @@ require (
 	google.golang.org/protobuf v1.30.0
 )
 
-require (
+require github.com/rudderlabs/bing-ads-go-sdk v0.0.0-20230612154712-532ead458eef // indirect
 
-	github.com/apache/arrow/go/v12 v12.0.0 // indirect
-	github.com/rudderlabs/bing-ads-go-sdk v0.0.0-20230612154712-532ead458eef // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
-	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
-	github.com/xdg-go/scram v1.1.2 // indirect
-	github.com/xdg-go/stringprep v1.0.4 // indirect
-)
+require (
 	cloud.google.com/go v0.110.2 // indirect
 	cloud.google.com/go/compute v1.19.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
