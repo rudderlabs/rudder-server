@@ -2,7 +2,6 @@ package backup
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +17,10 @@ import (
 	"github.com/samber/lo"
 )
 
+var (
+	successfulBackupResponse = []byte(`{"status": "backup successful"}`)
+)
+
 type jobQueue interface {
 	GetProcessed(
 		ctx context.Context,
@@ -30,12 +33,15 @@ type jobQueue interface {
 		customValFilters []string,
 		parameterFilters []jobsdb.ParameterFilterT,
 	) error
+
+	Identifier() string
 }
 
 type BackupContext struct {
 	QueryParams          jobsdb.GetQueryParamsT
 	Queue                jobQueue
 	FileUploaderProvider fileuploader.Provider
+	Marshaller           func(*jobsdb.JobT) ([]byte, error)
 }
 
 func Backup(
@@ -43,9 +49,7 @@ func Backup(
 	backupContext BackupContext,
 	log logger.Logger,
 ) {
-	// retry and backoff applied to all the steps below
-
-	// 1. Get the jobs from the jobsdb
+	// 1. Get jobs
 	jobs, err := backupContext.Queue.GetProcessed(ctx, backupContext.QueryParams)
 	if err != nil {
 		log.Infof("backup Error: Error getting jobs from jobsdb: %w", err)
@@ -54,7 +58,6 @@ func Backup(
 	workspaceJobsMap := lo.GroupBy(jobs.Jobs, func(job *jobsdb.JobT) string {
 		return job.WorkspaceId
 	})
-	// 2. Upload the jobs to the file uploader
 	for workspaceID, wJobs := range workspaceJobsMap {
 		// write to file
 		backupPathDirName := "/rudder-s3-dumps/"
@@ -63,7 +66,7 @@ func Backup(
 			panic(err)
 		}
 		// pathPrefix := strings.TrimPrefix("gw_jobs", preDropTablePrefix)
-		pathPrefix := "gw_jobs" // TODO: remove
+		pathPrefix := backupContext.Queue.Identifier() // TODO: remove
 		path := fmt.Sprintf(
 			"%v%v.%v.%v.%v.%v.%v.gz",
 			tmpDirPath+backupPathDirName,
@@ -75,7 +78,10 @@ func Backup(
 			workspaceID,
 		)
 
-		err = WriteGWJobsToFile(wJobs, path)
+		if backupContext.Marshaller == nil {
+			backupContext.Marshaller = jobsdb.MarshalJob
+		}
+		err = writeJobsToFile(wJobs, path, backupContext.Marshaller, log)
 		if err != nil {
 			log.Errorf("backup Error: Error writing jobs to file: %w for workspace %s",
 				err,
@@ -84,16 +90,16 @@ func Backup(
 			continue
 		}
 
-		// upload file
-		pathPrefixes := make([]string, 0) // TOOO
-		var output filemanager.UploadOutput
-		fileUploader, err := backupContext.FileUploaderProvider.GetFileManager(workspaceID)
-		if err != nil {
-			log.Errorf("backup Error: Error getting file uploader: %w", err)
-			continue
-		}
-
+		// 2. Upload jobs
 		{
+			pathPrefixes := make([]string, 0) // TOOO
+			var output filemanager.UploadOutput
+			fileUploader, err := backupContext.FileUploaderProvider.GetFileManager(workspaceID)
+			if err != nil {
+				log.Errorf("backup Error: Error getting file uploader: %w", err)
+				continue
+			}
+
 			bo := backoff.NewExponentialBackOff()
 			bo.MaxInterval = time.Minute
 			bo.MaxElapsedTime = config.GetDuration(
@@ -129,38 +135,63 @@ func Backup(
 			)
 		}
 
-		// 3. Update the job status in the jobsdb
-		if err = backupContext.Queue.UpdateJobStatus(
+		// 3. Update jobs status
+		if err = misc.RetryWithNotify(
 			ctx,
-			lo.Map(
-				wJobs,
-				func(job *jobsdb.JobT, _ int) *jobsdb.JobStatusT {
-					js := &jobsdb.JobStatusT{
-						JobID:         job.JobID,
-						ExecTime:      time.Now(),
-						RetryTime:     time.Now(),
-						ErrorCode:     "",
-						ErrorResponse: []byte(`{}`), // check
-						Parameters:    []byte(`{}`), // check
-						JobParameters: job.Parameters,
-					}
-					if job.LastJobStatus.ErrorCode == "200" {
-						js.JobState = jobsdb.Succeeded.State
-					}
-					js.JobState = jobsdb.Aborted.State
-					return js
-				},
-			),
-			nil,
-			nil,
+			config.GetDuration("backup.updateStatusTimeout", 60, time.Second),
+			config.GetInt("backup.updateStatusRetries", 3),
+			func(ctx context.Context) error {
+				return backupContext.Queue.UpdateJobStatus(
+					ctx,
+					lo.Map(
+						wJobs,
+						func(job *jobsdb.JobT, _ int) *jobsdb.JobStatusT {
+							js := &jobsdb.JobStatusT{
+								JobID:         job.JobID,
+								ExecTime:      time.Now(),
+								RetryTime:     time.Now(),
+								ErrorCode:     "",
+								ErrorResponse: successfulBackupResponse, // check
+								Parameters:    []byte(`{}`),             // check
+								JobParameters: job.Parameters,
+							}
+							switch job.LastJobStatus.ErrorCode {
+							case "200", "0":
+								js.JobState = jobsdb.Succeeded.State
+							default:
+								js.JobState = jobsdb.Aborted.State
+							}
+							return js
+						},
+					),
+					nil,
+					nil,
+				)
+			},
+			func(attempt int) {
+				log.Infof(
+					"backup Error: Error updating job status: %w for workspace %s, retrying %d",
+					err,
+					workspaceID,
+					attempt,
+				)
+			},
 		); err != nil {
-			panic(err)
+			log.Errorf("backup Error: Error updating job status: %w for workspace %s",
+				err,
+				workspaceID,
+			)
 		}
 	}
 }
 
 // Writes a list of jobs to a .gz file at given path
-func WriteGWJobsToFile(jobs []*jobsdb.JobT, path string) error {
+func writeJobsToFile(
+	jobs []*jobsdb.JobT,
+	path string,
+	marshaller func(*jobsdb.JobT) ([]byte, error),
+	log logger.Logger,
+) error {
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
@@ -174,29 +205,19 @@ func WriteGWJobsToFile(jobs []*jobsdb.JobT, path string) error {
 
 	// gzWriter.Write([]byte(jobs[0].Headings()))
 	for _, item := range jobs {
-		_, err = gzWriter.Write(mashalGWJob(item))
+		bytes, err := marshaller(item)
+		if err != nil {
+			log.Errorf("backup Error: Error marshalling job: %w for jobID - %d",
+				err,
+				item.JobID,
+			)
+			continue
+		}
+		_, err = gzWriter.Write(append(bytes, '\n'))
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
-}
-
-// TODO: pass this to backup
-func mashalGWJob(job *jobsdb.JobT) []byte {
-	jobMap := map[string]interface{}{
-		"job_id":        job.JobID,
-		"workspace_id":  job.WorkspaceId,
-		"uuid":          job.UUID.String(),
-		"user_id":       job.UserID,
-		"parameters":    job.Parameters,
-		"custom_val":    job.CustomVal,
-		"event_payload": job.EventPayload,
-		"event_count":   job.EventCount,
-		"created_at":    job.CreatedAt,
-		"expires_at":    job.ExpireAt,
-	}
-	jobBytes, _ := json.Marshal(jobMap)
-	return append(jobBytes, '\n')
 }

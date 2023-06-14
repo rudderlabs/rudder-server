@@ -567,6 +567,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 						},
 						Queue:                proc.gatewayDB,
 						FileUploaderProvider: proc.fileuploader,
+						Marshaller:           jobsdb.MarshalGWJob,
 					},
 					proc.logger,
 				)

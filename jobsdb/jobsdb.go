@@ -398,6 +398,34 @@ func (job *JobT) String() string {
 	)
 }
 
+func MarshalGWJob(job *JobT) ([]byte, error) {
+	jobMap := map[string]interface{}{
+		"job_id":        job.JobID,
+		"workspace_id":  job.WorkspaceId,
+		"uuid":          job.UUID.String(),
+		"user_id":       job.UserID,
+		"parameters":    job.Parameters,
+		"custom_val":    job.CustomVal,
+		"event_payload": job.EventPayload,
+		"event_count":   job.EventCount,
+		"created_at":    job.CreatedAt,
+		"expires_at":    job.ExpireAt,
+	}
+	jobBytes, err := json.Marshal(jobMap)
+	if err != nil {
+		return nil, err
+	}
+	return jobBytes, nil
+}
+
+func MarshalJob(job *JobT) ([]byte, error) {
+	jobBytes, err := json.Marshal(job)
+	if err != nil {
+		return nil, err
+	}
+	return jobBytes, nil
+}
+
 func (job *JobT) Headings() string {
 	return "job_id,workspace_id,uuid,user_id,parameters,custom_val,event_payload,event_count,created_at,expire_at"
 }
