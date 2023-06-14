@@ -250,8 +250,8 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
 	ctx, cancel := context.WithTimeout(job.ctx, config.GetDuration(
 		"Warehouse.loadFileGenerationTimeStatTimeout",
-		15,
-		time.Second,
+		5,
+		time.Minute,
 	))
 	defer cancel()
 	stmt := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM (f2.created_at - f1.created_at))::integer as delta

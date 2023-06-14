@@ -69,7 +69,7 @@ func (r *Recovery) Recover(ctx context.Context, whManager destination, wh model.
 	ctx, cancel := context.WithTimeout(
 		ctx,
 		config.GetDuration(
-			"Warehouse.schemaRecoveryTimeout",
+			"Warehouse.recoveryTimeout",
 			5,
 			time.Minute,
 		),

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/samber/lo"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -69,7 +70,7 @@ func TestLoadFileBatching(t *testing.T) {
 		})
 	}
 
-	batches := schemarepository.LoadFileBatching(loadFiles, batchSize)
+	batches := lo.Chunk(loadFiles, batchSize)
 	require.Equal(t, 1+(len(loadFiles)/batchSize), len(batches))
 
 	var reconstruct []warehouseutils.LoadFile

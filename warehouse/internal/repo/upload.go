@@ -570,8 +570,8 @@ func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace strin
 		ctx,
 		config.GetDuration(
 			"Warehouse.getPendingTableUploadsTimeout",
-			15,
-			time.Second,
+			5,
+			time.Minute,
 		),
 	)
 	defer cancel()

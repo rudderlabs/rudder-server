@@ -47,7 +47,7 @@ func NewLoadFiles(db *sql.DB, opts ...Opt) *LoadFiles {
 func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error {
 	ctx, cancel := context.WithTimeout(
 		ctx,
-		config.GetDuration("Warehouse.deleteLoadFilesTimeout", 60, time.Second),
+		config.GetDuration("Warehouse.deleteLoadFilesTimeout", 5, time.Minute),
 	)
 	defer cancel()
 	sqlStatement := `
@@ -68,7 +68,7 @@ func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs 
 func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (err error) {
 	ctx, cancel := context.WithTimeout(
 		ctx,
-		config.GetDuration("Warehouse.loadFilesInsertTimeout", 60, time.Minute),
+		config.GetDuration("Warehouse.loadFilesInsertTimeout", 5, time.Minute),
 	)
 	defer cancel()
 	// Using transactions for bulk copying
@@ -77,7 +77,21 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 		return
 	}
 
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at", "metadata"))
+	stmt, err := txn.PrepareContext(
+		ctx,
+		pq.CopyIn(
+			"wh_load_files",
+			"staging_file_id",
+			"location",
+			"source_id",
+			"destination_id",
+			"destination_type",
+			"table_name",
+			"total_events",
+			"created_at",
+			"metadata",
+		),
+	)
 	if err != nil {
 		return fmt.Errorf(`inserting load files: CopyIn: %w`, err)
 	}

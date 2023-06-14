@@ -80,8 +80,8 @@ func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updated
 		ctx,
 		config.GetDuration(
 			"Warehouse.schemaUpdateTimeout",
-			30,
-			time.Second,
+			5,
+			time.Minute,
 		),
 	)
 	defer cancel()
@@ -172,8 +172,8 @@ func (sh *Schema) prepareUploadSchema(ctx context.Context, stagingFiles []*model
 		ctx,
 		config.GetDuration(
 			"Warehouse.schemaGenerationTimeout",
-			30,
-			time.Second,
+			5,
+			time.Minute,
 		),
 	)
 	defer cancel()
