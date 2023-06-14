@@ -77,7 +77,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 	sqlStatement := fmt.Sprintf(`SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM %s WHERE id=%v`, idr.mergeRulesTable(), ruleID)
 
 	var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
-	err = txn.QueryRowContext(idr.ctx, sqlStatement).Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
+	err = txn.QueryRow(sqlStatement).Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
 	if err != nil {
 		return
 	}
@@ -89,7 +89,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 	}
 	sqlStatement = fmt.Sprintf(`SELECT ARRAY_AGG(DISTINCT(rudder_id)) FROM %s WHERE (merge_property_type='%s' AND merge_property_value=%s) %s`, idr.mappingsTable(), prop1Type.String, misc.QuoteLiteral(prop1Val.String), additionalClause)
 	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
-	err = txn.QueryRowContext(idr.ctx, sqlStatement).Scan(pq.Array(&rudderIDs))
+	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
 		pkgLogger.Errorf("IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v\nwith Error: %v", sqlStatement, err)
 		return
@@ -122,7 +122,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.warehouse))
 		pkgLogger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
-		_, err = txn.ExecContext(idr.ctx, sqlStatement)
+		_, err = txn.Exec(sqlStatement)
 		if err != nil {
 			pkgLogger.Errorf(`IDR: Error inserting properties from merge_rule into mappings table: %v`, err)
 			return
@@ -145,7 +145,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 		sqlStatement := fmt.Sprintf(`SELECT merge_property_type, merge_property_value FROM %s WHERE rudder_id IN (%v)`, idr.mappingsTable(), quotedRudderIDs)
 		pkgLogger.Debugf(`IDR: Get all merge properties from mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
 		var tableRows *sql.Rows
-		tableRows, err = txn.QueryContext(idr.ctx, sqlStatement)
+		tableRows, err = txn.Query(sqlStatement)
 		if err != nil {
 			return
 		}
@@ -166,7 +166,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 
 		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, misc.SingleQuoteLiteralJoin(rudderIDs[1:]))
 		var res sql.Result
-		res, err = txn.ExecContext(idr.ctx, sqlStatement)
+		res, err = txn.Exec(sqlStatement)
 		if err != nil {
 			return
 		}
@@ -175,7 +175,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.warehouse))
 		pkgLogger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
-		_, err = txn.ExecContext(idr.ctx, sqlStatement)
+		_, err = txn.Exec(sqlStatement)
 		if err != nil {
 			return
 		}
@@ -203,7 +203,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 						WITH NO DATA;`, mergeRulesStagingTable, idr.mergeRulesTable())
 
 	pkgLogger.Infof(`IDR: Creating temp table %s in postgres for loading %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
-	_, err = txn.ExecContext(idr.ctx, sqlStatement)
+	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error creating temp table %s in postgres: %v`, mergeRulesStagingTable, err)
 		return
@@ -256,7 +256,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 			// add rowID which allows us to insert in same order from staging to original merge _rules table
 			rowID++
 			recordInterface[4] = rowID
-			_, err = stmt.ExecContext(idr.ctx, recordInterface[:]...)
+			_, err = stmt.Exec(recordInterface[:]...)
 			if err != nil {
 				pkgLogger.Errorf("IDR: Error while adding rowID to merge_rules table: %v", err)
 				return
@@ -264,7 +264,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 		}
 	}
 
-	_, err = stmt.ExecContext(idr.ctx)
+	_, err = stmt.Exec()
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error bulk copy using CopyIn: %v for uploadID: %v`, err, idr.uploadID)
 		return
@@ -282,7 +282,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 					(original.merge_property_2_value = staging.merge_property_2_value)`,
 		mergeRulesStagingTable, idr.mergeRulesTable())
 	pkgLogger.Infof(`IDR: Deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
-	_, err = txn.ExecContext(idr.ctx, sqlStatement)
+	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), err)
 		return
@@ -307,7 +307,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 						) t
 		 				ORDER BY id ASC RETURNING id`, idr.mergeRulesTable(), mergeRulesStagingTable)
 	pkgLogger.Infof(`IDR: Inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, sqlStatement)
-	rows, err := txn.QueryContext(idr.ctx, sqlStatement)
+	rows, err := txn.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
 		return
@@ -333,7 +333,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *m
 	batchSize := int64(500)
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)
 	var totalRows int64
-	err = txn.QueryRowContext(idr.ctx, sqlStatement).Scan(&totalRows)
+	err = txn.QueryRow(sqlStatement).Scan(&totalRows)
 	if err != nil {
 		return
 	}
@@ -343,7 +343,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *m
 		sqlStatement = fmt.Sprintf(`SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM %s LIMIT %d OFFSET %d`, tableName, batchSize, offset)
 
 		var rows *sql.Rows
-		rows, err = txn.QueryContext(idr.ctx, sqlStatement)
+		rows, err = txn.Query(sqlStatement)
 		if err != nil {
 			return
 		}
@@ -381,7 +381,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *m
 	return
 }
 
-func (idr *Identity) uploadFile(filePath string, txn *sql.Tx, tableName string, totalRecords int) (err error) {
+func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sql.Tx, tableName string, totalRecords int) (err error) {
 	outputFile, err := os.Open(filePath)
 	if err != nil {
 		panic(err)
@@ -399,14 +399,14 @@ func (idr *Identity) uploadFile(filePath string, txn *sql.Tx, tableName string, 
 		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.warehouse.Destination.DestinationDefinition.Name, err)
 		return err
 	}
-	output, err := uploader.Upload(idr.ctx, outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.warehouse.Source.ID, tableName)
+	output, err := uploader.Upload(ctx, outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.warehouse.Source.ID, tableName)
 	if err != nil {
 		return
 	}
 
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET location='%s', total_events=%d WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, output.Location, totalRecords, idr.uploadID, warehouseutils.ToProviderCase(idr.warehouse.Destination.DestinationDefinition.Name, tableName))
 	pkgLogger.Infof(`IDR: Updating load file location for table: %s: %s `, tableName, sqlStatement)
-	_, err = txn.ExecContext(idr.ctx, sqlStatement)
+	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error updating load file location for table: %s: %v`, tableName, err)
 	}
@@ -431,8 +431,8 @@ func (idr *Identity) createTempGzFile(dirName string) (gzWriter misc.GZipWriter,
 	return
 }
 
-func (idr *Identity) processMergeRules(fileNames []string) (err error) {
-	txn, err := idr.db.BeginTx(idr.ctx, &sql.TxOptions{})
+func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) (err error) {
+	txn, err := idr.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		panic(err)
 	}
@@ -478,14 +478,14 @@ func (idr *Identity) processMergeRules(fileNames []string) (err error) {
 	// END: Add new/changed identity mappings to local pg table and also to file
 
 	// upload new merge rules to object storage
-	err = idr.uploadFile(mergeRulesFilePath, txn, idr.whMergeRulesTable(), len(ruleIDs))
+	err = idr.uploadFile(ctx, mergeRulesFilePath, txn, idr.whMergeRulesTable(), len(ruleIDs))
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error uploading load file for %s at %s to object storage: %v`, idr.mergeRulesTable(), mergeRulesFilePath, err)
 		return
 	}
 
 	// upload new/changed identity mappings to object storage
-	err = idr.uploadFile(mappingsFilePath, txn, idr.whMappingsTable(), totalMappingRecords)
+	err = idr.uploadFile(ctx, mappingsFilePath, txn, idr.whMappingsTable(), totalMappingRecords)
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Error uploading load file for %s at %s to object storage: %v`, mappingsFilePath, mergeRulesFilePath, err)
 		return
@@ -513,7 +513,7 @@ func (idr *Identity) Resolve(ctx context.Context) (err error) {
 		return
 	}
 
-	return idr.processMergeRules(loadFileNames)
+	return idr.processMergeRules(ctx, loadFileNames)
 }
 
 func (idr *Identity) ResolveHistoricIdentities(ctx context.Context) (err error) {
@@ -528,5 +528,5 @@ func (idr *Identity) ResolveHistoricIdentities(ctx context.Context) (err error) 
 	}
 	loadFileNames = append(loadFileNames, path)
 
-	return idr.processMergeRules(loadFileNames)
+	return idr.processMergeRules(ctx, loadFileNames)
 }

@@ -61,8 +61,8 @@ func (repo *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames
 		ctx,
 		config.GetDuration(
 			"Warehouse.tableUploadsTimeout",
-			15,
-			time.Second,
+			5,
+			time.Minute,
 		),
 	)
 	defer cancel()
@@ -128,8 +128,8 @@ func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadI
 		ctx,
 		config.GetDuration(
 			"Warehouse.getTableUploadsTimeout",
-			15,
-			time.Second,
+			5,
+			time.Minute,
 		),
 	)
 	defer cancel()
@@ -212,8 +212,8 @@ func (repo *TableUploads) PopulateTotalEventsFromStagingFileIDs(ctx context.Cont
 		ctx,
 		config.GetDuration(
 			"Warehouse.tableUploadsTimeout",
-			15,
-			time.Second,
+			5,
+			time.Minute,
 		),
 	)
 	defer cancel()
@@ -315,7 +315,7 @@ func (repo *TableUploads) Set(ctx context.Context, uploadId int64, tableName str
 		ctx,
 		config.GetDuration(
 			"Warehouse.tableUploadsTimeout",
-			15,
+			5,
 			time.Minute,
 		),
 	)

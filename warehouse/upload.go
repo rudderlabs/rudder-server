@@ -290,8 +290,8 @@ func (job *UploadJob) syncRemoteSchema() (bool, error) {
 		job.ctx,
 		config.GetDuration(
 			"Warehouse.schemaFetchTimeout",
-			30,
-			time.Second,
+			5,
+			time.Minute,
 		),
 		func(ctx context.Context) error {
 			if err := job.schemaHandle.fetchSchemaFromLocal(ctx); err != nil {
@@ -366,8 +366,8 @@ func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error 
 		ctx,
 		config.GetDuration(
 			"Warehouse.totalEventsCheckTimeout",
-			15,
-			time.Second,
+			5,
+			time.Minute,
 		),
 	)
 	defer cancel()
@@ -532,8 +532,8 @@ func (job *UploadJob) run() (err error) {
 					job.ctx,
 					config.GetDuration(
 						"Warehouse.createRemoteSchemaTimeout",
-						30,
-						time.Second,
+						60,
+						time.Minute,
 					),
 					func(ctx context.Context) error {
 						return whManager.CreateSchema(ctx)
@@ -801,7 +801,7 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 		job.ctx,
 		config.GetDuration(
 			"Warehouse.resolveIdentitiesTimeout",
-			5,
+			60,
 			time.Minute,
 		),
 		func(ctx context.Context) error {
@@ -809,7 +809,6 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 				return idr.ResolveHistoricIdentities(ctx)
 			}
 			return idr.Resolve(ctx)
-
 		},
 	)
 }
@@ -820,7 +819,7 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseu
 		job.ctx,
 		config.GetDuration(
 			"Warehouse.updateTableSchemaTimeout",
-			15,
+			60,
 			time.Minute,
 		),
 		func(ctx context.Context) error {
@@ -1508,8 +1507,8 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 			job.ctx,
 			config.GetDuration(
 				"Warehouse.setUploadStatusTimeout",
-				15,
-				time.Second,
+				5,
+				time.Minute,
 			),
 			func(ctx context.Context) error {
 				txn, err := dbHandle.BeginTx(ctx, &sql.TxOptions{})
@@ -1525,7 +1524,6 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 					application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
 				}
 				return txn.Commit()
-
 			},
 		)
 	}
@@ -1580,7 +1578,7 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
 		config.GetDuration(
 			"Warehouse.setUploadColumnsTimeout",
 			5,
-			time.Second,
+			time.Minute,
 		),
 	)
 	defer cancel()
@@ -1645,8 +1643,8 @@ func (job *UploadJob) triggerUploadNow() (err error) {
 		job.ctx,
 		config.GetDuration(
 			"Warehouse.triggerUploadTimeout",
-			15,
-			time.Second,
+			5,
+			time.Minute,
 		),
 		func(ctx context.Context) error {
 			txn, err := job.dbHandle.BeginTx(job.ctx, &sql.TxOptions{})
@@ -1783,8 +1781,8 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		job.ctx,
 		config.GetDuration(
 			"Warehouse.setUploadErrorTimeout",
-			15,
-			time.Second,
+			5,
+			time.Minute,
 		),
 		func(ctx context.Context) error {
 			txn, err := job.dbHandle.BeginTx(ctx, &sql.TxOptions{})
@@ -1910,8 +1908,8 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 		job.ctx,
 		config.GetDuration(
 			"Warehouse.getLoadFilesTimeout",
-			15,
-			time.Second,
+			5,
+			time.Minute,
 		),
 	)
 	defer cancel()
@@ -2243,8 +2241,8 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 			job.ctx,
 			config.GetDuration(
 				"Warehouse.refreshPartitionsTimeout",
-				15,
-				time.Second,
+				5,
+				time.Minute,
 			),
 			func(ctx context.Context) error {
 				loadFiles := job.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{
@@ -2252,7 +2250,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 					StartID: loadFileStartID,
 					EndID:   loadFileEndID,
 				})
-				batches := schemarepository.LoadFileBatching(loadFiles, job.refreshPartitionBatchSize)
+				batches := lo.Chunk(loadFiles, job.refreshPartitionBatchSize)
 				for _, batch := range batches {
 					if err = repository.RefreshPartitions(ctx, tableName, batch); err != nil {
 						return fmt.Errorf("refresh partitions: %w", err)

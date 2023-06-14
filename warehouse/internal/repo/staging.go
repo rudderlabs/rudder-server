@@ -51,7 +51,10 @@ type metadataSchema struct {
 }
 
 func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
-	return lo.Map(stagingFiles, func(stagingFile *model.StagingFile, _ int) int64 { return stagingFile.ID })
+	return lo.Map(
+		stagingFiles,
+		func(stagingFile *model.StagingFile, _ int) int64 { return stagingFile.ID },
+	)
 }
 
 func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
