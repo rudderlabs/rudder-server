@@ -105,6 +105,7 @@ type UploadJob struct {
 	refreshPartitionBatchSize int
 	retryTimeWindow           time.Duration
 	minRetryAttempts          int
+	DisableAlter              bool
 
 	errorHandler ErrorHandler
 }
@@ -125,7 +126,6 @@ const (
 	UploadUpdatedAtField       = "updated_at"
 	UploadTimingsField         = "timings"
 	UploadSchemaField          = "schema"
-	MergedSchemaField          = "mergedschema"
 	UploadLastExecAtField      = "last_exec_at"
 	UploadInProgress           = "in_progress"
 )
@@ -196,6 +196,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		refreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
 		retryTimeWindow:           retryTimeWindow,
 		minRetryAttempts:          minRetryAttempts,
+		DisableAlter:              config.GetBool("Warehouse.disableAlter", false),
 
 		alertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
@@ -253,9 +254,6 @@ func (job *UploadJob) generateUploadSchema() error {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
-	if err := job.setMergedSchema(job.schemaHandle.uploadSchema); err != nil {
-		return fmt.Errorf("set merged schema: %w", err)
-	}
 	if err := job.setUploadSchema(job.schemaHandle.uploadSchema); err != nil {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
@@ -794,6 +792,19 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseu
 }
 
 func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap model.TableSchema) error {
+	if job.DisableAlter {
+		pkgLogger.Debugw("skipping alter columns to warehouse",
+			logfield.SourceID, job.warehouse.Source.ID,
+			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, job.warehouse.Destination.ID,
+			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, job.warehouse.WorkspaceID,
+			logfield.TableName, tName,
+			"columns", columnsMap,
+		)
+		return nil
+	}
+
 	var responseToAlerta []model.AlterTableResponse
 	var errs []error
 
@@ -1454,15 +1465,6 @@ func (job *UploadJob) setUploadSchema(consolidatedSchema model.Schema) error {
 	}
 	job.upload.UploadSchema = consolidatedSchema
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadSchemaField, Value: marshalledSchema}}})
-}
-
-func (job *UploadJob) setMergedSchema(mergedSchema model.Schema) error {
-	marshalledSchema, err := json.Marshal(mergedSchema)
-	if err != nil {
-		panic(err)
-	}
-	job.upload.MergedSchema = mergedSchema
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: MergedSchemaField, Value: marshalledSchema}}})
 }
 
 // Set LoadFileIDs

@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -124,3 +125,20 @@ func (e *EventTypeThrottlingCost) Cost(eventType string) (cost int64) {
 	}
 	return 1
 }
+
+var (
+	// ErrContextCancelled is returned when the context is cancelled
+	ErrContextCancelled = errors.New("context cancelled")
+	// ErrParamsUnmarshal is returned when it is not possible to unmarshal the job parameters
+	ErrParamsUnmarshal = errors.New("unmarhall params")
+	// ErrJobOrderBlocked is returned when the job is blocked by another job discarded by the router in the same loop
+	ErrJobOrderBlocked = errors.New("blocked")
+	// ErrWorkerNoSlot is returned when the worker doesn't have an available slot
+	ErrWorkerNoSlot = errors.New("no slot")
+	// ErrJobBackoff is returned when the job is backoffed
+	ErrJobBackoff = errors.New("backoff")
+	// ErrDestinationThrottled is returned when the destination is being throttled
+	ErrDestinationThrottled = errors.New("throttled")
+	// ErrBarrierExists is returned when a job ordering barrier exists for the job's ordering key
+	ErrBarrierExists = errors.New("barrier")
+)
