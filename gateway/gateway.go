@@ -607,48 +607,47 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			return
 		}
 
-		if idx == 0 {
-			firstSourcesJobRunID, _ = misc.MapLookup(
-				toSet,
-				"context",
-				"sources",
-				"job_run_id",
-			).(string)
-			firstSourcesTaskRunID, _ = misc.MapLookup(
-				toSet,
-				"context",
-				"sources",
-				"task_run_id",
-			).(string)
+		eventContext, ok := misc.MapLookup(toSet, "context").(map[string]interface{})
+		if ok {
+			if idx == 0 {
+				firstSourcesJobRunID, _ = misc.MapLookup(
+					eventContext,
+					"sources",
+					"job_run_id",
+				).(string)
+				firstSourcesTaskRunID, _ = misc.MapLookup(
+					eventContext,
+					"sources",
+					"task_run_id",
+				).(string)
 
-			// calculate version
-			firstSDKName, _ := misc.MapLookup(
-				toSet,
-				"context",
-				"library",
-				"name",
-			).(string)
-			firstSDKVersion, _ := misc.MapLookup(
-				toSet,
-				"context",
-				"library",
-				"version",
-			).(string)
-			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) { // skipcq: CRT-A0007
-				firstSDKVersion = "invalid"
-			}
-			if firstSDKName != "" || firstSDKVersion != "" {
-				jobData.version = firstSDKName + "/" + firstSDKVersion
-			}
-		}
+				// calculate version
+				firstSDKName, _ := misc.MapLookup(
+					eventContext,
+					"library",
+					"name",
+				).(string)
+				firstSDKVersion, _ := misc.MapLookup(
+					eventContext,
+					"library",
+					"version",
+				).(string)
 
-		userAgent, _ := misc.MapLookup(
-			toSet,
-			"context",
-			"userAgent",
-		).(string)
-		if bot.IsBotUserAgent(userAgent) {
-			jobData.botEvents++
+				if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) { // skipcq: CRT-A0007
+					firstSDKVersion = "invalid"
+				}
+				if firstSDKName != "" || firstSDKVersion != "" {
+					jobData.version = firstSDKName + "/" + firstSDKVersion
+				}
+			}
+
+			userAgent, _ := misc.MapLookup(
+				eventContext,
+				"userAgent",
+			).(string)
+			if bot.IsBotUserAgent(userAgent) {
+				jobData.botEvents++
+			}
 		}
 
 		if isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
