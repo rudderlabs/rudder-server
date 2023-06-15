@@ -14,6 +14,7 @@ import (
 
 const (
 	responseKey = "response"
+	errorKey    = "error"
 	spaceStr    = " "
 
 	destinationResponseKey = "destinationResponse"
@@ -29,7 +30,7 @@ var (
 	spaceRegex       = regexp.MustCompile(`\s+`)
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
-	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", "error", "error_message"}
+	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", errorKey, "error_message"}
 )
 
 type ExtractorHandle struct {
@@ -83,7 +84,7 @@ func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
 				return strings.Split(erResStr, "\n")[0]
 			}
 			return ""
-		case responseKey:
+		case responseKey, errorKey:
 			if IsJSON(erResStr) {
 				var unmarshalledJson interface{}
 				unmarshalledErr := json.Unmarshal([]byte(erResStr), &unmarshalledJson)
