@@ -27,6 +27,7 @@ type DB struct {
 	logger             logger
 	keysAndValues      []any
 	slowQueryThreshold time.Duration
+	queryTimeout       time.Duration
 	rollbackThreshold  time.Duration
 	commitThreshold    time.Duration
 	secretsRegex       map[string]string
@@ -61,6 +62,12 @@ func WithSecretsRegex(secretsRegex map[string]string) Opt {
 	}
 }
 
+func WithTimeout(timeout time.Duration) Opt {
+	return func(s *DB) {
+		s.queryTimeout = timeout
+	}
+}
+
 func New(db *sql.DB, opts ...Opt) *DB {
 	s := &DB{
 		DB:                 db,
@@ -77,48 +84,47 @@ func New(db *sql.DB, opts ...Opt) *DB {
 }
 
 func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
-	startedAt := time.Now()
-	result, err := db.DB.Exec(query, args...)
-	db.logQuery(query, db.since(startedAt))
-	return result, err
+	return db.ExecContext(context.Background(), query, args...)
 }
 
 func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
 	startedAt := time.Now()
+	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
+	defer cancel()
 	result, err := db.DB.ExecContext(ctx, query, args...)
 	db.logQuery(query, db.since(startedAt))
 	return result, err
 }
 
 func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	startedAt := time.Now()
-	rows, err := db.DB.Query(query, args...)
-	db.logQuery(query, db.since(startedAt))
-	return rows, err
+	return db.QueryContext(context.Background(), query, args...)
 }
 
 func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	startedAt := time.Now()
+	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
+	defer cancel()
 	rows, err := db.DB.QueryContext(ctx, query, args...)
 	db.logQuery(query, db.since(startedAt))
 	return rows, err
 }
 
 func (db *DB) QueryRow(query string, args ...interface{}) *sql.Row {
-	startedAt := time.Now()
-	row := db.DB.QueryRow(query, args...)
-	db.logQuery(query, db.since(startedAt))
-	return row
+	return db.QueryRowContext(context.Background(), query, args...)
 }
 
 func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
 	startedAt := time.Now()
+	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
+	defer cancel()
 	row := db.DB.QueryRowContext(ctx, query, args...)
 	db.logQuery(query, db.since(startedAt))
 	return row
 }
 
 func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
+	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
+	defer cancel()
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -153,8 +159,13 @@ func (db *DB) logQuery(query string, elapsed time.Duration) {
 	db.logger.Infow("executing query", keysAndValues...)
 }
 
+// Begin starts a transaction.
+//
+// Use BeginTx to pass context and options to the underlying driver.
 func (db *DB) Begin() (*Tx, error) {
-	if tx, err := db.DB.Begin(); err != nil {
+	ctx, cancel := queryContextWithTimeout(context.Background(), db.queryTimeout)
+	defer cancel()
+	if tx, err := db.DB.BeginTx(ctx, nil); err != nil {
 		return nil, err
 	} else {
 		return &Tx{tx, db}, nil
@@ -162,6 +173,8 @@ func (db *DB) Begin() (*Tx, error) {
 }
 
 func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
+	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
+	defer cancel()
 	if tx, err := db.DB.BeginTx(ctx, opts); err != nil {
 		return nil, err
 	} else {
@@ -170,10 +183,7 @@ func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 }
 
 func (tx *Tx) Exec(query string, args ...interface{}) (sql.Result, error) {
-	startedAt := time.Now()
-	result, err := tx.Tx.Exec(query, args...)
-	tx.db.logQuery(query, tx.db.since(startedAt))
-	return result, err
+	return tx.ExecContext(context.Background(), query, args...)
 }
 
 func (tx *Tx) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
@@ -184,10 +194,7 @@ func (tx *Tx) ExecContext(ctx context.Context, query string, args ...interface{}
 }
 
 func (tx *Tx) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	startedAt := time.Now()
-	rows, err := tx.Tx.Query(query, args...)
-	tx.db.logQuery(query, tx.db.since(startedAt))
-	return rows, err
+	return tx.QueryContext(context.Background(), query, args...)
 }
 
 func (tx *Tx) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
@@ -198,10 +205,7 @@ func (tx *Tx) QueryContext(ctx context.Context, query string, args ...interface{
 }
 
 func (tx *Tx) QueryRow(query string, args ...interface{}) *sql.Row {
-	startedAt := time.Now()
-	row := tx.Tx.QueryRow(query, args...)
-	tx.db.logQuery(query, tx.db.since(startedAt))
-	return row
+	return tx.QueryRowContext(context.Background(), query, args...)
 }
 
 func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
@@ -227,4 +231,11 @@ func (tx *Tx) Commit() error {
 		tx.db.logger.Warnw("commit threshold exceeded", tx.db.keysAndValues...)
 	}
 	return err
+}
+
+func queryContextWithTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
 }

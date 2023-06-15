@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/tidwall/gjson"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
@@ -69,7 +70,7 @@ type UploadMetadata struct {
 
 func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
 	u := &Uploads{
-		db:  db,
+		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
 		now: timeutil.Now,
 	}
 
@@ -566,15 +567,6 @@ func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destination
 
 // PendingTableUploads returns a list of pending table uploads for a given upload.
 func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.getPendingTableUploadsTimeout",
-			5,
-			time.Minute,
-		),
-	)
-	defer cancel()
 	pendingTableUploads := make([]model.PendingTableUpload, 0)
 
 	rows, err := uploads.db.QueryContext(ctx, `

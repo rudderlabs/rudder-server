@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -29,7 +30,7 @@ type WHSchema repo
 
 func NewWHSchemas(db *sql.DB, opts ...Opt) *WHSchema {
 	r := &WHSchema{
-		db:  db,
+		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
 		now: timeutil.Now,
 	}
 	for _, opt := range opts {

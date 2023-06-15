@@ -10,8 +10,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -47,7 +47,7 @@ type TableUploadSetOptions struct {
 
 func NewTableUploads(db *sql.DB, opts ...Opt) *TableUploads {
 	r := &TableUploads{
-		db:  db,
+		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
 		now: timeutil.Now,
 	}
 	for _, opt := range opts {
@@ -57,17 +57,8 @@ func NewTableUploads(db *sql.DB, opts ...Opt) *TableUploads {
 }
 
 func (repo *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames []string) error {
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.tableUploadsTimeout",
-			5,
-			time.Minute,
-		),
-	)
-	defer cancel()
 	var (
-		txn  *sql.Tx
+		txn  *sqlquerywrapper.Tx
 		stmt *sql.Stmt
 		err  error
 	)
@@ -124,15 +115,6 @@ func (repo *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]
 }
 
 func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadID int64, tableName string) (model.TableUpload, error) {
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.getTableUploadsTimeout",
-			5,
-			time.Minute,
-		),
-	)
-	defer cancel()
 	query := `SELECT ` + tableUploadColumns + ` FROM ` + tableUploadTableName + `
 	WHERE
 		wh_upload_id = $1 AND
@@ -208,15 +190,6 @@ func (*TableUploads) parseRows(rows *sql.Rows) ([]model.TableUpload, error) {
 }
 
 func (repo *TableUploads) PopulateTotalEventsFromStagingFileIDs(ctx context.Context, uploadId int64, tableName string, stagingFileIDs []int64) error {
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.tableUploadsTimeout",
-			5,
-			time.Minute,
-		),
-	)
-	defer cancel()
 	subQuery := `
 		WITH row_numbered_load_files as (
 		  SELECT
@@ -311,15 +284,6 @@ func (repo *TableUploads) TotalExportedEvents(ctx context.Context, uploadId int6
 }
 
 func (repo *TableUploads) Set(ctx context.Context, uploadId int64, tableName string, options TableUploadSetOptions) error {
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.tableUploadsTimeout",
-			5,
-			time.Minute,
-		),
-	)
-	defer cancel()
 	var (
 		query     string
 		queryArgs []any

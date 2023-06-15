@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/samber/lo"
@@ -73,7 +73,7 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 
 func NewStagingFiles(db *sql.DB, opts ...Opt) *StagingFiles {
 	r := &StagingFiles{
-		db:  db,
+		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
 		now: timeutil.Now,
 	}
 	for _, opt := range opts {
@@ -465,15 +465,6 @@ func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status s
 	if len(ids) == 0 {
 		return fmt.Errorf("no staging files to update")
 	}
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.setStatusTimeout",
-			5,
-			time.Minute,
-		),
-	)
-	defer cancel()
 
 	sqlStatement := `
 		UPDATE
@@ -501,15 +492,6 @@ func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status s
 }
 
 func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.setStatusTimeout",
-			5,
-			time.Minute,
-		),
-	)
-	defer cancel()
 	sqlStatement := `
 		UPDATE
 		` + stagingTableName + `
