@@ -2655,28 +2655,6 @@ func (proc *Handle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.Stat
 	})
 }
 
-func subJobMerger(mergedJob, subJob *storeMessage) *storeMessage {
-	mergedJob.statusList = append(mergedJob.statusList, subJob.statusList...)
-	mergedJob.destJobs = append(mergedJob.destJobs, subJob.destJobs...)
-	mergedJob.batchDestJobs = append(mergedJob.batchDestJobs, subJob.batchDestJobs...)
-
-	mergedJob.procErrorJobs = append(mergedJob.procErrorJobs, subJob.procErrorJobs...)
-	for id, job := range subJob.procErrorJobsByDestID {
-		mergedJob.procErrorJobsByDestID[id] = append(mergedJob.procErrorJobsByDestID[id], job...)
-	}
-
-	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
-	for dupStatKey, count := range subJob.sourceDupStats {
-		mergedJob.sourceDupStats[dupStatKey] += count
-	}
-	for id, v := range subJob.uniqueMessageIds {
-		mergedJob.uniqueMessageIds[id] = v
-	}
-	mergedJob.totalEvents += subJob.totalEvents
-
-	return mergedJob
-}
-
 func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
 	normalizedTime := float64(timeTaken) / float64(time.Second)
 	return int(float64(processedJob) / normalizedTime)

@@ -78,7 +78,6 @@ func TestTransformerTimeoutAbort(t *testing.T) {
 	}
 	rsp := tr.Transform(context.TODO(), events, svr.URL, 1)
 	require.Equal(t, transformer.TransformerRequestTimeoutAbort, rsp.FailedEvents[0].StatusCode, "actual response code different than expected")
-
 }
 
 func Test_Transformer(t *testing.T) {
