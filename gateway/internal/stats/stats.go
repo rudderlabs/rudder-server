@@ -18,6 +18,7 @@ type SourceStat struct {
 
 	requests struct {
 		total int
+		bot   int
 
 		succeeded  int
 		failed     int
@@ -74,6 +75,10 @@ func (ss *SourceStat) RequestEventsFailed(num int, reason string) {
 	ss.reason = reason
 }
 
+func (ss *SourceStat) RequestEventsBot(num int) {
+	ss.requests.bot += num
+}
+
 // Report captured stats
 func (ss *SourceStat) Report(s stats.Stats) {
 	tags := map[string]string{
@@ -100,6 +105,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 	}
 
 	s.NewTaggedStat("gateway.write_key_requests", stats.CountType, tags).Count(ss.requests.total)
+	s.NewTaggedStat("gateway.write_key_bot_requests", stats.CountType, tags).Count(ss.requests.bot)
 	s.NewTaggedStat("gateway.write_key_successful_requests", stats.CountType, tags).Count(ss.requests.succeeded)
 	s.NewTaggedStat("gateway.write_key_failed_requests", stats.CountType, failedTags).Count(ss.requests.failed)
 	s.NewTaggedStat("gateway.write_key_dropped_requests", stats.CountType, tags).Count(ss.requests.dropped)

@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -436,6 +438,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
 			sourceStats[sourceTag].Version = jobData.version
+			sourceStats[sourceTag].RequestEventsBot(jobData.botEvents)
 			if err != nil {
 				switch {
 				case err == errRequestDropped:
@@ -511,6 +514,7 @@ var (
 type jobFromReq struct {
 	jobs      []*jobsdb.JobT
 	numEvents int
+	botEvents int
 	version   string
 }
 
@@ -636,6 +640,15 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			if firstSDKName != "" || firstSDKVersion != "" {
 				jobData.version = firstSDKName + "/" + firstSDKVersion
 			}
+		}
+
+		userAgent, _ := misc.MapLookup(
+			toSet,
+			"context",
+			"userAgent",
+		).(string)
+		if bot.IsBotUserAgent(userAgent) {
+			jobData.botEvents++
 		}
 
 		if isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
