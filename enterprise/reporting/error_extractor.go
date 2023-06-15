@@ -83,7 +83,7 @@ func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
 				return strings.Split(erResStr, "\n")[0]
 			}
 			return ""
-		case responseKey:
+		case responseKey, "error":
 			if IsJSON(erResStr) {
 				var unmarshalledJson interface{}
 				unmarshalledErr := json.Unmarshal([]byte(erResStr), &unmarshalledJson)

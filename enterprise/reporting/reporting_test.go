@@ -405,6 +405,14 @@ var tcs = []getValTc{
 		inputStr: `{"response":"{\n\t\t\t\tError: invalid character 'P' looking for beginning of value,\n\t\t\t\t(trRespStCd, trRespBody): (504, Post \"http://transformer.rudder-us-east-1b-blue/v0/destinations/google_adwords_enhanced_conversions/proxy\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)),\n\t\t\t}","firstAttemptedAt":"2023-03-30T17:24:58.068Z","content-type":"text/plain; charset=utf-8"}`,
 		expected: "{\n\t\t\t\tError: invalid character 'P' looking for beginning of value,\n\t\t\t\t(trRespStCd, trRespBody): (504, Post \"http://transformer.rudder-us-east-1b-blue/v0/destinations/google_adwords_enhanced_conversions/proxy\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)),\n\t\t\t}",
 	},
+	{
+		inputStr: `{"error":"{\"message\":\"some random message\",\"destinationResponse\":{\"error\":{\"message\":\"Unhandled random error\",\"type\":\"RandomException\",\"code\":5,\"error_subcode\":12,\"fbtrace_id\":\"facebook_px_trace_id_10\"},\"status\":412}}","firstAttemptedAt":"2023-04-20T17:24:58.068Z","content-type":"text/plain; charset=utf-8"}`,
+		expected: "Unhandled random error",
+	},
+	{
+		inputStr: `{"error":"unknown error occurred","firstAttemptedAt":"2023-04-21T17:24:58.068Z","content-type":"text/plain; charset=utf-8"}`,
+		expected: "unknown error occurred",
+	},
 }
 
 func TestGetErrorMessageFromResponse(t *testing.T) {
