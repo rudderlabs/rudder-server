@@ -786,28 +786,20 @@ func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[s
 
 func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err error) {
 	idr := identity.New(
-		job.ctx,
 		job.warehouse,
-		job.dbHandle,
+		sqlmiddleware.New(
+			job.dbHandle,
+			sqlmiddleware.WithTimeout(dbHanndleTimeout),
+		),
 		job,
 		job.upload.ID,
 		job.whManager,
 		downloader.NewDownloader(&job.warehouse, job, 8),
 	)
-	return warehouseutils.WithTimeout(
-		job.ctx,
-		config.GetDuration(
-			"Warehouse.resolveIdentitiesTimeout",
-			60,
-			time.Minute,
-		),
-		func(ctx context.Context) error {
-			if populateHistoricIdentities {
-				return idr.ResolveHistoricIdentities(ctx)
-			}
-			return idr.Resolve(ctx)
-		},
-	)
+	if populateHistoricIdentities {
+		return idr.ResolveHistoricIdentities(job.ctx)
+	}
+	return idr.Resolve(job.ctx)
 }
 
 func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiff) (err error) {

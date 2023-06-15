@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -36,18 +37,16 @@ type WarehouseManager interface {
 }
 
 type Identity struct {
-	ctx              context.Context
 	warehouse        model.Warehouse
-	db               *sql.DB
+	db               *sqlmiddleware.DB
 	uploader         warehouseutils.Uploader
 	uploadID         int64
 	warehouseManager WarehouseManager
 	downloader       downloader.Downloader
 }
 
-func New(ctx context.Context, warehouse model.Warehouse, db *sql.DB, uploader warehouseutils.Uploader, uploadID int64, warehouseManager WarehouseManager, loadFileDownloader downloader.Downloader) *Identity {
+func New(warehouse model.Warehouse, db *sqlmiddleware.DB, uploader warehouseutils.Uploader, uploadID int64, warehouseManager WarehouseManager, loadFileDownloader downloader.Downloader) *Identity {
 	return &Identity{
-		ctx:              ctx,
 		warehouse:        warehouse,
 		db:               db,
 		uploader:         uploader,
@@ -73,7 +72,7 @@ func (idr *Identity) whMappingsTable() string {
 	return warehouseutils.ToProviderCase(idr.warehouse.Destination.DestinationDefinition.Name, warehouseutils.IdentityMappingsTable)
 }
 
-func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWriter) (totalRowsModified int, err error) {
+func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *misc.GZipWriter) (totalRowsModified int, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM %s WHERE id=%v`, idr.mergeRulesTable(), ruleID)
 
 	var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
@@ -192,7 +191,7 @@ func (idr *Identity) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWri
 	return len(rows), err
 }
 
-func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc.GZipWriter) (ids []int64, err error) {
+func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzWriter *misc.GZipWriter) (ids []int64, err error) {
 	// add rules from load files into temp table
 	// use original table to delete redundant ones from temp table
 	// insert from temp table into original table
@@ -329,7 +328,7 @@ func (idr *Identity) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *mis
 	return ids, nil
 }
 
-func (idr *Identity) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *misc.GZipWriter) (err error) {
+func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, gzWriter *misc.GZipWriter) (err error) {
 	batchSize := int64(500)
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)
 	var totalRows int64
@@ -381,7 +380,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *m
 	return
 }
 
-func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sql.Tx, tableName string, totalRecords int) (err error) {
+func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmiddleware.Tx, tableName string, totalRecords int) (err error) {
 	outputFile, err := os.Open(filePath)
 	if err != nil {
 		panic(err)
@@ -432,7 +431,7 @@ func (idr *Identity) createTempGzFile(dirName string) (gzWriter misc.GZipWriter,
 }
 
 func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) (err error) {
-	txn, err := idr.db.BeginTx(ctx, &sql.TxOptions{})
+	txn, err := idr.db.BeginTx(ctx, nil)
 	if err != nil {
 		panic(err)
 	}
