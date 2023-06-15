@@ -3,6 +3,8 @@ package bingads
 import (
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	time "time"
@@ -141,8 +143,8 @@ var destination = backendconfig.DestinationT{
 func TestBingAdsPollSuccessCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-
-	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second.Abs())
+	clientI := Client{}
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second.Abs(), &clientI)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 		PercentComplete: int64(100),
@@ -170,8 +172,8 @@ func TestBingAdsPollSuccessCase(t *testing.T) {
 func TestBingAdsPollFailureCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-
-	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
+	clientI := Client{}
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, &clientI)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
 	pollInput := common.AsyncPoll{
@@ -196,20 +198,35 @@ func TestBingAdsPollFailureCase(t *testing.T) {
 func TestBingAdsPollPartialFailureCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-	bingAdsUtilsImpl := mock_bulkservice.NewMockBingAdsUtils(ctrl)
+	//bingAdsUtilsImpl := mock_bulkservice.NewMockBingAdsUtils(ctrl)
 
-	bingAdsUtilsImpl.EXPECT().Unzip(gomock.Any(), gomock.Any()).Return([]string{"/path/to/file1.csv"}, nil)
+	// Create a test server with a custom handler function
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Open the zip file
+		zipFilePath := "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/statuscheck.zip"
+		// Set the appropriate headers for a zip file response
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
+		http.ServeFile(w, r, zipFilePath)
+	}))
+	defer ts.Close()
+	client := ts.Client()
+	modifiedURL := ts.URL // Use the test server URL
+	clientI := Client{client: client, URL: modifiedURL}
 
-	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
+	// bingAdsUtilsImpl.EXPECT().Unzip(gomock.Any(), gomock.Any()).Return([]string{"/path/to/file1.csv"}, nil)
+
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, &clientI)
 
 	bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 		PercentComplete: int64(100),
 		RequestStatus:   "CompletedWithErrors",
-		ResultFileUrl:   "http://dummyurl.com",
+		ResultFileUrl:   ts.URL,
 	}, nil)
 	pollInput := common.AsyncPoll{
 		ImportId: "dummyRequestId123",
 	}
+
 	expectedResp := common.PollStatusResponse{
 		Success:        true,
 		StatusCode:     200,
@@ -217,10 +234,12 @@ func TestBingAdsPollPartialFailureCase(t *testing.T) {
 		HasWarning:     false,
 		FailedJobsURL:  "",
 		WarningJobsURL: "",
-		OutputFilePath: "/path/to/file1.csv",
+		OutputFilePath: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv",
 	}
 	expectedStatus := 200
 	recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
+
+	os.Remove(expectedResp.OutputFilePath)
 
 	assert.Equal(t, recievedResponse, expectedResp)
 	assert.Equal(t, RecievedStatus, expectedStatus)
@@ -263,8 +282,8 @@ func TestBingAdsGetUploadStats(t *testing.T) {
 		return
 	}
 	fmt.Printf("File %s duplicated to %s\n", templateFilePath, testFilePath)
-
-	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second)
+	clientI := Client{}
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, &clientI)
 
 	UploadStatsInput := common.FetchUploadJobStatus{
 		OutputFilePath: testFilePath,

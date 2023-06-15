@@ -28,22 +28,27 @@ import (
 	"golang.org/x/oauth2"
 )
 
+type Client struct {
+	URL    string
+	client *http.Client
+}
 type BingAdsBulkUploader struct {
 	destName             string
 	service              bingads.BulkServiceI
 	destinationIDFileMap map[string]string
 	timeout              time.Duration
 	logger               logger.Logger
-	//utils                BingAdsUtils
+	client               Client
 }
 
-func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration) *BingAdsBulkUploader {
+func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration, client *Client) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
 		destName: "BING_ADS",
 		service:  service,
 		timeout:  timeout,
 		logger:   logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
 		//utils:    utils,
+		client: *client,
 	}
 }
 
@@ -55,6 +60,13 @@ func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration)
 // }
 
 // type BingAdsUtilsImpl struct{}
+
+func NewClient(baseURL string, client *http.Client) *Client {
+	return &Client{
+		URL:    baseURL,
+		client: client,
+	}
+}
 
 func CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error) {
 	failedJobIds := []int64{}
@@ -440,7 +452,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		}
 
 		// Download the zip file
-		fileLoadResp, err := http.Get(modifiedUrl)
+		fileLoadResp, err := b.client.client.Get(modifiedUrl)
 		if err != nil {
 			fmt.Println("Error downloading zip file:", err)
 			panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
@@ -448,7 +460,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		defer fileLoadResp.Body.Close()
 
 		// Create a temporary file to save the downloaded zip file
-		tempFile, err := os.CreateTemp("", "downloaded_zip_*.zip")
+		tempFile, err := os.CreateTemp("", fmt.Sprintf("bingads_%s_*.zip", pollInput.ImportId))
 		if err != nil {
 			panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
 		}
@@ -459,7 +471,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		if err != nil {
 			panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
 		}
-		//utilImpl := BingAdsUtilsImpl{}
+		//client := BingAdsUtilsImpl{}
 		// Extract the contents of the zip file to the output directory
 		filePaths, err := Unzip(tempFile.Name(), outputDir)
 		if err != nil {
@@ -611,8 +623,9 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	session := bingads.NewSession(sessionConfig)
 
 	// bingAdsUtilsImpl := BingAdsUtilsImpl{}
+	clientNew := Client{}
 	//bingads := &BingAdsBulkUploader{destName: "BingAdsAudience", service: bingads.NewBulkService(session), timeout: HTTPTimeout}
-	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), HTTPTimeout)
+	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), HTTPTimeout, &clientNew)
 	return bingads, nil
 }
 
