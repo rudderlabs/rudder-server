@@ -429,6 +429,9 @@ func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse mod
 			}
 		}
 
+		whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+			wh.destType, warehouse.Destination.ID,
+		))
 		err = whManager.Setup(ctx, job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)

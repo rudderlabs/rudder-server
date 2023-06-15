@@ -402,6 +402,9 @@ func (job *UploadJob) run() (err error) {
 	}
 
 	whManager := job.whManager
+	whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+		job.warehouse.Type, job.warehouse.Destination.ID,
+	))
 	err = whManager.Setup(job.ctx, job.warehouse, job)
 	if err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)

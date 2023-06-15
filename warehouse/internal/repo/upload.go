@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"

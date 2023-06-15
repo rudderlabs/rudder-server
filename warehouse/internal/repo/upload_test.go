@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestUploads_Count(t *testing.T) {

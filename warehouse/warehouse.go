@@ -209,7 +209,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
-	config.RegisterDurationConfigVariable(5, &dbHanndleTimeout, true, time.Minute, []string{"Warehouse.dbHanndleTimeout", "Warehouse.dbHanndleTimeoutInS"}...)
+	config.RegisterDurationConfigVariable(5, &dbHanndleTimeout, true, time.Minute, []string{"Warehouse.dbHanndleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 }
