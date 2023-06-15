@@ -172,6 +172,10 @@ func (db *DB) Begin() (*Tx, error) {
 	}
 }
 
+func (tx *Tx) GetTx() *sql.Tx {
+	return tx.Tx
+}
+
 func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
 	defer cancel()

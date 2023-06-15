@@ -19,7 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
@@ -184,7 +184,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		destinationValidator: f.destinationValidator,
 		stats:                f.stats,
 		tableUploadsRepo:     repo.NewTableUploads(f.dbHandle),
-		schemaHandle:         NewSchema(sqlquerywrapper.New(f.dbHandle), dto.Warehouse, config.Default),
+		schemaHandle:         NewSchema(sqlmiddleware.New(f.dbHandle), dto.Warehouse, config.Default),
 
 		upload:         dto.Upload,
 		warehouse:      dto.Warehouse,
@@ -352,7 +352,7 @@ func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
 		misc.IntArrayToString(job.stagingFileIDs, ","),
 		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
 	)
-	if err := dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
+	if err := wrappedDBHandle.QueryRowContext(ctx, sqlStatement).Scan(&total); err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
 	}
 	return total.Int64
@@ -1508,17 +1508,20 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 				time.Minute,
 			),
 			func(ctx context.Context) error {
-				txn, err := dbHandle.BeginTx(ctx, &sql.TxOptions{})
+				txn, err := wrappedDBHandle.BeginTx(ctx, &sql.TxOptions{})
 				if err != nil {
 					return err
 				}
-				uploadColumnOpts.Txn = txn
+				uploadColumnOpts.Txn = txn.GetTx()
 				err = job.setUploadColumns(uploadColumnOpts)
 				if err != nil {
 					return err
 				}
 				if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
-					application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
+					application.Features().Reporting.GetReportingInstance().Report(
+						[]*types.PUReportedMetric{&statusOpts.ReportingMetric},
+						txn.GetTx(),
+					)
 				}
 				return txn.Commit()
 			},
@@ -2020,7 +2023,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options warehous
 	)
 
 	pkgLogger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
-	rows, err := dbHandle.QueryContext(ctx, sqlStatement)
+	rows, err := wrappedDBHandle.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -2225,31 +2228,27 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 
 	// Refresh partitions if exists
 	for tableName := range job.upload.UploadSchema {
-		if err = warehouseutils.WithTimeout(
-			job.ctx,
-			config.GetDuration(
-				"Warehouse.refreshPartitionsTimeout",
-				5,
-				time.Minute,
-			),
-			func(ctx context.Context) error {
-				loadFiles := job.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{
-					Table:   tableName,
-					StartID: loadFileStartID,
-					EndID:   loadFileEndID,
-				})
-				batches := lo.Chunk(loadFiles, job.refreshPartitionBatchSize)
-				for _, batch := range batches {
-					if err = repository.RefreshPartitions(ctx, tableName, batch); err != nil {
-						return fmt.Errorf("refresh partitions: %w", err)
-					}
-				}
-				return nil
-			},
-		); err != nil {
-			return err
+		loadFiles := job.GetLoadFilesMetadata(job.ctx, warehouseutils.GetLoadFilesOptions{
+			Table:   tableName,
+			StartID: loadFileStartID,
+			EndID:   loadFileEndID,
+		})
+		batches := lo.Chunk(loadFiles, job.refreshPartitionBatchSize)
+		for _, batch := range batches {
+			if err = warehouseutils.WithTimeout(
+				job.ctx,
+				config.GetDuration(
+					"Warehouse.refreshPartitionsTimeout",
+					5,
+					time.Minute,
+				),
+				func(ctx context.Context) error {
+					return repository.RefreshPartitions(ctx, tableName, batch)
+				},
+			); err != nil {
+				return err
+			}
 		}
 	}
-
 	return nil
 }
