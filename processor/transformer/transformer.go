@@ -353,23 +353,6 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 	}
 
 	var transformerResponses []TransformerResponseT
-	if statusCode == http.StatusOK {
-		integrations.CollectIntgTransformErrorStats(respData)
-
-		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
-		trace.WithRegion(ctx, "Unmarshal", func() {
-			err = jsonfast.Unmarshal(respData, &transformerResponses)
-		})
-		// This is returned by our JS engine so should  be parsable
-		// but still handling it
-		if err != nil {
-			trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
-			trans.logger.Errorf("Transformer returned : %v", string(respData))
-			respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
-			transformerResponses = nil
-			statusCode = 400
-		}
-	}
 
 	if statusCode != http.StatusOK {
 		for i := range data {
@@ -377,7 +360,25 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 			resp := TransformerResponseT{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
+		return transformerResponses
 	}
+
+	integrations.CollectIntgTransformErrorStats(respData)
+
+	trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
+	trace.WithRegion(ctx, "Unmarshal", func() {
+		err = jsonfast.Unmarshal(respData, &transformerResponses)
+	})
+	// This is returned by our JS engine so should  be parsable
+	// but still handling it
+	if err != nil {
+		trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
+		trans.logger.Errorf("Transformer returned : %v", string(respData))
+		respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
+		transformerResponses = nil
+		statusCode = 400
+	}
+
 	return transformerResponses
 }
 
