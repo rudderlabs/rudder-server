@@ -10,6 +10,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -39,7 +40,7 @@ func TestStagingFileRepo(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second).UTC()
 
-	r := repo.NewStagingFiles(setupDB(t),
+	r := repo.NewStagingFiles(sqlquerywrapper.New(setupDB(t)),
 		repo.WithNow(func() time.Time {
 			return now
 		}),
@@ -165,7 +166,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db,
+	r := repo.NewStagingFiles(sqlquerywrapper.New(db),
 		repo.WithNow(func() time.Time {
 			return now
 		}),
@@ -282,7 +283,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			`)
 			require.NoError(t, err)
 
-			r := repo.NewStagingFiles(db)
+			r := repo.NewStagingFiles(sqlquerywrapper.New(db))
 
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
 			require.EqualError(t, err, "cannot get schemas by ids: unmarshal staging schema: ReadMapCB: expect { or n, but found 1, error found in #1 byte of ...|1|..., bigger context ...|1|...")
@@ -297,7 +298,7 @@ func TestStagingFileRepo_Pending(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db,
+	r := repo.NewStagingFiles(sqlquerywrapper.New(db),
 		repo.WithNow(func() time.Time {
 			return now
 		}),
@@ -395,7 +396,7 @@ func TestStagingFileRepo_Status(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	r := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -503,7 +504,7 @@ func TestStagingFileIDs(t *testing.T) {
 func BenchmarkFiles(b *testing.B) {
 	ctx := context.Background()
 	db := setupDB(b)
-	stagingRepo := repo.NewStagingFiles(db)
+	stagingRepo := repo.NewStagingFiles(sqlquerywrapper.New(db))
 	uploadRepo := repo.NewUploads(db)
 
 	size := 100000

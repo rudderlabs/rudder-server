@@ -139,7 +139,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	UploadAPI = UploadAPIT{
 		enabled:           true,
 		dbHandle:          dbHandle,
-		warehouseDBHandle: NewWarehouseDB(dbHandle),
+		warehouseDBHandle: NewWarehouseDB(wrappedDBHandle),
 		log:               log,
 		isMultiWorkspace:  isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
@@ -245,7 +245,7 @@ func (uploadsReq *UploadsReq) TriggerWhUploads(ctx context.Context) (response *p
 		return
 	}
 	if pendingUploadCount == int64(0) {
-		pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForDestination(ctx, uploadsReq.DestinationID)
+		pendingStagingFileCount, err = repo.NewStagingFiles(wrappedDBHandle).CountPendingForDestination(ctx, uploadsReq.DestinationID)
 		if err != nil {
 			return
 		}

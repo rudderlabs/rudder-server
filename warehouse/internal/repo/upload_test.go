@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -22,7 +23,7 @@ func TestUploads_Count(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -134,7 +135,7 @@ func TestUploads_Get(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -271,7 +272,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -620,7 +621,7 @@ func TestUploads_Processing(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -804,7 +805,7 @@ func TestUploads_Delete(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -888,7 +889,7 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		db              = setupDB(t)
 		repoUpload      = repo.NewUploads(db)
 		repoTableUpload = repo.NewTableUploads(db)
-		repoStaging     = repo.NewStagingFiles(db)
+		repoStaging     = repo.NewStagingFiles(sqlquerywrapper.New(db))
 	)
 
 	for _, status := range []string{"exporting_data", "aborted"} {

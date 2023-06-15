@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/services/alerta"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
@@ -260,7 +261,7 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Total rows in staging files", func() {
-		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.Background(), job.upload)
+		count, err := repo.NewStagingFiles(sqlquerywrapper.New(pgResource.DB)).TotalEventsForUpload(context.Background(), job.upload)
 		Expect(err).To(BeNil())
 		Expect(count).To(BeEquivalentTo(5))
 	})

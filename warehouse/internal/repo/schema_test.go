@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/exp/slices"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -20,7 +21,7 @@ func TestWHSchemasRepo(t *testing.T) {
 		ctx = context.Background()
 		now = time.Now().Truncate(time.Second).UTC()
 		db  = setupDB(t)
-		r   = repo.NewWHSchemas(db, repo.WithNow(func() time.Time {
+		r   = repo.NewWHSchemas(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
 			return now
 		}))
 	)

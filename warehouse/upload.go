@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
@@ -183,7 +184,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		destinationValidator: f.destinationValidator,
 		stats:                f.stats,
 		tableUploadsRepo:     repo.NewTableUploads(f.dbHandle),
-		schemaHandle:         NewSchema(f.dbHandle, dto.Warehouse, config.Default),
+		schemaHandle:         NewSchema(sqlquerywrapper.New(f.dbHandle), dto.Warehouse, config.Default),
 
 		upload:         dto.Upload,
 		warehouse:      dto.Warehouse,
@@ -367,7 +368,7 @@ func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error 
 		),
 	)
 	defer cancel()
-	rowsInStagingFiles, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(ctx, job.upload)
+	rowsInStagingFiles, err := repo.NewStagingFiles(wrappedDBHandle).TotalEventsForUpload(ctx, job.upload)
 	if err != nil {
 		return fmt.Errorf("total rows: %w", err)
 	}
@@ -651,7 +652,7 @@ func (job *UploadJob) run() (err error) {
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == model.ExportedData {
 
-			rowCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(job.ctx, job.upload)
+			rowCount, _ := repo.NewStagingFiles(wrappedDBHandle).TotalEventsForUpload(job.ctx, job.upload)
 
 			reportingMetric := types.PUReportedMetric{
 				ConnectionDetails: types.ConnectionDetails{
@@ -1779,7 +1780,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			if err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn}); err != nil {
 				return fmt.Errorf("unable to change upload columns: %w", err)
 			}
-			inputCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(ctx, upload)
+			inputCount, _ := repo.NewStagingFiles(wrappedDBHandle).TotalEventsForUpload(ctx, upload)
 			outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(ctx, job.upload.ID, []string{
 				warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
 			})

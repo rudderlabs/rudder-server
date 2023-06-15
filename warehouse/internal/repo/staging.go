@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/samber/lo"
 )
 
 const stagingTableName = warehouseutils.WarehouseStagingFilesTable
@@ -51,10 +50,11 @@ type metadataSchema struct {
 }
 
 func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
-	return lo.Map(
-		stagingFiles,
-		func(stagingFile *model.StagingFile, _ int) int64 { return stagingFile.ID },
-	)
+	stagingFileIDs := make([]int64, len(stagingFiles))
+	for i, stagingFile := range stagingFiles {
+		stagingFileIDs[i] = stagingFile.ID
+	}
+	return stagingFileIDs
 }
 
 func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
@@ -71,9 +71,9 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	}
 }
 
-func NewStagingFiles(db *sql.DB, opts ...Opt) *StagingFiles {
+func NewStagingFiles(db *sqlquerywrapper.DB, opts ...Opt) *StagingFiles {
 	r := &StagingFiles{
-		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
+		db:  db,
 		now: timeutil.Now,
 	}
 	for _, opt := range opts {

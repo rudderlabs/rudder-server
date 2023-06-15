@@ -8,6 +8,7 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -149,7 +150,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 				destType:     tc.destType,
 				stats:        store,
 				dbHandle:     pgResource.DB,
-				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
+				whSchemaRepo: repo.NewWHSchemas(sqlquerywrapper.New(pgResource.DB)),
 			}
 			tenantManager = &multitenant.Manager{}
 
@@ -342,7 +343,7 @@ func Test_GetNamespace(t *testing.T) {
 				destType:     tc.destType,
 				stats:        store,
 				dbHandle:     pgResource.DB,
-				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
+				whSchemaRepo: repo.NewWHSchemas(sqlquerywrapper.New(pgResource.DB)),
 				conf:         conf,
 			}
 			if tc.setConfig {

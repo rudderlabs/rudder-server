@@ -28,9 +28,9 @@ const whSchemaTableColumns = `
 
 type WHSchema repo
 
-func NewWHSchemas(db *sql.DB, opts ...Opt) *WHSchema {
+func NewWHSchemas(db *sqlquerywrapper.DB, opts ...Opt) *WHSchema {
 	r := &WHSchema{
-		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
+		db:  db,
 		now: timeutil.Now,
 	}
 	for _, opt := range opts {
