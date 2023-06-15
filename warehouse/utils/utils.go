@@ -1007,3 +1007,16 @@ func WithTimeout(ctx context.Context, timeout time.Duration, function func(conte
 	defer cancel()
 	return function(ctxWithTimeout)
 }
+
+func GetConnectionTimeout(destType, destID string) time.Duration {
+	destIDLevelConfig := fmt.Sprintf("warehouse.%s.%s.connectionTimeout", destType, destID)
+	destTypeLevelConfig := fmt.Sprintf("warehouse.%s.connectionTimeout", destType)
+	warehouseLevelConfig := "warehouse.connectionTimeout"
+	if config.IsSet(destIDLevelConfig) {
+		return config.GetDuration(destIDLevelConfig, 1, time.Hour)
+	}
+	if config.IsSet(destTypeLevelConfig) {
+		return config.GetDuration(destTypeLevelConfig, 1, time.Hour)
+	}
+	return config.GetDuration(warehouseLevelConfig, 1, time.Hour)
+}

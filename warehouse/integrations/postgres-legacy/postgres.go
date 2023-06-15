@@ -161,6 +161,7 @@ func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
 			logfield.Schema, pg.Namespace,
 		),
 		sqlmiddleware.WithSlowQueryThreshold(pg.SlowQueryThreshold),
+		sqlmiddleware.WithTimeout(pg.ConnectTimeout),
 	)
 	return middleware
 }

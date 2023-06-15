@@ -527,7 +527,10 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 		return nil, fmt.Errorf("getting manager: %w", err)
 	}
 
-	operations.SetConnectionTimeout(warehouseutils.TestConnectionTimeout)
+	operations.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+		destType,
+		dest.ID,
+	))
 
 	if err = operations.Setup(ctx, warehouse, &dummyUploader{
 		dest: dest,
