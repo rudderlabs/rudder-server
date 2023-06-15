@@ -3105,6 +3105,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	}
 	defer jd.dsListLock.RUnlock()
 
+	dsRangeList := jd.getDSRangeList()
 	dsList := jd.getDSList()
 
 	limitByEventCount := false
@@ -3124,7 +3125,15 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	if jd.dsLimit != nil {
 		dsLimit = *jd.dsLimit
 	}
-	for _, ds := range dsList {
+	for idx, ds := range dsList {
+		if params.AfterJobID != nil {
+			if idx < len(dsRangeList) { // ranges are not stored for the last ds
+				// so the following condition cannot be applied the last ds
+				if *params.AfterJobID > dsRangeList[idx].maxJobID {
+					continue
+				}
+			}
+		}
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
 			break
 		}
@@ -3224,6 +3233,7 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 	}
 	defer jd.dsListLock.RUnlock()
 
+	dsRangeList := jd.getDSRangeList()
 	dsList := jd.getDSList()
 
 	limitByEventCount := false
@@ -3245,7 +3255,15 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 	if jd.dsLimit != nil {
 		dsLimit = *jd.dsLimit
 	}
-	for _, ds := range dsList {
+	for idx, ds := range dsList {
+		if params.AfterJobID != nil {
+			if idx < len(dsRangeList) { // ranges are not stored for the last ds
+				// so the following condition cannot be applied the last ds
+				if *params.AfterJobID > dsRangeList[idx].maxJobID {
+					continue
+				}
+			}
+		}
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
 			break
 		}
