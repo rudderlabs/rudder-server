@@ -70,12 +70,11 @@ func WithTimeout(timeout time.Duration) Opt {
 
 func New(db *sql.DB, opts ...Opt) *DB {
 	s := &DB{
-		DB:                 db,
-		since:              time.Since,
-		slowQueryThreshold: 300 * time.Second,
-		rollbackThreshold:  30 * time.Second,
-		commitThreshold:    30 * time.Second,
-		logger:             rslogger.NOP,
+		DB:                db,
+		since:             time.Since,
+		rollbackThreshold: 30 * time.Second,
+		commitThreshold:   30 * time.Second,
+		logger:            rslogger.NOP,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -144,6 +143,9 @@ func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
 }
 
 func (db *DB) logQuery(query string, elapsed time.Duration) {
+	if db.slowQueryThreshold <= 0 {
+		return
+	}
 	if elapsed < db.slowQueryThreshold {
 		return
 	}
@@ -159,31 +161,25 @@ func (db *DB) logQuery(query string, elapsed time.Duration) {
 	db.logger.Infow("executing query", keysAndValues...)
 }
 
+func (tx *Tx) GetTx() *sql.Tx {
+	return tx.Tx
+}
+
 // Begin starts a transaction.
 //
 // Use BeginTx to pass context and options to the underlying driver.
 func (db *DB) Begin() (*Tx, error) {
-	ctx, cancel := queryContextWithTimeout(context.Background(), db.queryTimeout)
-	defer cancel()
-	if tx, err := db.DB.BeginTx(ctx, nil); err != nil {
-		return nil, err
-	} else {
-		return &Tx{tx, db}, nil
-	}
-}
-
-func (tx *Tx) GetTx() *sql.Tx {
-	return tx.Tx
+	return db.BeginTx(context.Background(), nil)
 }
 
 func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
 	defer cancel()
-	if tx, err := db.DB.BeginTx(ctx, opts); err != nil {
+	tx, err := db.DB.BeginTx(ctx, opts)
+	if err != nil {
 		return nil, err
-	} else {
-		return &Tx{tx, db}, nil
 	}
+	return &Tx{tx, db}, nil
 }
 
 func (tx *Tx) Exec(query string, args ...interface{}) (sql.Result, error) {
