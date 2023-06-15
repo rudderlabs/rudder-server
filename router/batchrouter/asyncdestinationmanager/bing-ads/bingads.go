@@ -34,29 +34,29 @@ type BingAdsBulkUploader struct {
 	destinationIDFileMap map[string]string
 	timeout              time.Duration
 	logger               logger.Logger
-	utils                BingAdsUtils
+	//utils                BingAdsUtils
 }
 
-func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration, utils BingAdsUtils) *BingAdsBulkUploader {
+func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
 		destName: "BING_ADS",
 		service:  service,
 		timeout:  timeout,
 		logger:   logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
-		utils:    utils,
+		//utils:    utils,
 	}
 }
 
-type BingAdsUtils interface {
-	CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error)
-	Unzip(zipFile, targetDir string) ([]string, error)
-	ReadPollResults(filePath string) [][]string
-	ProcessPollStatusData(records [][]string) map[string]map[string]struct{}
-}
+// type BingAdsUtils interface {
+// 	CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error)
+// 	Unzip(zipFile, targetDir string) ([]string, error)
+// 	ReadPollResults(filePath string) [][]string
+// 	ProcessPollStatusData(records [][]string) map[string]map[string]struct{}
+// }
 
-type BingAdsUtilsImpl struct{}
+// type BingAdsUtilsImpl struct{}
 
-func (b *BingAdsUtilsImpl) CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error) {
+func CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error) {
 	failedJobIds := []int64{}
 	successJobIds := []int64{}
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
@@ -138,7 +138,7 @@ func (b *BingAdsUtilsImpl) CreateZipFile(filePath string, audienceId string) (st
 	return zipFilePath, successJobIds, failedJobIds, nil
 }
 
-func (b *BingAdsUtilsImpl) Unzip(zipFile, targetDir string) ([]string, error) {
+func Unzip(zipFile, targetDir string) ([]string, error) {
 
 	var filePaths []string
 
@@ -182,7 +182,16 @@ func (b *BingAdsUtilsImpl) Unzip(zipFile, targetDir string) ([]string, error) {
 	return filePaths, nil
 }
 
-func (b *BingAdsUtilsImpl) ReadPollResults(filePath string) [][]string {
+// ReadPollResults reads the CSV file and returns the records
+// In the below format (only adding relevant keys)
+//
+//	[][]string{
+//		{"Client Id", "Error", "Type"},
+//		{"1<<>>client1", "error1", "Customer List Error"},
+//		{"1<<>>client2", "error1", "Customer List Item Error"},
+//		{"1<<>>client2", "error2", "Customer List Item Error"},
+//	}
+func ReadPollResults(filePath string) [][]string {
 	// Open the CSV file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -212,7 +221,19 @@ func (b *BingAdsUtilsImpl) ReadPollResults(filePath string) [][]string {
 	return records
 }
 
-func (b *BingAdsUtilsImpl) ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
+// This function processes the CSV records and returns the JobIDs and the corresponding error messages
+// In the below format:
+//
+//	map[string]map[string]struct{}{
+//		"1": {
+//			"error1": {},
+//		},
+//		"2": {
+//			"error1": {},
+//			"error2": {},
+//		},
+//	}
+func ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := -1
@@ -319,7 +340,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			DestinationID: destination.ID,
 		}
 	}
-	filePath, successJobIDs, failedJobIds, err := b.utils.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
+	filePath, successJobIDs, failedJobIds, err := CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -440,7 +461,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		}
 		//utilImpl := BingAdsUtilsImpl{}
 		// Extract the contents of the zip file to the output directory
-		filePaths, err := b.utils.Unzip(tempFile.Name(), outputDir)
+		filePaths, err := Unzip(tempFile.Name(), outputDir)
 		if err != nil {
 			panic(fmt.Errorf("BRT: Failed saving zip file extracting zip file Err: %w", err))
 		}
@@ -589,9 +610,9 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	}
 	session := bingads.NewSession(sessionConfig)
 
-	bingAdsUtilsImpl := BingAdsUtilsImpl{}
+	// bingAdsUtilsImpl := BingAdsUtilsImpl{}
 	//bingads := &BingAdsBulkUploader{destName: "BingAdsAudience", service: bingads.NewBulkService(session), timeout: HTTPTimeout}
-	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), HTTPTimeout, &bingAdsUtilsImpl)
+	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), HTTPTimeout)
 	return bingads, nil
 }
 
@@ -599,9 +620,9 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	// Function implementation
 	filePath := UploadStatsInput.OutputFilePath
 	// utilImpl := BingAdsUtilsImpl{}
-	records := b.utils.ReadPollResults(filePath)
+	records := ReadPollResults(filePath)
 	status := "200"
-	clientIDErrors := b.utils.ProcessPollStatusData(records)
+	clientIDErrors := ProcessPollStatusData(records)
 
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
