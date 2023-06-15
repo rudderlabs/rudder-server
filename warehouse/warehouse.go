@@ -1132,23 +1132,6 @@ func setupTables(dbHandle *sql.DB) error {
 	return nil
 }
 
-func CheckPGHealth(dbHandle *sql.DB) bool {
-	if dbHandle == nil {
-		return false
-	}
-	rows, err := dbHandle.Query(`SELECT 'Rudder Warehouse DB Health Check'::text as message`)
-	defer func() { _ = rows.Close() }()
-	if err != nil {
-		pkgLogger.Error(err)
-		return false
-	}
-	if rows.Err() != nil {
-		pkgLogger.Error(rows.Err())
-		return false
-	}
-	return true
-}
-
 func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO : respond with errors in a common way
 	pkgLogger.LogRequest(r)
@@ -1492,10 +1475,13 @@ func clearTriggeredUpload(wh model.Warehouse) {
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	dbService := ""
-	pgNotifierService := ""
+	var dbService, pgNotifierService string
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	if runningMode != DegradedMode {
-		if !CheckPGHealth(notifier.GetDBHandle()) {
+		if !CheckPGHealth(ctx, notifier.GetDBHandle()) {
 			http.Error(w, "Cannot connect to pgNotifierService", http.StatusInternalServerError)
 			return
 		}
@@ -1503,18 +1489,46 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	if isMaster() {
-		if !CheckPGHealth(dbHandle) {
+		if !CheckPGHealth(ctx, dbHandle) {
 			http.Error(w, "Cannot connect to dbService", http.StatusInternalServerError)
 			return
 		}
 		dbService = "UP"
 	}
 
-	healthVal := fmt.Sprintf(
-		`{"server":"UP","db":%q,"pgNotifier":%q,"acceptingEvents":"TRUE","warehouseMode":%q,"goroutines":"%d"}`,
-		dbService, pgNotifierService, strings.ToUpper(warehouseMode), runtime.NumGoroutine(),
+	healthVal := fmt.Sprintf(`
+		{
+			"server": "UP",
+			"db": %q,
+			"pgNotifier": %q,
+			"acceptingEvents": "TRUE",
+			"warehouseMode": %q,
+			"goroutines": "%d"
+		}
+	`,
+		dbService,
+		pgNotifierService,
+		strings.ToUpper(warehouseMode),
+		runtime.NumGoroutine(),
 	)
+
 	_, _ = w.Write([]byte(healthVal))
+}
+
+func CheckPGHealth(ctx context.Context, db *sql.DB) bool {
+	if db == nil {
+		return false
+	}
+
+	healthCheckMsg := "Rudder Warehouse DB Health Check"
+	msg := ""
+
+	err := db.QueryRowContext(ctx, `SELECT '`+healthCheckMsg+`'::text as message;`).Scan(&msg)
+	if err != nil {
+		return false
+	}
+
+	return healthCheckMsg == msg
 }
 
 func getConnectionString() string {
