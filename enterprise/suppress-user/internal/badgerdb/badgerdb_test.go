@@ -13,11 +13,12 @@ import (
 	"github.com/dgraph-io/badger/v4"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/badgerdb"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-	"github.com/stretchr/testify/require"
 )
 
 type readerFunc func(p []byte) (n int, err error)

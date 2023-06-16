@@ -5,11 +5,12 @@ import (
 	"strconv"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/sync/errgroup"
 )
 
 // newPartitionWorker creates a worker that is responsible for picking up jobs for a single partition (none, workspace, destination).

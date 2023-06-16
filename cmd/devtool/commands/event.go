@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/urfave/cli/v2"
+
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 func init() {

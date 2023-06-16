@@ -13,10 +13,11 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	"github.com/stretchr/testify/require"
 )
 
 func TestQueryWrapper(t *testing.T) {

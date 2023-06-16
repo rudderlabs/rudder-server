@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 type Mode string

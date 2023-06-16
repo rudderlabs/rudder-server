@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/middleware"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/middleware"
 )
 
 func TestMaxConcurrentRequestsMiddleware(t *testing.T) {

@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 	"github.com/stretchr/testify/require"
+
+	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 )
 
 func TestSampler(t *testing.T) {

@@ -6,14 +6,15 @@ import (
 	"strings"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 )
 
 var (

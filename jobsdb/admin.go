@@ -4,6 +4,11 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 /*
@@ -134,4 +139,86 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 		),
 	)
 	return err
+}
+
+func (jd *HandleT) startCleanupLoop(ctx context.Context) {
+	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-jd.TriggerJobCleanUp():
+				func() {
+					for {
+						if err := jd.doCleanup(ctx, config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil && ctx.Err() == nil {
+							jd.logger.Errorf("error while cleaning up old jobs: %w", err)
+							if err := misc.SleepCtx(ctx, config.GetDuration("jobsdb.cleanupRetryInterval", 10, time.Second)); err != nil {
+								return
+							}
+							continue
+						}
+						return
+					}
+				}()
+			}
+		}
+	}))
+}
+
+func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
+	jobs := make([]*JobT, 0)
+
+	gather := func(f func(ctx context.Context, params GetQueryParamsT) (JobsResult, error), params GetQueryParamsT) ([]*JobT, error) {
+		res := make([]*JobT, 0)
+		var done bool
+		var afterJobID *int64
+		for !done {
+			params.IgnoreCustomValFiltersInQuery = true
+			params.JobsLimit = batchSize
+			params.AfterJobID = afterJobID
+			jobsResult, err := f(ctx, params)
+			if err != nil {
+				return nil, err
+			}
+			jobs := lo.Filter(jobsResult.Jobs, func(job *JobT, _ int) bool { return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge)) })
+			if len(jobs) > 0 {
+				afterJobID = &(jobs[len(jobs)-1].JobID)
+				res = append(res, jobs...)
+			}
+			if len(jobs) < batchSize {
+				done = true
+			}
+		}
+		return res, nil
+	}
+
+	unprocessed, err := gather(jd.getUnprocessed, GetQueryParamsT{})
+	if err != nil {
+		return err
+	}
+	jobs = append(jobs, unprocessed...)
+
+	processed, err := gather(jd.GetProcessed, GetQueryParamsT{StateFilters: []string{Failed.State, Executing.State, Waiting.State}})
+	if err != nil {
+		return err
+	}
+	jobs = append(jobs, processed...)
+
+	if len(jobs) > 0 {
+		statusList := make([]*JobStatusT, 0)
+		for _, job := range jobs {
+			statusList = append(statusList, &JobStatusT{
+				JobID:         job.JobID,
+				JobState:      Aborted.State,
+				ErrorCode:     "0",
+				AttemptNum:    job.LastJobStatus.AttemptNum,
+				ErrorResponse: []byte(`{"reason": "job max age exceeded"}`),
+			})
+		}
+		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
+			return err
+		}
+		jd.logger.Infof("cleaned up %d old jobs", len(jobs))
+	}
+	return nil
 }

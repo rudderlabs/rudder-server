@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/glue"
+
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )

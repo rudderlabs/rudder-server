@@ -14,8 +14,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/eventbridge"
 	"github.com/golang/mock/gomock"
-	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
 func TestNewProducer(t *testing.T) {

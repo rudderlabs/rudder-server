@@ -7,8 +7,9 @@ import (
 	"net/http"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 type RetryRequest struct {

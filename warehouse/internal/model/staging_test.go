@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 func TestStagingFile_Builder(t *testing.T) {

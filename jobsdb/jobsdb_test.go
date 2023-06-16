@@ -1201,6 +1201,98 @@ func TestFailExecuting(t *testing.T) {
 	require.Equal(t, 2, len(failed.Jobs))
 }
 
+func TestMaxAgeCleanup(t *testing.T) {
+	_ = startPostgres(t)
+	customVal := "CUSTOMVAL"
+	workspaceID := "workspaceID"
+	generateJobs := func(numOfJob int, destinationID string) []*JobT {
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				Parameters: []byte(fmt.Sprintf(
+					`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`,
+					destinationID,
+				)),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				EventCount:   1,
+				WorkspaceId:  workspaceID,
+			}
+		}
+		return js
+	}
+
+	destinationID := strings.ToLower(rsRand.String(5))
+	t.Setenv("RSERVER_JOBS_DB_JOB_MAX_AGE", "0")
+	triggerJobCleanup := make(chan time.Time)
+	jobsDB := &HandleT{
+		TriggerJobCleanUp: func() <-chan time.Time {
+			return triggerJobCleanup
+		},
+	}
+	err := jobsDB.Setup(
+		ReadWrite,
+		true,
+		strings.ToLower(rsRand.String(5)),
+		[]prebackup.Handler{},
+		fileuploader.NewDefaultProvider(),
+	)
+	require.NoError(t, err)
+	defer jobsDB.TearDown()
+
+	require.NoError(
+		t,
+		jobsDB.Store(
+			context.Background(),
+			generateJobs(2, destinationID),
+		),
+	)
+
+	unprocessed, err := jobsDB.getUnprocessed(
+		context.Background(),
+		GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			ParameterFilters: []ParameterFilterT{
+				{Name: "destination_id", Value: destinationID},
+			},
+			JobsLimit: 100,
+		})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(unprocessed.Jobs))
+
+	triggerJobCleanup <- time.Now()
+	triggerJobCleanup <- time.Now()
+
+	abortedJobs, err := jobsDB.GetProcessed(
+		context.Background(),
+		GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			ParameterFilters: []ParameterFilterT{
+				{Name: "destination_id", Value: destinationID},
+			},
+			StateFilters: []string{Aborted.State},
+			JobsLimit:    100,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(abortedJobs.Jobs))
+
+	unprocessed, err = jobsDB.getUnprocessed(
+		context.Background(),
+		GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			ParameterFilters: []ParameterFilterT{
+				{Name: "destination_id", Value: destinationID},
+			},
+			JobsLimit: 100,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(unprocessed.Jobs))
+}
+
 func TestConstructParameterJSONQuery(t *testing.T) {
 	q := constructParameterJSONQuery("alias", []ParameterFilterT{{Name: "name", Value: "value"}})
 	require.Equal(t, `(alias.parameters->>'name'='value')`, q)

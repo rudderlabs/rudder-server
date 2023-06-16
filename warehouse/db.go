@@ -24,27 +24,25 @@ func NewWarehouseDB(handle *sql.DB) *DB {
 	return &DB{handle}
 }
 
-func (db *DB) GetLatestUploadStatus(ctx context.Context, destType, sourceID, destinationID string) (int64, string, int, error) {
-	pkgLogger.Debugf("Fetching latest upload status for: destType: %s, sourceID: %s, destID: %s", destType, sourceID, destinationID)
+func (db *DB) GetLatestUploadStatus(ctx context.Context, sourceID, destinationID string) (int64, string, int, error) {
+	pkgLogger.Debugf("Fetching latest upload status for: sourceID: %s, destID: %s", sourceID, destinationID)
 
-	query := fmt.Sprintf(`	
-		SELECT 
-		  id, 
-		  status, 
-		  COALESCE(metadata ->> 'priority', '100'):: int 
-		FROM 
+	query := fmt.Sprintf(`
+		SELECT
+		  id,
+		  status,
+		  COALESCE(metadata ->> 'priority', '100'):: int
+		FROM
 		  %[1]s UT
-		WHERE 
-		  UT.destination_type = '%[2]s' 
-		  AND UT.source_id = '%[3]s' 
-		  AND UT.destination_id = '%[4]s' 
-		ORDER BY 
-		  id DESC 
-		LIMIT 
+		WHERE
+		      UT.source_id = '%[2]s'
+		  AND UT.destination_id = '%[3]s'
+		ORDER BY
+		  id DESC
+		LIMIT
 		  1;
 `,
 		warehouseutils.WarehouseUploadsTable,
-		destType,
 		sourceID,
 		destinationID,
 	)

@@ -16,6 +16,9 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
+	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -24,8 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/samber/lo"
-	"golang.org/x/sync/errgroup"
 )
 
 const (

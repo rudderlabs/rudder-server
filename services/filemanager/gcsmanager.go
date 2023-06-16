@@ -9,8 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"google.golang.org/api/iterator"
+
+	"github.com/rudderlabs/rudder-server/utils/googleutils"
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/option"

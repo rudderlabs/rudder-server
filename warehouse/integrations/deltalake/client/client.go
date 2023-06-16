@@ -3,9 +3,10 @@ package client
 import (
 	"context"
 
+	"google.golang.org/grpc"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
-	"google.golang.org/grpc"
 )
 
 type Credentials struct {

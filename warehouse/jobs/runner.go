@@ -8,8 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"golang.org/x/sync/errgroup"
 
