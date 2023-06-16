@@ -10,13 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"golang.org/x/exp/slices"
 
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
 	dbsql "github.com/databricks/databricks-sql-go"
+
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-go-kit/config"

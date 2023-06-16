@@ -5,9 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 )
 
 // NewStats returns a new, initialised partition stats

@@ -231,21 +231,90 @@ func TestBackoff(t *testing.T) {
 		t.Run("eventorder disabled", func(t *testing.T) {
 			r.guaranteeUserEventOrder = false
 			workers[0].inputReservations = 0
-			require.Nil(t, r.findWorkerSlot(workers, backoffJob, map[string]struct{}{}))
-			require.NotNil(t, r.findWorkerSlot(workers, noBackoffJob1, map[string]struct{}{}))
-			require.NotNil(t, r.findWorkerSlot(workers, noBackoffJob2, map[string]struct{}{}))
-			require.NotNil(t, r.findWorkerSlot(workers, noBackoffJob3, map[string]struct{}{}))
-			require.Nil(t, r.findWorkerSlot(workers, noBackoffJob4, map[string]struct{}{}), "worker's input channel should be full")
+
+			slot, err := r.findWorkerSlot(workers, backoffJob, map[string]struct{}{})
+			require.Nil(t, slot)
+			require.ErrorIs(t, err, types.ErrJobBackoff)
+
+			slot, err = r.findWorkerSlot(workers, noBackoffJob1, map[string]struct{}{})
+			require.NotNil(t, slot)
+			require.NoError(t, err)
+
+			slot, err = r.findWorkerSlot(workers, noBackoffJob2, map[string]struct{}{})
+			require.NotNil(t, slot)
+			require.NoError(t, err)
+
+			slot, err = r.findWorkerSlot(workers, noBackoffJob3, map[string]struct{}{})
+			require.NotNil(t, slot)
+			require.NoError(t, err)
+
+			slot, err = r.findWorkerSlot(workers, noBackoffJob4, map[string]struct{}{})
+			require.Nil(t, slot)
+			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 		})
 
 		t.Run("eventorder enabled", func(t *testing.T) {
 			r.guaranteeUserEventOrder = true
 			workers[0].inputReservations = 0
-			require.Nil(t, r.findWorkerSlot(workers, backoffJob, map[string]struct{}{}))
-			require.NotNil(t, r.findWorkerSlot(workers, noBackoffJob1, map[string]struct{}{}))
-			require.NotNil(t, r.findWorkerSlot(workers, noBackoffJob2, map[string]struct{}{}))
-			require.NotNil(t, r.findWorkerSlot(workers, noBackoffJob3, map[string]struct{}{}))
-			require.Nil(t, r.findWorkerSlot(workers, noBackoffJob4, map[string]struct{}{}), "worker's input channel should be full")
+
+			slot, err := r.findWorkerSlot(workers, backoffJob, map[string]struct{}{})
+			require.Nil(t, slot)
+			require.ErrorIs(t, err, types.ErrJobBackoff)
+
+			slot, err = r.findWorkerSlot(workers, noBackoffJob1, map[string]struct{}{})
+			require.NotNil(t, slot)
+			require.NoError(t, err)
+
+			slot, err = r.findWorkerSlot(workers, noBackoffJob2, map[string]struct{}{})
+			require.NotNil(t, slot)
+			require.NoError(t, err)
+
+			slot, err = r.findWorkerSlot(workers, noBackoffJob3, map[string]struct{}{})
+			require.NotNil(t, slot)
+			require.NoError(t, err)
+
+			slot, err = r.findWorkerSlot(workers, noBackoffJob4, map[string]struct{}{})
+			require.Nil(t, slot)
+			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
+		})
+
+		t.Run("context canceled", func(t *testing.T) {
+			defer func() { r.backgroundCtx = context.Background() }()
+			r.backgroundCtx, r.backgroundCancel = context.WithCancel(context.Background())
+			r.backgroundCancel()
+			slot, err := r.findWorkerSlot(workers, backoffJob, map[string]struct{}{})
+			require.Nil(t, slot)
+			require.ErrorIs(t, err, types.ErrContextCancelled)
+		})
+
+		t.Run("unmarshalling params failure", func(t *testing.T) {
+			invalidJob := &jobsdb.JobT{
+				JobID:      1,
+				Parameters: []byte(`{"destination_id": "destination"`),
+				LastJobStatus: jobsdb.JobStatusT{
+					JobState:   jobsdb.Failed.State,
+					AttemptNum: 1,
+					RetryTime:  time.Now().Add(1 * time.Hour),
+				},
+			}
+			slot, err := r.findWorkerSlot(workers, invalidJob, map[string]struct{}{})
+			require.Nil(t, slot)
+			require.ErrorIs(t, err, types.ErrParamsUnmarshal)
+		})
+
+		t.Run("blocked job", func(t *testing.T) {
+			job := &jobsdb.JobT{
+				JobID:      1,
+				Parameters: []byte(`{"destination_id": "destination"}`),
+				LastJobStatus: jobsdb.JobStatusT{
+					JobState:   jobsdb.Failed.State,
+					AttemptNum: 1,
+					RetryTime:  time.Now().Add(1 * time.Hour),
+				},
+			}
+			slot, err := r.findWorkerSlot(workers, backoffJob, map[string]struct{}{jobOrderKey(job.UserID, "destination"): {}})
+			require.Nil(t, slot)
+			require.ErrorIs(t, err, types.ErrJobOrderBlocked)
 		})
 	})
 }

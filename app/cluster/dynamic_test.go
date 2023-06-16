@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	mockjobsforwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	"github.com/stretchr/testify/require"
+
+	mockjobsforwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"

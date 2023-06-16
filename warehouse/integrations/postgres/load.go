@@ -16,10 +16,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"golang.org/x/exp/slices"
 )
 
 type loadTableResponse struct {

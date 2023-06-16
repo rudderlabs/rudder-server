@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/router/types"
 )
 
 type Mode string
@@ -36,6 +38,8 @@ type Strategy interface {
 	ActivePartitions(ctx context.Context, db jobsdb.MultiTenantJobsDB) ([]string, error)
 	// AugmentQueryParams augments the given GetQueryParamsT with the strategy specific parameters
 	AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT)
+	// StopIteration returns true if the iteration should be stopped for the given error
+	StopIteration(err error) bool
 }
 
 // noneStrategy implements isolation at no level
@@ -47,6 +51,10 @@ func (noneStrategy) ActivePartitions(_ context.Context, _ jobsdb.MultiTenantJobs
 
 func (noneStrategy) AugmentQueryParams(_ string, _ *jobsdb.GetQueryParamsT) {
 	// no-op
+}
+
+func (noneStrategy) StopIteration(_ error) bool {
+	return false
 }
 
 // workspaceStrategy implements isolation at workspace level
@@ -61,6 +69,10 @@ func (ws workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.Mult
 
 func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
 	params.WorkspaceID = partition
+}
+
+func (workspaceStrategy) StopIteration(_ error) bool {
+	return false
 }
 
 // destinationStrategy implements isolation at destination level
@@ -82,4 +94,9 @@ func (ds destinationStrategy) ActivePartitions(ctx context.Context, db jobsdb.Mu
 // AugmentQueryParams augments the given GetQueryParamsT by adding the partition as sourceID parameter filter
 func (destinationStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
 	params.ParameterFilters = append(params.ParameterFilters, jobsdb.ParameterFilterT{Name: "destination_id", Value: partition})
+}
+
+// StopIteration returns true if the error is ErrDestinationThrottled
+func (destinationStrategy) StopIteration(err error) bool {
+	return errors.Is(err, types.ErrDestinationThrottled)
 }

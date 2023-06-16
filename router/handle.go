@@ -13,6 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -35,9 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 )
 
 // Handle is the handle to this module.
@@ -188,6 +189,31 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 	var reservedJobs []reservedJob
 	blockedOrderKeys := make(map[string]struct{})
 
+	flushTime := time.Now()
+	shouldFlush := func() bool {
+		return len(statusList) > 0 && time.Since(flushTime) > rt.reloadableConfig.pickupFlushInterval
+	}
+	flush := func() {
+		flushTime = time.Now()
+		// Mark the jobs as executing
+		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) error {
+			return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
+		}, rt.sendRetryUpdateStats)
+		if err != nil {
+			rt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destType, err)
+			panic(err)
+		}
+
+		rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
+		assignedTime := time.Now()
+		for _, reservedJob := range reservedJobs {
+			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime})
+		}
+		pickupCount += len(reservedJobs)
+		reservedJobs = nil
+		statusList = nil
+	}
+
 	// Identify jobs which can be processed
 	for iterator.HasNext() {
 		if ctx.Err() != nil {
@@ -199,7 +225,8 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 			firstJob = job
 		}
 		lastJob = job
-		if slot := rt.findWorkerSlot(workers, job, blockedOrderKeys); slot != nil {
+		slot, err := rt.findWorkerSlot(workers, job, blockedOrderKeys)
+		if err == nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -214,9 +241,16 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 			}
 			statusList = append(statusList, &status)
 			reservedJobs = append(reservedJobs, reservedJob{slot: slot, job: job})
+			if shouldFlush() {
+				flush()
+			}
 		} else {
+			stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error()}).Increment()
 			iterator.Discard(job)
 			discardedCount++
+			if rt.isolationStrategy.StopIteration(err) {
+				break
+			}
 		}
 	}
 	iteratorStats := iterator.Stats()
@@ -224,22 +258,7 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 	stats.Default.NewTaggedStat("router_iterator_stats_total_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.TotalJobs)
 	stats.Default.NewTaggedStat("router_iterator_stats_discarded_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.DiscardedJobs)
 
-	// Mark the jobs as executing
-	err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) error {
-		return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
-	}, rt.sendRetryUpdateStats)
-	if err != nil {
-		rt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destType, err)
-		panic(err)
-	}
-
-	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
-	assignedTime := time.Now()
-	for _, reservedJob := range reservedJobs {
-		reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime})
-	}
-
-	pickupCount = len(reservedJobs)
+	flush()
 	limitsReached = iteratorStats.LimitsReached
 	rt.pipelineDelayStats(partition, firstJob, lastJob)
 	return
@@ -444,16 +463,15 @@ func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQu
 	return params
 }
 
-func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[string]struct{}) *workerSlot {
+func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[string]struct{}) (*workerSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
-		return nil
+		return nil, types.ErrContextCancelled
 	}
 
 	var parameters JobParameters
-	err := json.Unmarshal(job.Parameters, &parameters)
-	if err != nil {
+	if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
 		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
-		return nil
+		return nil, types.ErrParamsUnmarshal
 	}
 	orderKey := jobOrderKey(job.UserID, parameters.DestinationID)
 
@@ -461,27 +479,38 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 	// this check is done to maintain order.
 	if _, ok := blockedOrderKeys[orderKey]; ok {
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of orderKey:%s as orderKey has earlier jobs in throttled map`, rt.destType, job.JobID, orderKey)
-		return nil
+		return nil, types.ErrJobOrderBlocked
 	}
 
 	if !rt.guaranteeUserEventOrder {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
-		if len(availableWorkers) == 0 || rt.shouldThrottle(job, parameters) || rt.shouldBackoff(job) {
-			return nil
+		if len(availableWorkers) == 0 {
+			return nil, types.ErrWorkerNoSlot
 		}
-		return availableWorkers[rand.Intn(len(availableWorkers))].ReserveSlot() // skipcq: GSC-G404
+		if rt.shouldBackoff(job) {
+			return nil, types.ErrJobBackoff
+		}
+		if rt.shouldThrottle(job, parameters) {
+			return nil, types.ErrDestinationThrottled
+		}
+
+		if slot := availableWorkers[rand.Intn(len(availableWorkers))].ReserveSlot(); slot != nil { // skipcq: GSC-G404
+			return slot, nil
+		}
+		return nil, types.ErrWorkerNoSlot
+
 	}
 
 	//#JobOrder (see other #JobOrder comment)
 	worker := workers[getWorkerPartition(orderKey, len(workers))]
 	if rt.shouldBackoff(job) { // backoff
 		blockedOrderKeys[orderKey] = struct{}{}
-		return nil
+		return nil, types.ErrJobBackoff
 	}
 	slot := worker.ReserveSlot()
 	if slot == nil {
 		blockedOrderKeys[orderKey] = struct{}{}
-		return nil
+		return nil, types.ErrWorkerNoSlot
 	}
 
 	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
@@ -491,9 +520,9 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 			blockedOrderKeys[orderKey] = struct{}{}
 			worker.barrier.Leave(orderKey, job.JobID)
 			slot.Release()
-			return nil
+			return nil, types.ErrDestinationThrottled
 		}
-		return slot
+		return slot, nil
 	}
 	previousFailedJobIDStr := "<nil>"
 	if previousFailedJobID != nil {
@@ -501,7 +530,7 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 	}
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
 	slot.Release()
-	return nil
+	return nil, types.ErrBarrierExists
 	//#EndJobOrder
 }
 

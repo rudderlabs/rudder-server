@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -436,6 +438,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
 			sourceStats[sourceTag].Version = jobData.version
+			sourceStats[sourceTag].RequestEventsBot(jobData.botEvents)
 			if err != nil {
 				switch {
 				case err == errRequestDropped:
@@ -511,6 +514,7 @@ var (
 type jobFromReq struct {
 	jobs      []*jobsdb.JobT
 	numEvents int
+	botEvents int
 	version   string
 }
 
@@ -603,38 +607,46 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			return
 		}
 
-		if idx == 0 {
-			firstSourcesJobRunID, _ = misc.MapLookup(
-				toSet,
-				"context",
-				"sources",
-				"job_run_id",
-			).(string)
-			firstSourcesTaskRunID, _ = misc.MapLookup(
-				toSet,
-				"context",
-				"sources",
-				"task_run_id",
-			).(string)
+		eventContext, ok := misc.MapLookup(toSet, "context").(map[string]interface{})
+		if ok {
+			if idx == 0 {
+				firstSourcesJobRunID, _ = misc.MapLookup(
+					eventContext,
+					"sources",
+					"job_run_id",
+				).(string)
+				firstSourcesTaskRunID, _ = misc.MapLookup(
+					eventContext,
+					"sources",
+					"task_run_id",
+				).(string)
 
-			// calculate version
-			firstSDKName, _ := misc.MapLookup(
-				toSet,
-				"context",
-				"library",
-				"name",
-			).(string)
-			firstSDKVersion, _ := misc.MapLookup(
-				toSet,
-				"context",
-				"library",
-				"version",
-			).(string)
-			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) { // skipcq: CRT-A0007
-				firstSDKVersion = "invalid"
+				// calculate version
+				firstSDKName, _ := misc.MapLookup(
+					eventContext,
+					"library",
+					"name",
+				).(string)
+				firstSDKVersion, _ := misc.MapLookup(
+					eventContext,
+					"library",
+					"version",
+				).(string)
+
+				if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) { // skipcq: CRT-A0007
+					firstSDKVersion = "invalid"
+				}
+				if firstSDKName != "" || firstSDKVersion != "" {
+					jobData.version = firstSDKName + "/" + firstSDKVersion
+				}
 			}
-			if firstSDKName != "" || firstSDKVersion != "" {
-				jobData.version = firstSDKName + "/" + firstSDKVersion
+
+			userAgent, _ := misc.MapLookup(
+				eventContext,
+				"userAgent",
+			).(string)
+			if bot.IsBotUserAgent(userAgent) {
+				jobData.botEvents++
 			}
 		}
 

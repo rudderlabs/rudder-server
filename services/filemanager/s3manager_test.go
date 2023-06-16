@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
 func TestNewS3ManagerWithNil(t *testing.T) {

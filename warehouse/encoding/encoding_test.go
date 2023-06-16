@@ -5,23 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/google/uuid"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestReaderLoader(t *testing.T) {
-	t.Parallel()
-
 	misc.Init()
 	encoding.Init()
 
@@ -56,8 +58,6 @@ func TestReaderLoader(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			var (
 				outputFilePath = fmt.Sprintf("/tmp/%s.csv.gz", uuid.New().String())
 				lines          = 100
@@ -84,12 +84,10 @@ func TestReaderLoader(t *testing.T) {
 					c.AddEmptyColumn("column8")
 					c.AddRow([]string{"column9", "column10"}, []string{"value9", "value10"})
 
-					err := c.Write()
-					require.NoError(t, err)
+					require.NoError(t, c.Write())
 				}
 
-				err = writer.Close()
-				require.NoError(t, err)
+				require.NoError(t, writer.Close())
 
 				f, err := os.Open(outputFilePath)
 				require.NoError(t, err)
@@ -134,8 +132,6 @@ func TestReaderLoader(t *testing.T) {
 	}
 
 	t.Run("Parquet", func(t *testing.T) {
-		t.Parallel()
-
 		var (
 			outputFilePath      = fmt.Sprintf("/tmp/%s.parquet", uuid.New().String())
 			lines               = 100
@@ -185,12 +181,10 @@ func TestReaderLoader(t *testing.T) {
 				c.AddEmptyColumn("column8")
 				c.AddColumn("column9", "string", "RudderStack")
 
-				err := c.Write()
-				require.NoError(t, err)
+				require.NoError(t, c.Write())
 			}
 
-			err = writer.Close()
-			require.NoError(t, err)
+			require.NoError(t, writer.Close())
 
 			f, err := local.NewLocalFileReader(outputFilePath)
 			require.NoError(t, err)
@@ -222,9 +216,7 @@ func TestReaderLoader(t *testing.T) {
 			})
 
 			data := make([]*parquetData, lines)
-			err = pr.Read(&data)
-			require.NoError(t, err)
-
+			require.NoError(t, pr.Read(&data))
 			require.Len(t, data, lines)
 
 			for i := 0; i < lines; i++ {
@@ -242,6 +234,27 @@ func TestReaderLoader(t *testing.T) {
 				require.EqualValues(t, *data[i].Column6, float64(123.123))
 				require.EqualValues(t, *data[i].Column9, "RudderStack")
 			}
+
+			nullsMap := lo.MapEntries(pr.ColumnBuffers, func(key string, columnBuffer *reader.ColumnBufferType) (string, int64) {
+				metadata := columnBuffer.ChunkHeader.MetaData
+				columnName := strings.ToLower(metadata.GetPathInSchema()[0])
+				nullCount := metadata.GetStatistics().GetNullCount()
+				return columnName, nullCount
+			})
+			require.Equal(t, nullsMap, map[string]int64{
+				"column1":  int64(0),
+				"column10": int64(0),
+				"column11": int64(0),
+				"column12": int64(lines),
+				"column2":  int64(0),
+				"column3":  int64(lines),
+				"column4":  int64(lines),
+				"column5":  int64(0),
+				"column6":  int64(0),
+				"column7":  int64(lines),
+				"column8":  int64(lines),
+				"column9":  int64(0),
+			})
 		})
 
 		t.Run("invalid file path", func(t *testing.T) {

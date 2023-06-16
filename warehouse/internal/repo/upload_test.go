@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestUploads_Count(t *testing.T) {
@@ -93,7 +94,6 @@ func TestUploads_Count(t *testing.T) {
 		uploads[i].ID = id
 		uploads[i].Error = []byte("{}")
 		uploads[i].UploadSchema = model.Schema{}
-		uploads[i].MergedSchema = model.Schema{}
 		uploads[i].LoadFileType = "csv"
 		uploads[i].StagingFileStartID = int64(i + 1)
 		uploads[i].StagingFileEndID = int64(i + 1)
@@ -202,7 +202,6 @@ func TestUploads_Get(t *testing.T) {
 	ogUpload.SourceTaskRunID = "source_task_run_id"
 	ogUpload.SourceJobID = "source_job_id"
 	ogUpload.SourceJobRunID = "source_job_run_id"
-	ogUpload.MergedSchema = model.Schema{}
 
 	t.Run("Get", func(t *testing.T) {
 		upload, err := repoUpload.Get(ctx, id)
@@ -684,7 +683,6 @@ func TestUploads_Processing(t *testing.T) {
 		uploads[i].LoadFileType = "csv"
 		uploads[i].StagingFileStartID = int64(i + 1)
 		uploads[i].StagingFileEndID = int64(i + 1)
-		uploads[i].MergedSchema = model.Schema{}
 		require.NoError(t, err)
 	}
 

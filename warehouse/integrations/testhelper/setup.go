@@ -15,8 +15,9 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	_ "github.com/lib/pq"
-	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/stretchr/testify/require"
+
+	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 )
 
 const (

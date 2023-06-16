@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/router/internal/partition"
 )
 
 func TestPartitionStats(t *testing.T) {

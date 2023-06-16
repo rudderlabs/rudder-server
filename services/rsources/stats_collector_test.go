@@ -11,8 +11,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 var _ = Describe("Using StatsCollector", Serial, func() {

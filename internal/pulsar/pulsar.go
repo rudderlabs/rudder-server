@@ -8,6 +8,7 @@ import (
 
 	"github.com/apache/pulsar-client-go/pulsar"
 	pulsarLog "github.com/apache/pulsar-client-go/pulsar/log"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )

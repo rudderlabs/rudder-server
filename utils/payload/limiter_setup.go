@@ -4,11 +4,12 @@ import (
 	"context"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/mem"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"golang.org/x/sync/errgroup"
 )
 
 type AdaptiveLimiterFunc func(int64) int64

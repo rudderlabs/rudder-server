@@ -2,6 +2,7 @@ package log
 
 import (
 	"github.com/onsi/ginkgo/v2"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 

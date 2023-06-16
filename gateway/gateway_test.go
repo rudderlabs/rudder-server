@@ -239,7 +239,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		It("should not accept events from suppress users", func() {
 			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 			// Why GET
-			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), 200, "OK")
+			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "OK")
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
@@ -287,7 +287,7 @@ var _ = Describe("Gateway Enterprise", func() {
 					WriteKeyEnabled,
 					bytes.NewBufferString(allowedUserEventData),
 				),
-				200,
+				http.StatusOK,
 				"OK",
 			)
 			Eventually(
@@ -570,7 +570,7 @@ var _ = Describe("Gateway", func() {
 						authorizedRequest(
 							WriteKeyEnabled,
 							bytes.NewBuffer(validBody)),
-						200,
+						http.StatusOK,
 						"OK",
 					)
 					Eventually(
@@ -593,6 +593,109 @@ var _ = Describe("Gateway", func() {
 					).Should(BeTrue())
 				}
 			}
+		})
+	})
+
+	Context("Bots", func() {
+		var (
+			gateway    *HandleT
+			statsStore *memstats.Store
+		)
+
+		BeforeEach(func() {
+			gateway = &HandleT{}
+
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+			Expect(err).To(BeNil())
+
+			statsStore = memstats.New()
+			gateway.stats = statsStore
+		})
+
+		AfterEach(func() {
+			Expect(gateway.Shutdown()).To(BeNil())
+		})
+
+		It("should send bots information", func() {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+
+			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			mockCall.Do(func(context.Context, interface{}, interface{}) {
+				c.asyncHelper.ExpectAndNotifyCallbackWithName("")()
+			})
+
+			expectHandlerResponse(
+				gateway.webBatchHandler,
+				authorizedRequest(
+					WriteKeyEnabled,
+					bytes.NewBufferString(
+						fmt.Sprintf(`{
+						  "batch": [
+							{
+							  "userId": "dummyId",
+							  "context": {
+								"userAgent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+								"library": {
+								  "name": %[1]q,
+								  "version": %[2]q
+								}
+							  }
+							},
+							{
+							  "userId": "dummyId",
+							  "context": {
+								"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+								"library": {
+								  "name": %[1]q,
+								  "version": %[2]q
+								}
+							  }
+							}
+						  ]
+						}
+					`,
+							sdkLibrary,
+							sdkVersion,
+						),
+					),
+				),
+				http.StatusOK,
+				"OK",
+			)
+
+			tags := stats.Tags{
+				"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+				"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+				"workspaceId": getWorkspaceID(WriteKeyEnabled),
+				"writeKey":    WriteKeyEnabled,
+				"reqType":     "batch",
+				"sourceType":  sourceType2,
+				"sdkVersion":  sdkStatTag,
+			}
+			GinkgoWriter.Println("tags: %v", tags)
+
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_events",
+						tags,
+					)
+					GinkgoWriter.Println("stat: %v", stat)
+					return stat != nil && stat.LastValue() == float64(2)
+				},
+			).Should(BeTrue())
+
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_bot_events",
+						tags,
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+			).Should(BeTrue())
 		})
 	})
 
@@ -633,7 +736,7 @@ var _ = Describe("Gateway", func() {
 						fmt.Sprintf(`{"userId":"dummyId",%s}`, sdkContext),
 					),
 				),
-				200,
+				http.StatusOK,
 				"OK",
 			)
 			Eventually(
@@ -660,7 +763,7 @@ var _ = Describe("Gateway", func() {
 			expectHandlerResponse(
 				gateway.webAliasHandler,
 				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")),
-				429,
+				http.StatusTooManyRequests,
 				response.TooManyRequests+"\n",
 			)
 			Eventually(
@@ -719,7 +822,7 @@ var _ = Describe("Gateway", func() {
 				expectHandlerResponse(
 					handler,
 					unauthorizedRequest(nil),
-					401,
+					http.StatusUnauthorized,
 					response.NoWriteKeyInBasicAuth+"\n",
 				)
 				Eventually(
@@ -749,7 +852,7 @@ var _ = Describe("Gateway", func() {
 				expectHandlerResponse(
 					handler,
 					authorizedRequest(WriteKeyEmpty, nil),
-					401,
+					http.StatusUnauthorized,
 					response.NoWriteKeyInBasicAuth+"\n",
 				)
 				Eventually(
@@ -788,7 +891,7 @@ var _ = Describe("Gateway", func() {
 						WriteKeyEnabled,
 						bytes.NewBufferString(notRudderEvent),
 					),
-					400,
+					http.StatusBadRequest,
 					response.NotRudderEvent+"\n",
 				)
 				Eventually(
@@ -828,7 +931,7 @@ var _ = Describe("Gateway", func() {
 							WriteKeyEnabled,
 							bytes.NewBufferString(validBody),
 						),
-						400,
+						http.StatusBadRequest,
 						response.NonIdentifiableRequest+"\n",
 					)
 					Eventually(
@@ -878,7 +981,7 @@ var _ = Describe("Gateway", func() {
 						WriteKeyEnabled,
 						bytes.NewBufferString(body),
 					),
-					200,
+					http.StatusOK,
 					"OK",
 				)
 			}
@@ -886,14 +989,14 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests without request body", func() {
 			for _, handler := range allHandlers(gateway) {
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, response.RequestBodyNil+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), http.StatusBadRequest, response.RequestBodyNil+"\n")
 			}
 		})
 
 		It("should reject requests without valid json in request body", func() {
 			for _, handler := range allHandlers(gateway) {
 				invalidBody := "not-a-valid-json"
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), 400, response.InvalidJSON+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), http.StatusBadRequest, response.InvalidJSON+"\n")
 			}
 		})
 
@@ -911,7 +1014,7 @@ var _ = Describe("Gateway", func() {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
 				}
 				if handlerType != "audiencelist" {
-					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), 413, response.RequestBodyTooLarge+"\n")
+					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), http.StatusRequestEntityTooLarge, response.RequestBodyTooLarge+"\n")
 				}
 			}
 		})
@@ -922,7 +1025,7 @@ var _ = Describe("Gateway", func() {
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 401, response.InvalidWriteKey+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), http.StatusUnauthorized, response.InvalidWriteKey+"\n")
 			}
 		})
 
@@ -932,7 +1035,7 @@ var _ = Describe("Gateway", func() {
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 404, response.SourceDisabled+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), http.StatusNotFound, response.SourceDisabled+"\n")
 			}
 		})
 
@@ -955,7 +1058,7 @@ var _ = Describe("Gateway", func() {
 							WriteKeyEnabled,
 							bytes.NewBuffer(validBody),
 						),
-						500,
+						http.StatusInternalServerError,
 						"tx error"+"\n",
 					)
 					Eventually(
@@ -996,7 +1099,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should return a robots.txt", func() {
-			expectHandlerResponse(gateway.robots, nil, 200, "User-agent: * \nDisallow: / \n")
+			expectHandlerResponse(gateway.robots, nil, http.StatusOK, "User-agent: * \nDisallow: / \n")
 		})
 	})
 

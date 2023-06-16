@@ -3,8 +3,9 @@ package dsindex_test
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 )
 
 func Test_Index_Parse(t *testing.T) {

@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStageFileBatching(t *testing.T) {

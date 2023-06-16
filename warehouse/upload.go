@@ -13,8 +13,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
@@ -126,7 +127,6 @@ const (
 	UploadUpdatedAtField       = "updated_at"
 	UploadTimingsField         = "timings"
 	UploadSchemaField          = "schema"
-	MergedSchemaField          = "mergedschema"
 	UploadLastExecAtField      = "last_exec_at"
 	UploadInProgress           = "in_progress"
 )
@@ -255,9 +255,6 @@ func (job *UploadJob) generateUploadSchema() error {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
-	if err := job.setMergedSchema(job.schemaHandle.uploadSchema); err != nil {
-		return fmt.Errorf("set merged schema: %w", err)
-	}
 	if err := job.setUploadSchema(job.schemaHandle.uploadSchema); err != nil {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
@@ -1469,15 +1466,6 @@ func (job *UploadJob) setUploadSchema(consolidatedSchema model.Schema) error {
 	}
 	job.upload.UploadSchema = consolidatedSchema
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadSchemaField, Value: marshalledSchema}}})
-}
-
-func (job *UploadJob) setMergedSchema(mergedSchema model.Schema) error {
-	marshalledSchema, err := json.Marshal(mergedSchema)
-	if err != nil {
-		panic(err)
-	}
-	job.upload.MergedSchema = mergedSchema
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: MergedSchemaField, Value: marshalledSchema}}})
 }
 
 // Set LoadFileIDs

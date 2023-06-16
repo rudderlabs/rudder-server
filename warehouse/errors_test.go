@@ -10,9 +10,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-	"github.com/stretchr/testify/require"
 )
 
 func TestErrorHandler_MatchErrorMappings(t *testing.T) {

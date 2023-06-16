@@ -7,6 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -16,9 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 )
 
 // newWorker creates a new worker for the provided partition.

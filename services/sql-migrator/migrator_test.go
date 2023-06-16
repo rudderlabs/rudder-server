@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/sql/migrations"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMigrate(t *testing.T) {
