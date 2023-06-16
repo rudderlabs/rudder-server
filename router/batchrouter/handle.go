@@ -79,6 +79,7 @@ type Handle struct {
 	jobQueryBatchSize            int
 	pollStatusLoopSleep          time.Duration
 	payloadLimit                 int64
+	maxUploadLimit               int64
 	jobsDBCommandTimeout         time.Duration
 	jobdDBQueryRequestTimeout    time.Duration
 	jobdDBMaxRetries             int
