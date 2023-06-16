@@ -2,6 +2,7 @@ package stats
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/samber/lo"
 )
 
 type SourceStat struct {
@@ -26,6 +27,7 @@ type SourceStat struct {
 	}
 	events struct {
 		total int
+		bot   int
 
 		succeeded int
 		failed    int
@@ -74,9 +76,13 @@ func (ss *SourceStat) RequestEventsFailed(num int, reason string) {
 	ss.reason = reason
 }
 
+func (ss *SourceStat) RequestEventsBot(num int) {
+	ss.events.bot += num
+}
+
 // Report captured stats
 func (ss *SourceStat) Report(s stats.Stats) {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"source":      ss.Source,
 		"writeKey":    ss.WriteKey,
 		"reqType":     ss.ReqType,
@@ -86,15 +92,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 		"sdkVersion":  ss.Version,
 	}
 
-	failedTags := map[string]string{
-		"source":      ss.Source,
-		"writeKey":    ss.WriteKey,
-		"reqType":     ss.ReqType,
-		"workspaceId": ss.WorkspaceID,
-		"sourceID":    ss.SourceID,
-		"sourceType":  ss.SourceType,
-		"sdkVersion":  ss.Version,
-	}
+	failedTags := lo.Assign(tags)
 	if ss.reason != "" {
 		failedTags["reason"] = ss.reason
 	}
@@ -108,5 +106,9 @@ func (ss *SourceStat) Report(s stats.Stats) {
 		s.NewTaggedStat("gateway.write_key_events", stats.CountType, tags).Count(ss.events.total)
 		s.NewTaggedStat("gateway.write_key_successful_events", stats.CountType, tags).Count(ss.events.succeeded)
 		s.NewTaggedStat("gateway.write_key_failed_events", stats.CountType, failedTags).Count(ss.events.failed)
+
+		if ss.events.bot > 0 {
+			s.NewTaggedStat("gateway.write_key_bot_events", stats.CountType, tags).Count(ss.events.bot)
+		}
 	}
 }
