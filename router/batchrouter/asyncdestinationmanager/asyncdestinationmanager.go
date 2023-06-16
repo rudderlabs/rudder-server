@@ -73,6 +73,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(600, &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
 }
 
+// can we keep the maxupload size here. need to discuss
+
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("asyncDestinationManager")
@@ -93,12 +95,13 @@ func GetMarshalledData(payload string, jobID int64) string {
 	return string(responsePayload)
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (Asyncdestinationmanager, error) {
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, opts common.AsyncDestinationOpts) (Asyncdestinationmanager, error) {
+	opts.HttpTimeout = HTTPTimeout
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
-		return bingads.NewManager(destination, backendConfig, HTTPTimeout)
+		return bingads.NewManager(destination, backendConfig, opts)
 	case "MARKETO_BULK_UPLOAD":
-		return marketobulkupload.NewManager(destination, HTTPTimeout)
+		return marketobulkupload.NewManager(destination, opts)
 	}
 	return nil, nil
 

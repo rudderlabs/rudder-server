@@ -53,7 +53,10 @@ func (brt *Handle) Setup(
 ) {
 	brt.destination = destination
 	brt.destType = destination.DestinationDefinition.Name
-	asyncdestinationmanager, err := asyncdestinationmanager.NewManager(destination, backendConfig)
+	opts := common.AsyncDestinationOpts{
+		MaxUploadSize: brt.maxUploadLimit,
+	}
+	asyncdestinationmanager, err := asyncdestinationmanager.NewManager(destination, backendConfig, opts)
 	if err != nil {
 		panic(fmt.Errorf("unable to initialize async destination manager for: %w", err))
 	}
@@ -116,6 +119,8 @@ func (brt *Handle) Setup(
 	brt.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	config.RegisterStringConfigVariable("", &brt.datePrefixOverride, true, "BatchRouter.datePrefixOverride")
 	config.RegisterStringConfigVariable("", &brt.customDatePrefix, true, "BatchRouter.customDatePrefix")
+	// for bingads it should be  100*bytesize.MB, need to consult
+	config.RegisterInt64ConfigVariable(10*bytesize.MB, &brt.maxUploadLimit, true, 1, []string{"BatchRouter." + brt.destType + "." + "MaxUploadLimit", "BatchRouter.MaxUploadLimit"}...)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)

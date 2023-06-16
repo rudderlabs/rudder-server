@@ -132,6 +132,11 @@ type GetUploadStatsResponse struct {
 	Metadata EventStatMeta `json:"metadata"`
 }
 
+type AsyncDestinationOpts struct {
+	MaxUploadSize int64
+	HttpTimeout   time.Duration
+}
+
 func GetTransformedData(payload stdjson.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
 }

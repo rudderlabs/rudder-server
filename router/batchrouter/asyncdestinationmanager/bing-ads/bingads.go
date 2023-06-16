@@ -19,7 +19,6 @@ import (
 
 	"github.com/google/uuid"
 	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
-	bytesize "github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -39,20 +38,21 @@ type BingAdsBulkUploader struct {
 	timeout              time.Duration
 	logger               logger.Logger
 	client               Client
+	MaxUploadSize        int64
 }
 
-func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration, client *Client) *BingAdsBulkUploader {
+func NewBingAdsBulkUploader(service bingads.BulkServiceI, opts common.AsyncDestinationOpts, client *Client) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
-		destName: "BING_ADS",
-		service:  service,
-		timeout:  timeout,
-		logger:   logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
-		//utils:    utils,
-		client: *client,
+		destName:      "BING_ADS",
+		service:       service,
+		timeout:       opts.HttpTimeout,
+		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
+		client:        *client,
+		MaxUploadSize: opts.MaxUploadSize,
 	}
 }
 
-func CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error) {
+func CreateZipFile(filePath string, audienceId string, maxUploadSize int64) (string, []int64, []int64, error) {
 	failedJobIds := []int64{}
 	successJobIds := []int64{}
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
@@ -88,7 +88,8 @@ func CreateZipFile(filePath string, audienceId string) (string, []int64, []int64
 		}
 		marshaledUploadlist, err := json.Marshal(data.Message.List)
 		size = size + len([]byte(marshaledUploadlist))
-		if int64(size) < 100*bytesize.MB {
+		//if int64(size) < 100*bytesize.MB {
+		if int64(size) < maxUploadSize {
 			for _, uploadData := range data.Message.List {
 				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, uploadData.Email, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			}
@@ -337,7 +338,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			DestinationID: destination.ID,
 		}
 	}
-	filePath, successJobIDs, failedJobIds, err := CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
+	filePath, successJobIDs, failedJobIds, err := CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId, b.MaxUploadSize)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -576,7 +577,7 @@ func (ts *tokenSource) Token() (*oauth2.Token, error) {
 	return token, nil
 }
 
-func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, httpTimeout time.Duration) (*BingAdsBulkUploader, error) {
+func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, opts common.AsyncDestinationOpts) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
@@ -607,13 +608,13 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 	session := bingads.NewSession(sessionConfig)
 
 	clientNew := Client{}
-	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), httpTimeout, &clientNew)
+	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), opts, &clientNew)
 	return bingads, nil
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, timeout time.Duration) (*BingAdsBulkUploader, error) {
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, opts common.AsyncDestinationOpts) (*BingAdsBulkUploader, error) {
 	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
-	return newManagerInternal(destination, oauthClient, timeout)
+	return newManagerInternal(destination, oauthClient, opts)
 }
 
 func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
