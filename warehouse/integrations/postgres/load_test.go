@@ -15,6 +15,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
@@ -23,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 )
 
 type mockLoadFileUploader struct {

@@ -28,13 +28,14 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 // TestEventOrderGuarantee tests that order delivery guarantees are honoured by the server

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )

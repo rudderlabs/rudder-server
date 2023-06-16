@@ -4,11 +4,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/batcher"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestEventSchemaMessageBatcher(t *testing.T) {

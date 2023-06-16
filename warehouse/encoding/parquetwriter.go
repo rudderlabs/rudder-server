@@ -10,8 +10,9 @@ import (
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/xitongsys/parquet-go/writer"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (

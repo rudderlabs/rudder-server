@@ -13,8 +13,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestHandleSchemaChange(t *testing.T) {

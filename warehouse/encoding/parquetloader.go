@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/xitongsys/parquet-go/types"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // ParquetLoader is used for generating parquet load files.

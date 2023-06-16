@@ -13,6 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -35,9 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 )
 
 // Handle is the handle to this module.

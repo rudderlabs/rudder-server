@@ -11,12 +11,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/firehose"
 
 	"github.com/golang/mock/gomock"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
 
+	"github.com/stretchr/testify/assert"
+
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/stretchr/testify/assert"
 )
 
 var (

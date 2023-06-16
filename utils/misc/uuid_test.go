@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	uuid "github.com/gofrs/uuid"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	gluuid "github.com/google/uuid"
 )

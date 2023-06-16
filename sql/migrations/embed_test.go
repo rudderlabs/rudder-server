@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/sql/migrations"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/sql/migrations"
 )
 
 func Test_EmbeddedSQL(t *testing.T) {

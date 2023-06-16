@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"sync"
 
+	"github.com/tidwall/gjson"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/tidwall/gjson"
 )
 
 // Service provides services related to transient source ids

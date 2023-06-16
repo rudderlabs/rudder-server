@@ -18,6 +18,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -45,8 +48,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 )
 
 const (

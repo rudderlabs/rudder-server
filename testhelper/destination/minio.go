@@ -9,6 +9,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest/v3"
+
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 )
 

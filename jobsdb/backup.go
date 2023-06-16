@@ -11,12 +11,13 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/sync/errgroup"
 )
 
 // backupSettings is for capturing the backup

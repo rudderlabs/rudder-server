@@ -3,9 +3,10 @@ package router_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/router"
-	"github.com/stretchr/testify/require"
 )
 
 func TestLimiterPriorityValueFrom(t *testing.T) {

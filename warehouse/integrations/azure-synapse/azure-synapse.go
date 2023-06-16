@@ -17,13 +17,15 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	mssql "github.com/denisenkom/go-mssqldb"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"

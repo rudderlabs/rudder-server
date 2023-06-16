@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 )
 
 type paramFilter struct {

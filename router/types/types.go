@@ -5,9 +5,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/samber/lo"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/samber/lo"
 )
 
 const (

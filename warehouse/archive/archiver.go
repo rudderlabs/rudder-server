@@ -12,6 +12,9 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
@@ -21,8 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 var (

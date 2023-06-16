@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"github.com/stretchr/testify/require"
 )
 
 func TestValidate(t *testing.T) {

@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 func TestJobSvc(t *testing.T) {

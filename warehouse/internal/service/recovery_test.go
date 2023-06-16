@@ -7,10 +7,11 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 )
 
 type mockRepo struct {

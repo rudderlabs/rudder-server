@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 func TestJobIterator(t *testing.T) {

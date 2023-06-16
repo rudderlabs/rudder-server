@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"

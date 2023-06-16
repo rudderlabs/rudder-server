@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/common"
 	"github.com/xitongsys/parquet-go/parquet"
@@ -13,6 +12,8 @@ import (
 	"github.com/xitongsys/parquet-go/schema"
 	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
+
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
 type ParquetLocalFileHandler struct {

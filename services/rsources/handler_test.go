@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	testlog "github.com/rudderlabs/rudder-server/testhelper/log"

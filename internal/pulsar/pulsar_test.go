@@ -8,10 +8,11 @@ import (
 
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_Pulsar(t *testing.T) {

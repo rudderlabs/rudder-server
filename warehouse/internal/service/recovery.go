@@ -7,8 +7,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/exp/slices"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // TODO: Remove warehouseutils.POSTGRES once the postgres new implementation is stable

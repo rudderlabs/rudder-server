@@ -13,13 +13,14 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"github.com/ory/dockertest/v3"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/testhelper"
 )
 
 var (
