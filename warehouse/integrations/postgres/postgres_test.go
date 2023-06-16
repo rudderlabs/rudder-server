@@ -27,9 +27,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"github.com/stretchr/testify/require"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )

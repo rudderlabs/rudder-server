@@ -9,11 +9,12 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/stretchr/testify/assert"
 )
 
 var (

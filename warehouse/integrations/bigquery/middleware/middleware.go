@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 

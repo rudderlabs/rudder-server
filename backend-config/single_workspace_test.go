@@ -9,8 +9,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
 
 func TestSingleWorkspaceGetFromAPI(t *testing.T) {

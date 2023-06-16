@@ -11,8 +11,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	"github.com/stretchr/testify/assert"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
@@ -25,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
-	"github.com/stretchr/testify/assert"
 )
 
 var once sync.Once

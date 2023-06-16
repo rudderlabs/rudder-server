@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
@@ -21,8 +22,9 @@ import (
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/exporter"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (

@@ -5,10 +5,11 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestUseGlue(t *testing.T) {

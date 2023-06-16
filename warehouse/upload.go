@@ -13,8 +13,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/services/alerta"
 

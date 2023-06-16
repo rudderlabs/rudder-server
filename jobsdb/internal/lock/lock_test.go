@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 )
 
 func TestRLock(t *testing.T) {

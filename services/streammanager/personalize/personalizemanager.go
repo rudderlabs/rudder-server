@@ -7,11 +7,12 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/service/personalizeevents"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
-	"github.com/tidwall/gjson"
 )
 
 var pkgLogger logger.Logger

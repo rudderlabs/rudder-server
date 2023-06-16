@@ -15,6 +15,8 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -24,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/tidwall/gjson"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary

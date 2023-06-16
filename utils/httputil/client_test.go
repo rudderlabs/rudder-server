@@ -6,8 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 func TestRetriableStatus(t *testing.T) {

@@ -19,8 +19,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"

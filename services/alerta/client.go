@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
 	"github.com/cenkalti/backoff"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 )
 

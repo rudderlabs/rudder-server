@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/backend-config"

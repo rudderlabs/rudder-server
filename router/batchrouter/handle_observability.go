@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -12,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/tidwall/sjson"
 )
 
 func (brt *Handle) collectMetrics(ctx context.Context) {

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -17,7 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSuppressionSetup(t *testing.T) {

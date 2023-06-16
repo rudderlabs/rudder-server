@@ -6,17 +6,18 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"google.golang.org/genproto/googleapis/rpc/code"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type warehouseGRPC struct {

@@ -5,8 +5,9 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 // ResponseHandler - handle destination response

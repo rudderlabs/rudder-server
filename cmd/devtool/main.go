@@ -6,8 +6,9 @@ import (
 	"sort"
 
 	"github.com/joho/godotenv"
-	"github.com/rudderlabs/rudder-server/cmd/devtool/commands"
 	"github.com/urfave/cli/v2"
+
+	"github.com/rudderlabs/rudder-server/cmd/devtool/commands"
 )
 
 func main() {

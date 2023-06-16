@@ -3,12 +3,13 @@ package eventfilter
 import (
 	"strings"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"golang.org/x/exp/slices"
 )
 
 const (

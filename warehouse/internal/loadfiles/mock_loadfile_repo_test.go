@@ -3,8 +3,9 @@ package loadfiles_test
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 type mockLoadFilesRepo struct {

@@ -13,6 +13,8 @@ import (
 
 	pulsarType "github.com/apache/pulsar-client-go/pulsar"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -23,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/batcher"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/samber/lo"
 )
 
 // JobsForwarder is a forwarder that transforms and forwards jobs to a pulsar topic

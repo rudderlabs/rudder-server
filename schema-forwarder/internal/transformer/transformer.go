@@ -12,11 +12,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/jeremywohl/flatten"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
-	"github.com/tidwall/gjson"
 )
 
 type Transformer interface {

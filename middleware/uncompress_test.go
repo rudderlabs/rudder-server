@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/middleware"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/middleware"
 )
 
 func TestUncompress(t *testing.T) {

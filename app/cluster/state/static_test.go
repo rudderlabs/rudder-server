@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStatic_ServerMode(t *testing.T) {

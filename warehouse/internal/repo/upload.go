@@ -11,9 +11,10 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/lib/pq"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/tidwall/gjson"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
