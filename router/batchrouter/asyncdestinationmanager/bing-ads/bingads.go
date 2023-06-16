@@ -52,22 +52,6 @@ func NewBingAdsBulkUploader(service bingads.BulkServiceI, timeout time.Duration,
 	}
 }
 
-// type BingAdsUtils interface {
-// 	CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error)
-// 	Unzip(zipFile, targetDir string) ([]string, error)
-// 	ReadPollResults(filePath string) [][]string
-// 	ProcessPollStatusData(records [][]string) map[string]map[string]struct{}
-// }
-
-// type BingAdsUtilsImpl struct{}
-
-func NewClient(baseURL string, client *http.Client) *Client {
-	return &Client{
-		URL:    baseURL,
-		client: client,
-	}
-}
-
 func CreateZipFile(filePath string, audienceId string) (string, []int64, []int64, error) {
 	failedJobIds := []int64{}
 	successJobIds := []int64{}
@@ -110,6 +94,7 @@ func CreateZipFile(filePath string, audienceId string) (string, []int64, []int64
 			}
 			successJobIds = append(successJobIds, data.Metadata.JobID)
 		} else {
+			// ?? how to add test case for this
 			failedJobIds = append(failedJobIds, data.Metadata.JobID)
 		}
 
@@ -534,14 +519,13 @@ func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 }
 
 type tokenSource struct {
-	accessToken     string
 	workspaceID     string
 	destinationName string
 	accountID       string
 	oauthClient     oauth.Authorizer
 }
 
-func (ts *tokenSource) generateToken() (string, string, error) {
+func (ts *tokenSource) generateToken() (*secretStruct, error) {
 
 	refreshTokenParams := oauth.RefreshTokenParams{
 		WorkspaceId: ts.workspaceID,
@@ -550,51 +534,49 @@ func (ts *tokenSource) generateToken() (string, string, error) {
 	}
 	statusCode, authResponse := ts.oauthClient.FetchToken(&refreshTokenParams)
 	if statusCode != 200 {
-		return "", "", fmt.Errorf("Error in fetching access token")
+		return nil, fmt.Errorf("Error in fetching access token")
 	}
 	secret := secretStruct{}
 	err := json.Unmarshal(authResponse.Account.Secret, &secret)
 	if err != nil {
-		return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+		return nil, fmt.Errorf("Error in unmarshalling secret: %v", err)
 	}
 	currentTime := time.Now()
 	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
 	if err != nil {
-		return "", "", fmt.Errorf("Error in parsing expirationDate: %v", err)
+		return nil, fmt.Errorf("Error in parsing expirationDate: %v", err)
 	}
 	if currentTime.After(expirationTime) {
 		refreshTokenParams.Secret = authResponse.Account.Secret
 		statusCode, authResponse = ts.oauthClient.RefreshToken(&refreshTokenParams)
 		if statusCode != 200 {
-			return "", "", fmt.Errorf("Error in refreshing access token")
+			return nil, fmt.Errorf("Error in refreshing access token")
 		}
 		err = json.Unmarshal(authResponse.Account.Secret, &secret)
 		if err != nil {
-			return "", "", fmt.Errorf("Error in unmarshalling secret: %v", err)
+			return nil, fmt.Errorf("Error in unmarshalling secret: %v", err)
 		}
-		return secret.AccessToken, secret.Developer_token, nil
+		return &secret, nil
 	}
-	return secret.AccessToken, secret.Developer_token, nil
+	return &secret, nil
 
 }
 
 func (ts *tokenSource) Token() (*oauth2.Token, error) {
-	accessToken, _, err := ts.generateToken()
+	secret, err := ts.generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("Error occured while generating the accessToken")
 	}
-	ts.accessToken = accessToken
 
 	token := &oauth2.Token{
-		AccessToken: ts.accessToken,
-		Expiry:      time.Now().Add(time.Hour), // Set the token expiry time
+		AccessToken:  secret.AccessToken,
+		RefreshToken: secret.RefreshToken,
+		Expiry:       time.Now().Add(time.Hour), // Set the token expiry time
 	}
 	return token, nil
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, HTTPTimeout time.Duration) (*BingAdsBulkUploader, error) {
-
-	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
+func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, httpTimeout time.Duration) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
@@ -605,16 +587,18 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 		return nil, fmt.Errorf("Error in unmarshalling destination config: %v", err)
 	}
 
-	// oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
 	tokenSource := tokenSource{
 		workspaceID:     destination.WorkspaceID,
 		destinationName: destination.Name,
 		accountID:       destConfig.RudderAccountId,
 		oauthClient:     oauthClient,
 	}
-	_, developerToken, _ := tokenSource.generateToken()
+	secret, err := tokenSource.generateToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate oauth token: %v", err)
+	}
 	sessionConfig := bingads.SessionConfig{
-		DeveloperToken: developerToken,
+		DeveloperToken: secret.Developer_token,
 		AccountId:      destConfig.CustomerAccountId,
 		CustomerId:     destConfig.CustomerId,
 		HTTPClient:     http.DefaultClient,
@@ -622,11 +606,14 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	}
 	session := bingads.NewSession(sessionConfig)
 
-	// bingAdsUtilsImpl := BingAdsUtilsImpl{}
 	clientNew := Client{}
-	//bingads := &BingAdsBulkUploader{destName: "BingAdsAudience", service: bingads.NewBulkService(session), timeout: HTTPTimeout}
-	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), HTTPTimeout, &clientNew)
+	bingads := NewBingAdsBulkUploader(bingads.NewBulkService(session), httpTimeout, &clientNew)
 	return bingads, nil
+}
+
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, timeout time.Duration) (*BingAdsBulkUploader, error) {
+	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
+	return newManagerInternal(destination, oauthClient, timeout)
 }
 
 func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {

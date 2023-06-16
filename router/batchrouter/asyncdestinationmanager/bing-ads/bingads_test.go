@@ -15,13 +15,22 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/bingads"
+	mocks_oauth "github.com/rudderlabs/rudder-server/mocks/services/oauth"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/assert"
 )
 
 var destination = backendconfig.DestinationT{
 	Name: "BingAds",
+	Config: map[string]interface{}{
+		"audienceId":        "audience_id",
+		"customerAccountId": "customer_account_id",
+		"customerId":        "customer_id",
+		"rudderAccountId":   "rudder_account_id",
+	},
+	WorkspaceID: "workspace_id",
 }
 
 func TestBingAdsUploadSuccessCase(t *testing.T) {
@@ -336,5 +345,73 @@ func TestBingAdsUploadFailedWhileTransformingFile(t *testing.T) {
 		DestinationID: destination.ID,
 	}
 	recieved := bulkUploader.Upload(&destination, &asyncDestination)
+	assert.Equal(t, recieved, expected)
+}
+
+func TestNewManagerInternal(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	oauthService := mocks_oauth.NewMockAuthorizer(ctrl)
+	oauthService.EXPECT().FetchToken(gomock.Any()).Return(200, &oauth.AuthResponse{
+		Account: oauth.AccountSecret{
+			ExpirationDate: "",
+			Secret: []byte(`
+			{
+			"AccessToken": "dummyacesstoken", 
+			"RefreshToken": "dummyRefreshToken",
+			"Developer_token": "dummyDeveloperToken",
+			"ExpirationDate": "2023-01-31T23:59:59.999Z"
+			}`),
+		},
+	})
+	oauthService.EXPECT().RefreshToken(gomock.Any()).Return(200, &oauth.AuthResponse{
+		Account: oauth.AccountSecret{
+			ExpirationDate: "",
+			Secret: []byte(`
+			{
+			"AccessToken": "dummyacesstoken", 
+			"RefreshToken": "dummyRefreshToken",
+			"Developer_token": "dummyDeveloperToken",
+			"ExpirationDate": "2023-01-31T23:59:59.999Z"
+			}`),
+		},
+	})
+
+	bingAdsUploader, err := newManagerInternal(&destination, oauthService, 10*time.Second)
+	assert.Nil(t, err)
+	assert.NotNil(t, bingAdsUploader)
+
+}
+
+func TestBingAdsUploadNoTrackingId(t *testing.T) {
+
+	ctrl := gomock.NewController(t)
+	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+	clientI := Client{}
+	bulkUploader := NewBingAdsBulkUploader(bingAdsService, 10*time.Second, &clientI)
+	bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
+		UploadUrl: "http://localhost/upload",
+		RequestId: misc.FastUUID().URN(),
+	}, nil)
+	bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(&bingads_sdk.UploadBulkFileResponse{
+		TrackingId: "",
+		RequestId:  "",
+	}, nil)
+
+	asyncDestination := common.AsyncDestinationStruct{
+		ImportingJobIDs: []int64{1, 2, 3, 4},
+		FailedJobIDs:    []int64{},
+		FileName:        "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/uploadData.txt",
+	}
+	expected := common.AsyncUploadOutput{FailedReason: `{"error" : "getting empty string in tracking id or request id"}`,
+		FailedJobIDs:        []int64{1, 2, 3, 4},
+		ImportingParameters: stdjson.RawMessage{},
+		ImportingCount:      0,
+		FailedCount:         4,
+	}
+
+	//making upload function call
+	recieved := bulkUploader.Upload(&destination, &asyncDestination)
+	recieved.ImportingParameters = stdjson.RawMessage{}
+
 	assert.Equal(t, recieved, expected)
 }

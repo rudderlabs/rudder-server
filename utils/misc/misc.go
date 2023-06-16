@@ -407,6 +407,7 @@ func CreateTMPDIR() (string, error) {
 		_, err := os.Stat(fallbackPath)
 		if err == nil {
 			tmpdirPath = fallbackPath
+			// need to show why it is failing
 			logOnce.Do(func() {
 				pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
 			})
