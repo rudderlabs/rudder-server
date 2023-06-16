@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	time "time"
 
@@ -33,6 +34,8 @@ var destination = backendconfig.DestinationT{
 	WorkspaceID: "workspace_id",
 }
 
+var currentDir, _ = os.Getwd()
+
 func TestBingAdsUploadSuccessCase(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
@@ -51,7 +54,7 @@ func TestBingAdsUploadSuccessCase(t *testing.T) {
 	asyncDestination := common.AsyncDestinationStruct{
 		ImportingJobIDs: []int64{1, 2, 3, 4},
 		FailedJobIDs:    []int64{},
-		FileName:        "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/uploadData.txt",
+		FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
 	}
 	expected := common.AsyncUploadOutput{FailedReason: `{"error":"Jobs flowed over the prescribed limit"}`,
 		ImportingJobIDs:     []int64{1, 2, 3, 4},
@@ -78,7 +81,7 @@ func TestBingAdsUploadFailedGetBulkUploadUrl(t *testing.T) {
 	asyncDestination := common.AsyncDestinationStruct{
 		ImportingJobIDs: []int64{1, 2, 3},
 		FailedJobIDs:    []int64{},
-		FileName:        "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/uploadData.txt",
+		FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
 	}
 	expected := common.AsyncUploadOutput{
 		FailedJobIDs:   []int64{1, 2, 3},
@@ -131,7 +134,7 @@ func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
 	asyncDestination := common.AsyncDestinationStruct{
 		ImportingJobIDs: []int64{1, 2, 3, 4},
 		FailedJobIDs:    []int64{},
-		FileName:        "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/uploadData.txt",
+		FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
 	}
 	expected := common.AsyncUploadOutput{
 		FailedJobIDs:  []int64{1, 2, 3, 4},
@@ -205,7 +208,7 @@ func TestBingAdsPollPartialFailureCase(t *testing.T) {
 	// Create a test server with a custom handler function
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Open the zip file
-		zipFilePath := "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/statuscheck.zip"
+		zipFilePath := filepath.Join(currentDir, "test-files/statuscheck.zip")
 		// Set the appropriate headers for a zip file response
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
@@ -274,9 +277,8 @@ func DuplicateFile(sourcePath, destinationPath string) error {
 func TestBingAdsGetUploadStats(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-
-	templateFilePath := "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/uploadstatus.csv" // Path of the source file
-	testFilePath := "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/test_copy.csv"        // Path of the destination folder
+	templateFilePath := filepath.Join(currentDir, "test-files/uploadstatus.csv") // Path of the source file
+	testFilePath := filepath.Join(currentDir, "test-files/test_copy.csv")        // Path of the destination folder
 
 	err := DuplicateFile(templateFilePath, testFilePath)
 	if err != nil {
@@ -336,7 +338,7 @@ func TestBingAdsUploadFailedWhileTransformingFile(t *testing.T) {
 		ImportingJobIDs: []int64{1, 2, 3},
 		FailedJobIDs:    []int64{},
 		// the aim is to fail the text transformation of the file. That is why sending a csv file instead of a txt file
-		FileName: "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/uploadstatus.csv",
+		FileName: filepath.Join(currentDir, "test-files/uploadstatus.csv"),
 	}
 	expected := common.AsyncUploadOutput{
 		FailedJobIDs:  []int64{1, 2, 3},
@@ -400,7 +402,7 @@ func TestBingAdsUploadNoTrackingId(t *testing.T) {
 	asyncDestination := common.AsyncDestinationStruct{
 		ImportingJobIDs: []int64{1, 2, 3, 4},
 		FailedJobIDs:    []int64{},
-		FileName:        "/Users/shrouti/workspace/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/test-files/uploadData.txt",
+		FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
 	}
 	expected := common.AsyncUploadOutput{FailedReason: `{"error" : "getting empty string in tracking id or request id"}`,
 		FailedJobIDs:        []int64{1, 2, 3, 4},
