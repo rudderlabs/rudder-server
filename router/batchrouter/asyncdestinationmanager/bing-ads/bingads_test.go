@@ -8,11 +8,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	time "time"
 
 	"github.com/golang/mock/gomock"
 	bingads_sdk "github.com/rudderlabs/bing-ads-go-sdk/bingads"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/bingads"
@@ -23,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var once sync.Once
 var destination = backendconfig.DestinationT{
 	Name: "BingAds",
 	Config: map[string]interface{}{
@@ -36,8 +40,16 @@ var destination = backendconfig.DestinationT{
 
 var currentDir, _ = os.Getwd()
 
-func TestBingAdsUploadSuccessCase(t *testing.T) {
+func initBingads() {
+	once.Do(func() {
+		config.Reset()
+		logger.Reset()
+		misc.Init()
+	})
+}
 
+func TestBingAdsUploadSuccessCase(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	clientI := Client{}
@@ -72,6 +84,7 @@ func TestBingAdsUploadSuccessCase(t *testing.T) {
 }
 
 func TestBingAdsUploadFailedGetBulkUploadUrl(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	clientI := Client{}
@@ -95,7 +108,7 @@ func TestBingAdsUploadFailedGetBulkUploadUrl(t *testing.T) {
 }
 
 func TestBingAdsUploadEmptyGetBulkUploadUrl(t *testing.T) {
-
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	ClientI := Client{}
@@ -121,6 +134,7 @@ func TestBingAdsUploadEmptyGetBulkUploadUrl(t *testing.T) {
 }
 
 func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	clientI := Client{}
@@ -147,6 +161,7 @@ func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
 }
 
 func TestBingAdsPollSuccessCase(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	clientI := Client{}
@@ -176,6 +191,7 @@ func TestBingAdsPollSuccessCase(t *testing.T) {
 	assert.Equal(t, RecievedStatus, expectedStatus)
 }
 func TestBingAdsPollFailureCase(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	clientI := Client{}
@@ -202,6 +218,7 @@ func TestBingAdsPollFailureCase(t *testing.T) {
 }
 
 func TestBingAdsPollPartialFailureCase(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 
@@ -275,6 +292,7 @@ func DuplicateFile(sourcePath, destinationPath string) error {
 }
 
 func TestBingAdsGetUploadStats(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	templateFilePath := filepath.Join(currentDir, "test-files/uploadstatus.csv") // Path of the source file
@@ -325,6 +343,7 @@ func TestBingAdsGetUploadStats(t *testing.T) {
 }
 
 func TestBingAdsUploadFailedWhileTransformingFile(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	clientI := Client{}
@@ -351,6 +370,7 @@ func TestBingAdsUploadFailedWhileTransformingFile(t *testing.T) {
 }
 
 func TestNewManagerInternal(t *testing.T) {
+	initBingads()
 	ctrl := gomock.NewController(t)
 	oauthService := mocks_oauth.NewMockAuthorizer(ctrl)
 	oauthService.EXPECT().FetchToken(gomock.Any()).Return(200, &oauth.AuthResponse{
@@ -385,7 +405,7 @@ func TestNewManagerInternal(t *testing.T) {
 }
 
 func TestBingAdsUploadNoTrackingId(t *testing.T) {
-
+	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 	clientI := Client{}
