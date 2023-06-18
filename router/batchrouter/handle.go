@@ -784,7 +784,8 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 // uploadInterval calculates the upload interval for the destination
 func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time.Duration {
 	// TODO: remove
-	return time.Duration(2 * int64(time.Second))
+	// for testing purpose
+	// return time.Duration(20 * int64(time.Second))
 
 	uploadInterval, ok := destinationConfig["uploadInterval"]
 	if !ok {
