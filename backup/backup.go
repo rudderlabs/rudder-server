@@ -12,35 +12,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/samber/lo"
 )
-
-var successfulBackupResponse = []byte(`{"status": "backup successful"}`)
-
-type jobQueue interface {
-	GetProcessed(
-		ctx context.Context,
-		params jobsdb.GetQueryParamsT,
-	) (jobsdb.JobsResult, error)
-
-	UpdateJobStatus(
-		ctx context.Context,
-		statusList []*jobsdb.JobStatusT,
-		customValFilters []string,
-		parameterFilters []jobsdb.ParameterFilterT,
-	) error
-
-	Identifier() string
-}
-
-type BackupContext struct {
-	QueryParams          jobsdb.GetQueryParamsT
-	Queue                jobQueue
-	FileUploaderProvider fileuploader.Provider
-	Marshaller           func(*jobsdb.JobT) ([]byte, error)
-}
 
 func Backup(
 	ctx context.Context,
@@ -53,45 +27,58 @@ func Backup(
 		log.Infof("backup Error: Error getting jobs from jobsdb: %w", err)
 		panic(err)
 	}
+
+	// considering default isolation strategies, we probably don't need this
 	workspaceJobsMap := lo.GroupBy(jobs.Jobs, func(job *jobsdb.JobT) string {
 		return job.WorkspaceId
 	})
 	statusList := make([]*jobsdb.JobStatusT, 0)
+
 	for workspaceID, wJobs := range workspaceJobsMap {
-		// write to file
-		backupPathDirName := "/rudder-s3-dumps/"
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			panic(err)
-		}
-		// pathPrefix := strings.TrimPrefix("gw_jobs", preDropTablePrefix)
-		pathPrefix := backupContext.Queue.Identifier() // TODO: remove
-		path := fmt.Sprintf(
-			"%v%v.%v.%v.%v.%v.%v.gz",
-			tmpDirPath+backupPathDirName,
-			pathPrefix,
-			wJobs[0].JobID,
-			wJobs[len(wJobs)-1].JobID,
-			wJobs[0].CreatedAt.UnixNano()/int64(time.Millisecond),
-			wJobs[len(wJobs)-1].CreatedAt.UnixNano()/int64(time.Millisecond),
-			workspaceID,
+		var (
+			path string
 		)
 
-		if backupContext.Marshaller == nil {
-			backupContext.Marshaller = jobsdb.MarshalJob
-		}
-		err = writeJobsToFile(wJobs, path, backupContext.Marshaller, log)
-		if err != nil {
-			log.Errorf("backup Error: Error writing jobs to file: %w for workspace %s",
-				err,
+		// write to file
+		{
+			backupPathDirName := "/rudder-s3-dumps/"
+			tmpDirPath, err := misc.CreateTMPDIR()
+			if err != nil {
+				panic(err)
+			}
+			// pathPrefix := strings.TrimPrefix("gw_jobs", preDropTablePrefix)
+			pathPrefix := backupContext.Queue.Identifier() // TODO: any use?
+			path = fmt.Sprintf(
+				"%v%v.%v.%v.%v.%v.%v.gz",
+				tmpDirPath+backupPathDirName,
+				pathPrefix,
+				wJobs[0].JobID,
+				wJobs[len(wJobs)-1].JobID,
+				wJobs[0].CreatedAt.UnixNano()/int64(time.Millisecond),
+				wJobs[len(wJobs)-1].CreatedAt.UnixNano()/int64(time.Millisecond),
 				workspaceID,
 			)
-			continue
+
+			if backupContext.Marshaller == nil {
+				backupContext.Marshaller = jobsdb.MarshalJob
+			}
+			err = writeJobsToFile(wJobs, path, backupContext.Marshaller, log)
+			if err != nil {
+				log.Errorf("backup Error: Error writing jobs to file: %w for workspace %s",
+					err,
+					workspaceID,
+				)
+				continue
+			}
+			defer func() { _ = os.Remove(path) }()
 		}
 
 		// 2. Upload jobs
 		{
-			pathPrefixes := make([]string, 0) // TOOO
+			pathPrefixes := []string{
+				backupContext.Queue.Identifier(),
+				config.GetString("INSTANCE_ID", "1"),
+			}
 			var output filemanager.UploadOutput
 			fileUploader, err := backupContext.FileUploaderProvider.GetFileManager(workspaceID)
 			if err != nil {
@@ -99,18 +86,23 @@ func Backup(
 				continue
 			}
 
-			bo := backoff.NewExponentialBackOff()
-			bo.MaxInterval = time.Minute
-			bo.MaxElapsedTime = config.GetDuration(
-				"backup.maxRetryTime",
-				5,
-				time.Minute,
-			)
-			boRetries := backoff.WithMaxRetries(
-				bo,
-				uint64(config.GetInt64("backup.maxRetries", 3)),
-			)
-			boCtx := backoff.WithContext(boRetries, ctx)
+			// configure backoff
+			var boCtx backoff.BackOffContext
+			{
+				bo := backoff.NewExponentialBackOff()
+				bo.MaxInterval = time.Minute
+				bo.MaxElapsedTime = config.GetDuration(
+					"backup.maxRetryTime",
+					5,
+					time.Minute,
+				)
+				boRetries := backoff.WithMaxRetries(
+					bo,
+					uint64(config.GetInt64("backup.maxRetries", 3)),
+				)
+				boCtx = backoff.WithContext(boRetries, ctx)
+			}
+
 			file, err := os.Open(path)
 			if err != nil {
 				panic(err)
@@ -142,15 +134,12 @@ func Backup(
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: successfulBackupResponse, // check
-					Parameters:    []byte(`{}`),             // check
+					ErrorResponse: successfulBackupResponse,     // check
+					Parameters:    job.LastJobStatus.Parameters, // check
 					JobParameters: job.Parameters,
-				}
-				switch job.LastJobStatus.ErrorCode {
-				case "200", "0":
-					js.JobState = jobsdb.Succeeded.State
-				default:
-					js.JobState = jobsdb.Aborted.State
+					// if we no longer care about the job's status, we can set it to completed
+					//  otherwise TODO: add some logic to find if it's succeeded or aborted
+					JobState: jobsdb.Completed.State,
 				}
 				return js
 			},
@@ -159,31 +148,32 @@ func Backup(
 	}
 
 	// 3. Update jobs status
-	if err = misc.RetryWithNotify(
-		ctx,
-		config.GetDuration("backup.updateStatusTimeout", 60, time.Second),
-		config.GetInt("backup.updateStatusRetries", 3),
-		func(ctx context.Context) error {
-			return backupContext.Queue.UpdateJobStatus(
-				ctx,
-				statusList,
-				nil,
-				nil,
-			)
-		},
-		func(attempt int) {
-			log.Infof(
-				"backup Error: Error updating job status: %w, retrying %d",
+	{
+		if err := misc.RetryWithNotify(
+			ctx,
+			config.GetDuration("backup.updateStatusTimeout", 60, time.Second),
+			config.GetInt("backup.updateStatusRetries", 3),
+			func(ctx context.Context) error {
+				return backupContext.Queue.UpdateJobStatus(
+					ctx,
+					statusList,
+					nil,
+					nil,
+				)
+			},
+			func(attempt int) {
+				log.Infof(
+					"backup Error: Error updating job status: %w, attempt num - %d",
+					err,
+					attempt,
+				)
+			},
+		); err != nil {
+			log.Errorf("backup Error: Error updating job status: %w",
 				err,
-				attempt,
 			)
-		},
-	); err != nil {
-		log.Errorf("backup Error: Error updating job status: %w",
-			err,
-		)
+		}
 	}
-
 }
 
 // Writes a list of jobs to a .gz file at given path

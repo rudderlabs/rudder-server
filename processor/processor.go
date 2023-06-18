@@ -57,6 +57,14 @@ const (
 	EventFilter        = "EVENT_FILTER"
 )
 
+var backupQueryParams = jobsdb.GetQueryParamsT{
+	CustomValFilters: []string{"GW"},
+	StateFilters:     []string{jobsdb.ToBackup.State},
+	JobsLimit:        config.GetInt("Processor.backupJobsLimit", 100000),
+	EventsLimit:      config.GetInt("Processor.backupEventsLimit", 100000),
+	PayloadSizeLimit: config.GetInt64("Processor.backupPayloadSizeLimit", 1024*bytesize.MB),
+}
+
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func NewHandle(transformer transformer.Transformer) *Handle {
@@ -456,7 +464,7 @@ func (proc *Handle) Setup(
 	} else {
 		proc.postProcessStatus = func(workspace string) string {
 			prefs, err := proc.fileuploader.GetStoragePreferences(workspace)
-			if err == nil && prefs.Backup("gw") {
+			if err == nil && prefs.Backup(proc.gatewayDB.Identifier()) {
 				return jobsdb.ToBackup.State
 			}
 			return jobsdb.Succeeded.State
@@ -554,23 +562,34 @@ func (proc *Handle) Start(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(config.GetDuration("Processor.backupLoopSleep", 5, time.Second)):
-				backup.Backup(
-					ctx,
-					backup.BackupContext{
-						QueryParams: jobsdb.GetQueryParamsT{
-							CustomValFilters: []string{proc.config.GWCustomVal},
-							StateFilters:     []string{jobsdb.ToBackup.State},
-							JobsLimit:        config.GetInt("Processor.backupJobsLimit", 10000),
-							EventsLimit:      config.GetInt("Processor.backupEventsLimit", 100000),
-							PayloadSizeLimit: config.GetInt64("Processor.backupPayloadSizeLimit", 128*bytesize.MB),
+			case <-time.After(config.GetDuration("Processor.backupLoopSleep", 10, time.Minute)):
+			}
+			backupStrategy := lo.Must(
+				isolation.GetStrategy(
+					isolation.Mode(
+						config.GetString("Processor.backupIsolationLevel", "source"),
+					),
+				),
+			)
+			backupConcurrency := make(chan struct{}, config.GetInt("Processor.backupConcurrency", 0))
+			for _, partition := range proc.activePartitions(ctx) {
+				queryParams := backupQueryParams
+				queryParams.PayloadSizeLimit = proc.adaptiveLimit(proc.payloadLimit)
+				backupStrategy.AugmentQueryParams(partition, &queryParams)
+				go func() {
+					backup.Backup(
+						ctx,
+						backup.BackupContext{
+							QueryParams:          queryParams,
+							Queue:                proc.gatewayDB,
+							FileUploaderProvider: proc.fileuploader,
+							Marshaller:           jobsdb.MarshalGWJob,
 						},
-						Queue:                proc.gatewayDB,
-						FileUploaderProvider: proc.fileuploader,
-						Marshaller:           jobsdb.MarshalGWJob,
-					},
-					proc.logger,
-				)
+						proc.logger,
+					)
+					<-backupConcurrency
+				}()
+				backupConcurrency <- struct{}{}
 			}
 		}
 	}))
