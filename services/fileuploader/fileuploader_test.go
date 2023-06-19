@@ -118,11 +118,11 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 
 	fm1, err := fileUploaderProvider.GetFileManager("testWorkspaceId-1")
 	Expect(err).To(BeNil())
-	Expect(fm1.GetConfiguredPrefix()).To(Equal("fullStoragePrefixWithNoTTL"))
+	Expect(fm1.Prefix()).To(Equal("fullStoragePrefixWithNoTTL"))
 
 	fm3, err := fileUploaderProvider.GetFileManager("testWorkspaceId-3")
 	Expect(err).To(BeNil())
-	Expect(fm3.GetConfiguredPrefix()).To(Equal("defaultPrefixWithStorageTTL"))
+	Expect(fm3.Prefix()).To(Equal("defaultPrefixWithStorageTTL"))
 
 	fm0, err := fileUploaderProvider.GetFileManager("testWorkspaceId-0")
 	Expect(err).To(Equal(fmt.Errorf(noStorageForWorkspaceErrorString, "testWorkspaceId-0")))

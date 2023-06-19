@@ -21,16 +21,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/filemanager/mock_filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
-	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -67,7 +67,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 
 var (
 	sampleConfigPrefix = "config_prefix"
-	sampleFileObjects  = []*filemanager.FileObject{
+	sampleFileObjects  = []*filemanager.FileInfo{
 		{
 			Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "01-02-2006", "tmp1.log"),
 			LastModified: time.Now(),
@@ -87,10 +87,10 @@ type testContext struct {
 	mockBatchRouterJobsDB  *mocksJobsDB.MockJobsDB
 	mockProcErrorsDB       *mocksJobsDB.MockJobsDB
 	mockBackendConfig      *mocksBackendConfig.MockBackendConfig
-	mockFileManagerFactory *mocksFileManager.MockFileManagerFactory
-	mockFileManager        *mocksFileManager.MockFileManager
+	mockFileManagerFactory filemanager.Factory
+	mockFileManager        *mock_filemanager.MockFileManager
 	mockConfigPrefix       string
-	mockFileObjects        []*filemanager.FileObject
+	mockFileObjects        []*filemanager.FileInfo
 	mockMultitenantI       *mocksMultitenant.MockMultiTenantI
 }
 
@@ -101,8 +101,8 @@ func (c *testContext) Setup() {
 	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockFileManagerFactory = mocksFileManager.NewMockFileManagerFactory(c.mockCtrl)
-	c.mockFileManager = mocksFileManager.NewMockFileManager(c.mockCtrl)
+	c.mockFileManager = mock_filemanager.NewMockFileManager(c.mockCtrl)
+	c.mockFileManagerFactory = func(settings *filemanager.Settings) (filemanager.FileManager, error) { return c.mockFileManager, nil }
 	c.mockMultitenantI = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
@@ -183,10 +183,9 @@ var _ = Describe("BatchRouter", func() {
 			batchrouter.readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
-			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
-			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.UploadOutput{Location: "local", ObjectName: "file"}, nil)
-			c.mockFileManager.EXPECT().GetConfiguredPrefix().Return(c.mockConfigPrefix)
-			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(c.mockFileObjects, nil)
+			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.UploadedFile{Location: "local", ObjectName: "file"}, nil)
+			c.mockFileManager.EXPECT().Prefix().Return(c.mockConfigPrefix)
+			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.MockListSession(c.mockFileObjects, nil))
 
 			s3Payload := `{
 				"userId": "identified user id",

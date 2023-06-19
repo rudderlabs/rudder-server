@@ -15,8 +15,8 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
@@ -716,9 +716,9 @@ type BQCredentials struct {
 
 func Connect(context context.Context, cred *BQCredentials) (*bigquery.Client, error) {
 	var opts []option.ClientOption
-	if !googleutils.ShouldSkipCredentialsInit(cred.Credentials) {
+	if !googleutil.ShouldSkipCredentialsInit(cred.Credentials) {
 		credBytes := []byte(cred.Credentials)
-		if err := googleutils.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
+		if err := googleutil.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
 			return nil, err
 		}
 		opts = append(opts, option.WithCredentialsJSON(credBytes))
