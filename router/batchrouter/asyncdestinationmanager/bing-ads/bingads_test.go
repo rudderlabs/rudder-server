@@ -25,6 +25,7 @@ import (
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var once sync.Once
@@ -49,7 +50,7 @@ func initBingads() {
 	})
 }
 
-func TestBingAdsUploadSuccessCase(t *testing.T) {
+func TestBingAdsUploadPartialSuccessCase(t *testing.T) {
 	initBingads()
 	ctrl := gomock.NewController(t)
 	bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
@@ -68,6 +69,22 @@ func TestBingAdsUploadSuccessCase(t *testing.T) {
 		RequestId:  "randomRequestId",
 	}, nil)
 
+	dir, err := os.MkdirTemp("/tmp", "rudder-server")
+	if err != nil {
+		fmt.Printf("Failed to create temporary directory: %v\n", err)
+		return
+	}
+
+	subDir := filepath.Join(dir, "rudder-async-destination-logs")
+	err = os.Mkdir(subDir, 0755)
+	if err != nil {
+		fmt.Printf("Failed to create the directory 'something': %v\n", err)
+		return
+	}
+
+	require.NoError(t, err)
+	t.Setenv("RUDDER_TMPDIR", dir)
+
 	asyncDestination := common.AsyncDestinationStruct{
 		ImportingJobIDs: []int64{1, 2, 3, 4},
 		FailedJobIDs:    []int64{},
@@ -84,6 +101,13 @@ func TestBingAdsUploadSuccessCase(t *testing.T) {
 	//making upload function call
 	recieved := bulkUploader.Upload(&destination, &asyncDestination)
 	recieved.ImportingParameters = stdjson.RawMessage{}
+
+	// Remove the directory and its contents
+	err = os.RemoveAll(dir)
+	if err != nil {
+		fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+		return
+	}
 
 	assert.Equal(t, recieved, expected)
 }
@@ -162,6 +186,22 @@ func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
 	}, nil)
 	bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("Error in uploading bulk file"))
 
+	dir, err := os.MkdirTemp("/tmp", "rudder-server")
+	if err != nil {
+		fmt.Printf("Failed to create temporary directory: %v\n", err)
+		return
+	}
+
+	subDir := filepath.Join(dir, "rudder-async-destination-logs")
+	err = os.Mkdir(subDir, 0755)
+	if err != nil {
+		fmt.Printf("Failed to create the directory 'something': %v\n", err)
+		return
+	}
+
+	require.NoError(t, err)
+	t.Setenv("RUDDER_TMPDIR", dir)
+
 	asyncDestination := common.AsyncDestinationStruct{
 		ImportingJobIDs: []int64{1, 2, 3, 4},
 		FailedJobIDs:    []int64{},
@@ -174,6 +214,13 @@ func TestBingAdsUploadFailedUploadBulkFile(t *testing.T) {
 		DestinationID: destination.ID,
 	}
 	recieved := bulkUploader.Upload(&destination, &asyncDestination)
+
+	// Remove the directory and its contents
+	err = os.RemoveAll(dir)
+	if err != nil {
+		fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+		return
+	}
 	assert.Equal(t, recieved, expected)
 }
 
@@ -387,6 +434,22 @@ func TestBingAdsUploadFailedWhileTransformingFile(t *testing.T) {
 		RequestId: misc.FastUUID().URN(),
 	}, nil)
 
+	dir, err := os.MkdirTemp("/tmp", "rudder-server")
+	if err != nil {
+		fmt.Printf("Failed to create temporary directory: %v\n", err)
+		return
+	}
+
+	subDir := filepath.Join(dir, "rudder-async-destination-logs")
+	err = os.Mkdir(subDir, 0755)
+	if err != nil {
+		fmt.Printf("Failed to create the directory 'something': %v\n", err)
+		return
+	}
+
+	require.NoError(t, err)
+	t.Setenv("RUDDER_TMPDIR", dir)
+
 	asyncDestination := common.AsyncDestinationStruct{
 		ImportingJobIDs: []int64{1, 2, 3},
 		FailedJobIDs:    []int64{},
@@ -400,6 +463,13 @@ func TestBingAdsUploadFailedWhileTransformingFile(t *testing.T) {
 		DestinationID: destination.ID,
 	}
 	recieved := bulkUploader.Upload(&destination, &asyncDestination)
+
+	// Remove the directory and its contents
+	err = os.RemoveAll(dir)
+	if err != nil {
+		fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+		return
+	}
 	assert.Equal(t, recieved, expected)
 }
 
@@ -462,6 +532,22 @@ func TestBingAdsUploadNoTrackingId(t *testing.T) {
 		RequestId:  "",
 	}, nil)
 
+	dir, err := os.MkdirTemp("/tmp", "rudder-server")
+	if err != nil {
+		fmt.Printf("Failed to create temporary directory: %v\n", err)
+		return
+	}
+
+	subDir := filepath.Join(dir, "rudder-async-destination-logs")
+	err = os.Mkdir(subDir, 0755)
+	if err != nil {
+		fmt.Printf("Failed to create the directory 'something': %v\n", err)
+		return
+	}
+
+	require.NoError(t, err)
+	t.Setenv("RUDDER_TMPDIR", dir)
+
 	asyncDestination := common.AsyncDestinationStruct{
 		ImportingJobIDs: []int64{1, 2, 3, 4},
 		FailedJobIDs:    []int64{},
@@ -477,6 +563,13 @@ func TestBingAdsUploadNoTrackingId(t *testing.T) {
 	//making upload function call
 	recieved := bulkUploader.Upload(&destination, &asyncDestination)
 	recieved.ImportingParameters = stdjson.RawMessage{}
+
+	// Remove the directory and its contents
+	err = os.RemoveAll(dir)
+	if err != nil {
+		fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+		return
+	}
 
 	assert.Equal(t, recieved, expected)
 }
