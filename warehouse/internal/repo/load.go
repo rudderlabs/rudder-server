@@ -33,7 +33,7 @@ type LoadFiles repo
 
 func NewLoadFiles(db *sql.DB, opts ...Opt) *LoadFiles {
 	r := &LoadFiles{
-		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
+		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithQueryTimeout(repoTimeout)),
 		now: timeutil.Now,
 	}
 

@@ -1012,11 +1012,15 @@ func GetConnectionTimeout(destType, destID string) time.Duration {
 	destIDLevelConfig := fmt.Sprintf("warehouse.%s.%s.connectionTimeout", destType, destID)
 	destTypeLevelConfig := fmt.Sprintf("warehouse.%s.connectionTimeout", destType)
 	warehouseLevelConfig := "warehouse.connectionTimeout"
+
+	defaultTimeout := int64(3)
+	defaultTimeoutUnits := time.Hour
+
 	if config.IsSet(destIDLevelConfig) {
-		return config.GetDuration(destIDLevelConfig, 1, time.Hour)
+		return config.GetDuration(destIDLevelConfig, defaultTimeout, defaultTimeoutUnits)
 	}
 	if config.IsSet(destTypeLevelConfig) {
-		return config.GetDuration(destTypeLevelConfig, 1, time.Hour)
+		return config.GetDuration(destTypeLevelConfig, defaultTimeout, defaultTimeoutUnits)
 	}
-	return config.GetDuration(warehouseLevelConfig, 1, time.Hour)
+	return config.GetDuration(warehouseLevelConfig, defaultTimeout, defaultTimeoutUnits)
 }

@@ -72,7 +72,7 @@ type UploadMetadata struct {
 
 func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
 	u := &Uploads{
-		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
+		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithQueryTimeout(repoTimeout)),
 		now: timeutil.Now,
 	}
 

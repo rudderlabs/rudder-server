@@ -31,19 +31,19 @@ func TestQueryWrapper(t *testing.T) {
 	t.Log("db:", pgResource.DBDsn)
 
 	testCases := []struct {
-		name               string
-		executionTimeInSec time.Duration
-		wantLog            bool
+		name          string
+		executionTime time.Duration
+		wantLog       bool
 	}{
 		{
-			name:               "slow query",
-			executionTimeInSec: 500 * time.Second,
-			wantLog:            true,
+			name:          "slow query",
+			executionTime: 500 * time.Second,
+			wantLog:       true,
 		},
 		{
-			name:               "fast query",
-			executionTimeInSec: 1 * time.Second,
-			wantLog:            false,
+			name:          "fast query",
+			executionTime: 1 * time.Second,
+			wantLog:       false,
 		},
 	}
 
@@ -71,14 +71,14 @@ func TestQueryWrapper(t *testing.T) {
 				WithKeyAndValues(keysAndValues...),
 			)
 			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
+				return tc.executionTime
 			}
 
 			query := "SELECT 1;"
 
 			kvs := []any{
 				logfield.Query, query,
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
+				logfield.QueryExecutionTime, tc.executionTime,
 			}
 			kvs = append(kvs, keysAndValues...)
 
@@ -125,7 +125,7 @@ func TestQueryWrapper(t *testing.T) {
 				}),
 			)
 			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
+				return tc.executionTime
 			}
 
 			t.Run("DB", func(t *testing.T) {
@@ -133,11 +133,11 @@ func TestQueryWrapper(t *testing.T) {
 
 				createKvs := []any{
 					logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-					logfield.QueryExecutionTime, tc.executionTimeInSec,
+					logfield.QueryExecutionTime, tc.executionTime,
 				}
 				alterKvs := []any{
 					logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-					logfield.QueryExecutionTime, tc.executionTimeInSec,
+					logfield.QueryExecutionTime, tc.executionTime,
 				}
 
 				createKvs = append(createKvs, keysAndValues...)
@@ -186,11 +186,11 @@ func TestQueryWrapper(t *testing.T) {
 
 						createKvs := []any{
 							logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-							logfield.QueryExecutionTime, tc.executionTimeInSec,
+							logfield.QueryExecutionTime, tc.executionTime,
 						}
 						alterKvs := []any{
 							logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-							logfield.QueryExecutionTime, tc.executionTimeInSec,
+							logfield.QueryExecutionTime, tc.executionTime,
 						}
 
 						createKvs = append(createKvs, keysAndValues...)
@@ -233,14 +233,14 @@ func TestQueryWrapper(t *testing.T) {
 				WithKeyAndValues(keysAndValues...),
 			)
 			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
+				return tc.executionTime
 			}
 
 			query := "SELECT 1;"
 
 			kvs := []any{
 				logfield.Query, query,
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
+				logfield.QueryExecutionTime, tc.executionTime,
 			}
 			kvs = append(kvs, keysAndValues...)
 
@@ -336,7 +336,7 @@ func TestQueryWrapper(t *testing.T) {
 				WithLogger(rslogger.NOP),
 			)
 			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
+				return tc.executionTime
 			}
 
 			table := fmt.Sprintf("test_table_%d", uuid.New().ID())

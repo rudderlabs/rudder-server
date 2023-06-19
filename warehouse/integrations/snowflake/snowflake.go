@@ -994,7 +994,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmiddl
 			logfield.Schema, sf.Namespace,
 		),
 		sqlmiddleware.WithSlowQueryThreshold(sf.SlowQueryThreshold),
-		sqlmiddleware.WithTimeout(sf.ConnectTimeout),
+		sqlmiddleware.WithQueryTimeout(sf.ConnectTimeout),
 		sqlmiddleware.WithSecretsRegex(map[string]string{
 			"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
 			"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",

@@ -1644,7 +1644,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 	wrappedDBHandle = sqlquerywrapper.New(
 		dbHandle,
 		sqlquerywrapper.WithLogger(pkgLogger.Child("dbHandle")),
-		sqlquerywrapper.WithTimeout(dbHanndleTimeout),
+		sqlquerywrapper.WithQueryTimeout(dbHanndleTimeout),
 	)
 
 	return setupTables(dbHandle)

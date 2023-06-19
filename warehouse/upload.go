@@ -792,7 +792,7 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 		job.warehouse,
 		sqlmiddleware.New(
 			job.dbHandle,
-			sqlmiddleware.WithTimeout(dbHanndleTimeout),
+			sqlmiddleware.WithQueryTimeout(dbHanndleTimeout),
 		),
 		job,
 		job.upload.ID,

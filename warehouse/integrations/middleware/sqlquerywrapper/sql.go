@@ -28,6 +28,7 @@ type DB struct {
 	keysAndValues      []any
 	slowQueryThreshold time.Duration
 	queryTimeout       time.Duration
+	transactionTimeout time.Duration
 	rollbackThreshold  time.Duration
 	commitThreshold    time.Duration
 	secretsRegex       map[string]string
@@ -62,9 +63,17 @@ func WithSecretsRegex(secretsRegex map[string]string) Opt {
 	}
 }
 
-func WithTimeout(timeout time.Duration) Opt {
+// imposes a timeout on each query
+func WithQueryTimeout(timeout time.Duration) Opt {
 	return func(s *DB) {
 		s.queryTimeout = timeout
+	}
+}
+
+// imposes a timeout on the transaction
+func WithTransactionTimeout(timeout time.Duration) Opt {
+	return func(s *DB) {
+		s.transactionTimeout = timeout
 	}
 }
 
@@ -173,7 +182,7 @@ func (db *DB) Begin() (*Tx, error) {
 }
 
 func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
-	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
+	ctx, cancel := queryContextWithTimeout(ctx, db.transactionTimeout)
 	defer cancel()
 	tx, err := db.DB.BeginTx(ctx, opts)
 	if err != nil {

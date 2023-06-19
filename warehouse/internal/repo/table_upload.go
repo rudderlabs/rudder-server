@@ -47,7 +47,7 @@ type TableUploadSetOptions struct {
 
 func NewTableUploads(db *sql.DB, opts ...Opt) *TableUploads {
 	r := &TableUploads{
-		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithTimeout(repoTimeout)),
+		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithQueryTimeout(repoTimeout)),
 		now: timeutil.Now,
 	}
 	for _, opt := range opts {

@@ -220,7 +220,7 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 			logfield.Schema, d.Namespace,
 		),
 		sqlmiddleware.WithSlowQueryThreshold(d.SlowQueryThreshold),
-		sqlmiddleware.WithTimeout(d.ConnectTimeout),
+		sqlmiddleware.WithQueryTimeout(d.ConnectTimeout),
 		sqlmiddleware.WithSecretsRegex(map[string]string{
 			"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
 			"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
