@@ -5,15 +5,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/tidwall/gjson"
 )
 
-var (
-	AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
-)
+var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
 
 // we need to add bingAds specific fields if needs to be handy.
 type PollStatusResponse struct {
@@ -132,11 +131,15 @@ type GetUploadStatsResponse struct {
 	Metadata EventStatMeta `json:"metadata"`
 }
 
-type AsyncDestinationOpts struct {
-	MaxUploadSize int64
-	HttpTimeout   time.Duration
-}
-
 func GetTransformedData(payload stdjson.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
+}
+
+func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {
+	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
+	if destOverrideFound {
+		return config.GetInt64("BatchRouter."+destType+"."+key, defaultValue)
+	} else {
+		return config.GetInt64("BatchRouter."+key, defaultValue)
+	}
 }

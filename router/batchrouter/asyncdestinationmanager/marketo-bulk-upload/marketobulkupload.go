@@ -22,22 +22,18 @@ import (
 
 type MarketoBulkUploader struct {
 	destName          string
-	timeout           time.Duration
 	destinationConfig map[string]interface{}
 	TransformUrl      string
 	PollUrl           string
 	logger            logger.Logger
 }
 
-func NewManager(destination *backendconfig.DestinationT, opts common.AsyncDestinationOpts) (*MarketoBulkUploader, error) {
-	marketoBulkUpload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", timeout: opts.HttpTimeout, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
+func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
+	marketoBulkUpload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
 	return marketoBulkUpload, nil
-
 }
 
-var (
-	pkgLogger logger.Logger
-)
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("asyncdestinationmanager").Child("marketobulkupload")
@@ -48,7 +44,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 	if err != nil {
 		panic("JSON Marshal Failed" + err.Error())
 	}
-	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, b.timeout)
+	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
 	var asyncResponse common.PollStatusResponse
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
@@ -57,10 +53,10 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 	return asyncResponse, statusCode
 }
 
-func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
+func GenerateFailedPayload(destConfig map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
 	var failedPayloadT common.AsyncFailedPayload
 	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
-	failedPayloadT.Config = config
+	failedPayloadT.Config = destConfig
 	for index, job := range jobs {
 		failedPayloadT.Input[index] = make(map[string]interface{})
 		var message map[string]interface{}
@@ -90,7 +86,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 	payload := GenerateFailedPayload(b.destinationConfig, UploadStatsInput.ImportingList, importId, b.destName, csvHeaders)
-	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, b.timeout)
+	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{}, statusCode
 	}
@@ -100,7 +96,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	internalStatusCode, _ := failedJobsResponse["status"].(string)
 	metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
 	if !ok {
-		//TODO
+		// TODO
 		pkgLogger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", internalStatusCode, string(failedBodyBytes))
 		return common.GetUploadStatsResponse{}, statusCode
 	}
@@ -166,7 +162,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	destinationUploadUrl := asyncDestStruct.URL
 	url := resolveURL(b.TransformUrl, destinationUploadUrl)
 	filePath := asyncDestStruct.FileName
-	config := destination.Config
+	destConfig := destination.Config
 	destType := destination.DestinationDefinition.Name
 	failedJobIDs := asyncDestStruct.FailedJobIDs
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
@@ -189,7 +185,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 	payload, err := json.Marshal(common.AsyncUploadT{
 		Input:    input,
-		Config:   config,
+		Config:   destConfig,
 		DestType: strings.ToLower(destType),
 	})
 	if err != nil {
@@ -209,7 +205,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	startTime := time.Now()
 	payloadSizeStat.Observe(float64(len(payload)))
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
-	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, b.timeout)
+	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
 	pkgLogger.Debugf("[Async Destination Maanger] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
 	var bodyBytes []byte
@@ -291,5 +287,4 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 
 	}
 	return uploadResponse
-
 }

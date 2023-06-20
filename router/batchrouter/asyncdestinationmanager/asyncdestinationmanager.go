@@ -95,14 +95,12 @@ func GetMarshalledData(payload string, jobID int64) string {
 	return string(responsePayload)
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig, opts common.AsyncDestinationOpts) (Asyncdestinationmanager, error) {
-	opts.HttpTimeout = HTTPTimeout
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (Asyncdestinationmanager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
-		return bingads.NewManager(destination, backendConfig, opts)
+		return bingads.NewManager(destination, backendConfig)
 	case "MARKETO_BULK_UPLOAD":
-		return marketobulkupload.NewManager(destination, opts)
+		return marketobulkupload.NewManager(destination)
 	}
 	return nil, nil
-
 }
