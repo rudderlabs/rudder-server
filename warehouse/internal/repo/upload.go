@@ -70,9 +70,9 @@ type UploadMetadata struct {
 	NextRetryTime    time.Time `json:"nextRetryTime"`
 }
 
-func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
+func NewUploads(db *sqlquerywrapper.DB, opts ...Opt) *Uploads {
 	u := &Uploads{
-		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithQueryTimeout(repoTimeout)),
+		db:  db,
 		now: timeutil.Now,
 	}
 
@@ -140,9 +140,8 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		}
 	}()
 
-	row := tx.QueryRowContext(
-		ctx,
-
+	var uploadID int64
+	err = tx.QueryRow(
 		`INSERT INTO `+uploadsTableName+` (
 			source_id, namespace, workspace_id, destination_id,
 			destination_type, start_staging_file_id,
@@ -174,15 +173,12 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		lastEventAt,
 		uploads.now(),
 		uploads.now(),
-	)
-
-	var uploadID int64
-	err = row.Scan(&uploadID)
+	).Scan(&uploadID)
 	if err != nil {
 		return 0, err
 	}
 
-	result, err := tx.ExecContext(ctx,
+	result, err := tx.Exec(
 		`UPDATE `+stagingTableName+` SET upload_id = $1 WHERE id = ANY($2)`,
 		uploadID, pq.Array(stagingFileIDs),
 	)

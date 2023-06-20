@@ -380,7 +380,7 @@ func (uploadReq *UploadReq) TriggerWHUpload(ctx context.Context) (response *prot
 		return
 	}
 
-	upload, err := repo.NewUploads(uploadReq.API.dbHandle).Get(ctx, uploadReq.UploadId)
+	upload, err := repo.NewUploads(uploadReq.API.warehouseDBHandle.handle).Get(ctx, uploadReq.UploadId)
 	if err == model.ErrUploadNotFound {
 		return &proto.TriggerWhUploadsResponse{
 			Message:    NoSuchSync,
@@ -400,7 +400,7 @@ func (uploadReq *UploadReq) TriggerWHUpload(ctx context.Context) (response *prot
 
 	uploadJobT := UploadJob{
 		upload:   upload,
-		dbHandle: uploadReq.API.dbHandle,
+		dbHandle: uploadReq.API.warehouseDBHandle.handle,
 		now:      timeutil.Now,
 		ctx:      ctx,
 	}

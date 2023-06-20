@@ -79,7 +79,7 @@ type UploadJobFactory struct {
 
 type UploadJob struct {
 	ctx                  context.Context
-	dbHandle             *sql.DB
+	dbHandle             *sqlmiddleware.DB
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
 	tableUploadsRepo     *repo.TableUploads
@@ -174,24 +174,32 @@ func setMaxParallelLoads() {
 }
 
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
+	wrappedDBHandle := sqlmiddleware.New(
+		f.dbHandle,
+		sqlmiddleware.WithQueryTimeout(dbHanndleTimeout),
+	)
 	return &UploadJob{
 		ctx:                  ctx,
-		dbHandle:             f.dbHandle,
+		dbHandle:             wrappedDBHandle,
 		loadfile:             f.loadFile,
 		recovery:             f.recovery,
 		pgNotifier:           f.pgNotifier,
 		whManager:            whManager,
 		destinationValidator: f.destinationValidator,
 		stats:                f.stats,
-		tableUploadsRepo:     repo.NewTableUploads(f.dbHandle),
-		schemaHandle:         NewSchema(sqlmiddleware.New(f.dbHandle), dto.Warehouse, config.Default),
+		tableUploadsRepo:     repo.NewTableUploads(wrappedDBHandle),
+		schemaHandle: NewSchema(
+			wrappedDBHandle,
+			dto.Warehouse,
+			config.Default,
+		),
 
 		upload:         dto.Upload,
 		warehouse:      dto.Warehouse,
 		stagingFiles:   dto.StagingFiles,
 		stagingFileIDs: repo.StagingFileIDs(dto.StagingFiles),
 
-		pendingTableUploadsRepo: repo.NewUploads(f.dbHandle),
+		pendingTableUploadsRepo: repo.NewUploads(wrappedDBHandle),
 		pendingTableUploads:     []model.PendingTableUpload{},
 
 		refreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
@@ -790,10 +798,7 @@ func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[s
 func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err error) {
 	idr := identity.New(
 		job.warehouse,
-		sqlmiddleware.New(
-			job.dbHandle,
-			sqlmiddleware.WithQueryTimeout(dbHanndleTimeout),
-		),
+		wrappedDBHandle,
 		job,
 		job.upload.ID,
 		job.whManager,
@@ -1637,7 +1642,7 @@ func (job *UploadJob) triggerUploadNow() (err error) {
 			if err != nil {
 				panic(err)
 			}
-			err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+			err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn.GetTx()})
 			if err != nil {
 				panic(err)
 			}
@@ -1775,7 +1780,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			if err != nil {
 				return fmt.Errorf("unable to start transaction: %w", err)
 			}
-			if err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn}); err != nil {
+			if err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn.GetTx()}); err != nil {
 				return fmt.Errorf("unable to change upload columns: %w", err)
 			}
 			inputCount, _ := repo.NewStagingFiles(wrappedDBHandle).TotalEventsForUpload(ctx, upload)
@@ -1833,7 +1838,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 				})
 			}
 			if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
-				application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
+				application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn.GetTx())
 			}
 			return txn.Commit()
 		},

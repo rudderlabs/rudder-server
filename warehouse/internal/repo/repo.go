@@ -3,14 +3,11 @@ package repo
 import (
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 )
 
-var repoTimeout = config.GetDuration("Warehouse.repoTimeout", 5, time.Minute)
-
 type repo struct {
-	db  *sqlquerywrapper.DB
+	db  *sqlmiddleware.DB
 	now func() time.Time
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -72,7 +72,7 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	}
 }
 
-func NewStagingFiles(db *sqlquerywrapper.DB, opts ...Opt) *StagingFiles {
+func NewStagingFiles(db *sqlmiddleware.DB, opts ...Opt) *StagingFiles {
 	r := &StagingFiles{
 		db:  db,
 		now: timeutil.Now,

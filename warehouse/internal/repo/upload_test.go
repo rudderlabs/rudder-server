@@ -2,7 +2,6 @@ package repo_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
@@ -11,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -24,7 +23,7 @@ func TestUploads_Count(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -136,7 +135,7 @@ func TestUploads_Get(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -268,12 +267,12 @@ func TestUploads_GetToProcess(t *testing.T) {
 		ctx             = context.Background()
 	)
 
-	prepareUpload := func(db *sql.DB, sourceID string, status model.UploadStatus, priority int, now, nextRetryTime time.Time) model.Upload {
+	prepareUpload := func(db *sqlmiddleware.DB, sourceID string, status model.UploadStatus, priority int, now, nextRetryTime time.Time) model.Upload {
 		stagingFileID := int64(0)
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -622,7 +621,7 @@ func TestUploads_Processing(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -806,7 +805,7 @@ func TestUploads_Delete(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -890,7 +889,7 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		db              = setupDB(t)
 		repoUpload      = repo.NewUploads(db)
 		repoTableUpload = repo.NewTableUploads(db)
-		repoStaging     = repo.NewStagingFiles(sqlquerywrapper.New(db))
+		repoStaging     = repo.NewStagingFiles(db)
 	)
 
 	for _, status := range []string{"exporting_data", "aborted"} {

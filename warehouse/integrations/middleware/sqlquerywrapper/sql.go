@@ -243,7 +243,7 @@ func (tx *Tx) Commit() error {
 }
 
 func queryContextWithTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	if timeout <= 0 {
+	if timeout.Abs() <= 0 {
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, timeout)

@@ -875,7 +875,7 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 	// which we will be running the db calls.
 	wh.warehouseDBHandle = NewWarehouseDB(wrappedDBHandle)
 	wh.stagingRepo = repo.NewStagingFiles(wrappedDBHandle)
-	wh.uploadRepo = repo.NewUploads(dbHandle)
+	wh.uploadRepo = repo.NewUploads(wrappedDBHandle)
 	wh.whSchemaRepo = repo.NewWHSchemas(wrappedDBHandle)
 
 	wh.notifier = notifier
@@ -901,10 +901,10 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 			Logger:             pkgLogger.Child("loadfile"),
 			Notifier:           &notifier,
 			StageRepo:          repo.NewStagingFiles(wrappedDBHandle),
-			LoadRepo:           repo.NewLoadFiles(dbHandle),
+			LoadRepo:           repo.NewLoadFiles(wrappedDBHandle),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		recovery: service.NewRecovery(whType, repo.NewUploads(dbHandle)),
+		recovery: service.NewRecovery(whType, repo.NewUploads(wrappedDBHandle)),
 	}
 	loadfiles.WithConfig(wh.uploadJobFactory.loadFile, config.Default)
 
@@ -1288,7 +1288,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 func getFilteredCount(ctx context.Context, filters ...repo.FilterBy) (int64, error) {
 	pkgLogger.Debugf("fetching filtered count")
-	return repo.NewUploads(dbHandle).Count(ctx, filters...)
+	return repo.NewUploads(wrappedDBHandle).Count(ctx, filters...)
 }
 
 func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {

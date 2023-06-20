@@ -2,7 +2,6 @@ package repo_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -10,14 +9,14 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
 
-func setupDB(t testing.TB) *sql.DB {
+func setupDB(t testing.TB) *sqlmiddleware.DB {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -32,7 +31,7 @@ func setupDB(t testing.TB) *sql.DB {
 
 	t.Log("db:", pgResource.DBDsn)
 
-	return pgResource.DB
+	return sqlmiddleware.New(pgResource.DB)
 }
 
 func TestStagingFileRepo(t *testing.T) {
@@ -40,7 +39,7 @@ func TestStagingFileRepo(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second).UTC()
 
-	r := repo.NewStagingFiles(sqlquerywrapper.New(setupDB(t)),
+	r := repo.NewStagingFiles(setupDB(t),
 		repo.WithNow(func() time.Time {
 			return now
 		}),
@@ -166,7 +165,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-	r := repo.NewStagingFiles(sqlquerywrapper.New(db),
+	r := repo.NewStagingFiles(db,
 		repo.WithNow(func() time.Time {
 			return now
 		}),
@@ -185,7 +184,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	t.Run("GetForUploadID", func(t *testing.T) {
 		t.Parallel()
-		u := repo.NewUploads(db)
+		u := repo.NewUploads(setupDB(t))
 		uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
 		require.NoError(t, err)
 		testcases := []struct {
@@ -283,7 +282,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			`)
 			require.NoError(t, err)
 
-			r := repo.NewStagingFiles(sqlquerywrapper.New(db))
+			r := repo.NewStagingFiles(db)
 
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
 			require.EqualError(t, err, "cannot get schemas by ids: unmarshal staging schema: ReadMapCB: expect { or n, but found 1, error found in #1 byte of ...|1|..., bigger context ...|1|...")
@@ -298,7 +297,7 @@ func TestStagingFileRepo_Pending(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 
 	db := setupDB(t)
-	r := repo.NewStagingFiles(sqlquerywrapper.New(db),
+	r := repo.NewStagingFiles(db,
 		repo.WithNow(func() time.Time {
 			return now
 		}),
@@ -396,7 +395,7 @@ func TestStagingFileRepo_Status(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-	r := repo.NewStagingFiles(sqlquerywrapper.New(db), repo.WithNow(func() time.Time {
+	r := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -504,7 +503,7 @@ func TestStagingFileIDs(t *testing.T) {
 func BenchmarkFiles(b *testing.B) {
 	ctx := context.Background()
 	db := setupDB(b)
-	stagingRepo := repo.NewStagingFiles(sqlquerywrapper.New(db))
+	stagingRepo := repo.NewStagingFiles(db)
 	uploadRepo := repo.NewUploads(db)
 
 	size := 100000

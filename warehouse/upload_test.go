@@ -250,7 +250,7 @@ var _ = Describe("Upload", Ordered, func() {
 				Namespace:          namespace,
 			},
 			stagingFileIDs: []int64{1, 2, 3, 4, 5},
-			dbHandle:       pgResource.DB,
+			dbHandle:       sqlmiddleware.New(pgResource.DB),
 			ctx:            context.Background(),
 		}
 	})

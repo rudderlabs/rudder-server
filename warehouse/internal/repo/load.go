@@ -9,7 +9,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -31,9 +31,9 @@ const (
 
 type LoadFiles repo
 
-func NewLoadFiles(db *sql.DB, opts ...Opt) *LoadFiles {
+func NewLoadFiles(db *sqlmiddleware.DB, opts ...Opt) *LoadFiles {
 	r := &LoadFiles{
-		db:  sqlquerywrapper.New(db, sqlquerywrapper.WithQueryTimeout(repoTimeout)),
+		db:  db,
 		now: timeutil.Now,
 	}
 

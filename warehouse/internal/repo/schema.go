@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -28,7 +28,7 @@ const whSchemaTableColumns = `
 
 type WHSchema repo
 
-func NewWHSchemas(db *sqlquerywrapper.DB, opts ...Opt) *WHSchema {
+func NewWHSchemas(db *sqlmiddleware.DB, opts ...Opt) *WHSchema {
 	r := &WHSchema{
 		db:  db,
 		now: timeutil.Now,
