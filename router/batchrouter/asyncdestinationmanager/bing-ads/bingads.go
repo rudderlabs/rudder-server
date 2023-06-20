@@ -400,7 +400,6 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 	var statusCode int
 	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
 	if err != nil {
-		// panic("BRT: Failed to poll status for bingAds" + err.Error())
 		resp = common.PollStatusResponse{
 			Success:        false,
 			StatusCode:     400,
@@ -457,11 +456,20 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		if err != nil {
 			panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
 		}
-		//client := BingAdsUtilsImpl{}
 		// Extract the contents of the zip file to the output directory
 		filePaths, err := Unzip(tempFile.Name(), outputDir)
 		if err != nil {
-			panic(fmt.Errorf("BRT: Failed saving zip file extracting zip file Err: %w", err))
+			resp = common.PollStatusResponse{
+				Success:        false,
+				StatusCode:     400,
+				HasFailed:      true,
+				HasWarning:     false,
+				FailedJobsURL:  "",
+				WarningJobsURL: "",
+				OutputFilePath: "",
+			}
+			statusCode = 400
+			return resp, statusCode
 		}
 
 		// extracting file paths
