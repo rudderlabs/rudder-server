@@ -34,7 +34,7 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.10.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.44.283
+	github.com/aws/aws-sdk-go v1.44.284
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -64,7 +64,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.57
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mkmik/multierror v0.3.0
-	github.com/onsi/ginkgo/v2 v2.10.0
+	github.com/onsi/ginkgo/v2 v2.11.0
 	github.com/onsi/gomega v1.27.8
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
@@ -82,7 +82,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/tidwall/gjson v1.14.4
 	github.com/tidwall/sjson v1.2.5
-	github.com/urfave/cli/v2 v2.25.6
+	github.com/urfave/cli/v2 v2.25.7
 	github.com/viney-shih/go-lock v1.1.2
 	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20230312005205-fbbcdea5f512
@@ -276,7 +276,7 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.11.0 // indirect
-	golang.org/x/sys v0.8.0 // indirect
+	golang.org/x/sys v0.9.0 // indirect
 	golang.org/x/term v0.8.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/tools v0.9.3 // indirect
