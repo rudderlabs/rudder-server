@@ -12,7 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -29,8 +28,7 @@ type LifecycleManager struct {
 	errDB            *jobsdb.HandleT
 	esDB             *jobsdb.HandleT
 	clearDB          *bool
-	MultitenantStats multitenant.MultiTenantI // need not initialize again
-	ReportingI       types.Reporting          // need not initialize again
+	ReportingI       types.Reporting // need not initialize again
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
 	transientSources transientsource.Service
@@ -50,7 +48,7 @@ func (proc *LifecycleManager) Start() error {
 
 	proc.Handle.Setup(
 		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB, proc.esDB,
-		proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
+		proc.ReportingI, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -84,7 +82,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb, esDB *jobsdb.HandleT,
-	tenantDB multitenant.MultiTenantI, reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
+	reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 	opts ...Opts,
 ) *LifecycleManager {
@@ -97,7 +95,6 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb, esDB *job
 		errDB:            errDb,
 		esDB:             esDB,
 		clearDB:          clearDb,
-		MultitenantStats: tenantDB,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		ReportingI:       reporting,
 		transientSources: transientSources,

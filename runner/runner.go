@@ -43,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
@@ -348,7 +347,6 @@ func runAllInit() {
 	gateway.Init()
 	integrations.Init()
 	alert.Init()
-	multitenant.Init()
 	oauth.Init()
 }
 

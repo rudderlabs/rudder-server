@@ -165,6 +165,21 @@ func (mr *MockJobsDBMockRecorder) GetProcessed(arg0, arg1 interface{}) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcessed", reflect.TypeOf((*MockJobsDB)(nil).GetProcessed), arg0, arg1)
 }
 
+// GetToProcess mocks base method.
+func (m *MockJobsDB) GetToProcess(arg0 context.Context, arg1 jobsdb.GetQueryParamsT, arg2 jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetToProcess", arg0, arg1, arg2)
+	ret0, _ := ret[0].(*jobsdb.MoreJobsResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetToProcess indicates an expected call of GetToProcess.
+func (mr *MockJobsDBMockRecorder) GetToProcess(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetToProcess", reflect.TypeOf((*MockJobsDB)(nil).GetToProcess), arg0, arg1, arg2)
+}
+
 // GetToRetry mocks base method.
 func (m *MockJobsDB) GetToRetry(arg0 context.Context, arg1 jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
 	m.ctrl.T.Helper()

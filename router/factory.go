@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -19,9 +18,8 @@ import (
 type Factory struct {
 	Logger           logger.Logger
 	Reporting        reporter
-	Multitenant      tenantStats
 	BackendConfig    backendconfig.BackendConfig
-	RouterDB         jobsdb.MultiTenantJobsDB
+	RouterDB         jobsdb.JobsDB
 	ProcErrorDB      jobsdb.JobsDB
 	TransientSources transientsource.Service
 	RsourcesService  rsources.JobService
@@ -33,7 +31,6 @@ type Factory struct {
 func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 	r := &Handle{
 		Reporting:        f.Reporting,
-		MultitenantI:     f.Multitenant,
 		throttlerFactory: f.ThrottlerFactory,
 		adaptiveLimit:    f.AdaptiveLimit,
 	}
@@ -54,13 +51,4 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 type reporter interface {
 	WaitForSetup(ctx context.Context, clientName string) error
 	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
-}
-
-type tenantStats interface {
-	CalculateSuccessFailureCounts(workspace, destType string, isSuccess, isDrained bool)
-	GetRouterPickupJobs(
-		destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int,
-	) map[string]int
-	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
-	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
 }

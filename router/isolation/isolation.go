@@ -35,7 +35,7 @@ func GetStrategy(mode Mode, customVal string, destinationFilter func(destination
 // Strategy defines the operations that every different isolation strategy in processor must implement
 type Strategy interface {
 	// ActivePartitions returns the list of partitions that are active for the given strategy
-	ActivePartitions(ctx context.Context, db jobsdb.MultiTenantJobsDB) ([]string, error)
+	ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error)
 	// AugmentQueryParams augments the given GetQueryParamsT with the strategy specific parameters
 	AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT)
 	// StopIteration returns true if the iteration should be stopped for the given error
@@ -45,7 +45,7 @@ type Strategy interface {
 // noneStrategy implements isolation at no level
 type noneStrategy struct{}
 
-func (noneStrategy) ActivePartitions(_ context.Context, _ jobsdb.MultiTenantJobsDB) ([]string, error) {
+func (noneStrategy) ActivePartitions(_ context.Context, _ jobsdb.JobsDB) ([]string, error) {
 	return []string{""}, nil
 }
 
@@ -63,7 +63,7 @@ type workspaceStrategy struct {
 }
 
 // ActivePartitions returns the list of active workspaceIDs in jobsdb
-func (ws workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.MultiTenantJobsDB) ([]string, error) {
+func (ws workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
 	return db.GetActiveWorkspaces(ctx, ws.customVal)
 }
 
@@ -81,7 +81,7 @@ type destinationStrategy struct {
 }
 
 // ActivePartitions returns the list of active destinationIDs in jobsdb
-func (ds destinationStrategy) ActivePartitions(ctx context.Context, db jobsdb.MultiTenantJobsDB) ([]string, error) {
+func (ds destinationStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
 	unfiltered, err := db.GetDistinctParameterValues(ctx, "destination_id")
 	if err != nil {
 		return nil, err

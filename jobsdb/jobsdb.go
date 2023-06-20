@@ -197,6 +197,15 @@ func (h *HandleInspector) DSIndicesList() []string {
 	return indicesList
 }
 
+// MoreToken is a token that can be used to fetch more jobs
+type MoreToken interface{}
+
+// MoreJobsResult is a JobsResult with a MoreToken
+type MoreJobsResult struct {
+	JobsResult
+	More MoreToken
+}
+
 /*
 JobsDB interface contains public methods to access JobsDB data
 */
@@ -275,6 +284,10 @@ type JobsDB interface {
 
 	// GetImporting finds jobs in importing state
 	GetImporting(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
+
+	// GetToProcess finds jobs in any of the following states: failed, waiting, unprocessed.
+	// It also returns a MoreToken that can be used to fetch more jobs, if available, with a subsequent call.
+	GetToProcess(ctx context.Context, params GetQueryParamsT, more MoreToken) (*MoreJobsResult, error)
 
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
@@ -1769,6 +1782,74 @@ func (jd *HandleT) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 			jd.noResultsCache.Invalidate(ds.Index, workspace, []string{customVal}, []string{NotProcessed.State}, parameterFilters)
 		}
 	}
+}
+
+type moreToken struct {
+	retryAfterJobID       *int64
+	waitingAfterJobID     *int64
+	unprocessedAfterJobID *int64
+}
+
+func (jd *HandleT) GetToProcess(ctx context.Context, params GetQueryParamsT, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
+
+	mtoken := &moreToken{}
+	if more != nil {
+		var ok bool
+		if mtoken, ok = more.(*moreToken); !ok {
+			return nil, fmt.Errorf("invalid token: %+v", more)
+		}
+	}
+	updateParams := func(params *GetQueryParamsT, jobs JobsResult, nextAfterJobID *int64) {
+		params.JobsLimit -= len(jobs.Jobs)
+		if params.EventsLimit > 0 {
+			params.EventsLimit -= jobs.EventsCount
+		}
+		if params.PayloadSizeLimit > 0 {
+			params.PayloadSizeLimit -= jobs.PayloadSize
+		}
+		params.AfterJobID = nextAfterJobID
+	}
+	var list []*JobT
+	params.AfterJobID = mtoken.retryAfterJobID
+	toRetry, err := jd.GetToRetry(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(toRetry.Jobs) > 0 {
+		retryAfterJobID := toRetry.Jobs[len(toRetry.Jobs)-1].JobID
+		mtoken.retryAfterJobID = &retryAfterJobID
+	}
+
+	list = append(list, toRetry.Jobs...)
+	if toRetry.LimitsReached {
+		return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: true}, More: mtoken}, nil
+	}
+	updateParams(&params, toRetry, mtoken.waitingAfterJobID)
+
+	waiting, err := jd.GetWaiting(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(waiting.Jobs) > 0 {
+		waitingAfterJobID := waiting.Jobs[len(waiting.Jobs)-1].JobID
+		mtoken.waitingAfterJobID = &waitingAfterJobID
+	}
+	list = append(list, waiting.Jobs...)
+	if waiting.LimitsReached {
+		return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: true}, More: mtoken}, nil
+	}
+	updateParams(&params, waiting, mtoken.unprocessedAfterJobID)
+
+	unprocessed, err := jd.GetUnprocessed(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if len(unprocessed.Jobs) > 0 {
+		unprocessedAfterJobID := unprocessed.Jobs[len(unprocessed.Jobs)-1].JobID
+		mtoken.unprocessedAfterJobID = &unprocessedAfterJobID
+	}
+	list = append(list, unprocessed.Jobs...)
+	return &MoreJobsResult{JobsResult: JobsResult{Jobs: list, LimitsReached: unprocessed.LimitsReached}, More: mtoken}, nil
 }
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}

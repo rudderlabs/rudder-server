@@ -1252,10 +1252,6 @@ func Unique(stringSlice []string) []string {
 	return list
 }
 
-func UseFairPickup() bool {
-	return config.GetBool("JobsDB.fairPickup", false) && config.GetString("Router.isolationMode", "default") == "none"
-}
-
 // MapLookup returns the value of the key in the map, or nil if the key is not present.
 //
 // If multiple keys are provided then it looks for nested maps recursively.

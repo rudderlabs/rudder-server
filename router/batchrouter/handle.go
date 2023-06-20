@@ -35,7 +35,6 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -55,7 +54,6 @@ type Handle struct {
 	netHandle          *http.Client
 	jobsDB             jobsdb.JobsDB
 	errorDB            jobsdb.JobsDB
-	multitenantI       multitenant.MultiTenantI
 	reporting          types.Reporting
 	backendConfig      backendconfig.BackendConfig
 	fileManagerFactory filemanager.Factory
