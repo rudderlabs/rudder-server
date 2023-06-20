@@ -89,6 +89,20 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	defer gatewayDB.Stop()
 
+	errDB := jobsdb.NewForWrite(
+		"proc_error",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.gatewayDSLimit), // TODO: use better config
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
+	)
+	defer errDB.Close()
+
+	if err := errDB.Start(); err != nil {
+		return fmt.Errorf("could not start errDB: %w", err)
+	}
+	defer errDB.Stop()
+
 	g, ctx := errgroup.WithContext(ctx)
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -115,7 +129,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	err = gw.Setup(
 		ctx,
-		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
+		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDB,
 		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
 	if err != nil {

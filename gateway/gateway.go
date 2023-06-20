@@ -162,6 +162,7 @@ type HandleT struct {
 	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
 	jobsDB                       jobsdb.JobsDB
+	errDB                        jobsdb.JobsDB
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
@@ -343,6 +344,16 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 				errorMessagesMap[batch[0].UUID] = errorMessage
 			}
 		}
+
+		// TODO insert start - clean up later
+		err = gateway.errDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
+			return gateway.errDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
+		})
+		if err != nil {
+			panic(err)
+		}
+		// TODO insert end
+
 		cancel()
 		gateway.dbWritesStat.Count(1)
 
@@ -1502,7 +1513,7 @@ This function will block until backend config is initially received.
 */
 func (gateway *HandleT) Setup(
 	ctx context.Context,
-	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
+	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
@@ -1535,6 +1546,7 @@ func (gateway *HandleT) Setup(
 	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, maxDBWriterProcess)
 	gateway.emptyAnonIdHeaderStat = gateway.stats.NewStat("gateway.empty_anonymous_id_header", stats.CountType)
 	gateway.jobsDB = jobsDB
+	gateway.errDB = errDB
 
 	gateway.versionHandler = versionHandler
 

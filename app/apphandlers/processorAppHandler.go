@@ -170,7 +170,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
 	)
 	defer batchRouterDB.Close()
-	errDB := jobsdb.NewForReadWrite(
+	errDBForRead := jobsdb.NewForRead(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
@@ -178,6 +178,15 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
+	defer errDBForRead.Close()
+	errDBForWrite := jobsdb.NewForWrite(
+		"proc_error",
+		jobsdb.WithClearDB(options.ClearDB),
+	)
+	if err = errDBForWrite.Start(); err != nil {
+		return fmt.Errorf("could not start errDBForWrite: %w", err)
+	}
+	defer errDBForWrite.Stop()
 	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -225,7 +234,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		gwDBForProcessor,
 		routerDB,
 		batchRouterDB,
-		errDB,
+		errDBForRead,
+		errDBForWrite,
 		schemaDB,
 		multitenantStats,
 		reportingI,
@@ -246,7 +256,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         tenantRouterDB,
-		ProcErrorDB:      errDB,
+		ProcErrorDB:      errDBForRead,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		ThrottlerFactory: throttlerFactory,
@@ -258,7 +268,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         batchRouterDB,
-		ProcErrorDB:      errDB,
+		ProcErrorDB:      errDBForRead,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		Debugger:         destinationHandle,
@@ -272,7 +282,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		GatewayDB:        gwDBForProcessor,
 		RouterDB:         routerDB,
 		BatchRouterDB:    batchRouterDB,
-		ErrorDB:          errDB,
+		ErrorDB:          errDBForRead,
 		SchemaForwarder:  schemaForwarder,
 		EventSchemaDB:    schemaDB,
 		Processor:        p,
