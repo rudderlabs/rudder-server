@@ -66,7 +66,7 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
@@ -107,7 +107,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
@@ -147,7 +147,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
