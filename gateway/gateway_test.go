@@ -1145,6 +1145,7 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/v1/job-status/123",
 		"/v1/job-status/123/failed-records",
 		"/v1/warehouse/jobs/status",
+		"/v1/warehouse/fetch-tables",
 	}
 
 	postEndpoints := []string{
@@ -1164,7 +1165,6 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/v1/warehouse/pending-events",
 		"/v1/warehouse/trigger-upload",
 		"/v1/warehouse/jobs",
-		"/v1/warehouse/fetch-tables",
 	}
 
 	deleteEndpoints := []string{
