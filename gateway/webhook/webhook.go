@@ -474,8 +474,7 @@ func (webhook *HandleT) recordSourceTransformationErrors(reqs []*webhookT, statu
 		return request.writeKey
 	})
 
-	for _, reqs := range reqsGroupedByWriteKey {
-		writeKey := reqs[0].writeKey
+	for writeKey, reqs := range reqsGroupedByWriteKey {
 		webhook.countSourceTransformationErrors(writeKey, statusCode, len(reqs))
 	}
 }
