@@ -42,13 +42,35 @@ func init() {
 func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
 	payload, err := json.Marshal(pollInput)
 	if err != nil {
-		panic("JSON Marshal Failed" + err.Error())
+		resp := common.PollStatusResponse{
+			Success:        false,
+			StatusCode:     400,
+			HasFailed:      true,
+			HasWarning:     false,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: "",
+		}
+		// needs to be retried
+		statusCode := 500
+		return resp, statusCode
 	}
 	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
 	var asyncResponse common.PollStatusResponse
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
-		panic("JSON Unmarshal Failed" + err.Error())
+		resp := common.PollStatusResponse{
+			Success:        false,
+			StatusCode:     400,
+			HasFailed:      true,
+			HasWarning:     false,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: "",
+		}
+		// needs to be retried
+		statusCode := 500
+		return resp, statusCode
 	}
 	return asyncResponse, statusCode
 }
@@ -63,7 +85,7 @@ func GenerateFailedPayload(destConfig map[string]interface{}, jobs []*jobsdb.Job
 		metadata := make(map[string]interface{})
 		err := json.Unmarshal([]byte(common.GetTransformedData(job.EventPayload)), &message)
 		if err != nil {
-			panic("Unmarshalling Transformer Data to JSON Failed")
+			return nil
 		}
 		metadata["job_id"] = job.JobID
 		failedPayloadT.Input[index]["message"] = message
@@ -74,7 +96,7 @@ func GenerateFailedPayload(destConfig map[string]interface{}, jobs []*jobsdb.Job
 	failedPayloadT.MetaData = common.MetaDataT{CSVHeaders: csvHeaders}
 	payload, err := json.Marshal(failedPayloadT)
 	if err != nil {
-		panic("JSON Marshal Failed" + err.Error())
+		return nil
 	}
 	return payload
 }
@@ -86,6 +108,10 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 	payload := GenerateFailedPayload(b.destinationConfig, UploadStatsInput.ImportingList, importId, b.destName, csvHeaders)
+	if payload == nil {
+		return common.GetUploadStatsResponse{}, 500
+	}
+
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{}, statusCode
@@ -120,7 +146,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	return eventStatsResponse, statusCode
 }
 
-func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
+func ExtractJobStats(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
 	if keyMap == nil {
 		return []int64{}, importingJobIDs
 	}
@@ -245,7 +271,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		if err != nil {
 			panic("Errored in Marshalling" + err.Error())
 		}
-		successfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+		successfulJobIDs, failedJobIDsTrans := ExtractJobStats(responseStruct.Metadata, importingJobIDs)
 
 		uploadResponse = common.AsyncUploadOutput{
 			ImportingJobIDs:     successfulJobIDs,
@@ -266,7 +292,7 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			"module":   "batch_router",
 			"destType": destType,
 		})
-		abortedJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+		abortedJobIDs, failedJobIDsTrans := ExtractJobStats(responseStruct.Metadata, importingJobIDs)
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = common.AsyncUploadOutput{
 			AbortJobIDs:   abortedJobIDs,
