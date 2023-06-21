@@ -14,7 +14,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/lib/pq"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
@@ -70,7 +70,7 @@ type UploadMetadata struct {
 	NextRetryTime    time.Time `json:"nextRetryTime"`
 }
 
-func NewUploads(db *sqlquerywrapper.DB, opts ...Opt) *Uploads {
+func NewUploads(db *sqlmiddleware.DB, opts ...Opt) *Uploads {
 	u := &Uploads{
 		db:  db,
 		now: timeutil.Now,
@@ -301,7 +301,7 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 	)
 
 	var (
-		rows *sql.Rows
+		rows *sqlmiddleware.Rows
 		err  error
 	)
 	if opts.SkipWorkspaces == nil {

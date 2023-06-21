@@ -138,7 +138,7 @@ func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadI
 	return entries[0], err
 }
 
-func (*TableUploads) parseRows(rows *sql.Rows) ([]model.TableUpload, error) {
+func (*TableUploads) parseRows(rows *sqlmiddleware.Rows) ([]model.TableUpload, error) {
 	var tableUploads []model.TableUpload
 
 	defer func() { _ = rows.Close() }()

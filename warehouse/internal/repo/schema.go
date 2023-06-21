@@ -113,7 +113,7 @@ func (repo *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, nam
 	return *entries[0], err
 }
 
-func (*WHSchema) parseRows(rows *sql.Rows) ([]*model.WHSchema, error) {
+func (*WHSchema) parseRows(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 	var whSchemas []*model.WHSchema
 
 	defer func() { _ = rows.Close() }()

@@ -143,12 +143,12 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 		quotedRudderIDs := misc.SingleQuoteLiteralJoin(rudderIDs)
 		sqlStatement := fmt.Sprintf(`SELECT merge_property_type, merge_property_value FROM %s WHERE rudder_id IN (%v)`, idr.mappingsTable(), quotedRudderIDs)
 		pkgLogger.Debugf(`IDR: Get all merge properties from mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
-		var tableRows *sql.Rows
+		var tableRows *sqlmiddleware.Rows
 		tableRows, err = txn.Query(sqlStatement)
 		if err != nil {
 			return
 		}
-		defer tableRows.Close()
+		defer func() { _ = tableRows.Close() }()
 
 		for tableRows.Next() {
 			var mergePropType, mergePropVal string
@@ -341,7 +341,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 	for {
 		sqlStatement = fmt.Sprintf(`SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM %s LIMIT %d OFFSET %d`, tableName, batchSize, offset)
 
-		var rows *sql.Rows
+		var rows *sqlmiddleware.Rows
 		rows, err = txn.Query(sqlStatement)
 		if err != nil {
 			return

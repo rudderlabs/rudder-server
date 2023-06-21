@@ -169,7 +169,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 }
 
 // praseRow is a helper for mapping a row of tableColumns to a model.StagingFile.
-func (*StagingFiles) parseRows(rows *sql.Rows) ([]*model.StagingFile, error) {
+func (*StagingFiles) parseRows(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 	var stagingFiles []*model.StagingFile
 
 	defer func() { _ = rows.Close() }()
