@@ -21,6 +21,7 @@ import (
 	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
@@ -83,7 +84,14 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string
 		if err != nil {
 			return "", nil, nil, err
 		}
-		marshaledUploadlist, err := json.Marshal(data.Message.List)
+
+		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
+			"module":   "batch_router",
+			"destType": b.destName,
+		})
+		payloadSizeStat.Observe(float64(len(data.Message.List)))
+
+		marshaledUploadlist, _ := json.Marshal(data.Message.List)
 		size = size + len([]byte(marshaledUploadlist))
 		if int64(size) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) {
 			for _, uploadData := range data.Message.List {
@@ -332,6 +340,11 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 	}
 	filePath, successJobIDs, failedJobIds, err := b.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
+	uploadRetryableStat := stats.Default.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": b.destName,
+	})
+	uploadRetryableStat.Count(len(failedJobIds))
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -341,7 +354,14 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 	}
 
+	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+		"module":   "batch_router",
+		"destType": b.destName,
+	})
+
+	startTime := time.Now()
 	uploadBulkFileResp, errorDuringUpload := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
+	uploadTimeStat.Since(startTime)
 
 	err = os.Remove(filePath)
 	if err != nil {
@@ -644,6 +664,18 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 			FailedReasons: GetFailedReasons(clientIDErrors),
 		},
 	}
+
+	eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": b.destName,
+	})
+	eventsAbortedStat.Count(len(eventStatsResponse.Metadata.FailedKeys))
+
+	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": b.destName,
+	})
+	eventsSuccessStat.Count(len(eventStatsResponse.Metadata.SucceededKeys))
 
 	return eventStatsResponse, 200
 }
