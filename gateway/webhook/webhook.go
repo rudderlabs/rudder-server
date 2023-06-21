@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -381,6 +382,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 			pkgLogger.Errorf("webhook %s source transformation failed with error: %w and status code: %s", breq.sourceType, batchResponse.batchError, statusCode)
 			countWebhookErrors(breq.sourceType, statusCode, len(breq.batchRequest))
+			bt.webhook.recordSourceTransformationErrors(webRequests, statusCode)
+
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: statusCode, Err: batchResponse.batchError.Error()}
 			}
@@ -396,6 +399,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				outputPayload, err := json.Marshal(resp.Output)
 				if err != nil {
 					errMessage = response.SourceTransformerInvalidOutputFormatInResponse
+					bt.webhook.countSourceTransformationErrors(webRequest.writeKey, response.GetErrorStatusCode(errMessage), 1)
 				} else {
 					errMessage = bt.webhook.enqueueInGateway(webRequest, outputPayload)
 				}
@@ -408,6 +412,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			} else if resp.StatusCode != http.StatusOK {
 				pkgLogger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
 				countWebhookErrors(breq.sourceType, resp.StatusCode, 1)
+				bt.webhook.countSourceTransformationErrors(webRequest.writeKey, resp.StatusCode, 1)
 			}
 
 			webRequest.done <- resp
@@ -461,6 +466,27 @@ func countWebhookErrors(sourceType string, statusCode, count int) {
 	stats.Default.NewTaggedStat("webhook_num_errors", stats.CountType, stats.Tags{
 		"sourceType": sourceType,
 		"statusCode": strconv.Itoa(statusCode),
+	}).Count(count)
+}
+
+func (webhook *HandleT) recordSourceTransformationErrors(reqs []*webhookT, statusCode int) {
+	reqsGroupedByWriteKey := lo.GroupBy(reqs, func(request *webhookT) string {
+		return request.writeKey
+	})
+
+	for writeKey, reqs := range reqsGroupedByWriteKey {
+		webhook.countSourceTransformationErrors(writeKey, statusCode, len(reqs))
+	}
+}
+
+func (webhook *HandleT) countSourceTransformationErrors(writeKey string, statusCode, count int) {
+	stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+	webhook.stats.NewTaggedStat("source_transformation_errors", stats.CountType, stats.Tags{
+		"writeKey":    writeKey,
+		"workspaceId": stat.WorkspaceID,
+		"sourceID":    stat.SourceID,
+		"statusCode":  strconv.Itoa(statusCode),
+		"sourceType":  stat.SourceType,
 	}).Count(count)
 }
 
