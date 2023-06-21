@@ -29,8 +29,6 @@ import (
 	"time"
 	"unicode"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
@@ -50,7 +48,6 @@ var (
 	AppStartTime        int64
 	errorStorePath      string
 	reservedFolderPaths []*RFP
-	jsonfast            = jsoniter.ConfigCompatibleWithStandardLibrary
 	notifyOnce          sync.Once
 
 	regexGwHa               = regexp.MustCompile(`^.*-gw-ha-\d+-\w+-\w+$`)
@@ -222,18 +219,6 @@ func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{
 		return nil, false
 	}
 	return rudderVal, true
-}
-
-// ParseRudderEventBatch looks for the batch structure inside event
-func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
-	var gatewayBatchEvent types.GatewayBatchRequestT
-	err := jsonfast.Unmarshal(eventPayload, &gatewayBatchEvent)
-	if err != nil {
-		pkgLogger.Debug("json parsing of event payload failed ", string(eventPayload))
-		return nil, false
-	}
-
-	return gatewayBatchEvent.Batch, true
 }
 
 // GetRudderID return the UserID from the object
