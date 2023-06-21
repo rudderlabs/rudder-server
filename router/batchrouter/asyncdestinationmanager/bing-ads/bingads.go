@@ -85,7 +85,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string
 			return "", nil, nil, err
 		}
 
-		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
+		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
 		})
