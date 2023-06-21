@@ -2147,12 +2147,20 @@ func (proc *Handle) transformSrcDest(
 			response = proc.transformer.Transform(ctx, eventList, integrations.GetUserTransformURL(), proc.config.userTransformBatchSize)
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
-
+			for _, job := range response.FailedEvents {
+				if job.StatusCode == transformer.TransformerRequestFailure && !config.GetBool("Processor.Transformer.failOnError", false) {
+					panic(job.Error)
+				}
+				if job.StatusCode == transformer.TransformerRequestTimeout && !config.GetBool("Processor.Transformer.abortOnTimeout", false) {
+					panic(job.Error)
+				}
+			}
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
 			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, eventsByMessageID, destination, transformer.UserTransformerStage, trackingPlanEnabled, transformationEnabled)
 			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, trackingPlanEnabled)
+
 			proc.saveFailedJobs(failedJobs)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -2276,7 +2284,14 @@ func (proc *Handle) transformSrcDest(
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
 			response = proc.transformer.Transform(ctx, eventsToTransform, url, proc.config.transformBatchSize)
-
+			for _, job := range response.FailedEvents {
+				if job.StatusCode == transformer.TransformerRequestFailure && !config.GetBool("Processor.Transformer.failOnError", false) {
+					panic(job.Error)
+				}
+				if job.StatusCode == transformer.TransformerRequestTimeout {
+					panic(job.Error)
+				}
+			}
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
 			transformAt = "processor"

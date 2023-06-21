@@ -35,9 +35,9 @@ const (
 )
 
 const (
-	StatusCPDown                   = 809
-	TransformerRequestFailure      = 909
-	TransformerRequestTimeoutAbort = 919
+	StatusCPDown              = 809
+	TransformerRequestFailure = 909
+	TransformerRequestTimeout = 919
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -413,13 +413,11 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			trans.logger.Warnf("JS HTTP connection error: URL: %v Error: %+v after %v tries", url, err, retryCount)
 		})
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() && config.GetBool("Processor.Transformer.abortOnTimeout", false) {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			trans.logger.Errorf("JS HTTP connection timeout error: %w", err)
-			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeoutAbort
-		} else if config.GetBool("Processor.Transformer.failOnError", false) {
-			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
+			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeout
 		} else {
-			panic(err)
+			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
 		}
 	}
 

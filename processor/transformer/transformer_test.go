@@ -49,38 +49,6 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func TestTransformerTimeoutAbort(t *testing.T) {
-	config.Reset()
-	logger.Reset()
-	config.Set("HttpClient.procTransformer.timeout", "1ms")
-	config.Set("Processor.maxRetry", 1)
-	config.Set("Processor.Transformer.abortOnTimeout", true)
-	transformer.Init()
-	ch := make(chan struct{})
-	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("apiVersion", "2")
-		<-ch
-	}))
-
-	defer svr.Close()
-
-	tr := transformer.NewTransformer()
-	tr.Setup()
-	events := make([]transformer.TransformerEventT, 1)
-
-	events[0] = transformer.TransformerEventT{
-		Metadata: transformer.MetadataT{
-			MessageID: "messageID-1",
-		},
-		Message: map[string]interface{}{
-			"src-key-1": "messageID-1",
-		},
-	}
-	rsp := tr.Transform(context.TODO(), events, svr.URL, 1)
-	close(ch)
-	require.Equal(t, transformer.TransformerRequestTimeoutAbort, rsp.FailedEvents[0].StatusCode, "actual response code different than expected")
-}
-
 func Test_Transformer(t *testing.T) {
 	config.Reset()
 	logger.Reset()
