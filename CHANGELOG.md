@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.7](https://github.com/rudderlabs/rudder-server/compare/v1.9.6...v1.9.7) (2023-06-21)
+
+
+### Bug Fixes
+
+* **gateway:** use get method for /fetch-tables  ([#3527](https://github.com/rudderlabs/rudder-server/issues/3527)) ([2a6449d](https://github.com/rudderlabs/rudder-server/commit/2a6449deac767ffceb02f8a91f87398836abe04f))
+
 ## [1.9.6](https://github.com/rudderlabs/rudder-server/compare/v1.9.5...v1.9.6) (2023-06-09)
 
 
