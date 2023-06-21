@@ -141,7 +141,7 @@ func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}
 	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
 	defer cancel()
 	result, err := db.DB.ExecContext(ctx, query, args...)
-	db.logQuery(query, db.since(startedAt))()
+	db.logQuery(query, startedAt)()
 	return result, err
 }
 
@@ -155,19 +155,19 @@ func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{
 	rows, err := db.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		defer cancel()
-		defer db.logQuery(query, db.since(startedAt))()
+		defer db.logQuery(query, startedAt)()
 		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		cancel()
-		db.logQuery(query, db.since(startedAt))()
+		db.logQuery(query, startedAt)()
 		func() { _ = rows.Close() }()
 		return nil, err
 	}
 	return &Rows{
 		Rows:       rows,
 		CancelFunc: cancel,
-		logQ:       db.logQuery(query, db.since(startedAt)),
+		logQ:       db.logQuery(query, startedAt),
 	}, err
 }
 
@@ -181,7 +181,7 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interfa
 	return &Row{
 		Row:        db.DB.QueryRowContext(ctx, query, args...),
 		CancelFunc: cancel,
-		logQ:       db.logQuery(query, db.since(startedAt)),
+		logQ:       db.logQuery(query, startedAt),
 	}
 }
 
@@ -206,23 +206,25 @@ func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
 	return tx.Commit()
 }
 
-func (db *DB) logQuery(query string, elapsed time.Duration) logQ {
-	if db.slowQueryThreshold <= 0 {
-		return func() {}
-	}
-	if elapsed < db.slowQueryThreshold {
-		return func() {}
-	}
+func (db *DB) logQuery(query string, since time.Time) logQ {
+	return func() {
+		if db.slowQueryThreshold <= 0 {
+			return
+		}
+		if db.since(since) < db.slowQueryThreshold {
+			return
+		}
 
-	sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
+		sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
 
-	keysAndValues := []any{
-		logfield.Query, sanitizedQuery,
-		logfield.QueryExecutionTime, elapsed,
+		keysAndValues := []any{
+			logfield.Query, sanitizedQuery,
+			logfield.QueryExecutionTime, db.since(since),
+		}
+		keysAndValues = append(keysAndValues, db.keysAndValues...)
+
+		db.logger.Infow("executing query", keysAndValues...)
 	}
-	keysAndValues = append(keysAndValues, db.keysAndValues...)
-
-	return func() { db.logger.Infow("executing query", keysAndValues...) }
 }
 
 type logQ func()
@@ -257,7 +259,7 @@ func (tx *Tx) ExecContext(ctx context.Context, query string, args ...interface{}
 	ctx, cancel := queryContextWithTimeout(ctx, tx.db.queryTimeout)
 	defer cancel()
 	result, err := tx.Tx.ExecContext(ctx, query, args...)
-	tx.db.logQuery(query, tx.db.since(startedAt))()
+	tx.db.logQuery(query, startedAt)()
 	return result, err
 }
 
@@ -271,19 +273,19 @@ func (tx *Tx) QueryContext(ctx context.Context, query string, args ...interface{
 	rows, err := tx.Tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		defer cancel()
-		defer tx.db.logQuery(query, tx.db.since(startedAt))()
+		defer tx.db.logQuery(query, startedAt)()
 		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		cancel()
-		tx.db.logQuery(query, tx.db.since(startedAt))()
+		tx.db.logQuery(query, startedAt)()
 		func() { _ = rows.Close() }()
 		return nil, err
 	}
 	return &Rows{
 		Rows:       rows,
 		CancelFunc: cancel,
-		logQ:       tx.db.logQuery(query, tx.db.since(startedAt)),
+		logQ:       tx.db.logQuery(query, startedAt),
 	}, err
 }
 
@@ -297,7 +299,7 @@ func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...interfa
 	return &Row{
 		Row:        tx.Tx.QueryRowContext(ctx, query, args...),
 		CancelFunc: cancel,
-		logQ:       tx.db.logQuery(query, tx.db.since(startedAt)),
+		logQ:       tx.db.logQuery(query, startedAt),
 	}
 }
 

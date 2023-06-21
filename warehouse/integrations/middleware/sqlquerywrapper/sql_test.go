@@ -94,16 +94,20 @@ func TestQueryWrapper(t *testing.T) {
 			_, err = qw.ExecContext(ctx, query)
 			require.NoError(t, err)
 
-			_, err = qw.Query(query) //nolint:rowserrcheck
+			rows, err := qw.Query(query)
+			_ = rows.Close()
 			require.NoError(t, err)
 
-			_, err = qw.QueryContext(ctx, query) //nolint:rowserrcheck
+			rows, err = qw.QueryContext(ctx, query)
+			_ = rows.Close()
 			require.NoError(t, err)
 
-			_ = qw.QueryRow(query) //nolint:rowserrcheck
+			row := qw.QueryRow(query)
+			_ = row.Scan()
 			require.NoError(t, err)
 
-			_ = qw.QueryRowContext(ctx, query) //nolint:rowserrcheck
+			row = qw.QueryRowContext(ctx, query)
+			_ = row.Scan()
 			require.NoError(t, err)
 		})
 
@@ -280,7 +284,8 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_, err = tx.Query(query) // nolint:rowserrcheck
+				rows, err := tx.Query(query)
+				_ = rows.Close()
 				require.NoError(t, err)
 
 				err = tx.Commit() // nolint:rowserrcheck
@@ -291,7 +296,8 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_, err = tx.QueryContext(ctx, query) // nolint:rowserrcheck
+				rows, err := tx.QueryContext(ctx, query)
+				_ = rows.Close()
 				require.NoError(t, err)
 
 				err = tx.Commit()
@@ -302,7 +308,8 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_ = tx.QueryRow(query)
+				row := tx.QueryRow(query)
+				_ = row.Scan()
 				require.NoError(t, err)
 
 				err = tx.Commit()
@@ -313,7 +320,8 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_ = tx.QueryRowContext(ctx, query)
+				row := tx.QueryRowContext(ctx, query)
+				_ = row.Scan()
 				require.NoError(t, err)
 
 				err = tx.Commit()
