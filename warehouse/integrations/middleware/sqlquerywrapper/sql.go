@@ -71,7 +71,6 @@ func (r *Row) Scan(dest ...interface{}) error {
 }
 
 func (r *Row) Err() error {
-	defer r.CancelFunc()
 	return r.Row.Err()
 }
 
