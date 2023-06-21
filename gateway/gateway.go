@@ -1331,7 +1331,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 			r.Post("/pending-events", gateway.whProxy.ServeHTTP)
 			r.Post("/trigger-upload", gateway.whProxy.ServeHTTP)
 			r.Post("/jobs", gateway.whProxy.ServeHTTP)
-			r.Post("/fetch-tables", gateway.whProxy.ServeHTTP)
+			r.Get("/fetch-tables", gateway.whProxy.ServeHTTP)
 
 			r.Get("/jobs/status", gateway.whProxy.ServeHTTP)
 		})
