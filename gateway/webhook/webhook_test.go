@@ -294,8 +294,8 @@ func TestRecordSourceTransformationErrors(t *testing.T) {
 		{writeKey: "w1"}, {writeKey: "w2"}, {writeKey: "w1"}, {writeKey: "w3"}, {writeKey: "w2"}, {writeKey: "w1"},
 	}
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).DoAndReturn(func(writeKey, reqType string) *gwStats.SourceStat {
-        switch writeKey {
-        case "w1":
+		switch writeKey {
+		case "w1":
 			return &gwStats.SourceStat{
 				Source:      "source1",
 				SourceID:    "sourceID1",
@@ -304,7 +304,7 @@ func TestRecordSourceTransformationErrors(t *testing.T) {
 				WorkspaceID: "workspaceID1",
 				SourceType:  "webhook1",
 			}
-        case "w2":
+		case "w2":
 			return &gwStats.SourceStat{
 				Source:      "source2",
 				SourceID:    "sourceID2",
@@ -313,7 +313,7 @@ func TestRecordSourceTransformationErrors(t *testing.T) {
 				WorkspaceID: "workspaceID2",
 				SourceType:  "webhook2",
 			}
-        case "w3":
+		case "w3":
 			return &gwStats.SourceStat{
 				Source:      "source3",
 				SourceID:    "sourceID3",
