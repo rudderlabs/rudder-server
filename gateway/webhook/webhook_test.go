@@ -12,10 +12,12 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	gwStats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	mockWebhook "github.com/rudderlabs/rudder-server/gateway/mocks"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -280,4 +282,73 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 	assert.Equal(t, sampleJson, strings.TrimSpace(w.Body.String()))
 	_ = webhookHandler.Shutdown()
+}
+
+func TestRecordSourceTransformationErrors(t *testing.T) {
+	initWebhook()
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGatewayI(ctrl)
+	statsStore := memstats.New()
+	webhookHandler := Setup(mockGW, statsStore)
+	reqs := []*webhookT{
+		{writeKey: "w1"}, {writeKey: "w2"}, {writeKey: "w1"}, {writeKey: "w3"}, {writeKey: "w2"}, {writeKey: "w1"},
+	}
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).DoAndReturn(func(writeKey string, reqType string) *gwStats.SourceStat {
+		if writeKey == "w1" {
+			return &gwStats.SourceStat{
+				Source:      "source1",
+				SourceID:    "sourceID1",
+				WriteKey:    writeKey,
+				ReqType:     reqType,
+				WorkspaceID: "workspaceID1",
+				SourceType:  "webhook1",
+			}
+		} else if writeKey == "w2" {
+			return &gwStats.SourceStat{
+				Source:      "source2",
+				SourceID:    "sourceID2",
+				WriteKey:    writeKey,
+				ReqType:     reqType,
+				WorkspaceID: "workspaceID2",
+				SourceType:  "webhook2",
+			}
+		} else if writeKey == "w3" {
+			return &gwStats.SourceStat{
+				Source:      "source3",
+				SourceID:    "sourceID3",
+				WriteKey:    writeKey,
+				ReqType:     reqType,
+				WorkspaceID: "workspaceID3",
+				SourceType:  "webhook3",
+			}
+		}
+		return nil
+	}).Times(3)
+
+	webhookHandler.recordSourceTransformationErrors(reqs, 400)
+
+	m := statsStore.Get("source_transformation_errors", stats.Tags{
+		"writeKey":    "w1",
+		"workspaceId": "workspaceID1",
+		"sourceID":    "sourceID1",
+		"statusCode":  "400",
+		"sourceType":  "webhook1",
+	})
+	require.EqualValues(t, m.LastValue(), 3)
+	m = statsStore.Get("source_transformation_errors", stats.Tags{
+		"writeKey":    "w2",
+		"workspaceId": "workspaceID2",
+		"sourceID":    "sourceID2",
+		"statusCode":  "400",
+		"sourceType":  "webhook2",
+	})
+	require.EqualValues(t, m.LastValue(), 2)
+	m = statsStore.Get("source_transformation_errors", stats.Tags{
+		"writeKey":    "w3",
+		"workspaceId": "workspaceID3",
+		"sourceID":    "sourceID3",
+		"statusCode":  "400",
+		"sourceType":  "webhook3",
+	})
+	require.EqualValues(t, m.LastValue(), 1)
 }
