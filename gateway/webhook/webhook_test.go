@@ -293,7 +293,7 @@ func TestRecordSourceTransformationErrors(t *testing.T) {
 	reqs := []*webhookT{
 		{writeKey: "w1"}, {writeKey: "w2"}, {writeKey: "w1"}, {writeKey: "w3"}, {writeKey: "w2"}, {writeKey: "w1"},
 	}
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).DoAndReturn(func(writeKey string, reqType string) *gwStats.SourceStat {
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).DoAndReturn(func(writeKey, reqType string) *gwStats.SourceStat {
 		if writeKey == "w1" {
 			return &gwStats.SourceStat{
 				Source:      "source1",
