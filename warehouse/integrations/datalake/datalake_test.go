@@ -2,6 +2,7 @@ package datalake_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,6 +34,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
+	_ "github.com/trinodb/trino-go-client/trino"
 )
 
 type gcsTestCredentials struct {
@@ -67,7 +70,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "testdata/docker-compose.trino.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
 	c.Start(context.Background())
 
 	misc.Init()
@@ -78,6 +81,7 @@ func TestIntegration(t *testing.T) {
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
 	azurePort := c.Port("azure", 10000)
+	trinoPort := c.Port("trino", 8080)
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -406,5 +410,66 @@ func TestIntegration(t *testing.T) {
 			RevisionID: "29HgOWobnr0RYZLpaSwPIbN2987",
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
+	})
+
+	t.Run("Trino", func(t *testing.T) {
+		dsn := fmt.Sprintf("http://user@localhost:%d?catalog=minio&schema=default&session_properties=minio.parquet_use_column_index=true",
+			trinoPort,
+		)
+		db, err := sql.Open("trino", dsn)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			_, err := db.ExecContext(ctx, "SELECT 1")
+			return err == nil
+		}, 60*time.Second, 1*time.Second)
+
+		_, err = db.ExecContext(ctx, `
+			CREATE SCHEMA IF NOT EXISTS minio.rudderstack WITH (
+		  	location = 's3a://`+s3BucketName+`/')
+		`)
+		require.NoError(t, err)
+
+		_, err = db.ExecContext(ctx, `
+			CREATE TABLE IF NOT EXISTS minio.rudderstack.tracks (
+				"_timestamp" TIMESTAMP,
+				context_destination_id VARCHAR,
+				context_destination_type VARCHAR,
+				context_ip VARCHAR,
+				context_library_name VARCHAR,
+				context_passed_ip VARCHAR,
+				context_request_ip VARCHAR,
+				context_source_id VARCHAR,
+				context_source_type VARCHAR,
+				event VARCHAR,
+				event_text VARCHAR,
+				id VARCHAR,
+				original_timestamp TIMESTAMP,
+				received_at TIMESTAMP,
+				sent_at TIMESTAMP,
+				"timestamp" TIMESTAMP,
+				user_id VARCHAR,
+				uuid_ts TIMESTAMP
+			)
+			WITH (
+				external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/',
+				format = 'PARQUET'
+			)
+		`)
+		require.NoError(t, err)
+
+		var count int64
+
+		err = db.QueryRowContext(ctx, `
+			select count(*) from minio.rudderstack.tracks
+		`).Scan(&count)
+		require.NoError(t, err)
+		require.Equal(t, int64(8), count)
+
+		err = db.QueryRowContext(ctx, `
+			select count(*) from minio.rudderstack.tracks where context_destination_id = '`+s3DestinationID+`'
+		`).Scan(&count)
+		require.NoError(t, err)
+		require.Equal(t, int64(8), count)
 	})
 }
