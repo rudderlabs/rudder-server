@@ -1,0 +1,29 @@
+version: '3.7'
+services:
+  trino:
+    image: trinodb/trino:362
+    ports:
+      - 8080
+    volumes:
+      - ./etc:/etc/trino/:ro
+
+  mariadb:
+    image: mariadb:10.5.8
+    ports:
+      - 3306
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      MYSQL_DATABASE: metastore_db
+
+  hive-metastore:
+    image: bitsondatadev/hive-metastore:latest
+    ports:
+      - 9083
+    volumes:
+      - ./conf/metastore-site.xml:/opt/apache-hive-metastore-3.0.0-bin/conf/metastore-site.xml:ro
+    environment:
+      METASTORE_DB_HOSTNAME: mariadb
+    depends_on:
+      - mariadb
