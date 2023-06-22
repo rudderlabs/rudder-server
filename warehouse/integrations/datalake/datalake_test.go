@@ -70,7 +70,13 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "testdata/docker-compose.trino.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+	c := testcompose.New(t, compose.FilePaths([]string{
+		"testdata/docker-compose.yml",
+		"testdata/docker-compose.trino.yml",
+		"testdata/docker-compose.spark.yml",
+		"../testdata/docker-compose.jobsdb.yml",
+		"../testdata/docker-compose.minio.yml",
+	}))
 	c.Start(context.Background())
 
 	misc.Init()
@@ -471,5 +477,20 @@ func TestIntegration(t *testing.T) {
 		`).Scan(&count)
 		require.NoError(t, err)
 		require.Equal(t, int64(8), count)
+	})
+
+	t.Run("Spark", func(t *testing.T) {
+		_ = c.Exec(ctx, "spark-master", "spark-sql", "-e", `CREATE EXTERNAL TABLE tracks ( _timestamp timestamp, context_destination_id string, context_destination_type string, context_ip string, context_library_name string, context_passed_ip string, context_request_ip string, context_source_id string, context_source_type string, event string, event_text string, id string, original_timestamp timestamp, received_at timestamp, sent_at timestamp, timestamp timestamp, user_id string, uuid_ts timestamp ) STORED AS PARQUET location "s3a://s3-datalake-test/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/";`, "-S")
+
+		countOutput := c.Exec(ctx, "spark-master", "spark-sql", "-e", `select count(*) from tracks;`, "-S")
+		countOutput = strings.ReplaceAll(strings.ReplaceAll(countOutput, "\n", ""), "\r", "") // remove trailing newline
+		require.NotEmpty(t, countOutput)
+		require.Equal(t, string(countOutput[len(countOutput)-1]), "8") // last character is the count
+
+		strings.Contains(countOutput, "8")
+		filteredCountOutput := c.Exec(ctx, "spark-master", "spark-sql", "-e", `select count(*) from tracks where context_destination_id = '`+s3DestinationID+`';`, "-S")
+		filteredCountOutput = strings.ReplaceAll(strings.ReplaceAll(filteredCountOutput, "\n", ""), "\r", "") // remove trailing newline
+		require.NotEmpty(t, filteredCountOutput)
+		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "8") // last character is the count
 	})
 }
