@@ -196,7 +196,8 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 												WorkspaceId:   job.WorkspaceId,
 											}
 										} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, job.JobID) {
-											errorResp, _ := json.Marshal(ErrorResponse{Error: gjson.GetBytes(uploadStatsRespInBytes, fmt.Sprintf("Metadata.FailedReasons.%v", job.JobID)).String()})
+											errorRespString := uploadStatsResp.Metadata.FailedReasons[strconv.FormatInt(job.JobID, 10)]
+											errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
 												JobState:      jobsdb.Aborted.State,
@@ -357,8 +358,6 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					var uploadResponse common.AsyncUploadOutput
 					uploadResponse = brt.asyncdestinationmanager.Upload(brt.destination, brt.asyncDestinationStruct[destinationID])
-					// pollUrl remains under ImportingParameters
-					// eg : uploadResponse.ImportingParameters =  "{\"importId\":\"3100\",\"pollURL\":\"/pollStatus\",\"metadata\":{\"csvHeader\":\"anonymousId,address,email\"}}"
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
 				}

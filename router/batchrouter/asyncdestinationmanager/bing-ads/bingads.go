@@ -50,6 +50,11 @@ func NewBingAdsBulkUploader(name string, service bingads.BulkServiceI, client *C
 	}
 }
 
+func generateClientID(user User, metadata Metadata) string {
+	jobId := metadata.JobID
+	return strconv.FormatInt(jobId, 10) + "<<>>" + user.HashedEmail
+}
+
 func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string, []int64, []int64, error) {
 	failedJobIds := []int64{}
 	successJobIds := []int64{}
@@ -91,11 +96,11 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string
 		})
 		payloadSizeStat.Observe(float64(len(data.Message.List)))
 
-		marshaledUploadlist, _ := json.Marshal(data.Message.List)
-		size = size + len([]byte(marshaledUploadlist))
+		size = size + len([]byte(line))
 		if int64(size) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) {
 			for _, uploadData := range data.Message.List {
-				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, uploadData.Email, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+				clientId := generateClientID(uploadData, data.Metadata)
+				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			}
 			successJobIds = append(successJobIds, data.Metadata.JobID)
 		} else {
@@ -237,16 +242,15 @@ func ReadPollResults(filePath string) [][]string {
 func ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
 	clientIDIndex := -1
 	errorIndex := -1
-	typeIndex := -1
+	typeIndex := 0
 	if len(records) > 0 {
 		header := records[0]
 		for i, column := range header {
+			fmt.Println(column)
 			if column == "Client Id" {
 				clientIDIndex = i
 			} else if column == "Error" {
 				errorIndex = i
-			} else if column == "Type" {
-				typeIndex = i
 			}
 		}
 	}
@@ -257,8 +261,11 @@ func ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
 
 	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
-	for _, record := range records[1:] {
-		if typeIndex >= 0 && typeIndex < len(record) && strings.Contains(record[typeIndex], "Error") {
+	for index, record := range records[1:] {
+		fmt.Println(index)
+		//fmt.Println(record[0])
+		rowname := string(record[typeIndex])
+		if typeIndex < len(record) && strings.Contains(rowname, "Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
 				// expecting the client ID is present as jobId<<>>clientId
 				clientID := strings.Split(record[clientIDIndex], "<<>>")
@@ -408,6 +415,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 }
 
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
+	fmt.Println("Polling Bing Ads")
 	requestId := pollInput.ImportId
 	var resp common.PollStatusResponse
 	var statusCode int
@@ -450,7 +458,8 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		}
 
 		// Download the zip file
-		fileLoadResp, err := b.client.client.Get(modifiedUrl)
+		fileLoadResp, err := http.Get(modifiedUrl)
+
 		if err != nil {
 			fmt.Println("Error downloading zip file:", err)
 			panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
