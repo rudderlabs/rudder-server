@@ -1,6 +1,9 @@
 package model
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var (
 	ErrRestoring    = errors.New("repository is restoring")
@@ -10,8 +13,9 @@ var (
 var Wildcard = "*"
 
 type Suppression struct {
-	WorkspaceID string   `json:"workspaceId"`
-	Canceled    bool     `json:"canceled"`
-	UserID      string   `json:"userId"`
-	SourceIDs   []string `json:"sourceIds"`
+	WorkspaceID string    `json:"workspaceId"`
+	Canceled    bool      `json:"canceled"`
+	UserID      string    `json:"userId"`
+	CreatedAt   time.Time `json:"createdAt"`
+	SourceIDs   []string  `json:"sourceIds"`
 }

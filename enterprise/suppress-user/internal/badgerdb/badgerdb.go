@@ -1,6 +1,7 @@
 package badgerdb
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
+	badger "github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
 	"github.com/samber/lo"
 
@@ -39,6 +40,10 @@ func WithMaxSeedWait(maxSeedWait time.Duration) Opt {
 	return func(r *Repository) {
 		r.maxSeedWait = maxSeedWait
 	}
+}
+
+type suppressionMetadata struct {
+	CreatedAt string
 }
 
 // Repository is a repository backed by badgerdb
@@ -146,6 +151,72 @@ func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, err
 	return true, nil
 }
 
+func (b *Repository) GetCreatedAt(workspaceID, userID, sourceID string) (time.Time, error) {
+	b.restoringLock.RLock()
+	defer b.restoringLock.RUnlock()
+	if b.restoring {
+		return time.Time{}, model.ErrRestoring
+	}
+	if b.db.IsClosed() {
+		return time.Time{}, badger.ErrDBClosed
+	}
+
+	keyPrefix := keyPrefix(workspaceID, userID)
+	var createdAt time.Time
+	var metadata suppressionMetadata
+	err := b.db.View(func(txn *badger.Txn) error {
+		wildcardKey := keyPrefix + model.Wildcard
+		item, err := txn.Get([]byte(wildcardKey))
+		if err == nil {
+			if itemValue, err := item.ValueCopy(nil); err == nil {
+				if len(itemValue) == 0 {
+					return nil
+				}
+				err = json.Unmarshal(itemValue, &metadata)
+				if err != nil {
+					return fmt.Errorf("could not unmarshal metadata: %w", err)
+				}
+				createdAt, err = time.Parse(time.RFC3339Nano, metadata.CreatedAt)
+				if err != nil {
+					return fmt.Errorf("could not parse createdAt: %w", err)
+				}
+				return nil
+			}
+			return err
+		}
+		if !errors.Is(err, badger.ErrKeyNotFound) {
+			return fmt.Errorf("could not get wildcard key %s: %w", wildcardKey, err)
+		}
+		sourceKey := keyPrefix + sourceID
+		item, err = txn.Get([]byte(sourceKey))
+		if err != nil {
+			return fmt.Errorf("could not get sourceID key %s: %w", sourceKey, err)
+		}
+		if itemValue, err := item.ValueCopy(nil); err == nil {
+			if len(itemValue) == 0 {
+				return nil
+			}
+			err = json.Unmarshal(itemValue, &metadata)
+			if err != nil {
+				return fmt.Errorf("could not unmarshal metadata: %w", err)
+			}
+			createdAt, err = time.Parse(time.RFC3339Nano, metadata.CreatedAt)
+			if err != nil {
+				return fmt.Errorf("could not parse createdAt: %w", err)
+			}
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return time.Time{}, nil
+		}
+		return time.Time{}, err
+	}
+	return createdAt, nil
+}
+
 // Add adds the given suppressions to the repository
 func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 	b.restoringLock.RLock()
@@ -176,7 +247,17 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 			if suppression.Canceled {
 				err = wb.Delete([]byte(key))
 			} else {
-				err = wb.Set([]byte(key), []byte(""))
+				metadata := suppressionMetadata{
+					CreatedAt: suppression.CreatedAt.Format(time.RFC3339Nano),
+				}
+				value, err := json.Marshal(metadata)
+				if err != nil {
+					return fmt.Errorf("could not marshal suppression metadata: %w", err)
+				}
+				err = wb.Set([]byte(key), value)
+				if err != nil {
+					return fmt.Errorf("could not add key %s (canceled:%t) in write batch: %w", key, suppression.Canceled, err)
+				}
 			}
 			if err != nil {
 				return fmt.Errorf("could not add key %s (canceled:%t) in write batch: %w", key, suppression.Canceled, err)

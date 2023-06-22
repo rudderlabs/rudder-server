@@ -32,6 +32,22 @@ func TestIsSuppressedConcurrency(t *testing.T) {
 	require.Less(t, log.times, 1000)
 }
 
+func TestGetCreatedAtConcurrency(t *testing.T) {
+	log := &tLog{Logger: logger.NOP}
+	h := newHandler(&fakeSuppresser{}, log)
+
+	var wg sync.WaitGroup
+	wg.Add(1000)
+	for i := 0; i < 1000; i++ {
+		go func() {
+			defer wg.Done()
+			require.True(t, h.GetCreatedAt("workspaceID", "userID", "sourceID").IsZero())
+		}()
+	}
+	wg.Wait()
+	require.Less(t, log.times, 1000)
+}
+
 type fakeSuppresser struct {
 	Repository
 }
@@ -45,11 +61,20 @@ func (*fakeSuppresser) Suppressed(_, _, _ string) (bool, error) {
 	}
 }
 
+func (*fakeSuppresser) GetCreatedAt(_, _, _ string) (time.Time, error) {
+	// random failures, but always returning a zero time
+	if rand.Intn(2)%2 == 0 { // skipcq: GSC-G404
+		return time.Time{}, fmt.Errorf("some error")
+	} else {
+		return time.Time{}, nil
+	}
+}
+
 type tLog struct {
 	times int
 	logger.Logger
 }
 
-func (t *tLog) Warn(_ ...interface{}) {
+func (t *tLog) Errorf(_ string, _ ...interface{}) {
 	t.times++
 }

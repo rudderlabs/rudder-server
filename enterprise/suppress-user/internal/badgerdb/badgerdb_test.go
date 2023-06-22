@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
+	badger "github.com/dgraph-io/badger/v4"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -34,6 +34,41 @@ func TestBadgerRepository(t *testing.T) {
 	repo, err := badgerdb.NewRepository(basePath, logger.NOP, stats.Default)
 	require.NoError(t, err)
 
+	t.Run("adding suppressions with createdAt", func(t *testing.T) {
+		err := repo.Add([]model.Suppression{
+			{
+				WorkspaceID: "workspace1",
+				UserID:      "user1",
+				SourceIDs:   []string{},
+				CreatedAt:   time.Date(2020, time.March, 27, 2, 2, 1, 2, time.UTC),
+			},
+		}, token)
+		require.NoError(t, err)
+		createdAt, err := repo.GetCreatedAt("workspace1", "user1", "")
+		require.NoError(t, err)
+		require.Equal(t, time.Date(2020, time.March, 27, 2, 2, 1, 2, time.UTC), createdAt) // should be the same as the one we added
+		createdAt, err = repo.GetCreatedAt("workspace2", "user1", "")
+		require.NoError(t, err)
+		require.Equal(t, time.Time{}, createdAt) // should be empty
+
+		// Add a suppression with a source ID
+		err = repo.Add([]model.Suppression{
+			{
+				WorkspaceID: "workspace2",
+				UserID:      "user2",
+				SourceIDs:   []string{"source2"},
+				CreatedAt:   time.Date(2019, time.March, 27, 2, 2, 1, 2, time.UTC),
+			},
+		}, token)
+		require.NoError(t, err)
+		createdAt, err = repo.GetCreatedAt("workspace2", "user2", "source1") // wrong source ID
+		require.NoError(t, err)
+		require.Equal(t, time.Time{}, createdAt)                             // should be empty
+		createdAt, err = repo.GetCreatedAt("workspace2", "user2", "source2") // wrong workspace and user ID and correct source ID
+		require.NoError(t, err)
+		require.Equal(t, time.Date(2019, time.March, 27, 2, 2, 1, 2, time.UTC), createdAt) // should be the same as the one we added
+	})
+
 	t.Run("trying to use a repository during restore", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -55,11 +90,13 @@ func TestBadgerRepository(t *testing.T) {
 				WorkspaceID: "workspace1",
 				UserID:      "user1",
 				SourceIDs:   []string{},
+				CreatedAt:   time.Now(),
 			},
 			{
 				WorkspaceID: "workspace2",
 				UserID:      "user2",
 				SourceIDs:   []string{"source1"},
+				CreatedAt:   time.Now(),
 			},
 		}, token)
 		require.Error(t, err, "it should return an error when trying to add a suppression to a repository that is restoring")
@@ -78,6 +115,10 @@ func TestBadgerRepository(t *testing.T) {
 		require.ErrorIs(t, model.ErrRestoring, err)
 
 		_, err = repo.Suppressed("workspace2", "user2", "source2")
+		require.Error(t, err, "it should return an error when trying to suppress a user from a repository that is restoring")
+		require.ErrorIs(t, model.ErrRestoring, err)
+
+		_, err = repo.GetCreatedAt("workspace2", "user2", "source2")
 		require.Error(t, err, "it should return an error when trying to suppress a user from a repository that is restoring")
 		require.ErrorIs(t, model.ErrRestoring, err)
 
@@ -121,6 +162,9 @@ func TestBadgerRepository(t *testing.T) {
 		_, err := repo.Suppressed("workspace1", "user1", "")
 		require.Error(t, err)
 
+		_, err = repo.GetCreatedAt("workspace1", "user1", "")
+		require.Error(t, err)
+
 		_, err = repo.GetToken()
 		require.Error(t, err)
 
@@ -130,6 +174,7 @@ func TestBadgerRepository(t *testing.T) {
 			WorkspaceID: "workspace1",
 			UserID:      "user1",
 			SourceIDs:   []string{},
+			CreatedAt:   time.Now(),
 		}}, []byte("token")))
 	})
 
@@ -142,6 +187,10 @@ func TestBadgerRepository(t *testing.T) {
 
 		s, err := repo.Suppressed("", "", "")
 		require.False(t, s)
+		require.Equal(t, err, badger.ErrDBClosed)
+
+		createdAt, err := repo.GetCreatedAt("", "", "")
+		require.True(t, createdAt.IsZero())
 		require.Equal(t, err, badger.ErrDBClosed)
 
 		_, err = repo.GetToken()

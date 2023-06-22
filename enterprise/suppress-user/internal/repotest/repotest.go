@@ -2,6 +2,7 @@ package repotest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -24,11 +25,13 @@ func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {
 				WorkspaceID: "workspace1",
 				UserID:      "user1",
 				SourceIDs:   []string{},
+				CreatedAt:   time.Date(2020, time.March, 27, 2, 2, 1, 2, time.UTC),
 			},
 			{
 				WorkspaceID: "workspace2",
 				UserID:      "user2",
 				SourceIDs:   []string{"source1"},
+				CreatedAt:   time.Date(2019, time.March, 27, 2, 2, 1, 2, time.UTC),
 			},
 		}, token)
 		require.NoError(t, err, "it should be able to add some suppressions without an error")
@@ -44,28 +47,43 @@ func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {
 		suppressed, err := repo.Suppressed("workspace1", "user1", "source1")
 		require.NoError(t, err)
 		require.True(t, suppressed, "it should return true when trying to suppress a user that is suppressed by a wildcard suppression")
+		createdAt, err := repo.GetCreatedAt("workspace1", "user1", "source1")
+		require.NoError(t, err)
+		require.Equal(t, time.Date(2020, time.March, 27, 2, 2, 1, 2, time.UTC), createdAt) // should be the same as the one we added
 
 		suppressed, err = repo.Suppressed("workspace1", "user1", "source2")
 		require.NoError(t, err)
 		require.True(t, suppressed, "it should return true when trying to suppress a user that is suppressed by a wildcard suppression")
+		createdAt, err = repo.GetCreatedAt("workspace1", "user1", "source2")
+		require.NoError(t, err)
+		require.Equal(t, time.Date(2020, time.March, 27, 2, 2, 1, 2, time.UTC), createdAt) // should be the same as the one we added
 	})
 
 	t.Run("exact suppression", func(t *testing.T) {
 		suppressed, err := repo.Suppressed("workspace2", "user2", "source1")
 		require.NoError(t, err)
 		require.True(t, suppressed, "it should return true when trying to suppress a user that is suppressed by an exact suppression")
+		createdAt, err := repo.GetCreatedAt("workspace2", "user2", "source1")
+		require.NoError(t, err)
+		require.Equal(t, time.Date(2019, time.March, 27, 2, 2, 1, 2, time.UTC), createdAt) // should be the same as the one we added
 	})
 
 	t.Run("non matching key", func(t *testing.T) {
 		suppressed, err := repo.Suppressed("workspace3", "user3", "source2")
 		require.NoError(t, err)
 		require.False(t, suppressed, "it should return false when trying to suppress a user that is not suppressed")
+		createdAt, err := repo.GetCreatedAt("workspace3", "user3", "source2")
+		require.NoError(t, err)
+		require.Equal(t, time.Time{}, createdAt) // should be the same as the one we added
 	})
 
 	t.Run("non matching suppression", func(t *testing.T) {
 		suppressed, err := repo.Suppressed("workspace2", "user2", "source2")
 		require.NoError(t, err)
 		require.False(t, suppressed, "it should return false when trying to suppress a user that is suppressed for a different sourceID")
+		createdAt, err := repo.GetCreatedAt("workspace2", "user2", "source2")
+		require.NoError(t, err)
+		require.Equal(t, time.Time{}, createdAt) // should be the same as the one we added
 	})
 
 	t.Run("canceling a suppression", func(t *testing.T) {

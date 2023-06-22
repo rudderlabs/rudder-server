@@ -2,6 +2,7 @@ package suppression
 
 import (
 	"io"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -23,6 +24,9 @@ type Repository interface {
 
 	// Suppressed returns true if the given user is suppressed, false otherwise
 	Suppressed(workspaceID, userID, sourceID string) (bool, error)
+
+	// GetCreatedAt returns the time the user suppression was created
+	GetCreatedAt(workspaceID, userID, sourceID string) (time.Time, error)
 
 	// Backup writes a backup of the repository to the given writer
 	Backup(w io.Writer) error
