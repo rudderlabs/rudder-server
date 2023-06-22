@@ -403,4 +403,48 @@ func TestQueryWrapper(t *testing.T) {
 			})
 		})
 	}
+
+	t.Run("wrapper with transaction timeout", func(t *testing.T) {
+		qw := New(
+			pgResource.DB,
+			WithSlowQueryThreshold(queryThreshold),
+			WithKeyAndValues(keysAndValues...),
+			WithTransactionTimeout(1*time.Millisecond),
+		)
+
+		tx, err := qw.BeginTx(ctx, &sql.TxOptions{})
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Millisecond)
+
+		row := tx.QueryRowContext(ctx, "SELECT 1;")
+		var i int
+		err = row.Scan(&i)
+		require.ErrorIs(t, err, sql.ErrTxDone)
+
+		err = tx.Commit()
+		require.ErrorIs(t, err, sql.ErrTxDone)
+	})
+
+	t.Run("wrapper without transaction timeout", func(t *testing.T) {
+		qw := New(
+			pgResource.DB,
+			WithSlowQueryThreshold(queryThreshold),
+			WithKeyAndValues(keysAndValues...),
+		)
+
+		tx, err := qw.BeginTx(ctx, &sql.TxOptions{})
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Millisecond)
+
+		row := tx.QueryRowContext(ctx, "SELECT 1;")
+		var i int
+		err = row.Scan(&i)
+		require.Equal(t, 1, i)
+		require.NoError(t, err)
+
+		err = tx.Commit()
+		require.NoError(t, err)
+	})
 }
