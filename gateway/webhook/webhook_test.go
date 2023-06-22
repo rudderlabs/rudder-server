@@ -326,14 +326,14 @@ func TestRecordSourceTransformationErrors(t *testing.T) {
 		return nil
 	}).Times(3)
 
-	webhookHandler.recordSourceTransformationErrors(reqs, 400)
+	webhookHandler.recordSourceTransformationErrors("cio", reqs, 400)
 
 	m := statsStore.Get("source_transformation_errors", stats.Tags{
 		"writeKey":    "w1",
 		"workspaceId": "workspaceID1",
 		"sourceID":    "sourceID1",
 		"statusCode":  "400",
-		"sourceType":  "webhook1",
+		"sourceType":  "cio",
 	})
 	require.EqualValues(t, m.LastValue(), 3)
 	m = statsStore.Get("source_transformation_errors", stats.Tags{
@@ -341,7 +341,7 @@ func TestRecordSourceTransformationErrors(t *testing.T) {
 		"workspaceId": "workspaceID2",
 		"sourceID":    "sourceID2",
 		"statusCode":  "400",
-		"sourceType":  "webhook2",
+		"sourceType":  "cio",
 	})
 	require.EqualValues(t, m.LastValue(), 2)
 	m = statsStore.Get("source_transformation_errors", stats.Tags{
@@ -349,7 +349,7 @@ func TestRecordSourceTransformationErrors(t *testing.T) {
 		"workspaceId": "workspaceID3",
 		"sourceID":    "sourceID3",
 		"statusCode":  "400",
-		"sourceType":  "webhook3",
+		"sourceType":  "cio",
 	})
 	require.EqualValues(t, m.LastValue(), 1)
 }
