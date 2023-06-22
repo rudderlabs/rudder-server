@@ -784,24 +784,24 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time.Duration {
 	// TODO: remove
 	// for testing purpose
-	// return time.Duration(20 * int64(time.Second))
+	return time.Duration(20 * int64(time.Second))
 
-	uploadInterval, ok := destinationConfig["uploadInterval"]
-	if !ok {
-		brt.logger.Debugf("BRT: uploadInterval not found in destination config, falling back to default: %s", brt.asyncUploadTimeout)
-		return brt.asyncUploadTimeout
-	}
-	dur, ok := uploadInterval.(string)
-	if !ok {
-		brt.logger.Warnf("BRT: not found string type uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
-		return brt.asyncUploadTimeout
-	}
-	parsedTime, err := strconv.ParseInt(dur, 10, 64)
-	if err != nil {
-		brt.logger.Warnf("BRT: Couldn't parseint uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
-		return brt.asyncUploadTimeout
-	}
-	return time.Duration(parsedTime * int64(time.Minute))
+	// uploadInterval, ok := destinationConfig["uploadInterval"]
+	// if !ok {
+	// 	brt.logger.Debugf("BRT: uploadInterval not found in destination config, falling back to default: %s", brt.asyncUploadTimeout)
+	// 	return brt.asyncUploadTimeout
+	// }
+	// dur, ok := uploadInterval.(string)
+	// if !ok {
+	// 	brt.logger.Warnf("BRT: not found string type uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
+	// 	return brt.asyncUploadTimeout
+	// }
+	// parsedTime, err := strconv.ParseInt(dur, 10, 64)
+	// if err != nil {
+	// 	brt.logger.Warnf("BRT: Couldn't parseint uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
+	// 	return brt.asyncUploadTimeout
+	// }
+	// return time.Duration(parsedTime * int64(time.Minute))
 }
 
 // skipFetchingJobs returns true if the destination type is async and the there are still jobs in [importing] state for this destination type
