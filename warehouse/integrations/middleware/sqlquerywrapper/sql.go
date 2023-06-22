@@ -77,6 +77,7 @@ func (r *Row) Err() error {
 type Tx struct {
 	*sql.Tx
 	db *DB
+	context.CancelFunc
 }
 
 func WithLogger(logger logger) Opt {
@@ -119,11 +120,12 @@ func WithTransactionTimeout(timeout time.Duration) Opt {
 
 func New(db *sql.DB, opts ...Opt) *DB {
 	s := &DB{
-		DB:                db,
-		since:             time.Since,
-		rollbackThreshold: 30 * time.Second,
-		commitThreshold:   30 * time.Second,
-		logger:            rslogger.NOP,
+		DB:                 db,
+		since:              time.Since,
+		slowQueryThreshold: 300 * time.Second,
+		rollbackThreshold:  30 * time.Second,
+		commitThreshold:    30 * time.Second,
+		logger:             rslogger.NOP,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -241,12 +243,12 @@ func (db *DB) Begin() (*Tx, error) {
 
 func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 	ctx, cancel := queryContextWithTimeout(ctx, db.transactionTimeout)
-	defer cancel()
 	tx, err := db.DB.BeginTx(ctx, opts)
 	if err != nil {
+		defer cancel()
 		return nil, err
 	}
-	return &Tx{tx, db}, nil
+	return &Tx{tx, db, cancel}, nil
 }
 
 func (tx *Tx) Exec(query string, args ...interface{}) (sql.Result, error) {
@@ -304,6 +306,7 @@ func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...interfa
 
 func (tx *Tx) Rollback() error {
 	startedAt := time.Now()
+	defer tx.CancelFunc()
 	err := tx.Tx.Rollback()
 	if elapsed := tx.db.since(startedAt); elapsed > tx.db.rollbackThreshold {
 		tx.db.logger.Warnw("rollback threshold exceeded", tx.db.keysAndValues...)
@@ -313,6 +316,7 @@ func (tx *Tx) Rollback() error {
 
 func (tx *Tx) Commit() error {
 	startedAt := time.Now()
+	defer tx.CancelFunc()
 	err := tx.Tx.Commit()
 	if elapsed := tx.db.since(startedAt); elapsed > tx.db.commitThreshold {
 		tx.db.logger.Warnw("commit threshold exceeded", tx.db.keysAndValues...)

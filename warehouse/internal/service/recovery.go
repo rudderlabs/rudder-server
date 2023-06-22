@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -66,15 +64,6 @@ func (r *Recovery) detect(ctx context.Context) error {
 
 // Recover recovers a warehouse, for a non-graceful shutdown.
 func (r *Recovery) Recover(ctx context.Context, whManager destination, wh model.Warehouse) error {
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		config.GetDuration(
-			"Warehouse.recoveryTimeout",
-			5,
-			time.Minute,
-		),
-	)
-	defer cancel()
 	r.detectOnce.Do(func() {
 		r.detectErr = r.detect(ctx)
 	})

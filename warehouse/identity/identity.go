@@ -311,6 +311,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 		pkgLogger.Errorf(`IDR: Error inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
 		return
 	}
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id int64
 		err = rows.Scan(&id)
@@ -346,6 +347,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 		if err != nil {
 			return
 		}
+		defer func() { _ = rows.Close() }()
 		columnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
 		for rows.Next() {
 			var rowData []string
