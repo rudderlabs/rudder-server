@@ -788,7 +788,6 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseu
 	}
 
 	return nil
-
 }
 
 func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) error {
@@ -1555,7 +1554,7 @@ func (job *UploadJob) triggerUploadNow() (err error) {
 	if err != nil {
 		panic(err)
 	}
-	return txn.Commit()
+	err = txn.Commit()
 
 	job.upload.Status = newJobState
 	return err
@@ -1790,7 +1789,6 @@ func (job *UploadJob) getAttemptNumber() int {
 }
 
 func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
-
 	loadFilesMap = make(map[tableNameT]bool)
 
 	sourceID := job.warehouse.Source.ID
