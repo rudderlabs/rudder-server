@@ -1572,6 +1572,7 @@ func startWebHandler(ctx context.Context) error {
 
 			// fetch schema info
 			srvMux.Get("/v1/warehouse/fetch-tables", fetchTablesHandler)
+			srvMux.Get("/internal/v1/warehouse/fetch-tables", fetchTablesHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
