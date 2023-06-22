@@ -399,6 +399,10 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				outputPayload, err := json.Marshal(resp.Output)
 				if err != nil {
 					errMessage = response.SourceTransformerInvalidOutputFormatInResponse
+					stats.Default.NewTaggedStat(`source.transformer.invalid.response`, stats.CountType, stats.Tags{
+						"sourceType": breq.sourceType,
+						"writeKey":   webRequest.writeKey,
+					}).Increment()
 					bt.webhook.countSourceTransformationErrors(breq.sourceType, webRequest.writeKey, response.GetErrorStatusCode(errMessage), 1)
 				} else {
 					errMessage = bt.webhook.enqueueInGateway(webRequest, outputPayload)
