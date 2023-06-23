@@ -8,6 +8,7 @@ import (
 	context "context"
 	sql "database/sql"
 	reflect "reflect"
+	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 	types "github.com/rudderlabs/rudder-server/utils/types"
@@ -34,6 +35,20 @@ func NewMockUserSuppression(ctrl *gomock.Controller) *MockUserSuppression {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockUserSuppression) EXPECT() *MockUserSuppressionMockRecorder {
 	return m.recorder
+}
+
+// GetCreatedAt mocks base method.
+func (m *MockUserSuppression) GetCreatedAt(arg0, arg1, arg2 string) time.Time {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCreatedAt", arg0, arg1, arg2)
+	ret0, _ := ret[0].(time.Time)
+	return ret0
+}
+
+// GetCreatedAt indicates an expected call of GetCreatedAt.
+func (mr *MockUserSuppressionMockRecorder) GetCreatedAt(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCreatedAt", reflect.TypeOf((*MockUserSuppression)(nil).GetCreatedAt), arg0, arg1, arg2)
 }
 
 // IsSuppressedUser mocks base method.
