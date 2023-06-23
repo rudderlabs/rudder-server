@@ -284,7 +284,7 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	_ = webhookHandler.Shutdown()
 }
 
-func TestRecordSourceTransformationErrors(t *testing.T) {
+func TestRecordWebhookErrors(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGatewayI(ctrl)
@@ -326,30 +326,33 @@ func TestRecordSourceTransformationErrors(t *testing.T) {
 		return nil
 	}).Times(3)
 
-	webhookHandler.recordSourceTransformationErrors(reqs, 400)
+	webhookHandler.recordWebhookErrors("cio", "err1", reqs, 400)
 
-	m := statsStore.Get("source_transformation_errors", stats.Tags{
+	m := statsStore.Get("webhook_num_errors", stats.Tags{
 		"writeKey":    "w1",
 		"workspaceId": "workspaceID1",
 		"sourceID":    "sourceID1",
 		"statusCode":  "400",
-		"sourceType":  "webhook1",
+		"sourceType":  "cio",
+		"reason":      "err1",
 	})
 	require.EqualValues(t, m.LastValue(), 3)
-	m = statsStore.Get("source_transformation_errors", stats.Tags{
+	m = statsStore.Get("webhook_num_errors", stats.Tags{
 		"writeKey":    "w2",
 		"workspaceId": "workspaceID2",
 		"sourceID":    "sourceID2",
 		"statusCode":  "400",
-		"sourceType":  "webhook2",
+		"sourceType":  "cio",
+		"reason":      "err1",
 	})
 	require.EqualValues(t, m.LastValue(), 2)
-	m = statsStore.Get("source_transformation_errors", stats.Tags{
+	m = statsStore.Get("webhook_num_errors", stats.Tags{
 		"writeKey":    "w3",
 		"workspaceId": "workspaceID3",
 		"sourceID":    "sourceID3",
 		"statusCode":  "400",
-		"sourceType":  "webhook3",
+		"sourceType":  "cio",
+		"reason":      "err1",
 	})
 	require.EqualValues(t, m.LastValue(), 1)
 }
