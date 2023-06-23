@@ -107,8 +107,8 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			// making upload function call
-			recieved := bulkUploader.Upload(&destination, &asyncDestination)
-			recieved.ImportingParameters = stdjson.RawMessage{}
+			received := bulkUploader.Upload(&destination, &asyncDestination)
+			received.ImportingParameters = stdjson.RawMessage{}
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
@@ -117,7 +117,7 @@ var _ = Describe("Bing ads", func() {
 				return
 			}
 
-			Expect(recieved).To(Equal(expected))
+			Expect(received).To(Equal(expected))
 		})
 
 		It("TestBingAdsUploadFailedGetBulkUploadUrl", func() {
@@ -140,8 +140,8 @@ var _ = Describe("Bing ads", func() {
 				FailedCount:    3,
 				AbortCount:     0,
 			}
-			recieved := bulkUploader.Upload(&destination, &asyncDestination)
-			Expect(recieved).To(Equal(expected))
+			received := bulkUploader.Upload(&destination, &asyncDestination)
+			Expect(received).To(Equal(expected))
 		})
 
 		It("TestBingAdsUploadEmptyGetBulkUploadUrl", func() {
@@ -166,8 +166,8 @@ var _ = Describe("Bing ads", func() {
 				FailedCount:   3,
 				DestinationID: destination.ID,
 			}
-			recieved := bulkUploader.Upload(&destination, &asyncDestination)
-			Expect(recieved).To(Equal(expected))
+			received := bulkUploader.Upload(&destination, &asyncDestination)
+			Expect(received).To(Equal(expected))
 		})
 
 		It("TestBingAdsUploadFailedUploadBulkFile", func() {
@@ -209,7 +209,7 @@ var _ = Describe("Bing ads", func() {
 				FailedCount:   4,
 				DestinationID: destination.ID,
 			}
-			recieved := bulkUploader.Upload(&destination, &asyncDestination)
+			received := bulkUploader.Upload(&destination, &asyncDestination)
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
@@ -217,7 +217,7 @@ var _ = Describe("Bing ads", func() {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
 				return
 			}
-			Expect(recieved).To(Equal(expected))
+			Expect(received).To(Equal(expected))
 		})
 
 		It("TestBingAdsPollSuccessCase", func() {
@@ -462,7 +462,7 @@ var _ = Describe("Bing ads", func() {
 				FailedCount:   3,
 				DestinationID: destination.ID,
 			}
-			recieved := bulkUploader.Upload(&destination, &asyncDestination)
+			received := bulkUploader.Upload(&destination, &asyncDestination)
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
@@ -470,7 +470,7 @@ var _ = Describe("Bing ads", func() {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
 				return
 			}
-			Expect(recieved).To(Equal(expected))
+			Expect(received).To(Equal(expected))
 		})
 
 		It("TestNewManagerInternal", func() {
@@ -552,8 +552,8 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			// making upload function call
-			recieved := bulkUploader.Upload(&destination, &asyncDestination)
-			recieved.ImportingParameters = stdjson.RawMessage{}
+			received := bulkUploader.Upload(&destination, &asyncDestination)
+			received.ImportingParameters = stdjson.RawMessage{}
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
@@ -562,7 +562,7 @@ var _ = Describe("Bing ads", func() {
 				return
 			}
 
-			Expect(recieved).To(Equal(expected))
+			Expect(received).To(Equal(expected))
 		})
 	})
 })

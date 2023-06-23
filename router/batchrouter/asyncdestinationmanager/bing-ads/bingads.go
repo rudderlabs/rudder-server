@@ -35,11 +35,10 @@ type Client struct {
 	client *http.Client
 }
 type BingAdsBulkUploader struct {
-	destName             string
-	service              bingads.BulkServiceI
-	destinationIDFileMap map[string]string
-	logger               logger.Logger
-	client               Client
+	destName string
+	service  bingads.BulkServiceI
+	logger   logger.Logger
+	client   Client
 }
 
 func NewBingAdsBulkUploader(name string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
@@ -78,9 +77,9 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string
 		return "", nil, nil, err
 	}
 	csvWriter := csv.NewWriter(csvFile)
-	csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
-	csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
-	csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", "Add", "", ""})
+	err = csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
+	err = csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
+	err = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", "Add", "", ""})
 	scanner := bufio.NewScanner(textFile)
 	size := 0
 	for scanner.Scan() {
@@ -101,7 +100,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string
 		if int64(size) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) {
 			for _, uploadData := range data.Message.List {
 				clientId := generateClientID(uploadData, data.Metadata)
-				csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+				err = csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 			}
 			successJobIds = append(successJobIds, data.Metadata.JobID)
 		} else {
@@ -126,7 +125,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string
 		return "", nil, nil, err
 	}
 
-	csvFile.Seek(0, 0)
+	_, err = csvFile.Seek(0, 0)
 	_, err = io.Copy(csvFileInZip, csvFile)
 	if err != nil {
 		return "", nil, nil, err
@@ -167,7 +166,7 @@ func Unzip(zipFile, targetDir string) ([]string, error) {
 		path := filepath.Join(targetDir, f.Name)
 		if f.FileInfo().IsDir() {
 			// Create directories if the file is a directory
-			os.MkdirAll(path, f.Mode())
+			err = os.MkdirAll(path, f.Mode())
 		} else {
 			// Create the file and copy the contents
 			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
@@ -510,7 +509,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		}
 		statusCode = 200
 	} else {
-		// this will include authenticaion key errors
+		// this will include authentication key errors
 		// file will not be available for this case.
 		resp = common.PollStatusResponse{
 			Success:        false,
@@ -594,7 +593,7 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 func (ts *tokenSource) Token() (*oauth2.Token, error) {
 	secret, err := ts.generateToken()
 	if err != nil {
-		return nil, fmt.Errorf("Error occured while generating the accessToken")
+		return nil, fmt.Errorf("Error occurred while generating the accessToken")
 	}
 
 	token := &oauth2.Token{
