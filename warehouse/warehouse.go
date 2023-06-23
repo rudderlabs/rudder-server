@@ -1571,7 +1571,9 @@ func startWebHandler(ctx context.Context) error {
 			srvMux.Get("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // FIXME: add degraded mode
 
 			// fetch schema info
+			// TODO: Remove this endpoint once sources change is released
 			srvMux.Get("/v1/warehouse/fetch-tables", fetchTablesHandler)
+			srvMux.Get("/internal/v1/warehouse/fetch-tables", fetchTablesHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
