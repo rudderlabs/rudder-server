@@ -100,8 +100,6 @@ require (
 	google.golang.org/protobuf v1.30.0
 )
 
-// require github.com/rudderlabs/bing-ads-go-sdk v0.1.0
-
 require (
 	cloud.google.com/go v0.110.2 // indirect
 	cloud.google.com/go/compute v1.19.3 // indirect
