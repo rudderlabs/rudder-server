@@ -796,7 +796,7 @@ func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) b
 	if isSuppressedUser {
 		createdAt := gateway.suppressUserHandler.GetCreatedAt(workspaceID, userID, sourceID)
 		if !createdAt.IsZero() {
-			userSuppressionTimer := gateway.stats.NewTaggedStat("gateway.user_suppression_timer", stats.TimerType, stats.Tags{"workspaceID": workspaceID, "userID": userID, "sourceID": sourceID})
+			userSuppressionTimer := gateway.stats.NewTaggedStat("gateway.user_suppression_timer", stats.TimerType, stats.Tags{"workspaceId": workspaceID, "userID": userID, "sourceID": sourceID})
 			userSuppressionTimer.Since(createdAt)
 		}
 	}

@@ -216,6 +216,8 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
+		c.mockSuppressUser.EXPECT().GetCreatedAt(WorkspaceID, NormalUserID, SourceIDEnabled).Return(time.Time{}).AnyTimes()
+		c.mockSuppressUser.EXPECT().GetCreatedAt(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(time.Now()).AnyTimes()
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableSuppressUserFeature(true)
@@ -255,6 +257,21 @@ var _ = Describe("Gateway Enterprise", func() {
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
+				},
+				1*time.Second,
+			).Should(BeTrue())
+			// stat should be present for user suppression
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.user_suppression_timer",
+						map[string]string{
+							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
+							"userID":      SuppressedUserID,
+						},
+					)
+					return stat != nil
 				},
 				1*time.Second,
 			).Should(BeTrue())
@@ -308,6 +325,16 @@ var _ = Describe("Gateway Enterprise", func() {
 				},
 				1*time.Second,
 			).Should(BeTrue())
+			// stat should not be present for normal user
+			stat := statsStore.Get(
+				"gateway.user_suppression_timer",
+				map[string]string{
+					"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+					"workspaceId": getWorkspaceID(WriteKeyEnabled),
+					"userID":      NormalUserID,
+				},
+			)
+			Expect(stat).To(BeNil())
 		})
 	})
 })
