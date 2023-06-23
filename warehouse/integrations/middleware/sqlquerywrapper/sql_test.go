@@ -31,19 +31,19 @@ func TestQueryWrapper(t *testing.T) {
 	t.Log("db:", pgResource.DBDsn)
 
 	testCases := []struct {
-		name               string
-		executionTimeInSec time.Duration
-		wantLog            bool
+		name          string
+		executionTime time.Duration
+		wantLog       bool
 	}{
 		{
-			name:               "slow query",
-			executionTimeInSec: 500 * time.Second,
-			wantLog:            true,
+			name:          "slow query",
+			executionTime: 500 * time.Second,
+			wantLog:       true,
 		},
 		{
-			name:               "fast query",
-			executionTimeInSec: 1 * time.Second,
-			wantLog:            false,
+			name:          "fast query",
+			executionTime: 1 * time.Second,
+			wantLog:       false,
 		},
 	}
 
@@ -71,14 +71,14 @@ func TestQueryWrapper(t *testing.T) {
 				WithKeyAndValues(keysAndValues...),
 			)
 			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
+				return tc.executionTime
 			}
 
 			query := "SELECT 1;"
 
 			kvs := []any{
 				logfield.Query, query,
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
+				logfield.QueryExecutionTime, tc.executionTime,
 			}
 			kvs = append(kvs, keysAndValues...)
 
@@ -94,16 +94,20 @@ func TestQueryWrapper(t *testing.T) {
 			_, err = qw.ExecContext(ctx, query)
 			require.NoError(t, err)
 
-			_, err = qw.Query(query) //nolint:rowserrcheck
+			rows, err := qw.Query(query)
+			_ = rows.Close()
 			require.NoError(t, err)
 
-			_, err = qw.QueryContext(ctx, query) //nolint:rowserrcheck
+			rows, err = qw.QueryContext(ctx, query)
+			_ = rows.Close()
 			require.NoError(t, err)
 
-			_ = qw.QueryRow(query) //nolint:rowserrcheck
+			row := qw.QueryRow(query)
+			_ = row.Scan()
 			require.NoError(t, err)
 
-			_ = qw.QueryRowContext(ctx, query) //nolint:rowserrcheck
+			row = qw.QueryRowContext(ctx, query)
+			_ = row.Scan()
 			require.NoError(t, err)
 		})
 
@@ -125,7 +129,7 @@ func TestQueryWrapper(t *testing.T) {
 				}),
 			)
 			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
+				return tc.executionTime
 			}
 
 			t.Run("DB", func(t *testing.T) {
@@ -133,11 +137,11 @@ func TestQueryWrapper(t *testing.T) {
 
 				createKvs := []any{
 					logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-					logfield.QueryExecutionTime, tc.executionTimeInSec,
+					logfield.QueryExecutionTime, tc.executionTime,
 				}
 				alterKvs := []any{
 					logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-					logfield.QueryExecutionTime, tc.executionTimeInSec,
+					logfield.QueryExecutionTime, tc.executionTime,
 				}
 
 				createKvs = append(createKvs, keysAndValues...)
@@ -186,11 +190,11 @@ func TestQueryWrapper(t *testing.T) {
 
 						createKvs := []any{
 							logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-							logfield.QueryExecutionTime, tc.executionTimeInSec,
+							logfield.QueryExecutionTime, tc.executionTime,
 						}
 						alterKvs := []any{
 							logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-							logfield.QueryExecutionTime, tc.executionTimeInSec,
+							logfield.QueryExecutionTime, tc.executionTime,
 						}
 
 						createKvs = append(createKvs, keysAndValues...)
@@ -233,14 +237,14 @@ func TestQueryWrapper(t *testing.T) {
 				WithKeyAndValues(keysAndValues...),
 			)
 			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
+				return tc.executionTime
 			}
 
 			query := "SELECT 1;"
 
 			kvs := []any{
 				logfield.Query, query,
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
+				logfield.QueryExecutionTime, tc.executionTime,
 			}
 			kvs = append(kvs, keysAndValues...)
 
@@ -280,7 +284,8 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_, err = tx.Query(query) // nolint:rowserrcheck
+				rows, err := tx.Query(query)
+				_ = rows.Close()
 				require.NoError(t, err)
 
 				err = tx.Commit() // nolint:rowserrcheck
@@ -291,7 +296,8 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_, err = tx.QueryContext(ctx, query) // nolint:rowserrcheck
+				rows, err := tx.QueryContext(ctx, query)
+				_ = rows.Close()
 				require.NoError(t, err)
 
 				err = tx.Commit()
@@ -302,7 +308,8 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_ = tx.QueryRow(query)
+				row := tx.QueryRow(query)
+				_ = row.Scan()
 				require.NoError(t, err)
 
 				err = tx.Commit()
@@ -313,7 +320,8 @@ func TestQueryWrapper(t *testing.T) {
 				tx, err := qw.Begin()
 				require.NoError(t, err)
 
-				_ = tx.QueryRowContext(ctx, query)
+				row := tx.QueryRowContext(ctx, query)
+				_ = row.Scan()
 				require.NoError(t, err)
 
 				err = tx.Commit()
@@ -336,7 +344,7 @@ func TestQueryWrapper(t *testing.T) {
 				WithLogger(rslogger.NOP),
 			)
 			qw.since = func(time.Time) time.Duration {
-				return tc.executionTimeInSec
+				return tc.executionTime
 			}
 
 			table := fmt.Sprintf("test_table_%d", uuid.New().ID())
@@ -395,4 +403,48 @@ func TestQueryWrapper(t *testing.T) {
 			})
 		})
 	}
+
+	t.Run("wrapper with transaction timeout", func(t *testing.T) {
+		qw := New(
+			pgResource.DB,
+			WithSlowQueryThreshold(queryThreshold),
+			WithKeyAndValues(keysAndValues...),
+			WithTransactionTimeout(1*time.Millisecond),
+		)
+
+		tx, err := qw.BeginTx(ctx, &sql.TxOptions{})
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Millisecond)
+
+		row := tx.QueryRowContext(ctx, "SELECT 1;")
+		var i int
+		err = row.Scan(&i)
+		require.ErrorIs(t, err, sql.ErrTxDone)
+
+		err = tx.Commit()
+		require.ErrorIs(t, err, sql.ErrTxDone)
+	})
+
+	t.Run("wrapper without transaction timeout", func(t *testing.T) {
+		qw := New(
+			pgResource.DB,
+			WithSlowQueryThreshold(queryThreshold),
+			WithKeyAndValues(keysAndValues...),
+		)
+
+		tx, err := qw.BeginTx(ctx, &sql.TxOptions{})
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Millisecond)
+
+		row := tx.QueryRowContext(ctx, "SELECT 1;")
+		var i int
+		err = row.Scan(&i)
+		require.Equal(t, 1, i)
+		require.NoError(t, err)
+
+		err = tx.Commit()
+		require.NoError(t, err)
+	})
 }

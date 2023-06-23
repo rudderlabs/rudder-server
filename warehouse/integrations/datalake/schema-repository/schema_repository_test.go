@@ -3,12 +3,15 @@ package schemarepository_test
 import (
 	"testing"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
+	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestUseGlue(t *testing.T) {
@@ -69,7 +72,7 @@ func TestLoadFileBatching(t *testing.T) {
 		})
 	}
 
-	batches := schemarepository.LoadFileBatching(loadFiles, batchSize)
+	batches := lo.Chunk(loadFiles, batchSize)
 	require.Equal(t, 1+(len(loadFiles)/batchSize), len(batches))
 
 	var reconstruct []warehouseutils.LoadFile

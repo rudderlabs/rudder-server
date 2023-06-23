@@ -7,7 +7,9 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -29,7 +31,7 @@ const (
 
 type LoadFiles repo
 
-func NewLoadFiles(db *sql.DB, opts ...Opt) *LoadFiles {
+func NewLoadFiles(db *sqlmiddleware.DB, opts ...Opt) *LoadFiles {
 	r := &LoadFiles{
 		db:  db,
 		now: timeutil.Now,
@@ -65,7 +67,21 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 		return
 	}
 
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at", "metadata"))
+	stmt, err := txn.PrepareContext(
+		ctx,
+		pq.CopyIn(
+			"wh_load_files",
+			"staging_file_id",
+			"location",
+			"source_id",
+			"destination_id",
+			"destination_type",
+			"table_name",
+			"total_events",
+			"created_at",
+			"metadata",
+		),
+	)
 	if err != nil {
 		return fmt.Errorf(`inserting load files: CopyIn: %w`, err)
 	}

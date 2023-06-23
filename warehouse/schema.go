@@ -2,7 +2,6 @@ package warehouse
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -14,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -59,7 +59,7 @@ type Schema struct {
 }
 
 func NewSchema(
-	db *sql.DB,
+	db *sqlquerywrapper.DB,
 	warehouse model.Warehouse,
 	conf *config.Config,
 ) *Schema {

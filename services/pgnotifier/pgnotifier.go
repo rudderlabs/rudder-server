@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	whUtils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -58,7 +59,7 @@ func Init() {
 
 type PGNotifier struct {
 	URI                 string
-	db                  *sql.DB
+	db                  *sqlmiddleware.DB
 	workspaceIdentifier string
 }
 
@@ -141,7 +142,10 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PGNotifie
 	pgNotifierClaimUpdateFailed = whUtils.NewCounterStat("pgnotifier_claim_update_failed", pgNotifierModuleTag)
 
 	notifier = PGNotifier{
-		db:                  dbHandle,
+		db: sqlmiddleware.New(
+			dbHandle,
+			sqlmiddleware.WithQueryTimeout(config.GetDuration("Warehouse.pgNotifierQueryTimeout", 5, time.Minute)),
+		),
 		URI:                 connectionInfo,
 		workspaceIdentifier: workspaceIdentifier,
 	}
@@ -150,7 +154,7 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PGNotifie
 }
 
 func (notifier *PGNotifier) GetDBHandle() *sql.DB {
-	return notifier.db
+	return notifier.db.DB
 }
 
 func (notifier *PGNotifier) ClearJobs(ctx context.Context) (err error) {
@@ -626,7 +630,7 @@ func (notifier *PGNotifier) setupQueue() (err error) {
 	pkgLogger.Infof("PgNotifier: Creating Job Queue Tables ")
 
 	m := &migrator.Migrator{
-		Handle:                     notifier.db,
+		Handle:                     notifier.GetDBHandle(),
 		MigrationsTable:            "pg_notifier_queue_migrations",
 		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
@@ -648,7 +652,7 @@ func GetCurrentSQLTimestamp() string {
 // which were left behind by dead workers in executing state
 func (notifier *PGNotifier) RunMaintenanceWorker(ctx context.Context) error {
 	maintenanceWorkerLockID := murmur3.Sum64([]byte(queueName))
-	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), notifier.db)
+	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), notifier.GetDBHandle())
 	if err != nil {
 		return err
 	}

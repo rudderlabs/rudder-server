@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -49,9 +51,9 @@ type metadataSchema struct {
 }
 
 func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
-	var stagingFileIDs []int64
-	for _, stagingFile := range stagingFiles {
-		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	stagingFileIDs := make([]int64, len(stagingFiles))
+	for i, stagingFile := range stagingFiles {
+		stagingFileIDs[i] = stagingFile.ID
 	}
 	return stagingFileIDs
 }
@@ -70,7 +72,7 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	}
 }
 
-func NewStagingFiles(db *sql.DB, opts ...Opt) *StagingFiles {
+func NewStagingFiles(db *sqlmiddleware.DB, opts ...Opt) *StagingFiles {
 	r := &StagingFiles{
 		db:  db,
 		now: timeutil.Now,
@@ -167,7 +169,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 }
 
 // praseRow is a helper for mapping a row of tableColumns to a model.StagingFile.
-func (*StagingFiles) parseRows(rows *sql.Rows) ([]*model.StagingFile, error) {
+func (*StagingFiles) parseRows(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 	var stagingFiles []*model.StagingFile
 
 	defer func() { _ = rows.Close() }()
@@ -460,7 +462,7 @@ func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload mod
 	return revisionIDs, nil
 }
 
-func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) (err error) {
+func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("no staging files to update")
 	}
@@ -487,7 +489,7 @@ func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status s
 		return fmt.Errorf("not all rows were updated: %d != %d", rowsAffected, len(ids))
 	}
 
-	return
+	return nil
 }
 
 func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
@@ -512,7 +514,6 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 	if err != nil {
 		return fmt.Errorf("update staging file with error: %w", err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("rows affected: %w", err)
@@ -520,6 +521,5 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 	if rowsAffected == 0 {
 		return fmt.Errorf("no rows affected")
 	}
-
 	return nil
 }

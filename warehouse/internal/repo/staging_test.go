@@ -2,7 +2,6 @@ package repo_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -10,13 +9,14 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
 
-func setupDB(t testing.TB) *sql.DB {
+func setupDB(t testing.TB) *sqlmiddleware.DB {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -31,7 +31,7 @@ func setupDB(t testing.TB) *sql.DB {
 
 	t.Log("db:", pgResource.DBDsn)
 
-	return pgResource.DB
+	return sqlmiddleware.New(pgResource.DB)
 }
 
 func TestStagingFileRepo(t *testing.T) {

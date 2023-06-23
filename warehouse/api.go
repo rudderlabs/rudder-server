@@ -139,7 +139,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	UploadAPI = UploadAPIT{
 		enabled:           true,
 		dbHandle:          dbHandle,
-		warehouseDBHandle: NewWarehouseDB(dbHandle),
+		warehouseDBHandle: NewWarehouseDB(wrappedDBHandle),
 		log:               log,
 		isMultiWorkspace:  isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
@@ -245,7 +245,7 @@ func (uploadsReq *UploadsReq) TriggerWhUploads(ctx context.Context) (response *p
 		return
 	}
 	if pendingUploadCount == int64(0) {
-		pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForDestination(ctx, uploadsReq.DestinationID)
+		pendingStagingFileCount, err = repo.NewStagingFiles(wrappedDBHandle).CountPendingForDestination(ctx, uploadsReq.DestinationID)
 		if err != nil {
 			return
 		}
@@ -380,7 +380,7 @@ func (uploadReq *UploadReq) TriggerWHUpload(ctx context.Context) (response *prot
 		return
 	}
 
-	upload, err := repo.NewUploads(uploadReq.API.dbHandle).Get(ctx, uploadReq.UploadId)
+	upload, err := repo.NewUploads(uploadReq.API.warehouseDBHandle.handle).Get(ctx, uploadReq.UploadId)
 	if err == model.ErrUploadNotFound {
 		return &proto.TriggerWhUploadsResponse{
 			Message:    NoSuchSync,
@@ -400,7 +400,7 @@ func (uploadReq *UploadReq) TriggerWHUpload(ctx context.Context) (response *prot
 
 	uploadJobT := UploadJob{
 		upload:   upload,
-		dbHandle: uploadReq.API.dbHandle,
+		dbHandle: uploadReq.API.warehouseDBHandle.handle,
 		now:      timeutil.Now,
 		ctx:      ctx,
 	}

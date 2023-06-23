@@ -309,14 +309,10 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse
 		($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15)
 	RETURNING id
 	`, warehouseutils.WarehouseUploadsTable)
-	stmt, err := wh.dbHandle.Prepare(sqlStatement)
-	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed to prepare with Error : %w", sqlStatement, err))
-	}
-	defer stmt.Close()
 
 	now := timeutil.Now()
-	row := stmt.QueryRow(
+	row := wh.dbHandle.QueryRow(
+		sqlStatement,
 		warehouse.Source.ID,
 		warehouse.Namespace,
 		warehouse.WorkspaceID,
@@ -433,6 +429,9 @@ func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse mod
 			}
 		}
 
+		whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+			wh.destType, warehouse.Destination.ID,
+		))
 		err = whManager.Setup(ctx, job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)

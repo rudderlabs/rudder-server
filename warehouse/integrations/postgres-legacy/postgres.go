@@ -161,6 +161,7 @@ func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
 			logfield.Schema, pg.Namespace,
 		),
 		sqlmiddleware.WithSlowQueryThreshold(pg.SlowQueryThreshold),
+		sqlmiddleware.WithQueryTimeout(pg.ConnectTimeout),
 	)
 	return middleware
 }
@@ -1051,7 +1052,7 @@ func (pg *Postgres) handleExecContext(ctx context.Context, e *QueryParams) (err 
 	if e.enableWithQueryPlan {
 		sqlStatement := "EXPLAIN " + e.query
 
-		var rows *sql.Rows
+		var rows *sqlmiddleware.Rows
 		if e.txn != nil {
 			rows, err = e.txn.QueryContext(ctx, sqlStatement)
 		} else if e.db != nil {

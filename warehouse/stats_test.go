@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/golang/mock/gomock"
@@ -72,7 +73,7 @@ var _ = Describe("Stats", Ordered, func() {
 					Type: "POSTGRES",
 				},
 				stats:            mockStats,
-				tableUploadsRepo: repo.NewTableUploads(pgResource.DB),
+				tableUploadsRepo: repo.NewTableUploads(sqlmiddleware.New(pgResource.DB)),
 				ctx:              context.Background(),
 			}
 		})
@@ -102,7 +103,7 @@ var _ = Describe("Stats", Ordered, func() {
 					Type: "POSTGRES",
 				},
 				stats:            mockStats,
-				tableUploadsRepo: repo.NewTableUploads(pgResource.DB),
+				tableUploadsRepo: repo.NewTableUploads(sqlmiddleware.New(pgResource.DB)),
 				ctx:              context.Background(),
 			}
 		})
@@ -148,7 +149,7 @@ var _ = Describe("Stats", Ordered, func() {
 			warehouse: model.Warehouse{
 				Type: "POSTGRES",
 			},
-			dbHandle: pgResource.DB,
+			dbHandle: sqlmiddleware.New(pgResource.DB),
 			stats:    mockStats,
 			ctx:      context.Background(),
 		}
