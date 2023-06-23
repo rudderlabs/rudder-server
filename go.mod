@@ -100,7 +100,7 @@ require (
 	google.golang.org/protobuf v1.30.0
 )
 
-require github.com/rudderlabs/bing-ads-go-sdk v0.0.0-20230612154712-532ead458eef
+// require github.com/rudderlabs/bing-ads-go-sdk v0.1.0
 
 require (
 	cloud.google.com/go v0.110.2 // indirect
@@ -290,6 +290,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/gotestsum v1.8.2 // indirect
+	github.com/rudderlabs/bing-ads-go-sdk v0.1.0 // indirect
 )
 
 replace github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2

@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/oauth2"
+
 	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -26,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/oauth2"
 )
 
 type Client struct {
@@ -263,7 +264,7 @@ func ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
 	for index, record := range records[1:] {
 		fmt.Println(index)
-		//fmt.Println(record[0])
+		// fmt.Println(record[0])
 		rowname := string(record[typeIndex])
 		if typeIndex < len(record) && strings.Contains(rowname, "Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
@@ -459,7 +460,6 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 
 		// Download the zip file
 		fileLoadResp, err := http.Get(modifiedUrl)
-
 		if err != nil {
 			fmt.Println("Error downloading zip file:", err)
 			panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))

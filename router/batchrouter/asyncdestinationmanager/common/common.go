@@ -5,11 +5,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/tidwall/gjson"
 )
 
 var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
