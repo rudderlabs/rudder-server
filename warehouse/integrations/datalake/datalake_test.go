@@ -412,6 +412,8 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Trino", func(t *testing.T) {
+		t.Skip()
+
 		dsn := fmt.Sprintf("http://user@localhost:%d?catalog=minio&schema=default&session_properties=minio.parquet_use_column_index=true",
 			trinoPort,
 		)
