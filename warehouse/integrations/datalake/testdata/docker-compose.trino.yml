@@ -6,16 +6,13 @@ services:
       - 8080
     volumes:
       - ./etc:/etc/trino/:ro
-
-  mariadb:
-    image: mariadb:10.5.8
-    ports:
-      - 3306
-    environment:
-      MYSQL_ROOT_PASSWORD: admin
-      MYSQL_USER: admin
-      MYSQL_PASSWORD: admin
-      MYSQL_DATABASE: metastore_db
+    depends_on:
+      - hive-metastore
+    deploy:
+      resources:
+        limits:
+          cpus: '2.5'
+          memory: 1G
 
   hive-metastore:
     image: bitsondatadev/hive-metastore:latest
@@ -27,3 +24,23 @@ services:
       METASTORE_DB_HOSTNAME: mariadb
     depends_on:
       - mariadb
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  mariadb:
+    image: mariadb:10.5.8
+    ports:
+      - 3306
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      MYSQL_DATABASE: metastore_db
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G

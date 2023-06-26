@@ -430,67 +430,132 @@ func TestIntegration(t *testing.T) {
 			return err == nil
 		}, 60*time.Second, 1*time.Second)
 
-		_, err = db.ExecContext(ctx, `
-			CREATE SCHEMA IF NOT EXISTS minio.rudderstack WITH (
-		  	location = 's3a://`+s3BucketName+`/')
-		`)
-		require.NoError(t, err)
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			_, err = db.ExecContext(ctx, `
+				CREATE SCHEMA IF NOT EXISTS minio.rudderstack WITH (
+				location = 's3a://`+s3BucketName+`/')
+			`)
+			return err
+		}))
 
-		_, err = db.ExecContext(ctx, `
-			CREATE TABLE IF NOT EXISTS minio.rudderstack.tracks (
-				"_timestamp" TIMESTAMP,
-				context_destination_id VARCHAR,
-				context_destination_type VARCHAR,
-				context_ip VARCHAR,
-				context_library_name VARCHAR,
-				context_passed_ip VARCHAR,
-				context_request_ip VARCHAR,
-				context_source_id VARCHAR,
-				context_source_type VARCHAR,
-				event VARCHAR,
-				event_text VARCHAR,
-				id VARCHAR,
-				original_timestamp TIMESTAMP,
-				received_at TIMESTAMP,
-				sent_at TIMESTAMP,
-				"timestamp" TIMESTAMP,
-				user_id VARCHAR,
-				uuid_ts TIMESTAMP
-			)
-			WITH (
-				external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/',
-				format = 'PARQUET'
-			)
-		`)
-		require.NoError(t, err)
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			_, err = db.ExecContext(ctx, `
+				CREATE TABLE IF NOT EXISTS minio.rudderstack.tracks (
+					"_timestamp" TIMESTAMP,
+					context_destination_id VARCHAR,
+					context_destination_type VARCHAR,
+					context_ip VARCHAR,
+					context_library_name VARCHAR,
+					context_passed_ip VARCHAR,
+					context_request_ip VARCHAR,
+					context_source_id VARCHAR,
+					context_source_type VARCHAR,
+					event VARCHAR,
+					event_text VARCHAR,
+					id VARCHAR,
+					original_timestamp TIMESTAMP,
+					received_at TIMESTAMP,
+					sent_at TIMESTAMP,
+					"timestamp" TIMESTAMP,
+					user_id VARCHAR,
+					uuid_ts TIMESTAMP
+				)
+				WITH (
+					external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/',
+					format = 'PARQUET'
+				)
+			`)
+			return err
+		}))
 
 		var count int64
 
-		err = db.QueryRowContext(ctx, `
-			select count(*) from minio.rudderstack.tracks
-		`).Scan(&count)
-		require.NoError(t, err)
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			return db.QueryRowContext(ctx, `
+				select
+				    count(*)
+				from
+				     minio.rudderstack.tracks
+			`).Scan(&count)
+		}))
 		require.Equal(t, int64(8), count)
 
-		err = db.QueryRowContext(ctx, `
-			select count(*) from minio.rudderstack.tracks where context_destination_id = '`+s3DestinationID+`'
-		`).Scan(&count)
-		require.NoError(t, err)
+		require.NoError(t, testhelper.WithConstantRetries(func() error {
+			return db.QueryRowContext(ctx, `
+				select
+					count(*)
+				from
+					minio.rudderstack.tracks
+				where
+					context_destination_id = '`+s3DestinationID+`'
+			`).Scan(&count)
+		}))
 		require.Equal(t, int64(8), count)
 	})
 
 	t.Run("Spark", func(t *testing.T) {
-		_ = c.Exec(ctx, "spark-master", "spark-sql", "-e", `CREATE EXTERNAL TABLE tracks ( _timestamp timestamp, context_destination_id string, context_destination_type string, context_ip string, context_library_name string, context_passed_ip string, context_request_ip string, context_source_id string, context_source_type string, event string, event_text string, id string, original_timestamp timestamp, received_at timestamp, sent_at timestamp, timestamp timestamp, user_id string, uuid_ts timestamp ) STORED AS PARQUET location "s3a://s3-datalake-test/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/";`, "-S")
+		_ = c.Exec(ctx,
+			"spark-master",
+			"spark-sql",
+			"-e",
+			`
+			CREATE EXTERNAL TABLE tracks (
+			  	_timestamp timestamp,
+				context_destination_id string,
+			  	context_destination_type string,
+			  	context_ip string,
+				context_library_name string,
+			  	context_passed_ip string,
+				context_request_ip string,
+			  	context_source_id string,
+				context_source_type string,
+			  	event string,
+				event_text string, id string,
+			  	original_timestamp timestamp,
+				received_at timestamp,
+			  	sent_at timestamp,
+				timestamp timestamp,
+			  	user_id string,
+			  	uuid_ts timestamp
+			)
+			STORED AS PARQUET
+			location "s3a://s3-datalake-test/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/";
+		`,
+			"-S",
+		)
 
-		countOutput := c.Exec(ctx, "spark-master", "spark-sql", "-e", `select count(*) from tracks;`, "-S")
+		countOutput := c.Exec(ctx,
+			"spark-master",
+			"spark-sql",
+			"-e",
+			`
+				select
+					count(*)
+				from
+					tracks;
+			`,
+			"-S",
+		)
 		countOutput = strings.ReplaceAll(strings.ReplaceAll(countOutput, "\n", ""), "\r", "") // remove trailing newline
 		require.NotEmpty(t, countOutput)
-		require.Equal(t, string(countOutput[len(countOutput)-1]), "8") // last character is the count
+		require.Equal(t, string(countOutput[len(countOutput)-1]), "8", countOutput) // last character is the count
 
-		strings.Contains(countOutput, "8")
-		filteredCountOutput := c.Exec(ctx, "spark-master", "spark-sql", "-e", `select count(*) from tracks where context_destination_id = '`+s3DestinationID+`';`, "-S")
+		filteredCountOutput := c.Exec(ctx,
+			"spark-master",
+			"spark-sql",
+			"-e",
+			`
+				select
+					count(*)
+				from
+					tracks
+				where
+					context_destination_id = '`+s3DestinationID+`';
+			`,
+			"-S",
+		)
 		filteredCountOutput = strings.ReplaceAll(strings.ReplaceAll(filteredCountOutput, "\n", ""), "\r", "") // remove trailing newline
 		require.NotEmpty(t, filteredCountOutput)
-		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "8") // last character is the count
+		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "8", filteredCountOutput) // last character is the count
 	})
 }
