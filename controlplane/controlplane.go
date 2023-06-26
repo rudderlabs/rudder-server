@@ -6,8 +6,9 @@ import (
 	"net"
 
 	"github.com/hashicorp/yamux"
-	proto "github.com/rudderlabs/rudder-server/proto/common"
 	"google.golang.org/grpc"
+
+	proto "github.com/rudderlabs/rudder-server/proto/common"
 )
 
 type ConnHandler struct {

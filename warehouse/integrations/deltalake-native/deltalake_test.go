@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	dbsql "github.com/databricks/databricks-sql-go"
+
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -29,9 +30,10 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
+	"github.com/stretchr/testify/require"
+
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 )

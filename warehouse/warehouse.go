@@ -19,8 +19,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -1574,7 +1575,9 @@ func startWebHandler(ctx context.Context) error {
 			srvMux.Get("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // FIXME: add degraded mode
 
 			// fetch schema info
+			// TODO: Remove this endpoint once sources change is released
 			srvMux.Get("/v1/warehouse/fetch-tables", fetchTablesHandler)
+			srvMux.Get("/internal/v1/warehouse/fetch-tables", fetchTablesHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {

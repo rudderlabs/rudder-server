@@ -8,11 +8,12 @@ import (
 	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	"github.com/stretchr/testify/require"
 )
 
 func TestQueryWrapper(t *testing.T) {

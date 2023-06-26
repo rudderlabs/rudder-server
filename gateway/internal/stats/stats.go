@@ -1,8 +1,9 @@
 package stats
 
 import (
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 type SourceStat struct {

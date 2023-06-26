@@ -10,9 +10,10 @@ import (
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	"github.com/stretchr/testify/require"
 )
 
 func TestWHSchemasRepo(t *testing.T) {

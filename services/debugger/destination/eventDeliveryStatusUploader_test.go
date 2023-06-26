@@ -7,8 +7,9 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"

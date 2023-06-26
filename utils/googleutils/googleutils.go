@@ -3,8 +3,9 @@ package googleutils
 import (
 	"fmt"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"golang.org/x/oauth2/google"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
 const (

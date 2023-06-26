@@ -14,11 +14,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/aws/aws-sdk-go/service/glue"
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {

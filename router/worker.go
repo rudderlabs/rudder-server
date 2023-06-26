@@ -10,6 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -23,9 +27,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 )
 
 // worker a structure to define a worker for sending events to sinks

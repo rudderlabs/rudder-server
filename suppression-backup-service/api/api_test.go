@@ -12,12 +12,13 @@ import (
 	"testing"
 
 	"github.com/phayes/freeport"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/api"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/stretchr/testify/require"
 )
 
 // exportPath creates a tmp dir and returns the path to it

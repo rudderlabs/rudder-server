@@ -6,6 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/iancoleman/strcase"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )

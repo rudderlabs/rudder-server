@@ -16,11 +16,12 @@ import (
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
+	snowflakedb "github.com/snowflakedb/gosnowflake"
+
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	snowflakedb "github.com/snowflakedb/gosnowflake"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -33,8 +34,9 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type testCredentials struct {

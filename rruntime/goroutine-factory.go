@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/bugsnag/bugsnag-go/v2"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

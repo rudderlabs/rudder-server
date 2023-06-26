@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/types"
-	"github.com/samber/lo"
 )
 
 type Mode string

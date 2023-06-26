@@ -1310,6 +1310,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	)
 	srvMux.Route("/internal", func(r chi.Router) {
 		r.Post("/v1/extract", gateway.webExtractHandler)
+		r.Get("/v1/warehouse/fetch-tables", gateway.whProxy.ServeHTTP)
 	})
 
 	srvMux.Route("/v1", func(r chi.Router) {
@@ -1331,6 +1332,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 			r.Post("/pending-events", gateway.whProxy.ServeHTTP)
 			r.Post("/trigger-upload", gateway.whProxy.ServeHTTP)
 			r.Post("/jobs", gateway.whProxy.ServeHTTP)
+			// TODO: Remove this endpoint once sources change is released
 			r.Get("/fetch-tables", gateway.whProxy.ServeHTTP)
 
 			r.Get("/jobs/status", gateway.whProxy.ServeHTTP)

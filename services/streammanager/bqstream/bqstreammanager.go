@@ -11,13 +11,14 @@ import (
 
 	"cloud.google.com/go/bigquery"
 
+	"github.com/tidwall/gjson"
+	gbq "google.golang.org/api/bigquery/v2"
+	"google.golang.org/api/option"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
-	"github.com/tidwall/gjson"
-	gbq "google.golang.org/api/bigquery/v2"
-	"google.golang.org/api/option"
 )
 
 type Config struct {

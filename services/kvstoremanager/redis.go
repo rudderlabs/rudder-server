@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-redis/redis"
+
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 

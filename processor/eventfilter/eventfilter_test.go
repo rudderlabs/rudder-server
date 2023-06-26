@@ -3,8 +3,9 @@ package eventfilter
 import (
 	"testing"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/stretchr/testify/require"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 func TestFilterEventsForHybridMode(t *testing.T) {

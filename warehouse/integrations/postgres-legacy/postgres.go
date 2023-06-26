@@ -22,6 +22,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"

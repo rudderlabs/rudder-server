@@ -3,9 +3,10 @@ package types_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDehydrateAndHydrate(t *testing.T) {

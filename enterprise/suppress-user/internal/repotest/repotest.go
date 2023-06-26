@@ -3,9 +3,10 @@ package repotest
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-	"github.com/stretchr/testify/require"
 )
 
 func RunRepositoryTestSuite(t *testing.T, repo suppression.Repository) {

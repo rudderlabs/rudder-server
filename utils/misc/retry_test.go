@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func TestRetryWith(t *testing.T) {

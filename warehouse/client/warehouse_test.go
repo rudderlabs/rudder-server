@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 )
 
 func loadFile(t *testing.T, path string) string {

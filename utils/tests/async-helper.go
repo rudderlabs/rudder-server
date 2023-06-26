@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/onsi/ginkgo/v2"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

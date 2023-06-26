@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
 func TestRemoveIdentityRecordsFromGZIPFileWithReseredKeywords(t *testing.T) {

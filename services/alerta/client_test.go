@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSendFeatures(t *testing.T) {

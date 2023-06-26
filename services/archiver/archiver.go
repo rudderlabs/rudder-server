@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/iancoleman/strcase"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"

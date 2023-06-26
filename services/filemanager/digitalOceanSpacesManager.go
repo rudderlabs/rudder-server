@@ -18,6 +18,7 @@ import (
 	"github.com/samber/lo"
 
 	SpacesManager "github.com/aws/aws-sdk-go/service/s3/s3manager"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -27,8 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
-	"github.com/samber/lo"
-	"golang.org/x/sync/errgroup"
 )
 
 // Setup initializes this module

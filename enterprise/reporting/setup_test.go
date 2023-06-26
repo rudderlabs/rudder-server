@@ -8,8 +8,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 func TestFeatureSetup(t *testing.T) {

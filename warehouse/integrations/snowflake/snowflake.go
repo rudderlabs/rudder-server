@@ -18,12 +18,13 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
 )
 
 const (

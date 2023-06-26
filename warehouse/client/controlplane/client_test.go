@@ -8,8 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	cp "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/stretchr/testify/require"
+
+	cp "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 )
 
 func TestFetchSSHKeys(t *testing.T) {

@@ -9,14 +9,16 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_bqstream "github.com/rudderlabs/rudder-server/mocks/services/streammanager/bqstream"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/stretchr/testify/assert"
 )
 
 type BigQueryCredentials struct {

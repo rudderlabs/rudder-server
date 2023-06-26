@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
