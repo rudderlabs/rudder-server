@@ -27,7 +27,6 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -1744,16 +1743,14 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	job.upload.Status = state
 	job.upload.Error = serializedErr
 
-	attempts := job.getAttemptNumber()
-	job.counterStat("warehouse_failed_uploads", Tag{Name: "attempt_number", Value: strconv.Itoa(attempts)}).Count(1)
+	job.counterStat("warehouse_failed_uploads").Count(1)
 
 	// On aborted state, validate credentials to allow
 	// us to differentiate between user caused abort vs platform issue.
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		tags := []Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
-		tags = append(tags, errorTags)
+		tags := []Tag{errorTags}
 
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
@@ -1773,20 +1770,6 @@ func (job *UploadJob) validateDestinationCredentials() (bool, error) {
 	}
 	response := job.destinationValidator.Validate(job.ctx, &job.warehouse.Destination)
 	return response.Success, nil
-}
-
-func (job *UploadJob) getAttemptNumber() int {
-	uploadError := job.upload.Error
-	var attempts int32
-	if string(uploadError) == "" {
-		return 0
-	}
-
-	gjson.Parse(string(uploadError)).ForEach(func(key, value gjson.Result) bool {
-		attempts += int32(gjson.Get(value.String(), "attempt").Int())
-		return true
-	})
-	return int(attempts)
 }
 
 func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
