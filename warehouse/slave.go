@@ -12,7 +12,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -44,22 +47,37 @@ const (
 
 // JobRun Temporary store for processing staging file to load file
 type JobRun struct {
-	job                  Payload
-	stagingFilePath      string
-	uuidTS               time.Time
-	outputFileWritersMap map[string]encoding.LoadFileWriter
-	tableEventCountMap   map[string]int
-	stagingFileReader    *gzip.Reader
-	whIdentifier         string
-	stats                stats.Stats
+	job                      Payload
+	stagingFilePath          string
+	uuidTS                   time.Time
+	outputFileWritersMap     map[string]encoding.LoadFileWriter
+	tableEventCountMap       map[string]int
+	stagingFileReader        *gzip.Reader
+	whIdentifier             string
+	stats                    stats.Stats
+	since                    func(time.Time) time.Duration
+	numLoadFileUploadWorkers int
+	slaveUploadTimeout       time.Duration
+	logger                   logger.Logger
+	loadObjectFolder         string
 }
 
-func (jobRun *JobRun) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
-	job := jobRun.job
-	pkgLogger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
-	stagingFile, err := os.Open(jobRun.stagingFilePath)
+type loadFileUploadOutput struct {
+	TableName             string
+	Location              string
+	TotalRows             int
+	ContentLength         int64
+	StagingFileID         int64
+	DestinationRevisionID string
+	UseRudderStorage      bool
+}
+
+func (jr *JobRun) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
+	job := jr.job
+	jr.logger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
+	stagingFile, err := os.Open(jr.stagingFilePath)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Error opening file using os.Open at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
+		jr.logger.Errorf("[WH]: Error opening file using os.Open at path:%s downloaded from %s", jr.stagingFilePath, job.StagingFileLocation)
 		panic(err)
 	}
 	reader, err = gzip.NewReader(stagingFile)
@@ -67,23 +85,23 @@ func (jobRun *JobRun) setStagingFileReader() (reader *gzip.Reader, endOfFile boo
 		if err.Error() == "EOF" {
 			return nil, true
 		}
-		pkgLogger.Errorf("[WH]: Error reading file using gzip.NewReader at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
+		jr.logger.Errorf("[WH]: Error reading file using gzip.NewReader at path:%s downloaded from %s", jr.stagingFilePath, job.StagingFileLocation)
 		panic(err)
 	}
 
-	jobRun.stagingFileReader = reader
+	jr.stagingFileReader = reader
 	return reader, false
 }
 
 /*
  * Get download path for the job. Also creates missing directories for this path
  */
-func (jobRun *JobRun) setStagingFileDownloadPath(index int) (filePath string) {
-	job := jobRun.job
+func (jr *JobRun) setStagingFileDownloadPath(index int) (filePath string) {
+	job := jr.job
 	dirName := fmt.Sprintf(`/%s/_%s/`, misc.RudderWarehouseJsonUploadsTmp, strconv.Itoa(index))
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to create tmp DIR")
+		jr.logger.Errorf("[WH]: Failed to create tmp DIR")
 		panic(err)
 	}
 	filePath = tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, job.DestinationType, job.DestinationID) + job.StagingFileLocation
@@ -91,7 +109,7 @@ func (jobRun *JobRun) setStagingFileDownloadPath(index int) (filePath string) {
 	if err != nil {
 		panic(err)
 	}
-	jobRun.stagingFilePath = filePath
+	jr.stagingFilePath = filePath
 	return filePath
 }
 
@@ -130,10 +148,10 @@ func (job *Payload) getFileManager(config interface{}, useRudderStorage bool) (f
  * If error occurs with the current config and current revision is different from staging revision
  * We retry with the staging revision config if it is present
  */
-func (jobRun *JobRun) downloadStagingFile(ctx context.Context) error {
-	job := jobRun.job
+func (jr *JobRun) downloadStagingFile(ctx context.Context) error {
+	job := jr.job
 	downloadTask := func(config interface{}, useRudderStorage bool) (err error) {
-		filePath := jobRun.stagingFilePath
+		filePath := jr.stagingFilePath
 		file, err := os.Create(filePath)
 		if err != nil {
 			panic(err)
@@ -141,7 +159,7 @@ func (jobRun *JobRun) downloadStagingFile(ctx context.Context) error {
 
 		downloader, err := job.getFileManager(config, useRudderStorage)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to initialize downloader")
+			jr.logger.Errorf("[WH]: Failed to initialize downloader")
 			return err
 		}
 
@@ -149,26 +167,26 @@ func (jobRun *JobRun) downloadStagingFile(ctx context.Context) error {
 
 		err = downloader.Download(ctx, file, job.StagingFileLocation)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to download file")
+			jr.logger.Errorf("[WH]: Failed to download file")
 			return err
 		}
 		file.Close()
-		jobRun.timerStat("download_staging_file_time").Since(downloadStart)
+		jr.timerStat("download_staging_file_time").Since(downloadStart)
 
 		fi, err := os.Stat(filePath)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
+			jr.logger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
 			return err
 		}
 		fileSize := fi.Size()
-		pkgLogger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
+		jr.logger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
 		return
 	}
 
 	err := downloadTask(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
 		if PickupStagingConfiguration(&job) {
-			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, DestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.DestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
+			jr.logger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, DestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.DestinationRevisionID, job.StagingDestinationRevisionID, jr.whIdentifier)
 			err = downloadTask(job.StagingDestinationConfig, job.StagingUseRudderStorage)
 			if err != nil {
 				job.sendDownloadStagingFileFailedStat()
@@ -189,126 +207,170 @@ func (job *Payload) getDiscardsTable() string {
 	return warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 }
 
-func (jobRun *JobRun) getLoadFilePath(tableName string) string {
-	job := jobRun.job
+func (jr *JobRun) getLoadFilePath(tableName string) string {
+	job := jr.job
 	randomness := misc.FastUUID().String()
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.LoadFileType))
+	return strings.TrimSuffix(jr.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.LoadFileType))
 }
 
 func (job *Payload) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
 }
 
-type loadFileUploadJob struct {
-	tableName  string
-	outputFile encoding.LoadFileWriter
-}
-
-type loadFileUploadOutput struct {
-	TableName             string
-	Location              string
-	TotalRows             int
-	ContentLength         int64
-	StagingFileID         int64
-	DestinationRevisionID string
-	UseRudderStorage      bool
-}
-
-func (jobRun *JobRun) uploadLoadFilesToObjectStorage(ctx context.Context) ([]loadFileUploadOutput, error) {
-	job := jobRun.job
-	uploader, err := job.getFileManager(job.DestinationConfig, job.UseRudderStorage)
-	if err != nil {
-		return []loadFileUploadOutput{}, err
-	}
-	// var loadFileIDs []int64
-	var loadFileUploadOutputs []loadFileUploadOutput
-
-	// take the first staging file id in upload
-	// TODO: support multiple staging files in one upload
-	stagingFileId := jobRun.job.StagingFileID
-
-	loadFileOutputChan := make(chan loadFileUploadOutput, len(jobRun.outputFileWritersMap))
-	loadFileUploadTimer := jobRun.timerStat("load_file_upload_time")
-	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
-	// close chan to avoid memory leak ranging over it
-	defer close(uploadJobChan)
-	uploadErrorChan := make(chan error, numLoadFileUploadWorkers)
-	ctx, cancel := context.WithCancel(ctx)
+// uploadLoadFiles returns the upload output for each file uploaded to object storage
+func (jr *JobRun) uploadLoadFiles(ctx context.Context) ([]loadFileUploadOutput, error) {
+	ctx, cancel := context.WithTimeout(ctx, jr.slaveUploadTimeout)
 	defer cancel()
-	for i := 0; i < numLoadFileUploadWorkers; i++ {
-		go func(ctx context.Context) {
-			for uploadJob := range uploadJobChan {
-				select {
-				case <-ctx.Done():
-					pkgLogger.Debugf("context is cancelled, stopped processing load file for staging file ids %s ", stagingFileId)
-					return // stop further processing
-				default:
-					tableName := uploadJob.tableName
-					loadFileUploadStart := time.Now()
-					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(ctx, uploader, uploadJob.outputFile, tableName)
-					if err != nil {
-						uploadErrorChan <- err
-						return
-					}
-					loadFileUploadTimer.Since(loadFileUploadStart)
-					loadFileStats, err := os.Stat(uploadJob.outputFile.GetLoadFile().Name())
-					if err != nil {
-						uploadErrorChan <- err
-						return
-					}
-					loadFileOutputChan <- loadFileUploadOutput{
-						TableName:             tableName,
-						Location:              uploadOutput.Location,
-						ContentLength:         loadFileStats.Size(),
-						TotalRows:             jobRun.tableEventCountMap[tableName],
-						StagingFileID:         stagingFileId,
-						DestinationRevisionID: job.DestinationRevisionID,
-						UseRudderStorage:      job.UseRudderStorage,
-					}
-				}
-			}
-		}(ctx)
+
+	uploader, err := jr.job.getFileManager(jr.job.DestinationConfig, jr.job.UseRudderStorage)
+	if err != nil {
+		return nil, fmt.Errorf("creating uploader: %w", err)
 	}
-	// Create upload jobs
-	go func() {
-		for tableName, loadFile := range jobRun.outputFileWritersMap {
-			uploadJobChan <- &loadFileUploadJob{tableName: tableName, outputFile: loadFile}
+
+	type result struct {
+		uploadOutput loadFileUploadOutput
+		err          error
+	}
+
+	type uploadJob struct {
+		tableName  string
+		outputFile encoding.LoadFileWriter
+	}
+
+	var output []loadFileUploadOutput
+	var totalUploadTime time.Duration
+	var mu sync.Mutex
+
+	defer func() {
+		if totalUploadTime > 0 {
+			jr.timerStat("load_file_upload_time").SendTiming(totalUploadTime)
 		}
 	}()
 
-	// Wait for response
-	for {
-		select {
-		case loadFileOutput := <-loadFileOutputChan:
-			loadFileUploadOutputs = append(loadFileUploadOutputs, loadFileOutput)
-			if len(loadFileUploadOutputs) == len(jobRun.outputFileWritersMap) {
-				return loadFileUploadOutputs, nil
-			}
-		case err := <-uploadErrorChan:
-			pkgLogger.Errorf("received error while uploading load file to bucket for staging file ids %s, cancelling the context: err %v", stagingFileId, err)
-			return []loadFileUploadOutput{}, err
-		case <-time.After(slaveUploadTimeout):
-			return []loadFileUploadOutput{}, fmt.Errorf("load files upload timed out for staging file idsx: %v", stagingFileId)
-		}
-	}
-}
+	generate := func() <-chan *uploadJob {
+		jobStream := make(chan *uploadJob, len(jr.outputFileWritersMap))
+		go func() {
+			defer close(jobStream)
 
-func (jobRun *JobRun) uploadLoadFileToObjectStorage(ctx context.Context, uploader filemanager.FileManager, uploadFile encoding.LoadFileWriter, tableName string) (filemanager.UploadedFile, error) {
-	job := jobRun.job
-	file, err := os.Open(uploadFile.GetLoadFile().Name()) // opens file in read mode
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.GetLoadFile().Name())
-		return filemanager.UploadedFile{}, err
+			for tableName, loadFile := range jr.outputFileWritersMap {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					jobStream <- &uploadJob{
+						tableName:  tableName,
+						outputFile: loadFile,
+					}
+				}
+			}
+		}()
+		return jobStream
 	}
-	defer file.Close()
-	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
-	var uploadLocation filemanager.UploadedFile
-	if slices.Contains(warehouseutils.TimeWindowDestinations, job.DestinationType) {
-		uploadLocation, err = uploader.Upload(ctx, file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
-	} else {
-		uploadLocation, err = uploader.Upload(ctx, file, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
+
+	uploadLoadFile := func(uploader filemanager.FileManager, uploadFile encoding.LoadFileWriter, tableName string) (filemanager.UploadedFile, error) {
+		file, err := os.Open(uploadFile.GetLoadFile().Name())
+		if err != nil {
+			return filemanager.UploadedFile{}, fmt.Errorf("opening file: %w", err)
+		}
+		defer file.Close()
+
+		var uploadLocation filemanager.UploadedFile
+		if slices.Contains(warehouseutils.TimeWindowDestinations, jr.job.DestinationType) {
+			uploadLocation, err = uploader.Upload(
+				ctx,
+				file,
+				warehouseutils.GetTablePathInObjectStorage(jr.job.DestinationNamespace, tableName),
+				jr.job.LoadFilePrefix,
+			)
+		} else {
+			uploadLocation, err = uploader.Upload(
+				ctx,
+				file,
+				jr.loadObjectFolder,
+				tableName,
+				jr.job.SourceID,
+				getBucketFolder(jr.job.UniqueLoadGenID, tableName),
+			)
+		}
+		return uploadLocation, err
 	}
-	return uploadLocation, err
+
+	process := func(uploadJobChan <-chan *uploadJob) <-chan *result {
+		processStream := make(chan *result, len(jr.outputFileWritersMap))
+
+		g, _ := errgroup.WithContext(ctx)
+		g.SetLimit(jr.numLoadFileUploadWorkers)
+
+		for i := 0; i < jr.numLoadFileUploadWorkers; i++ {
+			g.Go(func() error {
+				for uploadJob := range uploadJobChan {
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					default:
+						loadFileUploadStart := time.Now()
+
+						uploadOutput, err := uploadLoadFile(
+							uploader,
+							uploadJob.outputFile,
+							uploadJob.tableName,
+						)
+						if err != nil {
+							return fmt.Errorf("uploading load file: %w", err)
+						}
+
+						mu.Lock()
+						totalUploadTime += jr.since(loadFileUploadStart)
+						mu.Unlock()
+
+						loadFileStats, err := os.Stat(uploadJob.outputFile.GetLoadFile().Name())
+						if err != nil {
+							return fmt.Errorf("getting load file stats: %w", err)
+						}
+
+						processStream <- &result{
+							uploadOutput: loadFileUploadOutput{
+								TableName:             uploadJob.tableName,
+								Location:              uploadOutput.Location,
+								ContentLength:         loadFileStats.Size(),
+								TotalRows:             jr.tableEventCountMap[uploadJob.tableName],
+								StagingFileID:         jr.job.StagingFileID,
+								DestinationRevisionID: jr.job.DestinationRevisionID,
+								UseRudderStorage:      jr.job.UseRudderStorage,
+							},
+						}
+					}
+				}
+				return nil
+			})
+		}
+
+		go func() {
+			if err := g.Wait(); err != nil {
+				processStream <- &result{err: err}
+			}
+			close(processStream)
+		}()
+
+		return processStream
+	}
+
+	for processedJob := range process(generate()) {
+		if err := processedJob.err; err != nil {
+			return nil, fmt.Errorf("uploading load file to object storage: %w", err)
+		}
+
+		output = append(output, processedJob.uploadOutput)
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("uploading load file to object storage: %w", ctx.Err())
+	}
+
+	if len(output) != len(jr.outputFileWritersMap) {
+		return nil, fmt.Errorf("matching number of load file upload outputs: expected %d, got %d", len(jr.outputFileWritersMap), len(output))
+	}
+
+	return output, nil
 }
 
 // Sort columns per table to maintain same order in load file (needed in case of csv load file)
@@ -325,38 +387,38 @@ func (job *Payload) getSortedColumnMapForAllTables() map[string][]string {
 	return sortedTableColumnMap
 }
 
-func (jobRun *JobRun) GetWriter(tableName string) (encoding.LoadFileWriter, error) {
-	writer, ok := jobRun.outputFileWritersMap[tableName]
+func (jr *JobRun) GetWriter(tableName string) (encoding.LoadFileWriter, error) {
+	writer, ok := jr.outputFileWritersMap[tableName]
 	if !ok {
 		var err error
-		outputFilePath := jobRun.getLoadFilePath(tableName)
-		if jobRun.job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-			writer, err = encoding.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
+		outputFilePath := jr.getLoadFilePath(tableName)
+		if jr.job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+			writer, err = encoding.CreateParquetWriter(jr.job.UploadSchema[tableName], outputFilePath, jr.job.DestinationType)
 		} else {
 			writer, err = misc.CreateGZ(outputFilePath)
 		}
 		if err != nil {
 			return nil, err
 		}
-		jobRun.outputFileWritersMap[tableName] = writer
-		jobRun.tableEventCountMap[tableName] = 0
+		jr.outputFileWritersMap[tableName] = writer
+		jr.tableEventCountMap[tableName] = 0
 	}
 	return writer, nil
 }
 
-func (jobRun *JobRun) cleanup() {
-	if jobRun.stagingFileReader != nil {
-		err := jobRun.stagingFileReader.Close()
+func (jr *JobRun) cleanup() {
+	if jr.stagingFileReader != nil {
+		err := jr.stagingFileReader.Close()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to close staging file: %v", err)
+			jr.logger.Errorf("[WH]: Failed to close staging file: %v", err)
 		}
 	}
 
-	if jobRun.stagingFilePath != "" {
-		misc.RemoveFilePaths(jobRun.stagingFilePath)
+	if jr.stagingFilePath != "" {
+		misc.RemoveFilePaths(jr.stagingFilePath)
 	}
-	if jobRun.outputFileWritersMap != nil {
-		for _, writer := range jobRun.outputFileWritersMap {
+	if jr.outputFileWritersMap != nil {
+		for _, writer := range jr.outputFileWritersMap {
 			misc.RemoveFilePaths(writer.GetLoadFile().Name())
 		}
 	}
@@ -387,31 +449,36 @@ func (event *BatchRouterEvent) GetColumnInfo(columnName string) (columnInfo ware
 
 func processStagingFile(ctx context.Context, job Payload, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutput, err error) {
 	processStartTime := time.Now()
-	jobRun := JobRun{
-		job:          job,
-		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
-		stats:        stats.Default,
+	jr := JobRun{
+		job:                      job,
+		whIdentifier:             warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
+		stats:                    stats.Default,
+		since:                    time.Since,
+		numLoadFileUploadWorkers: config.GetInt("Warehouse.numLoadFileUploadWorkers", 8),
+		slaveUploadTimeout:       config.GetDuration("Warehouse.slaveUploadTimeout", 10, config.GetDuration("Warehouse.slaveUploadTimeoutInMin", 10, time.Minute)),
+		logger:                   pkgLogger,
+		loadObjectFolder:         config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"),
 	}
 
-	defer jobRun.counterStat("staging_files_processed", Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
+	defer jr.counterStat("staging_files_processed", Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
 	defer func() {
-		jobRun.timerStat("staging_files_total_processing_time", Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+		jr.timerStat("staging_files_total_processing_time", Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Since(processStartTime)
 	}()
-	defer jobRun.cleanup()
+	defer jr.cleanup()
 
-	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
+	jr.logger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jr.whIdentifier)
 
-	jobRun.setStagingFileDownloadPath(workerIndex)
+	jr.setStagingFileDownloadPath(workerIndex)
 
 	// This creates the file, so on successful creation remove it
-	err = jobRun.downloadStagingFile(ctx)
+	err = jr.downloadStagingFile(ctx)
 	if err != nil {
 		return loadFileUploadOutputs, err
 	}
 
 	sortedTableColumnMap := job.getSortedColumnMapForAllTables()
 
-	reader, endOfFile := jobRun.setStagingFileReader()
+	reader, endOfFile := jr.setStagingFileReader()
 	if endOfFile {
 		// If empty file, return nothing
 		return loadFileUploadOutputs, nil
@@ -424,13 +491,13 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 	scanner.Buffer(buf, maxCapacity)
 
 	// read from staging file and write a separate load file for each table in warehouse
-	jobRun.outputFileWritersMap = make(map[string]encoding.LoadFileWriter)
-	jobRun.tableEventCountMap = make(map[string]int)
-	jobRun.uuidTS = timeutil.Now()
+	jr.outputFileWritersMap = make(map[string]encoding.LoadFileWriter)
+	jr.tableEventCountMap = make(map[string]int)
+	jr.uuidTS = timeutil.Now()
 
 	// Initialize Discards Table
 	discardsTable := job.getDiscardsTable()
-	jobRun.tableEventCountMap[discardsTable] = 0
+	jr.tableEventCountMap[discardsTable] = 0
 
 	processingStart := time.Now()
 
@@ -441,7 +508,7 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 		if !ok {
 			scanErr := scanner.Err()
 			if scanErr != nil {
-				pkgLogger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
+				jr.logger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
 			}
 			break
 		}
@@ -451,7 +518,7 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 		var batchRouterEvent BatchRouterEvent
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
+			jr.logger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
 			continue
 		}
 
@@ -459,12 +526,12 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 		columnData := batchRouterEvent.Data
 
 		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountLimitMap[warehouseutils.S3_DATALAKE] {
-			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for StagingFileID: %v", len(sortedTableColumnMap[tableName]), job.StagingFileID)
+			jr.logger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for StagingFileID: %v", len(sortedTableColumnMap[tableName]), job.StagingFileID)
 			return nil, fmt.Errorf("staging file schema limit exceeded for stagingFileID: %d, actualCount: %d", job.StagingFileID, len(sortedTableColumnMap[tableName]))
 		}
 
 		// Create separate load file for each table
-		writer, err := jobRun.GetWriter(tableName)
+		writer, err := jr.GetWriter(tableName)
 		if err != nil {
 			return nil, err
 		}
@@ -473,7 +540,7 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFormat(columnName)
-				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
+				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jr.uuidTS.Format(timestampFormat))
 				continue
 			}
 			columnInfo, ok := batchRouterEvent.GetColumnInfo(columnName)
@@ -535,19 +602,19 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 						eventLoader.AddEmptyColumn(columnName)
 					}
 
-					discardWriter, err := jobRun.GetWriter(discardsTable)
+					discardWriter, err := jr.GetWriter(discardsTable)
 					if err != nil {
 						return nil, err
 					}
 					// add discardWriter to outputFileWritersMap
-					jobRun.outputFileWritersMap[discardsTable] = discardWriter
+					jr.outputFileWritersMap[discardsTable] = discardWriter
 
-					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter)
+					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter)
 
 					if err != nil {
-						pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
+						jr.logger.Errorf("[WH]: Failed to write to discards: %v", err)
 					}
-					jobRun.tableEventCountMap[discardsTable]++
+					jr.tableEventCountMap[discardsTable]++
 					continue
 				}
 				columnVal = newColumnVal
@@ -558,7 +625,7 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 			if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
 				marshalledVal, err := json.Marshal(columnVal)
 				if err != nil {
-					pkgLogger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %v", err)
+					jr.logger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %v", err)
 					eventLoader.AddEmptyColumn(columnName)
 					continue
 				}
@@ -571,22 +638,22 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 		// Completed parsing all columns, write single event to the file
 		err = eventLoader.Write()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)
+			jr.logger.Errorf("[WH]: Failed to write event: %v", err)
 			return loadFileUploadOutputs, err
 		}
-		jobRun.tableEventCountMap[tableName]++
+		jr.tableEventCountMap[tableName]++
 	}
-	jobRun.timerStat("process_staging_file_time").Since(processingStart)
+	jr.timerStat("process_staging_file_time").Since(processingStart)
 
-	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
-	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
-	for _, loadFile := range jobRun.outputFileWritersMap {
+	jr.logger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
+	jr.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
+	for _, loadFile := range jr.outputFileWritersMap {
 		err = loadFile.Close()
 		if err != nil {
-			pkgLogger.Errorf("Error while closing load file %s : %v", loadFile.GetLoadFile().Name(), err)
+			jr.logger.Errorf("Error while closing load file %s : %v", loadFile.GetLoadFile().Name(), err)
 		}
 	}
-	loadFileUploadOutputs, err = jobRun.uploadLoadFilesToObjectStorage(ctx)
+	loadFileUploadOutputs, err = jr.uploadLoadFiles(ctx)
 	return loadFileUploadOutputs, err
 }
 
@@ -746,8 +813,8 @@ func setupSlave(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (jobRun *JobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData Data, violatedConstraints *ConstraintsViolation, discardWriter encoding.LoadFileWriter) error {
-	job := jobRun.job
+func (jr *JobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData Data, violatedConstraints *ConstraintsViolation, discardWriter encoding.LoadFileWriter) error {
+	job := jr.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
 	if violatedConstraints.IsViolated {
@@ -769,16 +836,16 @@ func (jobRun *JobRun) handleDiscardTypes(tableName, columnName string, columnVal
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
 			timestampFormat := eventLoader.GetLoadTimeFormat("uuid_ts")
-			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jobRun.uuidTS.Format(timestampFormat))
+			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jr.uuidTS.Format(timestampFormat))
 		}
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
 			timestampFormat := eventLoader.GetLoadTimeFormat("loaded_at")
-			eventLoader.AddColumn("loaded_at", "datetime", jobRun.uuidTS.Format(timestampFormat))
+			eventLoader.AddColumn("loaded_at", "datetime", jr.uuidTS.Format(timestampFormat))
 		}
 
 		err := eventLoader.Write()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to write event to discards table: %v", err)
+			jr.logger.Errorf("[WH]: Failed to write event to discards table: %v", err)
 			return err
 		}
 	}

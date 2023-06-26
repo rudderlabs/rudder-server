@@ -31,8 +31,8 @@ func (job *UploadJob) warehouseID() string {
 	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID)
 }
 
-func (jobRun *JobRun) warehouseID() string {
-	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
+func (jr *JobRun) warehouseID() string {
+	return getWarehouseTagName(jr.job.DestinationID, jr.job.SourceName, jr.job.DestinationName, jr.job.SourceID)
 }
 
 func (job *UploadJob) timerStat(name string, extraTags ...Tag) stats.Measurement {
@@ -81,34 +81,34 @@ func (job *UploadJob) guageStat(name string, extraTags ...Tag) stats.Measurement
 	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jobRun *JobRun) timerStat(name string, extraTags ...Tag) stats.Measurement {
+func (jr *JobRun) timerStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
-		"destType":    jobRun.job.DestinationType,
-		"warehouseID": jobRun.warehouseID(),
-		"workspaceId": jobRun.job.WorkspaceID,
-		"destID":      jobRun.job.DestinationID,
-		"sourceID":    jobRun.job.SourceID,
+		"destType":    jr.job.DestinationType,
+		"warehouseID": jr.warehouseID(),
+		"workspaceId": jr.job.WorkspaceID,
+		"destID":      jr.job.DestinationID,
+		"sourceID":    jr.job.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
 	}
-	return jobRun.stats.NewTaggedStat(name, stats.TimerType, tags)
+	return jr.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (jobRun *JobRun) counterStat(name string, extraTags ...Tag) stats.Measurement {
+func (jr *JobRun) counterStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
-		"destType":    jobRun.job.DestinationType,
-		"warehouseID": jobRun.warehouseID(),
-		"workspaceId": jobRun.job.WorkspaceID,
-		"destID":      jobRun.job.DestinationID,
-		"sourceID":    jobRun.job.SourceID,
+		"destType":    jr.job.DestinationType,
+		"warehouseID": jr.warehouseID(),
+		"workspaceId": jr.job.WorkspaceID,
+		"destID":      jr.job.DestinationID,
+		"sourceID":    jr.job.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
 	}
-	return jobRun.stats.NewTaggedStat(name, stats.CountType, tags)
+	return jr.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
 func (job *UploadJob) generateUploadSuccessMetrics() {
