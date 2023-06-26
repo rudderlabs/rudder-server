@@ -3,7 +3,7 @@ services:
   trino:
     image: trinodb/trino:362
     ports:
-      - 8080
+      - "8080"
     volumes:
       - ./etc:/etc/trino/:ro
     depends_on:
@@ -11,13 +11,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.5'
+          cpus: '1'
           memory: 1G
 
   hive-metastore:
     image: bitsondatadev/hive-metastore:latest
     ports:
-      - 9083
+      - "9083"
     volumes:
       - ./conf/metastore-site.xml:/opt/apache-hive-metastore-3.0.0-bin/conf/metastore-site.xml:ro
     environment:
@@ -33,7 +33,7 @@ services:
   mariadb:
     image: mariadb:10.5.8
     ports:
-      - 3306
+      - "3306"
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_USER: admin

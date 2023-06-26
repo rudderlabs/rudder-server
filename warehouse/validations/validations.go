@@ -11,8 +11,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -24,7 +24,7 @@ const (
 var (
 	connectionTestingFolder        string
 	pkgLogger                      logger.Logger
-	fileManagerFactory             filemanager.FileManagerFactory
+	fileManagerFactory             filemanager.Factory
 	objectStorageValidationTimeout time.Duration
 )
 
@@ -49,7 +49,7 @@ type validationFunc struct {
 func Init() {
 	connectionTestingFolder = config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("validations")
-	fileManagerFactory = filemanager.DefaultFileManagerFactory
+	fileManagerFactory = filemanager.New
 	objectStorageValidationTimeout = 15 * time.Second
 }
 

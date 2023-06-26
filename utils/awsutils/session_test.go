@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -39,7 +40,7 @@ func TestNewSessionConfigWithAccessKey(t *testing.T) {
 	sessionConfig, err := NewSessionConfigForDestination(&destinationWithAccessKey, httpTimeout, serviceName)
 	assert.Nil(t, err)
 	assert.NotNil(t, sessionConfig)
-	assert.Equal(t, *sessionConfig, SessionConfig{
+	assert.Equal(t, *sessionConfig, awsutil.SessionConfig{
 		Region:      someRegion,
 		AccessKeyID: someAccessKeyID,
 		AccessKey:   someAccessKey,
@@ -61,7 +62,7 @@ func TestNewSessionConfigWithSecretAccessKey(t *testing.T) {
 	sessionConfig, err := NewSessionConfigForDestination(&destinationWithSecretAccessKey, httpTimeout, serviceName)
 	assert.Nil(t, err)
 	assert.NotNil(t, sessionConfig)
-	assert.Equal(t, *sessionConfig, SessionConfig{
+	assert.Equal(t, *sessionConfig, awsutil.SessionConfig{
 		Region:          someRegion,
 		AccessKeyID:     someAccessKeyID,
 		AccessKey:       someSecretAccessKey,
@@ -84,7 +85,7 @@ func TestNewSessionConfigWithRole(t *testing.T) {
 		sessionConfig, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
 		assert.Nil(t, err)
 		assert.NotNil(t, sessionConfig)
-		assert.Equal(t, *sessionConfig, SessionConfig{
+		assert.Equal(t, *sessionConfig, awsutil.SessionConfig{
 			Region:        someRegion,
 			RoleBasedAuth: true,
 			IAMRoleARN:    someIAMRoleARN,
@@ -106,7 +107,7 @@ func TestNewSessionConfigWithRole(t *testing.T) {
 		sessionConfig, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
 		assert.Nil(t, err)
 		assert.NotNil(t, sessionConfig)
-		assert.Equal(t, *sessionConfig, SessionConfig{
+		assert.Equal(t, *sessionConfig, awsutil.SessionConfig{
 			Region:        someRegion,
 			RoleBasedAuth: false,
 			IAMRoleARN:    someIAMRoleARN,
@@ -144,7 +145,7 @@ func TestNewSessionConfigWithRoleBasedAuth(t *testing.T) {
 		sessionConfig, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
 		assert.Nil(t, err)
 		assert.NotNil(t, sessionConfig)
-		assert.Equal(t, *sessionConfig, SessionConfig{
+		assert.Equal(t, *sessionConfig, awsutil.SessionConfig{
 			Region:        someRegion,
 			RoleBasedAuth: true,
 			IAMRoleARN:    someIAMRoleARN,
@@ -199,52 +200,52 @@ func TestNewSessionConfigWithBadDestination(t *testing.T) {
 
 func TestCreateSessionWithRole(t *testing.T) {
 	t.Run("With RoleBasedAuth but without ExternalID", func(t *testing.T) {
-		sessionConfig := SessionConfig{
+		sessionConfig := awsutil.SessionConfig{
 			Region:        someRegion,
 			RoleBasedAuth: true,
 			IAMRoleARN:    someIAMRoleARN,
 			Timeout:       &httpTimeout,
 		}
-		awsSession, err := CreateSession(&sessionConfig)
+		awsSession, err := awsutil.CreateSession(&sessionConfig)
 		assert.NotNil(t, err)
 		assert.Nil(t, awsSession)
 		assert.EqualError(t, err, "externalID is required for IAM role")
 	})
 
 	t.Run("With RoleBasedAuth false and without ExternalID", func(t *testing.T) {
-		sessionConfig := SessionConfig{
+		sessionConfig := awsutil.SessionConfig{
 			Region:        someRegion,
 			RoleBasedAuth: false,
 			IAMRoleARN:    someIAMRoleARN,
 			Timeout:       &httpTimeout,
 		}
-		awsSession, err := CreateSession(&sessionConfig)
+		awsSession, err := awsutil.CreateSession(&sessionConfig)
 		assert.Nil(t, err)
 		assert.NotNil(t, awsSession)
 	})
 
 	t.Run("With RoleBasedAuth true auth and ExternalID", func(t *testing.T) {
-		sessionConfig := SessionConfig{
+		sessionConfig := awsutil.SessionConfig{
 			Region:        someRegion,
 			RoleBasedAuth: true,
 			ExternalID:    someWorkspaceID,
 			IAMRoleARN:    someIAMRoleARN,
 			Timeout:       &httpTimeout,
 		}
-		awsSession, err := CreateSession(&sessionConfig)
+		awsSession, err := awsutil.CreateSession(&sessionConfig)
 		assert.Nil(t, err)
 		assert.NotNil(t, awsSession)
 	})
 }
 
 func TestCreateSessionWithAccessKeys(t *testing.T) {
-	sessionConfig := SessionConfig{
+	sessionConfig := awsutil.SessionConfig{
 		Region:      destinationWithAccessKey.Config["region"].(string),
 		AccessKeyID: destinationWithAccessKey.Config["accessKeyID"].(string),
 		AccessKey:   destinationWithAccessKey.Config["accessKey"].(string),
 		Timeout:     &httpTimeout,
 	}
-	awsSession, err := CreateSession(&sessionConfig)
+	awsSession, err := awsutil.CreateSession(&sessionConfig)
 	assert.Nil(t, err)
 	assert.NotNil(t, awsSession)
 	assert.NotNil(t, awsSession.Config.Credentials)
@@ -253,11 +254,11 @@ func TestCreateSessionWithAccessKeys(t *testing.T) {
 }
 
 func TestCreateSessionWithoutAccessKeysOrRole(t *testing.T) {
-	sessionConfig := SessionConfig{
+	sessionConfig := awsutil.SessionConfig{
 		Region:  "someRegion",
 		Timeout: &httpTimeout,
 	}
-	awsSession, err := CreateSession(&sessionConfig)
+	awsSession, err := awsutil.CreateSession(&sessionConfig)
 	assert.Nil(t, err)
 	assert.NotNil(t, awsSession)
 	assert.NotNil(t, awsSession.Config.Credentials)
@@ -266,10 +267,10 @@ func TestCreateSessionWithoutAccessKeysOrRole(t *testing.T) {
 }
 
 func TestCreateSessionWithoutTimeout(t *testing.T) {
-	sessionConfig := SessionConfig{
+	sessionConfig := awsutil.SessionConfig{
 		Region: "someRegion",
 	}
-	awsSession, err := CreateSession(&sessionConfig)
+	awsSession, err := awsutil.CreateSession(&sessionConfig)
 	assert.Nil(t, err)
 	assert.NotNil(t, awsSession)
 	assert.NotNil(t, awsSession.Config.Credentials)

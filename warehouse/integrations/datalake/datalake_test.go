@@ -15,7 +15,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
-	"github.com/minio/minio-go/v6"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -224,10 +225,13 @@ func TestIntegration(t *testing.T) {
 						region = "us-east-1"
 					)
 
-					minioClient, err := minio.New(s3EndPoint, s3AccessKeyID, s3AccessKey, secure)
+					minioClient, err := minio.New(s3EndPoint, &minio.Options{
+						Creds:  credentials.NewStaticV4(s3AccessKeyID, s3AccessKey, ""),
+						Secure: secure,
+					})
 					require.NoError(t, err)
 
-					_ = minioClient.MakeBucket(s3BucketName, region)
+					_ = minioClient.MakeBucket(context.TODO(), s3BucketName, minio.MakeBucketOptions{Region: region})
 				},
 				stagingFilePrefix: "testdata/upload-job-s3-datalake",
 			},
@@ -327,10 +331,13 @@ func TestIntegration(t *testing.T) {
 			region = "us-east-1"
 		)
 
-		minioClient, err := minio.New(s3EndPoint, s3AccessKeyID, s3AccessKey, secure)
+		minioClient, err := minio.New(s3EndPoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(s3AccessKeyID, s3AccessKey, ""),
+			Secure: secure,
+		})
 		require.NoError(t, err)
 
-		_ = minioClient.MakeBucket(s3BucketName, region)
+		_ = minioClient.MakeBucket(context.Background(), s3BucketName, minio.MakeBucketOptions{Region: region})
 
 		dest := backendconfig.DestinationT{
 			ID: s3DestinationID,

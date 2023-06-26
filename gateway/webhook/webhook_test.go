@@ -12,10 +12,12 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	gwStats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	mockWebhook "github.com/rudderlabs/rudder-server/gateway/mocks"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -64,7 +66,7 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
@@ -105,7 +107,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
@@ -145,7 +147,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().GetWebhookSourceDefName(sampleWriteKey).Return(sourceDefName, true)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
@@ -280,4 +282,77 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 	assert.Equal(t, sampleJson, strings.TrimSpace(w.Body.String()))
 	_ = webhookHandler.Shutdown()
+}
+
+func TestRecordWebhookErrors(t *testing.T) {
+	initWebhook()
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGatewayI(ctrl)
+	statsStore := memstats.New()
+	webhookHandler := Setup(mockGW, statsStore)
+	reqs := []*webhookT{
+		{writeKey: "w1"}, {writeKey: "w2"}, {writeKey: "w1"}, {writeKey: "w3"}, {writeKey: "w2"}, {writeKey: "w1"},
+	}
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).DoAndReturn(func(writeKey, reqType string) *gwStats.SourceStat {
+		switch writeKey {
+		case "w1":
+			return &gwStats.SourceStat{
+				Source:      "source1",
+				SourceID:    "sourceID1",
+				WriteKey:    writeKey,
+				ReqType:     reqType,
+				WorkspaceID: "workspaceID1",
+				SourceType:  "webhook1",
+			}
+		case "w2":
+			return &gwStats.SourceStat{
+				Source:      "source2",
+				SourceID:    "sourceID2",
+				WriteKey:    writeKey,
+				ReqType:     reqType,
+				WorkspaceID: "workspaceID2",
+				SourceType:  "webhook2",
+			}
+		case "w3":
+			return &gwStats.SourceStat{
+				Source:      "source3",
+				SourceID:    "sourceID3",
+				WriteKey:    writeKey,
+				ReqType:     reqType,
+				WorkspaceID: "workspaceID3",
+				SourceType:  "webhook3",
+			}
+		}
+		return nil
+	}).Times(3)
+
+	webhookHandler.recordWebhookErrors("cio", "err1", reqs, 400)
+
+	m := statsStore.Get("webhook_num_errors", stats.Tags{
+		"writeKey":    "w1",
+		"workspaceId": "workspaceID1",
+		"sourceID":    "sourceID1",
+		"statusCode":  "400",
+		"sourceType":  "cio",
+		"reason":      "err1",
+	})
+	require.EqualValues(t, m.LastValue(), 3)
+	m = statsStore.Get("webhook_num_errors", stats.Tags{
+		"writeKey":    "w2",
+		"workspaceId": "workspaceID2",
+		"sourceID":    "sourceID2",
+		"statusCode":  "400",
+		"sourceType":  "cio",
+		"reason":      "err1",
+	})
+	require.EqualValues(t, m.LastValue(), 2)
+	m = statsStore.Get("webhook_num_errors", stats.Tags{
+		"writeKey":    "w3",
+		"workspaceId": "workspaceID3",
+		"sourceID":    "sourceID3",
+		"statusCode":  "400",
+		"sourceType":  "cio",
+		"reason":      "err1",
+	})
+	require.EqualValues(t, m.LastValue(), 1)
 }

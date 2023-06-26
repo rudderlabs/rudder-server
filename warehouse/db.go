@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -17,10 +18,10 @@ const (
 // DB encapsulate interactions of warehouse operations
 // with the database.
 type DB struct {
-	handle *sql.DB
+	handle *sqlquerywrapper.DB
 }
 
-func NewWarehouseDB(handle *sql.DB) *DB {
+func NewWarehouseDB(handle *sqlquerywrapper.DB) *DB {
 	return &DB{handle}
 }
 

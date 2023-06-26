@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -76,12 +76,12 @@ func prepareStagingFile(t testing.TB, testConfig *TestConfig) string {
 	return gzipFilePath
 }
 
-func uploadStagingFile(t testing.TB, testConfig *TestConfig, stagingFile string) filemanager.UploadOutput {
+func uploadStagingFile(t testing.TB, testConfig *TestConfig, stagingFile string) filemanager.UploadedFile {
 	t.Helper()
 
 	storageProvider := warehouseutils.ObjectStorageType(testConfig.DestinationType, testConfig.Config, false)
 
-	fm, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
@@ -98,7 +98,7 @@ func uploadStagingFile(t testing.TB, testConfig *TestConfig, stagingFile string)
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()
 
-	var uploadOutput filemanager.UploadOutput
+	var uploadOutput filemanager.UploadedFile
 
 	err = WithConstantRetries(func() error {
 		if uploadOutput, err = fm.Upload(context.Background(), f, keyPrefixes...); err != nil {
@@ -112,7 +112,7 @@ func uploadStagingFile(t testing.TB, testConfig *TestConfig, stagingFile string)
 	return uploadOutput
 }
 
-func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile string, uploadOutput filemanager.UploadOutput) warehouseclient.StagingFile {
+func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile string, uploadOutput filemanager.UploadedFile) warehouseclient.StagingFile {
 	t.Helper()
 
 	type StagingEvent struct {

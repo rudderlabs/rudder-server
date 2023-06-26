@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
@@ -112,7 +112,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 		gwHandle.handle.prefix,
 		gwHandle.handle.startAfterKey,
 		maxItems,
-		&gwHandle.handle.uploader,
+		gwHandle.handle.uploader,
 	)
 	for iter.Next() {
 		object := iter.Get()
@@ -177,7 +177,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 		procHandle.handle.prefix,
 		procHandle.handle.startAfterKey,
 		maxItems,
-		&procHandle.handle.uploader,
+		procHandle.handle.uploader,
 	)
 	for iter.Next() {
 		object := iter.Get()

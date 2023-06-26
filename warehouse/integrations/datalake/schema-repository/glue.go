@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -209,7 +210,7 @@ func getGlueClient(wh model.Warehouse) (*glue.Glue, error) {
 	if err != nil {
 		return nil, err
 	}
-	awsSession, err := awsutils.CreateSession(sessionConfig)
+	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, err
 	}

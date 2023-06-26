@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
@@ -25,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -92,7 +92,7 @@ func Run(ctx context.Context) error {
 		Deleter: delete.NewRouter(
 			&kvstore.KVDeleteManager{},
 			&batch.BatchManager{
-				FMFactory:  &filemanager.FileManagerFactoryT{},
+				FMFactory:  filemanager.New,
 				FilesLimit: config.GetInt("REGULATION_WORKER_FILES_LIMIT", 1000),
 			},
 			&api.APIManager{

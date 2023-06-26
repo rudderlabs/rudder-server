@@ -3,6 +3,8 @@ package schemarepository_test
 import (
 	"testing"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/stretchr/testify/require"
@@ -70,7 +72,7 @@ func TestLoadFileBatching(t *testing.T) {
 		})
 	}
 
-	batches := schemarepository.LoadFileBatching(loadFiles, batchSize)
+	batches := lo.Chunk(loadFiles, batchSize)
 	require.Equal(t, 1+(len(loadFiles)/batchSize), len(batches))
 
 	var reconstruct []warehouseutils.LoadFile

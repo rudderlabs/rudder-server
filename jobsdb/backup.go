@@ -14,8 +14,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -616,7 +616,7 @@ func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string
 		pathPrefixes = append(pathPrefixes, config.GetString("INSTANCE_ID", "1"))
 	}
 
-	var output filemanager.UploadOutput
+	var output filemanager.UploadedFile
 	output, err = jd.backupUploadWithExponentialBackoff(ctx, file, workspaceID, pathPrefixes...)
 	if err != nil {
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table dump for workspaceId %s. Error: %s", workspaceID, err.Error())
@@ -626,11 +626,11 @@ func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string
 	return nil
 }
 
-func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, workspaceID string, pathPrefixes ...string) (filemanager.UploadOutput, error) {
+func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, workspaceID string, pathPrefixes ...string) (filemanager.UploadedFile, error) {
 	// get a file uploader
 	fileUploader, err := jd.fileUploaderProvider.GetFileManager(workspaceID)
 	if err != nil {
-		return filemanager.UploadOutput{}, err
+		return filemanager.UploadedFile{}, err
 	}
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
@@ -638,7 +638,7 @@ func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file 
 	boRetries := backoff.WithMaxRetries(bo, uint64(config.GetInt64("MAX_BACKOFF_RETRIES", 3)))
 	boCtx := backoff.WithContext(boRetries, ctx)
 
-	var output filemanager.UploadOutput
+	var output filemanager.UploadedFile
 	backup := func() error {
 		output, err = fileUploader.Upload(ctx, file, pathPrefixes...)
 		return err

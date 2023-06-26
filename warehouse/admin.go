@@ -79,6 +79,9 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 	if err != nil {
 		return err
 	}
+	whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+		warehouse.Type, warehouse.Destination.ID,
+	))
 	client, err := whManager.Connect(context.TODO(), warehouse)
 	if err != nil {
 		return err

@@ -22,8 +22,8 @@ services:
         source: ./conf/core-site.xml
         target: /opt/bitnami/spark/conf/core-site.xml
     ports:
-      - 8080
-      - 7077
+      - "8080"
+      - "7077"
     deploy:
       resources:
         limits:
@@ -46,7 +46,7 @@ services:
         source: ./conf/log4j.properties
         target: /opt/bitnami/spark/conf/log4j.properties
     ports:
-      - 8081
+      - "8081"
     depends_on:
       - spark-master
     deploy:

@@ -13,6 +13,7 @@ replace (
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.15.0
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.1.0
 	github.com/spf13/viper => github.com/spf13/viper v1.15.0
+	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2
 	go.mongodb.org/mongo-driver => go.mongodb.org/mongo-driver v1.11.4
 	golang.org/x/crypto => golang.org/x/crypto v0.8.0
 	golang.org/x/image => golang.org/x/image v0.5.0
@@ -21,20 +22,18 @@ replace (
 	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
 	k8s.io/kubernetes => k8s.io/kubernetes v1.22.2
-
 )
 
 require (
 	cloud.google.com/go/bigquery v1.51.2
 	cloud.google.com/go/pubsub v1.31.0
-	cloud.google.com/go/storage v1.30.1
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.10.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.44.287
+	github.com/aws/aws-sdk-go v1.44.289
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -60,8 +59,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/minio/minio-go v6.0.14+incompatible
-	github.com/minio/minio-go/v6 v6.0.57
-	github.com/minio/minio-go/v7 v7.0.57
+	github.com/minio/minio-go/v7 v7.0.58
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mkmik/multierror v0.3.0
 	github.com/onsi/ginkgo/v2 v2.11.0
@@ -71,6 +69,7 @@ require (
 	github.com/prometheus/client_model v0.4.0
 	github.com/rs/cors v1.9.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
+	github.com/rudderlabs/compose-test v0.1.2
 	github.com/rudderlabs/rudder-go-kit v0.15.1
 	github.com/rudderlabs/sql-tunnels v0.1.3
 	github.com/samber/lo v1.38.1
@@ -105,6 +104,7 @@ require (
 	cloud.google.com/go/compute v1.19.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	cloud.google.com/go/iam v1.0.1 // indirect
+	cloud.google.com/go/storage v1.30.1 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/AthenZ/athenz v1.10.39 // indirect
@@ -233,7 +233,6 @@ require (
 	github.com/rivo/uniseg v0.1.0 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/rs/zerolog v1.28.0 // indirect
-	github.com/rudderlabs/compose-test v0.1.2
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/segmentio/backo-go v1.0.1 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.4 // indirect
@@ -296,5 +295,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/gotestsum v1.8.2 // indirect
 )
-
-replace github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -27,7 +28,7 @@ const whSchemaTableColumns = `
 
 type WHSchema repo
 
-func NewWHSchemas(db *sql.DB, opts ...Opt) *WHSchema {
+func NewWHSchemas(db *sqlmiddleware.DB, opts ...Opt) *WHSchema {
 	r := &WHSchema{
 		db:  db,
 		now: timeutil.Now,
@@ -112,7 +113,7 @@ func (repo *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, nam
 	return *entries[0], err
 }
 
-func (*WHSchema) parseRows(rows *sql.Rows) ([]*model.WHSchema, error) {
+func (*WHSchema) parseRows(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 	var whSchemas []*model.WHSchema
 
 	defer func() { _ = rows.Close() }()

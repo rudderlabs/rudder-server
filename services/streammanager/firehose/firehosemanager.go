@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/firehose"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -36,7 +37,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*FireH
 	if err != nil {
 		return nil, err
 	}
-	awsSession, err := awsutils.CreateSession(sessionConfig)
+	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, err
 	}
