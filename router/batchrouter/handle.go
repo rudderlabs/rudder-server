@@ -581,7 +581,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
-	jobStateCounts := make(map[string]map[string]int)
+	jobStateCounts := make(map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 		var firstAttemptedAt time.Time
@@ -647,10 +647,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			WorkspaceId:   job.WorkspaceId,
 		}
 		statusList = append(statusList, &status)
-		if jobStateCounts[jobState] == nil {
-			jobStateCounts[jobState] = make(map[string]int)
-		}
-		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
+		jobStateCounts[jobState] = jobStateCounts[jobState] + 1
 
 		// REPORTING - START
 		if brt.reporting != nil && brt.reportingEnabled {
