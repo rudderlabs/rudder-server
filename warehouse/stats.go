@@ -2,7 +2,6 @@ package warehouse
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -153,12 +152,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
-
-	attempts := job.getAttemptNumber()
-	job.counterStat("upload_success", Tag{
-		Name:  "attempt_number",
-		Value: strconv.Itoa(attempts),
-	}).Count(1)
+	job.counterStat("upload_success").Count(1)
 }
 
 func (job *UploadJob) generateUploadAbortedMetrics() {
