@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -370,17 +371,23 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		// stats
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.Since(transformStart)
 
+		var reason string
 		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadArr) {
 			batchResponse.batchError = errors.New("webhook batch transform response events size does not equal sent events size")
+			reason = "in out mismatch"
 			pkgLogger.Errorf("%w", batchResponse.batchError)
 		}
 		if batchResponse.batchError != nil {
+			if reason == "" {
+				reason = "batch response error"
+			}
 			statusCode := http.StatusInternalServerError
 			if batchResponse.statusCode != 0 {
 				statusCode = batchResponse.statusCode
 			}
 			pkgLogger.Errorf("webhook %s source transformation failed with error: %w and status code: %s", breq.sourceType, batchResponse.batchError, statusCode)
-			countWebhookErrors(breq.sourceType, statusCode, len(breq.batchRequest))
+			bt.webhook.recordWebhookErrors(breq.sourceType, reason, webRequests, statusCode)
+
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: statusCode, Err: batchResponse.batchError.Error()}
 			}
@@ -392,22 +399,24 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		for idx, resp := range batchResponse.responses {
 			webRequest := webRequests[idx]
 			if resp.Err == "" && resp.Output != nil {
-				var errMessage string
+				var errMessage, reason string
 				outputPayload, err := json.Marshal(resp.Output)
 				if err != nil {
 					errMessage = response.SourceTransformerInvalidOutputFormatInResponse
+					reason = "marshal error"
 				} else {
 					errMessage = bt.webhook.enqueueInGateway(webRequest, outputPayload)
+					reason = "enqueueInGateway failed"
 				}
 				if errMessage != "" {
 					pkgLogger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
-					countWebhookErrors(breq.sourceType, response.GetErrorStatusCode(errMessage), 1)
+					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.writeKey, reason, response.GetErrorStatusCode(errMessage), 1)
 					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
 				pkgLogger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
-				countWebhookErrors(breq.sourceType, resp.StatusCode, 1)
+				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.writeKey, "non 200 response", resp.StatusCode, 1)
 			}
 
 			webRequest.done <- resp
@@ -457,11 +466,26 @@ func (webhook *HandleT) Shutdown() error {
 	return webhook.backgroundWait()
 }
 
-func countWebhookErrors(sourceType string, statusCode, count int) {
-	stats.Default.NewTaggedStat("webhook_num_errors", stats.CountType, stats.Tags{
-		"sourceType": sourceType,
-		"statusCode": strconv.Itoa(statusCode),
+func (webhook *HandleT) countWebhookErrors(sourceType, writeKey, reason string, statusCode, count int) {
+	stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+	webhook.stats.NewTaggedStat("webhook_num_errors", stats.CountType, stats.Tags{
+		"writeKey":    writeKey,
+		"workspaceId": stat.WorkspaceID,
+		"sourceID":    stat.SourceID,
+		"statusCode":  strconv.Itoa(statusCode),
+		"sourceType":  sourceType,
+		"reason":      reason,
 	}).Count(count)
+}
+
+func (webhook *HandleT) recordWebhookErrors(sourceType, reason string, reqs []*webhookT, statusCode int) {
+	reqsGroupedByWriteKey := lo.GroupBy(reqs, func(request *webhookT) string {
+		return request.writeKey
+	})
+
+	for writeKey, reqs := range reqsGroupedByWriteKey {
+		webhook.countWebhookErrors(sourceType, writeKey, reason, statusCode, len(reqs))
+	}
 }
 
 // TODO: Check if correct

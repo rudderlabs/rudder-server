@@ -1,12 +1,13 @@
 package repo
 
 import (
-	"database/sql"
 	"time"
+
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 )
 
 type repo struct {
-	db  *sql.DB
+	db  *sqlmiddleware.DB
 	now func() time.Time
 }
 

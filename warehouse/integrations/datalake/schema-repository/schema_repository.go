@@ -53,20 +53,3 @@ func NewSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader) (
 	}
 	return NewLocalSchemaRepository(wh, uploader)
 }
-
-// LoadFileBatching batches load files for refresh partitions
-func LoadFileBatching(files []warehouseutils.LoadFile, batchSize int) [][]warehouseutils.LoadFile {
-	fileBatches := make([][]warehouseutils.LoadFile, 0, len(files)/batchSize+1)
-
-	for len(files) > 0 {
-		cut := batchSize
-		if len(files) < cut {
-			cut = len(files)
-		}
-
-		fileBatches = append(fileBatches, files[0:cut])
-		files = files[cut:]
-	}
-
-	return fileBatches
-}

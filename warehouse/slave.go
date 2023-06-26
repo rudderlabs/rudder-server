@@ -653,6 +653,9 @@ func runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (AsyncJobRu
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
+	whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+		destType, warehouse.Destination.ID,
+	))
 	err = whManager.Setup(ctx, warehouse, whasyncjob)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
