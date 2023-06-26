@@ -27,11 +27,12 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -403,7 +404,7 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 	if destConfig, ok = providerConfig.(map[string]interface{}); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
-	fm, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: objectProvider,
 		Config:   destConfig,
 	})
@@ -716,13 +717,13 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 	return strings.Join(output, separator)
 }
 
-func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutils.SessionConfig, error) {
+func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutil.SessionConfig, error) {
 	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
 		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
 	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
-	return &awsutils.SessionConfig{
+	return &awsutil.SessionConfig{
 		AccessKeyID: accessKeyID,
 		AccessKey:   accessKey,
 		Service:     serviceName,
@@ -735,7 +736,7 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		return "", "", "", err
 	}
 
-	awsSession, err := awsutils.CreateSession(sessionConfig)
+	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return "", "", "", err
 	}

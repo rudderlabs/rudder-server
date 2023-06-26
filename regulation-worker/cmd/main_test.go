@@ -22,11 +22,12 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
@@ -42,7 +43,7 @@ var (
 		key    string
 		fields map[string]interface{}
 	}
-	uploadOutputs []filemanager.UploadOutput
+	uploadOutputs []filemanager.UploadedFile
 
 	fileList []string
 
@@ -374,10 +375,10 @@ func verifyBatchDeletion(t *testing.T, minioConfig map[string]interface{}) {
 	goldenFile, err := io.ReadAll(gzipReader)
 	require.NoError(t, err, "batch verification failed")
 
-	var fmFactory filemanager.FileManagerFactoryT
-	fm, err := fmFactory.New(&filemanager.SettingsT{
+	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: "S3",
 		Config:   minioConfig,
+		Logger:   logger.NOP,
 	})
 	require.NoError(t, err, "batch verification failed")
 
@@ -466,10 +467,10 @@ func insertMinioData(t *testing.T, minioConfig map[string]interface{}) {
 		t.Fatal("File list empty, no data to test")
 	}
 
-	var fmFactory filemanager.FileManagerFactoryT
-	fm, err := fmFactory.New(&filemanager.SettingsT{
+	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: "S3",
 		Config:   minioConfig,
+		Logger:   logger.NOP,
 	})
 	require.NoError(t, err)
 

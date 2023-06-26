@@ -30,6 +30,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -39,7 +40,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
@@ -1788,7 +1788,7 @@ func Start(ctx context.Context, app app.App) error {
 			DB:          dbHandle,
 			Stats:       stats.Default,
 			Logger:      pkgLogger.Child("archiver"),
-			FileManager: filemanager.DefaultFileManagerFactory,
+			FileManager: filemanager.New,
 			Multitenant: tenantManager,
 		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {

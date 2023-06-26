@@ -24,9 +24,9 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
@@ -286,7 +286,7 @@ func (*Postgres) IsEmpty(context.Context, model.Warehouse) (empty bool, err erro
 func (pg *Postgres) DownloadLoadFiles(ctx context.Context, tableName string) ([]string, error) {
 	objects := pg.Uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
-	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	downloader, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,

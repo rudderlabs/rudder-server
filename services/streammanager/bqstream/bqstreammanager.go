@@ -15,10 +15,10 @@ import (
 	gbq "google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/option"
 
+	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/utils/googleutils"
 )
 
 type Config struct {
@@ -88,9 +88,9 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*BQStr
 			gbq.BigqueryInsertdataScope,
 		}...),
 	}
-	if !googleutils.ShouldSkipCredentialsInit(config.Credentials) {
+	if !googleutil.ShouldSkipCredentialsInit(config.Credentials) {
 		confCreds := []byte(config.Credentials)
-		if err = googleutils.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
+		if err = googleutil.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
 			return nil, createErr(err, "incompatible credentials")
 		}
 		opts = append(opts, option.WithCredentialsJSON(confCreds))

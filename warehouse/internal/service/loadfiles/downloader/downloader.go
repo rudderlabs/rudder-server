@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -54,7 +54,7 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 		l.uploader.UseRudderStorage(),
 	)
 
-	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,

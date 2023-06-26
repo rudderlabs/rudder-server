@@ -19,11 +19,12 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -101,8 +102,7 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error while inserting rt data")
 
 	// create a filemanager instance
-	fmFactory := filemanager.FileManagerFactoryT{}
-	fm, err := fmFactory.New(&filemanager.SettingsT{
+	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: "MINIO",
 		Config: map[string]interface{}{
 			"bucketName":      minioResource.BucketName,
@@ -116,13 +116,14 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error while creating file manager")
 
 	// wait for the backup to finish
-	var file []*filemanager.FileObject
+	var file []*filemanager.FileInfo
 	require.Eventually(t, func() bool {
-		file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 5)
+		file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 5).Next()
 
 		if len(file) != 3 {
 			t.Log("file list: ", file, " err: ", err)
-			fm, _ = fmFactory.New(&filemanager.SettingsT{
+			fm, _ = filemanager.New(&filemanager.Settings{
+				Logger:   logger.NOP,
 				Provider: "MINIO",
 				Config: map[string]interface{}{
 					"bucketName":      minioResource.BucketName,
@@ -311,9 +312,9 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
 		fm, err := fileuploaderProvider.GetFileManager(workspace)
 		require.NoError(t, err)
-		var file []*filemanager.FileObject
+		var file []*filemanager.FileInfo
 		require.Eventually(t, func() bool {
-			file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 10)
+			file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 10).Next()
 
 			if len(file) != 3 {
 				t.Log("file list: ", file, " err: ", err, "len: ", len(file))

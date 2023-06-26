@@ -23,6 +23,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -34,7 +35,6 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -58,7 +58,7 @@ type Handle struct {
 	multitenantI       multitenant.MultiTenantI
 	reporting          types.Reporting
 	backendConfig      backendconfig.BackendConfig
-	fileManagerFactory filemanager.FileManagerFactory
+	fileManagerFactory filemanager.Factory
 	transientSources   transientsource.Service
 	rsourcesService    rsources.JobService
 	warehouseClient    *client.Warehouse
@@ -364,7 +364,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.Connection.Destination.Config)
-	uploader, err := brt.fileManagerFactory.New(&filemanager.SettingsT{
+	uploader, err := brt.fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,

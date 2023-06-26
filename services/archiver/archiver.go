@@ -9,9 +9,10 @@ import (
 	"github.com/iancoleman/strcase"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 )
@@ -63,9 +64,9 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 	)
 	defer os.Remove(path)
 
-	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	fManager, err := filemanager.New(&filemanager.Settings{
 		Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigForBackupsFromEnv(context.TODO()),
+		Config:   filemanagerutil.GetProviderConfigForBackupsFromEnv(context.TODO(), config.Default),
 	})
 	if err != nil {
 		pkgLogger.Errorf("[Archiver]: Error in creating a file manager for :%s: , %v", config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)

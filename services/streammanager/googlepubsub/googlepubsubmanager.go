@@ -14,10 +14,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/utils/googleutils"
 )
 
 type Config struct {
@@ -70,9 +70,9 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 			option.WithEndpoint(config.TestConfig.Endpoint),
 		}
 		options = append(options, opts...)
-	} else if !googleutils.ShouldSkipCredentialsInit(config.Credentials) { // Test configuration requires a custom endpoint
+	} else if !googleutil.ShouldSkipCredentialsInit(config.Credentials) { // Test configuration requires a custom endpoint
 		credsBytes := []byte(config.Credentials)
-		if err = googleutils.CompatibleGoogleCredentialsJSON(credsBytes); err != nil {
+		if err = googleutil.CompatibleGoogleCredentialsJSON(credsBytes); err != nil {
 			return nil, err
 		}
 		options = append(options, option.WithCredentialsJSON(credsBytes))

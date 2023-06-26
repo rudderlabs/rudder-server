@@ -29,8 +29,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -521,8 +521,7 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 
 			defer func() { _ = f.Close() }()
 
-			fmFactory := filemanager.FileManagerFactoryT{}
-			fm, err := fmFactory.New(&filemanager.SettingsT{
+			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: provider,
 				Config: map[string]any{
 					"bucketName":      bucketName,

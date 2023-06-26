@@ -21,11 +21,12 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -840,8 +841,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 		return fmt.Errorf("unable to create file manager settings: \n%s", err.Error())
 	}
 
-	factory := &filemanager.FileManagerFactoryT{}
-	fileManager, err := factory.New(settings)
+	fileManager, err := filemanager.New(settings)
 	if err != nil {
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}
@@ -889,8 +889,8 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	return nil
 }
 
-func getFileManagerSettings(ctx context.Context, provider string, inputConfig map[string]interface{}) (*filemanager.SettingsT, error) {
-	settings := &filemanager.SettingsT{
+func getFileManagerSettings(ctx context.Context, provider string, inputConfig map[string]interface{}) (*filemanager.Settings, error) {
+	settings := &filemanager.Settings{
 		Provider: provider,
 		Config:   inputConfig,
 	}
@@ -903,8 +903,8 @@ func getFileManagerSettings(ctx context.Context, provider string, inputConfig ma
 
 // overrideWithEnv overrides the config keys in the fileManager settings
 // with fallback values pulled from env. Only supported for S3 for now.
-func overrideWithEnv(ctx context.Context, settings *filemanager.SettingsT) error {
-	envConfig := filemanager.GetProviderConfigFromEnv(ctx, settings.Provider)
+func overrideWithEnv(ctx context.Context, settings *filemanager.Settings) error {
+	envConfig := filemanager.GetProviderConfigFromEnv(filemanagerutil.ProviderConfigOpts(ctx, settings.Provider, config.Default))
 
 	if settings.Provider == "S3" {
 		ifNotExistThenSet("prefix", envConfig["prefix"], settings.Config)
