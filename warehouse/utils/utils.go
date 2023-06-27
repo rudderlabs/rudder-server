@@ -1003,16 +1003,10 @@ func ReadAsBool(key string, config map[string]interface{}) bool {
 	return false
 }
 
-func WithTimeout(ctx context.Context, timeout time.Duration, function func(context.Context) error) error {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	return function(ctxWithTimeout)
-}
-
 func GetConnectionTimeout(destType, destID string) time.Duration {
-	destIDLevelConfig := fmt.Sprintf("warehouse.%s.%s.connectionTimeout", destType, destID)
-	destTypeLevelConfig := fmt.Sprintf("warehouse.%s.connectionTimeout", destType)
-	warehouseLevelConfig := "warehouse.connectionTimeout"
+	destIDLevelConfig := fmt.Sprintf("Warehouse.%s.%s.connectionTimeout", destType, destID)
+	destTypeLevelConfig := fmt.Sprintf("Warehouse.%s.connectionTimeout", destType)
+	warehouseLevelConfig := "Warehouse.connectionTimeout"
 
 	defaultTimeout := int64(3)
 	defaultTimeoutUnits := time.Hour
