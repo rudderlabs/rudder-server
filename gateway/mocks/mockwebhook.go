@@ -10,6 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	stats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
+	model "github.com/rudderlabs/rudder-server/gateway/webhook/model"
 )
 
 // MockGatewayI is a mock of GatewayI interface.
@@ -100,6 +101,20 @@ func (m *MockGatewayI) ProcessWebRequest(arg0 *http.ResponseWriter, arg1 *http.R
 func (mr *MockGatewayIMockRecorder) ProcessWebRequest(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProcessWebRequest", reflect.TypeOf((*MockGatewayI)(nil).ProcessWebRequest), arg0, arg1, arg2, arg3, arg4)
+}
+
+// SaveWebhookFailures mocks base method.
+func (m *MockGatewayI) SaveWebhookFailures(arg0 []*model.WebhookPayload) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveWebhookFailures", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveWebhookFailures indicates an expected call of SaveWebhookFailures.
+func (mr *MockGatewayIMockRecorder) SaveWebhookFailures(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveWebhookFailures", reflect.TypeOf((*MockGatewayI)(nil).SaveWebhookFailures), arg0)
 }
 
 // TrackRequestMetrics mocks base method.

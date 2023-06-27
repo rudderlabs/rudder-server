@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
+	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 
 	"golang.org/x/sync/errgroup"
 
@@ -344,15 +345,6 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 				errorMessagesMap[batch[0].UUID] = errorMessage
 			}
 		}
-
-		// TODO insert start - clean up later
-		err = gateway.errDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			return gateway.errDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
-		})
-		if err != nil {
-			panic(err)
-		}
-		// TODO insert end
 
 		cancel()
 		gateway.dbWritesStat.Count(1)
@@ -1500,6 +1492,35 @@ func (*HandleT) GetWebhookSourceDefName(writeKey string) (name string, ok bool) 
 	defer configSubscriberLock.RUnlock()
 	name, ok = enabledWriteKeyWebhookMap[writeKey]
 	return
+}
+
+// SaveErrors saves errors to the error db
+func (gateway *HandleT) SaveWebhookFailures(reqs []*model.WebhookPayload) error {
+	jobs := make([]*jobsdb.JobT, 0, len(reqs))
+	for _, req := range reqs {
+		params := map[string]interface{}{
+			"source_id": gateway.getSourceIDForWriteKey(req.WriteKey),
+		}
+		marshalledParams, err := json.Marshal(params)
+		if err != nil {
+			gateway.logger.Errorf("[Gateway] Failed to marshal parameters map. Parameters: %+v", params)
+			marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
+		}
+
+		jobs = append(jobs, &jobsdb.JobT{
+			UUID:         uuid.New(),
+			UserID:       uuid.New().String(), // TODO remind for a better value
+			Parameters:   marshalledParams,
+			CustomVal:    CustomVal,
+			EventPayload: req.Payload,
+			EventCount:   1,
+			WorkspaceId:  gateway.getWorkspaceForWriteKey(req.WriteKey),
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), WriteTimeout)
+	defer cancel()
+	return gateway.errDB.Store(ctx, jobs)
 }
 
 /*

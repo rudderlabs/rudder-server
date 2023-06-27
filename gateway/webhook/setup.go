@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
+	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -23,6 +24,7 @@ type GatewayI interface {
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, writeKey string) string
 	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
 	NewSourceStat(writeKey, reqType string) *gwstats.SourceStat
+	SaveWebhookFailures([]*model.WebhookPayload) error
 }
 
 type WebHookI interface {
