@@ -104,7 +104,7 @@ func (mr *MockGatewayIMockRecorder) ProcessWebRequest(arg0, arg1, arg2, arg3, ar
 }
 
 // SaveWebhookFailures mocks base method.
-func (m *MockGatewayI) SaveWebhookFailures(arg0 []*model.WebhookPayload) error {
+func (m *MockGatewayI) SaveWebhookFailures(arg0 []*model.FailedWebhookPayload) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SaveWebhookFailures", arg0)
 	ret0, _ := ret[0].(error)

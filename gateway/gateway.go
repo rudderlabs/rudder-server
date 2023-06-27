@@ -1495,11 +1495,14 @@ func (*HandleT) GetWebhookSourceDefName(writeKey string) (name string, ok bool) 
 }
 
 // SaveErrors saves errors to the error db
-func (gateway *HandleT) SaveWebhookFailures(reqs []*model.WebhookPayload) error {
+func (gateway *HandleT) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error {
 	jobs := make([]*jobsdb.JobT, 0, len(reqs))
 	for _, req := range reqs {
 		params := map[string]interface{}{
-			"source_id": gateway.getSourceIDForWriteKey(req.WriteKey),
+			"source_id":   gateway.getSourceIDForWriteKey(req.WriteKey),
+			"stage":       "webhook",
+			"source_type": req.SourceType,
+			"reason":      req.Reason,
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {

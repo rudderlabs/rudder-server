@@ -1,6 +1,8 @@
 package model
 
-type WebhookPayload struct {
-	WriteKey string
-	Payload  []byte
+type FailedWebhookPayload struct {
+	WriteKey   string
+	Payload    []byte
+	SourceType string
+	Reason     string
 }

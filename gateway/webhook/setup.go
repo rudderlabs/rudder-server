@@ -24,7 +24,7 @@ type GatewayI interface {
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, writeKey string) string
 	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
 	NewSourceStat(writeKey, reqType string) *gwstats.SourceStat
-	SaveWebhookFailures([]*model.WebhookPayload) error
+	SaveWebhookFailures([]*model.FailedWebhookPayload) error
 }
 
 type WebHookI interface {

@@ -1233,34 +1233,41 @@ var _ = Describe("Gateway", func() {
 					) error {
 						for idx, job := range jobs {
 							Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
+							Expect(job.CustomVal).To(Equal(CustomVal))
 
 							var paramsMap, expectedParamsMap map[string]interface{}
-							_ = json.Unmarshal(job.Parameters, &paramsMap)
-							expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v"}`, SourceIDEnabled))
-							_ = json.Unmarshal(expectedStr, &expectedParamsMap)
-							equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-							Expect(equals).To(Equal(true))
+							var expectedStr []byte
 
-							Expect(job.CustomVal).To(Equal(CustomVal))
 							switch idx {
 							case 0:
 								Expect(job.EventPayload).To(Equal(json.RawMessage(`{"a1": "b1"}`)))
+								expectedStr = []byte(fmt.Sprintf(`{"source_id": "%v", "stage": "webhook", "source_type": "cio", "reason": "err1"}`, SourceIDEnabled))
 							case 1:
 								Expect(job.EventPayload).To(Equal(json.RawMessage(`{"a2": "b2"}`)))
+								expectedStr = []byte(fmt.Sprintf(`{"source_id": "%v", "stage": "webhook", "source_type": "af", "reason": "err2"}`, SourceIDEnabled))
 							}
+
+							_ = json.Unmarshal(job.Parameters, &paramsMap)
+							_ = json.Unmarshal(expectedStr, &expectedParamsMap)
+							equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
+							Expect(equals).To(Equal(true))
 						}
 						return nil
 					}).
 				Times(1)
 
-			reqs := make([]*model.WebhookPayload, 2)
-			reqs[0] = &model.WebhookPayload{
-				WriteKey: WriteKeyEnabled,
-				Payload:  []byte(`{"a1": "b1"}`),
+			reqs := make([]*model.FailedWebhookPayload, 2)
+			reqs[0] = &model.FailedWebhookPayload{
+				WriteKey:   WriteKeyEnabled,
+				Payload:    []byte(`{"a1": "b1"}`),
+				SourceType: "cio",
+				Reason:     "err1",
 			}
-			reqs[1] = &model.WebhookPayload{
-				WriteKey: WriteKeyEnabled,
-				Payload:  []byte(`{"a2": "b2"}`),
+			reqs[1] = &model.FailedWebhookPayload{
+				WriteKey:   WriteKeyEnabled,
+				Payload:    []byte(`{"a2": "b2"}`),
+				SourceType: "af",
+				Reason:     "err2",
 			}
 			err := gateway.SaveWebhookFailures(reqs)
 			Expect(err).To(BeNil())

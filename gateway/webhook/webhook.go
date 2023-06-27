@@ -394,12 +394,14 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 
 			// Saving failures to errors jobsdb
-			failedWebhookPayloads := make([]*model.WebhookPayload, len(webRequests))
+			failedWebhookPayloads := make([]*model.FailedWebhookPayload, len(webRequests))
 			for i, webRequest := range webRequests {
-				failedWebhookPayloads = append(failedWebhookPayloads, &model.WebhookPayload{
-					WriteKey: webRequest.writeKey,
-					Payload:  payloadArr[i],
-				})
+				failedWebhookPayloads[i] = &model.FailedWebhookPayload{
+					WriteKey:   webRequest.writeKey,
+					Payload:    payloadArr[i],
+					SourceType: breq.sourceType,
+					Reason:     batchResponse.batchError.Error(),
+				}
 			}
 			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
 				pkgLogger.Errorf("Saving webhook failures of sourceType: %s, failed. Error: %s", breq.sourceType, err.Error())
@@ -408,7 +410,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			continue
 		}
 
-		failedWebhookPayloads := make([]*model.WebhookPayload, 0)
+		failedWebhookPayloads := make([]*model.FailedWebhookPayload, 0)
 		bt.stats.sourceStats[breq.sourceType].numOutputEvents.Count(len(batchResponse.responses))
 
 		for idx, resp := range batchResponse.responses {
@@ -426,12 +428,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				if errMessage != "" {
 					pkgLogger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
 					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.writeKey, reason, response.GetErrorStatusCode(errMessage), 1)
-					failedWebhookPayloads = append(failedWebhookPayloads, &model.WebhookPayload{WriteKey: webRequest.writeKey, Payload: payloadArr[idx]})
+					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{WriteKey: webRequest.writeKey, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
 					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
-				failedWebhookPayloads = append(failedWebhookPayloads, &model.WebhookPayload{WriteKey: webRequest.writeKey, Payload: payloadArr[idx]})
+				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{WriteKey: webRequest.writeKey, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: resp.Err})
 				pkgLogger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
 				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.writeKey, "non 200 response", resp.StatusCode, 1)
 			}
