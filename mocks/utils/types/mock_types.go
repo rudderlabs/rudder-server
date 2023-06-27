@@ -8,9 +8,9 @@ import (
 	context "context"
 	sql "database/sql"
 	reflect "reflect"
-	time "time"
 
 	gomock "github.com/golang/mock/gomock"
+	model "github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	types "github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -37,32 +37,18 @@ func (m *MockUserSuppression) EXPECT() *MockUserSuppressionMockRecorder {
 	return m.recorder
 }
 
-// GetCreatedAt mocks base method.
-func (m *MockUserSuppression) GetCreatedAt(arg0, arg1, arg2 string) time.Time {
+// GetSuppressedUser mocks base method.
+func (m *MockUserSuppression) GetSuppressedUser(arg0, arg1, arg2 string) *model.Metadata {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCreatedAt", arg0, arg1, arg2)
-	ret0, _ := ret[0].(time.Time)
+	ret := m.ctrl.Call(m, "GetSuppressedUser", arg0, arg1, arg2)
+	ret0, _ := ret[0].(*model.Metadata)
 	return ret0
 }
 
-// GetCreatedAt indicates an expected call of GetCreatedAt.
-func (mr *MockUserSuppressionMockRecorder) GetCreatedAt(arg0, arg1, arg2 interface{}) *gomock.Call {
+// GetSuppressedUser indicates an expected call of GetSuppressedUser.
+func (mr *MockUserSuppressionMockRecorder) GetSuppressedUser(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCreatedAt", reflect.TypeOf((*MockUserSuppression)(nil).GetCreatedAt), arg0, arg1, arg2)
-}
-
-// IsSuppressedUser mocks base method.
-func (m *MockUserSuppression) IsSuppressedUser(arg0, arg1, arg2 string) bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsSuppressedUser", arg0, arg1, arg2)
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// IsSuppressedUser indicates an expected call of IsSuppressedUser.
-func (mr *MockUserSuppressionMockRecorder) IsSuppressedUser(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSuppressedUser", reflect.TypeOf((*MockUserSuppression)(nil).IsSuppressedUser), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSuppressedUser", reflect.TypeOf((*MockUserSuppression)(nil).GetSuppressedUser), arg0, arg1, arg2)
 }
 
 // MockReporting is a mock of Reporting interface.

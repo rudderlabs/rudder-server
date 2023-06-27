@@ -19,3 +19,7 @@ type Suppression struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	SourceIDs   []string  `json:"sourceIds"`
 }
+
+type Metadata struct {
+	CreatedAt time.Time
+}

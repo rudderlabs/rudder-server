@@ -53,16 +53,16 @@ func TestSuppressionSetup(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			h, err := f.Setup(ctx, backendconfig.DefaultBackendConfig)
 			require.NoError(t, err, "Error in setting up suppression feature")
-			v := h.IsSuppressedUser("workspace-1", "user-1", "src-1")
-			require.True(t, v)
+			v := h.GetSuppressedUser("workspace-1", "user-1", "src-1")
+			require.NotNil(t, v)
 			require.Eventually(t, func() bool {
-				return h.IsSuppressedUser("workspace-2", "user-2", "src-4")
+				return h.GetSuppressedUser("workspace-2", "user-2", "src-4") != nil
 			}, time.Second*15, time.Millisecond*100, "User should be suppressed")
 			cancel()
 			time.Sleep(time.Second * 2)
 			h2, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
 			require.NoError(t, err, "Error in setting up suppression feature")
-			require.True(t, h2.IsSuppressedUser("workspace-2", "user-2", "src-4"))
+			require.NotNil(t, h2.GetSuppressedUser("workspace-2", "user-2", "src-4"))
 		},
 	)
 	t.Run(
@@ -75,7 +75,7 @@ func TestSuppressionSetup(t *testing.T) {
 			t.Setenv("RSERVER_BACKEND_CONFIG_REGULATIONS_USE_BADGER_DB", "false")
 			h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
 			require.NoError(t, err, "Error in setting up suppression feature")
-			require.False(t, h.IsSuppressedUser("workspace-1", "user-1", "src-1"))
+			require.Nil(t, h.GetSuppressedUser("workspace-1", "user-1", "src-1"))
 		},
 	)
 }

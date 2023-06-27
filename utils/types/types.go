@@ -7,6 +7,8 @@ import (
 	"database/sql"
 	"net/http"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
 
 // SingularEventT single event structrue
@@ -24,8 +26,7 @@ type GatewayBatchRequestT struct {
 
 // UserSuppression is interface to access Suppress user feature
 type UserSuppression interface {
-	IsSuppressedUser(workspaceID, userID, sourceID string) bool
-	GetCreatedAt(workspaceID, userID, sourceID string) time.Time
+	GetSuppressedUser(workspaceID, userID, sourceID string) *model.Metadata
 }
 
 // EventSchemasI is interface to access EventSchemas feature

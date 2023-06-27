@@ -130,7 +130,7 @@ func TestExportLoop(t *testing.T) {
 				require.NoError(t, err)
 				isSuppressed, err := repo.Suppressed("workspace-1", "user-1", "src-1")
 				require.NoError(t, err)
-				return isSuppressed
+				return isSuppressed != nil
 			}
 			return false
 		}, 3*time.Second, 10*time.Millisecond, "full export should be done in 10 seconds")
@@ -148,7 +148,7 @@ func TestExportLoop(t *testing.T) {
 				require.NoError(t, err)
 				isSuppressed, err := repo.Suppressed("workspace-1", "user-1", "src-1")
 				require.NoError(t, err)
-				return isSuppressed
+				return isSuppressed != nil
 			} else {
 				fmt.Println("err: ", err)
 			}

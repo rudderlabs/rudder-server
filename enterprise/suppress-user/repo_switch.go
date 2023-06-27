@@ -3,7 +3,6 @@ package suppression
 import (
 	"io"
 	"sync"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
@@ -32,16 +31,10 @@ func (rh *RepoSwitcher) Add(suppressions []model.Suppression, token []byte) erro
 	return rh.Repository.Add(suppressions, token)
 }
 
-func (rh *RepoSwitcher) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
+func (rh *RepoSwitcher) Suppressed(workspaceID, userID, sourceID string) (*model.Metadata, error) {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
 	return rh.Repository.Suppressed(workspaceID, userID, sourceID)
-}
-
-func (rh *RepoSwitcher) GetCreatedAt(workspaceID, userID, sourceID string) (time.Time, error) {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
-	return rh.Repository.GetCreatedAt(workspaceID, userID, sourceID)
 }
 
 func (rh *RepoSwitcher) Backup(w io.Writer) error {

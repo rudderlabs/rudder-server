@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
@@ -214,10 +215,10 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.initializeEnterpriseAppFeatures()
 
 		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
-		c.mockSuppressUser.EXPECT().GetCreatedAt(WorkspaceID, NormalUserID, SourceIDEnabled).Return(time.Time{}).AnyTimes()
-		c.mockSuppressUser.EXPECT().GetCreatedAt(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(time.Now()).AnyTimes()
+		c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(nil).AnyTimes()
+		c.mockSuppressUser.EXPECT().GetSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(&model.Metadata{
+			CreatedAt: time.Now(),
+		}).AnyTimes()
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableSuppressUserFeature(true)
@@ -264,11 +265,10 @@ var _ = Describe("Gateway Enterprise", func() {
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
-						"gateway.user_suppression_timer",
+						"gateway.user_suppression_age",
 						map[string]string{
 							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
-							"userID":      SuppressedUserID,
 						},
 					)
 					return stat != nil
@@ -327,11 +327,10 @@ var _ = Describe("Gateway Enterprise", func() {
 			).Should(BeTrue())
 			// stat should not be present for normal user
 			stat := statsStore.Get(
-				"gateway.user_suppression_timer",
+				"gateway.user_suppression_age",
 				map[string]string{
 					"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
 					"workspaceId": getWorkspaceID(WriteKeyEnabled),
-					"userID":      NormalUserID,
 				},
 			)
 			Expect(stat).To(BeNil())

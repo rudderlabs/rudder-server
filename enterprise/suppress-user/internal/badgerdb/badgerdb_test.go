@@ -44,12 +44,12 @@ func TestBadgerRepository(t *testing.T) {
 			},
 		}, token)
 		require.NoError(t, err)
-		createdAt, err := repo.GetCreatedAt("workspace1", "user1", "")
+		metadata, err := repo.Suppressed("workspace1", "user1", "")
 		require.NoError(t, err)
-		require.Equal(t, time.Date(2020, time.March, 27, 2, 2, 1, 2, time.UTC), createdAt) // should be the same as the one we added
-		createdAt, err = repo.GetCreatedAt("workspace2", "user1", "")
+		require.Equal(t, time.Date(2020, time.March, 27, 2, 2, 1, 2, time.UTC), metadata.CreatedAt) // should be the same as the one we added
+		metadata, err = repo.Suppressed("workspace2", "user1", "")
 		require.NoError(t, err)
-		require.Equal(t, time.Time{}, createdAt) // should be empty
+		require.Nil(t, metadata) // should be nil
 
 		// Add a suppression with a source ID
 		err = repo.Add([]model.Suppression{
@@ -61,12 +61,13 @@ func TestBadgerRepository(t *testing.T) {
 			},
 		}, token)
 		require.NoError(t, err)
-		createdAt, err = repo.GetCreatedAt("workspace2", "user2", "source1") // wrong source ID
+		metadata, err = repo.Suppressed("workspace2", "user2", "source1") // wrong source ID
 		require.NoError(t, err)
-		require.Equal(t, time.Time{}, createdAt)                             // should be empty
-		createdAt, err = repo.GetCreatedAt("workspace2", "user2", "source2") // wrong workspace and user ID and correct source ID
+		require.Nil(t, metadata)
+		metadata, err = repo.Suppressed("workspace2", "user2", "source2") // wrong workspace and user ID and correct source ID
 		require.NoError(t, err)
-		require.Equal(t, time.Date(2019, time.March, 27, 2, 2, 1, 2, time.UTC), createdAt) // should be the same as the one we added
+		require.NotNil(t, metadata)
+		require.Equal(t, time.Date(2019, time.March, 27, 2, 2, 1, 2, time.UTC), metadata.CreatedAt) // should be the same as the one we added
 	})
 
 	t.Run("trying to use a repository during restore", func(t *testing.T) {
@@ -118,10 +119,6 @@ func TestBadgerRepository(t *testing.T) {
 		require.Error(t, err, "it should return an error when trying to suppress a user from a repository that is restoring")
 		require.ErrorIs(t, model.ErrRestoring, err)
 
-		_, err = repo.GetCreatedAt("workspace2", "user2", "source2")
-		require.Error(t, err, "it should return an error when trying to suppress a user from a repository that is restoring")
-		require.ErrorIs(t, model.ErrRestoring, err)
-
 		cancel()
 		wg.Wait() // wait for the restore to finish
 	})
@@ -162,9 +159,6 @@ func TestBadgerRepository(t *testing.T) {
 		_, err := repo.Suppressed("workspace1", "user1", "")
 		require.Error(t, err)
 
-		_, err = repo.GetCreatedAt("workspace1", "user1", "")
-		require.Error(t, err)
-
 		_, err = repo.GetToken()
 		require.Error(t, err)
 
@@ -186,11 +180,7 @@ func TestBadgerRepository(t *testing.T) {
 		require.Equal(t, repo.Add(nil, nil), badger.ErrDBClosed)
 
 		s, err := repo.Suppressed("", "", "")
-		require.False(t, s)
-		require.Equal(t, err, badger.ErrDBClosed)
-
-		createdAt, err := repo.GetCreatedAt("", "", "")
-		require.True(t, createdAt.IsZero())
+		require.Nil(t, s)
 		require.Equal(t, err, badger.ErrDBClosed)
 
 		_, err = repo.GetToken()
