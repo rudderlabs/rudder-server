@@ -130,11 +130,15 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
 		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
-	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
+	statsOptions := []stats.Option{
 		stats.WithServiceName(r.appType),
 		stats.WithServiceVersion(r.releaseInfo.Version),
 		stats.WithDefaultHistogramBuckets(defaultHistogramBuckets),
-	)
+	}
+	for histogramName, buckets := range customBuckets {
+		statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
+	}
+	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance, statsOptions...)
 	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
 		r.logger.Errorf("Failed to start stats: %v", err)
 		return 1
