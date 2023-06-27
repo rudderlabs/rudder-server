@@ -911,9 +911,9 @@ func (jd *HandleT) workersAndAuxSetup() {
 	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
 	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
 	maxWritersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxWriters", "JobsDB." + "maxWriters"}
-	config.RegisterIntConfigVariable(1, &jd.maxWriters, false, 1, maxWritersKeys...)
+	config.RegisterIntConfigVariable(3, &jd.maxWriters, false, 1, maxWritersKeys...)
 	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
-	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
+	config.RegisterIntConfigVariable(6, &jd.maxReaders, false, 1, maxReadersKeys...)
 	maxOpenConnectionsKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxOpenConnections", "JobsDB." + "maxOpenConnections"}
 	config.RegisterIntConfigVariable(20, &jd.maxOpenConnections, false, 1, maxOpenConnectionsKeys...)
 	analyzeThresholdKeys := []string{"JobsDB." + jd.tablePrefix + "." + "analyzeThreshold", "JobsDB." + "analyzeThreshold"}
@@ -2611,10 +2611,25 @@ func (jd *HandleT) refreshDSListLoop(ctx context.Context) {
 			defer cancel()
 
 			start := time.Now()
-			err := jd.dsListLock.WithLockInCtx(timeoutCtx, func(l lock.LockToken) error {
+			var err error
+			defer func() {
+				stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+			}()
+
+			previousDS := jd.datasetList
+			nextDS, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+			if err != nil {
+				return fmt.Errorf("getDSList: %w", err)
+			}
+			previousLastDS, _ := lo.Last(previousDS)
+			nextLastDS, _ := lo.Last(nextDS)
+
+			if previousLastDS.Index == nextLastDS.Index {
+				return nil
+			}
+			err = jd.dsListLock.WithLockInCtx(timeoutCtx, func(l lock.LockToken) error {
 				return jd.refreshDSRangeList(l)
 			})
-			stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 			if err != nil {
 				return fmt.Errorf("refreshDSRangeList: %w", err)
 			}
