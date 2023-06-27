@@ -1103,7 +1103,7 @@ func (jd *HandleT) refreshDSRangeList(l lock.LockToken) error {
 	if err != nil {
 		return fmt.Errorf("refreshDSList %w", err)
 	}
-	jd.datasetRangeList = nil
+	var datasetRangeList []dataSetRangeT
 
 	for idx, ds := range dsList {
 		jd.assert(ds.Index != "", "ds.Index is empty")
@@ -1139,7 +1139,7 @@ func (jd *HandleT) refreshDSRangeList(l lock.LockToken) error {
 			// TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
 			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
-			jd.datasetRangeList = append(jd.datasetRangeList,
+			datasetRangeList = append(datasetRangeList,
 				dataSetRangeT{
 					minJobID: minID.Int64,
 					maxJobID: maxID.Int64,
@@ -1148,6 +1148,7 @@ func (jd *HandleT) refreshDSRangeList(l lock.LockToken) error {
 			prevMax = maxID.Int64
 		}
 	}
+	jd.datasetRangeList = datasetRangeList
 	return nil
 }
 
