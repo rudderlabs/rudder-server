@@ -795,8 +795,8 @@ func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) b
 	)
 	if metadata != nil {
 		createdAt := metadata.CreatedAt
-			userSuppressionTimer := gateway.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{"workspaceId": workspaceID, "sourceID": sourceID})
-			userSuppressionTimer.Since(createdAt)
+		userSuppressionTimer := gateway.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{"workspaceId": workspaceID, "sourceID": sourceID})
+		userSuppressionTimer.Since(createdAt)
 	}
 	return metadata != nil
 }

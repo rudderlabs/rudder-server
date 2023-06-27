@@ -310,7 +310,7 @@ func generateTests(getRepo func() Repository) {
 			go func() {
 				s.SyncLoop(ctx)
 			}()
-			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil}).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeTrue())
 		})
 	})
 

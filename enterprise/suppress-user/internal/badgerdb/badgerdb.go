@@ -368,6 +368,7 @@ func getMetadataFromBadgerItem(item *badger.Item) (*model.Metadata, error) {
 		CreatedAt: createdAt,
 	}, nil
 }
+
 type badgerDBValue struct {
 	CreatedAt string
 }
