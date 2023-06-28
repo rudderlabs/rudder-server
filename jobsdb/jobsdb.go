@@ -2521,12 +2521,6 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 				return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
 					return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
 						var err error
-						// We acquire the list lock only after we have acquired the advisory lock.
-						// We will release the list lock after the transaction ends, that's why we need to use an async lock
-						dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
-						if err != nil {
-							return err
-						}
 						// refresh ds list
 						var dsList []dataSetT
 						var nextDSIdx string
@@ -2542,6 +2536,12 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 						}
 						// checkIfFullDS is true for last DS in the list
 						if full {
+							// We acquire the list lock only after we have acquired the advisory lock.
+							// We will release the list lock after the transaction ends, that's why we need to use an async lock
+							dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+							if err != nil {
+								return err
+							}
 							if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
 								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
 							}
