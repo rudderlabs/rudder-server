@@ -2565,8 +2565,10 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 				return fmt.Errorf("addNewDSLoop: %w", err)
 			}
 			// to get the updated DS list in the cache after createDS transaction has been committed.
-			if err = jd.refreshDSRangeList(dsListLock); err != nil {
-				return fmt.Errorf("refreshDSRangeList: %w", err)
+			if dsListLock != nil {
+				if err = jd.refreshDSRangeList(dsListLock); err != nil {
+					return fmt.Errorf("refreshDSRangeList: %w", err)
+				}
 			}
 			return nil
 		}
