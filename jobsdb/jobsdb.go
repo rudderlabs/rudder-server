@@ -873,7 +873,7 @@ func (jd *HandleT) init() {
 				jd.runAlwaysChangesets(templateData)
 
 				// finally refresh the dataset list to make sure [datasetList] field is populated
-				_, err := jd.refreshDSList(l)
+				_, err := jd.doRefreshDSList(l)
 				jd.assertError(err)
 			})
 			return nil
@@ -976,7 +976,7 @@ func (jd *HandleT) readerSetup(ctx context.Context, l lock.LockToken) {
 	// This is a thread-safe operation.
 	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
-	jd.assertError(jd.refreshDSRangeList(l))
+	jd.assertError(jd.doRefreshDSRangeList(l))
 
 	g := jd.backgroundGroup
 	g.Go(misc.WithBugsnag(func() error {
@@ -999,7 +999,7 @@ func (jd *HandleT) writerSetup(ctx context.Context, l lock.LockToken) {
 	// This is a thread-safe operation.
 	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
-	jd.assertError(jd.refreshDSRangeList(l))
+	jd.assertError(jd.doRefreshDSRangeList(l))
 
 	// If no DS present, add one
 	if len(jd.getDSList()) == 0 {
@@ -1064,8 +1064,8 @@ func (jd *HandleT) getDSList() []dataSetT {
 	return jd.datasetList
 }
 
-// refreshDSList refreshes the ds list from the database
-func (jd *HandleT) refreshDSList(l lock.LockToken) ([]dataSetT, error) {
+// doRefreshDSList refreshes the ds list from the database
+func (jd *HandleT) doRefreshDSList(l lock.LockToken) ([]dataSetT, error) {
 	if l == nil {
 		return nil, fmt.Errorf("cannot refresh DS list without a valid lock token")
 	}
@@ -1094,12 +1094,12 @@ func (jd *HandleT) getDSRangeList() []dataSetRangeT {
 	return jd.datasetRangeList
 }
 
-// refreshDSRangeList first refreshes the DS list and then calculate the DS range list
-func (jd *HandleT) refreshDSRangeList(l lock.LockToken) error {
+// doRefreshDSRangeList first refreshes the DS list and then calculate the DS range list
+func (jd *HandleT) doRefreshDSRangeList(l lock.LockToken) error {
 	var prevMax int64
 
 	// At this point we must have write-locked dsListLock
-	dsList, err := jd.refreshDSList(l)
+	dsList, err := jd.doRefreshDSList(l)
 	if err != nil {
 		return fmt.Errorf("refreshDSList %w", err)
 	}
@@ -1256,12 +1256,12 @@ func newDataSet(tablePrefix, dsIdx string) dataSetT {
 
 func (jd *HandleT) addNewDS(l lock.LockToken, ds dataSetT) {
 	err := jd.WithTx(func(tx *Tx) error {
-		dsList, err := jd.refreshDSList(l)
+		dsList, err := jd.doRefreshDSList(l)
 		jd.assertError(err)
 		return jd.addNewDSInTx(tx, l, dsList, ds)
 	})
 	jd.assertError(err)
-	jd.assertError(jd.refreshDSRangeList(l))
+	jd.assertError(jd.doRefreshDSRangeList(l))
 }
 
 // NOTE: If addNewDSInTx is directly called, make sure to explicitly call refreshDSRangeList(l) to update the DS list in cache, once transaction has completed.
@@ -1302,7 +1302,7 @@ func (jd *HandleT) addDSInTx(tx *Tx, ds dataSetT) error {
 }
 
 func (jd *HandleT) computeNewIdxForAppend(l lock.LockToken) string {
-	dList, err := jd.refreshDSList(l)
+	dList, err := jd.doRefreshDSList(l)
 	jd.assertError(err)
 	return jd.doComputeNewIdxForAppend(dList)
 }
@@ -1653,7 +1653,7 @@ func (jd *HandleT) dropAllBackupDS() error {
 
 func (jd *HandleT) dropAllDS(l lock.LockToken) error {
 	var err error
-	dList, err := jd.refreshDSList(l)
+	dList, err := jd.doRefreshDSList(l)
 	if err != nil {
 		return fmt.Errorf("refreshDSList: %w", err)
 	}
@@ -1664,7 +1664,7 @@ func (jd *HandleT) dropAllDS(l lock.LockToken) error {
 	}
 
 	// Update the lists
-	if err = jd.refreshDSRangeList(l); err != nil {
+	if err = jd.doRefreshDSRangeList(l); err != nil {
 		return fmt.Errorf("refreshDSRangeList: %w", err)
 	}
 	return nil
@@ -1703,7 +1703,7 @@ func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 		if err != nil && errors.Is(err, errStaleDsList) {
 			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-				_, err = jd.refreshDSList(l)
+				_, err = jd.doRefreshDSList(l)
 				if err != nil {
 					return fmt.Errorf("refreshing ds list: %w", err)
 				}
@@ -2556,6 +2556,10 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 							if err = setReadonlyDsInTx(tx, latestDS); err != nil {
 								return fmt.Errorf("error making dataset read only: %w", err)
 							}
+						} else {
+							if err := jd.refreshDSList(ctx); err != nil {
+								return fmt.Errorf("refreshDSList: %w", err)
+							}
 						}
 						return nil
 					})
@@ -2566,7 +2570,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 			}
 			// to get the updated DS list in the cache after createDS transaction has been committed.
 			if dsListLock != nil {
-				if err = jd.refreshDSRangeList(dsListLock); err != nil {
+				if err = jd.doRefreshDSRangeList(dsListLock); err != nil {
 					return fmt.Errorf("refreshDSRangeList: %w", err)
 				}
 			}
@@ -2606,45 +2610,48 @@ func (jd *HandleT) refreshDSListLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		refresh := func() error {
-			jd.logger.Debugw("Start", "operation", "refreshDSListLoop")
-
-			timeoutCtx, cancel := context.WithTimeout(ctx, jd.refreshDSTimeout)
-			defer cancel()
-
-			start := time.Now()
-			var err error
-			defer func() {
-				stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
-			}()
-
-			previousDS := jd.datasetList
-			nextDS, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
-			if err != nil {
-				return fmt.Errorf("getDSList: %w", err)
-			}
-			previousLastDS, _ := lo.Last(previousDS)
-			nextLastDS, _ := lo.Last(nextDS)
-
-			if previousLastDS.Index == nextLastDS.Index {
-				return nil
-			}
-			err = jd.dsListLock.WithLockInCtx(timeoutCtx, func(l lock.LockToken) error {
-				return jd.refreshDSRangeList(l)
-			})
-			if err != nil {
-				return fmt.Errorf("refreshDSRangeList: %w", err)
-			}
-
-			return nil
-		}
-		if err := refresh(); err != nil {
+		timeoutCtx, cancel := context.WithTimeout(ctx, jd.refreshDSTimeout)
+		if err := jd.refreshDSList(timeoutCtx); err != nil {
+			cancel()
 			if !jd.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
 			jd.logger.Errorw("refreshDSListLoop", "error", err)
 		}
+		cancel()
 	}
+}
+
+// refreshDSList refreshes the list of datasets in memory if the database view of the list has changed.
+func (jd *HandleT) refreshDSList(ctx context.Context) error {
+	jd.logger.Debugw("Start", "operation", "refreshDSListLoop")
+
+	start := time.Now()
+	var err error
+	defer func() {
+		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+	}()
+	jd.dsListLock.RLock()
+	previousDS := jd.datasetList
+	jd.dsListLock.RUnlock()
+	nextDS, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+	if err != nil {
+		return fmt.Errorf("getDSList: %w", err)
+	}
+	previousLastDS, _ := lo.Last(previousDS)
+	nextLastDS, _ := lo.Last(nextDS)
+
+	if previousLastDS.Index == nextLastDS.Index {
+		return nil
+	}
+	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+		return jd.doRefreshDSRangeList(l)
+	})
+	if err != nil {
+		return fmt.Errorf("refreshDSRangeList: %w", err)
+	}
+
+	return nil
 }
 
 // Identifier returns the identifier of the jobsdb. Here it is tablePrefix.
