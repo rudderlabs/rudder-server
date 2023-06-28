@@ -55,66 +55,34 @@ func generateClientID(user User, metadata Metadata) string {
 	return strconv.FormatInt(jobId, 10) + "<<>>" + user.HashedEmail
 }
 
-func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string, []int64, []int64, error) {
-	failedJobIds := []int64{}
-	successJobIds := []int64{}
+func csvZipFileCreator(audienceId string, fileType string) (string, *csv.Writer, string) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		return "", nil, nil, err
-	}
 	path := path.Join(tmpDirPath, localTmpDirName, uuid.String())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
-	textFile, err := os.Open(filePath)
-	if err != nil {
-		return "", nil, nil, err
-	}
-	defer textFile.Close()
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, ""
 	}
 	csvWriter := csv.NewWriter(csvFile)
 	err = csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
 	err = csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
-	err = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", "Add", "", ""})
-	scanner := bufio.NewScanner(textFile)
-	size := 0
-	for scanner.Scan() {
-		line := scanner.Text()
-		var data Data
-		err := json.Unmarshal([]byte(line), &data)
-		if err != nil {
-			return "", nil, nil, err
-		}
+	err = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", fileType, "", ""})
+	return csvFilePath, csvWriter, zipFilePath
+}
 
-		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
-			"module":   "batch_router",
-			"destType": b.destName,
-		})
-		payloadSizeStat.Observe(float64(len(data.Message.List)))
-
-		size = size + len([]byte(line))
-		if int64(size) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) {
-			for _, uploadData := range data.Message.List {
-				clientId := generateClientID(uploadData, data.Metadata)
-				err = csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
-			}
-			successJobIds = append(successJobIds, data.Metadata.JobID)
-		} else {
-			// ?? how to add test case for this
-			failedJobIds = append(failedJobIds, data.Metadata.JobID)
-		}
-
-	}
-	csvWriter.Flush()
-
-	// Create the ZIP file and add the CSV file to it
+func convertCsvToZip(csvFilePath string, zipFilePath string, eventCount int) error {
+	csvFile, err := os.Open(csvFilePath)
 	zipFile, err := os.Create(zipFilePath)
+	if eventCount == 0 {
+		os.Remove(csvFilePath)
+		os.Remove(zipFilePath)
+		return nil
+	}
 	if err != nil {
-		return "", nil, nil, err
+		return err
 	}
 	defer zipFile.Close()
 
@@ -122,27 +90,117 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) (string
 
 	csvFileInZip, err := zipWriter.Create(filepath.Base(csvFilePath))
 	if err != nil {
-		return "", nil, nil, err
+		return err
 	}
 
 	_, err = csvFile.Seek(0, 0)
 	_, err = io.Copy(csvFileInZip, csvFile)
 	if err != nil {
-		return "", nil, nil, err
+		return err
 	}
 
 	// Close the ZIP writer
 	err = zipWriter.Close()
 	if err != nil {
-		return "", nil, nil, err
+		return err
 	}
 	// Remove the csv file after creating the zip file
 	err = os.Remove(csvFilePath)
 	if err != nil {
-		return "", nil, nil, err
+		return err
 	}
+	return nil
+}
 
-	return zipFilePath, successJobIds, failedJobIds, nil
+func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]string, [3][]int64, [3][]int64, error) {
+	failedJobIds := [3][]int64{}
+	successJobIds := [3][]int64{}
+
+	textFile, err := os.Open(filePath)
+	if err != nil {
+		return [3]string{"", "", ""}, successJobIds, failedJobIds, err
+	}
+	defer textFile.Close()
+
+	if err != nil {
+		return [3]string{"", "", ""}, successJobIds, failedJobIds, err
+	}
+	var csvWriter [3]*csv.Writer
+	var csvFilePaths [3]string
+	var zipFilePaths [3]string
+	var eventCount [3]int
+	csvFilePaths[0], csvWriter[0], zipFilePaths[0] = csvZipFileCreator(audienceId, "Add")
+	csvFilePaths[1], csvWriter[1], zipFilePaths[1] = csvZipFileCreator(audienceId, "Remove")
+	csvFilePaths[2], csvWriter[2], zipFilePaths[2] = csvZipFileCreator(audienceId, "Update")
+	scanner := bufio.NewScanner(textFile)
+	fileSize := []int{0, 0, 0}
+	for scanner.Scan() {
+		line := scanner.Text()
+		var data Data
+		err := json.Unmarshal([]byte(line), &data)
+		if err != nil {
+			return [3]string{"", "", ""}, successJobIds, failedJobIds, err
+		}
+
+		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
+			"module":   "batch_router",
+			"destType": b.destName,
+		})
+		payloadSizeStat.Observe(float64(len(data.Message.List)))
+		switch data.Message.Action {
+		case "Add":
+			fileSize[0] = fileSize[0] + len([]byte(line))
+			if int64(fileSize[0]) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) && eventCount[0] < 4000000 {
+				eventCount[0] += 1
+				for _, uploadData := range data.Message.List {
+					clientId := generateClientID(uploadData, data.Metadata)
+					err = csvWriter[0].Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+				}
+				successJobIds[0] = append(successJobIds[0], data.Metadata.JobID)
+			} else {
+				// ?? how to add test case for this
+				failedJobIds[0] = append(failedJobIds[0], data.Metadata.JobID)
+			}
+		case "Remove":
+			fileSize[1] = fileSize[1] + len([]byte(line))
+			if int64(fileSize[1]) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) {
+				eventCount[1] += 1
+				for _, uploadData := range data.Message.List {
+					clientId := generateClientID(uploadData, data.Metadata)
+					err = csvWriter[1].Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+				}
+				successJobIds[1] = append(successJobIds[1], data.Metadata.JobID)
+			} else {
+				// ?? how to add test case for this
+				failedJobIds[1] = append(failedJobIds[1], data.Metadata.JobID)
+			}
+		case "Update":
+			fileSize[2] = fileSize[2] + len([]byte(line))
+			if int64(fileSize[2]) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) {
+				eventCount[2] += 1
+				for _, uploadData := range data.Message.List {
+					clientId := generateClientID(uploadData, data.Metadata)
+					err = csvWriter[2].Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+				}
+				successJobIds[2] = append(successJobIds[2], data.Metadata.JobID)
+			} else {
+				// ?? how to add test case for this
+				failedJobIds[2] = append(failedJobIds[2], data.Metadata.JobID)
+			}
+		}
+
+	}
+	csvWriter[0].Flush()
+	csvWriter[1].Flush()
+	csvWriter[2].Flush()
+
+	// Create the ZIP file and add the CSV file to it
+
+	convertCsvToZip(csvFilePaths[0], zipFilePaths[0], eventCount[0])
+	convertCsvToZip(csvFilePaths[1], zipFilePaths[1], eventCount[1])
+	convertCsvToZip(csvFilePaths[2], zipFilePaths[2], eventCount[2])
+
+	return zipFilePaths, successJobIds, failedJobIds, nil
 }
 
 func Unzip(zipFile, targetDir string) ([]string, error) {
@@ -290,7 +348,8 @@ type User struct {
 	HashedEmail string `json:"hashedEmail"`
 }
 type Message struct {
-	List []User `json:"List"`
+	List   []User `json:"List"`
+	Action string `json:"Action"`
 }
 type Metadata struct {
 	JobID int64 `json:"job_id"`
@@ -326,32 +385,16 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	destConfig := DestinationConfig{}
 	jsonConfig, _ := json.Marshal(destination.Config)
 	_ = json.Unmarshal(jsonConfig, &destConfig)
-
-	urlResp, err := b.service.GetBulkUploadUrl()
-	if err != nil {
-		b.logger.Error("Error in getting bulk upload url: %v", err)
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  `{"error" : "unable to get bulk upload url"}`,
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
-	}
-
-	if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  `{"error" : "getting empty string in upload url or request id"}`,
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
-	}
-	filePath, successJobIDs, failedJobIds, err := b.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
+	var failedJobs []int64
+	var successJobs []int64
+	var concatImpId string
+	var concatError string
+	filePaths, successJobIDs, failedJobIds, err := b.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
 	uploadRetryableStat := stats.Default.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": b.destName,
 	})
-	uploadRetryableStat.Count(len(failedJobIds))
+	uploadRetryableStat.Count(len(failedJobIds[0]) + len(failedJobIds[1]) + len(failedJobIds[2]))
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -360,56 +403,69 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			DestinationID: destination.ID,
 		}
 	}
-
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
-		"module":   "batch_router",
-		"destType": b.destName,
-	})
-
-	startTime := time.Now()
-	uploadBulkFileResp, errorDuringUpload := b.service.UploadBulkFile(urlResp.UploadUrl, filePath)
-	uploadTimeStat.Since(startTime)
-
-	err = os.Remove(filePath)
-	if err != nil {
-		b.logger.Error("Error in removing zip file: %v", err)
-		// To do add an alert here
-	}
-	if errorDuringUpload != nil {
-		b.logger.Error("Error in uploading the bulk file: %v", err)
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  `{"error" : "unable to upload bulk file"}`,
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
+	for index, path := range filePaths {
+		_, err := os.Stat(path)
+		if err != nil {
+			continue
 		}
-	}
-
-	if uploadBulkFileResp.RequestId == "" || uploadBulkFileResp.TrackingId == "" {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  `{"error" : "getting empty string in tracking id or request id"}`,
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
+		urlResp, err := b.service.GetBulkUploadUrl()
+		if err != nil {
+			b.logger.Error("Error in getting bulk upload url: %v", err)
+			failedJobs = append(append(failedJobs, successJobIDs[index]...), failedJobIds[index]...)
+			concatError += fmt.Sprintf("%v:error in getting bulk upload url: %v", index, err) + ","
+			continue
 		}
+
+		if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
+			b.logger.Error(`{"error" : "getting empty string in upload url or request id"}`)
+			failedJobs = append(append(failedJobs, successJobIDs[index]...), failedJobIds[index]...)
+			concatError += fmt.Sprintf("%v:getting empty string in upload url or request id", index) + ","
+			continue
+		}
+
+		uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+			"module":   "batch_router",
+			"destType": b.destName,
+		})
+
+		startTime := time.Now()
+		uploadBulkFileResp, errorDuringUpload := b.service.UploadBulkFile(urlResp.UploadUrl, filePaths[index])
+		uploadTimeStat.Since(startTime)
+
+		err = os.Remove(filePaths[index])
+		if err != nil {
+			b.logger.Error("Error in removing zip file: %v", err)
+			// To do add an alert here
+		}
+		if errorDuringUpload != nil {
+			b.logger.Error("Error in uploading the bulk file: %v", err)
+			failedJobs = append(append(failedJobs, successJobIDs[index]...), failedJobIds[index]...)
+			concatError += fmt.Sprintf("%v:Error in uploading the bulk file: %v", index, err) + ","
+			continue
+		}
+
+		if uploadBulkFileResp.RequestId == "" || uploadBulkFileResp.TrackingId == "" {
+			failedJobs = append(append(failedJobs, successJobIDs[index]...), failedJobIds[index]...)
+			concatError += fmt.Sprintf("%d:getting empty string in upload url or request id", index) + ","
+			continue
+		}
+		concatImpId += uploadBulkFileResp.RequestId + ","
+		failedJobs = append(failedJobs, failedJobIds[index]...)
 	}
 
-	// Remove the zip file after uploading it
-
-	// success case
 	var parameters common.ImportParameters
-	parameters.ImportId = uploadBulkFileResp.RequestId
+	parameters.ImportId = concatImpId
 	importParameters, err := json.Marshal(parameters)
 	if err != nil {
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     successJobIDs,
-		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobIds...),
+		ImportingJobIDs:     asyncDestStruct.ImportingJobIDs,
+		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
 		FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
 		ImportingParameters: stdjson.RawMessage(importParameters),
-		ImportingCount:      len(asyncDestStruct.ImportingJobIDs),
-		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobIds),
+		ImportingCount:      len(successJobs),
+		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
 		DestinationID:       destination.ID,
 	}
 }
