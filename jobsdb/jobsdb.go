@@ -2557,6 +2557,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 								return fmt.Errorf("error making dataset read only: %w", err)
 							}
 						} else {
+							// maybe another node added a new DS that we need to make visible to us
 							if err := jd.refreshDSList(ctx); err != nil {
 								return fmt.Errorf("refreshDSList: %w", err)
 							}
