@@ -873,7 +873,7 @@ func (jd *HandleT) init() {
 				jd.runAlwaysChangesets(templateData)
 
 				// finally refresh the dataset list to make sure [datasetList] field is populated
-				_, err := jd.doRefreshDSList(l)
+				err := jd.doRefreshDSRangeList(l)
 				jd.assertError(err)
 			})
 			return nil
@@ -1703,7 +1703,7 @@ func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 		if err != nil && errors.Is(err, errStaleDsList) {
 			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-				_, err = jd.doRefreshDSList(l)
+				err = jd.doRefreshDSRangeList(l)
 				if err != nil {
 					return fmt.Errorf("refreshing ds list: %w", err)
 				}
