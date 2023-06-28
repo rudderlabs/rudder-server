@@ -55,11 +55,17 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-var defaultHistogramBuckets = []float64{
-	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60,
-	300 /* 5 mins */, 600 /* 10 mins */, 1800 /* 30 mins */, 10800 /* 3 hours */, 36000, /* 10 hours */
-	86400 /* 1 day */, 259200 /* 3 days */, 604800 /* 7 days */, 1209600, /* 2 weeks */
-}
+var (
+	defaultHistogramBuckets = []float64{
+		0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60,
+		300 /* 5 mins */, 600 /* 10 mins */, 1800, /* 30 mins */
+	}
+	defaultWarehouseHistogramBuckets = []float64{
+		0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60,
+		300 /* 5 mins */, 600 /* 10 mins */, 1800 /* 30 mins */, 10800 /* 3 hours */, 36000, /* 10 hours */
+		86400 /* 1 day */, 259200 /* 3 days */, 604800 /* 7 days */, 1209600, /* 2 weeks */
+	}
+)
 
 // ReleaseInfo holds the release information
 type ReleaseInfo struct {
@@ -133,7 +139,11 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	statsOptions := []stats.Option{
 		stats.WithServiceName(r.appType),
 		stats.WithServiceVersion(r.releaseInfo.Version),
-		stats.WithDefaultHistogramBuckets(defaultHistogramBuckets),
+	}
+	if r.canStartWarehouse() {
+		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultWarehouseHistogramBuckets))
+	} else {
+		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultHistogramBuckets))
 	}
 	for histogramName, buckets := range customBuckets {
 		statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
