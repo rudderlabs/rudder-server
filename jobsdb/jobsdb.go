@@ -669,7 +669,7 @@ func loadConfig() {
 	*/
 	config.RegisterFloat64ConfigVariable(0.8, &jobDoneMigrateThres, true, "JobsDB.jobDoneMigrateThres")
 	config.RegisterFloat64ConfigVariable(3, &jobStatusMigrateThres, true, "JobsDB.jobStatusMigrateThres")
-	config.RegisterFloat64ConfigVariable(0.05, &jobMinRowsMigrateThres, true, "JobsDB.jobMinRowsMigrateThres")
+	config.RegisterFloat64ConfigVariable(0.2, &jobMinRowsMigrateThres, true, "JobsDB.jobMinRowsMigrateThres")
 	config.RegisterIntConfigVariable(100000, &maxDSSize, true, 1, "JobsDB.maxDSSize")
 	config.RegisterIntConfigVariable(10, &maxMigrateOnce, true, 1, "JobsDB.maxMigrateOnce")
 	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
