@@ -1863,8 +1863,8 @@ func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]i
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
-	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList()
+	jd.dsListLock.RUnlock()
 	statMap := make(map[string]map[string]int)
 
 	for _, ds := range dsList {
@@ -1925,9 +1925,8 @@ func (jd *HandleT) GetActiveWorkspaces(ctx context.Context, customVal string) ([
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
-	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList()
-
+	jd.dsListLock.RUnlock()
 	var workspaceIds []string
 	var queries []string
 	for _, ds := range dsList {
@@ -1981,8 +1980,8 @@ func (jd *HandleT) GetDistinctParameterValues(ctx context.Context, parameterName
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
-	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList()
+	jd.dsListLock.RUnlock()
 
 	var values []string
 	var queries []string
@@ -3214,10 +3213,9 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		return JobsResult{}, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
-	defer jd.dsListLock.RUnlock()
-
 	dsRangeList := jd.getDSRangeList()
 	dsList := jd.getDSList()
+	jd.dsListLock.RUnlock()
 
 	limitByEventCount := false
 	if params.EventsLimit > 0 {
@@ -3342,10 +3340,9 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		return JobsResult{}, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
-	defer jd.dsListLock.RUnlock()
-
 	dsRangeList := jd.getDSRangeList()
 	dsList := jd.getDSList()
+	jd.dsListLock.RUnlock()
 
 	limitByEventCount := false
 	if params.EventsLimit > 0 {
@@ -3532,8 +3529,8 @@ func (jd *HandleT) GetLastJob() *JobT {
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
 	}
-	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList()
+	jd.dsListLock.RUnlock()
 	maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
