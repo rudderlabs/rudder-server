@@ -55,7 +55,7 @@ func generateClientID(user User, metadata Metadata) string {
 	return strconv.FormatInt(jobId, 10) + "<<>>" + user.HashedEmail
 }
 
-func csvZipFileCreator(audienceId string, fileType string) (string, *csv.Writer, string) {
+func csvZipFileCreator(audienceId string, actionType string) (string, *csv.Writer, string) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -69,7 +69,7 @@ func csvZipFileCreator(audienceId string, fileType string) (string, *csv.Writer,
 	csvWriter := csv.NewWriter(csvFile)
 	err = csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
 	err = csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
-	err = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", fileType, "", ""})
+	err = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""})
 	return csvFilePath, csvWriter, zipFilePath
 }
 
@@ -112,6 +112,20 @@ func convertCsvToZip(csvFilePath string, zipFilePath string, eventCount int) err
 	return nil
 }
 
+func populateZipFile(fileSize *int, line string, destName string, eventCount *int, data Data, csvWriter *csv.Writer, audienceId string, successJobIds *[]int64, failedJobIds *[]int64) {
+	*fileSize = *fileSize + len([]byte(line))
+	if int64(*fileSize) < common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB) && *eventCount < 4000000 {
+		*eventCount += 1
+		for _, uploadData := range data.Message.List {
+			clientId := generateClientID(uploadData, data.Metadata)
+			csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+		}
+		*successJobIds = append(*successJobIds, data.Metadata.JobID)
+	} else {
+		*failedJobIds = append(*failedJobIds, data.Metadata.JobID)
+	}
+}
+
 func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]string, [3][]int64, [3][]int64, error) {
 	failedJobIds := [3][]int64{}
 	successJobIds := [3][]int64{}
@@ -129,9 +143,10 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]str
 	var csvFilePaths [3]string
 	var zipFilePaths [3]string
 	var eventCount [3]int
-	csvFilePaths[0], csvWriter[0], zipFilePaths[0] = csvZipFileCreator(audienceId, "Add")
-	csvFilePaths[1], csvWriter[1], zipFilePaths[1] = csvZipFileCreator(audienceId, "Remove")
-	csvFilePaths[2], csvWriter[2], zipFilePaths[2] = csvZipFileCreator(audienceId, "Update")
+	var actionTypes = [...]string{"Add", "Remove", "Update"}
+	for index, actionType := range actionTypes {
+		csvFilePaths[index], csvWriter[index], zipFilePaths[index] = csvZipFileCreator(audienceId, actionType)
+	}
 	scanner := bufio.NewScanner(textFile)
 	fileSize := []int{0, 0, 0}
 	for scanner.Scan() {
@@ -149,56 +164,19 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]str
 		payloadSizeStat.Observe(float64(len(data.Message.List)))
 		switch data.Message.Action {
 		case "Add":
-			fileSize[0] = fileSize[0] + len([]byte(line))
-			if int64(fileSize[0]) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) && eventCount[0] < 4000000 {
-				eventCount[0] += 1
-				for _, uploadData := range data.Message.List {
-					clientId := generateClientID(uploadData, data.Metadata)
-					err = csvWriter[0].Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
-				}
-				successJobIds[0] = append(successJobIds[0], data.Metadata.JobID)
-			} else {
-				// ?? how to add test case for this
-				failedJobIds[0] = append(failedJobIds[0], data.Metadata.JobID)
-			}
+			populateZipFile(&fileSize[0], line, b.destName, &eventCount[0], data, csvWriter[0], audienceId, &successJobIds[0], &failedJobIds[0])
 		case "Remove":
-			fileSize[1] = fileSize[1] + len([]byte(line))
-			if int64(fileSize[1]) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) {
-				eventCount[1] += 1
-				for _, uploadData := range data.Message.List {
-					clientId := generateClientID(uploadData, data.Metadata)
-					err = csvWriter[1].Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
-				}
-				successJobIds[1] = append(successJobIds[1], data.Metadata.JobID)
-			} else {
-				// ?? how to add test case for this
-				failedJobIds[1] = append(failedJobIds[1], data.Metadata.JobID)
-			}
+			populateZipFile(&fileSize[1], line, b.destName, &eventCount[1], data, csvWriter[1], audienceId, &successJobIds[1], &failedJobIds[1])
 		case "Update":
-			fileSize[2] = fileSize[2] + len([]byte(line))
-			if int64(fileSize[2]) < common.GetBatchRouterConfigInt64("MaxUploadLimit", b.destName, 100*bytesize.MB) {
-				eventCount[2] += 1
-				for _, uploadData := range data.Message.List {
-					clientId := generateClientID(uploadData, data.Metadata)
-					err = csvWriter[2].Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
-				}
-				successJobIds[2] = append(successJobIds[2], data.Metadata.JobID)
-			} else {
-				// ?? how to add test case for this
-				failedJobIds[2] = append(failedJobIds[2], data.Metadata.JobID)
-			}
+			populateZipFile(&fileSize[2], line, b.destName, &eventCount[2], data, csvWriter[2], audienceId, &successJobIds[2], &failedJobIds[2])
 		}
 
 	}
-	csvWriter[0].Flush()
-	csvWriter[1].Flush()
-	csvWriter[2].Flush()
-
+	for index := range actionTypes {
+		csvWriter[index].Flush()
+		convertCsvToZip(csvFilePaths[index], zipFilePaths[index], eventCount[index])
+	}
 	// Create the ZIP file and add the CSV file to it
-
-	convertCsvToZip(csvFilePaths[0], zipFilePaths[0], eventCount[0])
-	convertCsvToZip(csvFilePaths[1], zipFilePaths[1], eventCount[1])
-	convertCsvToZip(csvFilePaths[2], zipFilePaths[2], eventCount[2])
 
 	return zipFilePaths, successJobIds, failedJobIds, nil
 }
