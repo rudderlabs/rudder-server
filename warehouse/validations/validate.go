@@ -388,7 +388,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		return "", fmt.Errorf("create directory: %w", err)
 	}
 
-	if loadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+	if loadFileType == warehouseutils.LoadFileTypeParquet {
 		writer, err = encoding.CreateParquetWriter(tableSchemaMap, filePath, destinationType)
 	} else {
 		writer, err = misc.CreateGZ(filePath)

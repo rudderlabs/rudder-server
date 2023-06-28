@@ -194,7 +194,7 @@ func TestIntegration(t *testing.T) {
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				sourceID:      s3SourceID,
 				destinationID: s3DestinationID,
-				destType:      warehouseutils.S3_DATALAKE,
+				destType:      warehouseutils.S3Datalake,
 				conf: map[string]interface{}{
 					"region":           s3Region,
 					"bucketName":       s3BucketName,
@@ -231,7 +231,7 @@ func TestIntegration(t *testing.T) {
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
 				sourceID:      gcsSourceID,
 				destinationID: gcsDestinationID,
-				destType:      warehouseutils.GCS_DATALAKE,
+				destType:      warehouseutils.GCSDatalake,
 				conf: map[string]interface{}{
 					"bucketName":    gcsBucketName,
 					"prefix":        "",
@@ -253,7 +253,7 @@ func TestIntegration(t *testing.T) {
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				sourceID:      azSourceID,
 				destinationID: azDestinationID,
-				destType:      warehouseutils.AZURE_DATALAKE,
+				destType:      warehouseutils.AzureDatalake,
 				conf: map[string]interface{}{
 					"containerName":  azContainerName,
 					"prefix":         "",
