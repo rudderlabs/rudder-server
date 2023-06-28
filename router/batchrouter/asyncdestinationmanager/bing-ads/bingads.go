@@ -595,15 +595,28 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) (common.PollSta
 	return resp, statusCode
 }
 
+func generateArrayOfStrings(value string) []string {
+	result := []string{}
+	requestIdsArray := strings.Split(value, ",")
+	for _, requestId := range requestIdsArray {
+		if requestId != "" {
+			result = append(result, requestId)
+		}
+	}
+	return result
+}
+
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
 	fmt.Println("Polling Bing Ads")
 	var cumulativeResp common.PollStatusResponse
 	var statusCode int
-	requestIdsArray := strings.Split(pollInput.ImportId, ",")
-	for _, requestId := range requestIdsArray {
-		resp, statusCode := b.PollSingleImport(requestId)
-		if statusCode != 200 {
+	requestIdsArray := generateArrayOfStrings(pollInput.ImportId)
+	for index, requestId := range requestIdsArray {
+		fmt.Println(index)
+		resp, status := b.PollSingleImport(requestId)
+		if status != 200 {
 			cumulativeResp = resp
+			statusCode = status
 			break
 		}
 		cumulativeResp = common.PollStatusResponse{
@@ -615,6 +628,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 			WarningJobsURL: "",
 			OutputFilePath: cumulativeResp.OutputFilePath + resp.OutputFilePath + ",",
 		}
+		statusCode = status
 	}
 
 	return cumulativeResp, statusCode
@@ -781,7 +795,8 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 		initialEventList = append(initialEventList, job.JobID)
 	}
 	var eventStatsResponse common.GetUploadStatsResponse
-	filePaths := strings.Split(UploadStatsInput.OutputFilePath, ",")
+	//filePaths := strings.Split(UploadStatsInput.OutputFilePath, ",")
+	filePaths := generateArrayOfStrings(UploadStatsInput.OutputFilePath)
 	for _, filePath := range filePaths {
 		response, _ := b.GetUploadStatsOfSingleImport(filePath)
 		eventStatsResponse = common.GetUploadStatsResponse{
