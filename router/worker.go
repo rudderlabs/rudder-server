@@ -522,9 +522,6 @@ func (w *worker) processDestinationJobs() {
 				}
 				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
-				if respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode {
-					w.rt.MultitenantI.UpdateWorkspaceLatencyMap(w.rt.destType, workspaceID, float64(timeTaken)/float64(time.Second))
-				}
 
 				// Using response status code and body to get response code rudder router logic is based on.
 				// Works when transformer proxy in disabled

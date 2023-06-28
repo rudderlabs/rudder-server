@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
-	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -91,7 +90,6 @@ type testContext struct {
 	mockFileManager        *mock_filemanager.MockFileManager
 	mockConfigPrefix       string
 	mockFileObjects        []*filemanager.FileInfo
-	mockMultitenantI       *mocksMultitenant.MockMultiTenantI
 }
 
 // Initiaze mocks and common expectations
@@ -103,7 +101,6 @@ func (c *testContext) Setup() {
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockFileManager = mock_filemanager.NewMockFileManager(c.mockCtrl)
 	c.mockFileManagerFactory = func(settings *filemanager.Settings) (filemanager.FileManager, error) { return c.mockFileManager, nil }
-	c.mockMultitenantI = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
 
@@ -166,7 +163,7 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 		})
 	})
 
@@ -179,7 +176,7 @@ var _ = Describe("BatchRouter", func() {
 
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &Handle{}
-			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			batchrouter.readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
