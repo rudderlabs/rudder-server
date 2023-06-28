@@ -144,3 +144,15 @@ func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {
 		return config.GetInt64("BatchRouter."+key, defaultValue)
 	}
 }
+
+func MergeMaps(maps ...map[string]string) map[string]string {
+	result := make(map[string]string)
+
+	for _, m := range maps {
+		for key, value := range m {
+			result[key] = value
+		}
+	}
+
+	return result
+}

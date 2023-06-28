@@ -414,9 +414,8 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 }
 
-func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
+func (b *BingAdsBulkUploader) PollSingleImport(requestId string) (common.PollStatusResponse, int) {
 	fmt.Println("Polling Bing Ads")
-	requestId := pollInput.ImportId
 	var resp common.PollStatusResponse
 	var statusCode int
 	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
@@ -466,7 +465,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		defer fileLoadResp.Body.Close()
 
 		// Create a temporary file to save the downloaded zip file
-		tempFile, err := os.CreateTemp("", fmt.Sprintf("bingads_%s_*.zip", pollInput.ImportId))
+		tempFile, err := os.CreateTemp("", fmt.Sprintf("bingads_%s_*.zip", requestId))
 		if err != nil {
 			panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
 		}
@@ -508,9 +507,24 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 			OutputFilePath: outputPath,
 		}
 		statusCode = 200
+	} else if uploadStatusResp.RequestStatus == "FileUploaded" ||
+		uploadStatusResp.RequestStatus == "InProgress" ||
+		uploadStatusResp.RequestStatus == "PendingFileUpload" {
+		resp = common.PollStatusResponse{
+			Success:        true,
+			StatusCode:     200,
+			HasFailed:      false,
+			HasWarning:     false,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: "",
+		}
+		// needs to be retried to fetch the final status
+		statusCode = 500
+		return resp, statusCode
 	} else {
-		// this will include authentication key errors
-		// file will not be available for this case.
+		/* if uploadStatusResp.RequestStatus == "Failed" || uploadStatusResp.RequestStatus == "UploadFileRowCountExceeded" || uploadStatusResp.RequestStatus == "UploadFileFormatNotSupported" {
+		 */
 		resp = common.PollStatusResponse{
 			Success:        false,
 			StatusCode:     400,
@@ -523,6 +537,31 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 		statusCode = 400
 	}
 	return resp, statusCode
+}
+
+func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
+	fmt.Println("Polling Bing Ads")
+	var cumulativeResp common.PollStatusResponse
+	var statusCode int
+	requestIdsArray := strings.Split(pollInput.ImportId, ",")
+	for _, requestId := range requestIdsArray {
+		resp, statusCode := b.PollSingleImport(requestId)
+		if statusCode != 200 {
+			cumulativeResp = resp
+			break
+		}
+		cumulativeResp = common.PollStatusResponse{
+			Success:        resp.Success,
+			StatusCode:     200,
+			HasFailed:      cumulativeResp.HasFailed || resp.HasFailed,
+			HasWarning:     cumulativeResp.HasWarning || resp.HasWarning,
+			FailedJobsURL:  "",
+			WarningJobsURL: "",
+			OutputFilePath: cumulativeResp.OutputFilePath + resp.OutputFilePath + ",",
+		}
+	}
+
+	return cumulativeResp, statusCode
 }
 
 // create array of failed job Ids from clientIDErrors
@@ -644,22 +683,10 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	return newManagerInternal(destination, oauthClient)
 }
 
-func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
-	// Function implementation
-	filePath := UploadStatsInput.OutputFilePath
-	// utilImpl := BingAdsUtilsImpl{}
+func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, int) {
 	records := ReadPollResults(filePath)
 	status := "200"
 	clientIDErrors := ProcessPollStatusData(records)
-
-	// considering importing jobs are the primary list of jobs sent
-	// making an array of those jobIds
-	importList := UploadStatsInput.ImportingList
-	var initialEventList []int64
-	for _, job := range importList {
-		initialEventList = append(initialEventList, job.JobID)
-	}
-	// Build the response body
 	eventStatsResponse := common.GetUploadStatsResponse{
 		Status: status,
 		Metadata: common.EventStatMeta{
@@ -667,7 +694,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 			ErrFailed:     nil,
 			WarningKeys:   []int64{},
 			ErrWarning:    nil,
-			SucceededKeys: GetSuccessKeys(GetFailedKeys(clientIDErrors), initialEventList),
+			SucceededKeys: []int64{},
 			ErrSuccess:    nil,
 			FailedReasons: GetFailedReasons(clientIDErrors),
 		},
@@ -684,6 +711,40 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 		"destType": b.destName,
 	})
 	eventsSuccessStat.Count(len(eventStatsResponse.Metadata.SucceededKeys))
+
+	return eventStatsResponse, 200
+}
+
+func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
+
+	// considering importing jobs are the primary list of jobs sent
+	// making an array of those jobIds
+	importList := UploadStatsInput.ImportingList
+	var initialEventList []int64
+	for _, job := range importList {
+		initialEventList = append(initialEventList, job.JobID)
+	}
+	var eventStatsResponse common.GetUploadStatsResponse
+	filePaths := strings.Split(UploadStatsInput.OutputFilePath, ",")
+	for _, filePath := range filePaths {
+		response, _ := b.GetUploadStatsOfSingleImport(filePath)
+		eventStatsResponse = common.GetUploadStatsResponse{
+			Status: response.Status,
+			Metadata: common.EventStatMeta{
+				FailedKeys:    append(eventStatsResponse.Metadata.FailedKeys, response.Metadata.FailedKeys...),
+				ErrFailed:     nil,
+				WarningKeys:   []int64{},
+				ErrWarning:    nil,
+				SucceededKeys: []int64{},
+				ErrSuccess:    nil,
+				FailedReasons: common.MergeMaps(eventStatsResponse.Metadata.FailedReasons, response.Metadata.FailedReasons),
+			},
+		}
+
+	}
+
+	// filtering out failed jobIds from the total array of jobIds
+	eventStatsResponse.Metadata.SucceededKeys = GetSuccessKeys(eventStatsResponse.Metadata.FailedKeys, initialEventList)
 
 	return eventStatsResponse, 200
 }
