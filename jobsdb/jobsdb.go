@@ -156,15 +156,27 @@ func EmptyStoreSafeTx() StoreSafeTx {
 type UpdateSafeTx interface {
 	Tx() *Tx
 	SqlTx() *sql.Tx
+	getDSList() []dataSetT
+	getDSRangeList() []dataSetRangeT
 	updateSafeTxSealIdentifier() string
 }
 type updateSafeTx struct {
-	tx       *Tx
-	identity string
+	tx          *Tx
+	identity    string
+	dsList      []dataSetT
+	dsRangeList []dataSetRangeT
 }
 
 func (r *updateSafeTx) updateSafeTxSealIdentifier() string {
 	return r.identity
+}
+
+func (r *updateSafeTx) getDSList() []dataSetT {
+	return r.dsList
+}
+
+func (r *updateSafeTx) getDSRangeList() []dataSetRangeT {
+	return r.dsRangeList
 }
 
 func (r *updateSafeTx) Tx() *Tx {
@@ -333,24 +345,24 @@ Later we can move this to query
 IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
 */
 func (jd *HandleT) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-	updateCmd := func() error {
+	updateCmd := func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
 		if len(statusList) == 0 {
 			return nil
 		}
 		tags := statTags{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
 		command := func() interface{} {
-			return jd.internalUpdateJobStatusInTx(ctx, tx.Tx(), statusList, customValFilters, parameterFilters)
+			return jd.internalUpdateJobStatusInTx(ctx, tx.Tx(), dsList, dsRangeList, statusList, customValFilters, parameterFilters)
 		}
 		err, _ := jd.executeDbRequest(newWriteDbRequest("update_job_status", &tags, command)).(error)
 		return err
 	}
 
 	if tx.updateSafeTxSealIdentifier() != jd.Identifier() {
-		return jd.inUpdateSafeCtx(ctx, func() error {
-			return updateCmd()
+		return jd.inUpdateSafeCtx(ctx, func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
+			return updateCmd(dsList, dsRangeList)
 		})
 	}
-	return updateCmd()
+	return updateCmd(tx.getDSList(), tx.getDSRangeList())
 }
 
 /*
@@ -1718,12 +1730,19 @@ func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 }
 
 func (jd *HandleT) WithUpdateSafeTx(ctx context.Context, f func(tx UpdateSafeTx) error) error {
-	return jd.inUpdateSafeCtx(ctx, func() error {
-		return jd.WithTx(func(tx *Tx) error { return f(&updateSafeTx{tx: tx, identity: jd.tablePrefix}) })
+	return jd.inUpdateSafeCtx(ctx, func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
+		return jd.WithTx(func(tx *Tx) error {
+			return f(&updateSafeTx{
+				tx:          tx,
+				identity:    jd.tablePrefix,
+				dsList:      dsList,
+				dsRangeList: dsRangeList,
+			})
+		})
 	})
 }
 
-func (jd *HandleT) inUpdateSafeCtx(ctx context.Context, f func() error) error {
+func (jd *HandleT) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT, dsRangeList []dataSetRangeT) error) error {
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
@@ -1735,8 +1754,10 @@ func (jd *HandleT) inUpdateSafeCtx(ctx context.Context, f func() error) error {
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
-	defer jd.dsListLock.RUnlock()
-	return f()
+	dsList := jd.getDSList()
+	dsRangeList := jd.getDSRangeList()
+	jd.dsListLock.RUnlock()
+	return f(dsList, dsRangeList)
 }
 
 func (jd *HandleT) WithTx(f func(tx *Tx) error) error {
@@ -2887,7 +2908,7 @@ internalUpdateJobStatusInTx updates the status of a batch of jobs
 customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *HandleT) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 	// capture stats
 	tags := statTags{
 		CustomValFilters: customValFilters,
@@ -2899,7 +2920,7 @@ func (jd *HandleT) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, stat
 	).RecordDuration()()
 
 	// do update
-	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, statusList, tags)
+	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, dsList, dsRangeList, statusList, tags)
 	if err != nil {
 		jd.logger.Infof("[[ %s ]]: Error occurred while updating job statuses. Returning err, %v", jd.tablePrefix, err)
 		return err
@@ -2935,7 +2956,7 @@ doUpdateJobStatusInTx updates the status of a batch of jobs
 customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]map[string]map[string]map[ParameterFilterT]struct{}, err error) {
+func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]map[string]map[string]map[ParameterFilterT]struct{}, err error) {
 	if len(statusList) == 0 {
 		return
 	}
@@ -2947,7 +2968,6 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 
 	// We scan through the list of jobs and map them to DS
 	var lastPos int
-	dsRangeList := jd.getDSRangeList()
 	updatedStatesByDS = make(map[dataSetT]map[string]map[string]map[ParameterFilterT]struct{})
 	for _, ds := range dsRangeList {
 		minID := ds.minJobID
@@ -2997,7 +3017,6 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList
 	// The last (most active DS) might not have range element as it is being written to
 	if lastPos < len(statusList) {
 		// Make sure range is missing for the last ds and migration ds (if at all present)
-		dsList := jd.getDSList()
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		// Update status in the last element
 		jd.logger.Debug("RangeEnd ", statusList[lastPos].JobID, lastPos, len(statusList))
