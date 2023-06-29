@@ -55,12 +55,12 @@ func TestExport(t *testing.T) {
 		}, token), "could not add data to badgerdb")
 	}
 	verify := func(repo suppression.Repository) {
-		isSuppressed, err := repo.Suppressed("workspace1", "user1", "source1")
+		metadata, err := repo.Suppressed("workspace1", "user1", "source1")
 		require.NoError(t, err)
-		require.Equal(t, true, isSuppressed)
-		isSuppressed, err = repo.Suppressed("workspace2", "user2", "source1")
+		require.NotNil(t, metadata)
+		metadata, err = repo.Suppressed("workspace2", "user2", "source1")
 		require.NoError(t, err)
-		require.Equal(t, true, isSuppressed)
+		require.NotNil(t, metadata)
 	}
 
 	seed(repo)
@@ -128,9 +128,9 @@ func TestExportLoop(t *testing.T) {
 				require.NoError(t, err)
 				err = repo.Restore(file)
 				require.NoError(t, err)
-				isSuppressed, err := repo.Suppressed("workspace-1", "user-1", "src-1")
+				metadata, err := repo.Suppressed("workspace-1", "user-1", "src-1")
 				require.NoError(t, err)
-				return isSuppressed != nil
+				return metadata != nil
 			}
 			return false
 		}, 3*time.Second, 10*time.Millisecond, "full export should be done in 10 seconds")
@@ -146,9 +146,9 @@ func TestExportLoop(t *testing.T) {
 				require.NoError(t, err)
 				err = repo.Restore(file)
 				require.NoError(t, err)
-				isSuppressed, err := repo.Suppressed("workspace-1", "user-1", "src-1")
+				metadata, err := repo.Suppressed("workspace-1", "user-1", "src-1")
 				require.NoError(t, err)
-				return isSuppressed != nil
+				return metadata != nil
 			} else {
 				fmt.Println("err: ", err)
 			}
