@@ -38,7 +38,7 @@ func (rt *Handle) Setup(
 	log logger.Logger,
 	config *config.Config,
 	backendConfig backendconfig.BackendConfig,
-	jobsDB jobsdb.MultiTenantJobsDB,
+	jobsDB jobsdb.JobsDB,
 	errorDB jobsdb.JobsDB,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
@@ -354,12 +354,11 @@ func (rt *Handle) statusInsertLoop() {
 }
 
 func (rt *Handle) backendConfigSubscriber() {
-	workspaceSet := map[string]struct{}{}
 	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for configEvent := range ch {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
 		configData := configEvent.Data.(map[string]backendconfig.ConfigT)
-		for workspaceID, wConfig := range configData {
+		for _, wConfig := range configData {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				for i := range source.Destinations {
@@ -370,10 +369,6 @@ func (rt *Handle) backendConfigSubscriber() {
 								Destination: *destination,
 								Sources:     []backendconfig.SourceT{},
 							}
-						}
-						if _, ok := workspaceSet[workspaceID]; !ok {
-							workspaceSet[workspaceID] = struct{}{}
-							rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destType, workspaceID, 0)
 						}
 						destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, *source)
 

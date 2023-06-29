@@ -53,7 +53,7 @@ import (
 // After sending the jobs to the server, we verify that the destination has received the jobs in the
 // correct order. We also verify that the server has not sent any job twice.
 func TestEventOrderGuarantee(t *testing.T) {
-	eventOrderTest := func(useFairPickup bool) func(t *testing.T) {
+	eventOrderTest := func() func(t *testing.T) {
 		return func(t *testing.T) {
 			// necessary until we move away from a singleton config
 			config.Reset()
@@ -132,7 +132,6 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("JobsDB.backup.enabled", false)
 			config.Set("Router.jobIterator.maxQueries", 100)
 			config.Set("Router.jobIterator.discardedPercentageTolerance", 0)
-			config.Set("JobsDB.fairPickup", useFairPickup)
 
 			// generatorLoop
 			config.Set("Router.jobQueryBatchSize", 500)
@@ -278,8 +277,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 		}
 	}
 
-	t.Run("fair pickup", eventOrderTest(true))
-	t.Run("legacy pickup", eventOrderTest(false))
+	t.Run("pickup", eventOrderTest())
 }
 
 // Using a struct to keep main_test package clean and

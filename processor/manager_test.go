@@ -38,7 +38,6 @@ import (
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -200,12 +199,7 @@ func TestProcessorManager(t *testing.T) {
 
 	clearDb := false
 	ctx := context.Background()
-	mtStat := &multitenant.Stats{
-		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
-		},
-	}
+
 	processor := New(
 		ctx,
 		&clearDb,
@@ -215,7 +209,6 @@ func TestProcessorManager(t *testing.T) {
 		readErrDB,
 		writeErrDB,
 		eschDB,
-		mtStat,
 		&reporting.NOOP{},
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),

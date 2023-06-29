@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
@@ -41,7 +42,7 @@ import (
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -83,7 +84,6 @@ type Handle struct {
 	dedup                     dedup.Dedup
 	reporting                 types.Reporting
 	reportingEnabled          bool
-	multitenantI              multitenant.MultiTenantI
 	backgroundWait            func() error
 	backgroundCancel          context.CancelFunc
 	transformerFeatures       json.RawMessage
@@ -324,7 +324,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
 	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB jobsdb.JobsDB, reporting types.Reporting,
-	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
+	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
 	proc.reporting = reporting
@@ -337,7 +337,6 @@ func (proc *Handle) Setup(
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig
 
-	proc.multitenantI = multiTenantStat
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
@@ -453,6 +452,10 @@ func (proc *Handle) Setup(
 
 // Start starts this processor's main loops.
 func (proc *Handle) Start(ctx context.Context) error {
+	metric.Instance.Reset()
+	if err := proc.countPendingEvents(); err != nil {
+		return fmt.Errorf("counting pending events: %w", err)
+	}
 	g, ctx := errgroup.WithContext(ctx)
 	var err error
 	proc.logger.Infof("Starting processor in isolation mode: %s", proc.config.isolationMode)
@@ -554,6 +557,7 @@ func (proc *Handle) Shutdown() {
 	if proc.dedup != nil {
 		proc.dedup.Close()
 	}
+	metric.Instance.Reset()
 }
 
 func (proc *Handle) loadConfig() {
@@ -1907,10 +1911,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		}
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
-		proc.multitenantI.ReportProcLoopAddStats(
-			getJobCountsByWorkspaceDestType(batchDestJobs),
-			"batch_rt",
-		)
+		proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
 		proc.stats.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.stats.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
 		proc.stats.statDBWriteBatchPayloadBytes.Observe(
@@ -1956,7 +1957,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				panic(err)
 			}
 			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-			proc.multitenantI.ReportProcLoopAddStats(getJobCountsByWorkspaceDestType(destJobs), "rt")
+			proc.IncreasePendingEvents("rt", getJobCountsByWorkspaceDestType(destJobs))
 			proc.stats.statDestNumOutputEvents.Count(len(destJobs))
 			proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
 			proc.stats.statDBWriteRouterPayloadBytes.Observe(
@@ -2804,4 +2805,41 @@ func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.Job
 	}
 	proc.statsFactory.NewTaggedStat("pipeline_delay_min_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(lastJobDelay)
 	proc.statsFactory.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(firstJobDelay)
+}
+
+func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]map[string]int) {
+	for workspace := range stats {
+		for destType := range stats[workspace] {
+			rmetrics.IncreasePendingEvents(tablePrefix, workspace, destType, float64(stats[workspace][destType]))
+		}
+	}
+}
+
+func (proc *Handle) countPendingEvents() error {
+	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "brt": proc.batchRouterDB}
+	var jobdDBQueryRequestTimeout time.Duration
+	var jobdDBMaxRetries int
+	config.RegisterDurationConfigVariable(600, &jobdDBQueryRequestTimeout, false, time.Second, []string{"JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
+	config.RegisterIntConfigVariable(2, &jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Processor." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+
+	for tablePrefix, db := range dbs {
+		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
+			jobdDBQueryRequestTimeout,
+			jobdDBMaxRetries,
+			func(ctx context.Context) (map[string]map[string]int, error) {
+				return db.GetPileUpCounts(ctx)
+			}, func(attempt int) {
+				proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
+				stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "pileup"}).Count(1)
+			})
+		if err != nil {
+			return err
+		}
+		for workspace := range pileUpStatMap {
+			for destType, jobCount := range pileUpStatMap[workspace] {
+				rmetrics.IncreasePendingEvents(tablePrefix, workspace, destType, float64(jobCount))
+			}
+		}
+	}
+	return nil
 }

@@ -14,8 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app/cluster"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -83,10 +81,6 @@ func TestDynamicCluster(t *testing.T) {
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
 
-	mtStat := &multitenant.Stats{
-		RouterDBs: map[string]jobsdb.MultiTenantJobsDB{},
-	}
-
 	ctrl := gomock.NewController(t)
 	backendConfig := NewMockconfigLifecycle(ctrl)
 	dc := cluster.Dynamic{
@@ -102,8 +96,7 @@ func TestDynamicCluster(t *testing.T) {
 		Router:          router,
 		SchemaForwarder: schemaForwarder,
 
-		MultiTenantStat: mtStat,
-		BackendConfig:   backendConfig,
+		BackendConfig: backendConfig,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -35,14 +35,12 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
-	mock_tenantstats "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
@@ -174,7 +172,6 @@ func TestDynamicClusterManager(t *testing.T) {
 	initJobsDB()
 
 	mockCtrl := gomock.NewController(t)
-	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
@@ -195,10 +192,6 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	clearDb := false
 	ctx := context.Background()
-	mtStat := multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-		"rt":       &jobsdb.MultiTenantHandleT{HandleT: rtDB},
-		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
-	})
 
 	schemaForwarder := mock_jobs_forwarder.NewMockForwarder(gomock.NewController(t))
 
@@ -211,7 +204,6 @@ func TestDynamicClusterManager(t *testing.T) {
 		readErrDB,
 		writeErrDB,
 		eschDB,
-		mockMTI,
 		&reporting.NOOP{},
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),
@@ -224,20 +216,17 @@ func TestDynamicClusterManager(t *testing.T) {
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 	mockTransformer.EXPECT().Setup().Times(1)
 
-	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
 		Logger:           logger.NOP,
 		Reporting:        &reporting.NOOP{},
-		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
-		RouterDB:         tDb,
+		RouterDB:         rtDB,
 		ProcErrorDB:      readErrDB,
 		TransientSources: transientsource.NewEmptyService(),
 		RsourcesService:  mockRsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        &reporting.NOOP{},
-		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         brtDB,
 		ProcErrorDB:      readErrDB,
@@ -259,8 +248,6 @@ func TestDynamicClusterManager(t *testing.T) {
 
 		return ch
 	}).AnyTimes()
-	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	schemaForwarder.EXPECT().Start().Return(nil).AnyTimes()
 	schemaForwarder.EXPECT().Stop().AnyTimes()
 
@@ -273,10 +260,9 @@ func TestDynamicClusterManager(t *testing.T) {
 		EventSchemaDB:   eschDB,
 		SchemaForwarder: schemaForwarder,
 
-		Processor:       processor,
-		Router:          router,
-		Provider:        provider,
-		MultiTenantStat: mtStat,
+		Processor: processor,
+		Router:    router,
+		Provider:  provider,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
