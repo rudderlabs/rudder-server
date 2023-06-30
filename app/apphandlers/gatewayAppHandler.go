@@ -92,9 +92,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	errDB := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(&a.config.gatewayDSLimit), // TODO: use better config
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", false)),
-		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer errDB.Close()
 
