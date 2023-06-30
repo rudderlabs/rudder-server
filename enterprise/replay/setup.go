@@ -9,7 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -28,18 +27,10 @@ func initFileManager(log logger.Logger) (filemanager.FileManager, string, error)
 	}
 
 	provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-
-	configFromEnv := filemanagerutil.ProviderConfigOpts(context.TODO(), provider, config.Default)
 	uploader, err := filemanager.New(&filemanager.Settings{
 		Provider: provider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         provider,
-			Config:           configFromEnv,
-			UseRudderStorage: false,
-			// TODO: need to figure out how to bring workspaceID here
-			// when we support IAM role here.
-		}),
-		Conf: config.Default,
+		Config:   filemanager.GetProviderConfigFromEnv(filemanagerutil.ProviderConfigOpts(context.TODO(), provider, config.Default)),
+		Conf:     config.Default,
 	})
 	if err != nil {
 		log.Errorf("[[ Replay ]] Error creating file manager: %s", err.Error())
