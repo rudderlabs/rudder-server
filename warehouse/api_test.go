@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 )
 
 var _ = Describe("warehouse_api", func() {
@@ -14,7 +14,7 @@ var _ = Describe("warehouse_api", func() {
 		ctx := context.Background()
 
 		It("Should fallback to backup credentials when fields missing(as of now backup only supported for s3)", func() {
-			fm := &filemanager.SettingsT{
+			fm := &filemanager.Settings{
 				Provider: "AZURE_BLOB",
 				Config:   map[string]interface{}{"containerName": "containerName1", "prefix": "prefix1", "accountKey": "accountKey1"},
 			}

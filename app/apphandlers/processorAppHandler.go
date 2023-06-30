@@ -36,7 +36,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -185,21 +184,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 
-	var tenantRouterDB jobsdb.MultiTenantJobsDB
-	var multitenantStats multitenant.MultiTenantI
-	if misc.UseFairPickup() {
-		tenantRouterDB = &jobsdb.MultiTenantHandleT{HandleT: routerDB}
-		multitenantStats = multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       tenantRouterDB,
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
-		})
-	} else {
-		tenantRouterDB = &jobsdb.MultiTenantLegacy{HandleT: routerDB}
-		multitenantStats = multitenant.WithLegacyPickupJobs(multitenant.NewStats(map[string]jobsdb.MultiTenantJobsDB{
-			"rt":       tenantRouterDB,
-			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: batchRouterDB},
-		}))
-	}
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
 		client, err := pulsar.NewClient(config.Default)
@@ -227,7 +211,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		batchRouterDB,
 		errDB,
 		schemaDB,
-		multitenantStats,
 		reportingI,
 		transientSources,
 		fileUploaderProvider,
@@ -243,9 +226,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	rtFactory := &router.Factory{
 		Logger:           logger.NewLogger().Child("router"),
 		Reporting:        reportingI,
-		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
-		RouterDB:         tenantRouterDB,
+		RouterDB:         routerDB,
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
@@ -255,7 +237,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
-		Multitenant:      multitenantStats,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         batchRouterDB,
 		ProcErrorDB:      errDB,
@@ -277,7 +258,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		EventSchemaDB:    schemaDB,
 		Processor:        p,
 		Router:           rt,
-		MultiTenantStat:  multitenantStats,
 	}
 
 	g.Go(func() error {

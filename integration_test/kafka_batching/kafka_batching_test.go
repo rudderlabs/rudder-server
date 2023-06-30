@@ -307,6 +307,7 @@ func TestKafkaBatching(t *testing.T) {
 	requireHistogramEqual(t, metrics["router_kafka_batch_size"], histogram{
 		name: "router_kafka_batch_size", count: 1, sum: 10,
 		buckets: []*promClient.Bucket{
+			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.002)},
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.005)},
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.01)},
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(0.025)},
@@ -318,16 +319,11 @@ func TestKafkaBatching(t *testing.T) {
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(2.5)},
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(5.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(10.0)}, // 10 is the number of messages we sent
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(30.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(60.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(300.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(600.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(1800.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(10800.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(36000.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(86400.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(259200.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(604800.0)},
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(1209600.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(math.Inf(1))},
 		},
 		labels: expectedDefaultAttrs,

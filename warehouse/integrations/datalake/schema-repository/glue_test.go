@@ -16,8 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/glue"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -169,8 +169,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 				_ = f.Close()
 			})
 
-			fmFactory := filemanager.FileManagerFactoryT{}
-			fm, err := fmFactory.New(&filemanager.SettingsT{
+			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: warehouseutils.S3,
 				Config: map[string]any{
 					"bucketName":      credentials.Bucket,

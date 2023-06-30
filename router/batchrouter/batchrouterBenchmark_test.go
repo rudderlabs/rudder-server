@@ -1,26 +1,26 @@
 package batchrouter
 
 import (
+	"context"
 	jsonstd "encoding/json"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
 )
 
 func Benchmark_GetStorageDateFormat(b *testing.B) {
 	config.Reset()
 
-	mockCtrl := gomock.NewController(b)
-	mockFileManager := mocksFileManager.NewMockFileManager(mockCtrl)
 	destination := &Connection{
 		Source:      backendconfig.SourceT{},
 		Destination: backendconfig.DestinationT{},
@@ -33,10 +33,7 @@ func Benchmark_GetStorageDateFormat(b *testing.B) {
 			destination.Destination.ID = randomString()
 			destination.Source.ID = randomString()
 
-			mockFileManager.EXPECT().GetConfiguredPrefix().AnyTimes()
-			mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-
-			_, _ = dfProvider.GetFormat(logger.NOP, mockFileManager, destination, folderName)
+			_, _ = dfProvider.GetFormat(logger.NOP, mockFileManager{}, destination, folderName)
 		}
 	})
 }
@@ -95,4 +92,42 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 		})
 		_ = g.Wait()
 	}
+}
+
+type mockFileManager struct{}
+
+func (m mockFileManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) filemanager.ListSession {
+	return m
+}
+
+func (mockFileManager) Next() (fileObjects []*filemanager.FileInfo, err error) {
+	return nil, nil
+}
+
+func (mockFileManager) Upload(context.Context, *os.File, ...string) (filemanager.UploadedFile, error) {
+	return filemanager.UploadedFile{}, nil
+}
+
+func (mockFileManager) Download(context.Context, *os.File, string) error {
+	return nil
+}
+
+func (mockFileManager) Delete(ctx context.Context, keys []string) error {
+	return nil
+}
+
+func (mockFileManager) Prefix() string {
+	return ""
+}
+
+func (mockFileManager) SetTimeout(timeout time.Duration) {
+	// no-op
+}
+
+func (mockFileManager) GetObjectNameFromLocation(string) (string, error) {
+	return "", nil
+}
+
+func (mockFileManager) GetDownloadKeyFromFileLocation(string) string {
+	return ""
 }

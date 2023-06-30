@@ -30,6 +30,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -39,7 +40,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
@@ -50,6 +50,7 @@ import (
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -65,6 +66,8 @@ var (
 	application                         app.App
 	webPort                             int
 	dbHandle                            *sql.DB
+	wrappedDBHandle                     *sqlquerywrapper.DB
+	dbHanndleTimeout                    time.Duration
 	notifier                            pgnotifier.PGNotifier
 	tenantManager                       *multitenant.Manager
 	controlPlaneClient                  *controlplane.Client
@@ -207,6 +210,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
+	config.RegisterDurationConfigVariable(5, &dbHanndleTimeout, true, time.Minute, []string{"Warehouse.dbHanndleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 }
@@ -870,10 +874,10 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 	wh.dbHandle = dbHandle
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
-	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
-	wh.stagingRepo = repo.NewStagingFiles(dbHandle)
-	wh.uploadRepo = repo.NewUploads(dbHandle)
-	wh.whSchemaRepo = repo.NewWHSchemas(dbHandle)
+	wh.warehouseDBHandle = NewWarehouseDB(wrappedDBHandle)
+	wh.stagingRepo = repo.NewStagingFiles(wrappedDBHandle)
+	wh.uploadRepo = repo.NewUploads(wrappedDBHandle)
+	wh.whSchemaRepo = repo.NewWHSchemas(wrappedDBHandle)
 
 	wh.notifier = notifier
 	wh.destType = whType
@@ -897,11 +901,11 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             pkgLogger.Child("loadfile"),
 			Notifier:           &notifier,
-			StageRepo:          repo.NewStagingFiles(dbHandle),
-			LoadRepo:           repo.NewLoadFiles(dbHandle),
+			StageRepo:          repo.NewStagingFiles(wrappedDBHandle),
+			LoadRepo:           repo.NewLoadFiles(wrappedDBHandle),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		recovery: service.NewRecovery(whType, repo.NewUploads(dbHandle)),
+		recovery: service.NewRecovery(whType, repo.NewUploads(wrappedDBHandle)),
 	}
 	loadfiles.WithConfig(wh.uploadJobFactory.loadFile, config.Default)
 
@@ -995,7 +999,7 @@ func minimalConfigSubscriber(ctx context.Context) {
 						wh := &HandleT{
 							dbHandle:     dbHandle,
 							destType:     destination.DestinationDefinition.Name,
-							whSchemaRepo: repo.NewWHSchemas(dbHandle),
+							whSchemaRepo: repo.NewWHSchemas(wrappedDBHandle),
 							conf:         config.Default,
 						}
 						namespace := wh.getNamespace(ctx, source, destination)
@@ -1185,7 +1189,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// check whether there are any pending staging files or uploads for the given source id
 	// get pending staging files
-	pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForSource(ctx, sourceID)
+	pendingStagingFileCount, err = repo.NewStagingFiles(wrappedDBHandle).CountPendingForSource(ctx, sourceID)
 	if err != nil {
 		err := fmt.Errorf("error getting pending staging file count : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
@@ -1285,7 +1289,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 func getFilteredCount(ctx context.Context, filters ...repo.FilterBy) (int64, error) {
 	pkgLogger.Debugf("fetching filtered count")
-	return repo.NewUploads(dbHandle).Count(ctx, filters...)
+	return repo.NewUploads(wrappedDBHandle).Count(ctx, filters...)
 }
 
 func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {
@@ -1310,7 +1314,7 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 		args = append(args, filter.Value)
 	}
 
-	err = dbHandle.QueryRow(query, args...).Scan(&uploadCount)
+	err = wrappedDBHandle.QueryRow(query, args...).Scan(&uploadCount)
 	if err != nil && err != sql.ErrNoRows {
 		err = fmt.Errorf("query: %s failed with Error : %w", query, err)
 		return
@@ -1436,7 +1440,7 @@ func fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	schemaRepo := repo.NewWHSchemas(dbHandle)
+	schemaRepo := repo.NewWHSchemas(wrappedDBHandle)
 	tables, err := schemaRepo.GetTablesForConnection(ctx, connectionsTableRequest.Connections)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error fetching tables: %v", err)
@@ -1556,7 +1560,7 @@ func startWebHandler(ctx context.Context) error {
 			srvMux.Handle("/v1/process", (&api.WarehouseAPI{
 				Logger:      pkgLogger,
 				Stats:       stats.Default,
-				Repo:        repo.NewStagingFiles(dbHandle),
+				Repo:        repo.NewStagingFiles(wrappedDBHandle),
 				Multitenant: tenantManager,
 			}).Handler())
 
@@ -1639,6 +1643,12 @@ func setupDB(ctx context.Context, connInfo string) error {
 	if err = dbHandle.PingContext(ctx); err != nil {
 		return fmt.Errorf("could not ping WH db: %w", err)
 	}
+
+	wrappedDBHandle = sqlquerywrapper.New(
+		dbHandle,
+		sqlquerywrapper.WithLogger(pkgLogger.Child("dbHandle")),
+		sqlquerywrapper.WithQueryTimeout(dbHanndleTimeout),
+	)
 
 	return setupTables(dbHandle)
 }
@@ -1778,7 +1788,7 @@ func Start(ctx context.Context, app app.App) error {
 			DB:          dbHandle,
 			Stats:       stats.Default,
 			Logger:      pkgLogger.Child("archiver"),
-			FileManager: filemanager.DefaultFileManagerFactory,
+			FileManager: filemanager.New,
 			Multitenant: tenantManager,
 		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {

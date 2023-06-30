@@ -17,9 +17,12 @@ type SingularEventWithReceivedAt struct {
 	ReceivedAt    time.Time
 }
 
-// GatewayBatchRequestT batch request structure
-type GatewayBatchRequestT struct {
-	Batch []SingularEventT `json:"batch"`
+// GatewayBatchRequest batch request structure
+type GatewayBatchRequest struct {
+	Batch      []SingularEventT `json:"batch"`
+	WriteKey   string           `json:"writeKey"`
+	RequestIP  string           `json:"requestIP"`
+	ReceivedAt time.Time        `json:"receivedAt"`
 }
 
 // UserSuppression is interface to access Suppress user feature

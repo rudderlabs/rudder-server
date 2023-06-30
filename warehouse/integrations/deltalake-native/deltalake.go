@@ -222,6 +222,7 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 			logfield.Schema, d.Namespace,
 		),
 		sqlmiddleware.WithSlowQueryThreshold(d.SlowQueryThreshold),
+		sqlmiddleware.WithQueryTimeout(d.ConnectTimeout),
 		sqlmiddleware.WithSecretsRegex(map[string]string{
 			"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
 			"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
@@ -561,7 +562,7 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 
 		err  error
 		auth string
-		row  *sql.Row
+		row  *sqlmiddleware.Row
 	)
 
 	d.Logger.Infow("started loading",
@@ -971,7 +972,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 
 	var (
 		partitionQuery string
-		row            *sql.Row
+		row            *sqlmiddleware.Row
 	)
 
 	userColNames, firstValProps := getColumnProperties(usersSchemaInWarehouse)

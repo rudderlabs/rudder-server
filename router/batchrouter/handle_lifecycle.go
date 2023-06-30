@@ -19,6 +19,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -30,8 +31,6 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -46,7 +45,6 @@ func (brt *Handle) Setup(
 	backendConfig backendconfig.BackendConfig,
 	jobsDB, errorDB jobsdb.JobsDB,
 	reporting types.Reporting,
-	multitenantStat multitenant.MultiTenantI,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
 	debugger destinationdebugger.DestinationDebugger,
@@ -65,10 +63,9 @@ func (brt *Handle) Setup(
 	}
 	brt.jobsDB = jobsDB
 	brt.errorDB = errorDB
-	brt.multitenantI = multitenantStat
 	brt.reporting = reporting
 	brt.backendConfig = backendConfig
-	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
+	brt.fileManagerFactory = filemanager.New
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
 	if brt.warehouseClient == nil {
@@ -261,7 +258,7 @@ func (brt *Handle) crashRecover() {
 				brt.jobsDB.JournalDeleteEntry(entry.OpID)
 				continue
 			}
-			downloader, err := brt.fileManagerFactory.New(&filemanager.SettingsT{
+			downloader, err := brt.fileManagerFactory(&filemanager.Settings{
 				Provider: object.Provider,
 				Config:   object.Config,
 			})

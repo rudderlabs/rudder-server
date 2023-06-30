@@ -995,6 +995,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmiddl
 			logfield.Schema, sf.Namespace,
 		),
 		sqlmiddleware.WithSlowQueryThreshold(sf.SlowQueryThreshold),
+		sqlmiddleware.WithQueryTimeout(sf.ConnectTimeout),
 		sqlmiddleware.WithSecretsRegex(map[string]string{
 			"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
 			"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
@@ -1119,7 +1120,7 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 			// TODO: Handle case for missing anonymous_id, user_id columns
 			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s.%q LIMIT %d OFFSET %d`, toSelectFields, schemaIdentifier, tableName, batchSize, offset)
 			sf.Logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
-			var rows *sql.Rows
+			var rows *sqlmiddleware.Rows
 			rows, err = sf.DB.QueryContext(ctx, sqlStatement)
 			if err != nil {
 				return

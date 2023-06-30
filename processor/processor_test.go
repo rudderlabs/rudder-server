@@ -33,7 +33,6 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
-	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
@@ -58,7 +57,6 @@ type testContext struct {
 	mockEventSchemasDB    *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReporting
 	MockDedup             *mockDedup.MockDedup
-	MockMultitenantHandle *mocksMultitenant.MockMultiTenantI
 	MockRsourcesService   *rsources.MockJobService
 }
 
@@ -86,7 +84,6 @@ func (c *testContext) Setup() {
 		})
 	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
-	c.MockMultitenantHandle = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 }
 
 func (c *testContext) Finish() {
@@ -579,7 +576,6 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 			processor := prepareHandle(NewHandle(mockTransformer))
 
 			Setup(processor, c, false, false)
-			processor.multitenantI = c.MockMultitenantHandle
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -634,7 +630,7 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -648,7 +644,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -667,7 +663,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.MockReportingI, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -864,8 +860,6 @@ var _ = Describe("Processor", Ordered, func() {
 						assertStoreJob(job, i, "value-enabled-destination-a")
 					}
 				})
-
-			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1070,8 +1064,6 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
-
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
@@ -1173,8 +1165,6 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(nil).Times(1)
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(3)).Times(1)
 
-			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
-
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
@@ -1188,7 +1178,6 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
 			processor.dedup = c.MockDedup
-			processor.multitenantI = c.MockMultitenantHandle
 			handlePendingGatewayJobs(processor)
 		})
 	})
@@ -1302,8 +1291,6 @@ var _ = Describe("Processor", Ordered, func() {
 					Events:       []transformer.TransformerResponseT{},
 					FailedEvents: transformerResponses,
 				})
-
-			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1441,8 +1428,6 @@ var _ = Describe("Processor", Ordered, func() {
 					FailedEvents: transformerResponses,
 				})
 
-			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
-
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
@@ -1523,8 +1508,6 @@ var _ = Describe("Processor", Ordered, func() {
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any(), gomock.Any()).Times(0)
 
-			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
-
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
@@ -1556,7 +1539,7 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			processor.config.featuresRetryMaxAttempts = 0
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 
 			setMainLoopTimeout(processor, 1*time.Second)
 
@@ -1567,6 +1550,8 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockProcErrorsDB.EXPECT().FailExecuting().Times(1)
 			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).AnyTimes()
+			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).AnyTimes()
 
 			var wg sync.WaitGroup
 			wg.Add(1)
@@ -1598,7 +1583,7 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			processor.config.featuresRetryMaxAttempts = 0
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, c.MockReportingI, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 			defer processor.Shutdown()
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
@@ -1608,6 +1593,8 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
 			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).AnyTimes()
+			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).AnyTimes()
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Times(0)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
@@ -1653,7 +1640,6 @@ var _ = Describe("Processor", Ordered, func() {
 			processor := prepareHandle(NewHandle(mockTransformer))
 
 			Setup(processor, c, false, false)
-			processor.multitenantI = c.MockMultitenantHandle
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -3027,7 +3013,6 @@ func assertDestinationTransform(
 
 func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
 	Setup(processor, c, false, false)
-	processor.multitenantI = c.MockMultitenantHandle
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -3045,7 +3030,6 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		c.mockProcErrorsDB,
 		c.mockEventSchemasDB,
 		c.MockReportingI,
-		c.MockMultitenantHandle,
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),
 		c.MockRsourcesService,

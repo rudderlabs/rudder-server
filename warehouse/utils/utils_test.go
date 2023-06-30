@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -22,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -1164,7 +1164,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 	inputs := []struct {
 		destination    *backendconfig.DestinationT
 		service        string
-		expectedConfig *awsutils.SessionConfig
+		expectedConfig *awsutil.SessionConfig
 	}{
 		{
 			destination: &backendconfig.DestinationT{
@@ -1173,7 +1173,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 				},
 			},
 			service: "s3",
-			expectedConfig: &awsutils.SessionConfig{
+			expectedConfig: &awsutil.SessionConfig{
 				AccessKeyID: rudderAccessKeyID,
 				AccessKey:   rudderAccessKey,
 				Service:     "s3",
@@ -1187,7 +1187,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 				},
 			},
 			service: "glue",
-			expectedConfig: &awsutils.SessionConfig{
+			expectedConfig: &awsutil.SessionConfig{
 				AccessKeyID: someAccessKeyID,
 				AccessKey:   someAccessKey,
 				Service:     "glue",
@@ -1201,7 +1201,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 				WorkspaceID: someWorkspaceID,
 			},
 			service: "redshift",
-			expectedConfig: &awsutils.SessionConfig{
+			expectedConfig: &awsutil.SessionConfig{
 				RoleBasedAuth: true,
 				IAMRoleARN:    someIAMRoleARN,
 				ExternalID:    someWorkspaceID,
@@ -1214,7 +1214,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 				WorkspaceID: someWorkspaceID,
 			},
 			service: "redshift",
-			expectedConfig: &awsutils.SessionConfig{
+			expectedConfig: &awsutil.SessionConfig{
 				AccessKeyID: rudderAccessKeyID,
 				AccessKey:   rudderAccessKey,
 				Service:     "redshift",

@@ -12,8 +12,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -267,7 +267,7 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 	var (
 		tempPath     string
 		err          error
-		uploadObject filemanager.UploadOutput
+		uploadObject filemanager.UploadedFile
 	)
 
 	if tempPath, err = CreateTempLoadFile(os.destination); err != nil {
@@ -333,7 +333,7 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 		loadFileType    = warehouseutils.GetLoadFileType(destinationType)
 
 		tempPath     string
-		uploadOutput filemanager.UploadOutput
+		uploadOutput filemanager.UploadedFile
 		err          error
 	)
 
@@ -413,10 +413,10 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	return filePath, nil
 }
 
-func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath string) (filemanager.UploadOutput, error) {
+func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath string) (filemanager.UploadedFile, error) {
 	var (
 		err        error
-		output     filemanager.UploadOutput
+		output     filemanager.UploadedFile
 		fm         filemanager.FileManager
 		uploadFile *os.File
 
@@ -425,11 +425,11 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 	)
 
 	if fm, err = createFileManager(dest); err != nil {
-		return filemanager.UploadOutput{}, err
+		return filemanager.UploadedFile{}, err
 	}
 
 	if uploadFile, err = os.Open(filePath); err != nil {
-		return filemanager.UploadOutput{}, fmt.Errorf("opening file: %w", err)
+		return filemanager.UploadedFile{}, fmt.Errorf("opening file: %w", err)
 	}
 
 	// cleanup
@@ -437,7 +437,7 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 	defer func() { _ = uploadFile.Close() }()
 
 	if output, err = fm.Upload(ctx, uploadFile, prefixes...); err != nil {
-		return filemanager.UploadOutput{}, fmt.Errorf("uploading file: %w", err)
+		return filemanager.UploadedFile{}, fmt.Errorf("uploading file: %w", err)
 	}
 
 	return output, nil
@@ -496,7 +496,7 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 		provider = warehouseutils.ObjectStorageType(destType, conf, misc.IsConfiguredToUseRudderObjectStorage(conf))
 	)
 
-	fileManager, err := fileManagerFactory.New(&filemanager.SettingsT{
+	fileManager, err := fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,

@@ -33,7 +33,6 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
-	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerUtils "github.com/rudderlabs/rudder-server/router/utils"
@@ -46,14 +45,8 @@ import (
 )
 
 const (
-	writeKeyEnabled = "enabled-write-key"
-	// writeKeyDisabled          = "disabled-write-key"
-	// writeKeyInvalid           = "invalid-write-key"
-	// writeKeyEmpty             = ""
-	sourceIDEnabled = "enabled-source"
-	// sourceIDDisabled          = "disabled-source"
-	// testRemoteAddressWithPort = "test.com:80"
-	// testRemoteAddress         = "test.com"
+	writeKeyEnabled           = "enabled-write-key"
+	sourceIDEnabled           = "enabled-source"
 	gaDestinationDefinitionID = "gaid1"
 	gaDestinationID           = "did1"
 	nonexistentDestinationID  = "non-existent-destination-id"
@@ -114,7 +107,7 @@ type testContext struct {
 	dbReadBatchSize int
 
 	mockCtrl          *gomock.Controller
-	mockRouterJobsDB  *mocksJobsDB.MockMultiTenantJobsDB
+	mockRouterJobsDB  *mocksJobsDB.MockJobsDB
 	mockProcErrorsDB  *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
 }
@@ -123,7 +116,7 @@ type testContext struct {
 func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockRouterJobsDB = mocksJobsDB.NewMockMultiTenantJobsDB(c.mockCtrl)
+	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 
@@ -338,12 +331,9 @@ var _ = Describe("router", func() {
 
 	Context("initialization", func() {
 		It("should initialize and recover after crash", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
+				Reporting: &reporting.NOOP{},
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 		})
@@ -355,14 +345,11 @@ var _ = Describe("router", func() {
 		})
 
 		It("should send failed and unprocessed jobs to ga destination", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
+				Reporting: &reporting.NOOP{},
+				netHandle: mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
@@ -405,15 +392,15 @@ var _ = Describe("router", func() {
 			}
 
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			workspaceCountOut := workspaceCount
-
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{customVal["GA"]}, ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}}, PayloadSizeLimit: payloadLimit, JobsLimit: workspaceCount[workspaceID]}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: allJobs}, nil).After(callGetRouterPickupJobs)
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
+				jobsdb.GetQueryParamsT{
+					CustomValFilters: []string{customVal["GA"]},
+					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
+					PayloadSizeLimit: payloadLimit,
+					JobsLimit:        10000,
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -423,9 +410,6 @@ var _ = Describe("router", func() {
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
 				&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			done := make(chan struct{})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -447,13 +431,9 @@ var _ = Describe("router", func() {
 		})
 
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
+				Reporting: &reporting.NOOP{},
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
@@ -481,19 +461,13 @@ var _ = Describe("router", func() {
 				},
 			}
 
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList)
-			workspaceCountOut := workspaceCount
-
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
-
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount, jobsdb.GetQueryParamsT{
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
-				JobsLimit:        workspaceCount[workspaceID],
-			}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: unprocessedJobsList}, nil).After(callGetRouterPickupJobs)
+				JobsLimit:        10000,
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -501,7 +475,6 @@ var _ = Describe("router", func() {
 				}).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerUtils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
@@ -517,7 +490,6 @@ var _ = Describe("router", func() {
 					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
 					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
 				})
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), false, true).AnyTimes()
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -539,18 +511,14 @@ var _ = Describe("router", func() {
 
 		It("aborts events that are older than a configurable duration", func() {
 			routerUtils.JobRetention = time.Duration(24) * time.Hour
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
+				Reporting: &reporting.NOOP{},
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
-			router.MultitenantI = mockMultitenantHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
@@ -572,24 +540,16 @@ var _ = Describe("router", func() {
 				},
 			}
 
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList)
-			workspaceCountOut := workspaceCount
-
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
-
 			payloadLimit := router.reloadableConfig.payloadLimit
-			c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount, jobsdb.GetQueryParamsT{
+			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
-				JobsLimit:        workspaceCount[workspaceID],
-			}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: unprocessedJobsList}, nil).After(callGetRouterPickupJobs)
+				JobsLimit:        10000,
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
 			var routerAborted bool
 			var procErrorStored bool
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any()).Times(1)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
 
@@ -629,18 +589,14 @@ var _ = Describe("router", func() {
 
 		It("aborts events that have reached max retries", func() {
 			routerUtils.JobRetention = time.Duration(24) * time.Hour
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
+				Reporting: &reporting.NOOP{},
 			}
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.netHandle = mockNetHandle
-			router.MultitenantI = mockMultitenantHandle
 
 			firstAttemptedAt := time.Now().Add(-router.reloadableConfig.retryTimeWindow)
 			jobs := []*jobsdb.JobT{
@@ -669,22 +625,16 @@ var _ = Describe("router", func() {
 				},
 			}
 
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(jobs)
-			workspaceCountOut := workspaceCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
 			payloadLimit := router.reloadableConfig.payloadLimit
-			c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount, jobsdb.GetQueryParamsT{
+			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
-				JobsLimit:        workspaceCount[workspaceID],
-			}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: jobs}, nil).After(callGetRouterPickupJobs)
+				JobsLimit:        10000,
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
 
 			var routerAborted bool
 			var procErrorStored bool
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any()).Times(1)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
 
@@ -726,15 +676,12 @@ var _ = Describe("router", func() {
 		})
 
 		It("can fail jobs if time is more than router timeout", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
+				Reporting: &reporting.NOOP{},
+				netHandle: mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.transformer = mockTransformer
@@ -818,20 +765,15 @@ var _ = Describe("router", func() {
 			}
 
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			workspaceCountOut := workspaceCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount,
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
-					JobsLimit:        len(allJobs),
-				}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: allJobs}, nil).After(
-				callGetRouterPickupJobs)
+					JobsLimit:        10000,
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -843,7 +785,6 @@ var _ = Describe("router", func() {
 				}).Return(nil).After(callAllJobs)
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0)
 			done := make(chan struct{})
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
@@ -859,15 +800,12 @@ var _ = Describe("router", func() {
 		})
 
 		It("fails jobs if destination is not found in config", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
+				Reporting: &reporting.NOOP{},
+				netHandle: mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.transformer = mockTransformer
@@ -894,28 +832,19 @@ var _ = Describe("router", func() {
 					Parameters: []byte(parameters),
 				},
 			}
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList)
-			workspaceCountOut := workspaceCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().
-				GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(workspaceCountOut).Times(1)
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(
 				gomock.Any(),
-				workspaceCount,
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
-					JobsLimit:        len(unprocessedJobsList),
+					JobsLimit:        10000,
 				},
-				10,
 				nil).
 				Times(1).
-				Return(&jobsdb.GetAllJobsResult{Jobs: unprocessedJobsList}, nil).
-				After(callGetRouterPickupJobs)
+				Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -923,14 +852,6 @@ var _ = Describe("router", func() {
 				}).Return(nil).After(callAllJobs)
 
 			done := make(chan struct{})
-			mockMultitenantHandle.EXPECT().
-				CalculateSuccessFailureCounts(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).
-				AnyTimes()
 			c.mockRouterJobsDB.EXPECT().
 				WithUpdateSafeTx(
 					gomock.Any(),
@@ -970,15 +891,12 @@ var _ = Describe("router", func() {
 		})
 
 		It("can batch jobs together", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
+				Reporting: &reporting.NOOP{},
+				netHandle: mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 
@@ -1038,22 +956,16 @@ var _ = Describe("router", func() {
 				},
 			}
 
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			workspaceCountOut := workspaceCount
 			jobsList := append(toRetryJobsList, unprocessedJobsList...)
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
-
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount, jobsdb.GetQueryParamsT{
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
-				JobsLimit:        len(jobsList),
-			}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: jobsList}, nil).After(callGetRouterPickupJobs)
+				JobsLimit:        10000,
+			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobsList}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -1096,9 +1008,7 @@ var _ = Describe("router", func() {
 					})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
@@ -1119,15 +1029,12 @@ var _ = Describe("router", func() {
 		})
 
 		It("aborts jobs if batching fails for few of the jobs", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
+				Reporting: &reporting.NOOP{},
+				netHandle: mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 
@@ -1186,20 +1093,16 @@ var _ = Describe("router", func() {
 				},
 			}
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			workspaceCountOut := workspaceCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(workspaceCountOut)
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount,
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
-					JobsLimit:        len(allJobs),
-				}, 10, nil).Return(&jobsdb.GetAllJobsResult{Jobs: toRetryJobsList}, nil).Times(
-				1).Return(&jobsdb.GetAllJobsResult{Jobs: allJobs}, nil).After(callGetRouterPickupJobs)
+					JobsLimit:        10000,
+				}, nil).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: toRetryJobsList}}, nil).Times(
+				1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -1253,9 +1156,7 @@ var _ = Describe("router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1298,15 +1199,12 @@ var _ = Describe("router", func() {
 			[5] should be sent
 		*/
 		It("can transform jobs at router", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
+				Reporting: &reporting.NOOP{},
+				netHandle: mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			router.transformer = mockTransformer
@@ -1390,20 +1288,15 @@ var _ = Describe("router", func() {
 			}
 
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			workspaceCountOut := workspaceCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount,
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
-					JobsLimit:        len(allJobs),
-				}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: allJobs}, nil).After(
-				callGetRouterPickupJobs)
+					JobsLimit:        10000,
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -1493,9 +1386,7 @@ var _ = Describe("router", func() {
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
@@ -1521,14 +1412,11 @@ var _ = Describe("router", func() {
 				[3] should be dropped
 		*/
 		It("marks all jobs of a user failed if a preceding job fails due to transformation failure", func() {
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router := &Handle{
-				Reporting:    &reporting.NOOP{},
-				MultitenantI: mockMultitenantHandle,
-				netHandle:    mockNetHandle,
+				Reporting: &reporting.NOOP{},
+				netHandle: mockNetHandle,
 			}
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -1587,19 +1475,15 @@ var _ = Describe("router", func() {
 			}
 
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
-			workspaceCount := map[string]int{}
-			workspaceCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
-			workspaceCountOut := workspaceCount
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(customVal["GA"], gomock.Any(), gomock.Any(), gomock.Any()).Return(workspaceCountOut).Times(1)
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(gomock.Any(), workspaceCount,
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
-					JobsLimit:        len(allJobs),
-				}, 10, nil).Times(1).Return(&jobsdb.GetAllJobsResult{Jobs: allJobs}, nil).After(callGetRouterPickupJobs)
+					JobsLimit:        10000,
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
@@ -1658,9 +1542,7 @@ var _ = Describe("router", func() {
 					}
 				})
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&routerUtils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
-			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())

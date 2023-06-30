@@ -10,10 +10,10 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -102,7 +102,7 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 
 	getFullPrefix := func(manager filemanager.FileManager, prefix string) (fullPrefix string) {
 		fullPrefix = prefix
-		configPrefix := manager.GetConfiguredPrefix()
+		configPrefix := manager.Prefix()
 
 		if configPrefix != "" {
 			if configPrefix[len(configPrefix)-1:] == "/" {
@@ -114,7 +114,7 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 		return
 	}
 	fullPrefix := getFullPrefix(manager, prefix)
-	fileObjects, err := manager.ListFilesWithPrefix(context.TODO(), "", fullPrefix, 5)
+	fileObjects, err := manager.ListFilesWithPrefix(context.TODO(), "", fullPrefix, 5).Next()
 	if err != nil {
 		log.Errorf("[BRT]: Failed to fetch fileObjects with connIdentifier: %s, prefix: %s, Err: %v", connIdentifier, fullPrefix, err)
 		// Returning the earlier default as we might not able to fetch the list.

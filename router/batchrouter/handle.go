@@ -23,6 +23,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -35,8 +36,6 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -57,10 +56,9 @@ type Handle struct {
 	netHandle          *http.Client
 	jobsDB             jobsdb.JobsDB
 	errorDB            jobsdb.JobsDB
-	multitenantI       multitenant.MultiTenantI
 	reporting          types.Reporting
 	backendConfig      backendconfig.BackendConfig
-	fileManagerFactory filemanager.FileManagerFactory
+	fileManagerFactory filemanager.Factory
 	transientSources   transientsource.Service
 	rsourcesService    rsources.JobService
 	warehouseClient    *client.Warehouse
@@ -367,7 +365,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.Connection.Destination.Config)
-	uploader, err := brt.fileManagerFactory.New(&filemanager.SettingsT{
+	uploader, err := brt.fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,
@@ -584,7 +582,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
-	jobStateCounts := make(map[string]map[string]int)
+	jobStateCounts := make(map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 		var firstAttemptedAt time.Time
@@ -650,10 +648,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			WorkspaceId:   job.WorkspaceId,
 		}
 		statusList = append(statusList, &status)
-		if jobStateCounts[jobState] == nil {
-			jobStateCounts[jobState] = make(map[string]int)
-		}
-		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
+		jobStateCounts[jobState] = jobStateCounts[jobState] + 1
 
 		// REPORTING - START
 		if brt.reporting != nil && brt.reportingEnabled {

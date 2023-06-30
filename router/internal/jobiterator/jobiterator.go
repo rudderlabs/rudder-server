@@ -26,15 +26,6 @@ func WithDiscardedPercentageTolerance(discardedPercentageTolerance int) Iterator
 	}
 }
 
-// WithLegacyOrderGroupKeyFn if enabled, sets the order group key function to assume a legacy jobs pickup algorithm.
-func WithLegacyOrderGroupKey(legacy bool) IteratorOptFn {
-	return func(ji *Iterator) {
-		if legacy {
-			ji.orderGroupKeyFn = func(job *jobsdb.JobT) string { return job.LastJobStatus.JobState }
-		}
-	}
-}
-
 // Iterator is a job iterator with support for fetching more than the original set of jobs requested,
 // in case some of these jobs get discarded, according to the configured discarded percentage tolerance.
 type Iterator struct {
@@ -42,7 +33,7 @@ type Iterator struct {
 	maxQueries                   int
 	discardedPercentageTolerance int
 	orderGroupKeyFn              func(*jobsdb.JobT) string
-	getJobsFn                    func(context.Context, map[string]int, jobsdb.GetQueryParamsT, jobsdb.MoreToken) (*jobsdb.GetAllJobsResult, error)
+	getJobsFn                    func(context.Context, jobsdb.GetQueryParamsT, jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error)
 	state                        struct {
 		// running iterator state
 		jobs        []*jobsdb.JobT
@@ -56,7 +47,7 @@ type Iterator struct {
 
 		// for the next query
 		discarded         int
-		pickupMap         map[string]int
+		jobsLimit         int
 		continuationToken jobsdb.MoreToken
 	}
 }
@@ -74,19 +65,18 @@ type IteratorStats struct {
 }
 
 // New returns a new job iterator
-//   - pickupMap: a map of workspaceID to number of jobs to be fetched from that workspace
 //   - params: jobsDB query parameters
 //   - getJobsFn: the function to fetch jobs from jobsDB
 //   - opts: optional iterator options
-func New(pickupMap map[string]int, params jobsdb.GetQueryParamsT, getJobsFn func(context.Context, map[string]int, jobsdb.GetQueryParamsT, jobsdb.MoreToken) (*jobsdb.GetAllJobsResult, error), opts ...IteratorOptFn) *Iterator {
+func New(params jobsdb.GetQueryParamsT, getJobsFn func(context.Context, jobsdb.GetQueryParamsT, jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error), opts ...IteratorOptFn) *Iterator {
 	ji := &Iterator{
 		params:                       params,
 		maxQueries:                   100,
 		discardedPercentageTolerance: 0,
 		getJobsFn:                    getJobsFn,
-		orderGroupKeyFn:              func(job *jobsdb.JobT) string { return job.WorkspaceId },
+		orderGroupKeyFn:              func(job *jobsdb.JobT) string { return job.LastJobStatus.JobState },
 	}
-	ji.state.pickupMap = pickupMap
+	ji.state.jobsLimit = params.JobsLimit
 	ji.state.previousJob = map[string]*jobsdb.JobT{}
 	for _, opt := range opts {
 		opt(ji)
@@ -107,7 +97,7 @@ func (ji *Iterator) HasNext() bool {
 		ji.state.closed = true
 		return false
 	}
-	if len(ji.state.pickupMap) == 0 { // nothing left to fetch
+	if ji.state.jobsLimit == 0 { // nothing left to fetch
 		ji.state.closed = true
 		return false
 	}
@@ -122,22 +112,18 @@ func (ji *Iterator) HasNext() bool {
 
 	// try to fetch some more jobs
 	var err error
-	var jobsLimit int
-	for _, limit := range ji.state.pickupMap {
-		if limit > 0 {
-			jobsLimit += limit
-		}
-	}
-	ji.params.JobsLimit = jobsLimit
+	ji.params.JobsLimit = ji.state.jobsLimit
 
 	ji.state.stats.QueryCount++
-	allJobsResult, err := ji.getJobsFn(context.Background(), ji.state.pickupMap, ji.params, ji.state.continuationToken)
+	allJobsResult, err := ji.getJobsFn(context.Background(), ji.params, ji.state.continuationToken)
 	if err != nil {
 		panic(err)
 	}
 	ji.state.jobs = allJobsResult.Jobs
 	ji.state.continuationToken = allJobsResult.More
-	ji.state.stats.TotalJobs += len(ji.state.jobs)
+	jobCount := len(ji.state.jobs)
+	ji.state.jobsLimit -= jobCount
+	ji.state.stats.TotalJobs += jobCount
 	if !ji.state.stats.LimitsReached {
 		ji.state.stats.LimitsReached = allJobsResult.LimitsReached
 	}
@@ -145,7 +131,7 @@ func (ji *Iterator) HasNext() bool {
 	// reset state
 	ji.state.idx = 0
 	ji.state.discarded = 0
-	ji.state.pickupMap = map[string]int{}
+	ji.state.jobsLimit = 0
 
 	if len(ji.state.jobs) == 0 { // no more jobs, iterator has reached the end
 		ji.state.closed = true
@@ -178,7 +164,7 @@ func (ji *Iterator) Next() *jobsdb.JobT {
 func (ji *Iterator) Discard(job *jobsdb.JobT) {
 	ji.state.stats.DiscardedJobs++
 	ji.state.discarded++
-	ji.state.pickupMap[job.WorkspaceId]++
+	ji.state.jobsLimit++
 }
 
 func (ji *Iterator) Stats() IteratorStats {
