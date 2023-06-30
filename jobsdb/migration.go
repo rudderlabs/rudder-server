@@ -167,7 +167,7 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	if l != nil {
 		defer func() { lockChan <- l }()
 		if err == nil {
-			if err = jd.refreshDSRangeList(l); err != nil {
+			if err = jd.doRefreshDSRangeList(l); err != nil {
 				return fmt.Errorf("failed to refresh ds range list: %w", err)
 			}
 		}
@@ -461,7 +461,7 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 
 func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) (string, error) { // Within the node
 	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
-	dList, err := jd.refreshDSList(l)
+	dList, err := jd.doRefreshDSList(l)
 	if err != nil {
 		return "", fmt.Errorf("refreshDSList: %w", err)
 	}
