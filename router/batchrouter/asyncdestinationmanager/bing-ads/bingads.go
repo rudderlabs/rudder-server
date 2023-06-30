@@ -126,6 +126,14 @@ func populateZipFile(fileSize *int, line string, destName string, eventCount *in
 	}
 }
 
+/*
+Depending on add, remove and update action we are creating 3 different zip files using this function
+It is also returning the list of succeed and failed events lists.
+The following map indicates the index->actionType mapping
+0-> Add
+1-> Remove
+2-> Update
+*/
 func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]string, [3][]int64, [3][]int64, error) {
 	failedJobIds := [3][]int64{}
 	successJobIds := [3][]int64{}
@@ -148,7 +156,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]str
 		csvFilePaths[index], csvWriter[index], zipFilePaths[index] = csvZipFileCreator(audienceId, actionType)
 	}
 	scanner := bufio.NewScanner(textFile)
-	fileSize := []int{0, 0, 0}
+	fileSize := []int{0, 0, 0} //
 	for scanner.Scan() {
 		line := scanner.Text()
 		var data Data
@@ -355,7 +363,7 @@ type secretStruct struct {
 }
 
 /*
-This function create zip file from the text file created by the batchrouter
+This function create at most 3 zip files from the text file created by the batchrouter
 It takes the text file path as input and returns the zip file path
 The maximum size of the zip file is 100MB, if the size of the zip file exceeds 100MB then the job is marked as failed
 */
@@ -416,9 +424,9 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 			// To do add an alert here
 		}
 		if errorDuringUpload != nil {
-			b.logger.Error("Error in uploading the bulk file: %v", err)
+			b.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
 			failedJobs = append(append(failedJobs, successJobIDs[index]...), failedJobIds[index]...)
-			concatError += fmt.Sprintf("%v:Error in uploading the bulk file: %v", index, err) + ","
+			concatError += fmt.Sprintf("%v:error in uploading the bulk file: %v", index, errorDuringUpload) + ","
 			continue
 		}
 
@@ -429,6 +437,7 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 		concatImpId += uploadBulkFileResp.RequestId + ","
 		failedJobs = append(failedJobs, failedJobIds[index]...)
+		successJobs = append(successJobs, successJobIDs[index]...)
 	}
 
 	var parameters common.ImportParameters
@@ -437,10 +446,11 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	if err != nil {
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
+	concatError = `{"error":"` + concatError + `"}`
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     asyncDestStruct.ImportingJobIDs,
+		ImportingJobIDs:     successJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
-		FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
+		FailedReason:        concatError,
 		ImportingParameters: stdjson.RawMessage(importParameters),
 		ImportingCount:      len(successJobs),
 		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
