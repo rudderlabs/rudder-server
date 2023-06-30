@@ -244,7 +244,6 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) (common.PollSta
 		statusCode = 200
 	} else if uploadStatusResp.PercentComplete == int64(allSuccessPercentage) && uploadStatusResp.RequestStatus == "CompletedWithErrors" {
 		filePaths, err := extractUploadStatusFilePath(uploadStatusResp.ResultFileUrl, requestId)
-
 		if err != nil {
 			resp = common.PollStatusResponse{
 				Success:        false,
@@ -366,7 +365,6 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 }
 
 func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
-
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
 	importList := UploadStatsInput.ImportingList
@@ -375,7 +373,6 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 		initialEventList = append(initialEventList, job.JobID)
 	}
 	var eventStatsResponse common.GetUploadStatsResponse
-	//filePaths := strings.Split(UploadStatsInput.OutputFilePath, ",")
 	filePaths := common.GenerateArrayOfStrings(UploadStatsInput.OutputFilePath)
 	for _, filePath := range filePaths {
 		response, _ := b.GetUploadStatsOfSingleImport(filePath)

@@ -146,6 +146,9 @@ func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {
 	}
 }
 
+/*
+returns the merged elements of two similar type maps in a single map
+*/
 func MergeMaps(maps ...map[string]string) map[string]string {
 	result := make(map[string]string)
 
@@ -158,6 +161,10 @@ func MergeMaps(maps ...map[string]string) map[string]string {
 	return result
 }
 
+/*
+Generates array of strings for comma separated string
+Also removes "" elements from the array of strings if any.
+*/
 func GenerateArrayOfStrings(value string) []string {
 	result := []string{}
 	requestIdsArray := strings.Split(value, ",")

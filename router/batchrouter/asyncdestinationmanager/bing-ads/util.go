@@ -17,12 +17,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/oauth2"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/oauth2"
 )
 
 // authentication related utils
@@ -78,15 +79,22 @@ func (ts *tokenSource) Token() (*oauth2.Token, error) {
 
 // Upload related utils
 
+/*
+returns client in format "jobId<<>>hashedEmail"
+*/
 func generateClientID(user User, metadata Metadata) string {
 	jobId := metadata.JobID
 	return strconv.FormatInt(jobId, 10) + "<<>>" + user.HashedEmail
 }
 
-func csvZipFileCreator(audienceId string, actionType string) (string, *csv.Writer, string) {
+/*
+returns the csv file and zip file path, along with the csv writer that
+contains the template of the uploadable file.
+*/
+func csvZipFileCreator(audienceId, actionType string) (string, *csv.Writer, string) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, _ := misc.CreateTMPDIR()
 	path := path.Join(tmpDirPath, localTmpDirName, uuid.String())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
@@ -95,13 +103,13 @@ func csvZipFileCreator(audienceId string, actionType string) (string, *csv.Write
 		return "", nil, ""
 	}
 	csvWriter := csv.NewWriter(csvFile)
-	err = csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
-	err = csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
-	err = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""})
+	_ = csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
+	_ = csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
+	_ = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""})
 	return csvFilePath, csvWriter, zipFilePath
 }
 
-func convertCsvToZip(csvFilePath string, zipFilePath string, eventCount int) error {
+func convertCsvToZip(csvFilePath, zipFilePath string, eventCount int) error {
 	csvFile, err := os.Open(csvFilePath)
 	zipFile, err := os.Create(zipFilePath)
 	if eventCount == 0 {
@@ -140,7 +148,11 @@ func convertCsvToZip(csvFilePath string, zipFilePath string, eventCount int) err
 	return nil
 }
 
-func populateZipFile(fileSize *int, line string, destName string, eventCount *int, data Data, csvWriter *csv.Writer, audienceId string, successJobIds *[]int64, failedJobIds *[]int64) {
+/*
+Populates the csv file only if it is within the file size limit 100mb and row number limit 4000000
+Otherwise event is appended to the failedJobs and will be retried.
+*/
+func populateZipFile(fileSize *int, line, destName string, eventCount *int, data Data, csvWriter *csv.Writer, audienceId string, successJobIds, failedJobIds *[]int64) {
 	*fileSize = *fileSize + len([]byte(line))
 	if int64(*fileSize) < common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB) && *eventCount < 4000000 {
 		*eventCount += 1
@@ -179,7 +191,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]str
 	var csvFilePaths [3]string
 	var zipFilePaths [3]string
 	var eventCount [3]int
-	var actionTypes = [...]string{"Add", "Remove", "Update"}
+	actionTypes := [...]string{"Add", "Remove", "Update"}
 	for index, actionType := range actionTypes {
 		csvFilePaths[index], csvWriter[index], zipFilePaths[index] = csvZipFileCreator(audienceId, actionType)
 	}
@@ -219,6 +231,9 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]str
 
 // Poll Related Utils
 
+/*
+Provides file paths containing error information as a comma separated string
+*/
 func extractUploadStatusFilePath(ResultFileUrl, requestId string) ([]string, error) {
 	// the final status file needs to be downloaded
 	fileAccessUrl := ResultFileUrl
@@ -254,6 +269,8 @@ func extractUploadStatusFilePath(ResultFileUrl, requestId string) ([]string, err
 	return filePaths, err
 }
 
+// unzips the file downloaded from bingads, which contains error informations
+// of a particular event.
 func Unzip(zipFile, targetDir string) ([]string, error) {
 	var filePaths []string
 
@@ -297,15 +314,17 @@ func Unzip(zipFile, targetDir string) ([]string, error) {
 	return filePaths, nil
 }
 
-// ReadPollResults reads the CSV file and returns the records
-// In the below format (only adding relevant keys)
-//
-//	[][]string{
-//		{"Client Id", "Error", "Type"},
-//		{"1<<>>client1", "error1", "Customer List Error"},
-//		{"1<<>>client2", "error1", "Customer List Item Error"},
-//		{"1<<>>client2", "error2", "Customer List Item Error"},
-//	}
+/*
+ReadPollResults reads the CSV file and returns the records
+In the below format (only adding relevant keys)
+
+	[][]string{
+		{"Client Id", "Error", "Type"},
+		{"1<<>>client1", "error1", "Customer List Error"},
+		{"1<<>>client2", "error1", "Customer List Item Error"},
+		{"1<<>>client2", "error2", "Customer List Item Error"},
+	}
+*/
 func ReadPollResults(filePath string) [][]string {
 	// Open the CSV file
 	file, err := os.Open(filePath)
@@ -336,18 +355,20 @@ func ReadPollResults(filePath string) [][]string {
 	return records
 }
 
-// This function processes the CSV records and returns the JobIDs and the corresponding error messages
-// In the below format:
-//
-//	map[string]map[string]struct{}{
-//		"1": {
-//			"error1": {},
-//		},
-//		"2": {
-//			"error1": {},
-//			"error2": {},
-//		},
-//	}
+/*
+This function processes the CSV records and returns the JobIDs and the corresponding error messages
+In the below format:
+
+	map[string]map[string]struct{}{
+		"1": {
+			"error1": {},
+		},
+		"2": {
+			"error1": {},
+			"error2": {},
+		},
+	}
+*/
 func ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
 	clientIDIndex := -1
 	errorIndex := -1
