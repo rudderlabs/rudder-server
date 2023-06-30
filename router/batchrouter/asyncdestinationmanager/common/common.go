@@ -2,6 +2,7 @@ package common
 
 import (
 	stdjson "encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -143,4 +144,34 @@ func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {
 	} else {
 		return config.GetInt64("BatchRouter."+key, defaultValue)
 	}
+}
+
+/*
+returns the merged elements of two similar type maps in a single map
+*/
+func MergeMaps(maps ...map[string]string) map[string]string {
+	result := make(map[string]string)
+
+	for _, m := range maps {
+		for key, value := range m {
+			result[key] = value
+		}
+	}
+
+	return result
+}
+
+/*
+Generates array of strings for comma separated string
+Also removes "" elements from the array of strings if any.
+*/
+func GenerateArrayOfStrings(value string) []string {
+	result := []string{}
+	requestIdsArray := strings.Split(value, ",")
+	for _, requestId := range requestIdsArray {
+		if requestId != "" {
+			result = append(result, requestId)
+		}
+	}
+	return result
 }
