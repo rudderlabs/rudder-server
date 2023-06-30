@@ -155,7 +155,25 @@ var _ = Describe("Bing ads", func() {
 				AbortCount:          0,
 				ImportingParameters: stdjson.RawMessage(importParameters),
 			}
+			dir, err := os.MkdirTemp("/tmp", "rudder-server")
+			if err != nil {
+				fmt.Printf("Failed to create temporary directory: %v\n", err)
+				return
+			}
+
+			subDir := filepath.Join(dir, "rudder-async-destination-logs")
+			err = os.Mkdir(subDir, 0o755)
+			if err != nil {
+				fmt.Printf("Failed to create the directory 'something': %v\n", err)
+				return
+			}
+			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
 			received := bulkUploader.Upload(&destination, &asyncDestination)
+			err = os.RemoveAll(dir)
+			if err != nil {
+				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+				return
+			}
 			Expect(received).To(Equal(expected))
 		})
 
@@ -190,7 +208,26 @@ var _ = Describe("Bing ads", func() {
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
 			}
+
+			dir, err := os.MkdirTemp("/tmp", "rudder-server")
+			if err != nil {
+				fmt.Printf("Failed to create temporary directory: %v\n", err)
+				return
+			}
+
+			subDir := filepath.Join(dir, "rudder-async-destination-logs")
+			err = os.Mkdir(subDir, 0o755)
+			if err != nil {
+				fmt.Printf("Failed to create the directory 'something': %v\n", err)
+				return
+			}
+			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
 			received := bulkUploader.Upload(&destination, &asyncDestination)
+			err = os.RemoveAll(dir)
+			if err != nil {
+				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+				return
+			}
 			Expect(received).To(Equal(expected))
 		})
 
