@@ -70,7 +70,7 @@ require (
 	github.com/rs/cors v1.9.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/compose-test v0.1.2
-	github.com/rudderlabs/rudder-go-kit v0.15.1
+	github.com/rudderlabs/rudder-go-kit v0.15.2-0.20230630105058-6cf22d056001
 	github.com/rudderlabs/sql-tunnels v0.1.3
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.40
