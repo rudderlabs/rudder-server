@@ -319,7 +319,7 @@ func TestKafkaBatching(t *testing.T) {
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(2.5)},
 			{CumulativeCount: ptr(uint64(0)), UpperBound: ptr(5.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(10.0)}, // 10 is the number of messages we sent
-			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(30.0)}, // 10 is the number of messages we sent
+			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(30.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(60.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(300.0)},
 			{CumulativeCount: ptr(uint64(1)), UpperBound: ptr(600.0)},
