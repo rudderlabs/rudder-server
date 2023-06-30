@@ -2,6 +2,7 @@ package common
 
 import (
 	stdjson "encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -154,5 +155,16 @@ func MergeMaps(maps ...map[string]string) map[string]string {
 		}
 	}
 
+	return result
+}
+
+func GenerateArrayOfStrings(value string) []string {
+	result := []string{}
+	requestIdsArray := strings.Split(value, ",")
+	for _, requestId := range requestIdsArray {
+		if requestId != "" {
+			result = append(result, requestId)
+		}
+	}
 	return result
 }
