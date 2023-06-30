@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -30,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -294,7 +294,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	if spec.verifyDestinations {
 		t.Logf("Verifying the destinations")
 		verify := func(prefix, workspaceID, destType string, count int) {
-			fm, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: "MINIO",
 				Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 					Provider: "MINIO",
@@ -308,7 +308,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 				}),
 			})
 			require.NoError(t, err, "it should be able to create a file manager")
-			fileObjects, err := fm.ListFilesWithPrefix(context.Background(), "", prefix+"/"+workspaceID+"/", int64(count))
+			fileObjects, err := fm.ListFilesWithPrefix(context.Background(), "", prefix+"/"+workspaceID+"/", int64(count)).Next()
 			require.NoError(t, err, "it should be able to list files")
 			var eventCount int
 			for _, fileObject := range fileObjects {

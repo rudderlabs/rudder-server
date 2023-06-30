@@ -19,10 +19,10 @@ import (
 
 	"github.com/ory/dockertest/v3"
 
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
@@ -147,7 +147,7 @@ func TestArchiver(t *testing.T) {
 				DB:          pgResource.DB,
 				Stats:       mockStats,
 				Logger:      logger.NOP,
-				FileManager: filemanager.DefaultFileManagerFactory,
+				FileManager: filemanager.New,
 				Multitenant: &multitenant.Manager{
 					DegradedWorkspaceIDs: tc.degradedWorkspaceIDs,
 				},

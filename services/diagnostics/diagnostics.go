@@ -26,7 +26,6 @@ const (
 	RouterSuccess          = "router_success"
 	RouterFailed           = "router_failed"
 	RouterDestination      = "router_destination"
-	RouterAttemptNum       = "router_attempt_num"
 	RouterCompletedTime    = "router_average_job_time"
 	BatchRouterEvents      = "batch_router_events"
 	BatchRouterSuccess     = "batch_router_success"

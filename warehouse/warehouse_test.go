@@ -8,6 +8,8 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -150,11 +152,11 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 				destType:     tc.destType,
 				stats:        store,
 				dbHandle:     pgResource.DB,
-				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
+				whSchemaRepo: repo.NewWHSchemas(sqlquerywrapper.New(pgResource.DB)),
 			}
 			tenantManager = &multitenant.Manager{}
 
-			jobStats, err := repo.NewUploads(pgResource.DB, repo.WithNow(func() time.Time {
+			jobStats, err := repo.NewUploads(sqlmiddleware.New(pgResource.DB), repo.WithNow(func() time.Time {
 				// nowSQL := "'2022-12-06 22:00:00'"
 				return time.Date(2022, 12, 6, 22, 0, 0, 0, time.UTC)
 			})).UploadJobsStats(ctx, tc.destType, repo.ProcessOptions{
@@ -343,7 +345,7 @@ func Test_GetNamespace(t *testing.T) {
 				destType:     tc.destType,
 				stats:        store,
 				dbHandle:     pgResource.DB,
-				whSchemaRepo: repo.NewWHSchemas(pgResource.DB),
+				whSchemaRepo: repo.NewWHSchemas(sqlquerywrapper.New(pgResource.DB)),
 				conf:         conf,
 			}
 			if tc.setConfig {

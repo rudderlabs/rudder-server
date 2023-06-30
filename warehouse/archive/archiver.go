@@ -16,9 +16,10 @@ import (
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -66,7 +67,7 @@ type Archiver struct {
 	DB          *sql.DB
 	Stats       stats.Stats
 	Logger      logger.Logger
-	FileManager filemanager.FileManagerFactory
+	FileManager filemanager.Factory
 	Multitenant *multitenant.Manager
 }
 
@@ -90,9 +91,9 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	)
 	defer misc.RemoveFilePaths(path)
 
-	fManager, err := a.FileManager.New(&filemanager.SettingsT{
+	fManager, err := a.FileManager(&filemanager.Settings{
 		Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
+		Config:   filemanagerutil.GetProviderConfigForBackupsFromEnv(ctx, config.Default),
 	})
 	if err != nil {
 		err = fmt.Errorf("error in creating a file manager for:%s. Error: %w", config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
@@ -135,7 +136,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 }
 
 func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string) error {
-	fManager, err := a.FileManager.New(&filemanager.SettingsT{
+	fManager, err := a.FileManager(&filemanager.Settings{
 		Provider: warehouseutils.S3,
 		Config:   misc.GetRudderObjectStorageConfig(""),
 	})
@@ -144,7 +145,7 @@ func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string)
 		return err
 	}
 
-	err = fManager.DeleteObjects(ctx, locations)
+	err = fManager.Delete(ctx, locations)
 	if err != nil {
 		a.Logger.Errorf("Error in deleting objects in Rudder S3: %v", err)
 	}

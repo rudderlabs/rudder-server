@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -148,9 +148,9 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
 		fm, err := st.fileuploader.GetFileManager(workspace)
 		require.NoError(t, err)
-		var file []*filemanager.FileObject
+		var file []*filemanager.FileInfo
 		require.Eventually(t, func() bool {
-			file, err = fm.ListFilesWithPrefix(context.Background(), "", "", 5)
+			file, err = fm.ListFilesWithPrefix(context.Background(), "", "", 5).Next()
 			if !storageSettings[workspace].Preferences.ProcErrors {
 				return true
 			}

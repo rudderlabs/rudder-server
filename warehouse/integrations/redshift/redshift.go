@@ -20,9 +20,9 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -379,7 +379,7 @@ func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (str
 		panic(err)
 	}
 	defer func() { _ = file.Close() }()
-	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	uploader, err := filemanager.New(&filemanager.Settings{
 		Provider: warehouseutils.S3,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         warehouseutils.S3,

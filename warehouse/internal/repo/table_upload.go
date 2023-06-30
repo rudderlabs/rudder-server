@@ -11,6 +11,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -44,7 +45,7 @@ type TableUploadSetOptions struct {
 	TotalEvents  *int64
 }
 
-func NewTableUploads(db *sql.DB, opts ...Opt) *TableUploads {
+func NewTableUploads(db *sqlmiddleware.DB, opts ...Opt) *TableUploads {
 	r := &TableUploads{
 		db:  db,
 		now: timeutil.Now,
@@ -57,7 +58,7 @@ func NewTableUploads(db *sql.DB, opts ...Opt) *TableUploads {
 
 func (repo *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames []string) error {
 	var (
-		txn  *sql.Tx
+		txn  *sqlmiddleware.Tx
 		stmt *sql.Stmt
 		err  error
 	)
@@ -137,7 +138,7 @@ func (repo *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadI
 	return entries[0], err
 }
 
-func (*TableUploads) parseRows(rows *sql.Rows) ([]model.TableUpload, error) {
+func (*TableUploads) parseRows(rows *sqlmiddleware.Rows) ([]model.TableUpload, error) {
 	var tableUploads []model.TableUpload
 
 	defer func() { _ = rows.Close() }()

@@ -6,8 +6,9 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 )
 
 type StorageSettings struct {
@@ -76,7 +77,7 @@ func (p *provider) GetFileManager(workspaceID string) (filemanager.FileManager, 
 	if err != nil {
 		return nil, err
 	}
-	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	return filemanager.New(&filemanager.Settings{
 		Provider: settings.Bucket.Type,
 		Config:   settings.Bucket.Config,
 	})
@@ -142,7 +143,7 @@ type defaultProvider struct{}
 
 func (*defaultProvider) GetFileManager(_ string) (filemanager.FileManager, error) {
 	defaultConfig := getDefaultBucket(context.Background(), config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
-	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	return filemanager.New(&filemanager.Settings{
 		Provider: defaultConfig.Type,
 		Config:   defaultConfig.Config,
 	})
@@ -161,7 +162,7 @@ func (*defaultProvider) GetStoragePreferences(_ string) (backendconfig.StoragePr
 func getDefaultBucket(ctx context.Context, provider string) backendconfig.StorageBucket {
 	return backendconfig.StorageBucket{
 		Type:   provider,
-		Config: filemanager.GetProviderConfigFromEnv(ctx, provider),
+		Config: filemanager.GetProviderConfigFromEnv(filemanagerutil.ProviderConfigOpts(ctx, provider, config.Default)),
 	}
 }
 

@@ -52,7 +52,7 @@ func (brt *Handle) collectMetrics(ctx context.Context) {
 	}
 }
 
-func sendDestStatusStats(batchDestination *Connection, jobStateCounts map[string]map[string]int, destType string, isWarehouse bool) {
+func sendDestStatusStats(batchDestination *Connection, jobStateCounts map[string]int, destType string, isWarehouse bool) {
 	tags := map[string]string{
 		"module":        "batch_router",
 		"destType":      destType,
@@ -61,14 +61,9 @@ func sendDestStatusStats(batchDestination *Connection, jobStateCounts map[string
 		"sourceId":      misc.GetTagName(batchDestination.Source.ID, batchDestination.Source.Name),
 	}
 
-	for jobState, countByAttemptMap := range jobStateCounts {
+	for jobState, count := range jobStateCounts {
 		tags["job_state"] = jobState
-		for attempt, count := range countByAttemptMap {
-			tags["attempt_number"] = attempt
-			if count > 0 {
-				stats.Default.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
-			}
-		}
+		stats.Default.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
 	}
 }
 

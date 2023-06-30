@@ -16,8 +16,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -143,8 +143,7 @@ func TestDownloader(t *testing.T) {
 				conf[k] = v
 			}
 
-			fmFactory := filemanager.FileManagerFactoryT{}
-			fm, err := fmFactory.New(&filemanager.SettingsT{
+			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: provider,
 				Config:   conf,
 			})

@@ -522,9 +522,6 @@ func (w *worker) processDestinationJobs() {
 				}
 				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
-				if respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode {
-					w.rt.MultitenantI.UpdateWorkspaceLatencyMap(w.rt.destType, workspaceID, float64(timeTaken)/float64(time.Second))
-				}
 
 				// Using response status code and body to get response code rudder router logic is based on.
 				// Works when transformer proxy in disabled
@@ -816,7 +813,6 @@ func (w *worker) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destinat
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
 		"destId":         destination.ID,
-		"attempt_number": strconv.Itoa(status.AttemptNum),
 		"workspaceId":    status.WorkspaceId,
 		// To indicate if the failure should be alerted for router-aborted-count
 		"alert": strconv.FormatBool(alert),
@@ -830,13 +826,12 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 	destinationTag := misc.GetTagName(destination.ID, destination.Name)
 	if status.JobState == jobsdb.Succeeded.State {
 		eventsDeliveredStat := stats.Default.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-			"module":         "router",
-			"destType":       w.rt.destType,
-			"destID":         destination.ID,
-			"destination":    destinationTag,
-			"attempt_number": strconv.Itoa(status.AttemptNum),
-			"workspaceId":    status.WorkspaceId,
-			"source":         destinationJobMetadata.SourceID,
+			"module":      "router",
+			"destType":    w.rt.destType,
+			"destID":      destination.ID,
+			"destination": destinationTag,
+			"workspaceId": status.WorkspaceId,
+			"source":      destinationJobMetadata.SourceID,
 		})
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
@@ -844,12 +839,11 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 			if err == nil {
 				eventsDeliveryTimeStat := stats.Default.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
-						"module":         "router",
-						"destType":       w.rt.destType,
-						"destID":         destination.ID,
-						"destination":    destinationTag,
-						"attempt_number": strconv.Itoa(status.AttemptNum),
-						"workspaceId":    status.WorkspaceId,
+						"module":      "router",
+						"destType":    w.rt.destType,
+						"destID":      destination.ID,
+						"destination": destinationTag,
+						"workspaceId": status.WorkspaceId,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))

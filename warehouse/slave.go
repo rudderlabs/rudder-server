@@ -18,8 +18,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -112,7 +112,7 @@ func (job *Payload) sendDownloadStagingFileFailedStat() {
 // Get fileManager
 func (job *Payload) getFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
 	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, useRudderStorage)
-	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:                    storageProvider,
@@ -293,16 +293,16 @@ func (jobRun *JobRun) uploadLoadFilesToObjectStorage(ctx context.Context) ([]loa
 	}
 }
 
-func (jobRun *JobRun) uploadLoadFileToObjectStorage(ctx context.Context, uploader filemanager.FileManager, uploadFile encoding.LoadFileWriter, tableName string) (filemanager.UploadOutput, error) {
+func (jobRun *JobRun) uploadLoadFileToObjectStorage(ctx context.Context, uploader filemanager.FileManager, uploadFile encoding.LoadFileWriter, tableName string) (filemanager.UploadedFile, error) {
 	job := jobRun.job
 	file, err := os.Open(uploadFile.GetLoadFile().Name()) // opens file in read mode
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.GetLoadFile().Name())
-		return filemanager.UploadOutput{}, err
+		return filemanager.UploadedFile{}, err
 	}
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
-	var uploadLocation filemanager.UploadOutput
+	var uploadLocation filemanager.UploadedFile
 	if slices.Contains(warehouseutils.TimeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(ctx, file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
@@ -653,6 +653,9 @@ func runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (AsyncJobRu
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
+	whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+		destType, warehouse.Destination.ID,
+	))
 	err = whManager.Setup(ctx, warehouse, whasyncjob)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
