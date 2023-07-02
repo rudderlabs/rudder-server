@@ -14,68 +14,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/oauth2"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
-
-// authentication related utils
-
-func (ts *tokenSource) generateToken() (*secretStruct, error) {
-	refreshTokenParams := oauth.RefreshTokenParams{
-		WorkspaceId: ts.workspaceID,
-		DestDefName: ts.destinationName,
-		AccountId:   ts.accountID,
-	}
-	statusCode, authResponse := ts.oauthClient.FetchToken(&refreshTokenParams)
-	if statusCode != 200 {
-		return nil, fmt.Errorf("Error in fetching access token")
-	}
-	secret := secretStruct{}
-	err := json.Unmarshal(authResponse.Account.Secret, &secret)
-	if err != nil {
-		return nil, fmt.Errorf("Error in unmarshalling secret: %v", err)
-	}
-	currentTime := time.Now()
-	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
-	if err != nil {
-		return nil, fmt.Errorf("Error in parsing expirationDate: %v", err)
-	}
-	if currentTime.After(expirationTime) {
-		refreshTokenParams.Secret = authResponse.Account.Secret
-		statusCode, authResponse = ts.oauthClient.RefreshToken(&refreshTokenParams)
-		if statusCode != 200 {
-			return nil, fmt.Errorf("Error in refreshing access token")
-		}
-		err = json.Unmarshal(authResponse.Account.Secret, &secret)
-		if err != nil {
-			return nil, fmt.Errorf("Error in unmarshalling secret: %v", err)
-		}
-		return &secret, nil
-	}
-	return &secret, nil
-}
-
-func (ts *tokenSource) Token() (*oauth2.Token, error) {
-	secret, err := ts.generateToken()
-	if err != nil {
-		return nil, fmt.Errorf("Error occurred while generating the accessToken")
-	}
-
-	token := &oauth2.Token{
-		AccessToken:  secret.AccessToken,
-		RefreshToken: secret.RefreshToken,
-		Expiry:       time.Now().Add(time.Hour), // Set the token expiry time
-	}
-	return token, nil
-}
 
 // Upload related utils
 
@@ -91,7 +38,7 @@ func generateClientID(user User, metadata Metadata) string {
 returns the csv file and zip file path, along with the csv writer that
 contains the template of the uploadable file.
 */
-func csvZipFileCreator(audienceId, actionType string) (string, *csv.Writer, string) {
+func createActionFile(audienceId, actionType string) (ActionFileInfo, error) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 	tmpDirPath, _ := misc.CreateTMPDIR()
@@ -100,17 +47,25 @@ func csvZipFileCreator(audienceId, actionType string) (string, *csv.Writer, stri
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", nil, ""
+		return ActionFileInfo{}, err
 	}
 	csvWriter := csv.NewWriter(csvFile)
 	_ = csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
 	_ = csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
 	_ = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""})
-	return csvFilePath, csvWriter, zipFilePath
+	return ActionFileInfo{
+		Action:      actionType,
+		ZipFilePath: zipFilePath,
+		CSVFilePath: csvFilePath,
+		CSVWriter:   csvWriter,
+	}, nil
 }
 
 func convertCsvToZip(csvFilePath, zipFilePath string, eventCount int) error {
 	csvFile, err := os.Open(csvFilePath)
+	if err != nil {
+		return err
+	}
 	zipFile, err := os.Create(zipFilePath)
 	if eventCount == 0 {
 		os.Remove(csvFilePath)
@@ -130,6 +85,9 @@ func convertCsvToZip(csvFilePath, zipFilePath string, eventCount int) error {
 	}
 
 	_, err = csvFile.Seek(0, 0)
+	if err != nil {
+		return err
+	}
 	_, err = io.Copy(csvFileInZip, csvFile)
 	if err != nil {
 		return err
@@ -174,59 +132,51 @@ The following map indicates the index->actionType mapping
 1-> Remove
 2-> Update
 */
-func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]string, [3][]int64, [3][]int64, error) {
-	failedJobIds := [3][]int64{}
-	successJobIds := [3][]int64{}
-
+func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]ActionFileInfo, error) {
 	textFile, err := os.Open(filePath)
 	if err != nil {
-		return [3]string{"", "", ""}, successJobIds, failedJobIds, err
+		return nil, err
 	}
 	defer textFile.Close()
 
 	if err != nil {
-		return [3]string{"", "", ""}, successJobIds, failedJobIds, err
+		return nil, err
 	}
-	var csvWriter [3]*csv.Writer
-	var csvFilePaths [3]string
-	var zipFilePaths [3]string
-	var eventCount [3]int
-	actionTypes := [...]string{"Add", "Remove", "Update"}
-	for index, actionType := range actionTypes {
-		csvFilePaths[index], csvWriter[index], zipFilePaths[index] = csvZipFileCreator(audienceId, actionType)
+	actionFiles := map[string]ActionFileInfo{}
+	for _, actionType := range actionTypes {
+		actionFiles[actionType], err = createActionFile(audienceId, actionType)
+		if err != nil {
+			return nil, err
+		}
 	}
 	scanner := bufio.NewScanner(textFile)
-	fileSize := []int{0, 0, 0} //
 	for scanner.Scan() {
 		line := scanner.Text()
 		var data Data
 		err := json.Unmarshal([]byte(line), &data)
 		if err != nil {
-			return [3]string{"", "", ""}, successJobIds, failedJobIds, err
+			return nil, err
 		}
 
-		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
-			"module":   "batch_router",
-			"destType": b.destName,
-		})
+		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType,
+			map[string]string{
+				"module":   "batch_router",
+				"destType": b.destName,
+			})
 		payloadSizeStat.Observe(float64(len(data.Message.List)))
-		switch data.Message.Action {
-		case "Add":
-			populateZipFile(&fileSize[0], line, b.destName, &eventCount[0], data, csvWriter[0], audienceId, &successJobIds[0], &failedJobIds[0])
-		case "Remove":
-			populateZipFile(&fileSize[1], line, b.destName, &eventCount[1], data, csvWriter[1], audienceId, &successJobIds[1], &failedJobIds[1])
-		case "Update":
-			populateZipFile(&fileSize[2], line, b.destName, &eventCount[2], data, csvWriter[2], audienceId, &successJobIds[2], &failedJobIds[2])
-		}
+		actionFile := actionFiles[data.Message.Action]
+		populateZipFile(&actionFile.FileSize, line, b.destName, &actionFile.EventCount,
+			data, actionFile.CSVWriter, audienceId, &actionFile.SuccessfulJobIDs,
+			&actionFile.FailedJobIDs)
 
 	}
-	for index := range actionTypes {
-		csvWriter[index].Flush()
-		convertCsvToZip(csvFilePaths[index], zipFilePaths[index], eventCount[index])
+	for _, actionType := range actionTypes {
+		actionFile := actionFiles[actionType]
+		actionFile.CSVWriter.Flush()
+		convertCsvToZip(actionFile.CSVFilePath, actionFile.ZipFilePath, actionFile.EventCount)
 	}
 	// Create the ZIP file and add the CSV file to it
-
-	return zipFilePaths, successJobIds, failedJobIds, nil
+	return lo.Values(actionFiles), nil
 }
 
 // Poll Related Utils
@@ -234,7 +184,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([3]str
 /*
 Provides file paths containing error information as a comma separated string
 */
-func extractUploadStatusFilePath(ResultFileUrl, requestId string) ([]string, error) {
+func (b *BingAdsBulkUploader) extractUploadStatusFilePath(ResultFileUrl, requestId string) ([]string, error) {
 	// the final status file needs to be downloaded
 	fileAccessUrl := ResultFileUrl
 	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "amp;", "")
@@ -247,7 +197,7 @@ func extractUploadStatusFilePath(ResultFileUrl, requestId string) ([]string, err
 	// Download the zip file
 	fileLoadResp, err := http.Get(modifiedUrl)
 	if err != nil {
-		fmt.Println("Error downloading zip file:", err)
+		b.logger.Errorf("Error downloading zip file: %w", err)
 		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
 	}
 	defer fileLoadResp.Body.Close()
@@ -293,6 +243,9 @@ func Unzip(zipFile, targetDir string) ([]string, error) {
 		if f.FileInfo().IsDir() {
 			// Create directories if the file is a directory
 			err = os.MkdirAll(path, f.Mode())
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			// Create the file and copy the contents
 			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())

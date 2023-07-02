@@ -167,7 +167,6 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
 			batchrouter.Setup(&s3DestinationDefinition, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
-
 		})
 	})
 
