@@ -27,7 +27,7 @@ func exportPath() (baseDir string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
-	baseDir, err = os.MkdirTemp(tmpDir, "export")
+	baseDir, err = os.MkdirTemp(tmpDir, "exportV2")
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}

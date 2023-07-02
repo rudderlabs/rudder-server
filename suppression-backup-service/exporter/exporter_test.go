@@ -66,7 +66,7 @@ func TestExport(t *testing.T) {
 	seed(repo)
 	verify(repo)
 
-	file, err := os.CreateTemp(t.TempDir(), "export")
+	file, err := os.CreateTemp(t.TempDir(), "exportV2")
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 	require.NoError(t, exporter.Export(repo, model.File{Path: file.Name(), Mu: &sync.RWMutex{}}), "could not export data")
@@ -164,7 +164,7 @@ func exportPath() (baseDir string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
-	baseDir = path.Join(tmpDir, "export")
+	baseDir = path.Join(tmpDir, "exportV2")
 	err = os.MkdirAll(baseDir, 0o700)
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
