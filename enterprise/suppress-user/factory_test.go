@@ -127,6 +127,17 @@ func getSuppressionFromManager(w http.ResponseWriter, _ *http.Request) {
 }
 
 func generateTestData(t *testing.T, tmpDir string) {
+	generateBackupFiles := func(t *testing.T, dir, backupFilename string, repo *badgerdb.Repository, suppressions []model.Suppression) {
+		token := []byte("__token__")
+
+		repo.Add(suppressions, token)
+
+		f, err := os.Create(path.Join(dir, backupFilename))
+		defer func() { _ = f.Close() }()
+		require.NoError(t, err)
+		require.NoError(t, repo.Backup(f))
+	}
+
 	repo, err := badgerdb.NewRepository(tmpDir, logger.NOP, stats.Default)
 	require.NoError(t, err)
 
@@ -161,17 +172,6 @@ func generateTestData(t *testing.T, tmpDir string) {
 		},
 	}...)
 	generateBackupFiles(t, tmpDir, "full-export", repo, suppressions)
-}
-
-func generateBackupFiles(t *testing.T, dir, backupFilename string, repo *badgerdb.Repository, suppressions []model.Suppression) {
-	token := []byte("__token__")
-
-	repo.Add(suppressions, token)
-
-	f, err := os.Create(path.Join(dir, backupFilename))
-	defer func() { _ = f.Close() }()
-	require.NoError(t, err)
-	require.NoError(t, repo.Backup(f))
 }
 
 func backupDir(tmpDir string) (string, error) {
