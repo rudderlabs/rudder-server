@@ -544,9 +544,9 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 		loadObjectFolder:         config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"),
 	}
 
-	defer jr.counterStat("staging_files_processed", Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
+	defer jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
 	defer func() {
-		jr.timerStat("staging_files_total_processing_time", Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Since(processStartTime)
 	}()
 	defer jr.cleanup()
 
