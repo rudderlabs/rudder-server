@@ -408,6 +408,25 @@ func (job *Payload) getSortedColumnMapForAllTables() map[string][]string {
 	return sortedTableColumnMap
 }
 
+func (jobRun *JobRun) GetWriter(tableName string) (encoding.LoadFileWriter, error) {
+	writer, ok := jobRun.outputFileWritersMap[tableName]
+	if !ok {
+		var err error
+		outputFilePath := jobRun.getLoadFilePath(tableName)
+		if jobRun.job.LoadFileType == warehouseutils.LoadFileTypeParquet {
+			writer, err = encoding.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
+		} else {
+			writer, err = misc.CreateGZ(outputFilePath)
+		}
+		if err != nil {
+			return nil, err
+		}
+		jobRun.outputFileWritersMap[tableName] = writer
+		jobRun.tableEventCountMap[tableName] = 0
+	}
+	return writer, nil
+}
+
 func (job *Payload) sendDownloadStagingFileFailedStat() {
 	tags := []warehouseutils.Tag{
 		{
@@ -609,7 +628,7 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 		tableName := batchRouterEvent.Metadata.Table
 		columnData := batchRouterEvent.Data
 
-		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountLimitMap[warehouseutils.S3_DATALAKE] {
+		if job.DestinationType == warehouseutils.S3Datalake && len(sortedTableColumnMap[tableName]) > columnCountLimitMap[warehouseutils.S3Datalake] {
 			jr.logger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for StagingFileID: %v", len(sortedTableColumnMap[tableName]), job.StagingFileID)
 			return nil, fmt.Errorf("staging file schema limit exceeded for stagingFileID: %d, actualCount: %d", job.StagingFileID, len(sortedTableColumnMap[tableName]))
 		}

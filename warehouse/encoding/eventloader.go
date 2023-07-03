@@ -14,9 +14,9 @@ type EventLoader interface {
 
 func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriter) EventLoader {
 	switch loadFileType {
-	case warehouseutils.LOAD_FILE_TYPE_JSON:
+	case warehouseutils.LoadFileTypeJson:
 		return NewJSONLoader(destinationType, w)
-	case warehouseutils.LOAD_FILE_TYPE_PARQUET:
+	case warehouseutils.LoadFileTypeParquet:
 		return NewParquetLoader(destinationType, w)
 	default:
 		return NewCSVLoader(destinationType, w)

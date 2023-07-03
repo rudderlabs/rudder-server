@@ -43,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
@@ -56,11 +55,17 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-var defaultHistogramBuckets = []float64{
-	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60,
-	300 /* 5 mins */, 600 /* 10 mins */, 1800 /* 30 mins */, 10800 /* 3 hours */, 36000, /* 10 hours */
-	86400 /* 1 day */, 259200 /* 3 days */, 604800 /* 7 days */, 1209600, /* 2 weeks */
-}
+var (
+	defaultHistogramBuckets = []float64{
+		0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60,
+		300 /* 5 mins */, 600 /* 10 mins */, 1800, /* 30 mins */
+	}
+	defaultWarehouseHistogramBuckets = []float64{
+		0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60,
+		300 /* 5 mins */, 600 /* 10 mins */, 1800 /* 30 mins */, 10800 /* 3 hours */, 36000, /* 10 hours */
+		86400 /* 1 day */, 259200 /* 3 days */, 604800 /* 7 days */, 1209600, /* 2 weeks */
+	}
+)
 
 // ReleaseInfo holds the release information
 type ReleaseInfo struct {
@@ -131,11 +136,19 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
 		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
-	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
+	statsOptions := []stats.Option{
 		stats.WithServiceName(r.appType),
 		stats.WithServiceVersion(r.releaseInfo.Version),
-		stats.WithDefaultHistogramBuckets(defaultHistogramBuckets),
-	)
+	}
+	if r.canStartWarehouse() {
+		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultWarehouseHistogramBuckets))
+	} else {
+		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultHistogramBuckets))
+	}
+	for histogramName, buckets := range customBuckets {
+		statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
+	}
+	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance, statsOptions...)
 	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
 		r.logger.Errorf("Failed to start stats: %v", err)
 		return 1
@@ -188,7 +201,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			"builtBy":            r.releaseInfo.BuiltBy,
 			"gitUrl":             r.releaseInfo.GitURL,
 			"TransformerVersion": transformer.GetVersion(),
-			"DatabricksVersion":  misc.GetDatabricksVersion(),
 		}).Gauge(1)
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
@@ -348,7 +360,6 @@ func runAllInit() {
 	gateway.Init()
 	integrations.Init()
 	alert.Init()
-	multitenant.Init()
 	oauth.Init()
 }
 
@@ -363,7 +374,6 @@ func (r *Runner) versionInfo() map[string]interface{} {
 		"BuiltBy":            r.releaseInfo.BuiltBy,
 		"GitUrl":             r.releaseInfo.GitURL,
 		"TransformerVersion": transformer.GetVersion(),
-		"DatabricksVersion":  misc.GetDatabricksVersion(),
 		"Features":           info.ServerComponent.Features,
 	}
 }

@@ -69,15 +69,12 @@ type partitionWorker struct {
 
 	pickupCount   int  // number of jobs picked up by the workers in the last iteration
 	limitsReached bool // whether the limits were reached in the last iteration
-
-	lastWorkedAt time.Time // TODO: delete this once we remove the old fair pickup algorithm
 }
 
 // Work picks up jobs for the partitioned worker and returns whether it worked or not
 func (pw *partitionWorker) Work() bool {
 	start := time.Now()
-	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.lastWorkedAt, pw.partition, pw.workers)
-	pw.lastWorkedAt = start
+	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.partition, pw.workers)
 	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Since(start)
 	stats.Default.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Count(pw.pickupCount)
 	worked := pw.pickupCount > 0

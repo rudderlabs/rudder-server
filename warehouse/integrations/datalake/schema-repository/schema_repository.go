@@ -9,16 +9,16 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const MAX_CHARACTER_LIMIT = 65535
+const MaxCharacterLimit = 65535
 
 var (
-	VARCHAR_TYPE = fmt.Sprintf("varchar(%d)", MAX_CHARACTER_LIMIT)
+	VarcharType  = fmt.Sprintf("varchar(%d)", MaxCharacterLimit)
 	dataTypesMap = map[string]string{
 		"boolean":  "boolean",
 		"int":      "bigint",
 		"bigint":   "bigint",
 		"float":    "double",
-		"string":   VARCHAR_TYPE,
+		"string":   VarcharType,
 		"datetime": "timestamp",
 	}
 	dataTypesMapToRudder = map[string]string{
@@ -26,7 +26,7 @@ var (
 		"bigint":       "int",
 		"double":       "float",
 		"varchar(512)": "string",
-		VARCHAR_TYPE:   "string",
+		VarcharType:    "string",
 		"timestamp":    "datetime",
 		"string":       "string",
 	}

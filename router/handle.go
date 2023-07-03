@@ -44,9 +44,8 @@ import (
 // Handle is the handle to this module.
 type Handle struct {
 	// external dependencies
-	jobsDB           jobsdb.MultiTenantJobsDB
+	jobsDB           jobsdb.JobsDB
 	errorDB          jobsdb.JobsDB
-	MultitenantI     tenantStats
 	throttlerFactory *rtThrottler.Factory
 	backendConfig    backendconfig.BackendConfig
 	Reporting        reporter
@@ -128,7 +127,7 @@ func (rt *Handle) activePartitions(ctx context.Context) []string {
 
 // pickup picks up jobs from the jobsDB for the provided partition and returns the number of jobs picked up and whether the limits were reached or not
 // picked up jobs are distributed to the workers
-func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partition string, workers []*worker) (pickupCount int, limitsReached bool) {
+func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worker) (pickupCount int, limitsReached bool) {
 	// pickup limiter with dynamic priority
 	start := time.Now()
 	var discardedCount int
@@ -149,29 +148,12 @@ func (rt *Handle) pickup(ctx context.Context, lastQueryRunTime time.Time, partit
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
 
-	timeOut := rt.reloadableConfig.routerTimeout
-	timeElapsed := time.Since(lastQueryRunTime)
-	if timeElapsed < timeOut {
-		timeOut = timeElapsed
-	}
-
-	pickupMap := rt.MultitenantI.GetRouterPickupJobs(rt.destType, len(workers), timeOut, rt.reloadableConfig.jobQueryBatchSize)
-	totalPickupCount := 0
-	for _, pickup := range pickupMap {
-		if pickup > 0 {
-			totalPickupCount += pickup
-		}
-	}
 	iterator := jobiterator.New(
-		pickupMap,
-		rt.getQueryParams(partition, totalPickupCount),
+		rt.getQueryParams(partition, rt.reloadableConfig.jobQueryBatchSize),
 		rt.getJobsFn(ctx),
 		jobiterator.WithDiscardedPercentageTolerance(rt.reloadableConfig.jobIteratorDiscardedPercentageTolerance),
 		jobiterator.WithMaxQueries(rt.reloadableConfig.jobIteratorMaxQueries),
-		jobiterator.WithLegacyOrderGroupKey(!misc.UseFairPickup()),
 	)
-
-	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destType, pickupMap)
 
 	if !iterator.HasNext() {
 		rt.pipelineDelayStats(partition, nil, nil)
@@ -309,7 +291,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		switch workerJobStatus.status.JobState {
 		case jobsdb.Failed.State:
 			if workerJobStatus.status.ErrorCode != strconv.Itoa(types.RouterTimedOutStatusCode) && workerJobStatus.status.ErrorCode != strconv.Itoa(types.RouterUnMarshalErrorCode) {
-				rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destType, false, false)
 				if workerJobStatus.status.AttemptNum == 1 {
 					sd.Count++
 				}
@@ -317,12 +298,10 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		case jobsdb.Succeeded.State:
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
-			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destType, true, false)
 			completedJobsList = append(completedJobsList, workerJobStatus.job)
 		case jobsdb.Aborted.State:
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
-			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destType, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, workerJobStatus.job)
 			completedJobsList = append(completedJobsList, workerJobStatus.job)
 		}
@@ -435,19 +414,17 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	}
 }
 
-func (rt *Handle) getJobsFn(parentContext context.Context) func(context.Context, map[string]int, jobsdb.GetQueryParamsT, jobsdb.MoreToken) (*jobsdb.GetAllJobsResult, error) {
-	return func(ctx context.Context, pickupMap map[string]int, params jobsdb.GetQueryParamsT, resumeFrom jobsdb.MoreToken) (*jobsdb.GetAllJobsResult, error) {
-		jobs, err := misc.QueryWithRetriesAndNotify(parentContext, rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.GetAllJobsResult, error) {
-			return rt.jobsDB.GetAllJobs(
+func (rt *Handle) getJobsFn(parentContext context.Context) func(context.Context, jobsdb.GetQueryParamsT, jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
+	return func(ctx context.Context, params jobsdb.GetQueryParamsT, resumeFrom jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
+		jobs, err := misc.QueryWithRetriesAndNotify(parentContext, rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
+			return rt.jobsDB.GetToProcess(
 				ctx,
-				pickupMap,
 				params,
-				rt.reloadableConfig.maxDSQuerySize,
 				resumeFrom,
 			)
 		}, rt.sendQueryRetryStats)
 		if err != nil && parentContext.Err() != nil { // parentContext.Err() != nil means we are shutting down
-			return &jobsdb.GetAllJobsResult{}, nil //nolint:nilerr
+			return &jobsdb.MoreJobsResult{}, nil //nolint:nilerr
 		}
 		return jobs, err
 	}

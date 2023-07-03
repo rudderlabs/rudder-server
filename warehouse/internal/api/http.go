@@ -138,9 +138,9 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	api.Stats.NewTaggedStat("rows_staged", stats.CountType, stats.Tags{
-		"workspace_id": stagingFile.WorkspaceID,
-		"module":       "warehouse",
-		"destType":     payload.BatchDestination.Destination.DestinationDefinition.Name,
+		"workspaceId": stagingFile.WorkspaceID,
+		"module":      "warehouse",
+		"destType":    payload.BatchDestination.Destination.DestinationDefinition.Name,
 		"warehouseID": misc.GetTagName(
 			payload.BatchDestination.Destination.ID,
 			payload.BatchDestination.Source.Name,
