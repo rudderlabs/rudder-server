@@ -77,6 +77,8 @@ type reloadableConfig struct {
 	minRetryBackoff                         time.Duration
 	maxRetryBackoff                         time.Duration
 	jobsBatchTimeout                        time.Duration
+	failingJobsPenaltyThreshold             float64
+	failingJobsPenaltySleep                 time.Duration
 	toAbortDestinationIDs                   string
 	noOfJobsToBatchInAWorker                int
 	jobsDBCommandTimeout                    time.Duration
