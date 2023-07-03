@@ -3,7 +3,7 @@ services:
   trino:
     image: trinodb/trino:362
     ports:
-      - 8080
+      - "8080"
     volumes:
       - ./etc:/etc/trino/:ro
     depends_on:
@@ -11,34 +11,20 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.5'
-          memory: 1G
-
-  hive-metastore:
-    image: bitsondatadev/hive-metastore:latest
-    ports:
-      - 9083
-    volumes:
-      - ./conf/metastore-site.xml:/opt/apache-hive-metastore-3.0.0-bin/conf/metastore-site.xml:ro
-    environment:
-      METASTORE_DB_HOSTNAME: mariadb
-    depends_on:
-      - mariadb
-    deploy:
-      resources:
-        limits:
           cpus: '1'
           memory: 1G
 
-  mariadb:
-    image: mariadb:10.5.8
+  hive-metastore:
+    image: rudderstack/hive-metastore:latest
     ports:
-      - 3306
+      - "9083"
+    volumes:
+      - ./conf/metastore-site.xml:/opt/apache-hive-metastore-3.0.0-bin/conf/metastore-site.xml:ro
     environment:
-      MYSQL_ROOT_PASSWORD: admin
-      MYSQL_USER: admin
-      MYSQL_PASSWORD: admin
-      MYSQL_DATABASE: metastore_db
+      METASTORE_DB_HOSTNAME: jobsDb
+      METASTORE_TYPE: postgres
+    depends_on:
+      - jobsDb
     deploy:
       resources:
         limits:
