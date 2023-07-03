@@ -182,8 +182,8 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 				err = wb.Delete([]byte(key))
 			} else {
 				var value []byte
-				metadata := badgerDBValue{
-					CreatedAt: suppression.CreatedAt.Format(time.RFC3339Nano),
+				metadata := model.Metadata{
+					CreatedAt: suppression.CreatedAt,
 				}
 				value, err = json.Marshal(metadata)
 				if err != nil {
@@ -352,23 +352,15 @@ func getMetadataFromBadgerItem(item *badger.Item) (*model.Metadata, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not copy item value: %w", err)
 	}
-	var badgerDBValue badgerDBValue
+	var metadata model.Metadata
 	if len(itemValue) == 0 {
 		return nil, nil
 	}
-	err = json.Unmarshal(itemValue, &badgerDBValue)
+	err = json.Unmarshal(itemValue, &metadata)
 	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal metadata: %w", err)
 	}
-	createdAt, err := time.Parse(time.RFC3339Nano, badgerDBValue.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse createdAt: %w", err)
-	}
 	return &model.Metadata{
-		CreatedAt: createdAt,
+		CreatedAt: metadata.CreatedAt,
 	}, nil
-}
-
-type badgerDBValue struct {
-	CreatedAt string
 }
