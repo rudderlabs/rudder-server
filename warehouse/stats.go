@@ -31,7 +31,7 @@ func (job *UploadJob) warehouseID() string {
 	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID)
 }
 
-func (jr *JobRun) warehouseID() string {
+func (jr *jobRun) warehouseID() string {
 	return getWarehouseTagName(jr.job.DestinationID, jr.job.SourceName, jr.job.DestinationName, jr.job.SourceID)
 }
 
@@ -81,7 +81,7 @@ func (job *UploadJob) guageStat(name string, extraTags ...Tag) stats.Measurement
 	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jr *JobRun) timerStat(name string, extraTags ...Tag) stats.Measurement {
+func (jr *jobRun) timerStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jr.job.DestinationType,
@@ -96,7 +96,7 @@ func (jr *JobRun) timerStat(name string, extraTags ...Tag) stats.Measurement {
 	return jr.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (jr *JobRun) counterStat(name string, extraTags ...Tag) stats.Measurement {
+func (jr *jobRun) counterStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jr.job.DestinationType,

@@ -195,7 +195,7 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 				destType = tc.destType
 			}
 
-			jr := &JobRun{
+			jr := &jobRun{
 				job: Payload{
 					StagingFileID:            stagingFileID,
 					DestinationConfig:        conf,
@@ -237,7 +237,7 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, loadFIle, len(jr.outputFileWritersMap))
 			require.EqualValues(t, time.Second*time.Duration(len(jr.outputFileWritersMap)), store.Get(
-				"load_file_upload_time",
+				"load_file_total_upload_time",
 				stats.Tags{
 					"module":      moduleName,
 					"destType":    jr.job.DestinationType,
@@ -254,8 +254,8 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 			}
 
 			for _, f := range loadFIle {
-				require.Regexp(t, outputPathRegex, f.Location)
-				require.Equal(t, f.StagingFileID, stagingFileID)
+				require.Regexp(t, outputPathRegex, f.location)
+				require.Equal(t, f.stagingFileID, stagingFileID)
 			}
 		})
 	}
