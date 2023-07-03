@@ -1620,6 +1620,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		if err != nil {
 			proc.logger.Errorf("Store into archival table failed with error: %v", err)
 			proc.logger.Errorf("archival jobs: %v", archivalJobs)
+			panic(err)
 		}
 		proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(archivalJobs))
 	}
