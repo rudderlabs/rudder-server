@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -116,7 +117,7 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 		{
 			name:              "Parquet file",
 			additionalWriters: 9,
-			destType:          warehouseutils.S3_DATALAKE,
+			destType:          warehouseutils.S3Datalake,
 		},
 		{
 			name: "Few files",
@@ -195,33 +196,32 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 				destType = tc.destType
 			}
 
-			jr := &jobRun{
-				job: Payload{
-					StagingFileID:            stagingFileID,
-					DestinationConfig:        conf,
-					UseRudderStorage:         false,
-					StagingDestinationConfig: conf,
-					StagingUseRudderStorage:  false,
-					WorkspaceID:              workspaceID,
-					DestinationID:            destinationID,
-					DestinationName:          destinationName,
-					SourceID:                 sourceID,
-					SourceName:               sourceName,
-					DestinationType:          destType,
-					LoadFilePrefix:           prefix,
-					UniqueLoadGenID:          uuid.New().String(),
-					DestinationNamespace:     namespace,
-				},
-				stats:                    store,
-				numLoadFileUploadWorkers: worker,
-				slaveUploadTimeout:       time.Minute * 5,
-				logger:                   logger.NOP,
-				since: func(t time.Time) time.Duration {
-					return time.Second
-				},
-				outputFileWritersMap: writerMap,
+			job := Payload{
+				StagingFileID:            stagingFileID,
+				DestinationConfig:        conf,
+				UseRudderStorage:         false,
+				StagingDestinationConfig: conf,
+				StagingUseRudderStorage:  false,
+				WorkspaceID:              workspaceID,
+				DestinationID:            destinationID,
+				DestinationName:          destinationName,
+				SourceID:                 sourceID,
+				SourceName:               sourceName,
+				DestinationType:          destType,
+				LoadFilePrefix:           prefix,
+				UniqueLoadGenID:          uuid.New().String(),
+				DestinationNamespace:     namespace,
 			}
-			jr.loadObjectFolder = loadObjectFolder
+			c := config.New()
+			c.Set("Warehouse.numLoadFileUploadWorkers", worker)
+			c.Set("Warehouse.slaveUploadTimeout", "5m")
+			c.Set("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", loadObjectFolder)
+
+			jr := newJobRun(job, c, logger.NOP, store)
+			jr.since = func(t time.Time) time.Duration {
+				return time.Second
+			}
+			jr.outputFileWritersMap = writerMap
 
 			ctx := ctx
 			if tc.ctx != nil {
@@ -236,17 +236,10 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Len(t, loadFIle, len(jr.outputFileWritersMap))
-			require.EqualValues(t, time.Second*time.Duration(len(jr.outputFileWritersMap)), store.Get(
-				"load_file_total_upload_time",
-				stats.Tags{
-					"module":      moduleName,
-					"destType":    jr.job.DestinationType,
-					"warehouseID": jr.warehouseID(),
-					"workspaceId": jr.job.WorkspaceID,
-					"destID":      jr.job.DestinationID,
-					"sourceID":    jr.job.SourceID,
-				},
-			).LastDuration())
+			require.EqualValues(t, time.Second*time.Duration(len(jr.outputFileWritersMap)), store.Get("load_file_total_upload_time", jr.defaultTags()).LastDuration())
+			for i := 0; i < len(jr.outputFileWritersMap); i++ {
+				require.EqualValues(t, time.Second, store.Get("load_file_upload_time", jr.defaultTags()).LastDuration())
+			}
 
 			outputPathRegex := fmt.Sprintf(`http://localhost:%s/testbucket/%s/test.*/%s/.*/load.dump`, minioResource.Port, loadObjectFolder, sourceID)
 			if slices.Contains(warehouseutils.TimeWindowDestinations, destType) {
@@ -254,8 +247,8 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 			}
 
 			for _, f := range loadFIle {
-				require.Regexp(t, outputPathRegex, f.location)
-				require.Equal(t, f.stagingFileID, stagingFileID)
+				require.Regexp(t, outputPathRegex, f.Location)
+				require.Equal(t, f.StagingFileID, stagingFileID)
 			}
 		})
 	}

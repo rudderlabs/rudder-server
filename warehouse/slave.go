@@ -53,35 +53,66 @@ type uploadProcessingResult struct {
 }
 
 type uploadResult struct {
-	tableName             string
-	location              string
-	totalRows             int
-	contentLength         int64
-	stagingFileID         int64
-	destinationRevisionID string
-	useRudderStorage      bool
+	TableName             string
+	Location              string
+	TotalRows             int
+	ContentLength         int64
+	StagingFileID         int64
+	DestinationRevisionID string
+	UseRudderStorage      bool
 }
 
 type asyncJobRunResult struct {
-	result bool
-	id     string
+	Result bool
+	Id     string
 }
 
 // jobRun Temporary store for processing staging file to load file
 type jobRun struct {
-	job                      Payload
-	stagingFilePath          string
-	uuidTS                   time.Time
-	outputFileWritersMap     map[string]encoding.LoadFileWriter
-	tableEventCountMap       map[string]int
-	stagingFileReader        *gzip.Reader
-	whIdentifier             string
-	stats                    stats.Stats
-	since                    func(time.Time) time.Duration
-	numLoadFileUploadWorkers int
-	slaveUploadTimeout       time.Duration
-	logger                   logger.Logger
-	loadObjectFolder         string
+	job                  Payload
+	stagingFilePath      string
+	uuidTS               time.Time
+	outputFileWritersMap map[string]encoding.LoadFileWriter
+	tableEventCountMap   map[string]int
+	stagingFileReader    *gzip.Reader
+	whIdentifier         string
+	since                func(time.Time) time.Duration
+	logger               logger.Logger
+
+	stats                         stats.Stats
+	uploadTimeStat                stats.Measurement
+	totalUploadTimeStat           stats.Measurement
+	downloadStagingFileStat       stats.Measurement
+	processingStagingFileStat     stats.Measurement
+	bytesProcessedStagingFileStat stats.Measurement
+
+	config struct {
+		numLoadFileUploadWorkers int
+		slaveUploadTimeout       time.Duration
+		loadObjectFolder         string
+	}
+}
+
+func newJobRun(job Payload, conf *config.Config, log logger.Logger, stat stats.Stats) jobRun {
+	jr := jobRun{
+		job:          job,
+		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
+		stats:        stat,
+		since:        time.Since,
+		logger:       log,
+	}
+
+	jr.config.numLoadFileUploadWorkers = conf.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
+	jr.config.slaveUploadTimeout = conf.GetDuration("Warehouse.slaveUploadTimeout", 10, conf.GetDuration("Warehouse.slaveUploadTimeoutInMin", 10, time.Minute))
+	jr.config.loadObjectFolder = conf.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects")
+
+	jr.uploadTimeStat = jr.timerStat("load_file_upload_time")
+	jr.totalUploadTimeStat = jr.timerStat("load_file_total_upload_time")
+	jr.downloadStagingFileStat = jr.timerStat("download_staging_file_time")
+	jr.processingStagingFileStat = jr.timerStat("process_staging_file_time")
+	jr.bytesProcessedStagingFileStat = jr.counterStat("bytes_processed_in_staging_file")
+
+	return jr
 }
 
 func (jr *jobRun) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
@@ -149,7 +180,8 @@ func (jr *jobRun) downloadStagingFile(ctx context.Context) error {
 			return err
 		}
 		file.Close()
-		jr.timerStat("download_staging_file_time").Since(downloadStart)
+
+		jr.downloadStagingFileStat.Since(downloadStart)
 
 		fi, err := os.Stat(filePath)
 		if err != nil {
@@ -189,7 +221,7 @@ func (jr *jobRun) getLoadFilePath(tableName string) string {
 
 // uploadLoadFiles returns the upload output for each file uploaded to object storage
 func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, jr.slaveUploadTimeout)
+	ctx, cancel := context.WithTimeout(ctx, jr.config.slaveUploadTimeout)
 	defer cancel()
 
 	uploader, err := jr.job.fileManager(jr.job.DestinationConfig, jr.job.UseRudderStorage)
@@ -201,7 +233,7 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 
 	defer func() {
 		if err == nil {
-			jr.timerStat("load_file_total_upload_time").SendTiming(totalUploadTime.Load())
+			jr.totalUploadTimeStat.SendTiming(totalUploadTime.Load())
 		}
 	}()
 
@@ -216,29 +248,37 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 		}
 		defer func() { _ = file.Close() }()
 
+		var uploadLocation filemanager.UploadedFile
+
+		uploadStart := time.Now()
+
 		if slices.Contains(warehouseutils.TimeWindowDestinations, jr.job.DestinationType) {
-			return uploader.Upload(
+			uploadLocation, err = uploader.Upload(
 				ctx,
 				file,
 				warehouseutils.GetTablePathInObjectStorage(jr.job.DestinationNamespace, tableName),
 				jr.job.LoadFilePrefix,
 			)
+		} else {
+			uploadLocation, err = uploader.Upload(
+				ctx,
+				file,
+				jr.config.loadObjectFolder,
+				tableName,
+				jr.job.SourceID,
+				getBucketFolder(jr.job.UniqueLoadGenID, tableName),
+			)
 		}
-		return uploader.Upload(
-			ctx,
-			file,
-			jr.loadObjectFolder,
-			tableName,
-			jr.job.SourceID,
-			getBucketFolder(jr.job.UniqueLoadGenID, tableName),
-		)
+		jr.uploadTimeStat.SendTiming(jr.since(uploadStart))
+
+		return uploadLocation, err
 	}
 
 	process := func() <-chan *uploadProcessingResult {
 		processStream := make(chan *uploadProcessingResult, len(jr.outputFileWritersMap))
 
 		g, groupCtx := errgroup.WithContext(ctx)
-		g.SetLimit(jr.numLoadFileUploadWorkers)
+		g.SetLimit(jr.config.numLoadFileUploadWorkers)
 
 		go func() {
 			defer close(processStream)
@@ -272,13 +312,13 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 
 						processStream <- &uploadProcessingResult{
 							result: uploadResult{
-								tableName:             tableName,
-								location:              uploadOutput.Location,
-								contentLength:         loadFileStats.Size(),
-								totalRows:             jr.tableEventCountMap[tableName],
-								stagingFileID:         jr.job.StagingFileID,
-								destinationRevisionID: jr.job.DestinationRevisionID,
-								useRudderStorage:      jr.job.UseRudderStorage,
+								TableName:             tableName,
+								Location:              uploadOutput.Location,
+								ContentLength:         loadFileStats.Size(),
+								TotalRows:             jr.tableEventCountMap[tableName],
+								StagingFileID:         jr.job.StagingFileID,
+								DestinationRevisionID: jr.job.DestinationRevisionID,
+								UseRudderStorage:      jr.job.UseRudderStorage,
 							},
 						}
 						return nil
@@ -295,16 +335,17 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 	}
 
 	processStream := process()
-	output := make([]uploadResult, len(jr.outputFileWritersMap))
+	output := make([]uploadResult, 0, len(jr.outputFileWritersMap))
 
-	for i := 0; i < len(jr.outputFileWritersMap); i++ {
-		result := <-processStream
-
-		if err := result.err; err != nil {
+	for processedJob := range processStream {
+		if err := processedJob.err; err != nil {
 			return nil, fmt.Errorf("uploading load file to object storage: %w", err)
 		}
 
-		output[i] = result.result
+		output = append(output, processedJob.result)
+	}
+	if len(output) != len(jr.outputFileWritersMap) {
+		return nil, fmt.Errorf("matching number of load file upload outputs: expected %d, got %d", len(jr.outputFileWritersMap), len(output))
 	}
 
 	return output, nil
@@ -315,7 +356,7 @@ func (jr *jobRun) GetWriter(tableName string) (encoding.LoadFileWriter, error) {
 	if !ok {
 		var err error
 		outputFilePath := jr.getLoadFilePath(tableName)
-		if jr.job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		if jr.job.LoadFileType == warehouseutils.LoadFileTypeParquet {
 			writer, err = encoding.CreateParquetWriter(jr.job.UploadSchema[tableName], outputFilePath, jr.job.DestinationType)
 		} else {
 			writer, err = misc.CreateGZ(outputFilePath)
@@ -406,25 +447,6 @@ func (job *Payload) getSortedColumnMapForAllTables() map[string][]string {
 		sort.Strings(sortedTableColumnMap[tableName])
 	}
 	return sortedTableColumnMap
-}
-
-func (jobRun *JobRun) GetWriter(tableName string) (encoding.LoadFileWriter, error) {
-	writer, ok := jobRun.outputFileWritersMap[tableName]
-	if !ok {
-		var err error
-		outputFilePath := jobRun.getLoadFilePath(tableName)
-		if jobRun.job.LoadFileType == warehouseutils.LoadFileTypeParquet {
-			writer, err = encoding.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
-		} else {
-			writer, err = misc.CreateGZ(outputFilePath)
-		}
-		if err != nil {
-			return nil, err
-		}
-		jobRun.outputFileWritersMap[tableName] = writer
-		jobRun.tableEventCountMap[tableName] = 0
-	}
-	return writer, nil
 }
 
 func (job *Payload) sendDownloadStagingFileFailedStat() {
@@ -552,22 +574,14 @@ func processClaimedUploadJob(ctx context.Context, claimedJob pgnotifier.Claim, w
 // 5. Delete the staging and load files from tmp directory
 func processStagingFile(ctx context.Context, job Payload, workerIndex int) (loadFileUploadOutputs []uploadResult, err error) {
 	processStartTime := time.Now()
-	jr := jobRun{
-		job:                      job,
-		whIdentifier:             warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
-		stats:                    stats.Default,
-		since:                    time.Since,
-		numLoadFileUploadWorkers: config.GetInt("Warehouse.numLoadFileUploadWorkers", 8),
-		slaveUploadTimeout:       config.GetDuration("Warehouse.slaveUploadTimeout", 10, config.GetDuration("Warehouse.slaveUploadTimeoutInMin", 10, time.Minute)),
-		logger:                   pkgLogger,
-		loadObjectFolder:         config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"),
-	}
 
-	defer jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
+	jr := newJobRun(job, config.Default, pkgLogger, stats.Default)
+
 	defer func() {
+		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
 		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+		jr.cleanup()
 	}()
-	defer jr.cleanup()
 
 	jr.logger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jr.whIdentifier)
 
@@ -746,10 +760,11 @@ func processStagingFile(ctx context.Context, job Payload, workerIndex int) (load
 		}
 		jr.tableEventCountMap[tableName]++
 	}
-	jr.timerStat("process_staging_file_time").Since(processingStart)
+	jr.processingStagingFileStat.Since(processingStart)
 
 	jr.logger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
-	jr.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
+	jr.bytesProcessedStagingFileStat.Count(lineBytesCounter)
+
 	for _, loadFile := range jr.outputFileWritersMap {
 		err = loadFile.Close()
 		if err != nil {
@@ -796,26 +811,26 @@ func processClaimedAsyncJob(ctx context.Context, claimedJob pgnotifier.Claim) {
 func runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRunResult, error) {
 	warehouse, err := getDestinationFromSlaveConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
 	if err != nil {
-		return asyncJobRunResult{id: asyncjob.Id, result: false}, err
+		return asyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
 	destType := warehouse.Destination.DestinationDefinition.Name
 	whManager, err := manager.NewWarehouseOperations(destType)
 	if err != nil {
-		return asyncJobRunResult{id: asyncjob.Id, result: false}, err
+		return asyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
 	whasyncjob := &jobs.WhAsyncJob{}
 
 	var metadata warehouseutils.DeleteByMetaData
 	err = json.Unmarshal(asyncjob.MetaData, &metadata)
 	if err != nil {
-		return asyncJobRunResult{id: asyncjob.Id, result: false}, err
+		return asyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
 	whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
 		destType, warehouse.Destination.ID,
 	))
 	err = whManager.Setup(ctx, warehouse, whasyncjob)
 	if err != nil {
-		return asyncJobRunResult{id: asyncjob.Id, result: false}, err
+		return asyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
 	defer whManager.Cleanup(ctx)
 	tableNames := []string{asyncjob.TableName}
@@ -831,8 +846,8 @@ func runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRu
 		err = whManager.DeleteBy(ctx, tableNames, params)
 	}
 	asyncJobRunResult := asyncJobRunResult{
-		result: err == nil,
-		id:     asyncjob.Id,
+		Result: err == nil,
+		Id:     asyncjob.Id,
 	}
 	return asyncJobRunResult, err
 }

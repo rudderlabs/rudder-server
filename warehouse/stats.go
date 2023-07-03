@@ -25,15 +25,11 @@ func (job *UploadJob) defaultTags() stats.Tags {
 	return stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
-		"warehouseID": job.warehouseID(),
+		"warehouseID": warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
 		"workspaceId": job.upload.WorkspaceID,
 		"destID":      job.upload.DestinationID,
 		"sourceID":    job.upload.SourceID,
 	}
-}
-
-func (job *UploadJob) warehouseID() string {
-	return warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID)
 }
 
 func (job *UploadJob) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
@@ -210,15 +206,11 @@ func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (er
 	return nil
 }
 
-func (jr *jobRun) warehouseID() string {
-	return warehouseTagName(jr.job.DestinationID, jr.job.SourceName, jr.job.DestinationName, jr.job.SourceID)
-}
-
 func (jr *jobRun) defaultTags() stats.Tags {
 	return stats.Tags{
 		"module":      moduleName,
 		"destType":    jr.job.DestinationType,
-		"warehouseID": jr.warehouseID(),
+		"warehouseID": warehouseTagName(jr.job.DestinationID, jr.job.SourceName, jr.job.DestinationName, jr.job.SourceID),
 		"workspaceId": jr.job.WorkspaceID,
 		"destID":      jr.job.DestinationID,
 		"sourceID":    jr.job.SourceID,
