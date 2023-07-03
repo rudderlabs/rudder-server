@@ -137,6 +137,7 @@ type Handle struct {
 		GWCustomVal               string
 		asyncInit                 *misc.AsyncInit
 		eventSchemaV2Enabled      bool
+		archivalV2Enabled         bool
 		eventSchemaV2AllSources   bool
 	}
 
@@ -600,6 +601,7 @@ func (proc *Handle) loadConfig() {
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	// EventSchemas2 feature.
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2Enabled, false, "EventSchemas2.enabled")
+	config.RegisterBoolConfigVariable(false, &proc.config.archivalV2Enabled, false, "ArchivalV2.enabled")
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2AllSources, false, "EventSchemas2.enableAllSources")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
@@ -1383,6 +1385,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
+	archivalJobs := make([]*jobsdb.JobT, 0)
 
 	// Each block we receive from a client has a bunch of
 	// requests. We parse the block and take out individual
@@ -1491,6 +1494,25 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				}
 			}
 
+			if proc.config.archivalV2Enabled &&
+				!source.Transient &&
+				commonMetadataFromSingularEvent.SourceJobRunID != "" { // archival enabled
+				if payload := payloadFunc(); payload != nil {
+					archivalJobs = append(archivalJobs,
+						&jobsdb.JobT{
+							UUID:         batchEvent.UUID,
+							UserID:       batchEvent.UserID,
+							Parameters:   batchEvent.Parameters,
+							CustomVal:    batchEvent.CustomVal,
+							EventPayload: payload,
+							CreatedAt:    time.Now(),
+							ExpireAt:     time.Now(),
+							WorkspaceId:  batchEvent.WorkspaceId,
+						},
+					)
+				}
+			}
+
 			// REPORTING - GATEWAY metrics - START
 			// dummy event for metrics purposes only
 			event := &transformer.TransformerResponseT{}
@@ -1581,6 +1603,26 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			panic(err)
 		}
 		proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(eventSchemaJobs))
+	}
+
+	if len(archivalJobs) > 0 {
+		err := misc.RetryWithNotify(
+			context.Background(),
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.archivalDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						return proc.archivalDB.StoreInTx(ctx, tx, archivalJobs)
+					},
+				)
+			}, proc.sendRetryStoreStats)
+		if err != nil {
+			proc.logger.Errorf("Store into archival table failed with error: %v", err)
+			proc.logger.Errorf("archival josb: %v", archivalJobs)
+		}
+		proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(archivalJobs))
 	}
 
 	// REPORTING - GATEWAY metrics - START

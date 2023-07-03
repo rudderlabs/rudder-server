@@ -75,7 +75,7 @@ func (a *processorApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterIntConfigVariable(0, &a.config.archivalDSLimit, true, 1, "Archival.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &a.config.archivalDSLimit, true, 1, "ArchivalV2.jobsDB.dsLimit", "JobsDB.dsLimit")
 }
 
 func (a *processorApp) Setup(options *app.Options) error {
