@@ -10,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -47,6 +46,7 @@ type Dynamic struct {
 	BatchRouterDB lifecycle
 	ErrorDB       lifecycle
 	EventSchemaDB lifecycle
+	ArchivalDB    lifecycle
 
 	Processor lifecycle
 	Router    lifecycle
@@ -64,8 +64,7 @@ type Dynamic struct {
 
 	logger logger.Logger
 
-	once       sync.Once
-	ArchivalDB *jobsdb.HandleT
+	once sync.Once
 }
 
 func (d *Dynamic) init() {
@@ -166,6 +165,9 @@ func (d *Dynamic) start() error {
 	if err := d.EventSchemaDB.Start(); err != nil {
 		return fmt.Errorf("event schemas db start: %w", err)
 	}
+	if err := d.ArchivalDB.Start(); err != nil {
+		return fmt.Errorf("archival db start: %w", err)
+	}
 	if err := d.RouterDB.Start(); err != nil {
 		return fmt.Errorf("router db start: %w", err)
 	}
@@ -208,6 +210,8 @@ func (d *Dynamic) stop() {
 	d.logger.Debug("ErrorDB stopped")
 	d.EventSchemaDB.Stop()
 	d.logger.Debug("EventSchemasDB stopped")
+	d.ArchivalDB.Stop()
+	d.logger.Debug("ArchivalDB stopped")
 	d.GatewayDB.Stop()
 	d.logger.Debug("GatewayDB stopped")
 	d.serverStopTimeStat.Since(start)

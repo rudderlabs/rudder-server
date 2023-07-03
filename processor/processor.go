@@ -1495,7 +1495,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}
 
 			if proc.config.archivalV2Enabled &&
-				!source.Transient &&
 				commonMetadataFromSingularEvent.SourceJobRunID != "" { // archival enabled
 				if payload := payloadFunc(); payload != nil {
 					archivalJobs = append(archivalJobs,
@@ -1620,7 +1619,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}, proc.sendRetryStoreStats)
 		if err != nil {
 			proc.logger.Errorf("Store into archival table failed with error: %v", err)
-			proc.logger.Errorf("archival josb: %v", archivalJobs)
+			proc.logger.Errorf("archival jobs: %v", archivalJobs)
 		}
 		proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(archivalJobs))
 	}

@@ -77,6 +77,7 @@ func TestDynamicCluster(t *testing.T) {
 	errorDB := &mockLifecycle{status: "", callCount: &callCount}
 	schemaForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
 	eschDB := &mockLifecycle{status: "", callCount: &callCount}
+	archDB := &mockLifecycle{status: "", callCount: &callCount}
 
 	processor := &mockLifecycle{status: "", callCount: &callCount}
 	router := &mockLifecycle{status: "", callCount: &callCount}
@@ -91,6 +92,7 @@ func TestDynamicCluster(t *testing.T) {
 		BatchRouterDB: batchRouterDB,
 		ErrorDB:       errorDB,
 		EventSchemaDB: eschDB,
+		ArchivalDB:    archDB,
 
 		Processor:       processor,
 		Router:          router,
