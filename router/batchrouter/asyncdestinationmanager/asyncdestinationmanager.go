@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
-type Asyncdestinationmanager interface {
+type AsyncDestinationManager interface {
 	Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput
 	Poll(pollInput common.AsyncPoll) common.PollStatusResponse
 	GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) common.GetUploadStatsResponse
@@ -95,7 +95,7 @@ func GetMarshalledData(payload string, jobID int64) string {
 	return string(responsePayload)
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (Asyncdestinationmanager, error) {
+func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
 		return bingads.NewManager(destination, backendConfig)
