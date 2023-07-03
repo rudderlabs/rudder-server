@@ -257,6 +257,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		BatchRouterDB:   brtDB,
 		ErrorDB:         errDB,
 		EventSchemaDB:   eschDB,
+		ArchivalDB:      archDB,
 		SchemaForwarder: schemaForwarder,
 
 		Processor: processor,
