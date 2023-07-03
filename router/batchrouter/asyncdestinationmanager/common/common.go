@@ -25,23 +25,25 @@ type PollStatusResponse struct {
 	HasWarning     bool
 	FailedJobsURL  string
 	WarningJobsURL string
-	OutputFilePath string
+	ResultFileUrl  string
 }
 type AsyncUploadOutput struct {
 	Key                 string
 	ImportingJobIDs     []int64
 	ImportingParameters stdjson.RawMessage
-	SuccessJobIDs       []int64
-	FailedJobIDs        []int64
-	SucceededJobIDs     []int64
-	SuccessResponse     string
-	FailedReason        string
-	AbortJobIDs         []int64
-	AbortReason         string
-	ImportingCount      int
-	FailedCount         int
-	AbortCount          int
-	DestinationID       string
+	// TODO: see if we can remove this and use SucceededJobIDs
+	SuccessJobIDs []int64
+	// TODO: see if we can remove this and use AbortJobIDs
+	FailedJobIDs    []int64
+	SucceededJobIDs []int64
+	SuccessResponse string
+	FailedReason    string
+	AbortJobIDs     []int64
+	AbortReason     string
+	ImportingCount  int
+	FailedCount     int
+	AbortCount      int
+	DestinationID   string
 }
 
 type AsyncPoll struct {
@@ -113,10 +115,10 @@ type AsyncFailedPayload struct {
 }
 
 type FetchUploadJobStatus struct {
-	FailedJobsURL  string
-	Parameters     stdjson.RawMessage
-	ImportingList  []*jobsdb.JobT
-	OutputFilePath string
+	FailedJobsURL      string
+	Parameters         stdjson.RawMessage
+	ImportingList      []*jobsdb.JobT
+	PollResultFileURLs string
 }
 
 type EventStatMeta struct {

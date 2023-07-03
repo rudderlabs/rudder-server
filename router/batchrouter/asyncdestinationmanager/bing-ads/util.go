@@ -182,9 +182,10 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]Acti
 // Poll Related Utils
 
 /*
-Provides file paths containing error information as a comma separated string
+From the ResultFileUrl, it downloads the zip file and extracts the contents of the zip file
+and finally Provides file paths containing error information as an array string
 */
-func (b *BingAdsBulkUploader) extractUploadStatusFilePath(ResultFileUrl, requestId string) ([]string, error) {
+func (b *BingAdsBulkUploader) DownloadAndGetUploadStatusFile(ResultFileUrl string) ([]string, error) {
 	// the final status file needs to be downloaded
 	fileAccessUrl := ResultFileUrl
 	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "amp;", "")
@@ -202,8 +203,9 @@ func (b *BingAdsBulkUploader) extractUploadStatusFilePath(ResultFileUrl, request
 	}
 	defer fileLoadResp.Body.Close()
 
+	uuid := uuid.New()
 	// Create a temporary file to save the downloaded zip file
-	tempFile, err := os.CreateTemp("", fmt.Sprintf("bingads_%s_*.zip", requestId))
+	tempFile, err := os.CreateTemp("", fmt.Sprintf("bingads_%s_*.zip", uuid.String()))
 	if err != nil {
 		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/samber/lo"
 )
 
 func NewBingAdsBulkUploader(name string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
@@ -136,9 +137,10 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 		}
 	case "CompletedWithErrors":
 		return common.PollStatusResponse{
-			Complete:   true,
-			StatusCode: 200,
-			HasFailed:  true,
+			Complete:      true,
+			StatusCode:    200,
+			HasFailed:     true,
+			ResultFileUrl: uploadStatusResp.ResultFileUrl,
 		}
 	case "FileUploaded", "InProgress", "PendingFileUpload":
 		return common.PollStatusResponse{
@@ -153,31 +155,36 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 	}
 }
 
-func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
+func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	fmt.Println("Polling Bing Ads")
 	var cumulativeResp common.PollStatusResponse
-	var statusCode int
+	//var statusCode int
 	requestIdsArray := common.GenerateArrayOfStrings(pollInput.ImportId)
 	for _, requestId := range requestIdsArray {
 		resp := b.PollSingleImport(requestId)
-		if status != 200 {
+		if resp.StatusCode != 200 {
+			// if any of the request fails then the whole request fails
 			cumulativeResp = resp
-			statusCode = status
 			break
 		}
+		/*
+			Cumulative Response logic:
+			1. If any of the request is in progress then the whole request is in progress and it should retry
+			2. if all the requests are completed then the whole request is completed
+			3. if any of the requests are completed with errors then the whole request is completed with errors
+			4. if any of the requests are failed then the whole request is completed with errors
+			5. if all the requests are failed then the whole request is failed
+		*/
 		cumulativeResp = common.PollStatusResponse{
-			Complete:       resp.Success,
-			StatusCode:     200,
-			HasFailed:      cumulativeResp.HasFailed || resp.HasFailed,
-			HasWarning:     cumulativeResp.HasWarning || resp.HasWarning,
-			FailedJobsURL:  "",
-			WarningJobsURL: "",
-			OutputFilePath: cumulativeResp.OutputFilePath + resp.OutputFilePath + ",",
+			Complete:      resp.Complete,
+			InProgress:    cumulativeResp.InProgress || resp.InProgress,
+			StatusCode:    200,
+			HasFailed:     cumulativeResp.HasFailed || resp.HasFailed,
+			ResultFileUrl: cumulativeResp.ResultFileUrl + resp.ResultFileUrl + ",", // creating a comma separated string of all the result file urls
 		}
-		statusCode = status
 	}
 
-	return cumulativeResp, statusCode
+	return cumulativeResp
 }
 
 func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, int) {
@@ -188,11 +195,6 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 		Status: status,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    GetFailedKeys(clientIDErrors),
-			ErrFailed:     nil,
-			WarningKeys:   []int64{},
-			ErrWarning:    nil,
-			SucceededKeys: []int64{},
-			ErrSuccess:    nil,
 			FailedReasons: GetFailedReasons(clientIDErrors),
 		},
 	}
@@ -208,38 +210,46 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 		"destType": b.destName,
 	})
 	eventsSuccessStat.Count(len(eventStatsResponse.Metadata.SucceededKeys))
-
+	// separate status code is to be deleted
 	return eventStatsResponse, 200
 }
 
-func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
+func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) common.GetUploadStatsResponse {
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
 	importList := UploadStatsInput.ImportingList
 	var initialEventList []int64
 	for _, job := range importList {
+		//lo.Map
 		initialEventList = append(initialEventList, job.JobID)
 	}
 	var eventStatsResponse common.GetUploadStatsResponse
-	filePaths := common.GenerateArrayOfStrings(UploadStatsInput.OutputFilePath)
-	for _, filePath := range filePaths {
-		response, _ := b.GetUploadStatsOfSingleImport(filePath)
-		eventStatsResponse = common.GetUploadStatsResponse{
-			Status: response.Status,
-			Metadata: common.EventStatMeta{
-				FailedKeys:    append(eventStatsResponse.Metadata.FailedKeys, response.Metadata.FailedKeys...),
-				ErrFailed:     nil,
-				WarningKeys:   []int64{},
-				ErrWarning:    nil,
-				SucceededKeys: []int64{},
-				ErrSuccess:    nil,
-				FailedReasons: common.MergeMaps(eventStatsResponse.Metadata.FailedReasons, response.Metadata.FailedReasons),
-			},
+	var failedJobIds []int64
+	var cumulativeFailedReasons map[string]string
+	var status string
+	fileURLs := common.GenerateArrayOfStrings(UploadStatsInput.PollResultFileURLs)
+	for _, fileURL := range fileURLs {
+		// rename the function name
+		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
+		if err != nil {
+			return common.GetUploadStatsResponse{
+				Status: "500",
+			}
 		}
+		response, _ := b.GetUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
+		cumulativeFailedReasons = lo.Assign(cumulativeFailedReasons, response.Metadata.FailedReasons)
+		failedJobIds = append(failedJobIds, response.Metadata.FailedKeys...)
+		status = response.Status
 	}
 
-	// filtering out failed jobIds from the total array of jobIds
-	eventStatsResponse.Metadata.SucceededKeys = GetSuccessKeys(eventStatsResponse.Metadata.FailedKeys, initialEventList)
+	eventStatsResponse = common.GetUploadStatsResponse{
+		Status: status,
+		Metadata: common.EventStatMeta{
+			FailedKeys:    failedJobIds,
+			FailedReasons: cumulativeFailedReasons,
+			SucceededKeys: GetSuccessKeys(eventStatsResponse.Metadata.FailedKeys, initialEventList),
+		},
+	}
 
-	return eventStatsResponse, 200
+	return eventStatsResponse
 }

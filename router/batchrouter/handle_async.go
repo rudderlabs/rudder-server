@@ -65,9 +65,8 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						startPollTime := time.Now()
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 						var pollRespBytes []byte
-						var statusCode int
 						var pollResp common.PollStatusResponse
-						pollResp, statusCode = brt.asyncdestinationmanager.Poll(pollInput)
+						pollResp = brt.asyncdestinationmanager.Poll(pollInput)
 						pollRespBytes, err := stdjson.Marshal(pollResp)
 						if err != nil {
 							panic(err)
@@ -78,7 +77,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						if err != nil {
 							panic("HTTP Request Failed" + err.Error())
 						}
-						if statusCode == 200 {
+						if pollResp.StatusCode == 200 {
 							var asyncResponse common.PollStatusResponse
 							if err != nil {
 								panic("Read Body Failed" + err.Error())
@@ -91,6 +90,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							uploadStatus := asyncResponse.Complete
 							statusCode := asyncResponse.StatusCode
 							abortedJobs := make([]*jobsdb.JobT, 0)
+							uploadInProgress := asyncResponse.InProgress
 							if uploadStatus {
 								var statusList []*jobsdb.JobStatusT
 								list, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
@@ -112,7 +112,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								GetUploadStatsInput.FailedJobsURL = asyncResponse.FailedJobsURL
 								GetUploadStatsInput.Parameters = importingJob.LastJobStatus.Parameters
 								GetUploadStatsInput.ImportingList = importingList
-								GetUploadStatsInput.OutputFilePath = asyncResponse.OutputFilePath
+								GetUploadStatsInput.PollResultFileURLs = asyncResponse.ResultFileUrl
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -132,10 +132,10 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								} else {
 									startFailedJobsPollTime := time.Now()
 									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
-									uploadStatsResp, statusCode := brt.asyncdestinationmanager.GetUploadStats(GetUploadStatsInput)
+									uploadStatsResp := brt.asyncdestinationmanager.GetUploadStats(GetUploadStatsInput)
 									brt.asyncFailedJobsTimeStat.Since(startFailedJobsPollTime)
 
-									if statusCode != 200 {
+									if uploadStatsResp.Status != "200" {
 										continue
 									}
 
@@ -240,7 +240,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 									panic(err)
 								}
 								brt.updateProcessedEventsMetrics(statusList)
-							} else if statusCode != 0 {
+							} else if statusCode != 0 && !uploadInProgress {
 								var statusList []*jobsdb.JobStatusT
 								list, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 									return brt.jobsDB.GetImporting(

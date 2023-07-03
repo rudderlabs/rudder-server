@@ -40,40 +40,43 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("asyncdestinationmanager").Child("marketobulkupload")
 }
 
-func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
+func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	payload, err := json.Marshal(pollInput)
 	if err != nil {
 		resp := common.PollStatusResponse{
-			Complete:       false,
-			StatusCode:     400,
-			HasFailed:      true,
-			HasWarning:     false,
-			FailedJobsURL:  "",
-			WarningJobsURL: "",
-			OutputFilePath: "",
+			Complete:   false,
+			StatusCode: 500,
+			HasFailed:  true,
+			HasWarning: false,
 		}
 		// needs to be retried
-		statusCode := 500
-		return resp, statusCode
+		//transformerConnectionStatus := 500
+		return resp
 	}
-	bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
+	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
+	if transformerConnectionStatus != 200 {
+		resp := common.PollStatusResponse{
+			Complete:   false,
+			StatusCode: transformerConnectionStatus,
+			HasFailed:  true,
+			HasWarning: false,
+		}
+		return resp
+	}
 	var asyncResponse common.PollStatusResponse
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
 		resp := common.PollStatusResponse{
-			Complete:       false,
-			StatusCode:     400,
-			HasFailed:      true,
-			HasWarning:     false,
-			FailedJobsURL:  "",
-			WarningJobsURL: "",
-			OutputFilePath: "",
+			Complete:   false,
+			StatusCode: 500,
+			HasFailed:  true,
+			HasWarning: false,
 		}
 		// needs to be retried
-		statusCode := 500
-		return resp, statusCode
+		//transformerConnectionStatus := 500
+		return resp
 	}
-	return asyncResponse, statusCode
+	return asyncResponse
 }
 
 func GenerateFailedPayload(destConfig map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
@@ -102,7 +105,7 @@ func GenerateFailedPayload(destConfig map[string]interface{}, jobs []*jobsdb.Job
 	return payload
 }
 
-func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) (common.GetUploadStatsResponse, int) {
+func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) common.GetUploadStatsResponse {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	failedJobUrl := UploadStatsInput.FailedJobsURL
 	parameters := UploadStatsInput.Parameters
@@ -110,12 +113,16 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 	payload := GenerateFailedPayload(b.destinationConfig, UploadStatsInput.ImportingList, importId, b.destName, csvHeaders)
 	if payload == nil {
-		return common.GetUploadStatsResponse{}, 500
+		return common.GetUploadStatsResponse{
+			Status: "500",
+		}
 	}
 
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
 	if statusCode != 200 {
-		return common.GetUploadStatsResponse{}, statusCode
+		return common.GetUploadStatsResponse{
+			Status: string(statusCode),
+		}
 	}
 	var failedJobsResponse map[string]interface{}
 	_ = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
@@ -125,7 +132,9 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	if !ok {
 		// TODO
 		pkgLogger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", internalStatusCode, string(failedBodyBytes))
-		return common.GetUploadStatsResponse{}, statusCode
+		return common.GetUploadStatsResponse{
+			Status: "500",
+		}
 	}
 
 	failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
@@ -144,7 +153,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 			ErrSuccess:    errSuccess,
 		},
 	}
-	return eventStatsResponse, statusCode
+	return eventStatsResponse
 }
 
 func ExtractJobStats(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
