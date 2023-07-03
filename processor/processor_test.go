@@ -829,7 +829,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					Expect(jobs).To(HaveLen(3))
 				})
 
 			processor := prepareHandle(NewHandle(mockTransformer))
@@ -996,8 +996,8 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			)
 		})
 	})
-
 })
+
 var _ = Describe("Processor", Ordered, func() {
 	initProcessor()
 
