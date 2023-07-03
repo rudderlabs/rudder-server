@@ -72,7 +72,7 @@ func (m *Manager) DegradedWorkspace(workspaceID string) bool {
 	return ok
 }
 
-// DegradedWorkspaces returns a list of degraded workspaceIDs.
+// DegradedWorkspaceIDs returns a list of degraded workspaceIDs.
 func (m *Manager) DegradedWorkspaces() []string {
 	m.init()
 
