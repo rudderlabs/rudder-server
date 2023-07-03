@@ -98,9 +98,9 @@ func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model
 						if _, ok := unrecognizedSchema[tableName]; !ok {
 							unrecognizedSchema[tableName] = make(model.TableSchema)
 						}
-						unrecognizedSchema[tableName][*col.Name] = warehouseutils.MISSING_DATATYPE
+						unrecognizedSchema[tableName][*col.Name] = warehouseutils.MissingDatatype
 
-						warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
+						warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
 					}
 				}
 			}

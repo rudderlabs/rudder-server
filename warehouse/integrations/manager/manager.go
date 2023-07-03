@@ -5,13 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	deltalake_native "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake-native"
-
-	postgreslegacy "github.com/rudderlabs/rudder-server/warehouse/integrations/postgres-legacy"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
@@ -24,7 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type Manager interface {
@@ -61,7 +57,6 @@ type WarehouseOperations interface {
 }
 
 // New is a Factory function that returns a Manager of a given destination-type
-// TODO: Remove flag for useLegacy once the postgres new implementation is stable
 func New(destType string) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
@@ -77,12 +72,6 @@ func New(destType string) (Manager, error) {
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
-		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.New()
-			postgreslegacy.WithConfig(pg, config.Default)
-			return pg, nil
-		}
-
 		pg := postgres.New()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
@@ -94,20 +83,14 @@ func New(destType string) (Manager, error) {
 		ms := mssql.New()
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
-	case warehouseutils.AZURE_SYNAPSE:
+	case warehouseutils.AzureSynapse:
 		az := azuresynapse.New()
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
-	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
+	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
 		dl := datalake.New()
 		return dl, nil
 	case warehouseutils.DELTALAKE:
-		if config.Default.GetBool("Warehouse.deltalake.useNative", false) {
-			dl := deltalake_native.New()
-			deltalake_native.WithConfig(dl, config.Default)
-			return dl, nil
-		}
-
 		dl := deltalake.New()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
@@ -116,7 +99,6 @@ func New(destType string) (Manager, error) {
 }
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
-// TODO: Remove flag for useLegacy once the postgres new implementation is stable
 func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
@@ -132,12 +114,6 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		snowflake.WithConfig(sf, config.Default)
 		return sf, nil
 	case warehouseutils.POSTGRES:
-		if config.Default.GetBool("Warehouse.postgres.useLegacy", true) {
-			pg := postgreslegacy.New()
-			postgreslegacy.WithConfig(pg, config.Default)
-			return pg, nil
-		}
-
 		pg := postgres.New()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
@@ -149,20 +125,14 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		ms := mssql.New()
 		mssql.WithConfig(ms, config.Default)
 		return ms, nil
-	case warehouseutils.AZURE_SYNAPSE:
+	case warehouseutils.AzureSynapse:
 		az := azuresynapse.New()
 		azuresynapse.WithConfig(az, config.Default)
 		return az, nil
-	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
+	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
 		dl := datalake.New()
 		return dl, nil
 	case warehouseutils.DELTALAKE:
-		if config.Default.GetBool("Warehouse.deltalake.useNative", false) {
-			dl := deltalake_native.New()
-			deltalake_native.WithConfig(dl, config.Default)
-			return dl, nil
-		}
-
 		dl := deltalake.New()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
