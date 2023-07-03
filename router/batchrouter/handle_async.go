@@ -88,7 +88,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								panic("JSON Unmarshal Failed" + err.Error())
 							}
 
-							uploadStatus := asyncResponse.Success
+							uploadStatus := asyncResponse.Complete
 							statusCode := asyncResponse.StatusCode
 							abortedJobs := make([]*jobsdb.JobT, 0)
 							if uploadStatus {

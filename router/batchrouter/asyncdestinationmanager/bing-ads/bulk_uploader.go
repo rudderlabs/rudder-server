@@ -4,6 +4,7 @@ import (
 	stdjson "encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
@@ -29,12 +30,13 @@ The maximum size of the zip file is 100MB, if the size of the zip file exceeds 1
 */
 func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destConfig := DestinationConfig{}
-	jsonConfig, _ := stdjson.Marshal(destination.Config)
-	_ = stdjson.Unmarshal(jsonConfig, &destConfig)
+	// TODO: Need to handle errors here
+	jsonConfig, err := stdjson.Marshal(destination.Config)
+	err = stdjson.Unmarshal(jsonConfig, &destConfig)
 	var failedJobs []int64
 	var successJobs []int64
-	var concatImpId string
-	var concatError string
+	var importIds []string
+	var errors []string
 	actionFiles, err := b.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
 	if err != nil {
 		return common.AsyncUploadOutput{
@@ -58,14 +60,14 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		if err != nil {
 			b.logger.Error("Error in getting bulk upload url: %w", err)
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			concatError += fmt.Sprintf("%s:error in getting bulk upload url: %s", actionFile.Action, err.Error()) + ","
+			errors = append(errors, fmt.Sprintf("%s:error in getting bulk upload url: %s", actionFile.Action, err.Error()))
 			continue
 		}
 
 		if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
 			b.logger.Error(`{"error" : "getting empty string in upload url or request id"}`)
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			concatError += fmt.Sprintf("%s:getting empty string in upload url or request id", actionFile.Action) + ","
+			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id", actionFile.Action))
 			continue
 		}
 
@@ -86,31 +88,31 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		if errorDuringUpload != nil {
 			b.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			concatError += fmt.Sprintf("%s:error in uploading the bulk file: %v", actionFile.Action, errorDuringUpload) + ","
+			errors = append(errors, fmt.Sprintf("%s:error in uploading the bulk file: %v", actionFile.Action, errorDuringUpload))
 			continue
 		}
 
 		if uploadBulkFileResp.RequestId == "" || uploadBulkFileResp.TrackingId == "" {
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			concatError += fmt.Sprintf("%s:getting empty string in upload url or request id, ", actionFile.Action)
+			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id, ", actionFile.Action))
 			continue
 		}
-		concatImpId += uploadBulkFileResp.RequestId + ","
+		importIds = append(importIds, uploadBulkFileResp.RequestId)
 		failedJobs = append(failedJobs, actionFile.FailedJobIDs...)
 		successJobs = append(successJobs, actionFile.SuccessfulJobIDs...)
 	}
 
 	var parameters common.ImportParameters
-	parameters.ImportId = concatImpId
+	parameters.ImportId = strings.Join(importIds, comma)
 	importParameters, err := stdjson.Marshal(parameters)
 	if err != nil {
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
-	concatError = `{"error":"` + concatError + `"}`
+	allErrors := `{"error":"` + strings.Join(errors, comma) + `"}`
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     successJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
-		FailedReason:        concatError,
+		FailedReason:        allErrors,
 		ImportingParameters: stdjson.RawMessage(importParameters),
 		ImportingCount:      len(successJobs),
 		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
@@ -118,98 +120,37 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 }
 
-func (b *BingAdsBulkUploader) PollSingleImport(requestId string) (common.PollStatusResponse, int) {
-	var resp common.PollStatusResponse
-	var statusCode int
+func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStatusResponse {
 	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
 	if err != nil {
-		resp = common.PollStatusResponse{
-			Success:        false,
-			StatusCode:     400,
-			HasFailed:      true,
-			HasWarning:     false,
-			FailedJobsURL:  "",
-			WarningJobsURL: "",
-			OutputFilePath: "",
+		return common.PollStatusResponse{
+			StatusCode: 500,
+			HasFailed:  true,
 		}
-		// needs to be retried
-		statusCode = 500
-		return resp, statusCode
 	}
-	var allSuccessPercentage int = 100
-	if uploadStatusResp.PercentComplete == int64(allSuccessPercentage) && uploadStatusResp.RequestStatus == "Completed" {
-		// all successful events, do not need to download the file.
-		resp = common.PollStatusResponse{
-			Success:        true,
-			StatusCode:     200,
-			HasFailed:      false,
-			HasWarning:     false,
-			FailedJobsURL:  "",
-			WarningJobsURL: "",
-			OutputFilePath: "",
+	switch uploadStatusResp.RequestStatus {
+	case "Completed":
+		return common.PollStatusResponse{
+			Complete:   true,
+			StatusCode: 200,
 		}
-		statusCode = 200
-	} else if uploadStatusResp.PercentComplete == int64(allSuccessPercentage) && uploadStatusResp.RequestStatus == "CompletedWithErrors" {
-		filePaths, err := b.extractUploadStatusFilePath(uploadStatusResp.ResultFileUrl, requestId)
-		if err != nil {
-			resp = common.PollStatusResponse{
-				Success:        false,
-				StatusCode:     400,
-				HasFailed:      true,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: "",
-			}
-			statusCode = 400
-			return resp, statusCode
+	case "CompletedWithErrors":
+		return common.PollStatusResponse{
+			Complete:   true,
+			StatusCode: 200,
+			HasFailed:  true,
 		}
-
-		// extracting file paths
-		var outputPath string
-		for _, filePath := range filePaths {
-			outputPath = filePath
+	case "FileUploaded", "InProgress", "PendingFileUpload":
+		return common.PollStatusResponse{
+			InProgress: true,
+			StatusCode: 200,
 		}
-		resp = common.PollStatusResponse{
-			Success:        true,
-			StatusCode:     200,
-			HasFailed:      true,
-			HasWarning:     false,
-			FailedJobsURL:  "",
-			WarningJobsURL: "",
-			OutputFilePath: outputPath,
+	default:
+		return common.PollStatusResponse{
+			HasFailed:  true,
+			StatusCode: 400,
 		}
-		statusCode = 200
-	} else if uploadStatusResp.RequestStatus == "FileUploaded" ||
-		uploadStatusResp.RequestStatus == "InProgress" ||
-		uploadStatusResp.RequestStatus == "PendingFileUpload" {
-		resp = common.PollStatusResponse{
-			Success:        true,
-			StatusCode:     200,
-			HasFailed:      false,
-			HasWarning:     false,
-			FailedJobsURL:  "",
-			WarningJobsURL: "",
-			OutputFilePath: "",
-		}
-		// needs to be retried to fetch the final status
-		statusCode = 500
-		return resp, statusCode
-	} else {
-		/* if uploadStatusResp.RequestStatus == "Failed" || uploadStatusResp.RequestStatus == "UploadFileRowCountExceeded" || uploadStatusResp.RequestStatus == "UploadFileFormatNotSupported" {
-		 */
-		resp = common.PollStatusResponse{
-			Success:        false,
-			StatusCode:     400,
-			HasFailed:      true,
-			HasWarning:     false,
-			FailedJobsURL:  "",
-			WarningJobsURL: "",
-			OutputFilePath: "",
-		}
-		statusCode = 400
 	}
-	return resp, statusCode
 }
 
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatusResponse, int) {
@@ -218,14 +159,14 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 	var statusCode int
 	requestIdsArray := common.GenerateArrayOfStrings(pollInput.ImportId)
 	for _, requestId := range requestIdsArray {
-		resp, status := b.PollSingleImport(requestId)
+		resp := b.PollSingleImport(requestId)
 		if status != 200 {
 			cumulativeResp = resp
 			statusCode = status
 			break
 		}
 		cumulativeResp = common.PollStatusResponse{
-			Success:        resp.Success,
+			Complete:       resp.Success,
 			StatusCode:     200,
 			HasFailed:      cumulativeResp.HasFailed || resp.HasFailed,
 			HasWarning:     cumulativeResp.HasWarning || resp.HasWarning,

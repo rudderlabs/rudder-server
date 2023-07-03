@@ -44,7 +44,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 	payload, err := json.Marshal(pollInput)
 	if err != nil {
 		resp := common.PollStatusResponse{
-			Success:        false,
+			Complete:       false,
 			StatusCode:     400,
 			HasFailed:      true,
 			HasWarning:     false,
@@ -61,7 +61,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) (common.PollStatu
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
 		resp := common.PollStatusResponse{
-			Success:        false,
+			Complete:       false,
 			StatusCode:     400,
 			HasFailed:      true,
 			HasWarning:     false,

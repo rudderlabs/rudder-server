@@ -306,7 +306,7 @@ var _ = Describe("Bing ads", func() {
 				ImportId: "dummyRequestId123",
 			}
 			expectedResp := common.PollStatusResponse{
-				Success:        true,
+				Complete:       true,
 				StatusCode:     200,
 				HasFailed:      false,
 				HasWarning:     false,
@@ -333,7 +333,7 @@ var _ = Describe("Bing ads", func() {
 				ImportId: "dummyRequestId123",
 			}
 			expectedResp := common.PollStatusResponse{
-				Success:        false,
+				Complete:       false,
 				StatusCode:     400,
 				HasFailed:      true,
 				HasWarning:     false,
@@ -378,7 +378,7 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			expectedResp := common.PollStatusResponse{
-				Success:        true,
+				Complete:       true,
 				StatusCode:     200,
 				HasFailed:      true,
 				HasWarning:     false,
@@ -425,7 +425,7 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			expectedResp := common.PollStatusResponse{
-				Success:        false,
+				Complete:       false,
 				StatusCode:     400,
 				HasFailed:      true,
 				HasWarning:     false,

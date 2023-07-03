@@ -56,3 +56,5 @@ type ActionFileInfo struct {
 }
 
 var actionTypes = [3]string{"Add", "Remove", "Update"}
+
+const comma = ","
