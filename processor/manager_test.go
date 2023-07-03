@@ -193,6 +193,8 @@ func TestProcessorManager(t *testing.T) {
 	defer errDB.Close()
 	eschDB := jobsdb.NewForReadWrite("esch")
 	defer eschDB.Close()
+	archDB := jobsdb.NewForReadWrite("archival")
+	defer archDB.Close()
 
 	clearDb := false
 	ctx := context.Background()
@@ -205,6 +207,7 @@ func TestProcessorManager(t *testing.T) {
 		brtDB,
 		errDB,
 		eschDB,
+		archDB,
 		&reporting.NOOP{},
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),

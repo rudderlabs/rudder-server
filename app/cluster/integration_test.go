@@ -186,6 +186,8 @@ func TestDynamicClusterManager(t *testing.T) {
 	defer brtDB.TearDown()
 	errDB := jobsdb.NewForReadWrite("proc_error")
 	defer errDB.TearDown()
+	archDB := jobsdb.NewForReadWrite("archival")
+	defer archDB.TearDown()
 
 	clearDb := false
 	ctx := context.Background()
@@ -200,6 +202,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		brtDB,
 		errDB,
 		eschDB,
+		archDB,
 		&reporting.NOOP{},
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),

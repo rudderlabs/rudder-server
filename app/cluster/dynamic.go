@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
@@ -63,7 +64,8 @@ type Dynamic struct {
 
 	logger logger.Logger
 
-	once sync.Once
+	once       sync.Once
+	ArchivalDB *jobsdb.HandleT
 }
 
 func (d *Dynamic) init() {

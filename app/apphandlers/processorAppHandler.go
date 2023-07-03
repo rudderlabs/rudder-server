@@ -52,6 +52,7 @@ type processorApp struct {
 		routerDSLimit      int
 		batchRouterDSLimit int
 		gatewayDSLimit     int
+		archivalDSLimit    int
 		http               struct {
 			ReadTimeout       time.Duration
 			ReadHeaderTimeout time.Duration
@@ -74,6 +75,7 @@ func (a *processorApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &a.config.archivalDSLimit, true, 1, "Archival.jobsDB.dsLimit", "JobsDB.dsLimit")
 }
 
 func (a *processorApp) Setup(options *app.Options) error {
@@ -184,6 +186,13 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 
+	archivalDB := jobsdb.NewForReadWrite(
+		"archival",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.archivalDSLimit),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Archival.jobsDB.skipMaintenanceError", false)),
+	)
+
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
 		client, err := pulsar.NewClient(config.Default)
@@ -211,6 +220,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		batchRouterDB,
 		errDB,
 		schemaDB,
+		archivalDB,
 		reportingI,
 		transientSources,
 		fileUploaderProvider,
@@ -256,6 +266,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		ErrorDB:          errDB,
 		SchemaForwarder:  schemaForwarder,
 		EventSchemaDB:    schemaDB,
+		ArchivalDB:       archivalDB,
 		Processor:        p,
 		Router:           rt,
 	}

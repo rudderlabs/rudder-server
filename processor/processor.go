@@ -77,6 +77,7 @@ type Handle struct {
 	batchRouterDB jobsdb.JobsDB
 	errorDB       jobsdb.JobsDB
 	eventSchemaDB jobsdb.JobsDB
+	archivalDB    jobsdb.JobsDB
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
@@ -322,7 +323,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.Reporting,
+	batchRouterDB, errorDB, eventSchemaDB, archivalDB jobsdb.JobsDB, reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
@@ -341,6 +342,7 @@ func (proc *Handle) Setup(
 	proc.batchRouterDB = batchRouterDB
 	proc.errorDB = errorDB
 	proc.eventSchemaDB = eventSchemaDB
+	proc.archivalDB = archivalDB
 
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
