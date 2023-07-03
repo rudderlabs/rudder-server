@@ -244,6 +244,12 @@ func (brt *Handle) Shutdown() {
 	_ = brt.backgroundWait()
 }
 
+func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
+	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+		brt.asyncdestinationmanager, _ = asyncdestinationmanager.NewManager(&destination, brt.backendConfig)
+	}
+}
+
 func (brt *Handle) crashRecover() {
 	if slices.Contains(objectStoreDestinations, brt.destType) {
 		brt.logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
@@ -346,6 +352,9 @@ func (brt *Handle) backendConfigSubscriber() {
 							if _, ok := destinationsMap[destination.ID]; !ok {
 								destinationsMap[destination.ID] = &router_utils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
+							}
+							if brt.destination.RevisionID != destination.RevisionID {
+								brt.refreshDestination(destination)
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
 

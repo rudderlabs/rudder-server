@@ -135,7 +135,7 @@ type Handle struct {
 	asyncSuccessfulJobCount stats.Measurement
 	asyncFailedJobCount     stats.Measurement
 	asyncAbortedJobCount    stats.Measurement
-	asyncdestinationmanager asyncdestinationmanager.Asyncdestinationmanager
+	asyncdestinationmanager asyncdestinationmanager.AsyncDestinationManager
 }
 
 // mainLoop is responsible for pinging the workers periodically for every active partition
