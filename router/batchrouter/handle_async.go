@@ -109,10 +109,10 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								}
 								importingList := list.Jobs
 								var GetUploadStatsInput common.FetchUploadJobStatus
-								GetUploadStatsInput.FailedJobsURL = asyncResponse.FailedJobsURL
+								GetUploadStatsInput.FailedJobInfo = asyncResponse.FailedJobsInfo
 								GetUploadStatsInput.Parameters = importingJob.LastJobStatus.Parameters
 								GetUploadStatsInput.ImportingList = importingList
-								GetUploadStatsInput.PollResultFileURLs = asyncResponse.ResultFileUrl
+								GetUploadStatsInput.PollResultFileURLs = asyncResponse.FailedJobsInfo
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{

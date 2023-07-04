@@ -50,7 +50,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			HasWarning: false,
 		}
 		// needs to be retried
-		//transformerConnectionStatus := 500
+		// transformerConnectionStatus := 500
 		return resp
 	}
 	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
@@ -73,7 +73,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			HasWarning: false,
 		}
 		// needs to be retried
-		//transformerConnectionStatus := 500
+		// transformerConnectionStatus := 500
 		return resp
 	}
 	return asyncResponse
@@ -107,7 +107,7 @@ func GenerateFailedPayload(destConfig map[string]interface{}, jobs []*jobsdb.Job
 
 func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) common.GetUploadStatsResponse {
 	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	failedJobUrl := UploadStatsInput.FailedJobsURL
+	failedJobUrl := UploadStatsInput.FailedJobInfo
 	parameters := UploadStatsInput.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()

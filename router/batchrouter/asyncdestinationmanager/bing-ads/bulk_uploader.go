@@ -7,12 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/samber/lo"
 )
 
 func NewBingAdsBulkUploader(name string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
@@ -137,10 +138,10 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 		}
 	case "CompletedWithErrors":
 		return common.PollStatusResponse{
-			Complete:      true,
-			StatusCode:    200,
-			HasFailed:     true,
-			ResultFileUrl: uploadStatusResp.ResultFileUrl,
+			Complete:       true,
+			StatusCode:     200,
+			HasFailed:      true,
+			FailedJobsInfo: uploadStatusResp.ResultFileUrl,
 		}
 	case "FileUploaded", "InProgress", "PendingFileUpload":
 		return common.PollStatusResponse{
@@ -158,7 +159,7 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	fmt.Println("Polling Bing Ads")
 	var cumulativeResp common.PollStatusResponse
-	//var statusCode int
+	// var statusCode int
 	requestIdsArray := common.GenerateArrayOfStrings(pollInput.ImportId)
 	for _, requestId := range requestIdsArray {
 		resp := b.PollSingleImport(requestId)
@@ -176,11 +177,11 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			5. if all the requests are failed then the whole request is failed
 		*/
 		cumulativeResp = common.PollStatusResponse{
-			Complete:      resp.Complete,
-			InProgress:    cumulativeResp.InProgress || resp.InProgress,
-			StatusCode:    200,
-			HasFailed:     cumulativeResp.HasFailed || resp.HasFailed,
-			ResultFileUrl: cumulativeResp.ResultFileUrl + resp.ResultFileUrl + ",", // creating a comma separated string of all the result file urls
+			Complete:       resp.Complete,
+			InProgress:     cumulativeResp.InProgress || resp.InProgress,
+			StatusCode:     200,
+			HasFailed:      cumulativeResp.HasFailed || resp.HasFailed,
+			FailedJobsInfo: cumulativeResp.FailedJobsInfo + resp.FailedJobsInfo + ",", // creating a comma separated string of all the result file urls
 		}
 	}
 
@@ -220,7 +221,6 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	importList := UploadStatsInput.ImportingList
 	var initialEventList []int64
 	for _, job := range importList {
-		//lo.Map
 		initialEventList = append(initialEventList, job.JobID)
 	}
 	var eventStatsResponse common.GetUploadStatsResponse
@@ -229,7 +229,6 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	var status string
 	fileURLs := common.GenerateArrayOfStrings(UploadStatsInput.PollResultFileURLs)
 	for _, fileURL := range fileURLs {
-		// rename the function name
 		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
 			return common.GetUploadStatsResponse{
