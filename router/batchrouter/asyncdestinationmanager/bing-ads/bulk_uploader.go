@@ -159,6 +159,9 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	fmt.Println("Polling Bing Ads")
 	var cumulativeResp common.PollStatusResponse
+	var completionStatus []bool
+	var failedJobsInfo string
+	var cumulativeCompletionStatus, cumulativeProgressStatus, cumulativeFailureStatus bool
 	// var statusCode int
 	requestIdsArray := common.GenerateArrayOfStrings(pollInput.ImportId)
 	for _, requestId := range requestIdsArray {
@@ -173,16 +176,22 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			1. If any of the request is in progress then the whole request is in progress and it should retry
 			2. if all the requests are completed then the whole request is completed
 			3. if any of the requests are completed with errors then the whole request is completed with errors
-			4. if any of the requests are failed then the whole request is completed with errors
+			4. if any of the requests are failed then the whole request is failed and retried
 			5. if all the requests are failed then the whole request is failed
 		*/
-		cumulativeResp = common.PollStatusResponse{
-			Complete:       resp.Complete,
-			InProgress:     cumulativeResp.InProgress || resp.InProgress,
-			StatusCode:     200,
-			HasFailed:      cumulativeResp.HasFailed || resp.HasFailed,
-			FailedJobsInfo: cumulativeResp.FailedJobsInfo + resp.FailedJobsInfo + ",", // creating a comma separated string of all the result file urls
-		}
+		completionStatus = append(completionStatus, resp.Complete)
+		cumulativeCompletionStatus = generateCompletionStatus(completionStatus)
+		failedJobsInfo = cumulativeResp.FailedJobsInfo + resp.FailedJobsInfo + ","
+		cumulativeProgressStatus = cumulativeResp.InProgress || resp.InProgress
+		cumulativeFailureStatus = cumulativeResp.HasFailed || resp.HasFailed
+	}
+
+	cumulativeResp = common.PollStatusResponse{
+		Complete:       cumulativeCompletionStatus,
+		InProgress:     cumulativeProgressStatus,
+		StatusCode:     200,
+		HasFailed:      cumulativeFailureStatus,
+		FailedJobsInfo: failedJobsInfo, // creating a comma separated string of all the result file urls
 	}
 
 	return cumulativeResp

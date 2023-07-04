@@ -452,3 +452,13 @@ func GetSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 	}
 	return successfulEvents
 }
+
+// If any one importId is in progress, then the overall completion status is false
+func generateCompletionStatus(array []bool) bool {
+	for _, element := range array {
+		if !element {
+			return false
+		}
+	}
+	return true
+}
