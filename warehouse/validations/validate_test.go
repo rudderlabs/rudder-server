@@ -122,7 +122,7 @@ func TestValidator(t *testing.T) {
 
 			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.S3_DATALAKE,
+					Name: warehouseutils.S3Datalake,
 				},
 				Config: map[string]interface{}{
 					"region":           region,

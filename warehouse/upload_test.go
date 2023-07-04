@@ -110,7 +110,7 @@ func TestColumnCountStat(t *testing.T) {
 	}{
 		{
 			name:             "Datalakes destination",
-			destinationType:  warehouseutils.S3_DATALAKE,
+			destinationType:  warehouseutils.S3Datalake,
 			columnCountLimit: 1,
 		},
 		{

@@ -133,7 +133,9 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	var discardedCount int
 	limiter := rt.limiter.pickup
 	limiterStats := rt.limiter.stats.pickup
-	defer limiter.BeginWithPriority(partition, LimiterPriorityValueFrom(limiterStats.Score(partition), 100))()
+	limiterEnd := limiter.BeginWithPriority(partition, LimiterPriorityValueFrom(limiterStats.Score(partition), 100))
+	defer limiterEnd()
+
 	defer func() {
 		limiterStats.Update(partition, time.Since(start), pickupCount+discardedCount, discardedCount)
 	}()
@@ -158,6 +160,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	if !iterator.HasNext() {
 		rt.pipelineDelayStats(partition, nil, nil)
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destType)
+		limiterEnd() // exit the limiter before sleeping
 		_ = misc.SleepCtx(ctx, rt.reloadableConfig.readSleep)
 		return 0, false
 	}
@@ -241,8 +244,16 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	stats.Default.NewTaggedStat("router_iterator_stats_discarded_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.DiscardedJobs)
 
 	flush()
-	limitsReached = iteratorStats.LimitsReached
 	rt.pipelineDelayStats(partition, firstJob, lastJob)
+	limitsReached = iteratorStats.LimitsReached
+	discardedRatio := float64(iteratorStats.DiscardedJobs) / float64(iteratorStats.TotalJobs)
+	// If the discarded ratio is greater than the penalty threshold,
+	// sleep for a while to avoid having a loop running continuously without producing events
+	if limitsReached && discardedRatio > rt.reloadableConfig.failingJobsPenaltyThreshold {
+		limiterEnd() // exit the limiter before sleeping
+		_ = misc.SleepCtx(ctx, rt.reloadableConfig.failingJobsPenaltySleep)
+	}
+
 	return
 }
 

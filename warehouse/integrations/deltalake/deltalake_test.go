@@ -1,4 +1,4 @@
-package deltalake_native_test
+package deltalake_test
 
 import (
 	"context"
@@ -77,7 +77,7 @@ func TestIntegration(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml"}))
+	c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
 	c.Start(context.Background())
 
 	misc.Init()
@@ -86,7 +86,6 @@ func TestIntegration(t *testing.T) {
 	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
-	databricksConnectorPort := c.Port("databricks-connector", 50051)
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -102,8 +101,6 @@ func TestIntegration(t *testing.T) {
 
 	deltaLakeCredentials, err := deltaLakeTestCredentials()
 	require.NoError(t, err)
-
-	databricksEndpoint := fmt.Sprintf("localhost:%d", databricksConnectorPort)
 
 	templateConfigurations := map[string]any{
 		"workspaceID":   workspaceID,
@@ -124,7 +121,6 @@ func TestIntegration(t *testing.T) {
 	testhelper.EnhanceWithDefaultEnvs(t)
 	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("DATABRICKS_CONNECTOR_URL", databricksEndpoint)
 	t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
 	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
@@ -318,7 +314,7 @@ func TestIntegration(t *testing.T) {
 				Name:        "DELTALAKE",
 				DisplayName: "Databricks (Delta Lake)",
 			},
-			Name:       "deltalake-native-demo",
+			Name:       "deltalake-demo",
 			Enabled:    true,
 			RevisionID: "39eClxJQQlaWzMWyqnQctFDP5T2",
 		}

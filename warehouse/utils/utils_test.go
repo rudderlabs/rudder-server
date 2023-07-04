@@ -917,7 +917,7 @@ func TestGetTempFileExtension(t *testing.T) {
 			expected: "csv.gz",
 		},
 		{
-			destType: AZURE_SYNAPSE,
+			destType: AzureSynapse,
 			expected: "csv.gz",
 		},
 		{
@@ -925,15 +925,15 @@ func TestGetTempFileExtension(t *testing.T) {
 			expected: "csv.gz",
 		},
 		{
-			destType: S3_DATALAKE,
+			destType: S3Datalake,
 			expected: "csv.gz",
 		},
 		{
-			destType: GCS_DATALAKE,
+			destType: GCSDatalake,
 			expected: "csv.gz",
 		},
 		{
-			destType: AZURE_DATALAKE,
+			destType: AzureDatalake,
 			expected: "csv.gz",
 		},
 	}
@@ -1032,7 +1032,7 @@ func TestGetLoadFileFormat(t *testing.T) {
 			expected: "csv.gz",
 		},
 		{
-			whType:   AZURE_SYNAPSE,
+			whType:   AzureSynapse,
 			expected: "csv.gz",
 		},
 		{
@@ -1040,15 +1040,15 @@ func TestGetLoadFileFormat(t *testing.T) {
 			expected: "csv.gz",
 		},
 		{
-			whType:   S3_DATALAKE,
+			whType:   S3Datalake,
 			expected: "parquet",
 		},
 		{
-			whType:   GCS_DATALAKE,
+			whType:   GCSDatalake,
 			expected: "parquet",
 		},
 		{
-			whType:   AZURE_DATALAKE,
+			whType:   AzureDatalake,
 			expected: "parquet",
 		},
 	}
@@ -1088,7 +1088,7 @@ func TestGetLoadFileType(t *testing.T) {
 			expected: "csv",
 		},
 		{
-			whType:   AZURE_SYNAPSE,
+			whType:   AzureSynapse,
 			expected: "csv",
 		},
 		{
@@ -1096,15 +1096,15 @@ func TestGetLoadFileType(t *testing.T) {
 			expected: "csv",
 		},
 		{
-			whType:   S3_DATALAKE,
+			whType:   S3Datalake,
 			expected: "parquet",
 		},
 		{
-			whType:   GCS_DATALAKE,
+			whType:   GCSDatalake,
 			expected: "parquet",
 		},
 		{
-			whType:   AZURE_DATALAKE,
+			whType:   AzureDatalake,
 			expected: "parquet",
 		},
 	}
@@ -1262,11 +1262,11 @@ var _ = Describe("Utils", func() {
 		Entry(nil, POSTGRES),
 		Entry(nil, CLICKHOUSE),
 		Entry(nil, MSSQL),
-		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, AzureSynapse),
 		Entry(nil, DELTALAKE),
-		Entry(nil, S3_DATALAKE),
-		Entry(nil, GCS_DATALAKE),
-		Entry(nil, AZURE_DATALAKE),
+		Entry(nil, S3Datalake),
+		Entry(nil, GCSDatalake),
+		Entry(nil, AzureDatalake),
 	)
 
 	DescribeTable("Staging table name", func(provider string, limit int) {
@@ -1286,11 +1286,11 @@ var _ = Describe("Utils", func() {
 		Entry(nil, POSTGRES, 63),
 		Entry(nil, CLICKHOUSE, 127),
 		Entry(nil, MSSQL, 127),
-		Entry(nil, AZURE_SYNAPSE, 127),
+		Entry(nil, AzureSynapse, 127),
 		Entry(nil, DELTALAKE, 127),
-		Entry(nil, S3_DATALAKE, 127),
-		Entry(nil, GCS_DATALAKE, 127),
-		Entry(nil, AZURE_DATALAKE, 127),
+		Entry(nil, S3Datalake, 127),
+		Entry(nil, GCSDatalake, 127),
+		Entry(nil, AzureDatalake, 127),
 	)
 
 	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse model.Warehouse, expected string) {
@@ -1320,11 +1320,11 @@ var _ = Describe("Utils", func() {
 		Entry(nil, POSTGRES),
 		Entry(nil, CLICKHOUSE),
 		Entry(nil, MSSQL),
-		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, AzureSynapse),
 		Entry(nil, DELTALAKE),
-		Entry(nil, S3_DATALAKE),
-		Entry(nil, GCS_DATALAKE),
-		Entry(nil, AZURE_DATALAKE),
+		Entry(nil, S3Datalake),
+		Entry(nil, GCSDatalake),
+		Entry(nil, AzureDatalake),
 	)
 
 	DescribeTable("Identity mappings warehouse table name", func(provider string) {
@@ -1336,11 +1336,11 @@ var _ = Describe("Utils", func() {
 		Entry(nil, POSTGRES),
 		Entry(nil, CLICKHOUSE),
 		Entry(nil, MSSQL),
-		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, AzureSynapse),
 		Entry(nil, DELTALAKE),
-		Entry(nil, S3_DATALAKE),
-		Entry(nil, GCS_DATALAKE),
-		Entry(nil, AZURE_DATALAKE),
+		Entry(nil, S3Datalake),
+		Entry(nil, GCSDatalake),
+		Entry(nil, AzureDatalake),
 	)
 
 	DescribeTable("Get object name", func(location string, config interface{}, objectProvider, objectName string) {
@@ -1348,7 +1348,7 @@ var _ = Describe("Utils", func() {
 	},
 		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name"}, GCS, "key"),
 		Entry(S3, "https://bucket-name.s3.amazonaws.com/key", map[string]interface{}{"bucketName": "bucket-name"}, S3, "key"),
-		Entry(AZURE_BLOB, "https://account-name.blob.core.windows.net/container-name/key", map[string]interface{}{"containerName": "container-name"}, AZURE_BLOB, "key"),
+		Entry(AzureBlob, "https://account-name.blob.core.windows.net/container-name/key", map[string]interface{}{"containerName": "container-name"}, AzureBlob, "key"),
 		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
 	)
 

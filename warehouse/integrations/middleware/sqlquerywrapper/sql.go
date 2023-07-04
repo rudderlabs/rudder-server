@@ -104,14 +104,14 @@ func WithSecretsRegex(secretsRegex map[string]string) Opt {
 	}
 }
 
-// imposes a timeout on each query
+// WithQueryTimeout imposes a timeout on each query
 func WithQueryTimeout(timeout time.Duration) Opt {
 	return func(s *DB) {
 		s.queryTimeout = timeout
 	}
 }
 
-// imposes a timeout on the transaction
+// WithTransactionTimeout imposes a timeout on the transaction
 func WithTransactionTimeout(timeout time.Duration) Opt {
 	return func(s *DB) {
 		s.transactionTimeout = timeout

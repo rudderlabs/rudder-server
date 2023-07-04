@@ -1,6 +1,7 @@
 package badgerdb
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
+	badger "github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
 	"github.com/samber/lo"
 
@@ -111,39 +112,43 @@ func (b *Repository) GetToken() ([]byte, error) {
 }
 
 // Suppressed returns true if the given user is suppressed, false otherwise
-func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
+func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (*model.Metadata, error) {
 	b.restoringLock.RLock()
 	defer b.restoringLock.RUnlock()
 	if b.restoring {
-		return false, model.ErrRestoring
+		return nil, model.ErrRestoring
 	}
 	if b.db.IsClosed() {
-		return false, badger.ErrDBClosed
+		return nil, badger.ErrDBClosed
 	}
 
 	keyPrefix := keyPrefix(workspaceID, userID)
+	var metadata *model.Metadata
 	err := b.db.View(func(txn *badger.Txn) error {
 		wildcardKey := keyPrefix + model.Wildcard
-		_, err := txn.Get([]byte(wildcardKey))
+		item, err := txn.Get([]byte(wildcardKey))
 		if err == nil {
-			return nil
+			metadata, err = getMetadataFromBadgerItem(item)
+			return err
 		}
 		if !errors.Is(err, badger.ErrKeyNotFound) {
 			return fmt.Errorf("could not get wildcard key %s: %w", wildcardKey, err)
 		}
 		sourceKey := keyPrefix + sourceID
-		if _, err = txn.Get([]byte(sourceKey)); err != nil {
+		item, err = txn.Get([]byte(sourceKey))
+		if err != nil {
 			return fmt.Errorf("could not get sourceID key %s: %w", sourceKey, err)
 		}
+		metadata, err = getMetadataFromBadgerItem(item)
 		return err
 	})
 	if err != nil {
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			return false, nil
+			return nil, nil
 		}
-		return false, err
+		return nil, err
 	}
-	return true, nil
+	return metadata, nil
 }
 
 // Add adds the given suppressions to the repository
@@ -176,7 +181,15 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 			if suppression.Canceled {
 				err = wb.Delete([]byte(key))
 			} else {
-				err = wb.Set([]byte(key), []byte(""))
+				var value []byte
+				metadata := model.Metadata{
+					CreatedAt: suppression.CreatedAt,
+				}
+				value, err = json.Marshal(metadata)
+				if err != nil {
+					return fmt.Errorf("could not marshal suppression metadata: %w", err)
+				}
+				err = wb.Set([]byte(key), value)
 			}
 			if err != nil {
 				return fmt.Errorf("could not add key %s (canceled:%t) in write batch: %w", key, suppression.Canceled, err)
@@ -332,4 +345,20 @@ func (l blogger) Warningf(fmt string, args ...interface{}) {
 
 func keyPrefix(workspaceID, userID string) string {
 	return fmt.Sprintf("%s:%s:", workspaceID, userID)
+}
+
+func getMetadataFromBadgerItem(item *badger.Item) (*model.Metadata, error) {
+	itemValue, err := item.ValueCopy(nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy item value: %w", err)
+	}
+	var metadata model.Metadata
+	if len(itemValue) == 0 { // backwards compatibility
+		return &metadata, nil
+	}
+	err = json.Unmarshal(itemValue, &metadata)
+	if err != nil {
+		return nil, fmt.Errorf("could not unmarshal metadata: %w", err)
+	}
+	return &metadata, nil
 }
