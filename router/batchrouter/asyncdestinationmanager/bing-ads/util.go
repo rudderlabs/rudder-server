@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -26,12 +25,18 @@ import (
 
 // Upload related utils
 
-/*
-returns client in format "jobId<<>>hashedEmail"
-*/
-func generateClientID(user User, metadata Metadata) string {
-	jobId := metadata.JobID
-	return strconv.FormatInt(jobId, 10) + "<<>>" + user.HashedEmail
+// returns the clientID struct
+func newClientID(jobID int64, hashedEmail string) ClientID {
+	return ClientID{
+		JobID:       jobID,
+		HashedEmail: hashedEmail,
+	}
+}
+
+// returns the string representation of the clientID struct which is of format
+// jobId<<>>hashedEmail
+func (c *ClientID) ToString() string {
+	return fmt.Sprintf("%d%s%s", c.JobID, clientIDSeparator, c.HashedEmail)
 }
 
 /*
@@ -115,8 +120,9 @@ func populateZipFile(fileSize *int, line, destName string, eventCount *int, data
 	if int64(*fileSize) < common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB) && *eventCount < 4000000 {
 		*eventCount += 1
 		for _, uploadData := range data.Message.List {
-			clientId := generateClientID(uploadData, data.Metadata)
-			csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientId, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
+			clientIdStr := clientIdI.ToString()
+			csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 		}
 		*successJobIds = append(*successJobIds, data.Metadata.JobID)
 	} else {
@@ -280,17 +286,17 @@ In the below format (only adding relevant keys)
 		{"1<<>>client2", "error2", "Customer List Item Error"},
 	}
 */
-func ReadPollResults(filePath string) [][]string {
+func (b *BingAdsBulkUploader) ReadPollResults(filePath string) [][]string {
 	// Open the CSV file
 	file, err := os.Open(filePath)
 	if err != nil {
-		log.Fatal("Error opening the CSV file:", err)
+		b.logger.Errorf("Error opening the CSV file: %w", err)
 	}
 	// defer file.Close() and remove
 	defer func() {
 		err := file.Close()
 		if err != nil {
-			log.Fatal("Error closing the CSV file:", err)
+			b.logger.Errorf("Error closing the CSV file: %w", err)
 		}
 		// remove the file after the response has been written
 		err = os.Remove(filePath)
@@ -305,12 +311,44 @@ func ReadPollResults(filePath string) [][]string {
 	// Read all records from the CSV file
 	records, err := reader.ReadAll()
 	if err != nil {
-		log.Fatal("Error reading CSV:", err)
+		b.logger.Errorf("Error reading CSV: %w", err)
 	}
 	return records
 }
 
 /*
+	 converting the string clientID to ClientID struct
+	 formart :
+	  {
+		JobID       int64
+		HashedEmail string
+	  }
+*/
+func newClientIDFromString(clientID string) (*ClientID, error) {
+	clientIDParts := strings.Split(clientID, clientIDSeparator)
+	if len(clientIDParts) != 2 {
+		return nil, fmt.Errorf("invalid client id: %s", clientID)
+	}
+	jobID, err := strconv.ParseInt(clientIDParts[0], 0, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientID{
+		JobID:       jobID,
+		HashedEmail: clientIDParts[1],
+	}, nil
+}
+
+/*
+records is the output of ReadPollResults function which is in the below format
+
+	[][]string{
+		{"Client Id", "Error", "Type"},
+		{"1<<>>client1", "error1", "Customer List Error"},
+		{"1<<>>client2", "error1", "Customer List Item Error"},
+		{"1<<>>client2", "error2", "Customer List Item Error"},
+	}
+
 This function processes the CSV records and returns the JobIDs and the corresponding error messages
 In the below format:
 
@@ -323,8 +361,11 @@ In the below format:
 			"error2": {},
 		},
 	}
+
+** we are using map[string]map[string]struct{} for storing the error messages
+** because we want to avoid duplicate error messages
 */
-func ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
+func ProcessPollStatusData(records [][]string) (map[string]map[string]struct{}, error) {
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := 0
@@ -350,27 +391,29 @@ func ProcessPollStatusData(records [][]string) map[string]map[string]struct{} {
 		if typeIndex < len(record) && strings.Contains(rowname, "Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
 				// expecting the client ID is present as jobId<<>>clientId
-				clientID := strings.Split(record[clientIDIndex], "<<>>")
-				if len(clientID) >= 2 {
-					errorSet, ok := clientIDErrors[clientID[0]]
-					if !ok {
-						errorSet = make(map[string]struct{})
-						// making the structure as jobId: [error1, error2]
-						clientIDErrors[clientID[0]] = errorSet
-					}
-					errorSet[record[errorIndex]] = struct{}{}
-
+				clientId, err := newClientIDFromString(record[clientIDIndex])
+				if err != nil {
+					return nil, fmt.Errorf("invalid client id: %s", err)
 				}
+				JobId := strconv.FormatInt(clientId.JobID, 10)
+				errorSet, ok := clientIDErrors[JobId]
+				if !ok {
+					errorSet = make(map[string]struct{})
+					// making the structure as jobId: [error1, error2]
+					clientIDErrors[JobId] = errorSet
+				}
+				errorSet[record[errorIndex]] = struct{}{}
+
 			}
 		}
 	}
-	return clientIDErrors
+	return clientIDErrors, nil
 }
 
 // GetUploadStats Related utils
 
 // create array of failed job Ids from clientIDErrors
-func GetFailedKeys(clientIDErrors map[string]map[string]struct{}) []int64 {
+func GetFailedJobIDs(clientIDErrors map[string]map[string]struct{}) []int64 {
 	keys := make([]int64, 0, len(clientIDErrors))
 	for key := range clientIDErrors {
 		intKey, _ := strconv.ParseInt(key, 10, 64)
@@ -394,16 +437,16 @@ func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 
 // filtering out failed jobIds from the total array of jobIds
 // in order to get jobIds of the successful jobs
-func GetSuccessKeys(failedEventList, initialEventList []int64) []int64 {
+func GetSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 	successfulEvents := make([]int64, 0)
 
-	lookup := make(map[int64]bool)
+	failedEventsMap := make(map[int64]bool)
 	for _, element := range failedEventList {
-		lookup[element] = true
+		failedEventsMap[element] = true
 	}
 
 	for _, element := range initialEventList {
-		if !lookup[element] {
+		if !failedEventsMap[element] {
 			successfulEvents = append(successfulEvents, element)
 		}
 	}

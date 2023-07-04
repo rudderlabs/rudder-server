@@ -58,3 +58,10 @@ type ActionFileInfo struct {
 var actionTypes = [3]string{"Add", "Remove", "Update"}
 
 const comma = ","
+
+const clientIDSeparator = "<<>>"
+
+type ClientID struct {
+	JobID       int64
+	HashedEmail string
+}

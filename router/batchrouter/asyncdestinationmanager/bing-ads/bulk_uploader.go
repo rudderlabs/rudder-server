@@ -188,14 +188,17 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	return cumulativeResp
 }
 
-func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, int) {
-	records := ReadPollResults(filePath)
+func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, error) {
+	records := b.ReadPollResults(filePath)
 	status := "200"
-	clientIDErrors := ProcessPollStatusData(records)
+	clientIDErrors, err := ProcessPollStatusData(records)
+	if err != nil {
+		return common.GetUploadStatsResponse{}, err
+	}
 	eventStatsResponse := common.GetUploadStatsResponse{
 		Status: status,
 		Metadata: common.EventStatMeta{
-			FailedKeys:    GetFailedKeys(clientIDErrors),
+			FailedKeys:    GetFailedJobIDs(clientIDErrors),
 			FailedReasons: GetFailedReasons(clientIDErrors),
 		},
 	}
@@ -212,7 +215,7 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 	})
 	eventsSuccessStat.Count(len(eventStatsResponse.Metadata.SucceededKeys))
 	// separate status code is to be deleted
-	return eventStatsResponse, 200
+	return eventStatsResponse, nil
 }
 
 func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) common.GetUploadStatsResponse {
@@ -235,7 +238,12 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 				Status: "500",
 			}
 		}
-		response, _ := b.GetUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
+		response, err := b.GetUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
+		if err != nil {
+			return common.GetUploadStatsResponse{
+				Status: "500",
+			}
+		}
 		cumulativeFailedReasons = lo.Assign(cumulativeFailedReasons, response.Metadata.FailedReasons)
 		failedJobIds = append(failedJobIds, response.Metadata.FailedKeys...)
 		status = response.Status
@@ -246,7 +254,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 		Metadata: common.EventStatMeta{
 			FailedKeys:    failedJobIds,
 			FailedReasons: cumulativeFailedReasons,
-			SucceededKeys: GetSuccessKeys(eventStatsResponse.Metadata.FailedKeys, initialEventList),
+			SucceededKeys: GetSuccessJobIDs(eventStatsResponse.Metadata.FailedKeys, initialEventList),
 		},
 	}
 
