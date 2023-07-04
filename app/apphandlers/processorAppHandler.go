@@ -181,6 +181,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
 	)
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)

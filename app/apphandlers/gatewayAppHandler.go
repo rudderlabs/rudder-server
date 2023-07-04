@@ -92,6 +92,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	errDB := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 	)
 	defer errDB.Close()
 
