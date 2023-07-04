@@ -353,8 +353,8 @@ func getMetadataFromBadgerItem(item *badger.Item) (*model.Metadata, error) {
 		return nil, fmt.Errorf("could not copy item value: %w", err)
 	}
 	var metadata model.Metadata
-	if len(itemValue) == 0 {
-		return nil, nil
+	if len(itemValue) == 0 { // backwards compatibility
+		return &metadata, nil
 	}
 	err = json.Unmarshal(itemValue, &metadata)
 	if err != nil {
