@@ -31,7 +31,7 @@ func (rh *RepoSwitcher) Add(suppressions []model.Suppression, token []byte) erro
 	return rh.Repository.Add(suppressions, token)
 }
 
-func (rh *RepoSwitcher) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
+func (rh *RepoSwitcher) Suppressed(workspaceID, userID, sourceID string) (*model.Metadata, error) {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
 	return rh.Repository.Suppressed(workspaceID, userID, sourceID)
