@@ -23,7 +23,7 @@ type PollStatusResponse struct {
 	StatusCode     int
 	HasFailed      bool
 	HasWarning     bool
-	FailedJobUrls  string
+	FailedJobURLs  string
 	WarningJobsURL string
 }
 type AsyncUploadOutput struct {
@@ -111,7 +111,7 @@ type AsyncFailedPayload struct {
 }
 
 type FetchUploadJobStatus struct {
-	FailedJobInfo      string
+	FailedJobURLs      string
 	Parameters         stdjson.RawMessage
 	ImportingList      []*jobsdb.JobT
 	PollResultFileURLs string

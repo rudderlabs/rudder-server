@@ -159,7 +159,7 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 			Complete:      true,
 			StatusCode:    200,
 			HasFailed:     true,
-			FailedJobUrls: uploadStatusResp.ResultFileUrl,
+			FailedJobURLs: uploadStatusResp.ResultFileUrl,
 		}
 	case "FileUploaded", "InProgress", "PendingFileUpload":
 		return common.PollStatusResponse{
@@ -199,7 +199,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		*/
 		completionStatus = append(completionStatus, resp.Complete)
 		cumulativeCompletionStatus = !lo.Contains(completionStatus, false)
-		failedJobURLs = append(failedJobURLs, resp.FailedJobUrls)
+		failedJobURLs = append(failedJobURLs, resp.FailedJobURLs)
 		cumulativeProgressStatus = cumulativeResp.InProgress || resp.InProgress
 		cumulativeFailureStatus = cumulativeResp.HasFailed || resp.HasFailed
 	}
@@ -209,7 +209,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		InProgress:    cumulativeProgressStatus,
 		StatusCode:    200,
 		HasFailed:     cumulativeFailureStatus,
-		FailedJobUrls: strings.Join(failedJobURLs, ", "), // creating a comma separated string of all the result file urls
+		FailedJobURLs: strings.Join(failedJobURLs, commaSeparator), // creating a comma separated string of all the result file urls
 	}
 
 	return cumulativeResp

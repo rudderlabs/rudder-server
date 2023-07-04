@@ -364,11 +364,11 @@ var _ = Describe("Bing ads", func() {
 				Complete:      true,
 				StatusCode:    200,
 				HasFailed:     true,
-				FailedJobUrls: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv,",
+				FailedJobURLs: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv,",
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 
-			os.Remove(expectedResp.FailedJobUrls)
+			os.Remove(expectedResp.FailedJobURLs)
 
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
@@ -408,7 +408,7 @@ var _ = Describe("Bing ads", func() {
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 
-			os.Remove(expectedResp.FailedJobUrls)
+			os.Remove(expectedResp.FailedJobURLs)
 
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
