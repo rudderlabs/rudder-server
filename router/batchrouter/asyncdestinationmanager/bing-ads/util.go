@@ -123,7 +123,7 @@ func populateZipFile(actionFile *ActionFileInfo, audienceId, line, destName stri
 		for _, uploadData := range data.Message.List {
 			clientIdI := newClientID(strconv.FormatInt(data.Metadata.JobID, 10), uploadData.HashedEmail)
 			clientIdStr := clientIdI.ToString()
-			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.Email})
 		}
 		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
@@ -193,7 +193,7 @@ and finally Provides file paths containing error information as an array string
 func (b *BingAdsBulkUploader) DownloadAndGetUploadStatusFile(ResultFileUrl string) ([]string, error) {
 	// the final status file needs to be downloaded
 	fileAccessUrl := ResultFileUrl
-	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "amp;", "")
+	modifiedUrl := strings.TrimSpace(strings.ReplaceAll(fileAccessUrl, "amp;", ""))
 	outputDir := "/tmp"
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {

@@ -283,7 +283,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 		Metadata: common.EventStatMeta{
 			FailedKeys:    failedJobIds,
 			FailedReasons: cumulativeFailedReasons,
-			SucceededKeys: GetSuccessJobIDs(eventStatsResponse.Metadata.FailedKeys, initialEventList),
+			SucceededKeys: GetSuccessJobIDs(failedJobIds, initialEventList),
 		},
 	}
 
