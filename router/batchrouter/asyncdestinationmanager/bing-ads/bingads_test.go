@@ -448,9 +448,9 @@ var _ = Describe("Bing ads", func() {
 				Metadata: common.EventStatMeta{
 					FailedKeys: []int64{1, 2},
 					ErrFailed:  nil,
-					FailedReasons: map[string]string{
-						"1": "error1, error2",
-						"2": "error2",
+					FailedReasons: map[int64]string{
+						1: "error1, error2",
+						2: "error2",
 					},
 					WarningKeys:   []int64{},
 					ErrWarning:    nil,

@@ -10,18 +10,21 @@ import (
 	"github.com/samber/lo"
 
 	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func NewBingAdsBulkUploader(name string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
+func NewBingAdsBulkUploader(destName string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
-		destName: name,
-		service:  service,
-		logger:   logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
-		client:   *client,
+		destName:      destName,
+		service:       service,
+		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("BingAds").Child("BingAdsBulkUploader"),
+		client:        *client,
+		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB),
+		eventsLimit:   common.GetBatchRouterConfigInt64("MaxEventsLimit", destName, 4000000),
 	}
 }
 
@@ -120,12 +123,12 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 	}
 
 	var parameters common.ImportParameters
-	parameters.ImportId = strings.Join(importIds, comma)
+	parameters.ImportId = strings.Join(importIds, commaSeparator)
 	importParameters, err := stdjson.Marshal(parameters)
 	if err != nil {
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
-	allErrors := `{"error":"` + strings.Join(errors, comma) + `"}`
+	allErrors := `{"error":"` + strings.Join(errors, commaSeparator) + `"}`
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     successJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
@@ -195,7 +198,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			5. if all the requests are failed then the whole request is failed
 		*/
 		completionStatus = append(completionStatus, resp.Complete)
-		cumulativeCompletionStatus = generateCompletionStatus(completionStatus)
+		cumulativeCompletionStatus = !lo.Contains(completionStatus, false)
 		failedJobsInfo = append(failedJobsInfo, resp.FailedJobsInfo)
 		cumulativeProgressStatus = cumulativeResp.InProgress || resp.InProgress
 		cumulativeFailureStatus = cumulativeResp.HasFailed || resp.HasFailed
@@ -225,7 +228,7 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 	eventStatsResponse := common.GetUploadStatsResponse{
 		Status: status,
 		Metadata: common.EventStatMeta{
-			FailedKeys:    GetFailedJobIDs(clientIDErrors),
+			FailedKeys:    lo.Keys(clientIDErrors),
 			FailedReasons: GetFailedReasons(clientIDErrors),
 		},
 	}
@@ -255,7 +258,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	}
 	var eventStatsResponse common.GetUploadStatsResponse
 	var failedJobIds []int64
-	var cumulativeFailedReasons map[string]string
+	var cumulativeFailedReasons map[int64]string
 	var status string
 	fileURLs := common.GenerateArrayOfStrings(UploadStatsInput.PollResultFileURLs)
 	for _, fileURL := range fileURLs {

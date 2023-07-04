@@ -196,7 +196,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 												WorkspaceId:   job.WorkspaceId,
 											}
 										} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, job.JobID) {
-											errorRespString := uploadStatsResp.Metadata.FailedReasons[strconv.FormatInt(job.JobID, 10)]
+											errorRespString := uploadStatsResp.Metadata.FailedReasons[job.JobID]
 											errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
