@@ -84,7 +84,7 @@ func convertCsvToZip(actionFile *ActionFileInfo) error {
 
 	zipWriter := zip.NewWriter(zipFile)
 
-	csvFileInZip, err := zipWriter.Create(filepath.Base(actionFile.ZipFilePath))
+	csvFileInZip, err := zipWriter.Create(filepath.Base(actionFile.CSVFilePath))
 	if err != nil {
 		return err
 	}
