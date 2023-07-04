@@ -36,14 +36,14 @@ func newClientID(jobID string, hashedEmail string) ClientID {
 // returns the string representation of the clientID struct which is of format
 // jobId<<>>hashedEmail
 func (c *ClientID) ToString() string {
-	return fmt.Sprintf("%d%s%s", c.JobID, clientIDSeparator, c.HashedEmail)
+	return fmt.Sprintf("%s%s%s", c.JobID, clientIDSeparator, c.HashedEmail)
 }
 
 /*
 returns the csv file and zip file path, along with the csv writer that
 contains the template of the uploadable file.
 */
-func createActionFile(audienceId, actionType string) (ActionFileInfo, error) {
+func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 	tmpDirPath, _ := misc.CreateTMPDIR()
@@ -52,13 +52,13 @@ func createActionFile(audienceId, actionType string) (ActionFileInfo, error) {
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return ActionFileInfo{}, err
+		return nil, err
 	}
 	csvWriter := csv.NewWriter(csvFile)
 	_ = csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
 	_ = csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
 	_ = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""})
-	return ActionFileInfo{
+	return &ActionFileInfo{
 		Action:      actionType,
 		ZipFilePath: zipFilePath,
 		CSVFilePath: csvFilePath,
@@ -66,15 +66,15 @@ func createActionFile(audienceId, actionType string) (ActionFileInfo, error) {
 	}, nil
 }
 
-func convertCsvToZip(csvFilePath, zipFilePath string, eventCount int) error {
-	csvFile, err := os.Open(csvFilePath)
+func convertCsvToZip(actionFile *ActionFileInfo) error {
+	csvFile, err := os.Open(actionFile.CSVFilePath)
 	if err != nil {
 		return err
 	}
-	zipFile, err := os.Create(zipFilePath)
-	if eventCount == 0 {
-		os.Remove(csvFilePath)
-		os.Remove(zipFilePath)
+	zipFile, err := os.Create(actionFile.ZipFilePath)
+	if actionFile.EventCount == 0 {
+		os.Remove(actionFile.CSVFilePath)
+		os.Remove(actionFile.ZipFilePath)
 		return nil
 	}
 	if err != nil {
@@ -84,7 +84,7 @@ func convertCsvToZip(csvFilePath, zipFilePath string, eventCount int) error {
 
 	zipWriter := zip.NewWriter(zipFile)
 
-	csvFileInZip, err := zipWriter.Create(filepath.Base(csvFilePath))
+	csvFileInZip, err := zipWriter.Create(filepath.Base(actionFile.ZipFilePath))
 	if err != nil {
 		return err
 	}
@@ -104,7 +104,7 @@ func convertCsvToZip(csvFilePath, zipFilePath string, eventCount int) error {
 		return err
 	}
 	// Remove the csv file after creating the zip file
-	err = os.Remove(csvFilePath)
+	err = os.Remove(actionFile.CSVFilePath)
 	if err != nil {
 		return err
 	}
@@ -115,18 +115,19 @@ func convertCsvToZip(csvFilePath, zipFilePath string, eventCount int) error {
 Populates the csv file only if it is within the file size limit 100mb and row number limit 4000000
 Otherwise event is appended to the failedJobs and will be retried.
 */
-func populateZipFile(fileSize *int, line, destName string, eventCount *int, data Data, csvWriter *csv.Writer, audienceId string, successJobIds, failedJobIds *[]int64) {
-	*fileSize = *fileSize + len([]byte(line))
-	if int64(*fileSize) < common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB) && *eventCount < 4000000 {
-		*eventCount += 1
+func populateZipFile(actionFile *ActionFileInfo, audienceId, line, destName string, data Data) {
+	newFileSize := actionFile.FileSize + len(line)
+	if int64(newFileSize) < common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB) && actionFile.EventCount < 4000000 {
+		actionFile.FileSize = newFileSize
+		actionFile.EventCount += 1
 		for _, uploadData := range data.Message.List {
 			clientIdI := newClientID(strconv.FormatInt(data.Metadata.JobID, 10), uploadData.HashedEmail)
 			clientIdStr := clientIdI.ToString()
-			csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 		}
-		*successJobIds = append(*successJobIds, data.Metadata.JobID)
+		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
-		*failedJobIds = append(*failedJobIds, data.Metadata.JobID)
+		actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
 	}
 }
 
@@ -138,7 +139,7 @@ The following map indicates the index->actionType mapping
 1-> Remove
 2-> Update
 */
-func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]ActionFileInfo, error) {
+func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*ActionFileInfo, error) {
 	textFile, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -148,7 +149,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]Acti
 	if err != nil {
 		return nil, err
 	}
-	actionFiles := map[string]ActionFileInfo{}
+	actionFiles := map[string]*ActionFileInfo{}
 	for _, actionType := range actionTypes {
 		actionFiles[actionType], err = createActionFile(audienceId, actionType)
 		if err != nil {
@@ -171,15 +172,13 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]Acti
 			})
 		payloadSizeStat.Observe(float64(len(data.Message.List)))
 		actionFile := actionFiles[data.Message.Action]
-		populateZipFile(&actionFile.FileSize, line, b.destName, &actionFile.EventCount,
-			data, actionFile.CSVWriter, audienceId, &actionFile.SuccessfulJobIDs,
-			&actionFile.FailedJobIDs)
+		populateZipFile(actionFile, audienceId, line, b.destName, data)
 
 	}
 	for _, actionType := range actionTypes {
 		actionFile := actionFiles[actionType]
 		actionFile.CSVWriter.Flush()
-		convertCsvToZip(actionFile.CSVFilePath, actionFile.ZipFilePath, actionFile.EventCount)
+		convertCsvToZip(actionFile)
 	}
 	// Create the ZIP file and add the CSV file to it
 	return lo.Values(actionFiles), nil
@@ -324,14 +323,8 @@ func (b *BingAdsBulkUploader) ReadPollResults(filePath string) ([][]string, erro
 	return records, nil
 }
 
-/*
-	 converting the string clientID to ClientID struct
-	 formart :
-	  {
-		JobID       int64
-		HashedEmail string
-	  }
-*/
+// converting the string clientID to ClientID struct
+
 func newClientIDFromString(clientID string) (*ClientID, error) {
 	clientIDParts := strings.Split(clientID, clientIDSeparator)
 	if len(clientIDParts) != 2 {
