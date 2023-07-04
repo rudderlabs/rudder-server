@@ -26,7 +26,7 @@ import (
 // Upload related utils
 
 // returns the clientID struct
-func newClientID(jobID int64, hashedEmail string) ClientID {
+func newClientID(jobID string, hashedEmail string) ClientID {
 	return ClientID{
 		JobID:       jobID,
 		HashedEmail: hashedEmail,
@@ -120,7 +120,7 @@ func populateZipFile(fileSize *int, line, destName string, eventCount *int, data
 	if int64(*fileSize) < common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB) && *eventCount < 4000000 {
 		*eventCount += 1
 		for _, uploadData := range data.Message.List {
-			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
+			clientIdI := newClientID(strconv.FormatInt(data.Metadata.JobID, 10), uploadData.HashedEmail)
 			clientIdStr := clientIdI.ToString()
 			csvWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 		}
@@ -337,12 +337,8 @@ func newClientIDFromString(clientID string) (*ClientID, error) {
 	if len(clientIDParts) != 2 {
 		return nil, fmt.Errorf("invalid client id: %s", clientID)
 	}
-	jobID, err := strconv.ParseInt(clientIDParts[0], 0, 64)
-	if err != nil {
-		return nil, err
-	}
 	return &ClientID{
-		JobID:       jobID,
+		JobID:       clientIDParts[0],
 		HashedEmail: clientIDParts[1],
 	}, nil
 }
@@ -403,12 +399,11 @@ func ProcessPollStatusData(records [][]string) (map[string]map[string]struct{}, 
 				if err != nil {
 					return nil, err
 				}
-				JobId := strconv.FormatInt(clientId.JobID, 10)
-				errorSet, ok := clientIDErrors[JobId]
+				errorSet, ok := clientIDErrors[clientId.JobID]
 				if !ok {
 					errorSet = make(map[string]struct{})
 					// making the structure as jobId: [error1, error2]
-					clientIDErrors[JobId] = errorSet
+					clientIDErrors[clientId.JobID] = errorSet
 				}
 				errorSet[record[errorIndex]] = struct{}{}
 
@@ -446,18 +441,7 @@ func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 // filtering out failed jobIds from the total array of jobIds
 // in order to get jobIds of the successful jobs
 func GetSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
-	successfulEvents := make([]int64, 0)
-
-	failedEventsMap := make(map[int64]bool)
-	for _, element := range failedEventList {
-		failedEventsMap[element] = true
-	}
-
-	for _, element := range initialEventList {
-		if !failedEventsMap[element] {
-			successfulEvents = append(successfulEvents, element)
-		}
-	}
+	successfulEvents, _ := lo.Difference(initialEventList, failedEventList)
 	return successfulEvents
 }
 

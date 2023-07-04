@@ -33,7 +33,23 @@ The maximum size of the zip file is 100MB, if the size of the zip file exceeds 1
 func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := stdjson.Marshal(destination.Config)
+	if err != nil {
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+			FailedReason:  fmt.Sprintf("got error while marshalling the destination config %v", err.Error()),
+			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: destination.ID,
+		}
+	}
 	err = stdjson.Unmarshal(jsonConfig, &destConfig)
+	if err != nil {
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+			FailedReason:  fmt.Sprintf("got error while unmarshalling the destination config %v", err.Error()),
+			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: destination.ID,
+		}
+	}
 	var failedJobs []int64
 	var successJobs []int64
 	var importIds []string
@@ -245,12 +261,14 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	for _, fileURL := range fileURLs {
 		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
+			b.logger.Error("Error in downloading and unzipping the file: %v", err)
 			return common.GetUploadStatsResponse{
 				Status: "500",
 			}
 		}
 		response, err := b.GetUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
 		if err != nil {
+			b.logger.Error("Error in getting upload stats of single import: %v", err)
 			return common.GetUploadStatsResponse{
 				Status: "500",
 			}
