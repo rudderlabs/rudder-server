@@ -360,7 +360,5 @@ func getMetadataFromBadgerItem(item *badger.Item) (*model.Metadata, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal metadata: %w", err)
 	}
-	return &model.Metadata{
-		CreatedAt: metadata.CreatedAt,
-	}, nil
+	return &metadata, nil
 }
