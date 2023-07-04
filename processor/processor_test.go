@@ -668,7 +668,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.config.transformerURL = transformerServer.URL
 		proc.archivalDB = c.mockArchivalDB
-		proc.config.archivalV2Enabled = true
+		proc.config.archivalEnabled = true
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy

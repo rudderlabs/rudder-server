@@ -137,7 +137,7 @@ type Handle struct {
 		GWCustomVal               string
 		asyncInit                 *misc.AsyncInit
 		eventSchemaV2Enabled      bool
-		archivalEnabled         bool
+		archivalEnabled           bool
 		eventSchemaV2AllSources   bool
 	}
 
@@ -1494,7 +1494,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				}
 			}
 
-			if proc.config.archivalV2Enabled &&
+			if proc.config.archivalEnabled &&
 				commonMetadataFromSingularEvent.SourceJobRunID != "" { // archival enabled
 				if payload := payloadFunc(); payload != nil {
 					archivalJobs = append(archivalJobs,

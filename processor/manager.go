@@ -27,7 +27,7 @@ type LifecycleManager struct {
 	batchRouterDB    *jobsdb.HandleT
 	errDB            *jobsdb.HandleT
 	esDB             *jobsdb.HandleT
-	arcDB           *jobsdb.HandleT
+	arcDB            *jobsdb.HandleT
 	clearDB          *bool
 	ReportingI       types.Reporting // need not initialize again
 	BackendConfig    backendconfig.BackendConfig
@@ -95,7 +95,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb, esDB, arc
 		batchRouterDB:    brtDb,
 		errDB:            errDb,
 		esDB:             esDB,
-		arcDB:           arcDB,
+		arcDB:            arcDB,
 		clearDB:          clearDb,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		ReportingI:       reporting,
