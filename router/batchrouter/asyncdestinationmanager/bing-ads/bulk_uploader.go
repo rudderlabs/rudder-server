@@ -32,7 +32,6 @@ The maximum size of the zip file is 100MB, if the size of the zip file exceeds 1
 */
 func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destConfig := DestinationConfig{}
-	// TODO: Need to handle errors here
 	jsonConfig, err := stdjson.Marshal(destination.Config)
 	err = stdjson.Unmarshal(jsonConfig, &destConfig)
 	var failedJobs []int64

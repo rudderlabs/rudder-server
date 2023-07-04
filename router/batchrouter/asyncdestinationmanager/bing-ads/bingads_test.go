@@ -1,7 +1,6 @@
 package bingads
 
 import (
-	"encoding/json"
 	stdjson "encoding/json"
 	"fmt"
 	"io"
@@ -146,7 +145,7 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := json.Marshal(parameters)
+			importParameters, _ := stdjson.Marshal(parameters)
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{1, 2, 3, 4},
 				FailedReason:        "{\"error\":\"0:error in getting bulk upload url: Error in getting bulk upload url,1:error in getting bulk upload url: Error in getting bulk upload url,\"}",
@@ -200,7 +199,7 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := json.Marshal(parameters)
+			importParameters, _ := stdjson.Marshal(parameters)
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{1, 2, 3, 4},
 				FailedReason:        "{\"error\":\"0:getting empty string in upload url or request id,1:getting empty string in upload url or request id,\"}",
@@ -271,7 +270,7 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := json.Marshal(parameters)
+			importParameters, _ := stdjson.Marshal(parameters)
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{1, 2, 3, 4},
 				FailedReason:        "{\"error\":\"0:error in uploading the bulk file: Error in uploading bulk file,1:error in uploading the bulk file: Error in uploading bulk file,\"}",
@@ -308,17 +307,9 @@ var _ = Describe("Bing ads", func() {
 			expectedResp := common.PollStatusResponse{
 				Complete:       true,
 				StatusCode:     200,
-				HasFailed:      false,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: ",",
 			}
-			expectedStatus := 200
-			recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
-
+			recievedResponse := bulkUploader.Poll(pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
 		})
 
 		It("TestBingAdsPollFailureCase", func() {
@@ -333,19 +324,11 @@ var _ = Describe("Bing ads", func() {
 				ImportId: "dummyRequestId123",
 			}
 			expectedResp := common.PollStatusResponse{
-				Complete:       false,
 				StatusCode:     400,
 				HasFailed:      true,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: "",
 			}
-			expectedStatus := 500
-			recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
-
+			recievedResponse := bulkUploader.Poll(pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
 		})
 
 		It("TestBingAdsPollPartialFailureCase", func() {
@@ -381,18 +364,13 @@ var _ = Describe("Bing ads", func() {
 				Complete:       true,
 				StatusCode:     200,
 				HasFailed:      true,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv,",
+				FailedJobsInfo: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv,",
 			}
-			expectedStatus := 200
-			recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(pollInput)
 
-			os.Remove(expectedResp.OutputFilePath)
+			os.Remove(expectedResp.FailedJobsInfo)
 
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
 		})
 
 		It("TestBingAdsPollPartialFailureCaseWithWrongFilePath", func() {
@@ -425,21 +403,14 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			expectedResp := common.PollStatusResponse{
-				Complete:       false,
 				StatusCode:     400,
 				HasFailed:      true,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: "",
 			}
-			expectedStatus := 400
-			recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(pollInput)
 
-			os.Remove(expectedResp.OutputFilePath)
+			os.Remove(expectedResp.FailedJobsInfo)
 
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
 		})
 
 		It("TestBingAdsGetUploadStats", func() {
@@ -459,7 +430,7 @@ var _ = Describe("Bing ads", func() {
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
 			UploadStatsInput := common.FetchUploadJobStatus{
-				OutputFilePath: testFilePath,
+				PollResultFileURLs: testFilePath,
 				ImportingList: []*jobsdb.JobT{
 					{
 						JobID: 1,
@@ -487,10 +458,8 @@ var _ = Describe("Bing ads", func() {
 					ErrSuccess:    nil,
 				},
 			}
-			expectedStatus := 200
-			recievedResponse, RecievedStatus := bulkUploader.GetUploadStats(UploadStatsInput)
+			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
 		})
 
 		It("TestBingAdsUploadFailedWhileTransformingFile", func() {
