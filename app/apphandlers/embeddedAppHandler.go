@@ -48,7 +48,6 @@ type embeddedApp struct {
 		routerDSLimit      int
 		batchRouterDSLimit int
 		gatewayDSLimit     int
-		archivalDSLimit    int
 	}
 }
 
@@ -58,7 +57,6 @@ func (a *embeddedApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterIntConfigVariable(0, &a.config.archivalDSLimit, true, 1, "ArchivalV2.jobsDB.dsLimit", "JobsDB.dsLimit")
 }
 
 func (a *embeddedApp) Setup(options *app.Options) error {
@@ -178,10 +176,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	)
 
 	archivalDB := jobsdb.NewForReadWrite(
-		"archival",
+		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(&a.config.archivalDSLimit),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Archival.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
 
 	var schemaForwarder schema_forwarder.Forwarder

@@ -137,7 +137,7 @@ type Handle struct {
 		GWCustomVal               string
 		asyncInit                 *misc.AsyncInit
 		eventSchemaV2Enabled      bool
-		archivalV2Enabled         bool
+		archivalEnabled         bool
 		eventSchemaV2AllSources   bool
 	}
 
@@ -601,7 +601,7 @@ func (proc *Handle) loadConfig() {
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	// EventSchemas2 feature.
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2Enabled, false, "EventSchemas2.enabled")
-	config.RegisterBoolConfigVariable(false, &proc.config.archivalV2Enabled, false, "ArchivalV2.enabled")
+	config.RegisterBoolConfigVariable(false, &proc.config.archivalEnabled, true, "ArchivalV2.enabled")
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2AllSources, false, "EventSchemas2.enableAllSources")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
