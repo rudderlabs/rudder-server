@@ -62,6 +62,6 @@ const comma = ","
 const clientIDSeparator = "<<>>"
 
 type ClientID struct {
-	JobID       int64
+	JobID       string
 	HashedEmail string
 }
