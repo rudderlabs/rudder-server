@@ -348,50 +348,69 @@ func TestIntegration(t *testing.T) {
 func createGCSBucket(t testing.TB, ctx context.Context, endpoint, bucketName string) {
 	t.Helper()
 
-	require.NoError(t, testhelper.WithConstantRetries(func() error {
+	require.Eventually(t, func() bool {
 		client, err := storage.NewClient(ctx, option.WithEndpoint(endpoint))
 		if err != nil {
-			return fmt.Errorf("create GCS client: %w", err)
+			t.Logf("create GCS client: %v", err)
+			return false
 		}
 
 		bucket := client.Bucket(bucketName)
 
 		_, err = bucket.Attrs(ctx)
 		if err == nil {
-			return nil
+			return true
 		}
 		if !errors.Is(err, storage.ErrBucketNotExist) {
-			return fmt.Errorf("bucket attrs: %w", err)
+			t.Log("bucket attrs: ", err)
+			return false
 		}
 
-		return bucket.Create(ctx, "test", &storage.BucketAttrs{
+		err = bucket.Create(ctx, "test", &storage.BucketAttrs{
 			Location: "US",
 			Name:     bucketName,
 		})
-	}))
+		if err != nil {
+			t.Log("create bucket: ", err)
+			return false
+		}
+		return true
+	},
+		30*time.Second,
+		1*time.Second,
+	)
 }
 
 func createMinioBucket(t testing.TB, ctx context.Context, endpoint, accessKeyId, accessKey, bucketName, region string) {
 	t.Helper()
 
-	require.NoError(t, testhelper.WithConstantRetries(func() error {
+	require.Eventually(t, func() bool {
 		minioClient, err := minio.New(endpoint, &minio.Options{
 			Creds:  credentials.NewStaticV4(accessKeyId, accessKey, ""),
 			Secure: false,
 		})
 		if err != nil {
-			return fmt.Errorf("create minio client: %w", err)
+			t.Log("create minio client: ", err)
+			return false
 		}
 
 		exists, err := minioClient.BucketExists(ctx, bucketName)
 		if err != nil {
-			return fmt.Errorf("check if bucket exists: %w", err)
+			t.Log("check if bucket exists: ", err)
+			return false
 		}
-
 		if exists {
-			return nil
+			return true
 		}
 
-		return minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{Region: region})
-	}))
+		err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{Region: region})
+		if err != nil {
+			t.Log("make bucket: ", err)
+			return false
+		}
+		return true
+	},
+		30*time.Second,
+		1*time.Second,
+	)
 }
