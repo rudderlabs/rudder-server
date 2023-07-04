@@ -286,25 +286,32 @@ In the below format (only adding relevant keys)
 		{"1<<>>client2", "error2", "Customer List Item Error"},
 	}
 */
-func (b *BingAdsBulkUploader) ReadPollResults(filePath string) [][]string {
+func (b *BingAdsBulkUploader) ReadPollResults(filePath string) ([][]string, error) {
 	// Open the CSV file
 	file, err := os.Open(filePath)
 	if err != nil {
 		b.logger.Errorf("Error opening the CSV file: %w", err)
+		return nil, err
 	}
 	// defer file.Close() and remove
 	defer func() {
-		err := file.Close()
-		if err != nil {
+		closeErr := file.Close()
+		if closeErr != nil {
 			b.logger.Errorf("Error closing the CSV file: %w", err)
+			if err == nil {
+				err = closeErr
+			}
 		}
 		// remove the file after the response has been written
-		err = os.Remove(filePath)
-		if err != nil {
-			panic(err)
+		removeErr := os.Remove(filePath)
+		if removeErr != nil {
+			b.logger.Errorf("Error removing the CSV file: %w", removeErr)
+			if err == nil {
+				err = removeErr
+			}
+
 		}
 	}()
-
 	// Create a new CSV reader
 	reader := csv.NewReader(file)
 
@@ -312,8 +319,9 @@ func (b *BingAdsBulkUploader) ReadPollResults(filePath string) [][]string {
 	records, err := reader.ReadAll()
 	if err != nil {
 		b.logger.Errorf("Error reading CSV: %w", err)
+		return nil, err
 	}
-	return records
+	return records, nil
 }
 
 /*
@@ -393,7 +401,7 @@ func ProcessPollStatusData(records [][]string) (map[string]map[string]struct{}, 
 				// expecting the client ID is present as jobId<<>>clientId
 				clientId, err := newClientIDFromString(record[clientIDIndex])
 				if err != nil {
-					return nil, fmt.Errorf("invalid client id: %s", err)
+					return nil, err
 				}
 				JobId := strconv.FormatInt(clientId.JobID, 10)
 				errorSet, ok := clientIDErrors[JobId]

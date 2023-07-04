@@ -160,7 +160,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	fmt.Println("Polling Bing Ads")
 	var cumulativeResp common.PollStatusResponse
 	var completionStatus []bool
-	var failedJobsInfo string
+	var failedJobsInfo []string
 	var cumulativeCompletionStatus, cumulativeProgressStatus, cumulativeFailureStatus bool
 	// var statusCode int
 	requestIdsArray := common.GenerateArrayOfStrings(pollInput.ImportId)
@@ -181,7 +181,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		*/
 		completionStatus = append(completionStatus, resp.Complete)
 		cumulativeCompletionStatus = generateCompletionStatus(completionStatus)
-		failedJobsInfo = cumulativeResp.FailedJobsInfo + resp.FailedJobsInfo + ","
+		failedJobsInfo = append(failedJobsInfo, resp.FailedJobsInfo)
 		cumulativeProgressStatus = cumulativeResp.InProgress || resp.InProgress
 		cumulativeFailureStatus = cumulativeResp.HasFailed || resp.HasFailed
 	}
@@ -191,14 +191,17 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		InProgress:     cumulativeProgressStatus,
 		StatusCode:     200,
 		HasFailed:      cumulativeFailureStatus,
-		FailedJobsInfo: failedJobsInfo, // creating a comma separated string of all the result file urls
+		FailedJobsInfo: strings.Join(failedJobsInfo, ", "), // creating a comma separated string of all the result file urls
 	}
 
 	return cumulativeResp
 }
 
 func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, error) {
-	records := b.ReadPollResults(filePath)
+	records, err := b.ReadPollResults(filePath)
+	if err != nil {
+		return common.GetUploadStatsResponse{}, err
+	}
 	status := "200"
 	clientIDErrors, err := ProcessPollStatusData(records)
 	if err != nil {
