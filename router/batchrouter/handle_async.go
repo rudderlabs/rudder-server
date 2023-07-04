@@ -109,10 +109,10 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								}
 								importingList := list.Jobs
 								var GetUploadStatsInput common.FetchUploadJobStatus
-								GetUploadStatsInput.FailedJobInfo = asyncResponse.FailedJobsInfo
+								GetUploadStatsInput.FailedJobInfo = asyncResponse.FailedJobUrls
 								GetUploadStatsInput.Parameters = importingJob.LastJobStatus.Parameters
 								GetUploadStatsInput.ImportingList = importingList
-								GetUploadStatsInput.PollResultFileURLs = asyncResponse.FailedJobsInfo
+								GetUploadStatsInput.PollResultFileURLs = asyncResponse.FailedJobUrls
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -196,7 +196,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 												WorkspaceId:   job.WorkspaceId,
 											}
 										} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, job.JobID) {
-											errorRespString := uploadStatsResp.Metadata.FailedReasons[strconv.FormatInt(job.JobID, 10)]
+											errorRespString := uploadStatsResp.Metadata.FailedReasons[job.JobID]
 											errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,

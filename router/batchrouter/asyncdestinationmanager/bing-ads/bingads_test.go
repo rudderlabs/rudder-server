@@ -361,14 +361,14 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			expectedResp := common.PollStatusResponse{
-				Complete:       true,
-				StatusCode:     200,
-				HasFailed:      true,
-				FailedJobsInfo: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv,",
+				Complete:      true,
+				StatusCode:    200,
+				HasFailed:     true,
+				FailedJobUrls: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv,",
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 
-			os.Remove(expectedResp.FailedJobsInfo)
+			os.Remove(expectedResp.FailedJobUrls)
 
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
@@ -408,7 +408,7 @@ var _ = Describe("Bing ads", func() {
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 
-			os.Remove(expectedResp.FailedJobsInfo)
+			os.Remove(expectedResp.FailedJobUrls)
 
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
@@ -448,9 +448,9 @@ var _ = Describe("Bing ads", func() {
 				Metadata: common.EventStatMeta{
 					FailedKeys: []int64{1, 2},
 					ErrFailed:  nil,
-					FailedReasons: map[string]string{
-						"1": "error1, error2",
-						"2": "error2",
+					FailedReasons: map[int64]string{
+						1: "error1, error2",
+						2: "error2",
 					},
 					WarningKeys:   []int64{},
 					ErrWarning:    nil,

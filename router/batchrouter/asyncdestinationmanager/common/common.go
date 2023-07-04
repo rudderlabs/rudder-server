@@ -23,7 +23,7 @@ type PollStatusResponse struct {
 	StatusCode     int
 	HasFailed      bool
 	HasWarning     bool
-	FailedJobsInfo string
+	FailedJobUrls  string
 	WarningJobsURL string
 }
 type AsyncUploadOutput struct {
@@ -124,7 +124,7 @@ type EventStatMeta struct {
 	ErrWarning    error
 	SucceededKeys []int64
 	ErrSuccess    error
-	FailedReasons map[string]string
+	FailedReasons map[int64]string
 }
 
 type GetUploadStatsResponse struct {

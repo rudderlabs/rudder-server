@@ -17,16 +17,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // Upload related utils
 
 // returns the clientID struct
-func newClientID(jobID, hashedEmail string) ClientID {
+func newClientID(jobID int64, hashedEmail string) ClientID {
 	return ClientID{
 		JobID:       jobID,
 		HashedEmail: hashedEmail,
@@ -45,12 +43,11 @@ contains the template of the uploadable file.
 */
 func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	uuid := uuid.New()
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		return nil, err
 	}
-	path := path.Join(tmpDirPath, localTmpDirName, uuid.String())
+	path := path.Join(tmpDirPath, localTmpDirName, uuid.NewString())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	csvFile, err := os.Create(csvFilePath)
@@ -75,16 +72,12 @@ func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
 }
 
 func convertCsvToZip(actionFile *ActionFileInfo) error {
-	csvFile, err := os.Open(actionFile.CSVFilePath)
-	if err != nil {
-		return err
-	}
-	zipFile, err := os.Create(actionFile.ZipFilePath)
 	if actionFile.EventCount == 0 {
 		os.Remove(actionFile.CSVFilePath)
 		os.Remove(actionFile.ZipFilePath)
 		return nil
 	}
+	zipFile, err := os.Create(actionFile.ZipFilePath)
 	if err != nil {
 		return err
 	}
@@ -96,24 +89,24 @@ func convertCsvToZip(actionFile *ActionFileInfo) error {
 	if err != nil {
 		return err
 	}
-
-	_, err = csvFile.Seek(0, 0)
+	csvFile, err := os.Open(actionFile.CSVFilePath)
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(csvFileInZip, csvFile)
-	if err != nil {
+	if _, err := csvFile.Seek(0, 0); err != nil {
+		return err
+	}
+
+	if _, err = io.Copy(csvFileInZip, csvFile); err != nil {
 		return err
 	}
 
 	// Close the ZIP writer
-	err = zipWriter.Close()
-	if err != nil {
+	if err = zipWriter.Close(); err != nil {
 		return err
 	}
 	// Remove the csv file after creating the zip file
-	err = os.Remove(actionFile.CSVFilePath)
-	if err != nil {
+	if err = os.Remove(actionFile.CSVFilePath); err != nil {
 		return err
 	}
 	return nil
@@ -123,13 +116,14 @@ func convertCsvToZip(actionFile *ActionFileInfo) error {
 Populates the csv file only if it is within the file size limit 100mb and row number limit 4000000
 Otherwise event is appended to the failedJobs and will be retried.
 */
-func populateZipFile(actionFile *ActionFileInfo, audienceId, line, destName string, data Data) {
-	newFileSize := actionFile.FileSize + len(line)
-	if int64(newFileSize) < common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB) && actionFile.EventCount < 4000000 {
+func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audienceId, line, destName string, data Data) {
+	newFileSize := actionFile.FileSize + int64(len(line))
+	if newFileSize < b.fileSizeLimit &&
+		actionFile.EventCount < b.eventsLimit {
 		actionFile.FileSize = newFileSize
 		actionFile.EventCount += 1
 		for _, uploadData := range data.Message.List {
-			clientIdI := newClientID(strconv.FormatInt(data.Metadata.JobID, 10), uploadData.HashedEmail)
+			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
 			clientIdStr := clientIdI.ToString()
 			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 		}
@@ -168,8 +162,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*Act
 	for scanner.Scan() {
 		line := scanner.Text()
 		var data Data
-		err := json.Unmarshal([]byte(line), &data)
-		if err != nil {
+		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			return nil, err
 		}
 
@@ -180,7 +173,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*Act
 			})
 		payloadSizeStat.Observe(float64(len(data.Message.List)))
 		actionFile := actionFiles[data.Message.Action]
-		populateZipFile(actionFile, audienceId, line, b.destName, data)
+		b.populateZipFile(actionFile, audienceId, line, b.destName, data)
 
 	}
 	for _, actionType := range actionTypes {
@@ -201,7 +194,7 @@ and finally Provides file paths containing error information as an array string
 func (b *BingAdsBulkUploader) DownloadAndGetUploadStatusFile(ResultFileUrl string) ([]string, error) {
 	// the final status file needs to be downloaded
 	fileAccessUrl := ResultFileUrl
-	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "amp;", "")
+	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "&amp;", "&")
 	outputDir := "/tmp"
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
@@ -216,9 +209,8 @@ func (b *BingAdsBulkUploader) DownloadAndGetUploadStatusFile(ResultFileUrl strin
 	}
 	defer fileLoadResp.Body.Close()
 
-	uuid := uuid.New()
 	// Create a temporary file to save the downloaded zip file
-	tempFile, err := os.CreateTemp("", fmt.Sprintf("bingads_%s_*.zip", uuid.String()))
+	tempFile, err := os.CreateTemp("", fmt.Sprintf("bingads_%s_*.zip", uuid.NewString()))
 	if err != nil {
 		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
 	}
@@ -338,8 +330,12 @@ func newClientIDFromString(clientID string) (*ClientID, error) {
 	if len(clientIDParts) != 2 {
 		return nil, fmt.Errorf("invalid client id: %s", clientID)
 	}
+	jobID, err := strconv.ParseInt(clientIDParts[0], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid job id in clientId: %s", clientID)
+	}
 	return &ClientID{
-		JobID:       clientIDParts[0],
+		JobID:       jobID,
 		HashedEmail: clientIDParts[1],
 	}, nil
 }
@@ -367,10 +363,10 @@ In the below format:
 		},
 	}
 
-** we are using map[string]map[string]struct{} for storing the error messages
+** we are using map[int64]map[string]struct{} for storing the error messages
 ** because we want to avoid duplicate error messages
 */
-func ProcessPollStatusData(records [][]string) (map[string]map[string]struct{}, error) {
+func ProcessPollStatusData(records [][]string) (map[int64]map[string]struct{}, error) {
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := 0
@@ -387,7 +383,7 @@ func ProcessPollStatusData(records [][]string) (map[string]map[string]struct{}, 
 
 	// Declare variables for storing data
 
-	clientIDErrors := make(map[string]map[string]struct{})
+	clientIDErrors := make(map[int64]map[string]struct{})
 
 	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
@@ -416,25 +412,11 @@ func ProcessPollStatusData(records [][]string) (map[string]map[string]struct{}, 
 
 // GetUploadStats Related utils
 
-// create array of failed job Ids from clientIDErrors
-func GetFailedJobIDs(clientIDErrors map[string]map[string]struct{}) []int64 {
-	keys := make([]int64, 0, len(clientIDErrors))
-	for key := range clientIDErrors {
-		intKey, _ := strconv.ParseInt(key, 10, 64)
-		keys = append(keys, intKey)
-	}
-	return keys
-}
-
 // get the list of unique error messages for a particular jobId.
-func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]string {
-	reasons := make(map[string]string)
+func GetFailedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]string {
+	reasons := make(map[int64]string)
 	for key, errors := range clientIDErrors {
-		errorList := make([]string, 0, len(errors))
-		for k := range errors {
-			errorList = append(errorList, k)
-		}
-		reasons[key] = strings.Join(errorList, ", ")
+		reasons[key] = strings.Join(lo.Keys(errors), commaSeparator)
 	}
 	return reasons
 }
@@ -444,14 +426,4 @@ func GetFailedReasons(clientIDErrors map[string]map[string]struct{}) map[string]
 func GetSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 	successfulEvents, _ := lo.Difference(initialEventList, failedEventList)
 	return successfulEvents
-}
-
-// If any one importId is in progress, then the overall completion status is false
-func generateCompletionStatus(array []bool) bool {
-	for _, element := range array {
-		if !element {
-			return false
-		}
-	}
-	return true
 }
