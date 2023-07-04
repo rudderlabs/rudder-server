@@ -305,8 +305,8 @@ var _ = Describe("Bing ads", func() {
 				ImportId: "dummyRequestId123",
 			}
 			expectedResp := common.PollStatusResponse{
-				Complete:       true,
-				StatusCode:     200,
+				Complete:   true,
+				StatusCode: 200,
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
@@ -324,8 +324,8 @@ var _ = Describe("Bing ads", func() {
 				ImportId: "dummyRequestId123",
 			}
 			expectedResp := common.PollStatusResponse{
-				StatusCode:     400,
-				HasFailed:      true,
+				StatusCode: 400,
+				HasFailed:  true,
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
@@ -403,8 +403,8 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			expectedResp := common.PollStatusResponse{
-				StatusCode:     400,
-				HasFailed:      true,
+				StatusCode: 400,
+				HasFailed:  true,
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 

@@ -26,7 +26,7 @@ import (
 // Upload related utils
 
 // returns the clientID struct
-func newClientID(jobID string, hashedEmail string) ClientID {
+func newClientID(jobID, hashedEmail string) ClientID {
 	return ClientID{
 		JobID:       jobID,
 		HashedEmail: hashedEmail,
@@ -46,7 +46,10 @@ contains the template of the uploadable file.
 func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
-	tmpDirPath, _ := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		return nil, err
+	}
 	path := path.Join(tmpDirPath, localTmpDirName, uuid.String())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
@@ -55,9 +58,14 @@ func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
 		return nil, err
 	}
 	csvWriter := csv.NewWriter(csvFile)
-	_ = csvWriter.Write([]string{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"})
-	_ = csvWriter.Write([]string{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""})
-	_ = csvWriter.Write([]string{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""})
+	err = csvWriter.WriteAll([][]string{
+		{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"},
+		{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""},
+		{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""},
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &ActionFileInfo{
 		Action:      actionType,
 		ZipFilePath: zipFilePath,
