@@ -169,7 +169,7 @@ func TestColumnCountStat(t *testing.T) {
 				},
 			}
 
-			tags := j.defaultTags()
+			tags := j.buildTags()
 			tags["tableName"] = tableName
 
 			j.columnCountStat(tableName)

@@ -232,9 +232,7 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 	var totalUploadTime atomic.Duration
 
 	defer func() {
-		if err == nil {
-			jr.totalUploadTimeStat.SendTiming(totalUploadTime.Load())
-		}
+		jr.totalUploadTimeStat.SendTiming(totalUploadTime.Load())
 	}()
 
 	uploadLoadFile := func(
@@ -248,30 +246,27 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 		}
 		defer func() { _ = file.Close() }()
 
-		var uploadLocation filemanager.UploadedFile
-
 		uploadStart := time.Now()
+		defer func() {
+			jr.uploadTimeStat.SendTiming(jr.since(uploadStart))
+		}()
 
 		if slices.Contains(warehouseutils.TimeWindowDestinations, jr.job.DestinationType) {
-			uploadLocation, err = uploader.Upload(
+			return uploader.Upload(
 				ctx,
 				file,
 				warehouseutils.GetTablePathInObjectStorage(jr.job.DestinationNamespace, tableName),
 				jr.job.LoadFilePrefix,
 			)
-		} else {
-			uploadLocation, err = uploader.Upload(
-				ctx,
-				file,
-				jr.config.loadObjectFolder,
-				tableName,
-				jr.job.SourceID,
-				getBucketFolder(jr.job.UniqueLoadGenID, tableName),
-			)
 		}
-		jr.uploadTimeStat.SendTiming(jr.since(uploadStart))
-
-		return uploadLocation, err
+		return uploader.Upload(
+			ctx,
+			file,
+			jr.config.loadObjectFolder,
+			tableName,
+			jr.job.SourceID,
+			getBucketFolder(jr.job.UniqueLoadGenID, tableName),
+		)
 	}
 
 	process := func() <-chan *uploadProcessingResult {

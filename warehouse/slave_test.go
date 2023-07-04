@@ -70,11 +70,11 @@ func (*mockLoadFileWriter) WriteGZ(string) error {
 	return nil
 }
 
-func (*mockLoadFileWriter) Write(p []byte) (int, error) {
+func (*mockLoadFileWriter) Write([]byte) (int, error) {
 	return 0, nil
 }
 
-func (*mockLoadFileWriter) WriteRow(r []interface{}) error {
+func (*mockLoadFileWriter) WriteRow([]interface{}) error {
 	return nil
 }
 
@@ -90,8 +90,7 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	ctx := context.Background()
-	ctxCancel, cancel := context.WithCancel(ctx)
+	ctxCancel, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	provider := "MINIO"
@@ -223,22 +222,22 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 			}
 			jr.outputFileWritersMap = writerMap
 
-			ctx := ctx
+			ctx := context.Background()
 			if tc.ctx != nil {
 				ctx = tc.ctx
 			}
 
-			loadFIle, err := jr.uploadLoadFiles(ctx)
+			loadFile, err := jr.uploadLoadFiles(ctx)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 				return
 			}
 
 			require.NoError(t, err)
-			require.Len(t, loadFIle, len(jr.outputFileWritersMap))
-			require.EqualValues(t, time.Second*time.Duration(len(jr.outputFileWritersMap)), store.Get("load_file_total_upload_time", jr.defaultTags()).LastDuration())
+			require.Len(t, loadFile, len(jr.outputFileWritersMap))
+			require.EqualValues(t, time.Second*time.Duration(len(jr.outputFileWritersMap)), store.Get("load_file_total_upload_time", jr.buildTags()).LastDuration())
 			for i := 0; i < len(jr.outputFileWritersMap); i++ {
-				require.EqualValues(t, time.Second, store.Get("load_file_upload_time", jr.defaultTags()).LastDuration())
+				require.EqualValues(t, time.Second, store.Get("load_file_upload_time", jr.buildTags()).LastDuration())
 			}
 
 			outputPathRegex := fmt.Sprintf(`http://localhost:%s/testbucket/%s/test.*/%s/.*/load.dump`, minioResource.Port, loadObjectFolder, sourceID)
@@ -246,7 +245,7 @@ func TestUploadLoadFilesToObjectStorage(t *testing.T) {
 				outputPathRegex = fmt.Sprintf(`http://localhost:%s/testbucket/rudder-datalake/%s/test.*/2006/01/02/15/load.dump`, minioResource.Port, namespace)
 			}
 
-			for _, f := range loadFIle {
+			for _, f := range loadFile {
 				require.Regexp(t, outputPathRegex, f.Location)
 				require.Equal(t, f.StagingFileID, stagingFileID)
 			}

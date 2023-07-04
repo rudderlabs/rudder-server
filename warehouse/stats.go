@@ -21,8 +21,8 @@ func warehouseTagName(destID, sourceName, destName, sourceID string) string {
 	return misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6))
 }
 
-func (job *UploadJob) defaultTags() stats.Tags {
-	return stats.Tags{
+func (job *UploadJob) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
+	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
@@ -30,34 +30,26 @@ func (job *UploadJob) defaultTags() stats.Tags {
 		"destID":      job.upload.DestinationID,
 		"sourceID":    job.upload.SourceID,
 	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.Name] = extraTag.Value
+	}
+	return tags
 }
 
 func (job *UploadJob) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	tags := job.defaultTags()
-
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return job.stats.NewTaggedStat(name, stats.TimerType, tags)
+	return job.stats.NewTaggedStat(name, stats.TimerType, job.buildTags(extraTags...))
 }
 
 func (job *UploadJob) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	tags := job.defaultTags()
-
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return job.stats.NewTaggedStat(name, stats.CountType, tags)
+	return job.stats.NewTaggedStat(name, stats.CountType, job.buildTags(extraTags...))
 }
 
 func (job *UploadJob) guageStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	tags := job.defaultTags()
-	tags["sourceCategory"] = job.warehouse.Source.SourceDefinition.Category
-
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
+	extraTags = append(extraTags, warehouseutils.Tag{
+		Name:  "sourceCategory",
+		Value: job.warehouse.Source.SourceDefinition.Category,
+	})
+	return job.stats.NewTaggedStat(name, stats.GaugeType, job.buildTags(extraTags...))
 }
 
 func (job *UploadJob) generateUploadSuccessMetrics() {
@@ -206,8 +198,8 @@ func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (er
 	return nil
 }
 
-func (jr *jobRun) defaultTags() stats.Tags {
-	return stats.Tags{
+func (jr *jobRun) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
+	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jr.job.DestinationType,
 		"warehouseID": warehouseTagName(jr.job.DestinationID, jr.job.SourceName, jr.job.DestinationName, jr.job.SourceID),
@@ -215,24 +207,18 @@ func (jr *jobRun) defaultTags() stats.Tags {
 		"destID":      jr.job.DestinationID,
 		"sourceID":    jr.job.SourceID,
 	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.Name] = extraTag.Value
+	}
+	return tags
 }
 
 func (jr *jobRun) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	tags := jr.defaultTags()
-
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return jr.stats.NewTaggedStat(name, stats.TimerType, tags)
+	return jr.stats.NewTaggedStat(name, stats.TimerType, jr.buildTags(extraTags...))
 }
 
 func (jr *jobRun) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	tags := jr.defaultTags()
-
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return jr.stats.NewTaggedStat(name, stats.CountType, tags)
+	return jr.stats.NewTaggedStat(name, stats.CountType, jr.buildTags(extraTags...))
 }
 
 func persistSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
