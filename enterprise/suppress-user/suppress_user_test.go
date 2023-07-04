@@ -159,7 +159,7 @@ func generateTests(getRepo func() Repository) {
 			go func() {
 				s.SyncLoop(ctx)
 			}()
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeTrue())
 		})
 
 		It("user suppression added, then cancelled", func() {
@@ -184,8 +184,8 @@ func generateTests(getRepo func() Repository) {
 			go func() {
 				s.SyncLoop(ctx)
 			}()
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-2", "src-1") }).Should(BeTrue())
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-2", "src-1") != nil }).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeTrue())
 
 			resp.Items[0].Canceled = true
 			respBody, _ = json.Marshal(resp)
@@ -193,7 +193,7 @@ func generateTests(getRepo func() Repository) {
 				statusCode: 200,
 				respBody:   respBody,
 			}
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }).Should(BeFalse())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeFalse())
 		})
 
 		It("wildcard user suppression match", func() {
@@ -223,9 +223,9 @@ func generateTests(getRepo func() Repository) {
 			go func() {
 				s.SyncLoop(ctx)
 			}()
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }).Should(BeTrue())
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-2", "src-2") }).Should(BeTrue())
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-2", "src-1") }).Should(BeFalse())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-2", "src-2") != nil }).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-2", "src-1") != nil }).Should(BeFalse())
 		})
 
 		It("wildcard user suppression rule added and then cancelled", func() {
@@ -256,9 +256,9 @@ func generateTests(getRepo func() Repository) {
 				s.SyncLoop(ctx)
 			}()
 
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }).Should(BeTrue())
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-2", "src-2") }).Should(BeTrue())
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-2", "src-1") }).Should(BeFalse())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-2", "src-2") != nil }).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-2", "src-1") != nil }).Should(BeFalse())
 
 			resp.Items[0].Canceled = true
 			respBody, _ = json.Marshal(resp)
@@ -266,7 +266,7 @@ func generateTests(getRepo func() Repository) {
 				statusCode: 200,
 				respBody:   respBody,
 			}
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }).Should(BeFalse())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeFalse())
 		})
 
 		It("try to sync while restoring", func() {
@@ -289,7 +289,7 @@ func generateTests(getRepo func() Repository) {
 			go func() {
 				s.SyncLoop(ctx)
 			}()
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
 		})
 	})
 
@@ -310,7 +310,7 @@ func generateTests(getRepo func() Repository) {
 			go func() {
 				s.SyncLoop(ctx)
 			}()
-			Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeTrue())
 		})
 	})
 
@@ -341,8 +341,8 @@ func generateTests(getRepo func() Repository) {
 		go func() {
 			s.SyncLoop(ctx)
 		}()
-		Eventually(func() bool { return h.IsSuppressedUser("workspace-2", "user-2", "src-1") }).Should(BeTrue())
-		Eventually(func() bool { return h.IsSuppressedUser("workspace-1", "user-1", "src-1") }).Should(BeTrue())
+		Eventually(func() bool { return h.GetSuppressedUser("workspace-2", "user-2", "src-1") != nil }).Should(BeTrue())
+		Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeTrue())
 	})
 }
 
