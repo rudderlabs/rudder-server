@@ -43,7 +43,7 @@ const (
 
 const (
 	mssqlStringLengthLimit = 512
-	provider               = warehouseutils.AZURE_SYNAPSE
+	provider               = warehouseutils.AzureSynapse
 	tableNameLimit         = 127
 )
 
@@ -659,7 +659,7 @@ func (as *AzureSynapse) Setup(_ context.Context, warehouse model.Warehouse, uplo
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader
-	as.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.AZURE_SYNAPSE, warehouse.Destination.Config, as.Uploader.UseRudderStorage())
+	as.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.AzureSynapse, warehouse.Destination.Config, as.Uploader.UseRudderStorage())
 	as.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, as.NumWorkersDownloadLoadFiles)
 
 	as.DB, err = connect(as.getConnectionCredentials())
@@ -760,9 +760,9 @@ func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, model.Sc
 			if _, ok := unrecognizedSchema[tableName]; !ok {
 				unrecognizedSchema[tableName] = make(model.TableSchema)
 			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
 
-			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {

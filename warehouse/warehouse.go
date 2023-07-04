@@ -48,7 +48,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
@@ -1416,11 +1415,6 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(deltalake.GetDatabricksVersion(r.Context())))
-}
-
 func fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	defer func() { _ = r.Body.Close() }()
@@ -1568,7 +1562,6 @@ func startWebHandler(ctx context.Context) error {
 			srvMux.Post("/v1/warehouse/pending-events", pendingEventsHandler)
 			// triggers uploads for a source
 			srvMux.Post("/v1/warehouse/trigger-upload", triggerUploadHandler)
-			srvMux.Get("/databricksVersion", databricksVersionHandler)
 
 			// Warehouse Async Job end-points
 			srvMux.Post("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)          // FIXME: add degraded mode

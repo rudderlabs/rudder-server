@@ -16,7 +16,7 @@ import (
 var crashRecoverWarehouses = []string{
 	warehouseutils.RS,
 	warehouseutils.MSSQL,
-	warehouseutils.AZURE_SYNAPSE,
+	warehouseutils.AzureSynapse,
 	warehouseutils.DELTALAKE,
 	warehouseutils.POSTGRES,
 }
