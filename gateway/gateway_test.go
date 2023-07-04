@@ -1233,7 +1233,7 @@ var _ = Describe("Gateway", func() {
 					) error {
 						for idx, job := range jobs {
 							Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
-							Expect(job.CustomVal).To(Equal(CustomVal))
+							Expect(job.CustomVal).To(Equal("WEBHOOK"))
 
 							var paramsMap, expectedParamsMap map[string]interface{}
 							var expectedStr []byte
