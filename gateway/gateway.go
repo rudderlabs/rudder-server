@@ -1512,9 +1512,9 @@ func (gateway *HandleT) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) 
 
 		jobs = append(jobs, &jobsdb.JobT{
 			UUID:         uuid.New(),
-			UserID:       uuid.New().String(), // TODO remind for a better value
+			UserID:       uuid.New().String(), // Using a random userid for these failures. There is no notion of user id for these events.
 			Parameters:   marshalledParams,
-			CustomVal:    CustomVal,
+			CustomVal:    "WEBHOOK",
 			EventPayload: req.Payload,
 			EventCount:   1,
 			WorkspaceId:  gateway.getWorkspaceForWriteKey(req.WriteKey),
