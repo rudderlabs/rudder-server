@@ -26,8 +26,8 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 	}}
 
 	switch destType {
-	case warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
-	case warehouseutils.S3_DATALAKE:
+	case warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
+	case warehouseutils.S3Datalake:
 		wh := createDummyWarehouse(dest)
 		if canUseGlue := schemarepository.UseGlue(&wh); !canUseGlue {
 			break
