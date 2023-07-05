@@ -187,7 +187,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		if resp.StatusCode != 200 {
 			// if any of the request fails then the whole request fails
 			cumulativeResp = resp
-			break
+			return cumulativeResp
 		}
 		/*
 			Cumulative Response logic:
@@ -200,8 +200,9 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		completionStatus = append(completionStatus, resp.Complete)
 		cumulativeCompletionStatus = !lo.Contains(completionStatus, false)
 		failedJobURLs = append(failedJobURLs, resp.FailedJobURLs)
-		cumulativeProgressStatus = cumulativeResp.InProgress || resp.InProgress
-		cumulativeFailureStatus = cumulativeResp.HasFailed || resp.HasFailed
+		cumulativeProgressStatus = cumulativeProgressStatus || resp.InProgress
+		cumulativeFailureStatus = cumulativeFailureStatus || resp.HasFailed
+		fmt.Println("cumulativeFailureStatus :", cumulativeFailureStatus)
 	}
 
 	cumulativeResp = common.PollStatusResponse{

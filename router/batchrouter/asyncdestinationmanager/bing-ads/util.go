@@ -213,7 +213,7 @@ func (b *BingAdsBulkUploader) DownloadAndGetUploadStatusFile(ResultFileUrl strin
 	fileLoadResp, err := http.Get(modifiedUrl)
 	if err != nil {
 		b.logger.Errorf("Error downloading zip file: %w", err)
-		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
+		panic(fmt.Errorf("BRT: Error downloading zip file:. Err: %w", err))
 	}
 	defer fileLoadResp.Body.Close()
 

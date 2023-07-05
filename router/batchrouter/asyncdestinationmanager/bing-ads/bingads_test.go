@@ -324,7 +324,7 @@ var _ = Describe("Bing ads", func() {
 				ImportId: "dummyRequestId123",
 			}
 			expectedResp := common.PollStatusResponse{
-				StatusCode: 400,
+				StatusCode: 500,
 				HasFailed:  true,
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
@@ -335,26 +335,14 @@ var _ = Describe("Bing ads", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-
-			// Create a test server with a custom handler function
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Open the zip file
-				zipFilePath := filepath.Join(currentDir, "test-files/statuscheck.zip")
-				// Set the appropriate headers for a zip file response
-				w.Header().Set("Content-Type", "application/zip")
-				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
-				http.ServeFile(w, r, zipFilePath)
-			}))
-			defer ts.Close()
-			client := ts.Client()
-			modifiedURL := ts.URL // Use the test server URL
-			clientI := Client{client: client, URL: modifiedURL}
+			clientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "CompletedWithErrors",
-				ResultFileUrl:   ts.URL,
+				//ResultFileUrl:   ts.URL,
+				ResultFileUrl: "https://dummy.url.com",
 			}, nil)
 			pollInput := common.AsyncPoll{
 				ImportId: "dummyRequestId123",
@@ -364,7 +352,7 @@ var _ = Describe("Bing ads", func() {
 				Complete:      true,
 				StatusCode:    200,
 				HasFailed:     true,
-				FailedJobURLs: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv,",
+				FailedJobURLs: "https://dummy.url.com",
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 
@@ -373,38 +361,87 @@ var _ = Describe("Bing ads", func() {
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
-		It("TestBingAdsPollPartialFailureCaseWithWrongFilePath", func() {
+		It("TestBingAdsPollPendingStatusCase", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-
-			// Create a test server with a custom handler function
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Open the zip file
-				zipFilePath := filepath.Join(currentDir, "test-files/uploadData.txt")
-				// Set the appropriate headers for a zip file response
-				w.Header().Set("Content-Type", "application/zip")
-				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
-				http.ServeFile(w, r, zipFilePath)
-			}))
-			defer ts.Close()
-			client := ts.Client()
-			modifiedURL := ts.URL // Use the test server URL
-			clientI := Client{client: client, URL: modifiedURL}
+			clientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
-				PercentComplete: int64(100),
-				RequestStatus:   "CompletedWithErrors",
-				ResultFileUrl:   ts.URL,
+				PercentComplete: int64(0),
+				RequestStatus:   "InProgress",
+				//ResultFileUrl:   ts.URL,
+				ResultFileUrl: "",
 			}, nil)
 			pollInput := common.AsyncPoll{
 				ImportId: "dummyRequestId123",
 			}
 
 			expectedResp := common.PollStatusResponse{
-				StatusCode: 400,
+				InProgress: true,
+				StatusCode: 200,
+			}
+			recievedResponse := bulkUploader.Poll(pollInput)
+
+			os.Remove(expectedResp.FailedJobURLs)
+
+			Expect(recievedResponse).To(Equal(expectedResp))
+		})
+
+		It("TestBingAdsPollFailedStatusCase", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+			clientI := Client{}
+			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
+
+			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+				PercentComplete: int64(0),
+				RequestStatus:   "Failed",
+				ResultFileUrl:   "",
+			}, nil)
+			pollInput := common.AsyncPoll{
+				ImportId: "dummyRequestId123",
+			}
+
+			expectedResp := common.PollStatusResponse{
 				HasFailed:  true,
+				StatusCode: 400,
+			}
+			recievedResponse := bulkUploader.Poll(pollInput)
+
+			os.Remove(expectedResp.FailedJobURLs)
+
+			Expect(recievedResponse).To(Equal(expectedResp))
+		})
+
+		It("TestBingAdsPollSuccessAndFailedStatusCase", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+			clientI := Client{}
+			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
+
+			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId456").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+				PercentComplete: int64(100),
+				RequestStatus:   "Completed",
+				ResultFileUrl:   "",
+			}, nil)
+
+			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+				PercentComplete: int64(0),
+				RequestStatus:   "Failed",
+				ResultFileUrl:   "",
+			}, nil)
+
+			pollInput := common.AsyncPoll{
+				ImportId: "dummyRequestId456,dummyRequestId123",
+			}
+
+			expectedResp := common.PollStatusResponse{
+				HasFailed:  true,
+				StatusCode: 400,
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 
@@ -426,11 +463,24 @@ var _ = Describe("Bing ads", func() {
 				return
 			}
 			fmt.Printf("File %s duplicated to %s\n", templateFilePath, testFilePath)
-			clientI := Client{}
+
+			// Create a test server with a custom handler function
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Open the zip file
+				zipFilePath := filepath.Join(currentDir, "test-files/statuscheck2.zip")
+				// Set the appropriate headers for a zip file response
+				w.Header().Set("Content-Type", "application/zip")
+				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
+				http.ServeFile(w, r, zipFilePath)
+			}))
+			defer ts.Close()
+			client := ts.Client()
+			modifiedURL := ts.URL // Use the test server URL
+			clientI := Client{client: client, URL: modifiedURL}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
 			UploadStatsInput := common.FetchUploadJobStatus{
-				FailedJobURLs: testFilePath,
+				FailedJobURLs: modifiedURL,
 				ImportingList: []*jobsdb.JobT{
 					{
 						JobID: 1,
@@ -462,51 +512,6 @@ var _ = Describe("Bing ads", func() {
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
-		It("TestBingAdsUploadFailedWhileTransformingFile", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
-
-			Expect(err).To(BeNil())
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-
-			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3},
-				FailedJobIDs:    []int64{},
-				// the aim is to fail the text transformation of the file. That is why sending a csv file instead of a txt file
-				FileName: filepath.Join(currentDir, "test-files/uploadstatus.csv"),
-			}
-			expected := common.AsyncUploadOutput{
-				FailedJobIDs:  []int64{1, 2, 3},
-				FailedReason:  `got error while transforming the file. invalid character 'T' looking for beginning of value`,
-				FailedCount:   3,
-				DestinationID: destination.ID,
-			}
-			received := bulkUploader.Upload(&destination, &asyncDestination)
-
-			// Remove the directory and its contents
-			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
-			Expect(received).To(Equal(expected))
-		})
-
 		It("TestNewManagerInternal", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
@@ -515,24 +520,24 @@ var _ = Describe("Bing ads", func() {
 				Account: oauth.AccountSecret{
 					ExpirationDate: "",
 					Secret: []byte(`
-						{
-						"AccessToken": "dummyacesstoken",
-						"RefreshToken": "dummyRefreshToken",
-						"Developer_token": "dummyDeveloperToken",
-						"ExpirationDate": "2023-01-31T23:59:59.999Z"
-						}`),
+							{
+							"AccessToken": "dummyacesstoken",
+							"RefreshToken": "dummyRefreshToken",
+							"Developer_token": "dummyDeveloperToken",
+							"ExpirationDate": "2023-01-31T23:59:59.999Z"
+							}`),
 				},
 			})
 			oauthService.EXPECT().RefreshToken(gomock.Any()).Return(200, &oauth.AuthResponse{
 				Account: oauth.AccountSecret{
 					ExpirationDate: "",
 					Secret: []byte(`
-						{
-						"AccessToken": "dummyacesstoken",
-						"RefreshToken": "dummyRefreshToken",
-						"Developer_token": "dummyDeveloperToken",
-						"ExpirationDate": "2023-01-31T23:59:59.999Z"
-						}`),
+							{
+							"AccessToken": "dummyacesstoken",
+							"RefreshToken": "dummyRefreshToken",
+							"Developer_token": "dummyDeveloperToken",
+							"ExpirationDate": "2023-01-31T23:59:59.999Z"
+							}`),
 				},
 			})
 
