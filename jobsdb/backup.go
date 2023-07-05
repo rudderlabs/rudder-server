@@ -92,7 +92,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 				// drop dataset after successfully uploading both jobs and jobs_status to s3
 				opID, err := jd.JournalMarkStartInTx(tx, backupDropDSOperation, opPayload)
 				if err != nil {
-					return fmt.Errorf("mark start of backup operation: %w", err)
+					return fmt.Errorf("mark start of drop backup operation: %w", err)
 				}
 				// Currently, we retry uploading a table for some time & if it fails. We only drop that table & not all `pre_drop` tables.
 				// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
