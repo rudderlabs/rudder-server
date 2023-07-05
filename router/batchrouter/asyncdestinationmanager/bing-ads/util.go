@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -182,7 +183,14 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*Act
 		convertCsvToZip(actionFile)
 	}
 	// Create the ZIP file and add the CSV file to it
-	return lo.Values(actionFiles), nil
+	// sort.Slice(a, func(i, j int) bool {
+	// 	return a[i] < a[j]
+	// }
+	temp := lo.Values(actionFiles)
+	sort.Slice(temp, func(i, j int) bool {
+		return temp[i].Action > temp[j].Action
+	})
+	return temp, nil
 }
 
 // Poll Related Utils

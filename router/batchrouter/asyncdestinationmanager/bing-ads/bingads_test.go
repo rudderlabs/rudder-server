@@ -107,9 +107,9 @@ var _ = Describe("Bing ads", func() {
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"1:getting empty string in upload url or request id,\"}",
-				ImportingJobIDs:     []int64{1, 2},
-				FailedJobIDs:        []int64{3, 4},
+				FailedReason:        "{\"error\":\"Add:getting empty string in upload url or request id, \"}",
+				ImportingJobIDs:     []int64{3, 4},
+				FailedJobIDs:        []int64{1, 2},
 				ImportingParameters: stdjson.RawMessage{},
 				ImportingCount:      2,
 				FailedCount:         2,
@@ -147,8 +147,8 @@ var _ = Describe("Bing ads", func() {
 			parameters.ImportId = ""
 			importParameters, _ := stdjson.Marshal(parameters)
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{1, 2, 3, 4},
-				FailedReason:        "{\"error\":\"0:error in getting bulk upload url: Error in getting bulk upload url,1:error in getting bulk upload url: Error in getting bulk upload url,\"}",
+				FailedJobIDs:        []int64{3, 4, 1, 2},
+				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: Error in getting bulk upload url,Add:error in getting bulk upload url: Error in getting bulk upload url\"}",
 				ImportingCount:      0,
 				FailedCount:         4,
 				AbortCount:          0,
@@ -201,8 +201,8 @@ var _ = Describe("Bing ads", func() {
 			parameters.ImportId = ""
 			importParameters, _ := stdjson.Marshal(parameters)
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{1, 2, 3, 4},
-				FailedReason:        "{\"error\":\"0:getting empty string in upload url or request id,1:getting empty string in upload url or request id,\"}",
+				FailedJobIDs:        []int64{3, 4, 1, 2},
+				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id,Add:getting empty string in upload url or request id\"}",
 				FailedCount:         4,
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
@@ -272,8 +272,8 @@ var _ = Describe("Bing ads", func() {
 			parameters.ImportId = ""
 			importParameters, _ := stdjson.Marshal(parameters)
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{1, 2, 3, 4},
-				FailedReason:        "{\"error\":\"0:error in uploading the bulk file: Error in uploading bulk file,1:error in uploading the bulk file: Error in uploading bulk file,\"}",
+				FailedJobIDs:        []int64{3, 4, 1, 2},
+				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: Error in uploading bulk file,Add:error in uploading the bulk file: Error in uploading bulk file\"}",
 				FailedCount:         4,
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
@@ -419,7 +419,7 @@ var _ = Describe("Bing ads", func() {
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 			templateFilePath := filepath.Join(currentDir, "test-files/uploadstatus.csv") // Path of the source file
 			testFilePath := filepath.Join(currentDir, "test-files/test_copy.csv")        // Path of the destination folder
-
+			defer os.Remove("test-files/test_copy.csv")
 			err := DuplicateFile(templateFilePath, testFilePath)
 			if err != nil {
 				fmt.Printf("Error duplicating file: %v\n", err)
@@ -515,24 +515,24 @@ var _ = Describe("Bing ads", func() {
 				Account: oauth.AccountSecret{
 					ExpirationDate: "",
 					Secret: []byte(`
-					{
-					"AccessToken": "dummyacesstoken",
-					"RefreshToken": "dummyRefreshToken",
-					"Developer_token": "dummyDeveloperToken",
-					"ExpirationDate": "2023-01-31T23:59:59.999Z"
-					}`),
+						{
+						"AccessToken": "dummyacesstoken",
+						"RefreshToken": "dummyRefreshToken",
+						"Developer_token": "dummyDeveloperToken",
+						"ExpirationDate": "2023-01-31T23:59:59.999Z"
+						}`),
 				},
 			})
 			oauthService.EXPECT().RefreshToken(gomock.Any()).Return(200, &oauth.AuthResponse{
 				Account: oauth.AccountSecret{
 					ExpirationDate: "",
 					Secret: []byte(`
-					{
-					"AccessToken": "dummyacesstoken",
-					"RefreshToken": "dummyRefreshToken",
-					"Developer_token": "dummyDeveloperToken",
-					"ExpirationDate": "2023-01-31T23:59:59.999Z"
-					}`),
+						{
+						"AccessToken": "dummyacesstoken",
+						"RefreshToken": "dummyRefreshToken",
+						"Developer_token": "dummyDeveloperToken",
+						"ExpirationDate": "2023-01-31T23:59:59.999Z"
+						}`),
 				},
 			})
 
@@ -586,8 +586,8 @@ var _ = Describe("Bing ads", func() {
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"0:getting empty string in upload url or request id,1:getting empty string in upload url or request id,\"}",
-				FailedJobIDs:        []int64{1, 2, 3, 4},
+				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id, ,Add:getting empty string in upload url or request id, \"}",
+				FailedJobIDs:        []int64{3, 4, 1, 2},
 				ImportingParameters: stdjson.RawMessage{},
 				ImportingCount:      0,
 				FailedCount:         4,
