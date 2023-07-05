@@ -454,7 +454,7 @@ var _ = Describe("Bing ads", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			templateFilePath := filepath.Join(currentDir, "test-files/uploadstatus.csv") // Path of the source file
+			templateFilePath := filepath.Join(currentDir, "test-files/status-check.zip") // Path of the source file
 			testFilePath := filepath.Join(currentDir, "test-files/test_copy.csv")        // Path of the destination folder
 			defer os.Remove("test-files/test_copy.csv")
 			err := DuplicateFile(templateFilePath, testFilePath)
@@ -466,12 +466,10 @@ var _ = Describe("Bing ads", func() {
 
 			// Create a test server with a custom handler function
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Open the zip file
-				zipFilePath := filepath.Join(currentDir, "test-files/statuscheck2.zip")
 				// Set the appropriate headers for a zip file response
 				w.Header().Set("Content-Type", "application/zip")
 				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
-				http.ServeFile(w, r, zipFilePath)
+				http.ServeFile(w, r, templateFilePath)
 			}))
 			defer ts.Close()
 			client := ts.Client()
@@ -483,28 +481,27 @@ var _ = Describe("Bing ads", func() {
 				FailedJobURLs: modifiedURL,
 				ImportingList: []*jobsdb.JobT{
 					{
-						JobID: 1,
+						JobID: 5,
 					},
 					{
-						JobID: 2,
+						JobID: 6,
 					},
 					{
-						JobID: 3,
+						JobID: 7,
 					},
 				},
 			}
 			expectedResp := common.GetUploadStatsResponse{
 				Status: "200",
 				Metadata: common.EventStatMeta{
-					FailedKeys: []int64{1, 2},
+					FailedKeys: []int64{6},
 					ErrFailed:  nil,
 					FailedReasons: map[int64]string{
-						1: "error1, error2",
-						2: "error2",
+						6: "EmailMustBeHashed",
 					},
-					WarningKeys:   []int64{},
+					WarningKeys:   nil,
 					ErrWarning:    nil,
-					SucceededKeys: []int64{3},
+					SucceededKeys: []int64{5, 7},
 					ErrSuccess:    nil,
 				},
 			}
