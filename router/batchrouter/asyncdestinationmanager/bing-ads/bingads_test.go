@@ -145,7 +145,11 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := stdjson.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to unmarshal parameters: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: Error in getting bulk upload url,Add:error in getting bulk upload url: Error in getting bulk upload url\"}",
@@ -199,7 +203,11 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := stdjson.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id,Add:getting empty string in upload url or request id\"}",
@@ -270,7 +278,11 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := stdjson.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: Error in uploading bulk file,Add:error in uploading the bulk file: Error in uploading bulk file\"}",
