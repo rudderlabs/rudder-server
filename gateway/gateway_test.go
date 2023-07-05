@@ -35,7 +35,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
+	webhookModel "github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -1282,14 +1282,14 @@ var _ = Describe("Gateway", func() {
 					}).
 				Times(1)
 
-			reqs := make([]*model.FailedWebhookPayload, 2)
-			reqs[0] = &model.FailedWebhookPayload{
+			reqs := make([]*webhookModel.FailedWebhookPayload, 2)
+			reqs[0] = &webhookModel.FailedWebhookPayload{
 				WriteKey:   WriteKeyEnabled,
 				Payload:    []byte(`{"a1": "b1"}`),
 				SourceType: "cio",
 				Reason:     "err1",
 			}
-			reqs[1] = &model.FailedWebhookPayload{
+			reqs[1] = &webhookModel.FailedWebhookPayload{
 				WriteKey:   WriteKeyEnabled,
 				Payload:    []byte(`{"a2": "b2"}`),
 				SourceType: "af",
