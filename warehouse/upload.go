@@ -1108,9 +1108,9 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		}
 
 		// TODO : Perform the comparison here in the codebase
-		job.guageStat(`pre_load_table_rows`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
-		job.guageStat(`post_load_table_rows_estimate`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + tableUpload.TotalEvents))
-		job.guageStat(`post_load_table_rows`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
+		job.guageStat(`pre_load_table_rows`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
+		job.guageStat(`post_load_table_rows_estimate`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + tableUpload.TotalEvents))
+		job.guageStat(`post_load_table_rows`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
 	}()
 
 	status = model.TableUploadExported
@@ -1144,7 +1144,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 		return
 	}
 
-	tags := []Tag{
+	tags := []warehouseutils.Tag{
 		{Name: "tableName", Value: strings.ToLower(tableName)},
 	}
 	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
@@ -1750,11 +1750,11 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		tags := []Tag{errorTags}
+		tags := []warehouseutils.Tag{errorTags}
 
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
-			tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
+			tags = append(tags, warehouseutils.Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
 			destCredentialsValidations = &valid
 		}
 

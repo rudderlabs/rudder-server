@@ -92,8 +92,6 @@ var (
 	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.Logger
-	numLoadFileUploadWorkers            int
-	slaveUploadTimeout                  time.Duration
 	tableCountQueryTimeout              time.Duration
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
@@ -198,8 +196,6 @@ func loadConfig() {
 	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
-	config.RegisterDurationConfigVariable(10, &slaveUploadTimeout, true, time.Minute, []string{"Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin"}...)
-	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetString("Warehouse.runningMode", "")
 	config.RegisterDurationConfigVariable(30, &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterDurationConfigVariable(5, &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)

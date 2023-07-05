@@ -791,11 +791,16 @@ func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) b
 	if !enableSuppressUserFeature || gateway.suppressUserHandler == nil {
 		return false
 	}
-	return gateway.suppressUserHandler.IsSuppressedUser(
-		workspaceID,
-		userID,
-		sourceID,
-	)
+	if metadata := gateway.suppressUserHandler.GetSuppressedUser(workspaceID, userID, sourceID); metadata != nil {
+		if !metadata.CreatedAt.IsZero() {
+			gateway.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{
+				"workspaceId": workspaceID,
+				"sourceID":    sourceID,
+			}).Since(metadata.CreatedAt)
+		}
+		return true
+	}
+	return false
 }
 
 // checks for the presence of messageId in the event

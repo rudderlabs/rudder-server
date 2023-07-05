@@ -19,7 +19,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/golang/mock/gomock"
@@ -170,15 +169,8 @@ func TestColumnCountStat(t *testing.T) {
 				},
 			}
 
-			tags := stats.Tags{
-				"module":      moduleName,
-				"destType":    tc.destinationType,
-				"warehouseID": j.warehouseID(),
-				"workspaceId": workspaceID,
-				"destID":      destinationID,
-				"sourceID":    sourceID,
-				"tableName":   tableName,
-			}
+			tags := j.buildTags()
+			tags["tableName"] = tableName
 
 			j.columnCountStat(tableName)
 

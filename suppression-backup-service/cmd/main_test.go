@@ -53,7 +53,7 @@ func verifyBackup(t *testing.T, filePath, data string) {
 	require.NoError(t, err)
 	isSuppressed, err := repo.Suppressed("workspace-1", "user-1", "src-1")
 	require.NoError(t, err)
-	require.True(t, isSuppressed)
+	require.NotNil(t, isSuppressed)
 }
 
 func TestMain(t *testing.T) {
