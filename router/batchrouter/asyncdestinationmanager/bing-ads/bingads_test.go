@@ -454,24 +454,22 @@ var _ = Describe("Bing ads", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			templateFilePath := filepath.Join(currentDir, "test-files/uploadstatus.csv") // Path of the source file
-			testFilePath := filepath.Join(currentDir, "test-files/test_copy.csv")        // Path of the destination folder
-			defer os.Remove("test-files/test_copy.csv")
-			err := DuplicateFile(templateFilePath, testFilePath)
+			errorsTemplateFilePath := filepath.Join(currentDir, "test-files/statuscheck.zip") // Path of the source file
+			testErrorsCopyFilePath := filepath.Join(currentDir, "test-files/statuscheck_copy.zip")        // Path of the destination folder
+			err := DuplicateFile(errorsTemplateFilePath, testErrorsCopyFilePath)
+			defer os.Remove(testErrorsCopyFilePath)
 			if err != nil {
 				fmt.Printf("Error duplicating file: %v\n", err)
 				return
 			}
-			fmt.Printf("File %s duplicated to %s\n", templateFilePath, testFilePath)
+			fmt.Printf("File %s duplicated to %s\n", errorsTemplateFilePath, testErrorsCopyFilePath)
 
 			// Create a test server with a custom handler function
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Open the zip file
-				zipFilePath := filepath.Join(currentDir, "test-files/statuscheck2.zip")
 				// Set the appropriate headers for a zip file response
 				w.Header().Set("Content-Type", "application/zip")
 				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
-				http.ServeFile(w, r, zipFilePath)
+				http.ServeFile(w, r, testErrorsCopyFilePath)
 			}))
 			defer ts.Close()
 			client := ts.Client()
