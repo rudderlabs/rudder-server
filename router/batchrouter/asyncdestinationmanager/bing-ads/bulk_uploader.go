@@ -100,11 +100,6 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		uploadBulkFileResp, errorDuringUpload := b.service.UploadBulkFile(urlResp.UploadUrl, actionFile.ZipFilePath)
 		uploadTimeStat.Since(startTime)
 
-		err = os.Remove(actionFile.ZipFilePath)
-		if err != nil {
-			b.logger.Error("Error in removing zip file: %v", err)
-			// To do add an alert here
-		}
 		if errorDuringUpload != nil {
 			b.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
@@ -129,6 +124,13 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
 	allErrors := `{"error":"` + strings.Join(errors, commaSeparator) + `"}`
+
+	for _, actionFile := range actionFiles {
+		err = os.Remove(actionFile.ZipFilePath)
+		if err != nil {
+			b.logger.Error("Error in removing zip file: %v", err)
+		}
+	}
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     successJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),

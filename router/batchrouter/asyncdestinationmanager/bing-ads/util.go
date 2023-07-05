@@ -126,7 +126,7 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audien
 		for _, uploadData := range data.Message.List {
 			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
 			clientIdStr := clientIdI.ToString()
-			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.Email})
+			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 		}
 		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
