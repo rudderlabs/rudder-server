@@ -42,7 +42,7 @@ const (
 	statsWorkerClaimProcessingFailed    = "worker_claim_processing_failed"
 	statsWorkerClaimProcessingSucceeded = "worker_claim_processing_succeeded"
 
-	tagWorkerid = "workerId"
+	tagWorkerID = "workerId"
 
 	workerProcessingDownloadStagingFileFailed = "worker_processing_download_staging_file_failed"
 )
@@ -63,8 +63,8 @@ type uploadResult struct {
 }
 
 type asyncJobRunResult struct {
-	Result bool
-	Id     string
+	Result bool   `json:"Result"`
+	ID     string `json:"Id"`
 }
 
 // jobRun Temporary store for processing staging file to load file
@@ -103,7 +103,11 @@ func newJobRun(job Payload, conf *config.Config, log logger.Logger, stat stats.S
 	}
 
 	jr.config.numLoadFileUploadWorkers = conf.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
-	jr.config.slaveUploadTimeout = conf.GetDuration("Warehouse.slaveUploadTimeout", 10, conf.GetDuration("Warehouse.slaveUploadTimeoutInMin", 10, time.Minute))
+	if conf.IsSet("Warehouse.slaveUploadTimeout") {
+		jr.config.slaveUploadTimeout = conf.GetDuration("Warehouse.slaveUploadTimeout", 10, time.Minute)
+	} else {
+		jr.config.slaveUploadTimeout = conf.GetDuration("Warehouse.slaveUploadTimeoutInMin", 10, time.Minute)
+	}
 	jr.config.loadObjectFolder = conf.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects")
 
 	jr.uploadTimeStat = jr.timerStat("load_file_upload_time")
@@ -494,7 +498,7 @@ func setupSlave(ctx context.Context) error {
 		idx := workerIdx
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			// create tags and timers
-			workerIdleTimer := warehouseutils.NewTimerStat(statsWorkerIdleTime, warehouseutils.Tag{Name: tagWorkerid, Value: fmt.Sprintf("%d", idx)})
+			workerIdleTimer := warehouseutils.NewTimerStat(statsWorkerIdleTime, warehouseutils.Tag{Name: tagWorkerID, Value: fmt.Sprintf("%d", idx)})
 			workerIdleTimeStart := time.Now()
 			for claimedJob := range jobNotificationChannel {
 				workerIdleTimer.Since(workerIdleTimeStart)
@@ -521,14 +525,14 @@ func setupSlave(ctx context.Context) error {
 func processClaimedUploadJob(ctx context.Context, claimedJob pgnotifier.Claim, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
-		warehouseutils.NewTimerStat(statsWorkerClaimProcessingTime, warehouseutils.Tag{Name: tagWorkerid, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
+		warehouseutils.NewTimerStat(statsWorkerClaimProcessingTime, warehouseutils.Tag{Name: tagWorkerID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
 	}()
 	handleErr := func(err error, claim pgnotifier.Claim) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponse{
 			Err: err,
 		}
-		warehouseutils.NewCounterStat(statsWorkerClaimProcessingFailed, warehouseutils.Tag{Name: tagWorkerid, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(statsWorkerClaimProcessingFailed, warehouseutils.Tag{Name: tagWorkerID, Value: strconv.Itoa(workerIndex)}).Increment()
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
@@ -552,9 +556,9 @@ func processClaimedUploadJob(ctx context.Context, claimedJob pgnotifier.Claim, w
 		Payload: output,
 	}
 	if response.Err != nil {
-		warehouseutils.NewCounterStat(statsWorkerClaimProcessingFailed, warehouseutils.Tag{Name: tagWorkerid, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(statsWorkerClaimProcessingFailed, warehouseutils.Tag{Name: tagWorkerID, Value: strconv.Itoa(workerIndex)}).Increment()
 	} else {
-		warehouseutils.NewCounterStat(statsWorkerClaimProcessingSucceeded, warehouseutils.Tag{Name: tagWorkerid, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(statsWorkerClaimProcessingSucceeded, warehouseutils.Tag{Name: tagWorkerID, Value: strconv.Itoa(workerIndex)}).Increment()
 	}
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
@@ -806,26 +810,26 @@ func processClaimedAsyncJob(ctx context.Context, claimedJob pgnotifier.Claim) {
 func runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRunResult, error) {
 	warehouse, err := getDestinationFromSlaveConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
 	if err != nil {
-		return asyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+		return asyncJobRunResult{ID: asyncjob.Id, Result: false}, err
 	}
 	destType := warehouse.Destination.DestinationDefinition.Name
 	whManager, err := manager.NewWarehouseOperations(destType)
 	if err != nil {
-		return asyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+		return asyncJobRunResult{ID: asyncjob.Id, Result: false}, err
 	}
 	whasyncjob := &jobs.WhAsyncJob{}
 
 	var metadata warehouseutils.DeleteByMetaData
 	err = json.Unmarshal(asyncjob.MetaData, &metadata)
 	if err != nil {
-		return asyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+		return asyncJobRunResult{ID: asyncjob.Id, Result: false}, err
 	}
 	whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
 		destType, warehouse.Destination.ID,
 	))
 	err = whManager.Setup(ctx, warehouse, whasyncjob)
 	if err != nil {
-		return asyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+		return asyncJobRunResult{ID: asyncjob.Id, Result: false}, err
 	}
 	defer whManager.Cleanup(ctx)
 	tableNames := []string{asyncjob.TableName}
@@ -842,7 +846,7 @@ func runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRu
 	}
 	asyncJobRunResult := asyncJobRunResult{
 		Result: err == nil,
-		Id:     asyncjob.Id,
+		ID:     asyncjob.Id,
 	}
 	return asyncJobRunResult, err
 }
