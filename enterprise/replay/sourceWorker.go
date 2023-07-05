@@ -168,7 +168,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	}
 
 	if transformationVersionID != "" {
-		response := worker.transformer.Transform(context.TODO(), transEvents, integrations.GetUserTransformURL(), userTransformBatchSize)
+		response := worker.transformer.Transform(context.TODO(), transEvents, integrations.GetUserTransformURL(), userTransformBatchSize, transformer.UserTransformerStage)
 
 		for _, ev := range response.Events {
 			destEventJSON, err := json.Marshal(ev.Output[worker.getFieldIdentifier(eventPayload)])

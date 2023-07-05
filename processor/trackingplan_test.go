@@ -70,7 +70,7 @@ func TestReportViolations(t *testing.T) {
 					Output: map[string]interface{}{
 						"context": map[string]interface{}{},
 					},
-					ValidationErrors: []transformer.ValidationErrorT{
+					ValidationErrors: []transformer.ValidationError{
 						{
 							Type: "Datatype-Mismatch",
 							Meta: map[string]string{
@@ -92,7 +92,7 @@ func TestReportViolations(t *testing.T) {
 					Output: map[string]interface{}{
 						"context": map[string]interface{}{},
 					},
-					ValidationErrors: []transformer.ValidationErrorT{
+					ValidationErrors: []transformer.ValidationError{
 						{
 							Type: "Datatype-Mismatch",
 							Meta: map[string]string{

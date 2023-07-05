@@ -444,7 +444,7 @@ func (proc *Handle) Setup(
 		}
 	}))
 
-	proc.transformer.Setup()
+	proc.transformer.Setup(config.Default, proc.logger, proc.statsFactory)
 	proc.crashRecover()
 }
 
@@ -2147,7 +2147,7 @@ func (proc *Handle) transformSrcDest(
 
 		trace.WithRegion(ctx, "UserTransform", func() {
 			startedAt := time.Now()
-			response = proc.transformer.Transform(ctx, eventList, integrations.GetUserTransformURL(), proc.config.userTransformBatchSize)
+			response = proc.transformer.Transform(ctx, eventList, integrations.GetUserTransformURL(), proc.config.userTransformBatchSize, transformer.UserTransformerStage)
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
 
@@ -2278,7 +2278,7 @@ func (proc *Handle) transformSrcDest(
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
-			response = proc.transformer.Transform(ctx, eventsToTransform, url, proc.config.transformBatchSize)
+			response = proc.transformer.Transform(ctx, eventsToTransform, url, proc.config.transformBatchSize, transformer.DestTransformerStage)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
@@ -2656,28 +2656,6 @@ func (proc *Handle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.Stat
 			rsourcesStats: rsourcesStats,
 		}
 	})
-}
-
-func subJobMerger(mergedJob, subJob *storeMessage) *storeMessage {
-	mergedJob.statusList = append(mergedJob.statusList, subJob.statusList...)
-	mergedJob.destJobs = append(mergedJob.destJobs, subJob.destJobs...)
-	mergedJob.batchDestJobs = append(mergedJob.batchDestJobs, subJob.batchDestJobs...)
-
-	mergedJob.procErrorJobs = append(mergedJob.procErrorJobs, subJob.procErrorJobs...)
-	for id, job := range subJob.procErrorJobsByDestID {
-		mergedJob.procErrorJobsByDestID[id] = append(mergedJob.procErrorJobsByDestID[id], job...)
-	}
-
-	mergedJob.reportMetrics = append(mergedJob.reportMetrics, subJob.reportMetrics...)
-	for dupStatKey, count := range subJob.sourceDupStats {
-		mergedJob.sourceDupStats[dupStatKey] += count
-	}
-	for id, v := range subJob.uniqueMessageIds {
-		mergedJob.uniqueMessageIds[id] = v
-	}
-	mergedJob.totalEvents += subJob.totalEvents
-
-	return mergedJob
 }
 
 func throughputPerSecond(processedJob int, timeTaken time.Duration) int {

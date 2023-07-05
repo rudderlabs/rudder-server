@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -148,7 +150,7 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 		}
 		handle.workers[i] = worker
 		worker.transformer = transformer.NewTransformer()
-		worker.transformer.Setup()
+		worker.transformer.Setup(config.Default, handle.log, stats.Default)
 		go worker.workerProcess(ctx)
 	}
 	handle.initSourceWorkersChannel <- true

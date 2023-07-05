@@ -831,6 +831,7 @@ var _ = Describe("Processor", Ordered, func() {
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
+				gomock.Any(),
 			).Times(1).After(callUnprocessed).
 				DoAndReturn(assertDestinationTransform(
 					messages,
@@ -1018,7 +1019,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			// We expect one call to user transform for destination B
-			callUserTransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
+			callUserTransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
 				DoAndReturn(func(ctx context.Context, clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
 					defer GinkgoRecover()
 
@@ -1039,7 +1040,7 @@ var _ = Describe("Processor", Ordered, func() {
 				})
 
 			// We expect one transform call to destination B, after user transform for destination B.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
@@ -1158,7 +1159,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
@@ -1286,7 +1287,7 @@ var _ = Describe("Processor", Ordered, func() {
 				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Return(transformer.ResponseT{
 					Events:       []transformer.TransformerResponseT{},
 					FailedEvents: transformerResponses,
@@ -1422,7 +1423,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Return(transformer.ResponseT{
 					Events:       []transformer.TransformerResponseT{},
 					FailedEvents: transformerResponses,
@@ -1506,7 +1507,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any(), gomock.Any()).Times(0)
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1623,7 +1624,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
-					"floatVal": float64(4.51),
+					"floatVal": 4.51,
 				},
 				"integrations": map[string]interface{}{
 					"All": true,
@@ -1819,7 +1820,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				StatusCode: 200,
 				Error:      "",
-				ValidationErrors: []transformer.ValidationErrorT{
+				ValidationErrors: []transformer.ValidationError{
 					{
 						Type:    "type-1",
 						Message: "message-1",
@@ -3173,239 +3174,6 @@ var _ = Describe("TestJobSplitter", func() {
 				},
 			}
 			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
-		})
-	})
-})
-
-var _ = Describe("TestSubJobMerger", func() {
-	expectedMergedJob := storeMessage{
-		statusList: []*jobsdb.JobStatusT{
-			{
-				JobID: 1,
-			},
-			{
-				JobID: 2,
-			},
-		},
-		destJobs: []*jobsdb.JobT{
-			{
-				JobID: 1,
-			},
-			{
-				JobID: 2,
-			},
-		},
-		batchDestJobs: []*jobsdb.JobT{
-			{
-				JobID: 1,
-			},
-			{
-				JobID: 2,
-			},
-		},
-
-		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
-			"jobError1": {&jobsdb.JobT{}},
-			"jobError2": {&jobsdb.JobT{}},
-		},
-		procErrorJobs: []*jobsdb.JobT{
-			{
-				JobID: 1,
-			},
-			{
-				JobID: 2,
-			},
-		},
-
-		reportMetrics: []*types.PUReportedMetric{{}, {}},
-		sourceDupStats: map[dupStatKey]int{
-			{sourceID: "stat-1"}: 1,
-			{sourceID: "stat-2"}: 2,
-		},
-		uniqueMessageIds: map[string]struct{}{
-			"messageId-1": {},
-			"messageId-2": {},
-		},
-
-		totalEvents: 2,
-		start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
-	}
-	Context("testing jobs merger, which merge sub-jobs into final job", func() {
-		It("subJobSize: 1", func() {
-			mergedJob := storeMessage{}
-			mergedJob.uniqueMessageIds = make(map[string]struct{})
-			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[dupStatKey]int)
-
-			subJobs := []storeMessage{
-				{
-					statusList: []*jobsdb.JobStatusT{
-						{
-							JobID: 1,
-						},
-					},
-					destJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-					},
-					batchDestJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-					},
-
-					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
-						"jobError1": {
-							&jobsdb.JobT{},
-						},
-					},
-					procErrorJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-					},
-					reportMetrics: []*types.PUReportedMetric{
-						{},
-					},
-					sourceDupStats: map[dupStatKey]int{
-						{sourceID: "stat-1"}: 1,
-					},
-					uniqueMessageIds: map[string]struct{}{
-						"messageId-1": {},
-					},
-
-					totalEvents: 1,
-					start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
-				},
-				{
-					statusList: []*jobsdb.JobStatusT{
-						{
-							JobID: 2,
-						},
-					},
-					destJobs: []*jobsdb.JobT{
-						{
-							JobID: 2,
-						},
-					},
-					batchDestJobs: []*jobsdb.JobT{
-						{
-							JobID: 2,
-						},
-					},
-
-					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
-						"jobError2": {
-							&jobsdb.JobT{},
-						},
-					},
-					procErrorJobs: []*jobsdb.JobT{
-						{
-							JobID: 2,
-						},
-					},
-
-					reportMetrics: []*types.PUReportedMetric{{}},
-					sourceDupStats: map[dupStatKey]int{
-						{sourceID: "stat-2"}: 2,
-					},
-					uniqueMessageIds: map[string]struct{}{
-						"messageId-2": {},
-					},
-					totalEvents: 1,
-					start:       time.Date(2022, time.March, 10, 10, 10, 10, 12, time.UTC),
-				},
-			}
-			mergedJobPtr := &mergedJob
-			for _, subJob := range subJobs {
-				mergedJobPtr = subJobMerger(mergedJobPtr, &subJob)
-			}
-			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
-			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
-			Expect(mergedJob.batchDestJobs).To(Equal(expectedMergedJob.batchDestJobs))
-			Expect(mergedJob.procErrorJobsByDestID).To(Equal(expectedMergedJob.procErrorJobsByDestID))
-			Expect(mergedJob.procErrorJobs).To(Equal(expectedMergedJob.procErrorJobs))
-			Expect(mergedJob.reportMetrics).To(Equal(expectedMergedJob.reportMetrics))
-			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
-			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
-			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
-		})
-	})
-	Context("testing jobs merger, which merge sub-jobs into final job", func() {
-		It("subJobSize: 2", func() {
-			mergedJob := storeMessage{}
-			mergedJob.uniqueMessageIds = make(map[string]struct{})
-			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-			mergedJob.sourceDupStats = make(map[dupStatKey]int)
-
-			subJobs := []storeMessage{
-				{
-					statusList: []*jobsdb.JobStatusT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-					},
-					destJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-					},
-					batchDestJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-					},
-
-					procErrorJobsByDestID: map[string][]*jobsdb.JobT{
-						"jobError1": {&jobsdb.JobT{}},
-						"jobError2": {&jobsdb.JobT{}},
-					},
-					procErrorJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-					},
-
-					reportMetrics: []*types.PUReportedMetric{{}, {}},
-					sourceDupStats: map[dupStatKey]int{
-						{sourceID: "stat-1"}: 1,
-						{sourceID: "stat-2"}: 2,
-					},
-					uniqueMessageIds: map[string]struct{}{
-						"messageId-1": {},
-						"messageId-2": {},
-					},
-
-					totalEvents: 2,
-					start:       time.Date(2022, time.March, 10, 10, 10, 10, 10, time.UTC),
-				},
-			}
-			mergedJobPtr := &mergedJob
-			for _, subJob := range subJobs {
-				mergedJobPtr = subJobMerger(mergedJobPtr, &subJob)
-			}
-			Expect(mergedJob.statusList).To(Equal(expectedMergedJob.statusList))
-			Expect(mergedJob.destJobs).To(Equal(expectedMergedJob.destJobs))
-			Expect(mergedJob.batchDestJobs).To(Equal(expectedMergedJob.batchDestJobs))
-			Expect(mergedJob.procErrorJobsByDestID).To(Equal(expectedMergedJob.procErrorJobsByDestID))
-			Expect(mergedJob.procErrorJobs).To(Equal(expectedMergedJob.procErrorJobs))
-			Expect(mergedJob.reportMetrics).To(Equal(expectedMergedJob.reportMetrics))
-			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
-			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
-			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
 		})
 	})
 })

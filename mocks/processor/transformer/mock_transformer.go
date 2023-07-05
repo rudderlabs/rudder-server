@@ -6,6 +6,9 @@ package mocks_transformer
 
 import (
 	context "context"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -36,7 +39,7 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // Setup mocks base method.
-func (m *MockTransformer) Setup() {
+func (m *MockTransformer) Setup(*config.Config, logger.Logger, stats.Stats) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Setup")
 }
@@ -48,29 +51,15 @@ func (mr *MockTransformerMockRecorder) Setup() *gomock.Call {
 }
 
 // Transform mocks base method.
-func (m *MockTransformer) Transform(arg0 context.Context, arg1 []transformer.TransformerEventT, arg2 string, arg3 int) transformer.ResponseT {
+func (m *MockTransformer) Transform(arg0 context.Context, arg1 []transformer.TransformerEventT, arg2 string, arg3 int, arg4 string) transformer.ResponseT {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2, arg3, arg4)
 	ret0, _ := ret[0].(transformer.ResponseT)
 	return ret0
 }
 
 // Transform indicates an expected call of Transform.
-func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2, arg3)
-}
-
-// Validate mocks base method.
-func (m *MockTransformer) Validate(arg0 []transformer.TransformerEventT, arg1 string, arg2 int) transformer.ResponseT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Validate", arg0, arg1, arg2)
-	ret0, _ := ret[0].(transformer.ResponseT)
-	return ret0
-}
-
-// Validate indicates an expected call of Validate.
-func (mr *MockTransformerMockRecorder) Validate(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Validate", reflect.TypeOf((*MockTransformer)(nil).Validate), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2, arg3, arg4)
 }

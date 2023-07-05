@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"strconv"
 	"time"
 
@@ -78,7 +79,7 @@ func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]trans
 		}
 
 		validationStart := time.Now()
-		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), proc.config.userTransformBatchSize)
+		response := proc.transformer.Transform(context.TODO(), eventList, integrations.GetTrackingPlanValidationURL(), proc.config.userTransformBatchSize, transformer.TrackingPlanValidationStage)
 		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
