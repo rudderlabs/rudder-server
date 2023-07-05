@@ -430,7 +430,7 @@ var _ = Describe("Bing ads", func() {
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
 			UploadStatsInput := common.FetchUploadJobStatus{
-				PollResultFileURLs: testFilePath,
+				FailedJobURLs: testFilePath,
 				ImportingList: []*jobsdb.JobT{
 					{
 						JobID: 1,

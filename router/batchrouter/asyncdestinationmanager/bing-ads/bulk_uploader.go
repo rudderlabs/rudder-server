@@ -260,7 +260,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	var failedJobIds []int64
 	var cumulativeFailedReasons map[int64]string
 	var status string
-	fileURLs := common.GenerateArrayOfStrings(UploadStatsInput.PollResultFileURLs)
+	fileURLs := common.GenerateArrayOfStrings(UploadStatsInput.FailedJobURLs)
 	for _, fileURL := range fileURLs {
 		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
