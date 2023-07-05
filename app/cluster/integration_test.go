@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
@@ -212,7 +210,7 @@ func TestDynamicClusterManager(t *testing.T) {
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-	mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+	mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 	rtFactory := &router.Factory{
 		Logger:           logger.NOP,

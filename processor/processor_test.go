@@ -12,8 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -36,7 +34,6 @@ import (
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -394,7 +391,6 @@ func initProcessor() {
 	stash.Init()
 	admin.Init()
 	misc.Init()
-	integrations.Init()
 	format.MaxLength = 100000
 	format.MaxDepth = 10
 }
@@ -558,7 +554,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			c.mockEventSchemasDB.EXPECT().
 				WithStoreSafeTx(
@@ -625,7 +621,7 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("Initialization", func() {
 		It("should initialize (no jobs to recover)", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -640,7 +636,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 		It("should recover after crash", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -661,7 +657,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -806,7 +802,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
@@ -829,8 +825,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(
-				gomock.Any(),
-				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
 				gomock.Any(),
@@ -1001,7 +995,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1021,11 +1015,9 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			// We expect one call to user transform for destination B
-			callUserTransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
-				DoAndReturn(func(ctx context.Context, clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
+			callUserTransform := mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
+				DoAndReturn(func(ctx context.Context, clientEvents []transformer.TransformerEventT, batchSize int) transformer.ResponseT {
 					defer GinkgoRecover()
-
-					Expect(url).To(Equal("http://localhost:9090/customTransform"))
 
 					outputEvents := make([]transformer.TransformerResponseT, 0)
 
@@ -1042,7 +1034,7 @@ var _ = Describe("Processor", Ordered, func() {
 				})
 
 			// We expect one transform call to destination B, after user transform for destination B.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
@@ -1154,14 +1146,14 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0)).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
@@ -1278,7 +1270,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1289,7 +1281,7 @@ var _ = Describe("Processor", Ordered, func() {
 				PayloadSizeLimit: processor.payloadLimit,
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Return(transformer.ResponseT{
 					Events:       []transformer.TransformerResponseT{},
 					FailedEvents: transformerResponses,
@@ -1413,7 +1405,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1425,7 +1417,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Return(transformer.ResponseT{
 					Events:       []transformer.TransformerResponseT{},
 					FailedEvents: transformerResponses,
@@ -1497,7 +1489,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1509,7 +1501,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any()).Times(0)
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1535,7 +1527,7 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1579,7 +1571,7 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("ProcessorLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1638,7 +1630,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
+			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -2896,22 +2888,14 @@ func assertDestinationTransform(
 ) func(
 	ctx context.Context,
 	clientEvents []transformer.TransformerEventT,
-	url string,
 	batchSize int,
 ) transformer.ResponseT {
 	return func(
 		ctx context.Context,
 		clientEvents []transformer.TransformerEventT,
-		url string,
 		batchSize int,
 	) transformer.ResponseT {
 		defer GinkgoRecover()
-		destinationDefinitionName := expectations.destinationDefinitionName
-
-		fmt.Println("url", url)
-		fmt.Println("destinationDefinitionName", destinationDefinitionName)
-
-		Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/destinations/%s", destinationDefinitionName)))
 
 		fmt.Println("clientEvents:", len(clientEvents))
 		fmt.Println("expect:", expectations.events)

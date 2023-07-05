@@ -30,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -358,7 +357,6 @@ func runAllInit() {
 	customdestinationmanager.Init()
 	routertransformer.Init()
 	gateway.Init()
-	integrations.Init()
 	alert.Init()
 	oauth.Init()
 }

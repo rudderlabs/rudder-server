@@ -8,7 +8,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -79,7 +78,7 @@ func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]trans
 		}
 
 		validationStart := time.Now()
-		response := proc.transformer.Transform(context.TODO(), eventList, integrations.GetTrackingPlanValidationURL(), proc.config.userTransformBatchSize, transformer.TrackingPlanValidationStage)
+		response := proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize)
 		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput

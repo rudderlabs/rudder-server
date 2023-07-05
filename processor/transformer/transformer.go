@@ -11,8 +11,11 @@ import (
 	"os"
 	"runtime/trace"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
@@ -91,6 +94,7 @@ type HandleT struct {
 	receivedStat stats.Measurement
 	cpDownGauge  stats.Measurement
 
+	conf   *config.Config
 	logger logger.Logger
 	stat   stats.Stats
 
@@ -103,17 +107,27 @@ type HandleT struct {
 		maxHTTPConnections     int
 		maxHTTPIdleConnections int
 		disableKeepAlives      bool
-		timeoutDuration        time.Duration
-		maxRetry               int
-		failOnTimeout          bool
-		failOnError            bool
+
+		timeoutDuration time.Duration
+
+		maxRetry int
+
+		failOnTimeout bool
+		failOnError   bool
+
+		destTransformationURL string
+		userTransformationURL string
 	}
+
+	warehouseDestinationMap map[string]struct{}
 }
 
 // Transformer provides methods to transform events
 type Transformer interface {
 	Setup(*config.Config, logger.Logger, stats.Stats)
-	Transform(ctx context.Context, clientEvents []TransformerEventT, url string, batchSize int, stage string) ResponseT
+	Transform(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT
+	UserTransform(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT
+	Validate(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT
 }
 
 // NewTransformer creates a new transformer
@@ -149,6 +163,7 @@ type ValidationError struct {
 
 // Setup initializes this class
 func (trans *HandleT) Setup(conf *config.Config, log logger.Logger, stat stats.Stats) {
+	trans.conf = conf
 	trans.logger = log.Child("transformer")
 	trans.stat = stat
 
@@ -162,11 +177,18 @@ func (trans *HandleT) Setup(conf *config.Config, log logger.Logger, stat stats.S
 	trans.config.disableKeepAlives = conf.GetBool("Transformer.Client.disableKeepAlives", true)
 	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 30, time.Second)
 
+	trans.config.destTransformationURL = conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	trans.config.userTransformationURL = conf.GetString("USER_TRANSFORM_URL", trans.config.destTransformationURL)
+
 	conf.RegisterIntConfigVariable(30, &trans.config.maxRetry, true, 1, "Processor.maxRetry")
 	conf.RegisterBoolConfigVariable(false, &trans.config.failOnTimeout, true, "Processor.Transformer.failOnTimeout")
 	conf.RegisterBoolConfigVariable(false, &trans.config.failOnError, true, "Processor.Transformer.failOnError")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
+
+	trans.warehouseDestinationMap = lo.SliceToMap(warehouseutils.WarehouseDestinations, func(destination string) (string, struct{}) {
+		return destination, struct{}{}
+	})
 
 	if trans.Client == nil {
 		trans.Client = &http.Client{
@@ -190,8 +212,8 @@ type ResponseT struct {
 // GetVersion gets the transformer version by asking it on /transformerBuildVersion. if there is any error it returns empty string
 func GetVersion() (transformerBuildVersion string) {
 	transformerBuildVersion = "Not an official release. Get the latest release from dockerhub."
-	url := integrations.GetTransformerURL() + "/transformerBuildVersion"
-	resp, err := http.Get(url)
+	transformURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090") + "/transformerBuildVersion"
+	resp, err := http.Get(transformURL)
 	if err != nil {
 		pkgLogger.Errorf("Unable to make a transformer build version call with error : %s", err.Error())
 		return
@@ -213,11 +235,31 @@ func GetVersion() (transformerBuildVersion string) {
 	return
 }
 
-// Transform function is used to invoke transformer API
-func (trans *HandleT) Transform(
+// Transform function is used to invoke destination transformer API
+func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT {
+	if len(clientEvents) == 0 {
+		return ResponseT{}
+	}
+	destType := clientEvents[0].Destination.DestinationDefinition.Name
+	transformURL := trans.destTransformURL(destType)
+	return trans.transform(ctx, clientEvents, transformURL, batchSize, DestTransformerStage)
+}
+
+// UserTransform function is used to invoke user transformer API
+func (trans *HandleT) UserTransform(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT {
+	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, UserTransformerStage)
+}
+
+// Validate function is used to invoke tracking plan validation API
+func (trans *HandleT) Validate(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT {
+	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, TrackingPlanValidationStage)
+}
+
+func (trans *HandleT) transform(
 	ctx context.Context,
 	clientEvents []TransformerEventT,
-	url string, batchSize int,
+	url string,
+	batchSize int,
 	stage string,
 ) ResponseT {
 	if len(clientEvents) == 0 {
@@ -426,11 +468,11 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url, stage str
 	if err != nil {
 		if trans.config.failOnTimeout && stage == UserTransformerStage && os.IsTimeout(err) {
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeout
-		}
-		if trans.config.failOnError {
+		} else if trans.config.failOnError {
 			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
+		} else {
+			panic(err)
 		}
-		panic(err)
 	}
 
 	// perform version compatibility check only on success
@@ -447,4 +489,29 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url, stage str
 	}
 
 	return respData, resp.StatusCode
+}
+
+func (trans *HandleT) destTransformURL(destType string) string {
+	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", trans.config.destTransformationURL, strings.ToLower(destType))
+
+	if _, ok := trans.warehouseDestinationMap[destType]; ok {
+		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		if destType == warehouseutils.RS {
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam
+		}
+		if destType == warehouseutils.CLICKHOUSE {
+			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", trans.conf.GetBool("Warehouse.clickhouse.enableArraySupport", false)))
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
+		}
+		return destinationEndPoint + "?" + whSchemaVersionQueryParam
+	}
+	return destinationEndPoint
+}
+
+func (trans *HandleT) userTransformURL() string {
+	return trans.config.userTransformationURL + "/customTransform"
+}
+
+func (trans *HandleT) trackingPlanValidationURL() string {
+	return trans.config.destTransformationURL + "/v0/validate"
 }

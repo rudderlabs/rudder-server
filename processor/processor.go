@@ -2136,7 +2136,6 @@ func (proc *Handle) transformSrcDest(
 	}
 	// REPORTING - END
 
-	url := integrations.GetDestinationURL(destType)
 	var response transformer.ResponseT
 	var eventsToTransform []transformer.TransformerEventT
 	// Send to custom transformer only if the destination has a transformer enabled
@@ -2147,7 +2146,7 @@ func (proc *Handle) transformSrcDest(
 
 		trace.WithRegion(ctx, "UserTransform", func() {
 			startedAt := time.Now()
-			response = proc.transformer.Transform(ctx, eventList, integrations.GetUserTransformURL(), proc.config.userTransformBatchSize, transformer.UserTransformerStage)
+			response = proc.transformer.UserTransform(ctx, eventList, proc.config.userTransformBatchSize)
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
 
@@ -2278,7 +2277,7 @@ func (proc *Handle) transformSrcDest(
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
-			response = proc.transformer.Transform(ctx, eventsToTransform, url, proc.config.transformBatchSize, transformer.DestTransformerStage)
+			response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)

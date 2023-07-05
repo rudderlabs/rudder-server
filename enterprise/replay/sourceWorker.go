@@ -21,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
@@ -168,7 +167,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	}
 
 	if transformationVersionID != "" {
-		response := worker.transformer.Transform(context.TODO(), transEvents, integrations.GetUserTransformURL(), userTransformBatchSize, transformer.UserTransformerStage)
+		response := worker.transformer.UserTransform(context.TODO(), transEvents, userTransformBatchSize)
 
 		for _, ev := range response.Events {
 			destEventJSON, err := json.Marshal(ev.Output[worker.getFieldIdentifier(eventPayload)])

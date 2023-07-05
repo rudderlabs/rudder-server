@@ -12,6 +12,12 @@ import (
 	"testing"
 	"time"
 
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
+	"golang.org/x/exp/slices"
+
+	"github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -44,14 +50,13 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Output:     reqBody[i].Message,
 			Metadata:   reqBody[i].Metadata,
 			StatusCode: statusCode,
-			Error:      "",
 		}
-		if statusCode >= 400 {
+		if statusCode >= http.StatusBadRequest {
 			responses[i].Error = "error"
 		}
 	}
 
-	w.Header().Set("apiVersion", "2")
+	w.Header().Set("apiVersion", strconv.Itoa(types.SupportedTransformerApiVersion))
 
 	require.NoError(t.t, json.NewEncoder(w).Encode(responses))
 }
@@ -60,7 +65,8 @@ type endlessLoopTransformer struct {
 	retryCount    int
 	maxRetryCount int
 
-	apiVersion int
+	skipApiVersion bool
+	apiVersion     int
 
 	statusCode  int
 	statusError string
@@ -90,9 +96,43 @@ func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	w.Header().Set("apiVersion", strconv.Itoa(elt.apiVersion))
+	if !elt.skipApiVersion {
+		w.Header().Set("apiVersion", strconv.Itoa(elt.apiVersion))
+	}
 
 	require.NoError(elt.t, json.NewEncoder(w).Encode(responses))
+}
+
+type endpointTransformer struct {
+	t              testing.TB
+	supportedPaths []string
+}
+
+func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	if !slices.Contains(et.supportedPaths, path) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	var reqBody []TransformerEventT
+	require.NoError(et.t, json.NewDecoder(r.Body).Decode(&reqBody))
+
+	responses := make([]TransformerResponseT, len(reqBody))
+
+	for i := range reqBody {
+		responses[i] = TransformerResponseT{
+			Output:     reqBody[i].Message,
+			Metadata:   reqBody[i].Metadata,
+			StatusCode: http.StatusOK,
+			Error:      "",
+		}
+	}
+
+	w.Header().Set("apiVersion", strconv.Itoa(types.SupportedTransformerApiVersion))
+
+	require.NoError(et.t, json.NewEncoder(w).Encode(responses))
 }
 
 func TestTransformer(t *testing.T) {
@@ -116,6 +156,7 @@ func TestTransformer(t *testing.T) {
 			eventsCount int
 			failEvery   int
 		}{
+			{batchSize: 0, eventsCount: 0},
 			{batchSize: 10, eventsCount: 100},
 			{batchSize: 10, eventsCount: 9},
 			{batchSize: 10, eventsCount: 91},
@@ -170,22 +211,21 @@ func TestTransformer(t *testing.T) {
 				}
 			}
 
-			rsp := tr.Transform(context.TODO(), events, srv.URL, batchSize, "test-stage")
+			rsp := tr.transform(context.TODO(), events, srv.URL, batchSize, "test-stage")
 			require.Equal(t, expectedResponse, rsp)
 		}
 	})
 
 	t.Run("timeout", func(t *testing.T) {
 		msgID := "messageID-0"
-		events := make([]TransformerEventT, 1)
-		events[0] = TransformerEventT{
+		events := append([]TransformerEventT{}, TransformerEventT{
 			Metadata: MetadataT{
 				MessageID: msgID,
 			},
 			Message: map[string]interface{}{
 				"src-key-1": msgID,
 			},
-		}
+		})
 
 		testCases := []struct {
 			name             string
@@ -279,23 +319,22 @@ func TestTransformer(t *testing.T) {
 		}
 	})
 
-	t.Run("endless in case of control plane down", func(t *testing.T) {
+	t.Run("endless retries in case of control plane down", func(t *testing.T) {
 		msgID := "messageID-0"
-		events := make([]TransformerEventT, 1)
-		events[0] = TransformerEventT{
+		events := append([]TransformerEventT{}, TransformerEventT{
 			Metadata: MetadataT{
 				MessageID: msgID,
 			},
 			Message: map[string]interface{}{
 				"src-key-1": msgID,
 			},
-		}
+		})
 
 		elt := &endlessLoopTransformer{
 			maxRetryCount: 3,
 			statusCode:    StatusCPDown,
 			statusError:   "control plane not reachable",
-			apiVersion:    2,
+			apiVersion:    types.SupportedTransformerApiVersion,
 			t:             t,
 		}
 
@@ -326,8 +365,7 @@ func TestTransformer(t *testing.T) {
 
 	t.Run("retries", func(t *testing.T) {
 		msgID := "messageID-0"
-		events := make([]TransformerEventT, 1)
-		events[0] = TransformerEventT{
+		events := append([]TransformerEventT{}, TransformerEventT{
 			Metadata: MetadataT{
 				MessageID: msgID,
 			},
@@ -342,14 +380,13 @@ func TestTransformer(t *testing.T) {
 					},
 				},
 			},
-		}
+		})
 
 		testCases := []struct {
 			name             string
 			retries          int
 			maxRetryCount    int
 			statusCode       int
-			apiVersion       int
 			statusError      string
 			expectedRetries  int
 			expectPanic      bool
@@ -360,7 +397,6 @@ func TestTransformer(t *testing.T) {
 				name:            "too many requests",
 				retries:         3,
 				maxRetryCount:   10,
-				apiVersion:      2,
 				statusCode:      http.StatusTooManyRequests,
 				statusError:     "too many requests",
 				expectedRetries: 4,
@@ -371,7 +407,6 @@ func TestTransformer(t *testing.T) {
 				name:            "too many requests with fail on error",
 				retries:         3,
 				maxRetryCount:   10,
-				apiVersion:      2,
 				statusCode:      http.StatusTooManyRequests,
 				statusError:     "too many requests",
 				expectedRetries: 4,
@@ -391,7 +426,6 @@ func TestTransformer(t *testing.T) {
 				name:            "transient control plane error",
 				retries:         30,
 				maxRetryCount:   3,
-				apiVersion:      2,
 				statusCode:      StatusCPDown,
 				statusError:     "control plane not reachable",
 				expectedRetries: 3,
@@ -409,14 +443,6 @@ func TestTransformer(t *testing.T) {
 				},
 				failOnError: false,
 			},
-			{
-				name:            "incompatible api version",
-				retries:         30,
-				maxRetryCount:   0,
-				apiVersion:      1,
-				expectedRetries: 1,
-				expectPanic:     true,
-			},
 		}
 
 		for _, tc := range testCases {
@@ -427,7 +453,7 @@ func TestTransformer(t *testing.T) {
 					maxRetryCount: tc.maxRetryCount,
 					statusCode:    tc.statusCode,
 					statusError:   tc.statusError,
-					apiVersion:    tc.apiVersion,
+					apiVersion:    types.SupportedTransformerApiVersion,
 					t:             t,
 				}
 
@@ -455,5 +481,271 @@ func TestTransformer(t *testing.T) {
 				require.Equal(t, tc.expectedRetries, elt.retryCount)
 			})
 		}
+	})
+
+	t.Run("version compatibility", func(t *testing.T) {
+		msgID := "messageID-0"
+		events := append([]TransformerEventT{}, TransformerEventT{
+			Metadata: MetadataT{
+				MessageID: msgID,
+			},
+			Message: map[string]interface{}{
+				"src-key-1": msgID,
+			},
+			Destination: backendconfig.DestinationT{
+				Transformations: []backendconfig.TransformationT{
+					{
+						ID:        "test-transformation",
+						VersionID: "test-version",
+					},
+				},
+			},
+		})
+
+		testCases := []struct {
+			name             string
+			apiVersion       int
+			skipApiVersion   bool
+			expectPanic      bool
+			expectedResponse []TransformerResponseT
+		}{
+			{
+				name:        "compatible api version",
+				apiVersion:  types.SupportedTransformerApiVersion,
+				expectPanic: false,
+				expectedResponse: []TransformerResponseT{
+					{
+						Metadata: MetadataT{
+							MessageID: msgID,
+						},
+						StatusCode: http.StatusOK,
+						Output: map[string]interface{}{
+							"src-key-1": msgID,
+						},
+					},
+				},
+			},
+			{
+				name:        "incompatible api version",
+				apiVersion:  1,
+				expectPanic: true,
+			},
+			{
+				name:           "unexpected api version",
+				skipApiVersion: true,
+				expectPanic:    true,
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				elt := &endlessLoopTransformer{
+					maxRetryCount:  0,
+					skipApiVersion: tc.skipApiVersion,
+					apiVersion:     tc.apiVersion,
+					t:              t,
+				}
+
+				srv := httptest.NewServer(elt)
+				defer srv.Close()
+
+				tr := NewTransformer()
+				tr.Client = srv.Client()
+				tr.Setup(config.Default, logger.NOP, stats.Default)
+
+				if tc.expectPanic {
+					require.Panics(t, func() {
+						_ = tr.request(context.TODO(), srv.URL, "test-stage", events)
+					})
+					return
+				}
+
+				rsp := tr.request(context.TODO(), srv.URL, "test-stage", events)
+				require.Equal(t, tc.expectedResponse, rsp)
+			})
+		}
+	})
+
+	t.Run("endpoints", func(t *testing.T) {
+		msgID := "messageID-0"
+		expectedResponse := ResponseT{
+			Events: []TransformerResponseT{
+				{
+					Output: map[string]interface{}{
+						"src-key-1": msgID,
+					},
+					Metadata: MetadataT{
+						MessageID: msgID,
+					},
+					StatusCode: http.StatusOK,
+				},
+			},
+		}
+		events := append([]TransformerEventT{}, TransformerEventT{
+			Metadata: MetadataT{
+				MessageID: msgID,
+			},
+			Message: map[string]interface{}{
+				"src-key-1": msgID,
+			},
+			Destination: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destination",
+				},
+				Transformations: []backendconfig.TransformationT{
+					{
+						ID:        "test-transformation",
+						VersionID: "test-version",
+					},
+				},
+			},
+		})
+
+		t.Run("Destination transformations", func(t *testing.T) {
+			et := &endpointTransformer{
+				supportedPaths: []string{"/v0/destinations/test-destination"},
+				t:              t,
+			}
+
+			srv := httptest.NewServer(et)
+			defer srv.Close()
+
+			c := config.New()
+			c.Set("Processor.maxRetry", 1)
+			c.Set("DEST_TRANSFORM_URL", srv.URL)
+
+			tr := NewTransformer()
+			tr.Client = srv.Client()
+			tr.Setup(c, logger.NOP, stats.Default)
+
+			rsp := tr.Transform(context.TODO(), events, 10)
+			require.Equal(t, rsp, expectedResponse)
+		})
+
+		t.Run("Destination warehouse transformations", func(t *testing.T) {
+			testCases := []struct {
+				name            string
+				destinationType string
+			}{
+				{
+					name:            "rs",
+					destinationType: warehouseutils.RS,
+				},
+				{
+					name:            "clickhouse",
+					destinationType: warehouseutils.CLICKHOUSE,
+				},
+				{
+					name:            "snowflake",
+					destinationType: warehouseutils.SNOWFLAKE,
+				},
+			}
+
+			for _, tc := range testCases {
+				tc := tc
+
+				t.Run(tc.name, func(t *testing.T) {
+					et := &endpointTransformer{
+						supportedPaths: []string{`/v0/destinations/` + tc.name},
+						t:              t,
+					}
+
+					srv := httptest.NewServer(et)
+					defer srv.Close()
+
+					c := config.New()
+					c.Set("Processor.maxRetry", 1)
+					c.Set("DEST_TRANSFORM_URL", srv.URL)
+
+					tr := NewTransformer()
+					tr.Client = srv.Client()
+					tr.Setup(c, logger.NOP, stats.Default)
+
+					events := append([]TransformerEventT{}, TransformerEventT{
+						Metadata: MetadataT{
+							MessageID: msgID,
+						},
+						Message: map[string]interface{}{
+							"src-key-1": msgID,
+						},
+						Destination: backendconfig.DestinationT{
+							DestinationDefinition: backendconfig.DestinationDefinitionT{
+								Name: tc.destinationType,
+							},
+							Transformations: []backendconfig.TransformationT{
+								{
+									ID:        "test-transformation",
+									VersionID: "test-version",
+								},
+							},
+						},
+					})
+
+					rsp := tr.Transform(context.TODO(), events, 10)
+					require.Equal(t, rsp, expectedResponse)
+				})
+			}
+		})
+
+		t.Run("User transformations", func(t *testing.T) {
+			et := &endpointTransformer{
+				supportedPaths: []string{"/customTransform"},
+				t:              t,
+			}
+
+			srv := httptest.NewServer(et)
+			defer srv.Close()
+
+			c := config.New()
+			c.Set("Processor.maxRetry", 1)
+			c.Set("USER_TRANSFORM_URL", srv.URL)
+
+			tr := NewTransformer()
+			tr.Client = srv.Client()
+			tr.Setup(c, logger.NOP, stats.Default)
+
+			rsp := tr.UserTransform(context.TODO(), events, 10)
+			require.Equal(t, rsp, expectedResponse)
+		})
+
+		t.Run("Tracking Plan Validations", func(t *testing.T) {
+			et := &endpointTransformer{
+				supportedPaths: []string{"/v0/validate"},
+				t:              t,
+			}
+
+			srv := httptest.NewServer(et)
+			defer srv.Close()
+
+			c := config.New()
+			c.Set("Processor.maxRetry", 1)
+			c.Set("DEST_TRANSFORM_URL", srv.URL)
+
+			tr := NewTransformer()
+			tr.Client = srv.Client()
+			tr.Setup(c, logger.NOP, stats.Default)
+
+			rsp := tr.Validate(context.TODO(), events, 10)
+			require.Equal(t, rsp, expectedResponse)
+		})
+
+		t.Run("version", func(t *testing.T) {
+			config.Reset()
+			defer config.Reset()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, r.URL.Path, "/transformerBuildVersion")
+
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("1.34.0"))
+			}))
+			defer srv.Close()
+
+			config.Set("DEST_TRANSFORM_URL", srv.URL)
+
+			require.Equal(t, GetVersion(), "1.34.0")
+		})
 	})
 }
