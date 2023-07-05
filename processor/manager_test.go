@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -234,7 +236,7 @@ func TestProcessorManager(t *testing.T) {
 			},
 		)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
+		mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1).Do(func() {
 			processor.Handle.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
@@ -274,7 +276,7 @@ func TestProcessorManager(t *testing.T) {
 		)
 
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
+		mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1).Do(func() {
 			processor.Handle.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)

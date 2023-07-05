@@ -6,12 +6,12 @@ package mocks_transformer
 
 import (
 	context "context"
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	config "github.com/rudderlabs/rudder-go-kit/config"
+	logger "github.com/rudderlabs/rudder-go-kit/logger"
+	stats "github.com/rudderlabs/rudder-go-kit/stats"
 	transformer "github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
@@ -39,15 +39,15 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // Setup mocks base method.
-func (m *MockTransformer) Setup(*config.Config, logger.Logger, stats.Stats) {
+func (m *MockTransformer) Setup(arg0 *config.Config, arg1 logger.Logger, arg2 stats.Stats) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Setup")
+	m.ctrl.Call(m, "Setup", arg0, arg1, arg2)
 }
 
 // Setup indicates an expected call of Setup.
-func (mr *MockTransformerMockRecorder) Setup() *gomock.Call {
+func (mr *MockTransformerMockRecorder) Setup(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup), arg0, arg1, arg2)
 }
 
 // Transform mocks base method.

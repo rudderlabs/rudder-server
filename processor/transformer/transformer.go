@@ -92,21 +92,22 @@ type HandleT struct {
 	cpDownGauge  stats.Measurement
 
 	logger logger.Logger
-	conf   *config.Config
 	stat   stats.Stats
 
 	Client *http.Client
 
 	guardConcurrency chan struct{}
 
-	maxConcurrency         int
-	maxHTTPConnections     int
-	maxHTTPIdleConnections int
-	disableKeepAlives      bool
-	timeoutDuration        time.Duration
-	maxRetry               int
-	failOnTimeout          bool
-	failOnError            bool
+	config struct {
+		maxConcurrency         int
+		maxHTTPConnections     int
+		maxHTTPIdleConnections int
+		disableKeepAlives      bool
+		timeoutDuration        time.Duration
+		maxRetry               int
+		failOnTimeout          bool
+		failOnError            bool
+	}
 }
 
 // Transformer provides methods to transform events
@@ -148,7 +149,6 @@ type ValidationError struct {
 
 // Setup initializes this class
 func (trans *HandleT) Setup(conf *config.Config, log logger.Logger, stat stats.Stats) {
-	trans.conf = conf
 	trans.logger = log.Child("transformer")
 	trans.stat = stat
 
@@ -156,26 +156,27 @@ func (trans *HandleT) Setup(conf *config.Config, log logger.Logger, stat stats.S
 	trans.receivedStat = stat.NewStat("processor.transformer_received", stats.CountType)
 	trans.cpDownGauge = stat.NewStat("processor.control_plane_down", stats.GaugeType)
 
-	trans.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
-	trans.maxHTTPConnections = conf.GetInt("Processor.maxHTTPConnections", 100)
-	trans.maxHTTPIdleConnections = conf.GetInt("Processor.maxHTTPIdleConnections", 5)
-	trans.disableKeepAlives = conf.GetBool("Transformer.Client.disableKeepAlives", true)
-	trans.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 30, time.Second)
-	trans.guardConcurrency = make(chan struct{}, trans.maxConcurrency)
+	trans.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
+	trans.config.maxHTTPConnections = conf.GetInt("Processor.maxHTTPConnections", 100)
+	trans.config.maxHTTPIdleConnections = conf.GetInt("Processor.maxHTTPIdleConnections", 5)
+	trans.config.disableKeepAlives = conf.GetBool("Transformer.Client.disableKeepAlives", true)
+	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 30, time.Second)
 
-	trans.conf.RegisterIntConfigVariable(30, &trans.maxRetry, true, 1, "Processor.maxRetry")
-	trans.conf.RegisterBoolConfigVariable(false, &trans.failOnTimeout, true, "Processor.Transformer.failOnTimeout")
-	trans.conf.RegisterBoolConfigVariable(false, &trans.failOnError, true, "Processor.Transformer.failOnError")
+	conf.RegisterIntConfigVariable(30, &trans.config.maxRetry, true, 1, "Processor.maxRetry")
+	conf.RegisterBoolConfigVariable(false, &trans.config.failOnTimeout, true, "Processor.Transformer.failOnTimeout")
+	conf.RegisterBoolConfigVariable(false, &trans.config.failOnError, true, "Processor.Transformer.failOnError")
+
+	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
 	if trans.Client == nil {
 		trans.Client = &http.Client{
 			Transport: &http.Transport{
-				DisableKeepAlives:   trans.disableKeepAlives,
-				MaxConnsPerHost:     trans.maxHTTPConnections,
-				MaxIdleConnsPerHost: trans.maxHTTPIdleConnections,
+				DisableKeepAlives:   trans.config.disableKeepAlives,
+				MaxConnsPerHost:     trans.config.maxHTTPConnections,
+				MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
 				IdleConnTimeout:     time.Minute,
 			},
-			Timeout: trans.timeoutDuration,
+			Timeout: trans.config.timeoutDuration,
 		}
 	}
 }
@@ -416,17 +417,17 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url, stage str
 			respData, reqErr = io.ReadAll(resp.Body)
 			return reqErr
 		},
-		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.maxRetry)),
+		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.config.maxRetry)),
 		func(err error, t time.Duration) {
 			retryCount++
 			trans.logger.Warnf("JS HTTP connection error: URL: %v Error: %+v after %v tries", url, err, retryCount)
 		},
 	)
 	if err != nil {
-		if trans.failOnTimeout && stage == UserTransformerStage && os.IsTimeout(err) {
+		if trans.config.failOnTimeout && stage == UserTransformerStage && os.IsTimeout(err) {
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeout
 		}
-		if trans.failOnError {
+		if trans.config.failOnError {
 			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
 		}
 		panic(err)

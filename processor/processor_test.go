@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -556,7 +558,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			c.mockEventSchemasDB.EXPECT().
 				WithStoreSafeTx(
@@ -623,7 +625,7 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("Initialization", func() {
 		It("should initialize (no jobs to recover)", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -638,7 +640,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 		It("should recover after crash", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -659,7 +661,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -804,7 +806,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
@@ -999,7 +1001,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1152,7 +1154,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0)).After(callUnprocessed).Times(3)
@@ -1276,7 +1278,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1411,7 +1413,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1495,7 +1497,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1533,7 +1535,7 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1577,7 +1579,7 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("ProcessorLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1636,7 +1638,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
+			mockTransformer.EXPECT().Setup(config.Default, logger.Default, stats.Default).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
