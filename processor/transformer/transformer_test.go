@@ -131,6 +131,7 @@ func Test_Transformer(t *testing.T) {
 
 func Test_EndlessLoopIf809(t *testing.T) {
 	config.Reset()
+	defer config.Reset()
 	logger.Reset()
 	config.Set("Processor.maxRetry", 1)
 	transformer.Init()
