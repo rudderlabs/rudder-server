@@ -353,8 +353,7 @@ var _ = Describe("Bing ads", func() {
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "CompletedWithErrors",
-				//ResultFileUrl:   ts.URL,
-				ResultFileUrl: "https://dummy.url.com",
+				ResultFileUrl:   "https://dummy.url.com",
 			}, nil)
 			pollInput := common.AsyncPoll{
 				ImportId: "dummyRequestId123",
@@ -383,8 +382,7 @@ var _ = Describe("Bing ads", func() {
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
 				RequestStatus:   "InProgress",
-				//ResultFileUrl:   ts.URL,
-				ResultFileUrl: "",
+				ResultFileUrl:   "",
 			}, nil)
 			pollInput := common.AsyncPoll{
 				ImportId: "dummyRequestId123",
