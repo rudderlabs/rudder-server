@@ -2664,6 +2664,7 @@ func (jd *HandleT) refreshDSList(ctx context.Context) error {
 	if previousLastDS.Index == nextLastDS.Index {
 		return nil
 	}
+	defer stats.Default.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
 	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 		return jd.doRefreshDSRangeList(l)
 	})
