@@ -88,7 +88,7 @@ func (rt *Handle) Setup(
 	config.RegisterDurationConfigVariable(300, &rt.reloadableConfig.maxRetryBackoff, true, time.Second, []string{"Router.maxRetryBackoff", "Router.maxRetryBackoffInS"}...)
 	config.RegisterStringConfigVariable("", &rt.reloadableConfig.toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
 	config.RegisterDurationConfigVariable(2, &rt.reloadableConfig.pickupFlushInterval, true, time.Second, "Router.pickupFlushInterval")
-	config.RegisterDurationConfigVariable(1000, &rt.reloadableConfig.failingJobsPenaltySleep, true, time.Millisecond, []string{"Router.failingJobsPenaltySleep"}...)
+	config.RegisterDurationConfigVariable(2000, &rt.reloadableConfig.failingJobsPenaltySleep, true, time.Millisecond, []string{"Router.failingJobsPenaltySleep"}...)
 	config.RegisterFloat64ConfigVariable(0.6, &rt.reloadableConfig.failingJobsPenaltyThreshold, true, []string{"Router.failingJobsPenaltyThreshold"}...)
 
 	config.RegisterDurationConfigVariable(60, &rt.diagnosisTickerTime, false, time.Second, []string{"Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS"}...)
