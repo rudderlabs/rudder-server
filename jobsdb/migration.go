@@ -529,7 +529,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
 	).RecordDuration()()
 
-	var delCount, totalCount, statusCount int
+	var delCount, totalCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
 	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&totalCount); err != nil {
 		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobTable, err)
@@ -578,7 +578,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 		return float64(totalCount) < smallThreshold
 	}
 
-	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres || (float64(statusCount)/float64(totalCount) > jobStatusMigrateThres) {
+	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres {
 		return true, isSmall(), recordsLeft, nil
 	}
 
