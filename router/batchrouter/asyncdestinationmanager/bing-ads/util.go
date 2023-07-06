@@ -188,7 +188,10 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*Act
 		actionFile := actionFiles[actionType]
 		actionFile.CSVWriter.Flush()
 		convertCsvToZip(actionFile)
-		actionFilesList = append(actionFilesList, actionFile)
+		if actionFile.EventCount > 0 {
+			actionFilesList = append(actionFilesList, actionFile)
+		}
+
 	}
 	return actionFilesList, nil
 }
