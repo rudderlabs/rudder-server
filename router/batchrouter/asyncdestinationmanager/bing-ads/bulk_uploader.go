@@ -70,8 +70,8 @@ func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		"module":   "batch_router",
 		"destType": b.destName,
 	})
-	uploadRetryableStat.Count(len(actionFiles[0].FailedJobIDs) + len(actionFiles[1].FailedJobIDs) + len(actionFiles[2].FailedJobIDs))
 	for _, actionFile := range actionFiles {
+		uploadRetryableStat.Count(len(actionFile.FailedJobIDs))
 		_, err := os.Stat(actionFile.ZipFilePath)
 		if err != nil || actionFile.EventCount == 0 {
 			continue
