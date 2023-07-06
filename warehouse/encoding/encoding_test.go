@@ -38,7 +38,7 @@ func TestReaderLoader(t *testing.T) {
 			name:         "CSV",
 			destType:     warehouseutils.RS,
 			provider:     warehouseutils.RS,
-			loadFileType: warehouseutils.LOAD_FILE_TYPE_CSV,
+			loadFileType: warehouseutils.LoadFileTypeCsv,
 			timeColumnFormatMap: map[string]string{
 				encoding.UUIDTsColumn: misc.RFC3339Milli,
 			},
@@ -47,7 +47,7 @@ func TestReaderLoader(t *testing.T) {
 			name:         "JSON",
 			destType:     warehouseutils.BQ,
 			provider:     warehouseutils.BQ,
-			loadFileType: warehouseutils.LOAD_FILE_TYPE_JSON,
+			loadFileType: warehouseutils.LoadFileTypeJson,
 			timeColumnFormatMap: map[string]string{
 				encoding.UUIDTsColumn:   encoding.BQUuidTSFormat,
 				encoding.LoadedAtColumn: encoding.BQLoadedAtFormat,
@@ -135,8 +135,8 @@ func TestReaderLoader(t *testing.T) {
 		var (
 			outputFilePath      = fmt.Sprintf("/tmp/%s.parquet", uuid.New().String())
 			lines               = 100
-			destType            = warehouseutils.S3_DATALAKE
-			loadFileType        = warehouseutils.LOAD_FILE_TYPE_PARQUET
+			destType            = warehouseutils.S3Datalake
+			loadFileType        = warehouseutils.LoadFileTypeParquet
 			timeColumnFormatMap = map[string]string{
 				encoding.UUIDTsColumn: time.RFC3339,
 			}

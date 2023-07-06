@@ -28,7 +28,7 @@ func TestValidationSteps(t *testing.T) {
 			name: "GCS",
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.GCS_DATALAKE,
+					Name: warehouseutils.GCSDatalake,
 				},
 			},
 			steps: []string{model.VerifyingObjectStorage},
@@ -37,7 +37,7 @@ func TestValidationSteps(t *testing.T) {
 			name: "Azure",
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.AZURE_DATALAKE,
+					Name: warehouseutils.AzureDatalake,
 				},
 			},
 			steps: []string{model.VerifyingObjectStorage},
@@ -46,7 +46,7 @@ func TestValidationSteps(t *testing.T) {
 			name: "S3 without Glue",
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.S3_DATALAKE,
+					Name: warehouseutils.S3Datalake,
 				},
 				Config: map[string]interface{}{},
 			},
@@ -56,7 +56,7 @@ func TestValidationSteps(t *testing.T) {
 			name: "S3 with Glue",
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.S3_DATALAKE,
+					Name: warehouseutils.S3Datalake,
 				},
 				Config: map[string]interface{}{
 					"region":  "us-east-1",

@@ -75,7 +75,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)
 	}
-	repo, err := newBadgerDBInstance(path.Join(tmpDir, "fullsuppression"), e.Log)
+	repo, err := newBadgerDBInstance(path.Join(tmpDir, "fullsuppressionV2"), e.Log)
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)
 	}

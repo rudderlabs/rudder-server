@@ -14,8 +14,6 @@ const workflowFile = "./.github/workflows/tests.yaml"
 const jobName = "warehouse-integration"
 
 var IgnorePackages = []string{
-	"warehouse/integrations/deltalake",
-	"warehouse/integrations/postgres-legacy",
 	"warehouse/integrations/manager",
 	"warehouse/integrations/middleware",
 	"warehouse/integrations/testhelper",

@@ -36,7 +36,7 @@ type StagingFile struct {
 
 // StagingFileWithSchema is a StagingFile with schema field for included events.
 //
-//	schema size can be really big, and thus it should be included only when required.
+//	schema size can be huge, and thus it should be included only when required.
 type StagingFileWithSchema struct {
 	StagingFile
 	Schema json.RawMessage

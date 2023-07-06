@@ -53,7 +53,7 @@ func TestIntegration(t *testing.T) {
 	destinationID := warehouseutils.RandHex()
 	writeKey := warehouseutils.RandHex()
 
-	destType := warehouseutils.AZURE_SYNAPSE
+	destType := warehouseutils.AzureSynapse
 
 	namespace := testhelper.RandSchema(destType)
 

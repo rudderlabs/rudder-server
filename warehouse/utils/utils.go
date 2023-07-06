@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -34,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
@@ -44,17 +41,17 @@ const (
 )
 
 const (
-	RS             = "RS"
-	BQ             = "BQ"
-	SNOWFLAKE      = "SNOWFLAKE"
-	POSTGRES       = "POSTGRES"
-	CLICKHOUSE     = "CLICKHOUSE"
-	MSSQL          = "MSSQL"
-	AZURE_SYNAPSE  = "AZURE_SYNAPSE"
-	DELTALAKE      = "DELTALAKE"
-	S3_DATALAKE    = "S3_DATALAKE"
-	GCS_DATALAKE   = "GCS_DATALAKE"
-	AZURE_DATALAKE = "AZURE_DATALAKE"
+	RS            = "RS"
+	BQ            = "BQ"
+	SNOWFLAKE     = "SNOWFLAKE"
+	POSTGRES      = "POSTGRES"
+	CLICKHOUSE    = "CLICKHOUSE"
+	MSSQL         = "MSSQL"
+	AzureSynapse  = "AZURE_SYNAPSE"
+	DELTALAKE     = "DELTALAKE"
+	S3Datalake    = "S3_DATALAKE"
+	GCSDatalake   = "GCS_DATALAKE"
+	AzureDatalake = "AZURE_DATALAKE"
 )
 
 const (
@@ -101,9 +98,9 @@ const (
 )
 
 const (
-	WAREHOUSE               = "warehouse"
-	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
-	MISSING_DATATYPE        = "<missing_datatype>"
+	WAREHOUSE             = "warehouse"
+	RudderMissingDatatype = "warehouse_rudder_missing_datatype"
+	MissingDatatype       = "<missing_datatype>"
 )
 
 const (
@@ -112,10 +109,10 @@ const (
 
 // Object storages
 const (
-	S3         = "S3"
-	AZURE_BLOB = "AZURE_BLOB"
-	GCS        = "GCS"
-	MINIO      = "MINIO"
+	S3        = "S3"
+	AzureBlob = "AZURE_BLOB"
+	GCS       = "GCS"
+	MINIO     = "MINIO"
 )
 
 // Cloud providers
@@ -134,49 +131,44 @@ const (
 	MinioSecretAccessKey = "secretAccessKey"
 )
 
-// DeprecatedColumnsRegex
-// This regex is used to identify deprecated columns in the warehouse
-// Example: abc-deprecated-dba626a7-406a-4757-b3e0-3875559c5840
-var DeprecatedColumnsRegex = regexp.MustCompile(`.*-deprecated-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
 var (
 	pkgLogger          logger.Logger
 	enableIDResolution bool
 	AWSCredsExpiryInS  int64
 
-	TimeWindowDestinations    []string = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
-	WarehouseDestinations     []string = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
-	IdentityEnabledWarehouses []string = []string{SNOWFLAKE, BQ}
-	S3PathStyleRegex                   = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
-	S3VirtualHostedRegex               = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
+	TimeWindowDestinations    = []string{S3Datalake, GCSDatalake, AzureDatalake}
+	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
+	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
+	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
+	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
 )
 
 var WHDestNameMap = map[string]string{
-	BQ:             "bigquery",
-	RS:             "redshift",
-	MSSQL:          "mssql",
-	POSTGRES:       "postgres",
-	SNOWFLAKE:      "snowflake",
-	CLICKHOUSE:     "clickhouse",
-	DELTALAKE:      "deltalake",
-	S3_DATALAKE:    "s3_datalake",
-	GCS_DATALAKE:   "gcs_datalake",
-	AZURE_DATALAKE: "azure_datalake",
-	AZURE_SYNAPSE:  "azure_synapse",
+	BQ:            "bigquery",
+	RS:            "redshift",
+	MSSQL:         "mssql",
+	POSTGRES:      "postgres",
+	SNOWFLAKE:     "snowflake",
+	CLICKHOUSE:    "clickhouse",
+	DELTALAKE:     "deltalake",
+	S3Datalake:    "s3_datalake",
+	GCSDatalake:   "gcs_datalake",
+	AzureDatalake: "azure_datalake",
+	AzureSynapse:  "azure_synapse",
 }
 
 var ObjectStorageMap = map[string]string{
-	RS:             S3,
-	S3_DATALAKE:    S3,
-	BQ:             GCS,
-	GCS_DATALAKE:   GCS,
-	AZURE_DATALAKE: AZURE_BLOB,
+	RS:            S3,
+	S3Datalake:    S3,
+	BQ:            GCS,
+	GCSDatalake:   GCS,
+	AzureDatalake: AzureBlob,
 }
 
 var SnowflakeStorageMap = map[string]string{
 	AWS:   S3,
 	GCP:   GCS,
-	AZURE: AZURE_BLOB,
+	AZURE: AzureBlob,
 }
 
 var DiscardsSchema = map[string]string{
@@ -189,10 +181,10 @@ var DiscardsSchema = map[string]string{
 }
 
 const (
-	LOAD_FILE_TYPE_CSV     = "csv"
-	LOAD_FILE_TYPE_JSON    = "json"
-	LOAD_FILE_TYPE_PARQUET = "parquet"
-	TestConnectionTimeout  = 15 * time.Second
+	LoadFileTypeCsv       = "csv"
+	LoadFileTypeJson      = "json"
+	LoadFileTypeParquet   = "parquet"
+	TestConnectionTimeout = 15 * time.Second
 )
 
 func Init() {
@@ -334,7 +326,7 @@ func GetObjectFolder(provider, location string) (folder string) {
 		folder = GetS3LocationFolder(location)
 	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptions{TLDFormat: "gcs"})
-	case AZURE_BLOB:
+	case AzureBlob:
 		folder = GetAzureBlobLocationFolder(location)
 	}
 	return
@@ -350,7 +342,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 		folder = GetS3LocationFolder(location)
 	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptions{TLDFormat: "gs"})
-	case AZURE_BLOB:
+	case AzureBlob:
 		blobUrl, _ := url.Parse(location)
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
 		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
@@ -378,7 +370,7 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 		objectLocation, _ = GetS3Location(location)
 	case GCS:
 		objectLocation = GetGCSLocation(location, GCSLocationOptions{TLDFormat: "gcs"})
-	case AZURE_BLOB:
+	case AzureBlob:
 		objectLocation = GetAzureBlobLocation(location)
 	}
 	return
@@ -898,56 +890,32 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 func GetLoadFileType(destType string) string {
 	switch destType {
 	case BQ:
-		return LOAD_FILE_TYPE_JSON
+		return LoadFileTypeJson
 	case RS:
-		return LOAD_FILE_TYPE_CSV
-	case S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE:
-		return LOAD_FILE_TYPE_PARQUET
+		return LoadFileTypeCsv
+	case S3Datalake, GCSDatalake, AzureDatalake:
+		return LoadFileTypeParquet
 	case DELTALAKE:
 		if config.GetBool("Warehouse.deltalake.useParquetLoadFiles", false) {
-			return LOAD_FILE_TYPE_PARQUET
+			return LoadFileTypeParquet
 		}
-		return LOAD_FILE_TYPE_CSV
+		return LoadFileTypeCsv
 	default:
-		return LOAD_FILE_TYPE_CSV
+		return LoadFileTypeCsv
 	}
 }
 
 func GetLoadFileFormat(loadFileType string) string {
 	switch loadFileType {
-	case LOAD_FILE_TYPE_JSON:
+	case LoadFileTypeJson:
 		return "json.gz"
-	case LOAD_FILE_TYPE_PARQUET:
+	case LoadFileTypeParquet:
 		return "parquet"
-	case LOAD_FILE_TYPE_CSV:
+	case LoadFileTypeCsv:
 		return "csv.gz"
 	default:
 		return "csv.gz"
 	}
-}
-
-func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, timeout time.Duration) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
-	if err != nil {
-		return []byte{}, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(config.GetWorkspaceToken(), "")
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = io.ReadAll(resp.Body)
-		func() { httputil.CloseResponse(resp) }()
-	}
-
-	return respBody, nil
 }
 
 func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []string) {
@@ -1001,12 +969,6 @@ func ReadAsBool(key string, config map[string]interface{}) bool {
 		}
 	}
 	return false
-}
-
-func WithTimeout(ctx context.Context, timeout time.Duration, function func(context.Context) error) error {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	return function(ctxWithTimeout)
 }
 
 func GetConnectionTimeout(destType, destID string) time.Duration {
