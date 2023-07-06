@@ -75,7 +75,8 @@ type Handle struct {
 	gatewayDB     jobsdb.JobsDB
 	routerDB      jobsdb.JobsDB
 	batchRouterDB jobsdb.JobsDB
-	errorDB       jobsdb.JobsDB
+	readErrorDB   jobsdb.JobsDB
+	writeErrorDB  jobsdb.JobsDB
 	eventSchemaDB jobsdb.JobsDB
 
 	logger                    logger.Logger
@@ -322,7 +323,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, errorDB, eventSchemaDB jobsdb.JobsDB, reporting types.Reporting,
+	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB jobsdb.JobsDB, reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
@@ -339,7 +340,8 @@ func (proc *Handle) Setup(
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
-	proc.errorDB = errorDB
+	proc.readErrorDB = readErrorDB
+	proc.writeErrorDB = writeErrorDB
 	proc.eventSchemaDB = eventSchemaDB
 
 	proc.transientSources = transientSources
@@ -526,7 +528,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
 		st.Setup(
-			proc.errorDB,
+			proc.readErrorDB,
 			proc.transientSources,
 			proc.fileuploader,
 			proc.adaptiveLimit,
@@ -1969,7 +1971,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}
 	if len(in.procErrorJobs) > 0 {
 		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.errorDB.Store(ctx, in.procErrorJobs)
+			return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
 		}, proc.sendRetryStoreStats)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
@@ -2428,7 +2430,7 @@ func (proc *Handle) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
 		rsourcesStats.JobsFailed(failedJobs)
-		_ = proc.errorDB.WithTx(func(tx *jobsdb.Tx) error {
+		_ = proc.writeErrorDB.WithTx(func(tx *jobsdb.Tx) error {
 			return rsourcesStats.Publish(context.TODO(), tx.Tx)
 		})
 	}
