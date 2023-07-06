@@ -18,19 +18,18 @@ var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
 
 // we need to add bingAds specific fields if needs to be handy.
 type PollStatusResponse struct {
-	Success        bool
+	Complete       bool
+	InProgress     bool
 	StatusCode     int
 	HasFailed      bool
 	HasWarning     bool
-	FailedJobsURL  string
+	FailedJobURLs  string
 	WarningJobsURL string
-	OutputFilePath string
 }
 type AsyncUploadOutput struct {
 	Key                 string
 	ImportingJobIDs     []int64
 	ImportingParameters stdjson.RawMessage
-	SuccessJobIDs       []int64
 	FailedJobIDs        []int64
 	SucceededJobIDs     []int64
 	SuccessResponse     string
@@ -112,10 +111,10 @@ type AsyncFailedPayload struct {
 }
 
 type FetchUploadJobStatus struct {
-	FailedJobsURL  string
-	Parameters     stdjson.RawMessage
-	ImportingList  []*jobsdb.JobT
-	OutputFilePath string
+	FailedJobURLs      string
+	Parameters         stdjson.RawMessage
+	ImportingList      []*jobsdb.JobT
+	PollResultFileURLs string
 }
 
 type EventStatMeta struct {
@@ -125,7 +124,7 @@ type EventStatMeta struct {
 	ErrWarning    error
 	SucceededKeys []int64
 	ErrSuccess    error
-	FailedReasons map[string]string
+	FailedReasons map[int64]string
 }
 
 type GetUploadStatsResponse struct {
@@ -144,21 +143,6 @@ func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {
 	} else {
 		return config.GetInt64("BatchRouter."+key, defaultValue)
 	}
-}
-
-/*
-returns the merged elements of two similar type maps in a single map
-*/
-func MergeMaps(maps ...map[string]string) map[string]string {
-	result := make(map[string]string)
-
-	for _, m := range maps {
-		for key, value := range m {
-			result[key] = value
-		}
-	}
-
-	return result
 }
 
 /*

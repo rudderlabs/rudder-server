@@ -13,10 +13,12 @@ type Client struct {
 	client *http.Client
 }
 type BingAdsBulkUploader struct {
-	destName string
-	service  bingads.BulkServiceI
-	logger   logger.Logger
-	client   Client
+	destName      string
+	service       bingads.BulkServiceI
+	logger        logger.Logger
+	client        Client
+	fileSizeLimit int64
+	eventsLimit   int64
 }
 type User struct {
 	Email       string `json:"email"`
@@ -51,8 +53,17 @@ type ActionFileInfo struct {
 	ZipFilePath      string
 	SuccessfulJobIDs []int64
 	FailedJobIDs     []int64
-	FileSize         int
-	EventCount       int
+	FileSize         int64
+	EventCount       int64
 }
 
-var actionTypes = [3]string{"Add", "Remove", "Update"}
+var actionTypes = [3]string{"Replace", "Remove", "Add"}
+
+const commaSeparator = ","
+
+const clientIDSeparator = "<<>>"
+
+type ClientID struct {
+	JobID       int64
+	HashedEmail string
+}

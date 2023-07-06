@@ -1,7 +1,6 @@
 package bingads
 
 import (
-	"encoding/json"
 	stdjson "encoding/json"
 	"fmt"
 	"io"
@@ -108,9 +107,9 @@ var _ = Describe("Bing ads", func() {
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"1:getting empty string in upload url or request id,\"}",
-				ImportingJobIDs:     []int64{1, 2},
-				FailedJobIDs:        []int64{3, 4},
+				FailedReason:        "{\"error\":\"Add:getting empty string in upload url or request id, \"}",
+				ImportingJobIDs:     []int64{3, 4},
+				FailedJobIDs:        []int64{1, 2},
 				ImportingParameters: stdjson.RawMessage{},
 				ImportingCount:      2,
 				FailedCount:         2,
@@ -146,10 +145,14 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := json.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to unmarshal parameters: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{1, 2, 3, 4},
-				FailedReason:        "{\"error\":\"0:error in getting bulk upload url: Error in getting bulk upload url,1:error in getting bulk upload url: Error in getting bulk upload url,\"}",
+				FailedJobIDs:        []int64{3, 4, 1, 2},
+				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: Error in getting bulk upload url,Add:error in getting bulk upload url: Error in getting bulk upload url\"}",
 				ImportingCount:      0,
 				FailedCount:         4,
 				AbortCount:          0,
@@ -200,10 +203,14 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := json.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{1, 2, 3, 4},
-				FailedReason:        "{\"error\":\"0:getting empty string in upload url or request id,1:getting empty string in upload url or request id,\"}",
+				FailedJobIDs:        []int64{3, 4, 1, 2},
+				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id,Add:getting empty string in upload url or request id\"}",
 				FailedCount:         4,
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
@@ -271,10 +278,14 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := json.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
-				FailedJobIDs:        []int64{1, 2, 3, 4},
-				FailedReason:        "{\"error\":\"0:error in uploading the bulk file: Error in uploading bulk file,1:error in uploading the bulk file: Error in uploading bulk file,\"}",
+				FailedJobIDs:        []int64{3, 4, 1, 2},
+				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: Error in uploading bulk file,Add:error in uploading the bulk file: Error in uploading bulk file\"}",
 				FailedCount:         4,
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
@@ -306,19 +317,11 @@ var _ = Describe("Bing ads", func() {
 				ImportId: "dummyRequestId123",
 			}
 			expectedResp := common.PollStatusResponse{
-				Success:        true,
-				StatusCode:     200,
-				HasFailed:      false,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: ",",
+				Complete:   true,
+				StatusCode: 200,
 			}
-			expectedStatus := 200
-			recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
-
+			recievedResponse := bulkUploader.Poll(pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
 		})
 
 		It("TestBingAdsPollFailureCase", func() {
@@ -333,209 +336,178 @@ var _ = Describe("Bing ads", func() {
 				ImportId: "dummyRequestId123",
 			}
 			expectedResp := common.PollStatusResponse{
-				Success:        false,
-				StatusCode:     400,
-				HasFailed:      true,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: "",
+				StatusCode: 500,
+				HasFailed:  true,
 			}
-			expectedStatus := 500
-			recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
-
+			recievedResponse := bulkUploader.Poll(pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
 		})
 
 		It("TestBingAdsPollPartialFailureCase", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-
-			// Create a test server with a custom handler function
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Open the zip file
-				zipFilePath := filepath.Join(currentDir, "test-files/statuscheck.zip")
-				// Set the appropriate headers for a zip file response
-				w.Header().Set("Content-Type", "application/zip")
-				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
-				http.ServeFile(w, r, zipFilePath)
-			}))
-			defer ts.Close()
-			client := ts.Client()
-			modifiedURL := ts.URL // Use the test server URL
-			clientI := Client{client: client, URL: modifiedURL}
+			clientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
 				RequestStatus:   "CompletedWithErrors",
-				ResultFileUrl:   ts.URL,
+				ResultFileUrl:   "https://dummy.url.com",
 			}, nil)
 			pollInput := common.AsyncPoll{
 				ImportId: "dummyRequestId123",
 			}
 
 			expectedResp := common.PollStatusResponse{
-				Success:        true,
-				StatusCode:     200,
-				HasFailed:      true,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: "/tmp/BulkUpload-05-31-2023-6326c4f9-0745-4c43-8126-621b4a1849ad-Results.csv,",
+				Complete:      true,
+				StatusCode:    200,
+				HasFailed:     true,
+				FailedJobURLs: "https://dummy.url.com",
 			}
-			expectedStatus := 200
-			recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(pollInput)
 
-			os.Remove(expectedResp.OutputFilePath)
+			os.Remove(expectedResp.FailedJobURLs)
 
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
 		})
 
-		It("TestBingAdsPollPartialFailureCaseWithWrongFilePath", func() {
+		It("TestBingAdsPollPendingStatusCase", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-
-			// Create a test server with a custom handler function
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Open the zip file
-				zipFilePath := filepath.Join(currentDir, "test-files/uploadData.txt")
-				// Set the appropriate headers for a zip file response
-				w.Header().Set("Content-Type", "application/zip")
-				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
-				http.ServeFile(w, r, zipFilePath)
-			}))
-			defer ts.Close()
-			client := ts.Client()
-			modifiedURL := ts.URL // Use the test server URL
-			clientI := Client{client: client, URL: modifiedURL}
+			clientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
-				PercentComplete: int64(100),
-				RequestStatus:   "CompletedWithErrors",
-				ResultFileUrl:   ts.URL,
+				PercentComplete: int64(0),
+				RequestStatus:   "InProgress",
+				ResultFileUrl:   "",
 			}, nil)
 			pollInput := common.AsyncPoll{
 				ImportId: "dummyRequestId123",
 			}
 
 			expectedResp := common.PollStatusResponse{
-				Success:        false,
-				StatusCode:     400,
-				HasFailed:      true,
-				HasWarning:     false,
-				FailedJobsURL:  "",
-				WarningJobsURL: "",
-				OutputFilePath: "",
+				InProgress: true,
+				StatusCode: 200,
 			}
-			expectedStatus := 400
-			recievedResponse, RecievedStatus := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(pollInput)
 
-			os.Remove(expectedResp.OutputFilePath)
+			os.Remove(expectedResp.FailedJobURLs)
 
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
+		})
+
+		It("TestBingAdsPollFailedStatusCase", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+			clientI := Client{}
+			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
+
+			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+				PercentComplete: int64(0),
+				RequestStatus:   "Failed",
+				ResultFileUrl:   "",
+			}, nil)
+			pollInput := common.AsyncPoll{
+				ImportId: "dummyRequestId123",
+			}
+
+			expectedResp := common.PollStatusResponse{
+				HasFailed:  true,
+				StatusCode: 400,
+			}
+			recievedResponse := bulkUploader.Poll(pollInput)
+
+			os.Remove(expectedResp.FailedJobURLs)
+
+			Expect(recievedResponse).To(Equal(expectedResp))
+		})
+
+		It("TestBingAdsPollSuccessAndFailedStatusCase", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
+			clientI := Client{}
+			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
+
+			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId456").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+				PercentComplete: int64(100),
+				RequestStatus:   "Completed",
+				ResultFileUrl:   "",
+			}, nil)
+
+			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
+				PercentComplete: int64(0),
+				RequestStatus:   "Failed",
+				ResultFileUrl:   "",
+			}, nil)
+
+			pollInput := common.AsyncPoll{
+				ImportId: "dummyRequestId456,dummyRequestId123",
+			}
+
+			expectedResp := common.PollStatusResponse{
+				HasFailed:  true,
+				StatusCode: 400,
+			}
+			recievedResponse := bulkUploader.Poll(pollInput)
+
+			os.Remove(expectedResp.FailedJobURLs)
+
+			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
 		It("TestBingAdsGetUploadStats", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			templateFilePath := filepath.Join(currentDir, "test-files/uploadstatus.csv") // Path of the source file
-			testFilePath := filepath.Join(currentDir, "test-files/test_copy.csv")        // Path of the destination folder
-
-			err := DuplicateFile(templateFilePath, testFilePath)
-			if err != nil {
-				fmt.Printf("Error duplicating file: %v\n", err)
-				return
-			}
-			fmt.Printf("File %s duplicated to %s\n", templateFilePath, testFilePath)
-			clientI := Client{}
+			errorsTemplateFilePath := filepath.Join(currentDir, "test-files/status-check.zip") // Path of the source file
+			// Create a test server with a custom handler function
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Set the appropriate headers for a zip file response
+				w.Header().Set("Content-Type", "application/zip")
+				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
+				http.ServeFile(w, r, errorsTemplateFilePath)
+			}))
+			defer ts.Close()
+			client := ts.Client()
+			modifiedURL := ts.URL // Use the test server URL
+			clientI := Client{client: client, URL: modifiedURL}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
 			UploadStatsInput := common.FetchUploadJobStatus{
-				OutputFilePath: testFilePath,
+				FailedJobURLs: modifiedURL,
 				ImportingList: []*jobsdb.JobT{
 					{
-						JobID: 1,
+						JobID: 5,
 					},
 					{
-						JobID: 2,
+						JobID: 6,
 					},
 					{
-						JobID: 3,
+						JobID: 7,
 					},
 				},
 			}
 			expectedResp := common.GetUploadStatsResponse{
 				Status: "200",
 				Metadata: common.EventStatMeta{
-					FailedKeys: []int64{1, 2},
+					FailedKeys: []int64{6},
 					ErrFailed:  nil,
-					FailedReasons: map[string]string{
-						"1": "error1, error2",
-						"2": "error2",
+					FailedReasons: map[int64]string{
+						6: "EmailMustBeHashed",
 					},
-					WarningKeys:   []int64{},
+					WarningKeys:   nil,
 					ErrWarning:    nil,
-					SucceededKeys: []int64{3},
+					SucceededKeys: []int64{5, 7},
 					ErrSuccess:    nil,
 				},
 			}
-			expectedStatus := 200
-			recievedResponse, RecievedStatus := bulkUploader.GetUploadStats(UploadStatsInput)
+			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
-			Expect(RecievedStatus).To(Equal(expectedStatus))
-		})
-
-		It("TestBingAdsUploadFailedWhileTransformingFile", func() {
-			initBingads()
-			ctrl := gomock.NewController(GinkgoT())
-			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
-			dir, err := os.MkdirTemp("/tmp", "rudder-server")
-			if err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
-
-			subDir := filepath.Join(dir, "rudder-async-destination-logs")
-			err = os.Mkdir(subDir, 0o755)
-			if err != nil {
-				fmt.Printf("Failed to create the directory 'something': %v\n", err)
-				return
-			}
-
-			Expect(err).To(BeNil())
-			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-
-			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3},
-				FailedJobIDs:    []int64{},
-				// the aim is to fail the text transformation of the file. That is why sending a csv file instead of a txt file
-				FileName: filepath.Join(currentDir, "test-files/uploadstatus.csv"),
-			}
-			expected := common.AsyncUploadOutput{
-				FailedJobIDs:  []int64{1, 2, 3},
-				FailedReason:  `got error while transforming the file. invalid character 'T' looking for beginning of value`,
-				FailedCount:   3,
-				DestinationID: destination.ID,
-			}
-			received := bulkUploader.Upload(&destination, &asyncDestination)
-
-			// Remove the directory and its contents
-			err = os.RemoveAll(dir)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
-			Expect(received).To(Equal(expected))
 		})
 
 		It("TestNewManagerInternal", func() {
@@ -546,24 +518,24 @@ var _ = Describe("Bing ads", func() {
 				Account: oauth.AccountSecret{
 					ExpirationDate: "",
 					Secret: []byte(`
-					{
-					"AccessToken": "dummyacesstoken",
-					"RefreshToken": "dummyRefreshToken",
-					"Developer_token": "dummyDeveloperToken",
-					"ExpirationDate": "2023-01-31T23:59:59.999Z"
-					}`),
+							{
+							"AccessToken": "dummyacesstoken",
+							"RefreshToken": "dummyRefreshToken",
+							"Developer_token": "dummyDeveloperToken",
+							"ExpirationDate": "2023-01-31T23:59:59.999Z"
+							}`),
 				},
 			})
 			oauthService.EXPECT().RefreshToken(gomock.Any()).Return(200, &oauth.AuthResponse{
 				Account: oauth.AccountSecret{
 					ExpirationDate: "",
 					Secret: []byte(`
-					{
-					"AccessToken": "dummyacesstoken",
-					"RefreshToken": "dummyRefreshToken",
-					"Developer_token": "dummyDeveloperToken",
-					"ExpirationDate": "2023-01-31T23:59:59.999Z"
-					}`),
+							{
+							"AccessToken": "dummyacesstoken",
+							"RefreshToken": "dummyRefreshToken",
+							"Developer_token": "dummyDeveloperToken",
+							"ExpirationDate": "2023-01-31T23:59:59.999Z"
+							}`),
 				},
 			})
 
@@ -617,8 +589,8 @@ var _ = Describe("Bing ads", func() {
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"0:getting empty string in upload url or request id,1:getting empty string in upload url or request id,\"}",
-				FailedJobIDs:        []int64{1, 2, 3, 4},
+				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id, ,Add:getting empty string in upload url or request id, \"}",
+				FailedJobIDs:        []int64{3, 4, 1, 2},
 				ImportingParameters: stdjson.RawMessage{},
 				ImportingCount:      0,
 				FailedCount:         4,
