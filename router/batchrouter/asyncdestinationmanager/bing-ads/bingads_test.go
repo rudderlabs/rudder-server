@@ -145,7 +145,11 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := stdjson.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to unmarshal parameters: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: Error in getting bulk upload url,Add:error in getting bulk upload url: Error in getting bulk upload url\"}",
@@ -199,7 +203,11 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := stdjson.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id,Add:getting empty string in upload url or request id\"}",
@@ -270,7 +278,11 @@ var _ = Describe("Bing ads", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, _ := stdjson.Marshal(parameters)
+			importParameters, err := stdjson.Marshal(parameters)
+			if err != nil {
+				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
+				return
+			}
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: Error in uploading bulk file,Add:error in uploading the bulk file: Error in uploading bulk file\"}",
@@ -454,22 +466,13 @@ var _ = Describe("Bing ads", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			errorsTemplateFilePath := filepath.Join(currentDir, "test-files/statuscheck.zip") // Path of the source file
-			testErrorsCopyFilePath := filepath.Join(currentDir, "test-files/statuscheck_copy.zip")        // Path of the destination folder
-			err := DuplicateFile(errorsTemplateFilePath, testErrorsCopyFilePath)
-			defer os.Remove(testErrorsCopyFilePath)
-			if err != nil {
-				fmt.Printf("Error duplicating file: %v\n", err)
-				return
-			}
-			fmt.Printf("File %s duplicated to %s\n", errorsTemplateFilePath, testErrorsCopyFilePath)
-
+			errorsTemplateFilePath := filepath.Join(currentDir, "test-files/status-check.zip") // Path of the source file
 			// Create a test server with a custom handler function
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Set the appropriate headers for a zip file response
 				w.Header().Set("Content-Type", "application/zip")
 				w.Header().Set("Content-Disposition", "attachment; filename='uploadstatus.zip'")
-				http.ServeFile(w, r, testErrorsCopyFilePath)
+				http.ServeFile(w, r, errorsTemplateFilePath)
 			}))
 			defer ts.Close()
 			client := ts.Client()
@@ -481,28 +484,27 @@ var _ = Describe("Bing ads", func() {
 				FailedJobURLs: modifiedURL,
 				ImportingList: []*jobsdb.JobT{
 					{
-						JobID: 1,
+						JobID: 5,
 					},
 					{
-						JobID: 2,
+						JobID: 6,
 					},
 					{
-						JobID: 3,
+						JobID: 7,
 					},
 				},
 			}
 			expectedResp := common.GetUploadStatsResponse{
 				Status: "200",
 				Metadata: common.EventStatMeta{
-					FailedKeys: []int64{1, 2},
+					FailedKeys: []int64{6},
 					ErrFailed:  nil,
 					FailedReasons: map[int64]string{
-						1: "error1, error2",
-						2: "error2",
+						6: "EmailMustBeHashed",
 					},
-					WarningKeys:   []int64{},
+					WarningKeys:   nil,
 					ErrWarning:    nil,
-					SucceededKeys: []int64{3},
+					SucceededKeys: []int64{5, 7},
 					ErrSuccess:    nil,
 				},
 			}

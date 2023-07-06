@@ -57,7 +57,7 @@ type ActionFileInfo struct {
 	EventCount       int64
 }
 
-var actionTypes = [3]string{"Add", "Remove", "Replace"}
+var actionTypes = [3]string{"Replace", "Remove", "Add"}
 
 const commaSeparator = ","
 

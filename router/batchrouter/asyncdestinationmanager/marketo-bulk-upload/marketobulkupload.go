@@ -6,6 +6,7 @@ import (
 	stdjson "encoding/json"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	time "time"
 
@@ -114,7 +115,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{
-			Status: string(statusCode),
+			Status: strconv.Itoa(statusCode),
 		}
 	}
 	var failedJobsResponse map[string]interface{}

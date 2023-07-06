@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -35,7 +34,7 @@ func newClientID(jobID int64, hashedEmail string) ClientID {
 // returns the string representation of the clientID struct which is of format
 // jobId<<>>hashedEmail
 func (c *ClientID) ToString() string {
-	return fmt.Sprintf("%s%s%s", strconv.FormatInt(c.JobID, 10), clientIDSeparator, c.HashedEmail)
+	return fmt.Sprintf("%d%s%s", c.JobID, clientIDSeparator, c.HashedEmail)
 }
 
 /*
@@ -126,7 +125,7 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audien
 		for _, uploadData := range data.Message.List {
 			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
 			clientIdStr := clientIdI.ToString()
-			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.Email})
+			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
 		}
 		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
@@ -177,20 +176,14 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*Act
 		b.populateZipFile(actionFile, audienceId, line, b.destName, data)
 
 	}
+	actionFilesList := []*ActionFileInfo{}
 	for _, actionType := range actionTypes {
 		actionFile := actionFiles[actionType]
 		actionFile.CSVWriter.Flush()
 		convertCsvToZip(actionFile)
+		actionFilesList = append(actionFilesList, actionFile)
 	}
-	// Create the ZIP file and add the CSV file to it
-	// sort.Slice(a, func(i, j int) bool {
-	// 	return a[i] < a[j]
-	// }
-	temp := lo.Values(actionFiles)
-	sort.Slice(temp, func(i, j int) bool {
-		return temp[i].Action > temp[j].Action
-	})
-	return temp, nil
+	return actionFilesList, nil
 }
 
 // Poll Related Utils
