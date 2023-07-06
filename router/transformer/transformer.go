@@ -268,6 +268,15 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		return respCode, requestError.Error(), "text/plain; charset=utf-8"
 	}
 
+	if respCode >= 400 && respCode <= 499 {
+		responseDataJSON, err := json.Marshal(proxyReqParams.ResponseData)
+		if err != nil {
+			trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request failed with statuscode: %[3]d`, proxyReqParams.DestName, proxyReqParams.JobID, respCode)
+		} else {
+			trans.logger.Infof(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request failed with statuscode: %[3]d for payload: %[4]v`, proxyReqParams.DestName, proxyReqParams.JobID, respCode, string(responseDataJSON))
+		}
+	}
+
 	/**
 
 		Structure of TransformerProxy Response:
