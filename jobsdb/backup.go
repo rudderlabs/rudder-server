@@ -72,37 +72,40 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			opPayload, err := json.Marshal(&backupDS)
 			jd.assertError(err)
 
-			opID, err := jd.JournalMarkStart(backupDSOperation, opPayload)
-			if err != nil {
-				return fmt.Errorf("mark start of backup operation: %w", err)
-			}
-			err = jd.backupDS(ctx, backupDSRange)
-			if err != nil {
-				return fmt.Errorf("backup dataset: %w", err)
-			}
-			err = jd.JournalMarkDone(opID)
-			if err != nil {
-				return fmt.Errorf("mark end of backup operation: %w", err)
+			if err := jd.WithTx(func(tx *Tx) error {
+				opID, err := jd.JournalMarkStartInTx(tx, backupDSOperation, opPayload)
+				if err != nil {
+					return fmt.Errorf("mark start of backup operation: %w", err)
+				}
+				if err := jd.backupDS(ctx, backupDSRange); err != nil {
+					return fmt.Errorf("backup dataset: %w", err)
+				}
+				if err := jd.journalMarkDoneInTx(tx, opID); err != nil {
+					return fmt.Errorf("mark end of backup operation: %w", err)
+				}
+				return nil
+			}); err != nil {
+				return err
 			}
 
-			// drop dataset after successfully uploading both jobs and jobs_status to s3
-			opID, err = jd.JournalMarkStart(backupDropDSOperation, opPayload)
-			if err != nil {
-				return fmt.Errorf("mark start of drop backup operation: %w", err)
-			}
-			// Currently, we retry uploading a table for some time & if it fails. We only drop that table & not all `pre_drop` tables.
-			// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
-			// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
-			// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
-			err = jd.dropDS(backupDS)
-			if err != nil {
-				return fmt.Errorf(" drop dataset: %w", err)
-			}
-			err = jd.JournalMarkDone(opID)
-			if err != nil {
-				return fmt.Errorf("mark end of drop backup operation: %w", err)
-			}
-			return nil
+			return jd.WithTx(func(tx *Tx) error {
+				// drop dataset after successfully uploading both jobs and jobs_status to s3
+				opID, err := jd.JournalMarkStartInTx(tx, backupDropDSOperation, opPayload)
+				if err != nil {
+					return fmt.Errorf("mark start of drop backup operation: %w", err)
+				}
+				// Currently, we retry uploading a table for some time & if it fails. We only drop that table & not all `pre_drop` tables.
+				// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
+				// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
+				// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
+				if err := jd.dropDSInTx(tx, backupDS); err != nil {
+					return fmt.Errorf(" drop dataset: %w", err)
+				}
+				if err := jd.journalMarkDoneInTx(tx, opID); err != nil {
+					return fmt.Errorf("mark end of drop backup operation: %w", err)
+				}
+				return nil
+			})
 		}
 		if err := loop(); err != nil && ctx.Err() == nil {
 			if !jd.skipMaintenanceError {
