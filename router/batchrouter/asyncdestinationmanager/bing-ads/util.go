@@ -116,7 +116,7 @@ func convertCsvToZip(actionFile *ActionFileInfo) error {
 Populates the csv file only if it is within the file size limit 100mb and row number limit 4000000
 Otherwise event is appended to the failedJobs and will be retried.
 */
-func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audienceId, line, destName string, data Data) {
+func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audienceId, line string, data Data) error {
 	newFileSize := actionFile.FileSize + int64(len(line))
 	if newFileSize < b.fileSizeLimit &&
 		actionFile.EventCount < b.eventsLimit {
@@ -125,12 +125,16 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audien
 		for _, uploadData := range data.Message.List {
 			clientIdI := newClientID(data.Metadata.JobID, uploadData.HashedEmail)
 			clientIdStr := clientIdI.ToString()
-			actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+			err := actionFile.CSVWriter.Write([]string{"Customer List Item", "", "", audienceId, clientIdStr, "", "", "", "", "", "", "Email", uploadData.HashedEmail})
+			if err != nil {
+				return err
+			}
 		}
 		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
 		actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
 	}
+	return nil
 }
 
 /*
@@ -173,7 +177,10 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*Act
 			})
 		payloadSizeStat.Observe(float64(len(data.Message.List)))
 		actionFile := actionFiles[data.Message.Action]
-		b.populateZipFile(actionFile, audienceId, line, b.destName, data)
+		err := b.populateZipFile(actionFile, audienceId, line, data)
+		if err != nil {
+			return nil, err
+		}
 
 	}
 	actionFilesList := []*ActionFileInfo{}
