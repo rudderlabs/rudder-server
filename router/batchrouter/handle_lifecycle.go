@@ -249,7 +249,7 @@ func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
 	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 		brt.asyncdestinationmanager, err = asyncdestinationmanager.NewManager(&destination, brt.backendConfig)
 		if err != nil {
-			brt.logger.Error("BRT: error occured while creating new instance of %v. %v", destination.Name, err)
+			brt.logger.Error("BRT: error occurred while creating new instance of %v. %v", destination.Name, err)
 		}
 	}
 }

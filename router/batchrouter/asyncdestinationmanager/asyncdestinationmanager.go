@@ -1,13 +1,13 @@
 package asyncdestinationmanager
 
 import (
+	"errors"
 	"sync"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	bingads "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -64,10 +64,7 @@ type Parameters struct {
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-var (
-	HTTPTimeout time.Duration
-	pkgLogger   logger.Logger
-)
+var HTTPTimeout time.Duration
 
 func loadConfig() {
 	config.RegisterDurationConfigVariable(600, &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
@@ -77,7 +74,6 @@ func loadConfig() {
 
 func Init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("asyncDestinationManager")
 }
 
 func GetMarshalledData(payload string, jobID int64) string {
@@ -102,5 +98,5 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	case "MARKETO_BULK_UPLOAD":
 		return marketobulkupload.NewManager(destination)
 	}
-	return nil, nil
+	return nil, errors.New("invalid destination type")
 }

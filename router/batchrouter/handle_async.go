@@ -64,9 +64,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 
 						startPollTime := time.Now()
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
-						var pollRespBytes []byte
-						var pollResp common.PollStatusResponse
-						pollResp = brt.asyncdestinationmanager.Poll(pollInput)
+						pollResp := brt.asyncdestinationmanager.Poll(pollInput)
 						pollRespBytes, err := stdjson.Marshal(pollResp)
 						if err != nil {
 							panic(err)
@@ -355,8 +353,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeout := uploadIntervalMap[destinationID]
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					var uploadResponse common.AsyncUploadOutput
-					uploadResponse = brt.asyncdestinationmanager.Upload(brt.destination, brt.asyncDestinationStruct[destinationID])
+					uploadResponse := brt.asyncdestinationmanager.Upload(brt.destination, brt.asyncDestinationStruct[destinationID])
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
 				}
@@ -579,7 +576,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 		})
 	}, brt.sendRetryUpdateStats)
 	if err != nil {
-		//TODO: remove this after debug
+		// TODO: remove this after debug
 		for _, status := range statusList {
 			jobID := status.JobID
 			errorResponse := status.ErrorResponse

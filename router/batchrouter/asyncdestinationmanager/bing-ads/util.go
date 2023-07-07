@@ -187,7 +187,11 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*Act
 	for _, actionType := range actionTypes {
 		actionFile := actionFiles[actionType]
 		actionFile.CSVWriter.Flush()
-		convertCsvToZip(actionFile)
+		err := convertCsvToZip(actionFile)
+		if err != nil {
+			actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, actionFile.SuccessfulJobIDs...)
+			actionFile.SuccessfulJobIDs = []int64{}
+		}
 		if actionFile.EventCount > 0 {
 			actionFilesList = append(actionFilesList, actionFile)
 		}
@@ -399,7 +403,7 @@ func ProcessPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 	// Iterate over the remaining rows and filter based on the 'Type' field containing the substring 'Error'
 	// The error messages are present on the rows where the corresponding Type column values are "Customer List Error", "Customer List Item Error" etc
 	for _, record := range records[1:] {
-		rowname := string(record[typeIndex])
+		rowname := record[typeIndex]
 		if typeIndex < len(record) && strings.Contains(rowname, "Error") {
 			if clientIDIndex >= 0 && clientIDIndex < len(record) {
 				// expecting the client ID is present as jobId<<>>clientId
