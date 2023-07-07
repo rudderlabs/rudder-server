@@ -528,26 +528,20 @@ func (uploadReq *UploadReq) validateReq() error {
 }
 
 func (uploadReq *UploadReq) authorizeSource(sourceID string) bool {
-	var authorizedSourceIDs []string
-	var ok bool
-	sourceIDsByWorkspaceLock.RLock()
-	defer sourceIDsByWorkspaceLock.RUnlock()
-	if authorizedSourceIDs, ok = sourceIDsByWorkspace[uploadReq.WorkspaceID]; !ok {
-		pkgLogger.Errorf(`Did not find sourceId's in workspace:%s. CurrentList:%v`, uploadReq.WorkspaceID, sourceIDsByWorkspace)
+	currentList := bcManager.SourceIDsByWorkspace()
+	authorizedSourceIDs, ok := currentList[uploadReq.WorkspaceID] // TODO remove global variable
+	if !ok {
+		pkgLogger.Errorf(`Could not find sourceID in workspace %q: %v`, uploadReq.WorkspaceID, currentList)
 		return false
 	}
-	pkgLogger.Debugf(`Authorized sourceId's for workspace:%s - %v`, uploadReq.WorkspaceID, authorizedSourceIDs)
+
+	pkgLogger.Debugf(`Authorized sourceID for workspace %q: %v`, uploadReq.WorkspaceID, authorizedSourceIDs)
 	return slices.Contains(authorizedSourceIDs, sourceID)
 }
 
-func (uploadsReq *UploadsReq) authorizedSources() (sourceIDs []string) {
-	sourceIDsByWorkspaceLock.RLock()
-	defer sourceIDsByWorkspaceLock.RUnlock()
-	var ok bool
+func (uploadsReq *UploadsReq) authorizedSources() []string {
 	pkgLogger.Debugf(`Getting authorizedSourceIDs for workspace:%s`, uploadsReq.WorkspaceID)
-	if sourceIDs, ok = sourceIDsByWorkspace[uploadsReq.WorkspaceID]; !ok {
-		sourceIDs = []string{}
-	}
+	sourceIDs, _ := bcManager.SourceIDsByWorkspace()[uploadsReq.WorkspaceID] // TODO remove global variable
 	return sourceIDs
 }
 
