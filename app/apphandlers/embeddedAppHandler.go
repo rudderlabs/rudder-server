@@ -160,7 +160,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
 	)
 	defer batchRouterDB.Close()
-	errDB := jobsdb.NewForReadWrite(
+
+	// We need two errorDBs, one in read & one in write mode to support separate gateway to store failures
+	errDBForRead := jobsdb.NewForRead(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
@@ -168,6 +170,17 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
+	defer errDBForRead.Close()
+	errDBForWrite := jobsdb.NewForWrite(
+		"proc_error",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
+	)
+	if err = errDBForWrite.Start(); err != nil {
+		return fmt.Errorf("could not start errDBForWrite: %w", err)
+	}
+	defer errDBForWrite.Stop()
+
 	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -200,7 +213,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		gwDBForProcessor,
 		routerDB,
 		batchRouterDB,
-		errDB,
+		errDBForRead,
+		errDBForWrite,
 		schemaDB,
 		reportingI,
 		transientSources,
@@ -219,7 +233,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		Reporting:        reportingI,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         routerDB,
-		ProcErrorDB:      errDB,
+		ProcErrorDB:      errDBForWrite,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		ThrottlerFactory: throttlerFactory,
@@ -230,7 +244,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		Reporting:        reportingI,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		RouterDB:         batchRouterDB,
-		ProcErrorDB:      errDB,
+		ProcErrorDB:      errDBForWrite,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		Debugger:         destinationHandle,
@@ -243,7 +257,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		GatewayDB:       gwDBForProcessor,
 		RouterDB:        routerDB,
 		BatchRouterDB:   batchRouterDB,
-		ErrorDB:         errDB,
+		ErrorDB:         errDBForRead,
 		EventSchemaDB:   schemaDB,
 		Processor:       proc,
 		Router:          rt,
@@ -262,7 +276,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 	)
-	defer gwDBForProcessor.Close()
 	if err = gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gateway: %w", err)
 	}
@@ -270,7 +283,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	err = gw.Setup(
 		ctx,
-		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
+		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDBForWrite,
 		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
 	if err != nil {
