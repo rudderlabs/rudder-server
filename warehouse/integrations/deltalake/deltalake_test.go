@@ -142,25 +142,25 @@ func TestIntegration(t *testing.T) {
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
+	port, err := strconv.Atoi(deltaLakeCredentials.Port)
+	require.NoError(t, err)
+
+	connector, err := dbsql.NewConnector(
+		dbsql.WithServerHostname(deltaLakeCredentials.Host),
+		dbsql.WithPort(port),
+		dbsql.WithHTTPPath(deltaLakeCredentials.Path),
+		dbsql.WithAccessToken(deltaLakeCredentials.Token),
+		dbsql.WithSessionParams(map[string]string{
+			"ansi_mode": "false",
+		}),
+	)
+	require.NoError(t, err)
+
+	db := sql.OpenDB(connector)
+	require.NoError(t, db.Ping())
+
 	t.Run("Event flow", func(t *testing.T) {
 		jobsDB := testhelper.JobsDB(t, jobsDBPort)
-
-		port, err := strconv.Atoi(deltaLakeCredentials.Port)
-		require.NoError(t, err)
-
-		connector, err := dbsql.NewConnector(
-			dbsql.WithServerHostname(deltaLakeCredentials.Host),
-			dbsql.WithPort(port),
-			dbsql.WithHTTPPath(deltaLakeCredentials.Path),
-			dbsql.WithAccessToken(deltaLakeCredentials.Token),
-			dbsql.WithSessionParams(map[string]string{
-				"ansi_mode": "false",
-			}),
-		)
-		require.NoError(t, err)
-
-		db := sql.OpenDB(connector)
-		require.NoError(t, db.Ping())
 
 		t.Cleanup(func() {
 			require.NoError(t, testhelper.WithConstantRetries(func() error {
@@ -290,6 +290,13 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
+		t.Cleanup(func() {
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace))
+				return err
+			}))
+		})
+
 		dest := backendconfig.DestinationT{
 			ID: destinationID,
 			Config: map[string]interface{}{

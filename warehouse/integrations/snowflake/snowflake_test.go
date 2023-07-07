@@ -396,6 +396,27 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
+		dsn, err := snowflakedb.DSN(&snowflakedb.Config{
+			Account:   credentials.Account,
+			User:      credentials.User,
+			Role:      credentials.Role,
+			Password:  credentials.Password,
+			Database:  credentials.Database,
+			Warehouse: credentials.Warehouse,
+		})
+		require.NoError(t, err)
+
+		db, err := sql.Open("snowflake", dsn)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+
+		t.Cleanup(func() {
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
+				return err
+			}))
+		})
+
 		dest := backendconfig.DestinationT{
 			ID: destinationID,
 			Config: map[string]interface{}{

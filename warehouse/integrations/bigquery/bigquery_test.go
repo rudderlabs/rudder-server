@@ -126,14 +126,13 @@ func TestIntegration(t *testing.T) {
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
 	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
-	t.Run("Event flow", func(t *testing.T) {
-		ctx := context.Background()
-		db, err := bigquery.NewClient(
-			ctx,
-			bqTestCredentials.ProjectID, option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
-		)
-		require.NoError(t, err)
+	db, err := bigquery.NewClient(
+		ctx,
+		bqTestCredentials.ProjectID, option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
+	)
+	require.NoError(t, err)
 
+	t.Run("Event flow", func(t *testing.T) {
 		jobsDB := testhelper.JobsDB(t, jobsDBPort)
 
 		t.Cleanup(func() {
@@ -353,6 +352,12 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validations", func(t *testing.T) {
+		t.Cleanup(func() {
+			require.NoError(t, testhelper.WithConstantRetries(func() error {
+				return db.Dataset(namespace).DeleteWithContents(ctx)
+			}))
+		})
+
 		dest := backendconfig.DestinationT{
 			ID: destinationID,
 			Config: map[string]interface{}{
