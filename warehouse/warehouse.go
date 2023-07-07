@@ -18,16 +18,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/go-chi/chi/v5"
+	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -56,6 +52,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -83,13 +80,9 @@ var (
 	minRetryAttempts                    int
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
-	connectionsMap                      map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
-	slaveConnectionsMap                 map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
-	connectionsMapLock                  sync.RWMutex
+	bcManager                           *backendConfigManager
 	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
 	triggerUploadsMapLock               sync.RWMutex
-	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
-	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.Logger
 	tableCountQueryTimeout              time.Duration
@@ -190,10 +183,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
-	connectionsMap = map[string]map[string]model.Warehouse{}
-	slaveConnectionsMap = map[string]map[string]model.Warehouse{}
 	triggerUploadsMap = map[string]bool{}
-	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
 	runningMode = config.GetString("Warehouse.runningMode", "")
@@ -208,6 +198,9 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
+	bcManager = newBackendConfigManager(
+		config.Default, dbHandle, wrappedDBHandle, backendconfig.DefaultBackendConfig, enableTunnelling,
+	)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -224,7 +217,7 @@ func getDestinationFromSlaveConnectionMap(destinationId, sourceId string) (model
 	if destinationId == "" || sourceId == "" {
 		return model.Warehouse{}, errors.New("invalid Parameters")
 	}
-	sourceMap, ok := slaveConnectionsMap[destinationId]
+	sourceMap, ok := bcManager.ConnectionSourcesMap(destinationId)
 	if !ok {
 		return model.Warehouse{}, errors.New("invalid Destination Id")
 	}
@@ -277,95 +270,17 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJob) error {
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
-	for configData := range wh.tenantManager.WatchConfig(ctx) {
-		var warehouses []model.Warehouse
-		sourceIDsByWorkspaceTemp := map[string][]string{}
-
-		workspaceBySourceIDs := map[string]string{}
-
-		wh.Logger.Info(`Received updated workspace config`)
-		for workspaceID, wConfig := range configData {
-			for _, source := range wConfig.Sources {
-				if _, ok := sourceIDsByWorkspaceTemp[workspaceID]; !ok {
-					sourceIDsByWorkspaceTemp[workspaceID] = []string{}
-				}
-
-				sourceIDsByWorkspaceTemp[workspaceID] = append(sourceIDsByWorkspaceTemp[workspaceID], source.ID)
-				workspaceBySourceIDs[source.ID] = workspaceID
-
-				if len(source.Destinations) == 0 {
-					continue
-				}
-
-				for _, destination := range source.Destinations {
-
-					if destination.DestinationDefinition.Name != wh.destType {
-						continue
-					}
-
-					if enableTunnelling {
-						destination = wh.attachSSHTunnellingInfo(ctx, destination)
-					}
-
-					namespace := wh.getNamespace(ctx, source, destination)
-					warehouse := model.Warehouse{
-						WorkspaceID: workspaceID,
-						Source:      source,
-						Destination: destination,
-						Namespace:   namespace,
-						Type:        wh.destType,
-						Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
-					}
-					warehouses = append(warehouses, warehouse)
-
-					workerName := wh.workerIdentifier(warehouse)
-					wh.workerChannelMapLock.Lock()
-					// spawn one worker for each unique destID_namespace
-					// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
-					// to avoid creating goroutine for disabled sources/destinations
-					if _, ok := wh.workerChannelMap[workerName]; !ok {
-						workerChan := wh.initWorker()
-						wh.workerChannelMap[workerName] = workerChan
-					}
-					wh.workerChannelMapLock.Unlock()
-
-					connectionsMapLock.Lock()
-					if _, ok := connectionsMap[destination.ID]; !ok {
-						connectionsMap[destination.ID] = map[string]model.Warehouse{}
-					}
-					if _, ok := slaveConnectionsMap[destination.ID]; !ok {
-						slaveConnectionsMap[destination.ID] = map[string]model.Warehouse{}
-					}
-					if warehouse.Destination.Config["sslMode"] == "verify-ca" {
-						if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
-							wh.Logger.Error(err.Error())
-							persistSSLFileErrorStat(workspaceID, wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
-						}
-					}
-					connectionsMap[destination.ID][source.ID] = warehouse
-					slaveConnectionsMap[destination.ID][source.ID] = warehouse
-					connectionsMapLock.Unlock()
-
-					if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
-						wh.setupIdentityTables(ctx, warehouse)
-						if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
-							// non-blocking populate historic identities
-							wh.populateHistoricIdentities(ctx, warehouse)
-						}
-					}
-				}
-			}
+	for warehouse := range bcManager.Subscribe(ctx) {
+		workerName := wh.workerIdentifier(warehouse)
+		wh.workerChannelMapLock.Lock()
+		// spawn one worker for each unique destID_namespace
+		// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
+		// to avoid creating goroutine for disabled sources/destinations
+		if _, ok := wh.workerChannelMap[workerName]; !ok {
+			workerChan := wh.initWorker()
+			wh.workerChannelMap[workerName] = workerChan
 		}
-		wh.configSubscriberLock.Lock()
-		wh.warehouses = warehouses
-		wh.workspaceBySourceIDs = workspaceBySourceIDs
-		wh.Logger.Infof("Releasing config subscriber lock: %s", wh.destType)
-		wh.configSubscriberLock.Unlock()
-
-		sourceIDsByWorkspaceLock.Lock()
-		sourceIDsByWorkspace = sourceIDsByWorkspaceTemp
-		sourceIDsByWorkspaceLock.Unlock()
-		wh.initialConfigFetched = true
+		wh.workerChannelMapLock.Unlock()
 	}
 }
 
@@ -973,72 +888,6 @@ func (wh *HandleT) resetInProgressJobs(ctx context.Context) error {
 	return err
 }
 
-func minimalConfigSubscriber(ctx context.Context) {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-	for data := range ch {
-		pkgLogger.Debug("Got config from config-backend", data)
-		configData := data.Data.(map[string]backendconfig.ConfigT)
-
-		sourceIDsByWorkspaceTemp := map[string][]string{}
-
-		var connectionFlags backendconfig.ConnectionFlags
-		for workspaceID, wConfig := range configData {
-			connectionFlags = wConfig.ConnectionFlags // the last connection flags should be enough, since they are all the same in multi-workspace environments
-			for _, source := range wConfig.Sources {
-				if _, ok := sourceIDsByWorkspaceTemp[workspaceID]; !ok {
-					sourceIDsByWorkspaceTemp[workspaceID] = []string{}
-				}
-				sourceIDsByWorkspaceTemp[workspaceID] = append(sourceIDsByWorkspaceTemp[workspaceID], source.ID)
-				for _, destination := range source.Destinations {
-					if slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
-						wh := &HandleT{
-							dbHandle:     wrappedDBHandle,
-							destType:     destination.DestinationDefinition.Name,
-							whSchemaRepo: repo.NewWHSchemas(wrappedDBHandle),
-							conf:         config.Default,
-						}
-						namespace := wh.getNamespace(ctx, source, destination)
-
-						connectionsMapLock.Lock()
-						if _, ok := slaveConnectionsMap[destination.ID]; !ok {
-							slaveConnectionsMap[destination.ID] = map[string]model.Warehouse{}
-						}
-						if _, ok := connectionsMap[destination.ID]; !ok {
-							connectionsMap[destination.ID] = map[string]model.Warehouse{}
-						}
-						warehouse := model.Warehouse{
-							WorkspaceID: workspaceID,
-							Destination: destination,
-							Namespace:   namespace,
-							Type:        wh.destType,
-							Source:      source,
-							Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
-						}
-						if destination.Config["sslMode"] == "verify-ca" {
-							if err := warehouseutils.WriteSSLKeys(destination); err.IsError() {
-								wh.Logger.Error(err.Error())
-								persistSSLFileErrorStat(workspaceID, wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
-							}
-						}
-						slaveConnectionsMap[destination.ID][source.ID] = warehouse
-						connectionsMap[destination.ID][source.ID] = warehouse
-						connectionsMapLock.Unlock()
-					}
-				}
-			}
-		}
-		sourceIDsByWorkspaceLock.Lock()
-		sourceIDsByWorkspace = sourceIDsByWorkspaceTemp
-		sourceIDsByWorkspaceLock.Unlock()
-
-		if val, ok := connectionFlags.Services["warehouse"]; ok {
-			if UploadAPI.connectionManager != nil {
-				UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
-			}
-		}
-	}
-}
-
 // Gets the config from config backend and extracts enabled write keys
 func monitorDestRouters(ctx context.Context) error {
 	dstToWhRouter := make(map[string]*HandleT)
@@ -1237,18 +1086,8 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// trigger upload if there are pending events and triggerPendingUpload is true
 	if pendingEvents && triggerPendingUpload {
 		pkgLogger.Infof("[WH]: Triggering upload for all wh destinations connected to source '%s'", sourceID)
-		wh := make([]model.Warehouse, 0)
 
-		// get all wh destinations for given source id
-		connectionsMapLock.Lock()
-		for _, srcMap := range connectionsMap {
-			for srcID, w := range srcMap {
-				if srcID == sourceID {
-					wh = append(wh, w)
-				}
-			}
-		}
-		connectionsMapLock.Unlock()
+		wh := bcManager.WarehousesBySourceID(sourceID)
 
 		// return error if no such destinations found
 		if len(wh) == 0 {
@@ -1371,30 +1210,12 @@ func TriggerUploadHandler(sourceID, destID string) error {
 		return err
 	}
 
-	wh := make([]model.Warehouse, 0)
-
+	var wh []model.Warehouse
 	if sourceID != "" && destID == "" {
-		// get all wh destinations for given source id
-		connectionsMapLock.Lock()
-		for _, srcMap := range connectionsMap {
-			for srcID, w := range srcMap {
-				if srcID == sourceID {
-					wh = append(wh, w)
-				}
-			}
-		}
-		connectionsMapLock.Unlock()
+		wh = bcManager.WarehousesBySourceID(sourceID)
 	}
 	if destID != "" {
-		connectionsMapLock.Lock()
-		for destinationId, srcMap := range connectionsMap {
-			if destinationId == destID {
-				for _, w := range srcMap {
-					wh = append(wh, w)
-				}
-			}
-		}
-		connectionsMapLock.Unlock()
+		wh = bcManager.WarehousesByDestID(destID)
 	}
 
 	// return error if no such destinations found
@@ -1678,13 +1499,14 @@ func Start(ctx context.Context, app app.App) error {
 		}
 	}()
 
+	rruntime.GoForWarehouse(func() {
+		bcManager.Start(ctx)
+	})
+
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
-			rruntime.GoForWarehouse(func() {
-				minimalConfigSubscriber(ctx)
-			})
 			err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 			if err != nil {
 				pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
@@ -1735,10 +1557,6 @@ func Start(ctx context.Context, app app.App) error {
 
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			minimalConfigSubscriber(ctx)
-			return nil
-		}))
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return setupSlave(ctx)
 		}))
