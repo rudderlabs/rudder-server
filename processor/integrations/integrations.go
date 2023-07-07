@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	jsonFast              = jsoniter.ConfigCompatibleWithStandardLibrary
+	json                  = jsoniter.ConfigCompatibleWithStandardLibrary
 	postParametersTFields []string
 )
 
@@ -53,7 +53,7 @@ type TransResponseT struct {
 
 func CollectDestErrorStats(input []byte) {
 	var integrationStat TransStatsT
-	err := jsonFast.Unmarshal(input, &integrationStat)
+	err := json.Unmarshal(input, &integrationStat)
 	if err == nil {
 		if len(integrationStat.StatTags) > 0 {
 			stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
@@ -63,7 +63,7 @@ func CollectDestErrorStats(input []byte) {
 
 func CollectIntgTransformErrorStats(input []byte) {
 	var integrationStats []TransStatsT
-	err := jsonFast.Unmarshal(input, &integrationStats)
+	err := json.Unmarshal(input, &integrationStats)
 	if err == nil {
 		for _, integrationStat := range integrationStats {
 			if len(integrationStat.StatTags) > 0 {
@@ -75,7 +75,7 @@ func CollectIntgTransformErrorStats(input []byte) {
 
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
-	transformRaw, err := jsonFast.Marshal(transformRawParams)
+	transformRaw, err := json.Marshal(transformRawParams)
 	if err != nil {
 		return err
 	}

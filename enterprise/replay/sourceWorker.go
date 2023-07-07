@@ -112,7 +112,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	var jobs []*jobsdb.JobT
 
-	var transEvents []transformer.TransformerEventT
+	var transEvents []transformer.TransformerEvent
 	transformationVersionID := config.GetString("TRANSFORMATION_VERSION_ID", "")
 
 	for sc.Scan() {
@@ -150,14 +150,14 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 		messageID := uuid.New().String()
 
-		metadata := transformer.MetadataT{
+		metadata := transformer.Metadata{
 			MessageID:     messageID,
 			DestinationID: gjson.GetBytes(copyLineBytes, "parameters.destination_id").String(),
 		}
 
 		transformation := backendconfig.TransformationT{VersionID: config.GetString("TRANSFORMATION_VERSION_ID", "")}
 
-		transEvent := transformer.TransformerEventT{
+		transEvent := transformer.TransformerEvent{
 			Message:     message,
 			Metadata:    metadata,
 			Destination: backendconfig.DestinationT{Transformations: []backendconfig.TransformationT{transformation}},

@@ -554,7 +554,6 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			c.mockEventSchemasDB.EXPECT().
 				WithStoreSafeTx(
@@ -621,7 +620,6 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("Initialization", func() {
 		It("should initialize (no jobs to recover)", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -636,7 +634,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 		It("should recover after crash", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -657,7 +654,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -802,7 +798,6 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
@@ -995,7 +990,6 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1016,19 +1010,19 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// We expect one call to user transform for destination B
 			callUserTransform := mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
-				DoAndReturn(func(ctx context.Context, clientEvents []transformer.TransformerEventT, batchSize int) transformer.ResponseT {
+				DoAndReturn(func(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
 					defer GinkgoRecover()
 
-					outputEvents := make([]transformer.TransformerResponseT, 0)
+					outputEvents := make([]transformer.TransformerResponse, 0)
 
 					for _, event := range clientEvents {
 						event.Message["user-transform"] = "value"
-						outputEvents = append(outputEvents, transformer.TransformerResponseT{
+						outputEvents = append(outputEvents, transformer.TransformerResponse{
 							Output: event.Message,
 						})
 					}
 
-					return transformer.ResponseT{
+					return transformer.Response{
 						Events: outputEvents,
 					}
 				})
@@ -1146,7 +1140,6 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0)).After(callUnprocessed).Times(3)
@@ -1222,16 +1215,16 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			transformerResponses := []transformer.TransformerResponseT{
+			transformerResponses := []transformer.TransformerResponse{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-1",
 					},
 					StatusCode: 400,
 					Error:      "error-1",
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					StatusCode: 400,
@@ -1270,7 +1263,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1282,8 +1274,8 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Return(transformer.ResponseT{
-					Events:       []transformer.TransformerResponseT{},
+				Return(transformer.Response{
+					Events:       []transformer.TransformerResponse{},
 					FailedEvents: transformerResponses,
 				})
 
@@ -1358,9 +1350,9 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			transformerResponses := []transformer.TransformerResponseT{
+			transformerResponses := []transformer.TransformerResponse{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageIDs: []string{"message-1", "message-2"},
 					},
 					StatusCode: 400,
@@ -1405,7 +1397,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1418,8 +1409,8 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// Test transformer failure
 			mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Return(transformer.ResponseT{
-					Events:       []transformer.TransformerResponseT{},
+				Return(transformer.Response{
+					Events:       []transformer.TransformerResponse{},
 					FailedEvents: transformerResponses,
 				})
 
@@ -1489,7 +1480,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1527,7 +1517,6 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1571,7 +1560,6 @@ var _ = Describe("Processor", Ordered, func() {
 	Context("ProcessorLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1630,7 +1618,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
@@ -1658,9 +1645,9 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("TransformerFormatResponse Tests", func() {
 		It("Should match ConvertToTransformerResponse without filtering", func() {
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -1668,7 +1655,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -1676,14 +1663,14 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			expectedResponses := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponses := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output: map[string]interface{}{
 							"some-key-1": "some-value-1",
 						},
 						StatusCode: 200,
-						Metadata: transformer.MetadataT{
+						Metadata: transformer.Metadata{
 							MessageID: "message-1",
 						},
 					},
@@ -1692,7 +1679,7 @@ var _ = Describe("Static Function Tests", func() {
 							"some-key-2": "some-value-2",
 						},
 						StatusCode: 200,
-						Metadata: transformer.MetadataT{
+						Metadata: transformer.Metadata{
 							MessageID: "message-2",
 						},
 					},
@@ -1803,8 +1790,8 @@ var _ = Describe("Static Function Tests", func() {
 			proc.reportingEnabled = true
 			proc.reporting = &mockReportingTypes.MockReporting{}
 
-			inputEvent := &transformer.TransformerResponseT{
-				Metadata: transformer.MetadataT{
+			inputEvent := &transformer.TransformerResponse{
+				Metadata: transformer.Metadata{
 					SourceID:         "source-id-1",
 					DestinationID:    "destination-id-1",
 					TransformationID: "transformation-id-1",
@@ -1891,9 +1878,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -1903,7 +1890,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -1913,7 +1900,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -1923,15 +1910,15 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
 						Metadata:   events[0].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponseT{
+				FailedEvents: []transformer.TransformerResponse{
 					{
 						Output:     events[2].Message,
 						StatusCode: 400,
@@ -1958,9 +1945,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -1970,7 +1957,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -1980,7 +1967,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -1990,15 +1977,15 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[1].Message,
 						StatusCode: 200,
 						Metadata:   events[1].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponseT{
+				FailedEvents: []transformer.TransformerResponse{
 					{
 						Output:     events[2].Message,
 						StatusCode: 400,
@@ -2018,9 +2005,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -2030,7 +2017,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -2040,7 +2027,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -2050,8 +2037,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -2082,9 +2069,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -2094,7 +2081,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -2104,7 +2091,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -2114,8 +2101,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -2150,9 +2137,9 @@ var _ = Describe("Static Function Tests", func() {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -2162,7 +2149,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -2172,7 +2159,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -2182,15 +2169,15 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[1].Message,
 						StatusCode: 200,
 						Metadata:   events[1].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponseT{
+				FailedEvents: []transformer.TransformerResponse{
 					{
 						Output:     events[2].Message,
 						StatusCode: 400,
@@ -2217,9 +2204,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -2229,7 +2216,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -2239,7 +2226,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -2249,8 +2236,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -2307,9 +2294,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -2320,7 +2307,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2331,7 +2318,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2342,8 +2329,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -2395,9 +2382,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -2408,7 +2395,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2419,7 +2406,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2430,7 +2417,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
+			expectedResponse := transformer.Response{
 				Events:       nil,
 				FailedEvents: nil,
 			}
@@ -2472,9 +2459,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -2485,7 +2472,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2496,7 +2483,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2507,8 +2494,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -2555,9 +2542,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -2568,7 +2555,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2579,7 +2566,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2590,8 +2577,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -2641,9 +2628,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -2654,7 +2641,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2665,7 +2652,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -2676,8 +2663,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -2730,9 +2717,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEventT{
+			events := []transformer.TransformerEvent{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "",
 					},
@@ -2743,7 +2730,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "",
 					},
@@ -2754,7 +2741,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "",
 					},
@@ -2765,8 +2752,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.ResponseT{
-				Events: []transformer.TransformerResponseT{
+			expectedResponse := transformer.Response{
+				Events: []transformer.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -2887,14 +2874,14 @@ func assertDestinationTransform(
 	expectations transformExpectation,
 ) func(
 	ctx context.Context,
-	clientEvents []transformer.TransformerEventT,
+	clientEvents []transformer.TransformerEvent,
 	batchSize int,
-) transformer.ResponseT {
+) transformer.Response {
 	return func(
 		ctx context.Context,
-		clientEvents []transformer.TransformerEventT,
+		clientEvents []transformer.TransformerEvent,
 		batchSize int,
-	) transformer.ResponseT {
+	) transformer.Response {
 		defer GinkgoRecover()
 
 		fmt.Println("clientEvents:", len(clientEvents))
@@ -2971,14 +2958,14 @@ func assertDestinationTransform(
 
 		Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
 
-		return transformer.ResponseT{
-			Events: []transformer.TransformerResponseT{
+		return transformer.Response{
+			Events: []transformer.TransformerResponse{
 				{
 					Output: map[string]interface{}{
 						"int-value":    0,
 						"string-value": fmt.Sprintf("value-%s", destinationID),
 					},
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						SourceID:      "source-from-transformer",      // transformer should replay source id
 						DestinationID: "destination-from-transformer", // transformer should replay destination id
 					},
@@ -2988,7 +2975,7 @@ func assertDestinationTransform(
 						"int-value":    1,
 						"string-value": fmt.Sprintf("value-%s", destinationID),
 					},
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						SourceID:      "source-from-transformer",      // transformer should replay source id
 						DestinationID: "destination-from-transformer", // transformer should replay destination id
 					},
@@ -3183,7 +3170,7 @@ var _ = Describe("TestConfigFilter", func() {
 				Enabled:            true,
 				IsProcessorEnabled: true,
 			}
-			expectedEvent := transformer.TransformerEventT{
+			expectedEvent := transformer.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -3202,7 +3189,7 @@ var _ = Describe("TestConfigFilter", func() {
 					IsProcessorEnabled: true,
 				},
 			}
-			event := transformer.TransformerEventT{
+			event := transformer.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -3234,7 +3221,7 @@ var _ = Describe("TestConfigFilter", func() {
 			Expect(json.Unmarshal([]byte(intgConfigStr), &intgConfig)).To(BeNil())
 			Expect(json.Unmarshal([]byte(destDefStr), &destDef)).To(BeNil())
 			intgConfig.DestinationDefinition = destDef
-			expectedEvent := transformer.TransformerEventT{
+			expectedEvent := transformer.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -3253,7 +3240,7 @@ var _ = Describe("TestConfigFilter", func() {
 					IsProcessorEnabled: true,
 				},
 			}
-			event := transformer.TransformerEventT{
+			event := transformer.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -3280,7 +3267,7 @@ var _ = Describe("TestConfigFilter", func() {
 				Enabled:            true,
 				IsProcessorEnabled: true,
 			}
-			expectedEvent := transformer.TransformerEventT{
+			expectedEvent := transformer.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -3301,7 +3288,7 @@ var _ = Describe("TestConfigFilter", func() {
 					IsProcessorEnabled: true,
 				},
 			}
-			event := transformer.TransformerEventT{
+			event := transformer.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},

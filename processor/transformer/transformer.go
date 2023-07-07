@@ -44,11 +44,17 @@ const (
 )
 
 var (
-	jsonFast  = jsoniter.ConfigCompatibleWithStandardLibrary
-	pkgLogger logger.Logger
+	json                    = jsoniter.ConfigCompatibleWithStandardLibrary
+	warehouseDestinationMap map[string]struct{}
 )
 
-type MetadataT struct {
+func init() {
+	warehouseDestinationMap = lo.SliceToMap(warehouseutils.WarehouseDestinations, func(destination string) (string, struct{}) {
+		return destination, struct{}{}
+	})
+}
+
+type Metadata struct {
 	SourceID            string                            `json:"sourceId"`
 	WorkspaceID         string                            `json:"workspaceId"`
 	Namespace           string                            `json:"namespace"`
@@ -81,15 +87,86 @@ type MetadataT struct {
 	SourceDefinitionType    string   `json:"-"`
 }
 
-type TransformerEventT struct {
+type TransformerEvent struct {
 	Message     types.SingularEventT       `json:"message"`
-	Metadata    MetadataT                  `json:"metadata"`
+	Metadata    Metadata                   `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 }
 
-// HandleT is the handle for this class
-type HandleT struct {
+func isJobTerminated(status int) bool {
+	if status == http.StatusTooManyRequests {
+		return false
+	}
+	return status >= http.StatusOK && status < http.StatusInternalServerError
+}
+
+type TransformerResponse struct {
+	// Not marking this Singular Event, since this not a RudderEvent
+	Output           map[string]interface{} `json:"output"`
+	Metadata         Metadata               `json:"metadata"`
+	StatusCode       int                    `json:"statusCode"`
+	Error            string                 `json:"error"`
+	ValidationErrors []ValidationError      `json:"validationErrors"`
+}
+
+type ValidationError struct {
+	Type    string            `json:"type"`
+	Message string            `json:"message"`
+	Meta    map[string]string `json:"meta"`
+}
+
+// Response represents a Transformer response
+type Response struct {
+	Events       []TransformerResponse
+	FailedEvents []TransformerResponse
+}
+
+// GetVersion gets the transformer version by asking it on /transformerBuildVersion. if there is any error it returns empty string
+func GetVersion() string {
+	defaultBuildVersion := "Not an official release. Get the latest release from dockerhub."
+
+	transformURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090") + "/transformerBuildVersion"
+
+	resp, err := http.Get(transformURL)
+	if err != nil {
+		fmt.Printf("Unable to make a transformer build version call with error: %s", err.Error())
+		return defaultBuildVersion
+	}
+	if resp == nil {
+		return fmt.Sprintf("No response from transformer. %s", defaultBuildVersion)
+	}
+	defer func() { httputil.CloseResponse(resp) }()
+
+	if resp.StatusCode == http.StatusOK {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Println("Unable to read response into bytes with error : ", err.Error())
+			return "Unable to read response from transformer."
+		}
+
+		return string(bodyBytes)
+	}
+	return defaultBuildVersion
+}
+
+type Opt func(*handle)
+
+func WithClient(client *http.Client) Opt {
+	return func(s *handle) {
+		s.client = client
+	}
+}
+
+// Transformer provides methods to transform events
+type Transformer interface {
+	Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+	UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+	Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+}
+
+// handle is the handle for this class
+type handle struct {
 	sentStat     stats.Measurement
 	receivedStat stats.Measurement
 	cpDownGauge  stats.Measurement
@@ -98,7 +175,7 @@ type HandleT struct {
 	logger logger.Logger
 	stat   stats.Stats
 
-	Client *http.Client
+	client *http.Client
 
 	guardConcurrency chan struct{}
 
@@ -112,57 +189,18 @@ type HandleT struct {
 
 		maxRetry int
 
-		failOnTimeout bool
-		failOnError   bool
+		failOnUserTransformTimeout bool
+		failOnError                bool
 
 		destTransformationURL string
 		userTransformationURL string
 	}
-
-	warehouseDestinationMap map[string]struct{}
-}
-
-// Transformer provides methods to transform events
-type Transformer interface {
-	Setup(*config.Config, logger.Logger, stats.Stats)
-	Transform(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT
-	UserTransform(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT
-	Validate(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT
 }
 
 // NewTransformer creates a new transformer
-func NewTransformer() *HandleT {
-	return &HandleT{}
-}
+func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) Transformer {
+	trans := handle{}
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
-}
-
-func isJobTerminated(status int) bool {
-	if status == http.StatusTooManyRequests {
-		return false
-	}
-	return status >= http.StatusOK && status < http.StatusInternalServerError
-}
-
-type TransformerResponseT struct {
-	// Not marking this Singular Event, since this not a RudderEvent
-	Output           map[string]interface{} `json:"output"`
-	Metadata         MetadataT              `json:"metadata"`
-	StatusCode       int                    `json:"statusCode"`
-	Error            string                 `json:"error"`
-	ValidationErrors []ValidationError      `json:"validationErrors"`
-}
-
-type ValidationError struct {
-	Type    string            `json:"type"`
-	Message string            `json:"message"`
-	Meta    map[string]string `json:"meta"`
-}
-
-// Setup initializes this class
-func (trans *HandleT) Setup(conf *config.Config, log logger.Logger, stat stats.Stats) {
 	trans.conf = conf
 	trans.logger = log.Child("transformer")
 	trans.stat = stat
@@ -181,17 +219,13 @@ func (trans *HandleT) Setup(conf *config.Config, log logger.Logger, stat stats.S
 	trans.config.userTransformationURL = conf.GetString("USER_TRANSFORM_URL", trans.config.destTransformationURL)
 
 	conf.RegisterIntConfigVariable(30, &trans.config.maxRetry, true, 1, "Processor.maxRetry")
-	conf.RegisterBoolConfigVariable(false, &trans.config.failOnTimeout, true, "Processor.Transformer.failOnTimeout")
+	conf.RegisterBoolConfigVariable(false, &trans.config.failOnUserTransformTimeout, true, "Processor.Transformer.failOnUserTransformTimeout")
 	conf.RegisterBoolConfigVariable(false, &trans.config.failOnError, true, "Processor.Transformer.failOnError")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
-	trans.warehouseDestinationMap = lo.SliceToMap(warehouseutils.WarehouseDestinations, func(destination string) (string, struct{}) {
-		return destination, struct{}{}
-	})
-
-	if trans.Client == nil {
-		trans.Client = &http.Client{
+	if trans.client == nil {
+		trans.client = &http.Client{
 			Transport: &http.Transport{
 				DisableKeepAlives:   trans.config.disableKeepAlives,
 				MaxConnsPerHost:     trans.config.maxHTTPConnections,
@@ -201,44 +235,18 @@ func (trans *HandleT) Setup(conf *config.Config, log logger.Logger, stat stats.S
 			Timeout: trans.config.timeoutDuration,
 		}
 	}
-}
 
-// ResponseT represents a Transformer response
-type ResponseT struct {
-	Events       []TransformerResponseT
-	FailedEvents []TransformerResponseT
-}
+	for _, opt := range opts {
+		opt(&trans)
+	}
 
-// GetVersion gets the transformer version by asking it on /transformerBuildVersion. if there is any error it returns empty string
-func GetVersion() (transformerBuildVersion string) {
-	transformerBuildVersion = "Not an official release. Get the latest release from dockerhub."
-	transformURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090") + "/transformerBuildVersion"
-	resp, err := http.Get(transformURL)
-	if err != nil {
-		pkgLogger.Errorf("Unable to make a transformer build version call with error : %s", err.Error())
-		return
-	}
-	if resp == nil {
-		transformerBuildVersion = fmt.Sprintf("No response from transformer. %s", transformerBuildVersion)
-		return
-	}
-	defer func() { httputil.CloseResponse(resp) }()
-	if resp.StatusCode == http.StatusOK {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
-			transformerBuildVersion = "Unable to read response from transformer."
-			return
-		}
-		transformerBuildVersion = string(bodyBytes)
-	}
-	return
+	return &trans
 }
 
 // Transform function is used to invoke destination transformer API
-func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT {
+func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
 	if len(clientEvents) == 0 {
-		return ResponseT{}
+		return Response{}
 	}
 	destType := clientEvents[0].Destination.DestinationDefinition.Name
 	transformURL := trans.destTransformURL(destType)
@@ -246,24 +254,24 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 }
 
 // UserTransform function is used to invoke user transformer API
-func (trans *HandleT) UserTransform(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT {
+func (trans *handle) UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
 	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, UserTransformerStage)
 }
 
 // Validate function is used to invoke tracking plan validation API
-func (trans *HandleT) Validate(ctx context.Context, clientEvents []TransformerEventT, batchSize int) ResponseT {
+func (trans *handle) Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
 	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, TrackingPlanValidationStage)
 }
 
-func (trans *HandleT) transform(
+func (trans *handle) transform(
 	ctx context.Context,
-	clientEvents []TransformerEventT,
+	clientEvents []TransformerEvent,
 	url string,
 	batchSize int,
 	stage string,
-) ResponseT {
+) Response {
 	if len(clientEvents) == 0 {
-		return ResponseT{}
+		return Response{}
 	}
 
 	sTags := statsTags(&clientEvents[0])
@@ -277,14 +285,14 @@ func (trans *HandleT) transform(
 	).Observe(float64(len(batches)))
 	trace.Logf(ctx, "request", "batch_count: %d", len(batches))
 
-	transformResponse := make([][]TransformerResponseT, len(batches))
+	transformResponse := make([][]TransformerResponse, len(batches))
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(batches))
 
 	lo.ForEach(
 		batches,
-		func(batch []TransformerEventT, i int) {
+		func(batch []TransformerEvent, i int) {
 			trans.guardConcurrency <- struct{}{}
 			go func() {
 				trace.WithRegion(ctx, "request", func() {
@@ -297,8 +305,8 @@ func (trans *HandleT) transform(
 	)
 	wg.Wait()
 
-	var outClientEvents []TransformerResponseT
-	var failedEvents []TransformerResponseT
+	var outClientEvents []TransformerResponse
+	var failedEvents []TransformerResponse
 
 	for _, batch := range transformResponse {
 		if batch == nil {
@@ -318,17 +326,13 @@ func (trans *HandleT) transform(
 
 	trans.receivedStat.Count(len(outClientEvents))
 
-	return ResponseT{
+	return Response{
 		Events:       outClientEvents,
 		FailedEvents: failedEvents,
 	}
 }
 
-func (trans *HandleT) requestTime(s stats.Tags, d time.Duration) {
-	trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
-}
-
-func statsTags(event *TransformerEventT) stats.Tags {
+func statsTags(event *TransformerEvent) stats.Tags {
 	return stats.Tags{
 		"dest_type": event.Destination.DestinationDefinition.Name,
 		"dest_id":   event.Destination.ID,
@@ -336,7 +340,11 @@ func statsTags(event *TransformerEventT) stats.Tags {
 	}
 }
 
-func (trans *HandleT) request(ctx context.Context, url, stage string, data []TransformerEventT) []TransformerResponseT {
+func (trans *handle) requestTime(s stats.Tags, d time.Duration) {
+	trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
+}
+
+func (trans *handle) request(ctx context.Context, url, stage string, data []TransformerEvent) []TransformerResponse {
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -344,7 +352,7 @@ func (trans *HandleT) request(ctx context.Context, url, stage string, data []Tra
 	)
 
 	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = jsonFast.Marshal(data)
+		rawJSON, err = json.Marshal(data)
 	})
 	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
 	if err != nil {
@@ -399,13 +407,13 @@ func (trans *HandleT) request(ctx context.Context, url, stage string, data []Tra
 		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
 	}
 
-	var transformerResponses []TransformerResponseT
+	var transformerResponses []TransformerResponse
 	if statusCode == http.StatusOK {
 		integrations.CollectIntgTransformErrorStats(respData)
 
 		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
 		trace.WithRegion(ctx, "Unmarshal", func() {
-			err = jsonFast.Unmarshal(respData, &transformerResponses)
+			err = json.Unmarshal(respData, &transformerResponses)
 		})
 		// This is returned by our JS engine so should  be parsable
 		// but still handling it
@@ -423,14 +431,14 @@ func (trans *HandleT) request(ctx context.Context, url, stage string, data []Tra
 	if statusCode != http.StatusOK {
 		for i := range data {
 			transformEvent := &data[i]
-			resp := TransformerResponseT{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
+			resp := TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
 	}
 	return transformerResponses
 }
 
-func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url, stage string, tags stats.Tags) ([]byte, int) {
+func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage string, tags stats.Tags) ([]byte, int) {
 	var (
 		retryCount int
 		resp       *http.Response
@@ -443,7 +451,7 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url, stage str
 			requestStartTime := time.Now()
 
 			trace.WithRegion(ctx, "request/post", func() {
-				resp, reqErr = trans.Client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+				resp, reqErr = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
 			})
 			trans.requestTime(tags, time.Since(requestStartTime))
 			if reqErr != nil {
@@ -466,7 +474,7 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url, stage str
 		},
 	)
 	if err != nil {
-		if trans.config.failOnTimeout && stage == UserTransformerStage && os.IsTimeout(err) {
+		if trans.config.failOnUserTransformTimeout && stage == UserTransformerStage && os.IsTimeout(err) {
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeout
 		} else if trans.config.failOnError {
 			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
@@ -491,10 +499,10 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url, stage str
 	return respData, resp.StatusCode
 }
 
-func (trans *HandleT) destTransformURL(destType string) string {
+func (trans *handle) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", trans.config.destTransformationURL, strings.ToLower(destType))
 
-	if _, ok := trans.warehouseDestinationMap[destType]; ok {
+	if _, ok := warehouseDestinationMap[destType]; ok {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
 		if destType == warehouseutils.RS {
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
@@ -508,10 +516,10 @@ func (trans *HandleT) destTransformURL(destType string) string {
 	return destinationEndPoint
 }
 
-func (trans *HandleT) userTransformURL() string {
+func (trans *handle) userTransformURL() string {
 	return trans.config.userTransformationURL + "/customTransform"
 }
 
-func (trans *HandleT) trackingPlanValidationURL() string {
+func (trans *handle) trackingPlanValidationURL() string {
 	return trans.config.destTransformationURL + "/v0/validate"
 }

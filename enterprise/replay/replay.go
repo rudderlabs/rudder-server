@@ -149,8 +149,7 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 			uploader:      handle.uploader,
 		}
 		handle.workers[i] = worker
-		worker.transformer = transformer.NewTransformer()
-		worker.transformer.Setup(config.Default, handle.log, stats.Default)
+		worker.transformer = transformer.NewTransformer(config.Default, handle.log, stats.Default)
 		go worker.workerProcess(ctx)
 	}
 	handle.initSourceWorkersChannel <- true

@@ -9,9 +9,6 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	config "github.com/rudderlabs/rudder-go-kit/config"
-	logger "github.com/rudderlabs/rudder-go-kit/logger"
-	stats "github.com/rudderlabs/rudder-go-kit/stats"
 	transformer "github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
@@ -38,23 +35,11 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 	return m.recorder
 }
 
-// Setup mocks base method.
-func (m *MockTransformer) Setup(arg0 *config.Config, arg1 logger.Logger, arg2 stats.Stats) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Setup", arg0, arg1, arg2)
-}
-
-// Setup indicates an expected call of Setup.
-func (mr *MockTransformerMockRecorder) Setup(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup), arg0, arg1, arg2)
-}
-
 // Transform mocks base method.
-func (m *MockTransformer) Transform(arg0 context.Context, arg1 []transformer.TransformerEventT, arg2 int) transformer.ResponseT {
+func (m *MockTransformer) Transform(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2)
-	ret0, _ := ret[0].(transformer.ResponseT)
+	ret0, _ := ret[0].(transformer.Response)
 	return ret0
 }
 
@@ -65,10 +50,10 @@ func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2 interface{}) *
 }
 
 // UserTransform mocks base method.
-func (m *MockTransformer) UserTransform(arg0 context.Context, arg1 []transformer.TransformerEventT, arg2 int) transformer.ResponseT {
+func (m *MockTransformer) UserTransform(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UserTransform", arg0, arg1, arg2)
-	ret0, _ := ret[0].(transformer.ResponseT)
+	ret0, _ := ret[0].(transformer.Response)
 	return ret0
 }
 
@@ -79,10 +64,10 @@ func (mr *MockTransformerMockRecorder) UserTransform(arg0, arg1, arg2 interface{
 }
 
 // Validate mocks base method.
-func (m *MockTransformer) Validate(arg0 context.Context, arg1 []transformer.TransformerEventT, arg2 int) transformer.ResponseT {
+func (m *MockTransformer) Validate(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Validate", arg0, arg1, arg2)
-	ret0, _ := ret[0].(transformer.ResponseT)
+	ret0, _ := ret[0].(transformer.Response)
 	return ret0
 }
 

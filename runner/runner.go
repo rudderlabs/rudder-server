@@ -346,7 +346,6 @@ func runAllInit() {
 	warehouse.Init6()
 	warehousearchiver.Init()
 	validations.Init()
-	transformer.Init()
 	webhook.Init()
 	asyncdestinationmanager.Init()
 	batchrouterutils.Init()
