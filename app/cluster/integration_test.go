@@ -184,10 +184,14 @@ func TestDynamicClusterManager(t *testing.T) {
 	defer rtDB.TearDown()
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
 	defer brtDB.TearDown()
-	errDB := jobsdb.NewForReadWrite("proc_error")
-	defer errDB.TearDown()
+
 	archDB := jobsdb.NewForReadWrite("archival")
 	defer archDB.TearDown()
+	readErrDB := jobsdb.NewForRead("proc_error")
+	defer readErrDB.TearDown()
+	writeErrDB := jobsdb.NewForWrite("proc_error")
+	require.NoError(t, writeErrDB.Start())
+	defer writeErrDB.TearDown()
 
 	clearDb := false
 	ctx := context.Background()
@@ -200,7 +204,8 @@ func TestDynamicClusterManager(t *testing.T) {
 		gwDB,
 		rtDB,
 		brtDB,
-		errDB,
+		readErrDB,
+		writeErrDB,
 		eschDB,
 		archDB,
 		&reporting.NOOP{},
@@ -220,7 +225,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		Reporting:        &reporting.NOOP{},
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         rtDB,
-		ProcErrorDB:      errDB,
+		ProcErrorDB:      readErrDB,
 		TransientSources: transientsource.NewEmptyService(),
 		RsourcesService:  mockRsourcesService,
 	}
@@ -228,7 +233,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		Reporting:        &reporting.NOOP{},
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         brtDB,
-		ProcErrorDB:      errDB,
+		ProcErrorDB:      readErrDB,
 		TransientSources: transientsource.NewEmptyService(),
 		RsourcesService:  mockRsourcesService,
 	}
@@ -255,7 +260,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		GatewayDB:       gwDB,
 		RouterDB:        rtDB,
 		BatchRouterDB:   brtDB,
-		ErrorDB:         errDB,
+		ErrorDB:         readErrDB,
 		EventSchemaDB:   eschDB,
 		ArchivalDB:      archDB,
 		SchemaForwarder: schemaForwarder,

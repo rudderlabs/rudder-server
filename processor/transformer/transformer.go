@@ -397,7 +397,7 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 				return reqErr
 			}
 			defer func() { httputil.CloseResponse(resp) }()
-			if !isJobTerminated(resp.StatusCode) {
+			if !isJobTerminated(resp.StatusCode) && resp.StatusCode != StatusCPDown {
 				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
 			}
 			respData, reqErr = io.ReadAll(resp.Body)

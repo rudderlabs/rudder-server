@@ -77,6 +77,8 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	}
 	var l lock.LockToken
 	var lockChan chan<- lock.LockToken
+
+	lockStart := time.Now()
 	err = jd.WithTx(func(tx *Tx) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 			// Take the lock and run actual migration
@@ -165,6 +167,7 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 		})
 	})
 	if l != nil {
+		defer stats.Default.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
 		defer func() { lockChan <- l }()
 		if err == nil {
 			if err = jd.doRefreshDSRangeList(l); err != nil {
@@ -526,7 +529,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
 	).RecordDuration()()
 
-	var delCount, totalCount, statusCount int
+	var delCount, totalCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
 	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&totalCount); err != nil {
 		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobTable, err)
@@ -539,15 +542,6 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 		ds.JobStatusTable, strings.Join(validTerminalStates, "', '"))
 	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&delCount); err != nil {
 		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobStatusTable, err)
-	}
-
-	if jobStatusCountMigrationCheck {
-		// Total number of job status. If this table grows too big (e.g. a lot of retries)
-		// we migrate to a new table and get rid of old job status
-		sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobStatusTable)
-		if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&statusCount); err != nil {
-			return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobStatusTable, err)
-		}
 	}
 
 	recordsLeft = totalCount - delCount
@@ -581,10 +575,10 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	smallThreshold := jobMinRowsMigrateThres * float64(*jd.MaxDSSize)
 	isSmall := func() bool {
-		return float64(totalCount) < smallThreshold && float64(statusCount) < smallThreshold
+		return float64(totalCount) < smallThreshold
 	}
 
-	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres || (float64(statusCount)/float64(totalCount) > jobStatusMigrateThres) {
+	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres {
 		return true, isSmall(), recordsLeft, nil
 	}
 
