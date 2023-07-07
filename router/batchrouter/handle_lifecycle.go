@@ -51,11 +51,13 @@ func (brt *Handle) Setup(
 ) {
 	brt.destination = destination
 	brt.destType = destination.DestinationDefinition.Name
-	asyncdestinationmanager, err := asyncdestinationmanager.NewManager(destination, backendConfig)
-	if err != nil {
-		panic(fmt.Errorf("unable to initialize async destination manager for: %w", err))
+	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+		asyncdestinationmanager, err := asyncdestinationmanager.NewManager(destination, backendConfig)
+		if err != nil {
+			panic(fmt.Errorf("unable to initialize async destination manager for: %w", err))
+		}
+		brt.asyncdestinationmanager = asyncdestinationmanager
 	}
-	brt.asyncdestinationmanager = asyncdestinationmanager
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
@@ -83,6 +85,7 @@ func (brt *Handle) Setup(
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
 	isolationMode := config.GetString("BatchRouter.isolationMode", string(defaultIsolationMode))
+	var err error
 	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destination.DestinationDefinition.Name, func(destinationID string) bool {
 		brt.configSubscriberMu.RLock()
 		defer brt.configSubscriberMu.RUnlock()
