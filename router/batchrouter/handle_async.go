@@ -579,6 +579,15 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 		})
 	}, brt.sendRetryUpdateStats)
 	if err != nil {
+		//TODO: remove this after debug
+		for _, status := range statusList {
+			jobID := status.JobID
+			errorResponse := status.ErrorResponse
+
+			// Do something with the jobID and errorResponse
+			fmt.Println("JobID:", jobID)
+			fmt.Println("ErrorResponse:", string(errorResponse))
+		}
 		panic(err)
 	}
 	brt.updateProcessedEventsMetrics(statusList)
