@@ -59,7 +59,7 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 	}
 
 	var warehouse model.Warehouse
-	srcMap, ok := connectionsMap[s.DestID]
+	srcMap, ok := bcManager.ConnectionSourcesMap(s.DestID) // TODO remove global variable
 	if !ok {
 		return errors.New("please specify a valid and existing destination ID")
 	}
@@ -104,7 +104,7 @@ func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Config
 	}
 
 	var warehouse model.Warehouse
-	srcMap, ok := connectionsMap[s.DestID]
+	srcMap, ok := bcManager.ConnectionSourcesMap(s.DestID) // TODO remove global variable
 	if !ok {
 		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
 	}
