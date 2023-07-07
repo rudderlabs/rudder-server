@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -125,6 +126,14 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	configEnvHandler := nc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
+	}
+
+	tmpFile, err := os.CreateTemp("", "*")
+	if err == nil {
+		if _, err = tmpFile.Write(respBody); err == nil {
+			nc.logger.Debugf("[BC-DUMP] Config written to file %s", tmpFile.Name())
+		}
+		_ = tmpFile.Close()
 	}
 
 	var requestData map[string]*ConfigT
