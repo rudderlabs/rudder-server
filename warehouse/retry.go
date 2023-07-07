@@ -131,13 +131,8 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Retr
 	return
 }
 
-func (retryReq *RetryRequest) getSourceIDs() (sourceIDs []string) {
-	sourceIDsByWorkspaceLock.RLock()
-	defer sourceIDsByWorkspaceLock.RUnlock()
-	var ok bool
-	if sourceIDs, ok = sourceIDsByWorkspace[retryReq.WorkspaceID]; !ok {
-		sourceIDs = []string{}
-	}
+func (retryReq *RetryRequest) getSourceIDs() []string {
+	sourceIDs, _ := bcManager.SourceIDsByWorkspace()[retryReq.WorkspaceID] // TODO remove global variable
 	return sourceIDs
 }
 
