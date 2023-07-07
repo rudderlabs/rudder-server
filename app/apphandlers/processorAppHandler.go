@@ -185,7 +185,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	)
 
 	archivalDB := jobsdb.NewForReadWrite(
-		"archival",
+		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
