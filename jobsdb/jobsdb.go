@@ -536,9 +536,9 @@ func (jd *HandleT) registerBackUpSettings() {
 	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
-	config.RegisterDurationConfigVariable(1, &jd.refreshDSTimeout, false, time.Minute, "JobsDB.refreshDS.timeout")
+	config.RegisterDurationConfigVariable(10, &jd.refreshDSTimeout, true, time.Minute, "JobsDB.refreshDS.timeout")
 	config.RegisterDurationConfigVariable(720, &jd.JobMaxAge, false, time.Hour, "JobsDB.jobMaxAge")
-	config.RegisterDurationConfigVariable(2, &jd.migrateDSTimeout, false, time.Minute, "JobsDB.migrateDS.timeout")
+	config.RegisterDurationConfigVariable(10, &jd.migrateDSTimeout, true, time.Minute, "JobsDB.migrateDS.timeout")
 
 	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
 }
