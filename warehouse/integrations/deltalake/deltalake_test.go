@@ -163,10 +163,16 @@ func TestIntegration(t *testing.T) {
 		jobsDB := testhelper.JobsDB(t, jobsDBPort)
 
 		t.Cleanup(func() {
-			require.NoError(t, testhelper.WithConstantRetries(func() error {
-				_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace))
-				return err
-			}))
+			require.Eventually(t, func() bool {
+				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace)); err != nil {
+					t.Logf("error deleting schema: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
 		})
 
 		testCases := []struct {
@@ -291,10 +297,16 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Validation", func(t *testing.T) {
 		t.Cleanup(func() {
-			require.NoError(t, testhelper.WithConstantRetries(func() error {
-				_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace))
-				return err
-			}))
+			require.Eventually(t, func() bool {
+				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, namespace)); err != nil {
+					t.Logf("error deleting schema: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
 		})
 
 		dest := backendconfig.DestinationT{

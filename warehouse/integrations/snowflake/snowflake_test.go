@@ -318,10 +318,16 @@ func TestIntegration(t *testing.T) {
 				require.NoError(t, db.Ping())
 
 				t.Cleanup(func() {
-					require.NoError(t, testhelper.WithConstantRetries(func() error {
-						_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-						return err
-					}))
+					require.Eventually(t, func() bool {
+						if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema)); err != nil {
+							t.Logf("error deleting schema: %v", err)
+							return false
+						}
+						return true
+					},
+						time.Minute,
+						time.Second,
+					)
 				})
 
 				sqlClient := &client.Client{
@@ -411,10 +417,16 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, db.Ping())
 
 		t.Cleanup(func() {
-			require.NoError(t, testhelper.WithConstantRetries(func() error {
-				_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
-				return err
-			}))
+			require.Eventually(t, func() bool {
+				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
+					t.Logf("error deleting schema: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
 		})
 
 		dest := backendconfig.DestinationT{

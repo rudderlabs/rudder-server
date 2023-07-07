@@ -137,9 +137,16 @@ func TestIntegration(t *testing.T) {
 
 		t.Cleanup(func() {
 			for _, dataset := range []string{namespace, sourcesNamespace} {
-				require.NoError(t, testhelper.WithConstantRetries(func() error {
-					return db.Dataset(dataset).DeleteWithContents(ctx)
-				}))
+				require.Eventually(t, func() bool {
+					if err := db.Dataset(dataset).DeleteWithContents(ctx); err != nil {
+						t.Logf("error deleting dataset: %v", err)
+						return false
+					}
+					return true
+				},
+					time.Minute,
+					time.Second,
+				)
 			}
 		})
 
@@ -353,9 +360,16 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Validations", func(t *testing.T) {
 		t.Cleanup(func() {
-			require.NoError(t, testhelper.WithConstantRetries(func() error {
-				return db.Dataset(namespace).DeleteWithContents(ctx)
-			}))
+			require.Eventually(t, func() bool {
+				if err := db.Dataset(namespace).DeleteWithContents(ctx); err != nil {
+					t.Logf("error deleting dataset: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
 		})
 
 		dest := backendconfig.DestinationT{
