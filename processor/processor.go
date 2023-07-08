@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -1417,8 +1418,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			for _, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
 				if strings.TrimSpace(messageId) == "" {
-					proc.logger.Error("Dropping Job since messageId is empty")
-					continue
+					messageId = rand.UniqueString(20)
+					proc.logger.Error("Generating random messageId because it was empty")
 				}
 
 				source, sourceError := proc.getSourceByWriteKey(writeKey)
