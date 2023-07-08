@@ -18,6 +18,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -45,8 +48,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 )
 
 const (
@@ -1404,7 +1405,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
 
 	for _, batchEvent := range jobList {
-
 		var singularEvents []types.SingularEventT
 		var ok bool
 		singularEvents, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
@@ -1416,6 +1416,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			// Iterate through all the events in the batch
 			for _, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
+				if strings.TrimSpace(messageId) == "" {
+					proc.logger.Error("Dropping Job since messageId is empty")
+					continue
+				}
+
 				source, sourceError := proc.getSourceByWriteKey(writeKey)
 				if sourceError != nil {
 					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)

@@ -732,7 +732,11 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			}
 			payload, err = json.Marshal(singularEventBatch)
 			if err != nil {
-				panic(err)
+				gateway.logger.Errorf(
+					"[Gateway] Failed to marshal singular event batch. Parameters: %+v",
+					singularEventBatch,
+				)
+				continue
 			}
 			eventCount = len(userEvent.events)
 		}
