@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY reports_reported_at_index ON reports (reported_at);
