@@ -564,6 +564,14 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	for _, metric := range metrics {
 		workspaceID := r.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
+
+		// TODO: Remove this once we have a proper fix from reverseETL side
+		if metric.ConnectionDetails.SourceID == "2Rw0wQ5B2R0GONopjomUj5vPDhu" {
+			if _, err := strconv.Atoi(metric.StatusDetail.EventName); err == nil {
+				metric.StatusDetail.EventName = "__numeric_id__"
+			}
+		}
+
 		if r.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
