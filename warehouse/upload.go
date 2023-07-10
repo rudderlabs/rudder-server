@@ -904,7 +904,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	}
 
 	configKey := fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", warehouseutils.WHDestNameMap[job.upload.DestinationType])
-	if k, ok := config.GetStringMap(configKey, nil)[job.warehouse.WorkspaceID]; ok {
+	if k, ok := config.GetStringMap(configKey, nil)[strings.ToLower(job.warehouse.WorkspaceID)]; ok {
 		if load, ok := k.(float64); ok {
 			parallelLoads = int(load)
 		}
