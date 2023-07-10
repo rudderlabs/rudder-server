@@ -28,23 +28,25 @@ var errorsMappings = []model.JobError{
 }
 
 type Datalake struct {
-	SchemaRepository schemarepository.SchemaRepository
-	Warehouse        model.Warehouse
-	Uploader         warehouseutils.Uploader
-	Logger           logger.Logger
+	schemaRepository schemarepository.SchemaRepository
+	warehouse        model.Warehouse
+	uploader         warehouseutils.Uploader
+	logger           logger.Logger
 }
 
-func New() *Datalake {
-	return &Datalake{
-		Logger: logger.NewLogger().Child("warehouse").Child("integrations").Child("datalake"),
-	}
+func New(log logger.Logger) *Datalake {
+	d := &Datalake{}
+
+	d.logger = log.Child("integrations").Child("datalake")
+
+	return d
 }
 
 func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
-	d.Warehouse = warehouse
-	d.Uploader = uploader
+	d.warehouse = warehouse
+	d.uploader = uploader
 
-	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.Warehouse, d.Uploader)
+	d.schemaRepository, err = schemarepository.NewSchemaRepository(d.warehouse, d.uploader, d.logger)
 
 	return err
 }
@@ -52,15 +54,15 @@ func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader 
 func (*Datalake) CrashRecover(context.Context) {}
 
 func (d *Datalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
-	return d.SchemaRepository.FetchSchema(ctx, d.Warehouse)
+	return d.schemaRepository.FetchSchema(ctx, d.warehouse)
 }
 
 func (d *Datalake) CreateSchema(ctx context.Context) (err error) {
-	return d.SchemaRepository.CreateSchema(ctx)
+	return d.schemaRepository.CreateSchema(ctx)
 }
 
 func (d *Datalake) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
-	return d.SchemaRepository.CreateTable(ctx, tableName, columnMap)
+	return d.schemaRepository.CreateTable(ctx, tableName, columnMap)
 }
 
 func (*Datalake) DropTable(context.Context, string) (err error) {
@@ -68,15 +70,15 @@ func (*Datalake) DropTable(context.Context, string) (err error) {
 }
 
 func (d *Datalake) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	return d.SchemaRepository.AddColumns(ctx, tableName, columnsInfo)
+	return d.schemaRepository.AddColumns(ctx, tableName, columnsInfo)
 }
 
 func (d *Datalake) AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error) {
-	return d.SchemaRepository.AlterColumn(ctx, tableName, columnName, columnType)
+	return d.schemaRepository.AlterColumn(ctx, tableName, columnName, columnType)
 }
 
 func (d *Datalake) LoadTable(_ context.Context, tableName string) error {
-	d.Logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.Warehouse.Destination.ID)
+	d.logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.warehouse.Destination.ID)
 	return nil
 }
 
@@ -85,23 +87,23 @@ func (*Datalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByPara
 }
 
 func (d *Datalake) LoadUserTables(context.Context) map[string]error {
-	d.Logger.Infof("Skipping load for user tables : %s is a datalake destination", d.Warehouse.Destination.ID)
+	d.logger.Infof("Skipping load for user tables : %s is a datalake destination", d.warehouse.Destination.ID)
 	// return map with nil error entries for identifies and users(if any) tables
 	// this is so that they are marked as succeeded
 	errorMap := map[string]error{warehouseutils.IdentifiesTable: nil}
-	if len(d.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) > 0 {
+	if len(d.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) > 0 {
 		errorMap[warehouseutils.UsersTable] = nil
 	}
 	return errorMap
 }
 
 func (d *Datalake) LoadIdentityMergeRulesTable(context.Context) error {
-	d.Logger.Infof("Skipping load for identity merge rules : %s is a datalake destination", d.Warehouse.Destination.ID)
+	d.logger.Infof("Skipping load for identity merge rules : %s is a datalake destination", d.warehouse.Destination.ID)
 	return nil
 }
 
 func (d *Datalake) LoadIdentityMappingsTable(context.Context) error {
-	d.Logger.Infof("Skipping load for identity mappings : %s is a datalake destination", d.Warehouse.Destination.ID)
+	d.logger.Infof("Skipping load for identity mappings : %s is a datalake destination", d.warehouse.Destination.ID)
 	return nil
 }
 

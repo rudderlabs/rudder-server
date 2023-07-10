@@ -124,8 +124,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			ctx := context.Background()
 
-			g, err := NewGlueSchemaRepository(warehouse)
-			g.Logger = logger.NOP
+			g, err := NewGlueSchemaRepository(warehouse, logger.NOP)
 			require.NoError(t, err)
 
 			t.Logf("Creating schema %s", testNamespace)
@@ -138,7 +137,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			t.Cleanup(func() {
 				t.Log("Cleaning up")
-				_, err = g.GlueClient.DeleteDatabase(&glue.DeleteDatabaseInput{
+				_, err = g.glueClient.DeleteDatabase(&glue.DeleteDatabaseInput{
 					Name: &testNamespace,
 				})
 				require.NoError(t, err)

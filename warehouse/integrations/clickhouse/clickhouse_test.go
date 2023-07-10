@@ -1,4 +1,4 @@
-package clickhouse_test
+package clickhouse
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/compose-test/compose"
 
@@ -348,13 +350,11 @@ func TestClickhouse_UseS3CopyEngineForLoading(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", S3EngineEnabledWorkspaceIDs)
 
-			ch := clickhouse.New()
-			clickhouse.WithConfig(ch, c)
-
-			ch.Warehouse = model.Warehouse{
+			ch := clickhouse.New(c, logger.NOP, stats.Default)
+			ch.warehouse = model.Warehouse{
 				WorkspaceID: tc.workspaceID,
 			}
-			ch.ObjectStorage = tc.ObjectStorage
+			ch.objectStorage = tc.ObjectStorage
 
 			require.Equal(t, tc.useS3Engine, ch.UseS3CopyEngineForLoading())
 		})
@@ -465,14 +465,12 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			ch := clickhouse.New()
-			ch.Logger = logger.NOP
+			c := config.New()
+			c.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", tc.S3EngineEnabledWorkspaceIDs)
+			c.Set("Warehouse.clickhouse.disableNullable", tc.disableNullable)
 
-			conf := config.New()
-			conf.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", tc.S3EngineEnabledWorkspaceIDs)
-			conf.Set("Warehouse.clickhouse.disableNullable", tc.disableNullable)
-
-			clickhouse.WithConfig(ch, conf)
+			ch := clickhouse.New(c, logger.NOP, stats.Default)
+			ch.logger = logger.NOP
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("test_namespace_%d", i),
@@ -602,7 +600,7 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 
 			t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
 			if tc.disableNullable {
-				rows, err := ch.DB.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, ch.Namespace))
+				rows, err := ch.db.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, ch.namespace))
 				require.NoError(t, err)
 
 				defer func() { _ = rows.Close() }()
@@ -726,8 +724,7 @@ func TestClickhouse_TestConnection(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			ch := clickhouse.New()
-			ch.Logger = logger.NOP
+			ch := clickhouse.New(config.Default, logger.NOP, stats.Default)
 
 			host := "localhost"
 			if tc.host != "" {
@@ -827,8 +824,7 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 		i := i
 
 		t.Run(tc.name, func(t *testing.T) {
-			ch := clickhouse.New()
-			ch.Logger = logger.NOP
+			ch := clickhouse.New(config.Default, logger.NOP, stats.Default)
 
 			warehouse := model.Warehouse{
 				Namespace:   namespace,
@@ -901,8 +897,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Success", func(t *testing.T) {
-		ch := clickhouse.New()
-		ch.Logger = logger.NOP
+		ch := clickhouse.New(config.Default, logger.NOP, stats.Default)
 
 		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_success", namespace),
@@ -947,8 +942,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	})
 
 	t.Run("Invalid host", func(t *testing.T) {
-		ch := clickhouse.New()
-		ch.Logger = logger.NOP
+		ch := clickhouse.New(config.Default, logger.NOP, stats.Default)
 
 		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_invalid_host", namespace),
@@ -974,8 +968,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	})
 
 	t.Run("Invalid database", func(t *testing.T) {
-		ch := clickhouse.New()
-		ch.Logger = logger.NOP
+		ch := clickhouse.New(config.Default, logger.NOP, stats.Default)
 
 		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_invalid_database", namespace),
@@ -1001,8 +994,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	})
 
 	t.Run("Empty schema", func(t *testing.T) {
-		ch := clickhouse.New()
-		ch.Logger = logger.NOP
+		ch := clickhouse.New(config.Default, logger.NOP, stats.Default)
 
 		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_empty_schema", namespace),
@@ -1031,8 +1023,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 	})
 
 	t.Run("Unrecognized schema", func(t *testing.T) {
-		ch := clickhouse.New()
-		ch.Logger = logger.NOP
+		ch := clickhouse.New(config.Default, logger.NOP, stats.Default)
 
 		warehouse := model.Warehouse{
 			Namespace:   fmt.Sprintf("%s_unrecognized_schema", namespace),
@@ -1054,7 +1045,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 		err = ch.CreateSchema(ctx)
 		require.NoError(t, err)
 
-		_, err = ch.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
+		_, err = ch.db.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
 			warehouse.Namespace,
 			table,
 		))

@@ -813,7 +813,7 @@ func runAsyncJob(ctx context.Context, asyncjob jobs.AsyncJobPayload) (asyncJobRu
 		return asyncJobRunResult{ID: asyncjob.Id, Result: false}, err
 	}
 	destType := warehouse.Destination.DestinationDefinition.Name
-	whManager, err := manager.NewWarehouseOperations(destType)
+	whManager, err := manager.NewWarehouseOperations(destType, config.Default, pkgLogger, stats.Default)
 	if err != nil {
 		return asyncJobRunResult{ID: asyncjob.Id, Result: false}, err
 	}
