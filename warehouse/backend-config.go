@@ -42,9 +42,6 @@ type backendConfigManager struct {
 
 	sourceIDsByWorkspace   map[string][]string // workspaceID -> []sourceIDs
 	sourceIDsByWorkspaceMu sync.RWMutex
-
-	workspaceBySourceIDs   map[string]string // sourceID -> workspaceID
-	workspaceBySourceIDsMu sync.RWMutex
 }
 
 func newBackendConfigManager(
@@ -66,9 +63,7 @@ func newBackendConfigManager(
 		schema:          repo.NewWHSchemas(wrappedDB),
 		backendConfig:   backendConfig,
 		enableTunneling: enableTunneling,
-
-		connectionsMap:       make(map[string]map[string]model.Warehouse),
-		workspaceBySourceIDs: make(map[string]string),
+		connectionsMap:  make(map[string]map[string]model.Warehouse),
 	}
 }
 
