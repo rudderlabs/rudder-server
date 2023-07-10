@@ -25,7 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	whbigquery "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -450,12 +450,12 @@ func appendEventsMap() testhelper.EventsCountMap {
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
-	credentials := bigquery2.BQCredentials{
+	credentials := whbigquery.BQCredentials{
 		ProjectID:   "projectId",
 		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 	}
 
-	_, err := bigquery2.Connect(context.Background(), &credentials)
+	_, err := whbigquery.Connect(context.Background(), &credentials)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }

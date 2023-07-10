@@ -541,8 +541,7 @@ func (uploadReq *UploadReq) authorizeSource(sourceID string) bool {
 
 func (uploadsReq *UploadsReq) authorizedSources() []string {
 	pkgLogger.Debugf(`Getting authorizedSourceIDs for workspace:%s`, uploadsReq.WorkspaceID)
-	sourceIDs, _ := bcManager.SourceIDsByWorkspace()[uploadsReq.WorkspaceID] // TODO remove global variable
-	return sourceIDs
+	return bcManager.SourceIDsByWorkspace()[uploadsReq.WorkspaceID] // TODO remove global variable
 }
 
 func (uploadsReq *UploadsReq) getUploadsFromDB(ctx context.Context, isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {

@@ -132,8 +132,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Retr
 }
 
 func (retryReq *RetryRequest) getSourceIDs() []string {
-	sourceIDs, _ := bcManager.SourceIDsByWorkspace()[retryReq.WorkspaceID] // TODO remove global variable
-	return sourceIDs
+	return bcManager.SourceIDsByWorkspace()[retryReq.WorkspaceID] // TODO remove global variable
 }
 
 func (retryReq *RetryRequest) clausesQuery(sourceIDs []string) []FilterClause {
