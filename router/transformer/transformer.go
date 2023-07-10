@@ -282,18 +282,19 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	transformerResponse := integrations.TransResponseT{
 		Message: "[TransformerProxy]:: Default Message TransResponseT",
 	}
-	respData = []byte(gjson.GetBytes(respData, "output").Raw)
-	integrations.CollectDestErrorStats(respData)
-	err := jsonfast.Unmarshal(respData, &transformerResponse)
+	respOutputData := []byte(gjson.GetBytes(respData, "output").Raw)
+	integrations.CollectDestErrorStats(respOutputData)
+	err := jsonfast.Unmarshal(respOutputData, &transformerResponse)
 	// unmarshal failure
 	if err != nil {
 		errStr := string(respData) + " [TransformerProxy Unmarshaling]::" + err.Error()
-		trans.logger.Errorf(errStr)
+		trans.logger.Errorf("Error: %s, destType: %s, destID: %s",
+			errStr, proxyReqParams.DestName, proxyReqParams.ResponseData.Metadata.DestinationID)
 		respCode = http.StatusInternalServerError
 		return respCode, errStr, "text/plain; charset=utf-8"
 	}
 
-	return respCode, string(respData), "application/json"
+	return respCode, string(respOutputData), "application/json"
 }
 
 func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
