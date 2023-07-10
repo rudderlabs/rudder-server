@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/ory/dockertest/v3"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/ory/dockertest/v3"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -74,10 +75,10 @@ var _ = Describe("WarehouseGrpc", func() {
 			})
 
 			BeforeEach(func() {
-				sourceIDsByWorkspace = map[string][]string{
+				bcManager.sourceIDsByWorkspace = map[string][]string{
 					workspaceID: {sourceID},
 				}
-				connectionsMap = map[string]map[string]model.Warehouse{
+				bcManager.connectionsMap = map[string]map[string]model.Warehouse{
 					destinationID: {
 						sourceID: model.Warehouse{
 							Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
@@ -120,7 +121,7 @@ var _ = Describe("WarehouseGrpc", func() {
 					Expect(err).NotTo(BeNil())
 				})
 				It("Unauthorized source", func() {
-					sourceIDsByWorkspace = map[string][]string{}
+					bcManager.sourceIDsByWorkspace = map[string][]string{}
 					_, err := w.GetWHUpload(c, req)
 
 					Expect(err).NotTo(BeNil())
@@ -150,7 +151,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 
 				It("Unauthorized source", func() {
-					sourceIDsByWorkspace = map[string][]string{}
+					bcManager.sourceIDsByWorkspace = map[string][]string{}
 
 					res, err := w.GetWHUploads(c, req)
 					Expect(err).To(BeNil())
@@ -241,7 +242,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 				It("Unauthorized source", func() {
 					req.IntervalInHours = 12
-					sourceIDsByWorkspace = map[string][]string{}
+					bcManager.sourceIDsByWorkspace = map[string][]string{}
 
 					res, err := w.CountWHUploadsToRetry(c, req)
 					Expect(err).NotTo(BeNil())
@@ -304,7 +305,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 				It("Unauthorized source", func() {
 					req.IntervalInHours = 12
-					sourceIDsByWorkspace = map[string][]string{}
+					bcManager.sourceIDsByWorkspace = map[string][]string{}
 
 					res, err := w.RetryWHUploads(c, req)
 					Expect(err).NotTo(BeNil())
@@ -348,7 +349,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 
 				It("Unauthorized source", func() {
-					sourceIDsByWorkspace = map[string][]string{}
+					bcManager.sourceIDsByWorkspace = map[string][]string{}
 
 					res, err := w.TriggerWHUpload(c, req)
 					Expect(err).NotTo(BeNil())
@@ -375,7 +376,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 
 				It("Unauthorized source", func() {
-					sourceIDsByWorkspace = map[string][]string{}
+					bcManager.sourceIDsByWorkspace = map[string][]string{}
 
 					res, err := w.TriggerWHUploads(c, req)
 					Expect(err).NotTo(BeNil())
@@ -573,10 +574,10 @@ var _ = Describe("WarehouseGrpc", func() {
 				Expect(err).To(BeNil())
 
 				pkgLogger = logger.NOP
-				sourceIDsByWorkspace = map[string][]string{
+				bcManager.sourceIDsByWorkspace = map[string][]string{
 					workspaceID: {sourceID},
 				}
-				connectionsMap = map[string]map[string]model.Warehouse{
+				bcManager.connectionsMap = map[string]map[string]model.Warehouse{
 					destinationID: {
 						sourceID: model.Warehouse{
 							Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),

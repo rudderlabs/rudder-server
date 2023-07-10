@@ -54,6 +54,12 @@ func newBackendConfigManager(
 	backendConfig bc.BackendConfig,
 	enableTunneling bool,
 ) *backendConfigManager {
+	if c == nil {
+		c = config.Default
+	}
+	if backendConfig == nil {
+		backendConfig = bc.DefaultBackendConfig
+	}
 	return &backendConfigManager{
 		conf:            c,
 		db:              db,
