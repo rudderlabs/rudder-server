@@ -349,9 +349,6 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	httpReqStTime := time.Now()
 	resp, err := trans.proxyClient.Do(req)
 	reqRoundTripTime := time.Since(httpReqStTime)
-	if resp != nil {
-		trans.logger.Infof("[TransformerProxy] Response Headers: %#v", resp.Header)
-	}
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
 	stats.Default.NewTaggedStat("transformer_proxy.req_round_trip_time", stats.TimerType, stats.Tags{
