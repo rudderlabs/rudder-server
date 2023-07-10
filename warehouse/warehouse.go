@@ -198,9 +198,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-	bcManager = newBackendConfigManager(
-		config.Default, dbHandle, wrappedDBHandle, backendconfig.DefaultBackendConfig, enableTunnelling,
-	)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -1499,6 +1496,9 @@ func Start(ctx context.Context, app app.App) error {
 		}
 	}()
 
+	bcManager = newBackendConfigManager(
+		config.Default, dbHandle, wrappedDBHandle, backendconfig.DefaultBackendConfig, enableTunnelling,
+	)
 	rruntime.GoForWarehouse(func() {
 		bcManager.Start(ctx)
 	})
