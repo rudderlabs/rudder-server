@@ -426,7 +426,7 @@ func (w *worker) processDestinationJobs() {
 					if err != nil {
 						errorAt = routerutils.ERROR_AT_TF
 						respStatusCode, respBody = types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
-						w.logger.Errorf("transformer response unmarshal error: %v, destType: %s, destID: %s, jobID: %d", err, w.rt.destType, destinationID, destinationJob.JobMetadataArray[0].JobID)
+						w.logger.Errorf("transformer response unmarshal error: %v, destType: %s, destID: %s", err, w.rt.destType, destinationID)
 					} else {
 						for _, val := range result {
 							err := integrations.ValidatePostInfo(val)
