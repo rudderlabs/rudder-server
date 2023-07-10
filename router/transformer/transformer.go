@@ -371,16 +371,14 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 			statusCode: http.StatusInternalServerError,
 			err:        err,
 		}
-	} else if resp.StatusCode == http.StatusNotFound {
-		// Actually Router wouldn't send any destination to proxy unless it already exists
-		// But if accidentally such a request is sent, we'd probably need to handle for better
-		// understanding of the response
-		notFoundErr := fmt.Errorf(`post "%s" not found`, req.URL)
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobID, notFoundErr)
+	} else if resp.StatusCode != http.StatusOK {
+		// Non 200 response code. Returning an error
+		notSuccessErr := fmt.Errorf(`request "%s" failed with code %d`, req.URL, resp.StatusCode)
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Client.Do Failure for %[1]v, with %[3]v`, destName, jobID, notSuccessErr)
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: resp.StatusCode,
-			err:        notFoundErr,
+			err:        notSuccessErr,
 		}
 	}
 
