@@ -10,36 +10,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/compose-test/compose"
-
+	"cloud.google.com/go/bigquery"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-
+	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
-
-	"cloud.google.com/go/bigquery"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
-	"github.com/stretchr/testify/require"
-
-	"github.com/stretchr/testify/assert"
-
-	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestIntegration(t *testing.T) {
@@ -55,6 +45,7 @@ func TestIntegration(t *testing.T) {
 
 	misc.Init()
 	validations.Init()
+	backendconfig.Init()
 	warehouseutils.Init()
 	encoding.Init()
 
