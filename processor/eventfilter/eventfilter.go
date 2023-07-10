@@ -3,12 +3,13 @@ package eventfilter
 import (
 	"strings"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -124,6 +125,10 @@ Currently this method supports below validations(executed in the same order):
 */
 func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEventT, supportedMsgTypes []string) (bool, *transformer.TransformerResponseT) {
 	// MessageType filtering -- STARTS
+	eventMessageTypeI := misc.MapLookup(transformerEvent.Message, "type")
+	if eventMessageTypeI == nil {
+		pkgLogger.Errorf("Empty message type detected: %+v", transformerEvent)
+	}
 	messageType := strings.TrimSpace(strings.ToLower(getMessageType(&transformerEvent.Message)))
 	if messageType == "" {
 		// We will abort the event
