@@ -288,7 +288,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	// unmarshal failure
 	if err != nil {
 		errStr := string(respData) + " [TransformerProxy Unmarshaling]::" + err.Error()
-		trans.logger.Errorf("Error: %s, destType: %s, destID: %s",
+		trans.logger.Errorf("ErrorStatusCode: %d, Error: %s, destType: %s, destID: %s", respCode,
 			errStr, proxyReqParams.DestName, proxyReqParams.ResponseData.Metadata.DestinationID)
 		respCode = http.StatusInternalServerError
 		return respCode, errStr, "text/plain; charset=utf-8"
@@ -349,6 +349,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	httpReqStTime := time.Now()
 	resp, err := trans.proxyClient.Do(req)
 	reqRoundTripTime := time.Since(httpReqStTime)
+	trans.logger.Infof("[TransformerProxy] Response Headers: %v", resp.Header)
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
 	stats.Default.NewTaggedStat("transformer_proxy.req_round_trip_time", stats.TimerType, stats.Tags{
