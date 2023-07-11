@@ -171,13 +171,12 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 	default:
 		return common.PollStatusResponse{
 			HasFailed:  true,
-			StatusCode: 400,
+			StatusCode: 500,
 		}
 	}
 }
 
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-	fmt.Println("Polling Bing Ads")
 	var cumulativeResp common.PollStatusResponse
 	var completionStatus []bool
 	var failedJobURLs []string
@@ -204,7 +203,6 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		failedJobURLs = append(failedJobURLs, resp.FailedJobURLs)
 		cumulativeProgressStatus = cumulativeProgressStatus || resp.InProgress
 		cumulativeFailureStatus = cumulativeFailureStatus || resp.HasFailed
-		fmt.Println("cumulativeFailureStatus :", cumulativeFailureStatus)
 	}
 
 	cumulativeResp = common.PollStatusResponse{
@@ -223,13 +221,12 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 	if err != nil {
 		return common.GetUploadStatsResponse{}, err
 	}
-	status := "200"
 	clientIDErrors, err := ProcessPollStatusData(records)
 	if err != nil {
 		return common.GetUploadStatsResponse{}, err
 	}
 	eventStatsResponse := common.GetUploadStatsResponse{
-		Status: status,
+		Status: "200",
 		Metadata: common.EventStatMeta{
 			FailedKeys:    lo.Keys(clientIDErrors),
 			FailedReasons: GetFailedReasons(clientIDErrors),
@@ -247,7 +244,6 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 		"destType": b.destName,
 	})
 	eventsSuccessStat.Count(len(eventStatsResponse.Metadata.SucceededKeys))
-	// separate status code is to be deleted
 	return eventStatsResponse, nil
 }
 

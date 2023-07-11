@@ -417,7 +417,7 @@ var _ = Describe("Bing ads", func() {
 
 			expectedResp := common.PollStatusResponse{
 				HasFailed:  true,
-				StatusCode: 400,
+				StatusCode: 500,
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 
@@ -451,7 +451,7 @@ var _ = Describe("Bing ads", func() {
 
 			expectedResp := common.PollStatusResponse{
 				HasFailed:  true,
-				StatusCode: 400,
+				StatusCode: 500,
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 

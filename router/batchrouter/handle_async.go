@@ -28,7 +28,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(brt.pollStatusLoopSleep): // 10 sec
+		case <-time.After(brt.pollStatusLoopSleep):
 			brt.configSubscriberMu.RLock()
 			destinationsMap := brt.destinationsMap
 			brt.configSubscriberMu.RUnlock()
@@ -67,7 +67,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						pollResp := brt.asyncdestinationmanager.Poll(pollInput)
 						pollRespBytes, err := stdjson.Marshal(pollResp)
 						if err != nil {
-							panic(err)
+							panic("JSON Marshal For Poll Response Failed" + err.Error())
 						}
 						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 						brt.asyncPollTimeStat.Since(startPollTime)
@@ -136,7 +136,11 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 										continue
 									}
 
-									uploadStatsRespInBytes, _ := stdjson.Marshal(uploadStatsResp)
+									uploadStatsRespInBytes, err := stdjson.Marshal(uploadStatsResp)
+
+									if err != nil {
+										panic("JSON Marshal For Upload Status Response Failed" + err.Error())
+									}
 
 									internalStatusCode := uploadStatsResp.Status
 									if internalStatusCode != "200" {
@@ -255,7 +259,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								}
 
 								importingList := list.Jobs
-								if IsJobTerminated(statusCode) {
+								if isJobTerminated(statusCode) {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
 											JobID:         job.JobID,
@@ -576,15 +580,6 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 		})
 	}, brt.sendRetryUpdateStats)
 	if err != nil {
-		// TODO: remove this after debug
-		for _, status := range statusList {
-			jobID := status.JobID
-			errorResponse := status.ErrorResponse
-
-			// Do something with the jobID and errorResponse
-			fmt.Println("JobID:", jobID)
-			fmt.Println("ErrorResponse:", string(errorResponse))
-		}
 		panic(err)
 	}
 	brt.updateProcessedEventsMetrics(statusList)

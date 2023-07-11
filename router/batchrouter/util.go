@@ -17,7 +17,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func IsJobTerminated(status int) bool {
+func isJobTerminated(status int) bool {
 	if status == 429 {
 		return false
 	}

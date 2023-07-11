@@ -70,8 +70,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(600, &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
 }
 
-// can we keep the maxupload size here. need to discuss
-
 func Init() {
 	loadConfig()
 }
