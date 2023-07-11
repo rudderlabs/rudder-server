@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 	"time"
-
+	"net/http"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
