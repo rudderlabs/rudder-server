@@ -31,7 +31,7 @@ type MarketoBulkUploader struct {
 }
 
 func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
-	marketoBulkUpload := &MarketoBulkUploader{destName: "MARKETO_BULK_UPLOAD", destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
+	marketoBulkUpload := &MarketoBulkUploader{destName: destination.DestinationDefinition.Name, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
 	return marketoBulkUpload, nil
 }
 
@@ -45,7 +45,6 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	payload, err := json.Marshal(pollInput)
 	if err != nil {
 		// needs to be retried
-		// transformerConnectionStatus := 500
 		b.logger.Error("Error in Marshalling Poll Input: %w", err)
 		return common.PollStatusResponse{
 			StatusCode: 500,
@@ -100,7 +99,6 @@ func GenerateFailedPayload(destConfig map[string]interface{}, jobs []*jobsdb.Job
 }
 
 func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) common.GetUploadStatsResponse {
-	transformUrl := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	failedJobUrl := UploadStatsInput.FailedJobURLs
 	parameters := UploadStatsInput.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
@@ -112,7 +110,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 		}
 	}
 
-	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformUrl+failedJobUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
+	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+failedJobUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{
 			Status: strconv.Itoa(statusCode),
@@ -127,10 +125,15 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 		}
 	}
 
-	internalStatusCode, _ := failedJobsResponse["status"].(string)
+	internalStatusCode, ok := failedJobsResponse["status"].(string)
+	if !ok {
+		pkgLogger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", internalStatusCode, string(failedBodyBytes))
+		return common.GetUploadStatsResponse{
+			Status: "500",
+		}
+	}
 	metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
 	if !ok {
-		// TODO
 		pkgLogger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", internalStatusCode, string(failedBodyBytes))
 		return common.GetUploadStatsResponse{
 			Status: "500",
@@ -181,15 +184,14 @@ func ExtractJobStats(keyMap map[string]interface{}, importingJobIDs []int64) ([]
 
 func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	resolveURL := func(base, relative string) string {
-		// var logger logger.Logger
-		baseURL, _ := url.Parse(base)
-		// if err != nil {
-		// 	logger.Fatal(err)
-		// }
+		baseURL, err := url.Parse(base)
+		if err != nil {
+			b.logger.Error("Error in Parsing Base URL: %w", err)
+		}
 		relURL, _ := url.Parse(relative)
-		// if err != nil {
-		// 	logger.Fatal(err)
-		// }
+		if err != nil {
+			b.logger.Error("Error in Parsing Relative URL: %w", err)
+		}
 		destURL := baseURL.ResolveReference(relURL).String()
 		return destURL
 	}
@@ -214,7 +216,12 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		jobBytes := scanner.Bytes()
 		err := json.Unmarshal(jobBytes, &tempJob)
 		if err != nil {
-			panic("Unmarshalling a Single Line Failed")
+			return common.AsyncUploadOutput{
+				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+				FailedReason:  "BRT: Error in Unmarshalling Job: " + err.Error(),
+				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+				DestinationID: destinationID,
+			}
 		}
 		input = append(input, tempJob)
 	}
@@ -224,7 +231,12 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		DestType: strings.ToLower(destType),
 	})
 	if err != nil {
-		panic("BRT: JSON Marshal Failed " + err.Error())
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+			FailedReason:  "BRT: JSON Marshal Failed" + err.Error(),
+			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+			DestinationID: destinationID,
+		}
 	}
 
 	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
@@ -264,7 +276,12 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		var responseStruct common.UploadStruct
 		err := json.Unmarshal(bodyBytes, &responseStruct)
 		if err != nil {
-			panic("Incorrect Response from Transformer: " + err.Error())
+			return common.AsyncUploadOutput{
+				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+				FailedReason:  "BRT: Incorrect Response from Transformer:: " + err.Error(),
+				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+				DestinationID: destinationID,
+			}
 		}
 		var parameters common.ImportParameters
 		parameters.ImportId = responseStruct.ImportId
@@ -278,7 +295,12 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		}
 		importParameters, err := json.Marshal(parameters)
 		if err != nil {
-			panic("Errored in Marshalling" + err.Error())
+			return common.AsyncUploadOutput{
+				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+				FailedReason:  "BRT: JSON Marshal Failed" + err.Error(),
+				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+				DestinationID: destinationID,
+			}
 		}
 		successfulJobIDs, failedJobIDsTrans := ExtractJobStats(responseStruct.Metadata, importingJobIDs)
 
@@ -295,7 +317,12 @@ func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, as
 		var responseStruct common.UploadStruct
 		err := json.Unmarshal(bodyBytes, &responseStruct)
 		if err != nil {
-			panic("Incorrect Response from Transformer: " + err.Error())
+			return common.AsyncUploadOutput{
+				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+				FailedReason:  "BRT: Incorrect Response from Transformer:: " + err.Error(),
+				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+				DestinationID: destinationID,
+			}
 		}
 		eventsAbortedStat := stats.Default.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
 			"module":   "batch_router",
