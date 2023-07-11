@@ -3,10 +3,10 @@ package batchrouter
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
-	"net/http"
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
