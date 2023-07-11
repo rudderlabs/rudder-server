@@ -54,7 +54,12 @@ func (brt *Handle) Setup(
 	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 		asyncdestinationmanager, err := asyncdestinationmanager.NewManager(destination, backendConfig)
 		if err != nil {
-			panic(fmt.Errorf("unable to initialize async destination manager for: %w", err))
+			brt.logger.Error("BRT: error occurred while creating new instance of %v. Error: %v", destination.Name, err)
+			destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
+				"module":   "batch_router",
+				"destType": brt.destination.DestinationDefinition.Name,
+			})
+			destInitFailStat.Count(1)
 		}
 		brt.asyncdestinationmanager = asyncdestinationmanager
 	}
