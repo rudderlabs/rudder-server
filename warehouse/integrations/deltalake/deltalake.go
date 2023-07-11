@@ -982,12 +982,12 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	query := fmt.Sprintf(`
 		CREATE TABLE %[1]s.%[2]s USING DELTA %[7]s AS (
 		  SELECT
-			DISTINCT *
+			id,
+			%[3]s
 		  FROM
 			(
 			  SELECT
-				id,
-				%[3]s
+				*
 			  FROM
 				(
 				  (
@@ -1017,7 +1017,12 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 						user_id IS NOT NULL
 					)
 				)
+			  ORDER BY
+				id DESC,
+				received_at DESC
 			)
+		  GROUP BY
+			id
 		);
 `,
 		d.Namespace,
@@ -1167,7 +1172,7 @@ func getColumnProperties(usersSchemaInWarehouse model.TableSchema) ([]string, []
 		}
 
 		userColNames = append(userColNames, colName)
-		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s, TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s, TRUE) AS %[1]s`, colName))
 	}
 
 	return userColNames, firstValProps
