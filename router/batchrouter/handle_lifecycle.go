@@ -51,6 +51,7 @@ func (brt *Handle) Setup(
 ) {
 	brt.destination = destination
 	brt.destType = destination.DestinationDefinition.Name
+	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
 	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 		asyncdestinationmanager, err := asyncdestinationmanager.NewManager(destination, backendConfig)
 		if err != nil {
@@ -63,7 +64,6 @@ func (brt *Handle) Setup(
 		}
 		brt.asyncdestinationmanager = asyncdestinationmanager
 	}
-	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
 		Timeout:   config.GetDuration("BatchRouter.httpTimeout", 10, time.Second),
