@@ -35,7 +35,7 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 	}
 	statusCode, authResponse := ts.oauthClient.FetchToken(&refreshTokenParams)
 	if statusCode != 200 {
-		return nil, fmt.Errorf("error in fetching access token")
+		return nil, fmt.Errorf("error in fetching access token. %v", authResponse.Err)
 	}
 	secret := secretStruct{}
 	err := json.Unmarshal(authResponse.Account.Secret, &secret)
