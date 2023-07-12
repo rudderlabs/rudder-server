@@ -244,10 +244,6 @@ func (brt *Handle) Shutdown() {
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
 	_, ok := brt.asyncDestinationStruct[destination.ID]
-	if !ok {
-		brt.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
-	}
-	brt.asyncDestinationStruct[destination.ID].Destination = destination
 	manager, err := asyncdestinationmanager.NewManager(destination, brt.backendConfig)
 	if err != nil {
 		brt.logger.Errorf("BRT: Error initializing async destination struct: %v", err)
@@ -258,6 +254,10 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 		destInitFailStat.Count(1)
 		return
 	}
+	if !ok {
+		brt.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
+	}
+	brt.asyncDestinationStruct[destination.ID].Destination = destination
 	brt.asyncDestinationStruct[destination.ID].Manager = manager
 }
 
