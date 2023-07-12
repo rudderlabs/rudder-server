@@ -49,8 +49,8 @@ func (brt *Handle) Setup(
 	rsourcesService rsources.JobService,
 	debugger destinationdebugger.DestinationDebugger,
 ) {
-	brt.destination = destination
 	brt.destType = destination.DestinationDefinition.Name
+	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
 	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 		asyncdestinationmanager, err := asyncdestinationmanager.NewManager(destination, backendConfig)
@@ -58,11 +58,13 @@ func (brt *Handle) Setup(
 			brt.logger.Error("BRT: error occurred while creating new instance of %v. Error: %v", destination.Name, err)
 			destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
 				"module":   "batch_router",
-				"destType": brt.destination.DestinationDefinition.Name,
+				"destType": destination.DestinationDefinition.Name,
 			})
 			destInitFailStat.Count(1)
 		}
-		brt.asyncdestinationmanager = asyncdestinationmanager
+		brt.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
+		brt.asyncDestinationStruct[destination.ID].Destination = destination
+		brt.asyncDestinationStruct[destination.ID].Manager = asyncdestinationmanager
 	}
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
@@ -140,7 +142,6 @@ func (brt *Handle) Setup(
 	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.uploadedRawDataJobsCache = make(map[string]map[string]bool)
-	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
 
 	asyncStatTags := map[string]string{
 		"module":   "batch_router",
@@ -255,7 +256,12 @@ func (brt *Handle) Shutdown() {
 func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
 	var err error
 	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-		brt.asyncdestinationmanager, err = asyncdestinationmanager.NewManager(&destination, brt.backendConfig)
+		asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
+		if !ok || asyncDestStruct.Destination.RevisionID == destination.RevisionID {
+			return
+		}
+		brt.asyncDestinationStruct[destination.ID].Destination = &destination
+		brt.asyncDestinationStruct[destination.ID].Manager, err = asyncdestinationmanager.NewManager(&destination, brt.backendConfig)
 		if err != nil {
 			brt.logger.Error("BRT: error occurred while creating new instance of %v. %v", destination.Name, err)
 		}
@@ -365,9 +371,8 @@ func (brt *Handle) backendConfigSubscriber() {
 								destinationsMap[destination.ID] = &router_utils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
 							}
-							if brt.destination.RevisionID != destination.RevisionID {
-								brt.refreshDestination(destination)
-							}
+							brt.refreshDestination(destination)
+
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
 
 							// initialize map to track encountered anonymousIds for a warehouse destination

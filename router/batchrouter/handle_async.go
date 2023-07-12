@@ -61,10 +61,10 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						pollInput.ImportId = importId
 						pollInput.Config = destinationsMap[key].Destination.Config
 						pollInput.DestType = strings.ToLower(brt.destType)
-
+						destinationID := destinationsMap[key].Destination.ID
 						startPollTime := time.Now()
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
-						pollResp := brt.asyncdestinationmanager.Poll(pollInput)
+						pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(pollInput)
 						pollRespBytes, err := stdjson.Marshal(pollResp)
 						if err != nil {
 							panic("JSON Marshal For Poll Response Failed" + err.Error())
@@ -129,7 +129,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 								} else {
 									startFailedJobsPollTime := time.Now()
 									brt.logger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
-									uploadStatsResp := brt.asyncdestinationmanager.GetUploadStats(GetUploadStatsInput)
+									uploadStatsResp := brt.asyncDestinationStruct[destinationID].Manager.GetUploadStats(GetUploadStatsInput)
 									brt.asyncFailedJobsTimeStat.Since(startFailedJobsPollTime)
 
 									if uploadStatsResp.Status != "200" {
@@ -137,7 +137,6 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 									}
 
 									uploadStatsRespInBytes, err := stdjson.Marshal(uploadStatsResp)
-
 									if err != nil {
 										panic("JSON Marshal For Upload Status Response Failed" + err.Error())
 									}
@@ -357,7 +356,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeout := uploadIntervalMap[destinationID]
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					uploadResponse := brt.asyncdestinationmanager.Upload(brt.destination, brt.asyncDestinationStruct[destinationID])
+					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
 					brt.asyncStructCleanUp(destinationID)
 				}

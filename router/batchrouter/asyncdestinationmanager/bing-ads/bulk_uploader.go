@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -33,7 +32,8 @@ This function create at most 3 zip files from the text file created by the batch
 It takes the text file path as input and returns the zip file path
 The maximum size of the zip file is 100MB, if the size of the zip file exceeds 100MB then the job is marked as failed
 */
-func (b *BingAdsBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+	destination := asyncDestStruct.Destination
 	destConfig := DestinationConfig{}
 	jsonConfig, err := stdjson.Marshal(destination.Config)
 	if err != nil {

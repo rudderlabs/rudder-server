@@ -29,7 +29,6 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/router/rterror"
@@ -47,9 +46,7 @@ import (
 )
 
 type Handle struct {
-	destType    string
-	destination *backendconfig.DestinationT
-
+	destType string
 	// dependencies
 
 	logger             logger.Logger
@@ -135,7 +132,6 @@ type Handle struct {
 	asyncSuccessfulJobCount stats.Measurement
 	asyncFailedJobCount     stats.Measurement
 	asyncAbortedJobCount    stats.Measurement
-	asyncdestinationmanager asyncdestinationmanager.AsyncDestinationManager
 }
 
 // mainLoop is responsible for pinging the workers periodically for every active partition

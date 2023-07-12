@@ -182,7 +182,8 @@ func ExtractJobStats(keyMap map[string]interface{}, importingJobIDs []int64) ([]
 	return succesfulJobIDs, failedJobIDsTrans
 }
 
-func (b *MarketoBulkUploader) Upload(destination *backendconfig.DestinationT, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+	destination := asyncDestStruct.Destination
 	resolveURL := func(base, relative string) string {
 		baseURL, err := url.Parse(base)
 		if err != nil {

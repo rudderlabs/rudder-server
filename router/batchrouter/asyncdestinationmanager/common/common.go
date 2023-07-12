@@ -14,6 +14,12 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
+type AsyncDestinationManager interface {
+	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
+	Poll(pollInput AsyncPoll) PollStatusResponse
+	GetUploadStats(UploadStatsInput FetchUploadJobStatus) GetUploadStatsResponse
+}
+
 var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
 
 type PollStatusResponse struct {
@@ -99,6 +105,8 @@ type AsyncDestinationStruct struct {
 	UploadMutex     sync.RWMutex
 	URL             string
 	RsourcesStats   rsources.StatsCollector
+	Destination     *backendconfig.DestinationT
+	Manager         AsyncDestinationManager
 }
 
 type AsyncFailedPayload struct {

@@ -105,6 +105,8 @@ var _ = Describe("Bing ads", func() {
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				Destination:     &destination,
+				Manager:         bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "{\"error\":\"Add:getting empty string in upload url or request id, \"}",
@@ -116,7 +118,7 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			// making upload function call
-			received := bulkUploader.Upload(&destination, &asyncDestination)
+			received := bulkUploader.Upload(&asyncDestination)
 			received.ImportingParameters = stdjson.RawMessage{}
 
 			// Remove the directory and its contents
@@ -142,6 +144,8 @@ var _ = Describe("Bing ads", func() {
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				Destination:     &destination,
+				Manager:         bulkUploader,
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
@@ -171,7 +175,7 @@ var _ = Describe("Bing ads", func() {
 				return
 			}
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(&destination, &asyncDestination)
+			received := bulkUploader.Upload(&asyncDestination)
 			err = os.RemoveAll(dir)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
@@ -200,6 +204,8 @@ var _ = Describe("Bing ads", func() {
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				Destination:     &destination,
+				Manager:         bulkUploader,
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
@@ -229,7 +235,7 @@ var _ = Describe("Bing ads", func() {
 				return
 			}
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(&destination, &asyncDestination)
+			received := bulkUploader.Upload(&asyncDestination)
 			err = os.RemoveAll(dir)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
@@ -275,6 +281,8 @@ var _ = Describe("Bing ads", func() {
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				Destination:     &destination,
+				Manager:         bulkUploader,
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
@@ -290,7 +298,7 @@ var _ = Describe("Bing ads", func() {
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
 			}
-			received := bulkUploader.Upload(&destination, &asyncDestination)
+			received := bulkUploader.Upload(&asyncDestination)
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
@@ -587,6 +595,8 @@ var _ = Describe("Bing ads", func() {
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				Destination:     &destination,
+				Manager:         bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id, ,Add:getting empty string in upload url or request id, \"}",
@@ -597,7 +607,7 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			// making upload function call
-			received := bulkUploader.Upload(&destination, &asyncDestination)
+			received := bulkUploader.Upload(&asyncDestination)
 			received.ImportingParameters = stdjson.RawMessage{}
 
 			// Remove the directory and its contents
