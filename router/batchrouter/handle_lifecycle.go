@@ -50,11 +50,9 @@ func (brt *Handle) Setup(
 	debugger destinationdebugger.DestinationDebugger,
 ) {
 	brt.destType = destination.DestinationDefinition.Name
-	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
+	brt.backendConfig = backendConfig
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
-	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-		brt.initAsyncDestinationStruct(destination)
-	}
+
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
 		Timeout:   config.GetDuration("BatchRouter.httpTimeout", 10, time.Second),
@@ -62,7 +60,6 @@ func (brt *Handle) Setup(
 	brt.jobsDB = jobsDB
 	brt.errorDB = errorDB
 	brt.reporting = reporting
-	brt.backendConfig = backendConfig
 	brt.fileManagerFactory = filemanager.New
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
@@ -141,6 +138,11 @@ func (brt *Handle) Setup(
 	brt.asyncSuccessfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, asyncStatTags)
 	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
 	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
+
+	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
+	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+		brt.initAsyncDestinationStruct(destination)
+	}
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
