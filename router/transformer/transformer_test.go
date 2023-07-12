@@ -220,11 +220,11 @@ func TestProxyRequest(t *testing.T) {
 			},
 		},
 		{
-			name:     "should fail with not found error for not_found_dest",
+			name:     "should fail with not 200 error for not_found_dest",
 			destName: "not_found_dest",
 			expected: expectedResponse{
 				code:        http.StatusNotFound,
-				body:        `post "%s/v0/destinations/not_found_dest/proxy" not found`,
+				body:        `request "%s/v0/destinations/not_found_dest/proxy" failed with code %d`,
 				contentType: "text/plain; charset=utf-8",
 				bodyType:    STR,
 			},
@@ -271,7 +271,7 @@ func TestProxyRequest(t *testing.T) {
 				stCd, resp, contentType := tr.ProxyRequest(ctx, reqParams)
 				assert.Equal(t, tc.expected.code, stCd)
 				require.Equal(t, tc.expected.contentType, contentType)
-				expectedBodyStr := fmt.Sprintf(tc.expected.body, srv.URL)
+				expectedBodyStr := fmt.Sprintf(tc.expected.body, srv.URL, tc.proxy.code)
 				require.Equal(t, expectedBodyStr, resp)
 			})
 			continue
