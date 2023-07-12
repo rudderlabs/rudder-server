@@ -257,7 +257,7 @@ func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
 	var err error
 	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 		asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
-		if !ok || asyncDestStruct.Destination.RevisionID == destination.RevisionID {
+		if !ok || (asyncDestStruct.Destination != nil && asyncDestStruct.Destination.RevisionID == destination.RevisionID) {
 			return
 		}
 		brt.asyncDestinationStruct[destination.ID].Destination = &destination
