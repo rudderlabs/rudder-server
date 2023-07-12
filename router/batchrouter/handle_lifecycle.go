@@ -53,18 +53,7 @@ func (brt *Handle) Setup(
 	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
 	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-		asyncdestinationmanager, err := asyncdestinationmanager.NewManager(destination, backendConfig)
-		if err != nil {
-			brt.logger.Error("BRT: error occurred while creating new instance of %v. Error: %v", destination.Name, err)
-			destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
-				"module":   "batch_router",
-				"destType": destination.DestinationDefinition.Name,
-			})
-			destInitFailStat.Count(1)
-		}
-		brt.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
-		brt.asyncDestinationStruct[destination.ID].Destination = destination
-		brt.asyncDestinationStruct[destination.ID].Manager = asyncdestinationmanager
+		brt.initAsyncDestinationStruct(destination)
 	}
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
@@ -253,18 +242,33 @@ func (brt *Handle) Shutdown() {
 	_ = brt.backgroundWait()
 }
 
+func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
+	_, ok := brt.asyncDestinationStruct[destination.ID]
+	if !ok {
+		brt.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
+	}
+	brt.asyncDestinationStruct[destination.ID].Destination = destination
+	manager, err := asyncdestinationmanager.NewManager(destination, brt.backendConfig)
+	if err != nil {
+		brt.logger.Errorf("BRT: Error initializing async destination struct: %v", err)
+		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
+			"module":   "batch_router",
+			"destType": destination.DestinationDefinition.Name,
+		})
+		destInitFailStat.Count(1)
+		return
+	}
+	brt.asyncDestinationStruct[destination.ID].Manager = manager
+}
+
 func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
-	var err error
 	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 		asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
-		if !ok || (asyncDestStruct.Destination != nil && asyncDestStruct.Destination.RevisionID == destination.RevisionID) {
+		if ok && asyncDestStruct.Destination != nil &&
+			asyncDestStruct.Destination.RevisionID == destination.RevisionID {
 			return
 		}
-		brt.asyncDestinationStruct[destination.ID].Destination = &destination
-		brt.asyncDestinationStruct[destination.ID].Manager, err = asyncdestinationmanager.NewManager(&destination, brt.backendConfig)
-		if err != nil {
-			brt.logger.Error("BRT: error occurred while creating new instance of %v. %v", destination.Name, err)
-		}
+		brt.initAsyncDestinationStruct(&destination)
 	}
 }
 
