@@ -1617,6 +1617,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 	if err != nil {
 		return err
 	}
+	dbHandle.SetMaxOpenConns(config.GetInt("Warehouse.maxOpenConnections", 20))
 
 	isDBCompatible, err := validators.IsPostgresCompatible(ctx, dbHandle)
 	if err != nil {
