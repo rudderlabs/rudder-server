@@ -9,18 +9,19 @@ import (
 )
 
 // Repository is a repository backed by memory.
+
 type Repository struct {
 	log            logger.Logger
 	token          []byte
 	suppressionsMu sync.RWMutex
-	suppressions   map[string]map[string]map[string]struct{}
+	suppressions   map[string]map[string]map[string]model.Metadata
 }
 
 // NewRepository returns a new repository backed by memory.
 func NewRepository(log logger.Logger) *Repository {
 	m := &Repository{
 		log:          log,
-		suppressions: make(map[string]map[string]map[string]struct{}),
+		suppressions: make(map[string]map[string]map[string]model.Metadata),
 	}
 	return m
 }
@@ -31,24 +32,24 @@ func (m *Repository) GetToken() ([]byte, error) {
 }
 
 // Suppressed returns true if the given user is suppressed, false otherwise
-func (m *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
+func (m *Repository) Suppressed(workspaceID, userID, sourceID string) (*model.Metadata, error) {
 	m.suppressionsMu.RLock()
 	defer m.suppressionsMu.RUnlock()
 	workspace, ok := m.suppressions[workspaceID]
 	if !ok {
-		return false, nil
+		return nil, nil
 	}
 	sourceIDs, ok := workspace[userID]
 	if !ok {
-		return false, nil
+		return nil, nil
 	}
-	if _, ok := sourceIDs[model.Wildcard]; ok {
-		return true, nil
+	if metadata, ok := sourceIDs[model.Wildcard]; ok {
+		return &metadata, nil
 	}
-	if _, ok := sourceIDs[sourceID]; ok {
-		return true, nil
+	if metadata, ok := sourceIDs[sourceID]; ok {
+		return &metadata, nil
 	}
-	return false, nil
+	return nil, nil
 }
 
 // Add adds the given suppressions to the repository
@@ -66,12 +67,12 @@ func (m *Repository) Add(suppressions []model.Suppression, token []byte) error {
 		}
 		workspace, ok := m.suppressions[suppression.WorkspaceID]
 		if !ok {
-			workspace = make(map[string]map[string]struct{})
+			workspace = make(map[string]map[string]model.Metadata)
 			m.suppressions[suppression.WorkspaceID] = workspace
 		}
 		user, ok := workspace[suppression.UserID]
 		if !ok {
-			user = make(map[string]struct{})
+			user = make(map[string]model.Metadata)
 			m.suppressions[suppression.WorkspaceID][suppression.UserID] = user
 		}
 		if suppression.Canceled {
@@ -80,7 +81,9 @@ func (m *Repository) Add(suppressions []model.Suppression, token []byte) error {
 			}
 		} else {
 			for _, key := range keys {
-				user[key] = struct{}{}
+				user[key] = model.Metadata{
+					CreatedAt: suppression.CreatedAt,
+				}
 			}
 		}
 	}

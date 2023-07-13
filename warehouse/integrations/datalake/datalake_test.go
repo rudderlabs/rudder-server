@@ -3,19 +3,21 @@ package datalake_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
+
+	"cloud.google.com/go/storage"
+
+	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/compose-test/compose"
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
-	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/rudderlabs/compose-test/testcompose"
@@ -37,33 +39,6 @@ import (
 
 	_ "github.com/trinodb/trino-go-client/trino"
 )
-
-type gcsTestCredentials struct {
-	BucketName  string `json:"bucketName"`
-	Credentials string `json:"credentials"`
-}
-
-const gcsTestKey = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
-
-func getGCSTestCredentials() (*gcsTestCredentials, error) {
-	cred, exists := os.LookupEnv(gcsTestKey)
-	if !exists {
-		return nil, fmt.Errorf("gcs credentials not found")
-	}
-
-	var credentials gcsTestCredentials
-	err := json.Unmarshal([]byte(cred), &credentials)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal gcs credentials: %w", err)
-	}
-
-	return &credentials, nil
-}
-
-func isGCSTestCredentialsAvailable() bool {
-	_, err := getGCSTestCredentials()
-	return err == nil
-}
 
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
@@ -87,6 +62,7 @@ func TestIntegration(t *testing.T) {
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
 	azurePort := c.Port("azure", 10000)
+	gcsPort := c.Port("gcs", 4443)
 	trinoPort := c.Port("trino", 8080)
 
 	httpPort, err := kithelper.GetFreePort()
@@ -105,6 +81,7 @@ func TestIntegration(t *testing.T) {
 
 	azContainerName := "azure-datalake-test"
 	s3BucketName := "s3-datalake-test"
+	gcsBucketName := "gcs-datalake-test"
 	azAccountName := "MYACCESSKEY"
 	azAccountKey := "TVlTRUNSRVRLRVk="
 	azEndPoint := fmt.Sprintf("localhost:%d", azurePort)
@@ -112,14 +89,12 @@ func TestIntegration(t *testing.T) {
 	s3AccessKeyID := "MYACCESSKEY"
 	s3AccessKey := "MYSECRETKEY"
 	s3EndPoint := fmt.Sprintf("localhost:%d", minioPort)
+	gcsEndPoint := fmt.Sprintf("http://localhost:%d/storage/v1/", gcsPort)
 
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
 
 	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-	var gcsBucketName string
-	var gcsCredentials string
 
 	templateConfigurations := map[string]any{
 		"workspaceID":      workspaceID,
@@ -141,21 +116,8 @@ func TestIntegration(t *testing.T) {
 		"s3AccessKeyID":    s3AccessKeyID,
 		"s3AccessKey":      s3AccessKey,
 		"s3EndPoint":       s3EndPoint,
-	}
-	if isGCSTestCredentialsAvailable() {
-		credentials, err := getGCSTestCredentials()
-		require.NoError(t, err)
-
-		escapedCredentials, err := json.Marshal(credentials.Credentials)
-		require.NoError(t, err)
-
-		escapedCredentialsTrimmedStr := strings.Trim(string(escapedCredentials), `"`)
-
-		templateConfigurations["gcsBucketName"] = credentials.BucketName
-		templateConfigurations["gcsCredentials"] = escapedCredentialsTrimmedStr
-
-		gcsBucketName = credentials.BucketName
-		gcsCredentials = credentials.Credentials
+		"gcsBucketName":    gcsBucketName,
+		"gcsEndPoint":      gcsEndPoint,
 	}
 
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
@@ -169,6 +131,8 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("MINIO_SSL", "false")
 	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+	t.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("localhost:%d", gcsPort))
+	t.Setenv("RSERVER_WORKLOAD_IDENTITY_TYPE", "GKE")
 
 	svcDone := make(chan struct{})
 
@@ -204,7 +168,7 @@ func TestIntegration(t *testing.T) {
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				sourceID:      s3SourceID,
 				destinationID: s3DestinationID,
-				destType:      warehouseutils.S3_DATALAKE,
+				destType:      warehouseutils.S3Datalake,
 				conf: map[string]interface{}{
 					"region":           s3Region,
 					"bucketName":       s3BucketName,
@@ -218,20 +182,7 @@ func TestIntegration(t *testing.T) {
 					"syncFrequency":    "30",
 				},
 				prerequisite: func(t testing.TB) {
-					t.Helper()
-
-					const (
-						secure = false
-						region = "us-east-1"
-					)
-
-					minioClient, err := minio.New(s3EndPoint, &minio.Options{
-						Creds:  credentials.NewStaticV4(s3AccessKeyID, s3AccessKey, ""),
-						Secure: secure,
-					})
-					require.NoError(t, err)
-
-					_ = minioClient.MakeBucket(context.TODO(), s3BucketName, minio.MakeBucketOptions{Region: region})
+					createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 				},
 				stagingFilePrefix: "testdata/upload-job-s3-datalake",
 			},
@@ -241,19 +192,17 @@ func TestIntegration(t *testing.T) {
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
 				sourceID:      gcsSourceID,
 				destinationID: gcsDestinationID,
-				destType:      warehouseutils.GCS_DATALAKE,
+				destType:      warehouseutils.GCSDatalake,
 				conf: map[string]interface{}{
 					"bucketName":    gcsBucketName,
 					"prefix":        "",
-					"credentials":   gcsCredentials,
+					"endPoint":      gcsEndPoint,
+					"disableSSL":    true,
+					"jsonReads":     true,
 					"syncFrequency": "30",
 				},
 				prerequisite: func(t testing.TB) {
-					t.Helper()
-
-					if !isGCSTestCredentialsAvailable() {
-						t.Skipf("Skipping %s as %s is not set", t.Name(), gcsTestKey)
-					}
+					createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
 				},
 				stagingFilePrefix: "testdata/upload-job-gcs-datalake",
 			},
@@ -263,7 +212,7 @@ func TestIntegration(t *testing.T) {
 				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				sourceID:      azSourceID,
 				destinationID: azDestinationID,
-				destType:      warehouseutils.AZURE_DATALAKE,
+				destType:      warehouseutils.AzureDatalake,
 				conf: map[string]interface{}{
 					"containerName":  azContainerName,
 					"prefix":         "",
@@ -326,18 +275,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("S3 DataLake Validation", func(t *testing.T) {
-		const (
-			secure = false
-			region = "us-east-1"
-		)
-
-		minioClient, err := minio.New(s3EndPoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(s3AccessKeyID, s3AccessKey, ""),
-			Secure: secure,
-		})
-		require.NoError(t, err)
-
-		_ = minioClient.MakeBucket(context.Background(), s3BucketName, minio.MakeBucketOptions{Region: region})
+		createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 
 		dest := backendconfig.DestinationT{
 			ID: s3DestinationID,
@@ -366,19 +304,16 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("GCS DataLake Validation", func(t *testing.T) {
-		if !isGCSTestCredentialsAvailable() {
-			t.Skipf("Skipping %s as %s is not set", t.Name(), gcsTestKey)
-		}
-
-		credentials, err := getGCSTestCredentials()
-		require.NoError(t, err)
+		createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
 
 		dest := backendconfig.DestinationT{
 			ID: gcsDestinationID,
 			Config: map[string]interface{}{
-				"bucketName":    credentials.BucketName,
+				"bucketName":    gcsBucketName,
 				"prefix":        "",
-				"credentials":   credentials.Credentials,
+				"endPoint":      gcsEndPoint,
+				"disableSSL":    true,
+				"jsonReads":     true,
 				"syncFrequency": "30",
 			},
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -558,4 +493,74 @@ func TestIntegration(t *testing.T) {
 		require.NotEmpty(t, filteredCountOutput)
 		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "8", filteredCountOutput) // last character is the count
 	})
+}
+
+func createGCSBucket(t testing.TB, ctx context.Context, endpoint, bucketName string) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		client, err := storage.NewClient(ctx, option.WithEndpoint(endpoint))
+		if err != nil {
+			t.Logf("create GCS client: %v", err)
+			return false
+		}
+
+		bucket := client.Bucket(bucketName)
+
+		_, err = bucket.Attrs(ctx)
+		if err == nil {
+			return true
+		}
+		if !errors.Is(err, storage.ErrBucketNotExist) {
+			t.Log("bucket attrs: ", err)
+			return false
+		}
+
+		err = bucket.Create(ctx, "test", &storage.BucketAttrs{
+			Location: "US",
+			Name:     bucketName,
+		})
+		if err != nil {
+			t.Log("create bucket: ", err)
+			return false
+		}
+		return true
+	},
+		30*time.Second,
+		1*time.Second,
+	)
+}
+
+func createMinioBucket(t testing.TB, ctx context.Context, endpoint, accessKeyId, accessKey, bucketName, region string) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		minioClient, err := minio.New(endpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(accessKeyId, accessKey, ""),
+			Secure: false,
+		})
+		if err != nil {
+			t.Log("create minio client: ", err)
+			return false
+		}
+
+		exists, err := minioClient.BucketExists(ctx, bucketName)
+		if err != nil {
+			t.Log("check if bucket exists: ", err)
+			return false
+		}
+		if exists {
+			return true
+		}
+
+		err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{Region: region})
+		if err != nil {
+			t.Log("make bucket: ", err)
+			return false
+		}
+		return true
+	},
+		30*time.Second,
+		1*time.Second,
+	)
 }

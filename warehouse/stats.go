@@ -7,39 +7,25 @@ import (
 
 	"golang.org/x/exp/slices"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const moduleName = "warehouse"
 
-type Tag struct {
-	Name  string
-	Value string
-}
-
-func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
+func warehouseTagName(destID, sourceName, destName, sourceID string) string {
 	return misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6))
 }
 
-func (job *UploadJob) warehouseID() string {
-	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID)
-}
-
-func (jobRun *JobRun) warehouseID() string {
-	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
-}
-
-func (job *UploadJob) timerStat(name string, extraTags ...Tag) stats.Measurement {
+func (job *UploadJob) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
-		"warehouseID": job.warehouseID(),
+		"warehouseID": warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
 		"workspaceId": job.upload.WorkspaceID,
 		"destID":      job.upload.DestinationID,
 		"sourceID":    job.upload.SourceID,
@@ -47,68 +33,23 @@ func (job *UploadJob) timerStat(name string, extraTags ...Tag) stats.Measurement
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
 	}
-	return job.stats.NewTaggedStat(name, stats.TimerType, tags)
+	return tags
 }
 
-func (job *UploadJob) counterStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := stats.Tags{
-		"module":      moduleName,
-		"destType":    job.warehouse.Type,
-		"warehouseID": job.warehouseID(),
-		"workspaceId": job.upload.WorkspaceID,
-		"destID":      job.upload.DestinationID,
-		"sourceID":    job.upload.SourceID,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return job.stats.NewTaggedStat(name, stats.CountType, tags)
+func (job *UploadJob) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+	return job.stats.NewTaggedStat(name, stats.TimerType, job.buildTags(extraTags...))
 }
 
-func (job *UploadJob) guageStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := stats.Tags{
-		"module":         moduleName,
-		"destType":       job.warehouse.Type,
-		"warehouseID":    job.warehouseID(),
-		"workspaceId":    job.upload.WorkspaceID,
-		"destID":         job.upload.DestinationID,
-		"sourceID":       job.upload.SourceID,
-		"sourceCategory": job.warehouse.Source.SourceDefinition.Category,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
+func (job *UploadJob) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+	return job.stats.NewTaggedStat(name, stats.CountType, job.buildTags(extraTags...))
 }
 
-func (jobRun *JobRun) timerStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := stats.Tags{
-		"module":      moduleName,
-		"destType":    jobRun.job.DestinationType,
-		"warehouseID": jobRun.warehouseID(),
-		"workspaceId": jobRun.job.WorkspaceID,
-		"destID":      jobRun.job.DestinationID,
-		"sourceID":    jobRun.job.SourceID,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return jobRun.stats.NewTaggedStat(name, stats.TimerType, tags)
-}
-
-func (jobRun *JobRun) counterStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := stats.Tags{
-		"module":      moduleName,
-		"destType":    jobRun.job.DestinationType,
-		"warehouseID": jobRun.warehouseID(),
-		"workspaceId": jobRun.job.WorkspaceID,
-		"destID":      jobRun.job.DestinationID,
-		"sourceID":    jobRun.job.SourceID,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return jobRun.stats.NewTaggedStat(name, stats.CountType, tags)
+func (job *UploadJob) guageStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+	extraTags = append(extraTags, warehouseutils.Tag{
+		Name:  "sourceCategory",
+		Value: job.warehouse.Source.SourceDefinition.Category,
+	})
+	return job.stats.NewTaggedStat(name, stats.GaugeType, job.buildTags(extraTags...))
 }
 
 func (job *UploadJob) generateUploadSuccessMetrics() {
@@ -202,7 +143,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
 	if slices.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
-		job.counterStat(`event_delivery`, Tag{
+		job.counterStat(`event_delivery`, warehouseutils.Tag{
 			Name:  "tableName",
 			Value: strings.ToLower(tableName),
 		}).Count(int(numEvents))
@@ -217,7 +158,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		}
 	}
 
-	job.counterStat(`rows_synced`, Tag{
+	job.counterStat(`rows_synced`, warehouseutils.Tag{
 		Name:  "tableName",
 		Value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
@@ -235,8 +176,8 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 		}
 		job.timerStat("event_delivery_time",
-			Tag{Name: "tableName", Value: strings.ToLower(tableName)},
-			Tag{Name: "syncFrequency", Value: syncFrequency},
+			warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tableName)},
+			warehouseutils.Tag{Name: "syncFrequency", Value: syncFrequency},
 		).Since(firstEventAt)
 	}
 }
@@ -257,12 +198,35 @@ func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (er
 	return nil
 }
 
+func (jr *jobRun) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
+	tags := stats.Tags{
+		"module":      moduleName,
+		"destType":    jr.job.DestinationType,
+		"warehouseID": warehouseTagName(jr.job.DestinationID, jr.job.SourceName, jr.job.DestinationName, jr.job.SourceID),
+		"workspaceId": jr.job.WorkspaceID,
+		"destID":      jr.job.DestinationID,
+		"sourceID":    jr.job.SourceID,
+	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.Name] = extraTag.Value
+	}
+	return tags
+}
+
+func (jr *jobRun) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+	return jr.stats.NewTaggedStat(name, stats.TimerType, jr.buildTags(extraTags...))
+}
+
+func (jr *jobRun) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+	return jr.stats.NewTaggedStat(name, stats.CountType, jr.buildTags(extraTags...))
+}
+
 func persistSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
 	tags := stats.Tags{
 		"workspaceId":   workspaceID,
 		"module":        moduleName,
 		"destType":      destType,
-		"warehouseID":   getWarehouseTagName(destID, sourceName, destName, sourceID),
+		"warehouseID":   warehouseTagName(destID, sourceName, destName, sourceID),
 		"destinationID": destID,
 		"errTag":        errTag,
 	}

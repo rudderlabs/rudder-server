@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
 
 func init() {
@@ -25,7 +26,7 @@ func TestIsSuppressedConcurrency(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		go func() {
 			defer wg.Done()
-			require.False(t, h.IsSuppressedUser("workspaceID", "userID", "sourceID"))
+			require.Nil(t, h.GetSuppressedUser("workspaceID", "userID", "sourceID"))
 		}()
 	}
 	wg.Wait()
@@ -36,12 +37,12 @@ type fakeSuppresser struct {
 	Repository
 }
 
-func (*fakeSuppresser) Suppressed(_, _, _ string) (bool, error) {
+func (*fakeSuppresser) Suppressed(_, _, _ string) (*model.Metadata, error) {
 	// random failures, but always returning false
 	if rand.Intn(2)%2 == 0 { // skipcq: GSC-G404
-		return false, fmt.Errorf("some error")
+		return nil, fmt.Errorf("some error")
 	} else {
-		return false, nil
+		return nil, nil
 	}
 }
 
@@ -50,6 +51,6 @@ type tLog struct {
 	logger.Logger
 }
 
-func (t *tLog) Warn(_ ...interface{}) {
+func (t *tLog) Errorf(_ string, _ ...interface{}) {
 	t.times++
 }

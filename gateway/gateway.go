@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
+	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 
 	"golang.org/x/sync/errgroup"
 
@@ -162,6 +163,7 @@ type HandleT struct {
 	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
 	jobsDB                       jobsdb.JobsDB
+	errDB                        jobsdb.JobsDB
 	ackCount                     uint64
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
@@ -343,6 +345,7 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 				errorMessagesMap[batch[0].UUID] = errorMessage
 			}
 		}
+
 		cancel()
 		gateway.dbWritesStat.Count(1)
 
@@ -788,11 +791,16 @@ func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) b
 	if !enableSuppressUserFeature || gateway.suppressUserHandler == nil {
 		return false
 	}
-	return gateway.suppressUserHandler.IsSuppressedUser(
-		workspaceID,
-		userID,
-		sourceID,
-	)
+	if metadata := gateway.suppressUserHandler.GetSuppressedUser(workspaceID, userID, sourceID); metadata != nil {
+		if !metadata.CreatedAt.IsZero() {
+			gateway.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{
+				"workspaceId": workspaceID,
+				"sourceID":    sourceID,
+			}).Since(metadata.CreatedAt)
+		}
+		return true
+	}
+	return false
 }
 
 // checks for the presence of messageId in the event
@@ -1491,6 +1499,38 @@ func (*HandleT) GetWebhookSourceDefName(writeKey string) (name string, ok bool) 
 	return
 }
 
+// SaveErrors saves errors to the error db
+func (gateway *HandleT) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error {
+	jobs := make([]*jobsdb.JobT, 0, len(reqs))
+	for _, req := range reqs {
+		params := map[string]interface{}{
+			"source_id":   gateway.getSourceIDForWriteKey(req.WriteKey),
+			"stage":       "webhook",
+			"source_type": req.SourceType,
+			"reason":      req.Reason,
+		}
+		marshalledParams, err := json.Marshal(params)
+		if err != nil {
+			gateway.logger.Errorf("[Gateway] Failed to marshal parameters map. Parameters: %+v", params)
+			marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
+		}
+
+		jobs = append(jobs, &jobsdb.JobT{
+			UUID:         uuid.New(),
+			UserID:       uuid.New().String(), // Using a random userid for these failures. There is no notion of user id for these events.
+			Parameters:   marshalledParams,
+			CustomVal:    "WEBHOOK",
+			EventPayload: req.Payload,
+			EventCount:   1,
+			WorkspaceId:  gateway.getWorkspaceForWriteKey(req.WriteKey),
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), WriteTimeout)
+	defer cancel()
+	return gateway.errDB.Store(ctx, jobs)
+}
+
 /*
 Setup initializes this module:
 - Monitors backend config for changes.
@@ -1502,7 +1542,7 @@ This function will block until backend config is initially received.
 */
 func (gateway *HandleT) Setup(
 	ctx context.Context,
-	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
+	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
@@ -1535,6 +1575,7 @@ func (gateway *HandleT) Setup(
 	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, maxDBWriterProcess)
 	gateway.emptyAnonIdHeaderStat = gateway.stats.NewStat("gateway.empty_anonymous_id_header", stats.CountType)
 	gateway.jobsDB = jobsDB
+	gateway.errDB = errDB
 
 	gateway.versionHandler = versionHandler
 

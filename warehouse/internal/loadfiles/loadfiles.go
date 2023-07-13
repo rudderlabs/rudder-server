@@ -144,7 +144,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	if publishBatchSize == 0 {
 		publishBatchSize = defaultPublishBatchSize
 	}
-	if size, ok := lf.publishBatchSizePerWorkspace[job.Warehouse.WorkspaceID]; ok {
+	if size, ok := lf.publishBatchSizePerWorkspace[strings.ToLower(job.Warehouse.WorkspaceID)]; ok {
 		publishBatchSize = size
 	}
 
@@ -364,7 +364,7 @@ func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *
 
 func GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {
 	switch warehouse.Type {
-	case warehouseutils.GCS_DATALAKE:
+	case warehouseutils.GCSDatalake:
 		windowFormat := timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 
 		if windowLayout := warehouseutils.GetConfigValue("timeWindowLayout", warehouse); windowLayout != "" {
@@ -374,7 +374,7 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {
 			windowFormat = fmt.Sprintf("%v/%v", suffix, windowFormat)
 		}
 		return windowFormat
-	case warehouseutils.S3_DATALAKE:
+	case warehouseutils.S3Datalake:
 		if !schemarepository.UseGlue(&warehouse) {
 			return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 		}

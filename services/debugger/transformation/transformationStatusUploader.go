@@ -24,9 +24,9 @@ type TransformationStatusT struct {
 	SourceID              string
 	DestID                string
 	Destination           *backendconfig.DestinationT
-	UserTransformedEvents []transformer.TransformerEventT
+	UserTransformedEvents []transformer.TransformerEvent
 	EventsByMessageID     map[string]types.SingularEventWithReceivedAt
-	FailedEvents          []transformer.TransformerResponseT
+	FailedEvents          []transformer.TransformerResponse
 	UniqueMessageIds      map[string]struct{}
 }
 
@@ -236,13 +236,13 @@ func (ts *TransformationStatusT) Limit(
 		append(
 			lo.Map(
 				ts.UserTransformedEvents,
-				func(event transformer.TransformerEventT, _ int) string {
+				func(event transformer.TransformerEvent, _ int) string {
 					return event.Metadata.MessageID
 				},
 			),
 			lo.Map(
 				ts.FailedEvents,
-				func(event transformer.TransformerResponseT, _ int) string {
+				func(event transformer.TransformerResponse, _ int) string {
 					return event.Metadata.MessageID
 				},
 			)...,

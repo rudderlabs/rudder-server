@@ -311,7 +311,7 @@ func TestClickhouse_UseS3CopyEngineForLoading(t *testing.T) {
 	}{
 		{
 			name:          "incompatible object storage(AZURE BLOB)",
-			ObjectStorage: warehouseutils.AZURE_BLOB,
+			ObjectStorage: warehouseutils.AzureBlob,
 			workspaceID:   "test-workspace-id",
 		},
 		{

@@ -30,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -201,7 +200,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			"builtBy":            r.releaseInfo.BuiltBy,
 			"gitUrl":             r.releaseInfo.GitURL,
 			"TransformerVersion": transformer.GetVersion(),
-			"DatabricksVersion":  misc.GetDatabricksVersion(),
 		}).Gauge(1)
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
@@ -348,7 +346,6 @@ func runAllInit() {
 	warehouse.Init6()
 	warehousearchiver.Init()
 	validations.Init()
-	transformer.Init()
 	webhook.Init()
 	asyncdestinationmanager.Init()
 	batchrouterutils.Init()
@@ -359,7 +356,6 @@ func runAllInit() {
 	customdestinationmanager.Init()
 	routertransformer.Init()
 	gateway.Init()
-	integrations.Init()
 	alert.Init()
 	oauth.Init()
 }
@@ -375,7 +371,6 @@ func (r *Runner) versionInfo() map[string]interface{} {
 		"BuiltBy":            r.releaseInfo.BuiltBy,
 		"GitUrl":             r.releaseInfo.GitURL,
 		"TransformerVersion": transformer.GetVersion(),
-		"DatabricksVersion":  misc.GetDatabricksVersion(),
 		"Features":           info.ServerComponent.Features,
 	}
 }

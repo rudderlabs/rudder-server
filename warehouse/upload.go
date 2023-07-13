@@ -151,25 +151,25 @@ func init() {
 
 func setMaxParallelLoads() {
 	maxParallelLoads = map[string]int{
-		warehouseutils.BQ:             config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
-		warehouseutils.RS:             config.GetInt("Warehouse.redshift.maxParallelLoads", 8),
-		warehouseutils.POSTGRES:       config.GetInt("Warehouse.postgres.maxParallelLoads", 8),
-		warehouseutils.MSSQL:          config.GetInt("Warehouse.mssql.maxParallelLoads", 8),
-		warehouseutils.SNOWFLAKE:      config.GetInt("Warehouse.snowflake.maxParallelLoads", 8),
-		warehouseutils.CLICKHOUSE:     config.GetInt("Warehouse.clickhouse.maxParallelLoads", 8),
-		warehouseutils.DELTALAKE:      config.GetInt("Warehouse.deltalake.maxParallelLoads", 8),
-		warehouseutils.S3_DATALAKE:    config.GetInt("Warehouse.s3_datalake.maxParallelLoads", 8),
-		warehouseutils.GCS_DATALAKE:   config.GetInt("Warehouse.gcs_datalake.maxParallelLoads", 8),
-		warehouseutils.AZURE_DATALAKE: config.GetInt("Warehouse.azure_datalake.maxParallelLoads", 8),
+		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
+		warehouseutils.RS:            config.GetInt("Warehouse.redshift.maxParallelLoads", 8),
+		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.maxParallelLoads", 8),
+		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.maxParallelLoads", 8),
+		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.maxParallelLoads", 8),
+		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.maxParallelLoads", 8),
+		warehouseutils.DELTALAKE:     config.GetInt("Warehouse.deltalake.maxParallelLoads", 8),
+		warehouseutils.S3Datalake:    config.GetInt("Warehouse.s3_datalake.maxParallelLoads", 8),
+		warehouseutils.GCSDatalake:   config.GetInt("Warehouse.gcs_datalake.maxParallelLoads", 8),
+		warehouseutils.AzureDatalake: config.GetInt("Warehouse.azure_datalake.maxParallelLoads", 8),
 	}
 	columnCountLimitMap = map[string]int{
-		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024),
-		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountLimit", 10000),
-		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000),
-		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountLimit", 1024),
-		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountLimit", 1600),
-		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountLimit", 1600),
-		warehouseutils.S3_DATALAKE:   config.GetInt("Warehouse.s3_datalake.columnCountLimit", 10000),
+		warehouseutils.AzureSynapse: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024),
+		warehouseutils.BQ:           config.GetInt("Warehouse.bigquery.columnCountLimit", 10000),
+		warehouseutils.CLICKHOUSE:   config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000),
+		warehouseutils.MSSQL:        config.GetInt("Warehouse.mssql.columnCountLimit", 1024),
+		warehouseutils.POSTGRES:     config.GetInt("Warehouse.postgres.columnCountLimit", 1600),
+		warehouseutils.RS:           config.GetInt("Warehouse.redshift.columnCountLimit", 1600),
+		warehouseutils.S3Datalake:   config.GetInt("Warehouse.s3_datalake.columnCountLimit", 10000),
 	}
 }
 
@@ -904,7 +904,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	}
 
 	configKey := fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", warehouseutils.WHDestNameMap[job.upload.DestinationType])
-	if k, ok := config.GetStringMap(configKey, nil)[job.warehouse.WorkspaceID]; ok {
+	if k, ok := config.GetStringMap(configKey, nil)[strings.ToLower(job.warehouse.WorkspaceID)]; ok {
 		if load, ok := k.(float64); ok {
 			parallelLoads = int(load)
 		}
@@ -1108,9 +1108,9 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		}
 
 		// TODO : Perform the comparison here in the codebase
-		job.guageStat(`pre_load_table_rows`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
-		job.guageStat(`post_load_table_rows_estimate`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + tableUpload.TotalEvents))
-		job.guageStat(`post_load_table_rows`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
+		job.guageStat(`pre_load_table_rows`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
+		job.guageStat(`post_load_table_rows_estimate`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + tableUpload.TotalEvents))
+		job.guageStat(`post_load_table_rows`, warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
 	}()
 
 	status = model.TableUploadExported
@@ -1136,7 +1136,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	)
 
 	switch job.warehouse.Type {
-	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
+	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
 		return
 	}
 
@@ -1144,7 +1144,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 		return
 	}
 
-	tags := []Tag{
+	tags := []warehouseutils.Tag{
 		{Name: "tableName", Value: strings.ToLower(tableName)},
 	}
 	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
@@ -1750,11 +1750,11 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		tags := []Tag{errorTags}
+		tags := []warehouseutils.Tag{errorTags}
 
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
-			tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
+			tags = append(tags, warehouseutils.Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
 			destCredentialsValidations = &valid
 		}
 

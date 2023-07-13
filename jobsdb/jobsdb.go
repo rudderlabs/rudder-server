@@ -647,7 +647,6 @@ var (
 	backupRowsBatchSize                          int64
 	backupMaxTotalPayloadSize                    int64
 	pkgLogger                                    logger.Logger
-	jobStatusCountMigrationCheck                 bool // TODO: Remove this in next release
 )
 
 // Loads db config and migration related config from config file
@@ -667,7 +666,7 @@ func loadConfig() {
 	refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
 	maxTableSizeInMB: Maximum Table size in MB
 	*/
-	config.RegisterFloat64ConfigVariable(0.8, &jobDoneMigrateThres, true, "JobsDB.jobDoneMigrateThres")
+	config.RegisterFloat64ConfigVariable(0.7, &jobDoneMigrateThres, true, "JobsDB.jobDoneMigrateThres")
 	config.RegisterFloat64ConfigVariable(3, &jobStatusMigrateThres, true, "JobsDB.jobStatusMigrateThres")
 	config.RegisterFloat64ConfigVariable(0.2, &jobMinRowsMigrateThres, true, "JobsDB.jobMinRowsMigrateThres")
 	config.RegisterIntConfigVariable(100000, &maxDSSize, true, 1, "JobsDB.maxDSSize")
@@ -680,11 +679,10 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(64*bytesize.MB, &backupMaxTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
 	config.RegisterDurationConfigVariable(30, &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
-	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
+	config.RegisterDurationConfigVariable(10, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
-	config.RegisterDurationConfigVariable(60, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	config.RegisterDurationConfigVariable(120, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	config.RegisterDurationConfigVariable(24, &jobCleanupFrequency, true, time.Hour, []string{"JobsDB.jobCleanupFrequency"}...)
-	config.RegisterBoolConfigVariable(false, &jobStatusCountMigrationCheck, true, "JobsDB.jobStatusCountMigrationCheck")
 }
 
 func Init2() {
@@ -2666,6 +2664,7 @@ func (jd *HandleT) refreshDSList(ctx context.Context) error {
 	if previousLastDS.Index == nextLastDS.Index {
 		return nil
 	}
+	defer stats.Default.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
 	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 		return jd.doRefreshDSRangeList(l)
 	})

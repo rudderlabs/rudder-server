@@ -496,7 +496,7 @@ func (rs *Redshift) loadTable(ctx context.Context, tableName string, tableSchema
 		}
 	}()
 
-	if rs.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+	if rs.Uploader.GetLoadFileType() == warehouseutils.LoadFileTypeParquet {
 		query = fmt.Sprintf(`
 			COPY %v
 			FROM '%s'
@@ -700,7 +700,7 @@ func (rs *Redshift) loadTable(ctx context.Context, tableName string, tableSchema
 			  row_number() OVER (
 				PARTITION BY %[5]s
 				ORDER BY
-				  received_at ASC
+				  received_at DESC
 			  ) AS _rudder_staging_row_number
 			FROM
 			  %[1]q.%[4]q
@@ -1332,9 +1332,9 @@ func (rs *Redshift) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 			if _, ok := unrecognizedSchema[tableName]; !ok {
 				unrecognizedSchema[tableName] = make(model.TableSchema)
 			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MISSING_DATATYPE
+			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
 
-			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &rs.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &rs.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -1451,7 +1451,7 @@ func (rs *Redshift) LoadTestTable(ctx context.Context, location, tableName strin
 	}
 
 	var sqlStatement string
-	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+	if format == warehouseutils.LoadFileTypeParquet {
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
 			fmt.Sprintf(`%q.%q`, rs.Namespace, tableName),

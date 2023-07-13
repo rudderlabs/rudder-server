@@ -33,7 +33,7 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"text":     ParquetString,
 		"datetime": ParquetTimestampMicros,
 	},
-	warehouseutils.S3_DATALAKE: {
+	warehouseutils.S3Datalake: {
 		"bigint":   ParquetInt64,
 		"int":      ParquetInt64,
 		"boolean":  ParquetBoolean,
@@ -42,14 +42,14 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"text":     ParquetString,
 		"datetime": ParquetTimestampMicros,
 	},
-	warehouseutils.GCS_DATALAKE: {
+	warehouseutils.GCSDatalake: {
 		"int":      ParquetInt64,
 		"boolean":  ParquetBoolean,
 		"float":    ParquetDouble,
 		"string":   ParquetString,
 		"datetime": ParquetTimestampMicros,
 	},
-	warehouseutils.AZURE_DATALAKE: {
+	warehouseutils.AzureDatalake: {
 		"int":      ParquetInt64,
 		"boolean":  ParquetBoolean,
 		"float":    ParquetDouble,

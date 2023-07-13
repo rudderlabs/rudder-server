@@ -128,6 +128,7 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PGNotifie
 	if err != nil {
 		return
 	}
+	dbHandle.SetMaxOpenConns(config.GetInt("PgNotifier.maxOpenConnections", 20))
 
 	// setup metrics
 	pgNotifierModuleTag := whUtils.Tag{Name: "module", Value: "pgnotifier"}
