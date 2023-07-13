@@ -45,21 +45,22 @@ const (
 )
 
 type HandleT struct {
-	init                      chan struct{}
-	onceInit                  sync.Once
-	clients                   map[string]*types.Client
-	clientsMapLock            sync.RWMutex
-	log                       logger.Logger
-	reportingServiceURL       string
-	namespace                 string
-	workspaceID               string
-	instanceID                string
-	workspaceIDForSourceIDMap map[string]string
-	piiReportingSettings      map[string]bool
-	whActionsOnly             bool
-	region                    string
-	sleepInterval             time.Duration
-	mainLoopSleepInterval     time.Duration
+	init                                 chan struct{}
+	onceInit                             sync.Once
+	clients                              map[string]*types.Client
+	clientsMapLock                       sync.RWMutex
+	log                                  logger.Logger
+	reportingServiceURL                  string
+	namespace                            string
+	workspaceID                          string
+	instanceID                           string
+	workspaceIDForSourceIDMap            map[string]string
+	piiReportingSettings                 map[string]bool
+	whActionsOnly                        bool
+	region                               string
+	sleepInterval                        time.Duration
+	mainLoopSleepInterval                time.Duration
+	sourcesWithEventNameTrackingDisabled []string
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -70,6 +71,8 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
+	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("SOURCES_WITH_EVENT_NAME_TRACKING_DISABLED", []string{})
+
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
@@ -80,18 +83,19 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 	}
 
 	return &HandleT{
-		init:                      make(chan struct{}),
-		log:                       log,
-		clients:                   make(map[string]*types.Client),
-		reportingServiceURL:       reportingServiceURL,
-		namespace:                 config.GetKubeNamespace(),
-		instanceID:                config.GetString("INSTANCE_ID", "1"),
-		workspaceIDForSourceIDMap: make(map[string]string),
-		piiReportingSettings:      make(map[string]bool),
-		whActionsOnly:             whActionsOnly,
-		sleepInterval:             sleepInterval,
-		mainLoopSleepInterval:     mainLoopSleepInterval,
-		region:                    config.GetString("region", ""),
+		init:                                 make(chan struct{}),
+		log:                                  log,
+		clients:                              make(map[string]*types.Client),
+		reportingServiceURL:                  reportingServiceURL,
+		namespace:                            config.GetKubeNamespace(),
+		instanceID:                           config.GetString("INSTANCE_ID", "1"),
+		workspaceIDForSourceIDMap:            make(map[string]string),
+		piiReportingSettings:                 make(map[string]bool),
+		whActionsOnly:                        whActionsOnly,
+		sleepInterval:                        sleepInterval,
+		mainLoopSleepInterval:                mainLoopSleepInterval,
+		region:                               config.GetString("region", ""),
+		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 	}
 }
 
@@ -525,6 +529,20 @@ func (r *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
 	return r.piiReportingSettings[workspaceID]
 }
 
+func (r *HandleT) IsEventNameTrackingDisabledForSource(sourceID string) bool {
+	for _, s := range r.sourcesWithEventNameTrackingDisabled {
+		if s == sourceID {
+			return true
+		}
+	}
+	return false
+}
+
+func transformMetricForEventNameTrackingDisabled(metric types.PUReportedMetric) types.PUReportedMetric {
+	metric.StatusDetail.EventName = ""
+	return metric
+}
+
 func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	if len(metrics) == 0 {
 		return
@@ -565,11 +583,8 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 		workspaceID := r.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
 
-		// TODO: Remove this once we have a proper fix from reverseETL side
-		if metric.ConnectionDetails.SourceID == "2Rw0wQ5B2R0GONopjomUj5vPDhu" {
-			if _, err := strconv.Atoi(metric.StatusDetail.EventName); err == nil {
-				metric.StatusDetail.EventName = "__numeric_id__"
-			}
+		if r.IsEventNameTrackingDisabledForSource(metric.ConnectionDetails.SourceID) {
+			metric = transformMetricForEventNameTrackingDisabled(metric)
 		}
 
 		if r.IsPIIReportingDisabled(workspaceID) {
