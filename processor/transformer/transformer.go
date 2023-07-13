@@ -119,7 +119,7 @@ func Init() {
 }
 
 func isJobTerminated(status int) bool {
-	if status == http.StatusTooManyRequests {
+	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
 		return false
 	}
 	return status >= http.StatusOK && status < http.StatusInternalServerError
