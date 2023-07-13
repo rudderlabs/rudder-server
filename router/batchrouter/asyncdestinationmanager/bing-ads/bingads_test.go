@@ -486,7 +486,7 @@ var _ = Describe("Bing ads", func() {
 			clientI := Client{client: client, URL: modifiedURL}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
-			UploadStatsInput := common.FetchUploadJobStatus{
+			UploadStatsInput := common.GetUploadStatsInput{
 				FailedJobURLs: modifiedURL,
 				ImportingList: []*jobsdb.JobT{
 					{
@@ -501,7 +501,7 @@ var _ = Describe("Bing ads", func() {
 				},
 			}
 			expectedResp := common.GetUploadStatsResponse{
-				Status: "200",
+				StatusCode: 200,
 				Metadata: common.EventStatMeta{
 					FailedKeys: []int64{6},
 					ErrFailed:  nil,

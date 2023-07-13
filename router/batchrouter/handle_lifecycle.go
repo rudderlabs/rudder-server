@@ -254,7 +254,7 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			"destType": destination.DestinationDefinition.Name,
 		})
 		destInitFailStat.Count(1)
-		return
+		manager = &common.InvalidManager{}
 	}
 	if !ok {
 		brt.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}

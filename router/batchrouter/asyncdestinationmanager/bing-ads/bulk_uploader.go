@@ -226,7 +226,7 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 		return common.GetUploadStatsResponse{}, err
 	}
 	eventStatsResponse := common.GetUploadStatsResponse{
-		Status: "200",
+		StatusCode: 200,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    lo.Keys(clientIDErrors),
 			FailedReasons: GetFailedReasons(clientIDErrors),
@@ -247,7 +247,7 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 	return eventStatsResponse, nil
 }
 
-func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) common.GetUploadStatsResponse {
+func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
 	importList := UploadStatsInput.ImportingList
@@ -255,38 +255,34 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	for _, job := range importList {
 		initialEventList = append(initialEventList, job.JobID)
 	}
-	var eventStatsResponse common.GetUploadStatsResponse
+	eventStatsResponse := common.GetUploadStatsResponse{}
 	var failedJobIds []int64
 	var cumulativeFailedReasons map[int64]string
-	var status string
 	fileURLs := common.GenerateArrayOfStrings(UploadStatsInput.FailedJobURLs)
 	for _, fileURL := range fileURLs {
 		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
 			b.logger.Error("Error in downloading and unzipping the file: %v", err)
 			return common.GetUploadStatsResponse{
-				Status: "500",
+				StatusCode: 500,
 			}
 		}
 		response, err := b.GetUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
 		if err != nil {
 			b.logger.Error("Error in getting upload stats of single import: %v", err)
 			return common.GetUploadStatsResponse{
-				Status: "500",
+				StatusCode: 500,
 			}
 		}
 		cumulativeFailedReasons = lo.Assign(cumulativeFailedReasons, response.Metadata.FailedReasons)
 		failedJobIds = append(failedJobIds, response.Metadata.FailedKeys...)
-		status = response.Status
+		eventStatsResponse.StatusCode = response.StatusCode
 	}
 
-	eventStatsResponse = common.GetUploadStatsResponse{
-		Status: status,
-		Metadata: common.EventStatMeta{
-			FailedKeys:    failedJobIds,
-			FailedReasons: cumulativeFailedReasons,
-			SucceededKeys: GetSuccessJobIDs(failedJobIds, initialEventList),
-		},
+	eventStatsResponse.Metadata = common.EventStatMeta{
+		FailedKeys:    failedJobIds,
+		FailedReasons: cumulativeFailedReasons,
+		SucceededKeys: GetSuccessJobIDs(failedJobIds, initialEventList),
 	}
 
 	return eventStatsResponse
