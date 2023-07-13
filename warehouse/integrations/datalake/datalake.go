@@ -28,9 +28,9 @@ var errorsMappings = []model.JobError{
 }
 
 type Datalake struct {
-	schemaRepository schemarepository.SchemaRepository
-	warehouse        model.Warehouse
-	uploader         warehouseutils.Uploader
+	SchemaRepository schemarepository.SchemaRepository
+	Warehouse        model.Warehouse
+	Uploader         warehouseutils.Uploader
 	logger           logger.Logger
 }
 
@@ -43,10 +43,10 @@ func New(log logger.Logger) *Datalake {
 }
 
 func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
-	d.warehouse = warehouse
-	d.uploader = uploader
+	d.Warehouse = warehouse
+	d.Uploader = uploader
 
-	d.schemaRepository, err = schemarepository.NewSchemaRepository(d.warehouse, d.uploader, d.logger)
+	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.Warehouse, d.Uploader, d.logger)
 
 	return err
 }
@@ -54,15 +54,15 @@ func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader 
 func (*Datalake) CrashRecover(context.Context) {}
 
 func (d *Datalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
-	return d.schemaRepository.FetchSchema(ctx, d.warehouse)
+	return d.SchemaRepository.FetchSchema(ctx, d.Warehouse)
 }
 
 func (d *Datalake) CreateSchema(ctx context.Context) (err error) {
-	return d.schemaRepository.CreateSchema(ctx)
+	return d.SchemaRepository.CreateSchema(ctx)
 }
 
 func (d *Datalake) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
-	return d.schemaRepository.CreateTable(ctx, tableName, columnMap)
+	return d.SchemaRepository.CreateTable(ctx, tableName, columnMap)
 }
 
 func (*Datalake) DropTable(context.Context, string) (err error) {
@@ -70,15 +70,15 @@ func (*Datalake) DropTable(context.Context, string) (err error) {
 }
 
 func (d *Datalake) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	return d.schemaRepository.AddColumns(ctx, tableName, columnsInfo)
+	return d.SchemaRepository.AddColumns(ctx, tableName, columnsInfo)
 }
 
 func (d *Datalake) AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error) {
-	return d.schemaRepository.AlterColumn(ctx, tableName, columnName, columnType)
+	return d.SchemaRepository.AlterColumn(ctx, tableName, columnName, columnType)
 }
 
 func (d *Datalake) LoadTable(_ context.Context, tableName string) error {
-	d.logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.warehouse.Destination.ID)
+	d.logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.Warehouse.Destination.ID)
 	return nil
 }
 
@@ -87,23 +87,23 @@ func (*Datalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByPara
 }
 
 func (d *Datalake) LoadUserTables(context.Context) map[string]error {
-	d.logger.Infof("Skipping load for user tables : %s is a datalake destination", d.warehouse.Destination.ID)
+	d.logger.Infof("Skipping load for user tables : %s is a datalake destination", d.Warehouse.Destination.ID)
 	// return map with nil error entries for identifies and users(if any) tables
 	// this is so that they are marked as succeeded
 	errorMap := map[string]error{warehouseutils.IdentifiesTable: nil}
-	if len(d.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) > 0 {
+	if len(d.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) > 0 {
 		errorMap[warehouseutils.UsersTable] = nil
 	}
 	return errorMap
 }
 
 func (d *Datalake) LoadIdentityMergeRulesTable(context.Context) error {
-	d.logger.Infof("Skipping load for identity merge rules : %s is a datalake destination", d.warehouse.Destination.ID)
+	d.logger.Infof("Skipping load for identity merge rules : %s is a datalake destination", d.Warehouse.Destination.ID)
 	return nil
 }
 
 func (d *Datalake) LoadIdentityMappingsTable(context.Context) error {
-	d.logger.Infof("Skipping load for identity mappings : %s is a datalake destination", d.warehouse.Destination.ID)
+	d.logger.Infof("Skipping load for identity mappings : %s is a datalake destination", d.Warehouse.Destination.ID)
 	return nil
 }
 

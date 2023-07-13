@@ -137,7 +137,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			t.Cleanup(func() {
 				t.Log("Cleaning up")
-				_, err = g.glueClient.DeleteDatabase(&glue.DeleteDatabaseInput{
+				_, err = g.GlueClient.DeleteDatabase(&glue.DeleteDatabaseInput{
 					Name: &testNamespace,
 				})
 				require.NoError(t, err)

@@ -1,4 +1,4 @@
-package clickhouse
+package clickhouse_test
 
 import (
 	"context"
@@ -351,10 +351,10 @@ func TestClickhouse_UseS3CopyEngineForLoading(t *testing.T) {
 			c.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", S3EngineEnabledWorkspaceIDs)
 
 			ch := clickhouse.New(c, logger.NOP, stats.Default)
-			ch.warehouse = model.Warehouse{
+			ch.Warehouse = model.Warehouse{
 				WorkspaceID: tc.workspaceID,
 			}
-			ch.objectStorage = tc.ObjectStorage
+			ch.ObjectStorage = tc.ObjectStorage
 
 			require.Equal(t, tc.useS3Engine, ch.UseS3CopyEngineForLoading())
 		})
@@ -470,7 +470,6 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			c.Set("Warehouse.clickhouse.disableNullable", tc.disableNullable)
 
 			ch := clickhouse.New(c, logger.NOP, stats.Default)
-			ch.logger = logger.NOP
 
 			warehouse := model.Warehouse{
 				Namespace:   fmt.Sprintf("test_namespace_%d", i),
@@ -600,7 +599,7 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 
 			t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
 			if tc.disableNullable {
-				rows, err := ch.db.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, ch.namespace))
+				rows, err := ch.DB.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, warehouse.Namespace))
 				require.NoError(t, err)
 
 				defer func() { _ = rows.Close() }()
@@ -1045,7 +1044,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 		err = ch.CreateSchema(ctx)
 		require.NoError(t, err)
 
-		_, err = ch.db.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
+		_, err = ch.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
 			warehouse.Namespace,
 			table,
 		))

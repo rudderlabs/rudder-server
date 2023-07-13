@@ -241,11 +241,11 @@ func TestLoadTable(t *testing.T) {
 				require.NotEmpty(t, loadFiles)
 
 				pg := New(c, logger.NOP, store)
-				pg.db = db
-				pg.namespace = namespace
-				pg.warehouse = warehouse
+				pg.DB = db
+				pg.Namespace = namespace
+				pg.Warehouse = warehouse
 				pg.stats = store
-				pg.loadFileDownloader = &mockLoadFileUploader{
+				pg.LoadFileDownloader = &mockLoadFileUploader{
 					mockFiles: map[string][]string{
 						tableName: loadFiles,
 					},
@@ -253,7 +253,7 @@ func TestLoadTable(t *testing.T) {
 						tableName: tc.mockError,
 					},
 				}
-				pg.uploader = &mockUploader{
+				pg.Uploader = &mockUploader{
 					schema: map[string]model.TableSchema{
 						tableName: {
 							"test_bool":     "boolean",
@@ -363,12 +363,11 @@ func TestLoadTable(t *testing.T) {
 				require.NotEmpty(t, loadFiles)
 
 				pg := New(c, logger.NOP, store)
-				pg.logger = logger.NOP
-				pg.db = db
-				pg.namespace = namespace
-				pg.warehouse = warehouse
+				pg.DB = db
+				pg.Namespace = namespace
+				pg.Warehouse = warehouse
 				pg.stats = store
-				pg.loadFileDownloader = &mockLoadFileUploader{
+				pg.LoadFileDownloader = &mockLoadFileUploader{
 					mockFiles: map[string][]string{
 						tableName: loadFiles,
 					},
@@ -376,7 +375,7 @@ func TestLoadTable(t *testing.T) {
 						tableName: tc.mockError,
 					},
 				}
-				pg.uploader = &mockUploader{
+				pg.Uploader = &mockUploader{
 					schema: map[string]model.TableSchema{
 						tableName: warehouseutils.DiscardsSchema,
 					},
@@ -567,12 +566,11 @@ func TestLoadUsersTable(t *testing.T) {
 				usersSchamaInUpload = tc.usersSchemaInUpload
 			}
 
-			pg.logger = logger.NOP
-			pg.db = db
-			pg.namespace = namespace
-			pg.warehouse = warehouse
+			pg.DB = db
+			pg.Namespace = namespace
+			pg.Warehouse = warehouse
 			pg.stats = store
-			pg.loadFileDownloader = &mockLoadFileUploader{
+			pg.LoadFileDownloader = &mockLoadFileUploader{
 				mockFiles: map[string][]string{
 					warehouseutils.UsersTable:      usersLoadFiles,
 					warehouseutils.IdentifiesTable: identifiesLoadFiles,
@@ -582,7 +580,7 @@ func TestLoadUsersTable(t *testing.T) {
 					warehouseutils.IdentifiesTable: tc.mockIdentifiesError,
 				},
 			}
-			pg.uploader = &mockUploader{
+			pg.Uploader = &mockUploader{
 				schema: map[string]model.TableSchema{
 					warehouseutils.UsersTable:      usersSchamaInUpload,
 					warehouseutils.IdentifiesTable: identifiesSchemaInUpload,

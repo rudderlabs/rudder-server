@@ -2,12 +2,16 @@ package datalake_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/minio/minio-go/v7"
 
 	"cloud.google.com/go/storage"
 
@@ -17,7 +21,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
-	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/rudderlabs/compose-test/testcompose"
@@ -36,6 +39,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
+	_ "github.com/trinodb/trino-go-client/trino"
 )
 
 func TestIntegration(t *testing.T) {
@@ -43,7 +48,13 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+	c := testcompose.New(t, compose.FilePaths([]string{
+		"testdata/docker-compose.yml",
+		"testdata/docker-compose.trino.yml",
+		"testdata/docker-compose.spark.yml",
+		"../testdata/docker-compose.jobsdb.yml",
+		"../testdata/docker-compose.minio.yml",
+	}))
 	c.Start(context.Background())
 
 	misc.Init()
@@ -55,6 +66,7 @@ func TestIntegration(t *testing.T) {
 	minioPort := c.Port("minio", 9000)
 	azurePort := c.Port("azure", 10000)
 	gcsPort := c.Port("gcs", 4443)
+	trinoPort := c.Port("trino", 8080)
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -342,6 +354,180 @@ func TestIntegration(t *testing.T) {
 			RevisionID: "29HgOWobnr0RYZLpaSwPIbN2987",
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
+	})
+
+	t.Run("Trino", func(t *testing.T) {
+		dsn := fmt.Sprintf("http://user@localhost:%d?catalog=minio&schema=default&session_properties=minio.parquet_use_column_index=true",
+			trinoPort,
+		)
+		db, err := sql.Open("trino", dsn)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			_, err := db.ExecContext(ctx, `SELECT 1`)
+			return err == nil
+		},
+			60*time.Second,
+			100*time.Millisecond,
+		)
+
+		require.Eventually(t, func() bool {
+			_, err = db.ExecContext(ctx, `
+				CREATE SCHEMA IF NOT EXISTS minio.rudderstack WITH (
+				location = 's3a://`+s3BucketName+`/')
+			`)
+			if err != nil {
+				t.Log("create schema: ", err)
+				return false
+			}
+			return true
+		},
+			60*time.Second,
+			1*time.Second,
+		)
+
+		require.Eventually(t, func() bool {
+			_, err = db.ExecContext(ctx, `
+				CREATE TABLE IF NOT EXISTS minio.rudderstack.tracks (
+					"_timestamp" TIMESTAMP,
+					context_destination_id VARCHAR,
+					context_destination_type VARCHAR,
+					context_ip VARCHAR,
+					context_library_name VARCHAR,
+					context_passed_ip VARCHAR,
+					context_request_ip VARCHAR,
+					context_source_id VARCHAR,
+					context_source_type VARCHAR,
+					event VARCHAR,
+					event_text VARCHAR,
+					id VARCHAR,
+					original_timestamp TIMESTAMP,
+					received_at TIMESTAMP,
+					sent_at TIMESTAMP,
+					"timestamp" TIMESTAMP,
+					user_id VARCHAR,
+					uuid_ts TIMESTAMP
+				)
+				WITH (
+					external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/',
+					format = 'PARQUET'
+				)
+			`)
+			if err != nil {
+				t.Log("create table: ", err)
+				return false
+			}
+			return true
+		},
+			60*time.Second,
+			1*time.Second,
+		)
+
+		var count int64
+
+		require.Eventually(t, func() bool {
+			err := db.QueryRowContext(ctx, `
+				select
+				    count(*)
+				from
+				     minio.rudderstack.tracks
+			`).Scan(&count)
+			if err != nil {
+				t.Log("select count: ", err)
+				return false
+			}
+			return true
+		},
+			60*time.Second,
+			1*time.Second,
+		)
+		require.Equal(t, int64(8), count)
+
+		require.Eventually(t, func() bool {
+			err := db.QueryRowContext(ctx, `
+				select
+					count(*)
+				from
+					minio.rudderstack.tracks
+				where
+					context_destination_id = '`+s3DestinationID+`'
+			`).Scan(&count)
+			if err != nil {
+				t.Log("select count with where clause: ", err)
+				return false
+			}
+			return true
+		},
+			60*time.Second,
+			1*time.Second,
+		)
+		require.Equal(t, int64(8), count)
+	})
+
+	t.Run("Spark", func(t *testing.T) {
+		_ = c.Exec(ctx,
+			"spark-master",
+			"spark-sql",
+			"-e",
+			`
+			CREATE EXTERNAL TABLE tracks (
+			  	_timestamp timestamp,
+				context_destination_id string,
+			  	context_destination_type string,
+			  	context_ip string,
+				context_library_name string,
+			  	context_passed_ip string,
+				context_request_ip string,
+			  	context_source_id string,
+				context_source_type string,
+			  	event string,
+				event_text string, id string,
+			  	original_timestamp timestamp,
+				received_at timestamp,
+			  	sent_at timestamp,
+				timestamp timestamp,
+			  	user_id string,
+			  	uuid_ts timestamp
+			)
+			STORED AS PARQUET
+			location "s3a://s3-datalake-test/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/";
+		`,
+			"-S",
+		)
+
+		countOutput := c.Exec(ctx,
+			"spark-master",
+			"spark-sql",
+			"-e",
+			`
+				select
+					count(*)
+				from
+					tracks;
+			`,
+			"-S",
+		)
+		countOutput = strings.ReplaceAll(strings.ReplaceAll(countOutput, "\n", ""), "\r", "") // remove trailing newline
+		require.NotEmpty(t, countOutput)
+		require.Equal(t, string(countOutput[len(countOutput)-1]), "8", countOutput) // last character is the count
+
+		filteredCountOutput := c.Exec(ctx,
+			"spark-master",
+			"spark-sql",
+			"-e",
+			`
+				select
+					count(*)
+				from
+					tracks
+				where
+					context_destination_id = '`+s3DestinationID+`';
+			`,
+			"-S",
+		)
+		filteredCountOutput = strings.ReplaceAll(strings.ReplaceAll(filteredCountOutput, "\n", ""), "\r", "") // remove trailing newline
+		require.NotEmpty(t, filteredCountOutput)
+		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "8", filteredCountOutput) // last character is the count
 	})
 }
 

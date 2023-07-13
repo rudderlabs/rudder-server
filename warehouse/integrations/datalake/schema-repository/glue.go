@@ -34,11 +34,11 @@ var (
 )
 
 type GlueSchemaRepository struct {
-	glueClient *glue.Glue
+	GlueClient *glue.Glue
 	s3bucket   string
 	s3prefix   string
-	warehouse  model.Warehouse
-	namespace  string
+	Warehouse  model.Warehouse
+	Namespace  string
 	logger     logger.Logger
 }
 
@@ -46,8 +46,8 @@ func NewGlueSchemaRepository(wh model.Warehouse, log logger.Logger) (*GlueSchema
 	gl := GlueSchemaRepository{
 		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
 		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
-		warehouse: wh,
-		namespace: wh.Namespace,
+		Warehouse: wh,
+		Namespace: wh.Namespace,
 		logger:    log.Child("schema-repository"),
 	}
 
@@ -55,7 +55,7 @@ func NewGlueSchemaRepository(wh model.Warehouse, log logger.Logger) (*GlueSchema
 	if err != nil {
 		return nil, err
 	}
-	gl.glueClient = glueClient
+	gl.GlueClient = glueClient
 
 	return &gl, nil
 }
@@ -75,7 +75,7 @@ func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model
 			getTablesInput.NextToken = getTablesOutput.NextToken
 		}
 
-		getTablesOutput, err = gl.glueClient.GetTablesWithContext(ctx, getTablesInput)
+		getTablesOutput, err = gl.GlueClient.GetTablesWithContext(ctx, getTablesInput)
 		if err != nil {
 			if _, ok := err.(*glue.EntityNotFoundException); ok {
 				gl.logger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
@@ -116,13 +116,13 @@ func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model
 }
 
 func (gl *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
-	_, err = gl.glueClient.CreateDatabaseWithContext(ctx, &glue.CreateDatabaseInput{
+	_, err = gl.GlueClient.CreateDatabaseWithContext(ctx, &glue.CreateDatabaseInput{
 		DatabaseInput: &glue.DatabaseInput{
-			Name: &gl.namespace,
+			Name: &gl.Namespace,
 		},
 	})
 	if _, ok := err.(*glue.AlreadyExistsException); ok {
-		gl.logger.Infof("Skipping database creation : database %s already exists", gl.namespace)
+		gl.logger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
 		err = nil
 	}
 	return
@@ -141,14 +141,14 @@ func (gl *GlueSchemaRepository) CreateTable(ctx context.Context, tableName strin
 
 	// create table request
 	input := glue.CreateTableInput{
-		DatabaseName: aws.String(gl.namespace),
+		DatabaseName: aws.String(gl.Namespace),
 		TableInput:   tableInput,
 	}
 
 	// add storage descriptor to create table request
 	input.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, columnMap)
 
-	_, err = gl.glueClient.CreateTableWithContext(ctx, &input)
+	_, err = gl.GlueClient.CreateTableWithContext(ctx, &input)
 	if err != nil {
 		_, ok := err.(*glue.AlreadyExistsException)
 		if ok {
@@ -160,14 +160,14 @@ func (gl *GlueSchemaRepository) CreateTable(ctx context.Context, tableName strin
 
 func (gl *GlueSchemaRepository) updateTable(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	updateTableInput := glue.UpdateTableInput{
-		DatabaseName: aws.String(gl.namespace),
+		DatabaseName: aws.String(gl.Namespace),
 		TableInput: &glue.TableInput{
 			Name: aws.String(tableName),
 		},
 	}
 
 	// fetch schema from glue
-	schema, _, err := gl.FetchSchema(ctx, gl.warehouse)
+	schema, _, err := gl.FetchSchema(ctx, gl.Warehouse)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (gl *GlueSchemaRepository) updateTable(ctx context.Context, tableName strin
 	updateTableInput.TableInput.PartitionKeys = partitionKeys
 
 	// update table
-	_, err = gl.glueClient.UpdateTableWithContext(ctx, &updateTableInput)
+	_, err = gl.GlueClient.UpdateTableWithContext(ctx, &updateTableInput)
 	return
 }
 
@@ -246,7 +246,7 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 	if gl.s3prefix != "" {
 		filePath = fmt.Sprintf("%s/", gl.s3prefix)
 	}
-	filePath += warehouseutils.GetTablePathInObjectStorage(gl.namespace, tableName)
+	filePath += warehouseutils.GetTablePathInObjectStorage(gl.Namespace, tableName)
 	return fmt.Sprintf("%s/%s", bucketPath, filePath)
 }
 
@@ -257,7 +257,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName
 	gl.logger.Infof("Refreshing partitions for table: %s", tableName)
 
 	// Skip if time window layout is not defined
-	if layout := warehouseutils.GetConfigValue("timeWindowLayout", gl.warehouse); layout == "" {
+	if layout := warehouseutils.GetConfigValue("timeWindowLayout", gl.Warehouse); layout == "" {
 		return nil
 	}
 
@@ -302,8 +302,8 @@ func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName
 	// partitions) changes in Glue tables (since the number of versions of a Glue table
 	// is limited)
 	for location, partition := range locationsToPartition {
-		_, err := gl.glueClient.GetPartitionWithContext(ctx, &glue.GetPartitionInput{
-			DatabaseName:    aws.String(gl.namespace),
+		_, err := gl.GlueClient.GetPartitionWithContext(ctx, &glue.GetPartitionInput{
+			DatabaseName:    aws.String(gl.Namespace),
 			PartitionValues: partition.Values,
 			TableName:       aws.String(tableName),
 		})
@@ -329,8 +329,8 @@ func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName
 
 	gl.logger.Debugf("Refreshing %d partitions", len(partitionInputs))
 
-	if _, err = gl.glueClient.BatchCreatePartitionWithContext(ctx, &glue.BatchCreatePartitionInput{
-		DatabaseName:       aws.String(gl.namespace),
+	if _, err = gl.GlueClient.BatchCreatePartitionWithContext(ctx, &glue.BatchCreatePartitionInput{
+		DatabaseName:       aws.String(gl.Namespace),
 		PartitionInputList: partitionInputs,
 		TableName:          aws.String(tableName),
 	}); err != nil {
@@ -346,7 +346,7 @@ func (gl *GlueSchemaRepository) partitionColumns() (columns []*glue.Column, err 
 		partitionGroups map[string]string
 	)
 
-	if layout = warehouseutils.GetConfigValue("timeWindowLayout", gl.warehouse); layout == "" {
+	if layout = warehouseutils.GetConfigValue("timeWindowLayout", gl.Warehouse); layout == "" {
 		return
 	}
 

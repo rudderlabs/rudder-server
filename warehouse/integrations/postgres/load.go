@@ -34,17 +34,17 @@ type loadUsersTableResponse struct {
 
 func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 	pg.logger.Infow("started loading",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
-		logfield.Namespace, pg.namespace,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
 	)
 
-	err := pg.db.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
-		tableSchemaInUpload := pg.uploader.GetTableSchemaInUpload(tableName)
+	err := pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+		tableSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(tableName)
 
 		_, err := pg.loadTable(ctx, tx, tableName, tableSchemaInUpload)
 		return err
@@ -54,12 +54,12 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 	}
 
 	pg.logger.Infow("completed loading",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
-		logfield.Namespace, pg.namespace,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
 	)
 
@@ -72,7 +72,7 @@ func (pg *Postgres) loadTable(
 	tableName string,
 	tableSchemaInUpload model.TableSchema,
 ) (loadTableResponse, error) {
-	query := fmt.Sprintf(`SET search_path TO %q;`, pg.namespace)
+	query := fmt.Sprintf(`SET search_path TO %q;`, pg.Namespace)
 	if _, err := txn.ExecContext(ctx, query); err != nil {
 		return loadTableResponse{}, fmt.Errorf("setting search path: %w", err)
 	}
@@ -84,17 +84,17 @@ func (pg *Postgres) loadTable(
 		CREATE TEMPORARY TABLE %[2]s (LIKE %[1]q.%[3]q)
 		ON COMMIT PRESERVE ROWS;
 `,
-		pg.namespace,
+		pg.Namespace,
 		stagingTableName,
 		tableName,
 	)
 	pg.logger.Infow("creating temporary table",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
-		logfield.Namespace, pg.namespace,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
 		logfield.Query, query,
@@ -108,7 +108,7 @@ func (pg *Postgres) loadTable(
 		return loadTableResponse{}, fmt.Errorf("preparing statement for copy in: %w", err)
 	}
 
-	loadFiles, err := pg.loadFileDownloader.Download(ctx, tableName)
+	loadFiles, err := pg.LoadFileDownloader.Download(ctx, tableName)
 	defer misc.RemoveFilePaths(loadFiles...)
 	if err != nil {
 		return loadTableResponse{}, fmt.Errorf("downloading load files: %w", err)
@@ -187,7 +187,7 @@ func (pg *Postgres) loadTable(
 	if tableName == warehouseutils.DiscardsTable {
 		additionalJoinClause = fmt.Sprintf(
 			`AND _source.%[3]s = %[1]q.%[2]q.%[3]q AND _source.%[4]s = %[1]q.%[2]q.%[4]q`,
-			pg.namespace,
+			pg.Namespace,
 			tableName,
 			"table_name",
 			"column_name",
@@ -204,21 +204,21 @@ func (pg *Postgres) loadTable(
 			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
 		  );
 	`,
-		pg.namespace,
+		pg.Namespace,
 		tableName,
 		stagingTableName,
 		primaryKey,
 		additionalJoinClause,
 	)
 
-	if !slices.Contains(pg.config.skipDedupDestinationIDs, pg.warehouse.Destination.ID) {
+	if !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
 		pg.logger.Infow("deduplication",
-			logfield.SourceID, pg.warehouse.Source.ID,
-			logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, pg.warehouse.Destination.ID,
-			logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, pg.warehouse.WorkspaceID,
-			logfield.Namespace, pg.namespace,
+			logfield.SourceID, pg.Warehouse.Source.ID,
+			logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, pg.Warehouse.Destination.ID,
+			logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+			logfield.Namespace, pg.Namespace,
 			logfield.TableName, tableName,
 			logfield.StagingTableName, stagingTableName,
 			logfield.Query, query,
@@ -235,11 +235,11 @@ func (pg *Postgres) loadTable(
 		}
 
 		pg.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-			"sourceID":     pg.warehouse.Source.ID,
-			"sourceType":   pg.warehouse.Source.SourceDefinition.Name,
-			"destID":       pg.warehouse.Destination.ID,
-			"destType":     pg.warehouse.Destination.DestinationDefinition.Name,
-			"workspaceId":  pg.warehouse.WorkspaceID,
+			"sourceID":     pg.Warehouse.Source.ID,
+			"sourceType":   pg.Warehouse.Source.SourceDefinition.Name,
+			"destID":       pg.Warehouse.Destination.ID,
+			"destType":     pg.Warehouse.Destination.DestinationDefinition.Name,
+			"workspaceId":  pg.Warehouse.WorkspaceID,
 			"tableName":    tableName,
 			"rowsAffected": fmt.Sprintf("%d", rowsAffected),
 		})
@@ -266,7 +266,7 @@ func (pg *Postgres) loadTable(
 		WHERE
 		  _rudder_staging_row_number = 1;
 	`,
-		pg.namespace,
+		pg.Namespace,
 		tableName,
 		quotedColumnNames,
 		stagingTableName,
@@ -274,12 +274,12 @@ func (pg *Postgres) loadTable(
 	)
 
 	pg.logger.Infow("inserting records",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
-		logfield.Namespace, pg.namespace,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+		logfield.Namespace, pg.Namespace,
 		logfield.TableName, tableName,
 		logfield.StagingTableName, stagingTableName,
 		logfield.Query, query,
@@ -296,20 +296,20 @@ func (pg *Postgres) loadTable(
 
 func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
 	pg.logger.Infow("started loading for identifies and users tables",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
-		logfield.Namespace, pg.namespace,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+		logfield.Namespace, pg.Namespace,
 	)
 
-	identifiesSchemaInUpload := pg.uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
-	usersSchemaInUpload := pg.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
-	usersSchemaInWarehouse := pg.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	identifiesSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
+	usersSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
+	usersSchemaInWarehouse := pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 
 	var loadingError loadUsersTableResponse
-	_ = pg.db.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+	_ = pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		loadingError = pg.loadUsersTable(ctx, tx, identifiesSchemaInUpload, usersSchemaInUpload, usersSchemaInWarehouse)
 		if loadingError.identifiesError != nil || loadingError.usersError != nil {
 			return errors.New("loading users and identifies table")
@@ -335,12 +335,12 @@ func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	pg.logger.Infow("completed loading for users and identities table",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
-		logfield.Namespace, pg.namespace,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+		logfield.Namespace, pg.Namespace,
 	)
 
 	return map[string]error{
@@ -367,7 +367,7 @@ func (pg *Postgres) loadUsersTable(
 		return loadUsersTableResponse{}
 	}
 
-	canSkipComputingLatestUserTraits := pg.config.skipComputingUserLatestTraits || slices.Contains(pg.config.skipComputingUserLatestTraitsWorkspaceIDs, pg.warehouse.WorkspaceID)
+	canSkipComputingLatestUserTraits := pg.config.skipComputingUserLatestTraits || slices.Contains(pg.config.skipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID)
 	if canSkipComputingLatestUserTraits {
 		if _, err = pg.loadTable(ctx, tx, warehouseutils.UsersTable, usersSchemaInUpload); err != nil {
 			return loadUsersTableResponse{
@@ -440,7 +440,7 @@ func (pg *Postgres) loadUsersTable(
 			)
 		);
 `,
-		pg.namespace,
+		pg.Namespace,
 		warehouseutils.UsersTable,
 		identifiesTableResponse.StagingTableName,
 		strings.Join(userColNames, ","),
@@ -448,14 +448,14 @@ func (pg *Postgres) loadUsersTable(
 	)
 
 	pg.logger.Infow("creating union staging users table",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, unionStagingTableName,
-		logfield.Namespace, pg.namespace,
+		logfield.Namespace, pg.Namespace,
 		logfield.Query, query,
 	)
 	if _, err = tx.ExecContext(ctx, query); err != nil {
@@ -484,11 +484,11 @@ func (pg *Postgres) loadUsersTable(
 	)
 
 	pg.logger.Debugw("creating temporary users table",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, usersStagingTableName,
 		logfield.Query, query,
@@ -510,21 +510,21 @@ func (pg *Postgres) loadUsersTable(
 			_source.%[4]s = %[1]s.%[2]s.%[4]s
 		  );
 `,
-		pg.namespace,
+		pg.Namespace,
 		warehouseutils.UsersTable,
 		usersStagingTableName,
 		primaryKey,
 	)
 
 	pg.logger.Infow("deduplication for users table",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, usersStagingTableName,
-		logfield.Namespace, pg.namespace,
+		logfield.Namespace, pg.Namespace,
 		logfield.Query, query,
 	)
 	if _, err = tx.ExecContext(ctx, query); err != nil {
@@ -541,20 +541,20 @@ func (pg *Postgres) loadUsersTable(
 		FROM
 		  %[3]q;
 `,
-		pg.namespace,
+		pg.Namespace,
 		warehouseutils.UsersTable,
 		usersStagingTableName,
 		strings.Join(append([]string{"id"}, userColNames...), ","),
 	)
 	pg.logger.Infow("inserting records to users table",
-		logfield.SourceID, pg.warehouse.Source.ID,
-		logfield.SourceType, pg.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.warehouse.Destination.ID,
-		logfield.DestinationType, pg.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.warehouse.WorkspaceID,
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
 		logfield.TableName, warehouseutils.UsersTable,
 		logfield.StagingTableName, usersStagingTableName,
-		logfield.Namespace, pg.namespace,
+		logfield.Namespace, pg.Namespace,
 		logfield.Query, query,
 	)
 	if _, err = tx.ExecContext(ctx, query); err != nil {
