@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/rudderlabs/rudder-server/compare/v1.10.0...v1.10.1) (2023-07-13)
+
+
+### Miscellaneous
+
+* retry on 408 response events hot fix ([#3629](https://github.com/rudderlabs/rudder-server/issues/3629)) ([973894c](https://github.com/rudderlabs/rudder-server/commit/973894c3b85a1cd57dcaf2d0dcd2fcd9ec939ec2))
+
 ## [1.10.0](https://github.com/rudderlabs/rudder-server/compare/v1.9.0...v1.10.0) (2023-06-23)
 
 
