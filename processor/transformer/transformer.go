@@ -43,16 +43,7 @@ const (
 	TransformerRequestTimeout = 919
 )
 
-var (
-	json                    = jsoniter.ConfigCompatibleWithStandardLibrary
-	warehouseDestinationMap map[string]struct{}
-)
-
-func init() {
-	warehouseDestinationMap = lo.SliceToMap(warehouseutils.WarehouseDestinations, func(destination string) (string, struct{}) {
-		return destination, struct{}{}
-	})
-}
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Metadata struct {
 	SourceID            string                            `json:"sourceId"`
@@ -502,7 +493,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 func (trans *handle) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", trans.config.destTransformationURL, strings.ToLower(destType))
 
-	if _, ok := warehouseDestinationMap[destType]; ok {
+	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
 		if destType == warehouseutils.RS {
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
