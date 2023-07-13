@@ -209,6 +209,68 @@ var _ = Describe("Reporting", func() {
 		aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
 		Expect(aggregatedMetrics).To(Equal(expectedResponse))
 	})
+
+	Context("transformMetricForEventNameTrackingDisabled Tests", func() {
+		It("Should match transformMetricForEventNameTrackingDisabled response for a valid metric", func() {
+			inputMetric := types.PUReportedMetric{
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:        "some-source-id",
+					DestinationID:   "some-destination-id",
+					SourceTaskRunID: "some-source-task-run-id",
+					SourceJobID:     "some-source-job-id",
+					SourceJobRunID:  "some-source-job-run-id",
+				},
+				PUDetails: types.PUDetails{
+					InPU:       "some-in-pu",
+					PU:         "some-pu",
+					TerminalPU: false,
+					InitialPU:  false,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:         "some-status",
+					Count:          3,
+					StatusCode:     0,
+					SampleResponse: `{"some-sample-response-key": "some-sample-response-value"}`,
+					SampleEvent:    []byte(`{"some-sample-event-key": "some-sample-event-value"}`),
+					EventName:      "some-event-name",
+					EventType:      "some-event-type",
+				},
+			}
+
+			expectedResponse := types.PUReportedMetric{
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:        "some-source-id",
+					DestinationID:   "some-destination-id",
+					SourceTaskRunID: "some-source-task-run-id",
+					SourceJobID:     "some-source-job-id",
+					SourceJobRunID:  "some-source-job-run-id",
+				},
+				PUDetails: types.PUDetails{
+					InPU:       "some-in-pu",
+					PU:         "some-pu",
+					TerminalPU: false,
+					InitialPU:  false,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:         "some-status",
+					Count:          3,
+					StatusCode:     0,
+					SampleResponse: `{"some-sample-response-key": "some-sample-response-value"}`,
+					SampleEvent:    []byte(`{"some-sample-event-key": "some-sample-event-value"}`),
+					EventName:      "",
+					EventType:      "some-event-type",
+				},
+			}
+
+			transformedMetric := transformMetricForEventNameTrackingDisabled(inputMetric)
+			assertReportMetric(expectedResponse, transformedMetric)
+		})
+
+		It("IsEventNameTrackingDisabledForSource should return false for invalid sourceID", func() {
+			reportHandle := NewFromEnvConfig(logger.NOP)
+			Expect(reportHandle.IsEventNameTrackingDisabledForSource("testSourceId-1")).To(BeFalse())
+		})
+	})
 })
 
 func assertReportMetric(expectedMetric, actualMetric types.PUReportedMetric) {
