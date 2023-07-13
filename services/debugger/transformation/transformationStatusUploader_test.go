@@ -323,13 +323,13 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 func TestLimit(t *testing.T) {
 	var (
 		singularEvent1 = types.SingularEventT{"payload": "event-1"}
-		metadata1      = transformer.MetadataT{MessageID: "message-id-1"}
+		metadata1      = transformer.Metadata{MessageID: "message-id-1"}
 		singularEvent2 = types.SingularEventT{"payload": "event-2"}
-		metadata2      = transformer.MetadataT{MessageID: "message-id-2"}
+		metadata2      = transformer.Metadata{MessageID: "message-id-2"}
 		singularEvent3 = types.SingularEventT{"payload": "event-3"}
-		metadata3      = transformer.MetadataT{MessageID: "message-id-3"}
+		metadata3      = transformer.Metadata{MessageID: "message-id-3"}
 		singularEvent4 = types.SingularEventT{"payload": "event-4"}
-		metadata4      = transformer.MetadataT{MessageID: "message-id-4"}
+		metadata4      = transformer.Metadata{MessageID: "message-id-4"}
 		now            = time.Now()
 		limit          = 1
 	)
@@ -338,7 +338,7 @@ func TestLimit(t *testing.T) {
 			Destination: &sampleBackendConfig.Sources[1].Destinations[1],
 			DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,
 			SourceID:    sampleBackendConfig.Sources[1].ID,
-			UserTransformedEvents: []transformer.TransformerEventT{
+			UserTransformedEvents: []transformer.TransformerEvent{
 				{
 					Message:  singularEvent1,
 					Metadata: metadata1,
@@ -366,7 +366,7 @@ func TestLimit(t *testing.T) {
 					ReceivedAt:    now,
 				},
 			},
-			FailedEvents: []transformer.TransformerResponseT{
+			FailedEvents: []transformer.TransformerResponse{
 				{
 					Output:   singularEvent1,
 					Metadata: metadata3,
@@ -400,7 +400,7 @@ func TestLimit(t *testing.T) {
 		)
 		require.Equal(
 			t,
-			[]transformer.TransformerEventT{
+			[]transformer.TransformerEvent{
 				{
 					Message:  singularEvent1,
 					Metadata: metadata1,
@@ -410,7 +410,7 @@ func TestLimit(t *testing.T) {
 		)
 		require.Equal(
 			t,
-			[]transformer.TransformerResponseT{
+			[]transformer.TransformerResponse{
 				{
 					Output:   singularEvent1,
 					Metadata: metadata3,

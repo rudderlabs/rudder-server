@@ -318,10 +318,16 @@ func TestIntegration(t *testing.T) {
 				require.NoError(t, db.Ping())
 
 				t.Cleanup(func() {
-					require.NoError(t, testhelper.WithConstantRetries(func() error {
-						_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-						return err
-					}))
+					require.Eventually(t, func() bool {
+						if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema)); err != nil {
+							t.Logf("error deleting schema: %v", err)
+							return false
+						}
+						return true
+					},
+						time.Minute,
+						time.Second,
+					)
 				})
 
 				sqlClient := &client.Client{
@@ -396,6 +402,33 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
+		dsn, err := snowflakedb.DSN(&snowflakedb.Config{
+			Account:   credentials.Account,
+			User:      credentials.User,
+			Role:      credentials.Role,
+			Password:  credentials.Password,
+			Database:  credentials.Database,
+			Warehouse: credentials.Warehouse,
+		})
+		require.NoError(t, err)
+
+		db, err := sql.Open("snowflake", dsn)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+
+		t.Cleanup(func() {
+			require.Eventually(t, func() bool {
+				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
+					t.Logf("error deleting schema: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
+		})
+
 		dest := backendconfig.DestinationT{
 			ID: destinationID,
 			Config: map[string]interface{}{
