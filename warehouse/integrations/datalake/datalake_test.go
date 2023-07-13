@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/minio/minio-go/v7"
 
 	"cloud.google.com/go/storage"
 
@@ -361,19 +364,29 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			_, err := db.ExecContext(ctx, "SELECT 1")
+			_, err := db.ExecContext(ctx, `SELECT 1`)
 			return err == nil
-		}, 60*time.Second, 1*time.Second)
+		},
+			60*time.Second,
+			100*time.Millisecond,
+		)
 
-		require.NoError(t, testhelper.WithConstantRetries(func() error {
+		require.Eventually(t, func() bool {
 			_, err = db.ExecContext(ctx, `
 				CREATE SCHEMA IF NOT EXISTS minio.rudderstack WITH (
 				location = 's3a://`+s3BucketName+`/')
 			`)
-			return err
-		}))
+			if err != nil {
+				t.Log("create schema: ", err)
+				return false
+			}
+			return true
+		},
+			60*time.Second,
+			1*time.Second,
+		)
 
-		require.NoError(t, testhelper.WithConstantRetries(func() error {
+		require.Eventually(t, func() bool {
 			_, err = db.ExecContext(ctx, `
 				CREATE TABLE IF NOT EXISTS minio.rudderstack.tracks (
 					"_timestamp" TIMESTAMP,
@@ -400,23 +413,38 @@ func TestIntegration(t *testing.T) {
 					format = 'PARQUET'
 				)
 			`)
-			return err
-		}))
+			if err != nil {
+				t.Log("create table: ", err)
+				return false
+			}
+			return true
+		},
+			60*time.Second,
+			1*time.Second,
+		)
 
 		var count int64
 
-		require.NoError(t, testhelper.WithConstantRetries(func() error {
-			return db.QueryRowContext(ctx, `
+		require.Eventually(t, func() bool {
+			err := db.QueryRowContext(ctx, `
 				select
 				    count(*)
 				from
 				     minio.rudderstack.tracks
 			`).Scan(&count)
-		}))
+			if err != nil {
+				t.Log("select count: ", err)
+				return false
+			}
+			return true
+		},
+			60*time.Second,
+			1*time.Second,
+		)
 		require.Equal(t, int64(8), count)
 
-		require.NoError(t, testhelper.WithConstantRetries(func() error {
-			return db.QueryRowContext(ctx, `
+		require.Eventually(t, func() bool {
+			err := db.QueryRowContext(ctx, `
 				select
 					count(*)
 				from
@@ -424,7 +452,15 @@ func TestIntegration(t *testing.T) {
 				where
 					context_destination_id = '`+s3DestinationID+`'
 			`).Scan(&count)
-		}))
+			if err != nil {
+				t.Log("select count with where clause: ", err)
+				return false
+			}
+			return true
+		},
+			60*time.Second,
+			1*time.Second,
+		)
 		require.Equal(t, int64(8), count)
 	})
 
