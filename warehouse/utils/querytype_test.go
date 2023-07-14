@@ -15,6 +15,7 @@ func TestGetQueryType(t *testing.T) {
 		{"insert", "\t\n\n  \t\n\n  InSerT INTO something", "INSERT INTO"},
 		{"create temp table 1", "\t\n\n  \t\n\n  create temp table t1", "CREATE TEMP TABLE"},
 		{"create temp table 2", "\t\n\n  \t\n\n  create tempORARY table t1", "CREATE TEMP TABLE"},
+		{"create database", "\t\n\n  \t\n\n  creATE dataBASE db1", "CREATE DATABASE"},
 		{"create schema", "\t\n\n  \t\n\n  creATE schEMA sch1", "CREATE SCHEMA"},
 		{"create table", "\t\n\n  \t\n\n  creATE tABLE t1", "CREATE TABLE"},
 		{"create index", "\t\n\n  \t\n\n  creATE inDeX idx1", "CREATE INDEX"},
