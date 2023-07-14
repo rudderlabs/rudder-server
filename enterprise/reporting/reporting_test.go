@@ -257,7 +257,7 @@ var _ = Describe("Reporting", func() {
 					StatusCode:     0,
 					SampleResponse: `{"some-sample-response-key": "some-sample-response-value"}`,
 					SampleEvent:    []byte(`{"some-sample-event-key": "some-sample-event-value"}`),
-					EventName:      "",
+					EventName:      "some-event-type",
 					EventType:      "some-event-type",
 				},
 			}

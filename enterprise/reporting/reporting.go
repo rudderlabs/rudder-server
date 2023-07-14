@@ -539,7 +539,7 @@ func (r *HandleT) IsEventNameTrackingDisabledForSource(sourceID string) bool {
 }
 
 func transformMetricForEventNameTrackingDisabled(metric types.PUReportedMetric) types.PUReportedMetric {
-	metric.StatusDetail.EventName = ""
+	metric.StatusDetail.EventName = metric.StatusDetail.EventType
 	return metric
 }
 
