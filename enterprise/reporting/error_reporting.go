@@ -409,11 +409,13 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 				continue
 			}
 			deleteReportsStart := time.Now()
-			_, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
+			var delRows *sql.Rows
+			delRows, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
 				edRep.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
 			}
+			delRows.Close()
 		}
 
 		mainLoopTimer.Since(loopStart)
