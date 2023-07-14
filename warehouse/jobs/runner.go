@@ -209,6 +209,8 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 		go func() {
 			defer wg.Done()
 			select {
+			case <-ctx.Done():
+				a.logger.Infof("[WH-Jobs]: Context cancelled for async job runner")
 			case responses := <-ch:
 				a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
 				asyncJobsStatusMap := getAsyncStatusMapFromAsyncPayloads(pendingAsyncJobs)
