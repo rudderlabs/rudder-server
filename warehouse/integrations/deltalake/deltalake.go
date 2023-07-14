@@ -215,6 +215,7 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	db := sql.OpenDB(connector)
 	middleware := sqlmiddleware.New(
 		db,
+		sqlmiddleware.WithStats(d.stats),
 		sqlmiddleware.WithLogger(d.logger),
 		sqlmiddleware.WithKeyAndValues(
 			logfield.SourceID, d.Warehouse.Source.ID,

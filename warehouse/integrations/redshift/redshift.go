@@ -1060,6 +1060,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	}
 	middleware := sqlmiddleware.New(
 		db,
+		sqlmiddleware.WithStats(rs.stats),
 		sqlmiddleware.WithLogger(rs.logger),
 		sqlmiddleware.WithKeyAndValues(
 			logfield.SourceID, rs.Warehouse.Source.ID,
