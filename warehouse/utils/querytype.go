@@ -1,0 +1,71 @@
+package warehouseutils
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+var (
+	// queryTypeIndex works for both regexes as long as the groups order is not changed
+	queryTypeIndex  int
+	queryTypeTokens string
+	queryTypeRegex  *regexp.Regexp
+
+	unknownQueryTypeRegex = regexp.MustCompile(`^(?i)\s*(?P<type>\w+)\s+`)
+)
+
+func init() {
+	tokens := []string{
+		"SELECT", "UPDATE", "DELETE FROM", "INSERT INTO",
+		"CREATE TEMP TABLE", "CREATE TEMPORARY TABLE",
+		"CREATE SCHEMA", "CREATE TABLE", "CREATE INDEX",
+		"ALTER TABLE", "ALTER SESSION",
+		"DROP TABLE",
+	}
+	queryTypeTokens = tokens[0]
+	for i := 1; i < len(tokens); i++ {
+		queryTypeTokens += "|" + tokens[i]
+	}
+	queryTypeRegex = regexp.MustCompile(`^(?i)\s*(?P<type>` + queryTypeTokens + `)\s+`)
+
+	var found bool
+	for i, name := range queryTypeRegex.SubexpNames() {
+		if name == "type" {
+			found = true
+			queryTypeIndex = i
+			break
+		}
+	}
+	if !found {
+		panic(fmt.Errorf("warehouseutils: query type index not found"))
+	}
+}
+
+// GetQueryType returns the type of the query.
+func GetQueryType(query string) string {
+	var (
+		queryType = ""
+		submatch  = queryTypeRegex.FindStringSubmatch(query)
+	)
+
+	if len(submatch) > queryTypeIndex {
+		queryType = strings.ToUpper(submatch[queryTypeIndex])
+		if queryType == "CREATE TEMPORARY TABLE" {
+			queryType = "CREATE TEMP TABLE"
+		}
+	}
+
+	if queryType == "" { // get the first word
+		submatch = unknownQueryTypeRegex.FindStringSubmatch(query)
+		if len(submatch) > queryTypeIndex {
+			queryType = strings.ToUpper(submatch[queryTypeIndex])
+		}
+	}
+
+	if queryType == "" {
+		queryType = "UNKNOWN"
+	}
+
+	return queryType
+}
