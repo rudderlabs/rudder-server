@@ -85,7 +85,7 @@ func GetSupportedMessageEvents(destination *backendconfig.DestinationT) ([]strin
 }
 
 type AllowTransformerEventParams struct {
-	TransformerEvent      *transformer.TransformerEventT
+	TransformerEvent      *transformer.TransformerEvent
 	SupportedMessageTypes []string
 }
 
@@ -123,13 +123,13 @@ Currently this method supports below validations(executed in the same order):
 
 2. Validate if the event is sendable to destination based on connectionMode, sourceType & messageType
 */
-func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEventT, supportedMsgTypes []string) (bool, *transformer.TransformerResponseT) {
+func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEvent, supportedMsgTypes []string) (bool, *transformer.TransformerResponse) {
 	// MessageType filtering -- STARTS
 	messageType := strings.TrimSpace(strings.ToLower(getMessageType(&transformerEvent.Message)))
 	if messageType == "" {
 		// We will abort the event
 		errMessage := "Invalid message type. Type assertion failed"
-		resp := &transformer.TransformerResponseT{
+		resp := &transformer.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: 400,
 			Metadata: transformerEvent.Metadata,
 			Error:    errMessage,
@@ -193,7 +193,7 @@ Example:
 			...
 		}
 */
-func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterParams) (bool, *transformer.TransformerResponseT) {
+func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterParams) (bool, *transformer.TransformerResponse) {
 	destination := connectionModeFilterParams.Destination
 	srcType := strings.TrimSpace(connectionModeFilterParams.SrcType)
 	messageType := connectionModeFilterParams.Event.MessageType
