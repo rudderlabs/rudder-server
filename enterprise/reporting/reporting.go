@@ -74,7 +74,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
-	config.RegisterIntConfigVariable(16, &maxOpenConnections, true, 1, []string{"Reporting.maxOpenConnections"}...)
+	config.RegisterIntConfigVariable(16, &maxOpenConnections, false, 1, []string{"Reporting.maxOpenConnections"}...)
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {

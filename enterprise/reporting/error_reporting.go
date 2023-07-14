@@ -101,7 +101,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, []string{"Reporting.errorReporting.mainLoopSleepInterval"}...)
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, []string{"Reporting.errorReporting.sleepInterval"}...)
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, []string{"Reporting.errorReporting.maxConcurrentRequests"}...)
-	config.RegisterIntConfigVariable(16, &maxOpenConnections, true, 1, []string{"Reporting.errorReporting.maxOpenConnections"}...)
+	config.RegisterIntConfigVariable(16, &maxOpenConnections, false, 1, []string{"Reporting.errorReporting.maxOpenConnections"}...)
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
