@@ -72,7 +72,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
-	sourcesWithEventNameTrackingDisabledEnv := config.GetString("SOURCES_WITH_EVENT_NAME_TRACKING_DISABLEDd", "")
+	sourcesWithEventNameTrackingDisabledEnv := config.GetString("SOURCES_WITH_EVENT_NAME_TRACKING_DISABLED", "")
 	sourcesWithEventNameTrackingDisabled := []string{}
 	if len(sourcesWithEventNameTrackingDisabledEnv) > 0 {
 		sourcesWithEventNameTrackingDisabled = strings.Split(sourcesWithEventNameTrackingDisabledEnv, ",")
