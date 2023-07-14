@@ -70,6 +70,7 @@ type ErrorDetailReporter struct {
 	sleepInterval             time.Duration
 	mainLoopSleepInterval     time.Duration
 	maxConcurrentRequests     int
+	maxOpenConnections        int
 	workspaceIDForSourceIDMap map[string]string
 	destinationIDMap          map[string]destDetail
 	srcWspMutex               sync.RWMutex
@@ -91,14 +92,16 @@ type errorDetails struct {
 func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	var maxConcurrentRequests int
+	var maxOpenConnections int
 	tr := &http.Transport{}
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
-	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
-	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
-	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
+	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, []string{"Reporting.errorReporting.mainLoopSleepInterval"}...)
+	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, []string{"Reporting.errorReporting.sleepInterval"}...)
+	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, []string{"Reporting.errorReporting.maxConcurrentRequests"}...)
+	config.RegisterIntConfigVariable(16, &maxOpenConnections, true, 1, []string{"Reporting.errorReporting.maxOpenConnections"}...)
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
@@ -121,6 +124,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 		destinationIDMap:          make(map[string]destDetail),
 		clients:                   make(map[string]*types.Client),
 		errorDetailExtractor:      extractor,
+		maxOpenConnections:        maxOpenConnections,
 	}
 }
 
@@ -273,6 +277,7 @@ func (*ErrorDetailReporter) IsPIIReportingDisabled(_ string) bool {
 
 func (edRep *ErrorDetailReporter) migrate(c types.Config) (*sql.DB, error) {
 	dbHandle, err := sql.Open("postgres", c.ConnInfo)
+	dbHandle.SetMaxOpenConns(edRep.maxOpenConnections)
 	if err != nil {
 		return nil, err
 	}

@@ -59,6 +59,7 @@ type HandleT struct {
 	region                    string
 	sleepInterval             time.Duration
 	mainLoopSleepInterval     time.Duration
+	maxOpenConnections        int
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -67,11 +68,13 @@ type HandleT struct {
 
 func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
+	var maxOpenConnections int
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
+	config.RegisterIntConfigVariable(16, &maxOpenConnections, true, 1, []string{"Reporting.maxOpenConnections"}...)
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -91,6 +94,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 		sleepInterval:             sleepInterval,
 		mainLoopSleepInterval:     mainLoopSleepInterval,
 		region:                    config.GetString("region", ""),
+		maxOpenConnections:        maxOpenConnections,
 	}
 }
 
@@ -148,6 +152,7 @@ func (r *HandleT) AddClient(ctx context.Context, c types.Config) {
 	if err != nil {
 		panic(err)
 	}
+	dbHandle.SetMaxOpenConns(r.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
