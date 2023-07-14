@@ -151,7 +151,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			wh := HandleT{
 				destType:     tc.destType,
 				stats:        store,
-				dbHandle:     pgResource.DB,
+				dbHandle:     sqlquerywrapper.New(pgResource.DB),
 				whSchemaRepo: repo.NewWHSchemas(sqlquerywrapper.New(pgResource.DB)),
 			}
 			tenantManager = &multitenant.Manager{}
@@ -344,7 +344,7 @@ func Test_GetNamespace(t *testing.T) {
 			wh := HandleT{
 				destType:     tc.destType,
 				stats:        store,
-				dbHandle:     pgResource.DB,
+				dbHandle:     sqlquerywrapper.New(pgResource.DB),
 				whSchemaRepo: repo.NewWHSchemas(sqlquerywrapper.New(pgResource.DB)),
 				conf:         conf,
 			}
