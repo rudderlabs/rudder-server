@@ -243,8 +243,10 @@
           "config": {
             "bucketName": "{{.gcsBucketName}}",
             "prefix": "",
-            "credentials": "{{.gcsCredentials}}",
-            "syncFrequency": "30"
+            "endPoint": "{{.gcsEndPoint}}",
+            "syncFrequency": "30",
+            "disableSSL": true,
+            "jsonReads": true
           },
           "liveEventsConfig": {},
           "secretConfig": {},

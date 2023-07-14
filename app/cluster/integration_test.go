@@ -214,7 +214,6 @@ func TestDynamicClusterManager(t *testing.T) {
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-	mockTransformer.EXPECT().Setup().Times(1)
 
 	rtFactory := &router.Factory{
 		Logger:           logger.NOP,

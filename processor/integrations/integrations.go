@@ -7,45 +7,25 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
-	jsonfast              = jsoniter.ConfigCompatibleWithStandardLibrary
-	destTransformURL      string
-	userTransformURL      string
+	json                  = jsoniter.ConfigCompatibleWithStandardLibrary
 	postParametersTFields []string
 )
 
-func Init() {
-	loadConfig()
+func init() {
 	// This is called in init and it should be a one time call. Making reflect calls during runtime is not a great idea.
 	// We unmarshal json response from transformer into PostParametersT struct.
 	// Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling
 	// This function gets a list of fields tagged as json from the struct and populates in postParametersTFields
 	postParametersTFields = misc.GetMandatoryJSONFieldNames(PostParametersT{})
 }
-
-func loadConfig() {
-	destTransformURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	userTransformURL = config.GetString("USER_TRANSFORM_URL", destTransformURL)
-}
-
-const (
-	// PostDataKV means post data is sent as KV
-	PostDataKV = iota + 1
-	// PostDataJSON means post data is sent as JSON
-	PostDataJSON
-	// PostDataXML means post data is sent as XML
-	PostDataXML
-)
 
 // PostParametersT is a struct for holding all the values from transformerResponse and use them to publish an event to a destination
 // optional is a custom tag introduced by us and is handled by GetMandatoryJSONFieldNames. Its intentionally added
@@ -73,7 +53,7 @@ type TransResponseT struct {
 
 func CollectDestErrorStats(input []byte) {
 	var integrationStat TransStatsT
-	err := jsonfast.Unmarshal(input, &integrationStat)
+	err := json.Unmarshal(input, &integrationStat)
 	if err == nil {
 		if len(integrationStat.StatTags) > 0 {
 			stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
@@ -83,7 +63,7 @@ func CollectDestErrorStats(input []byte) {
 
 func CollectIntgTransformErrorStats(input []byte) {
 	var integrationStats []TransStatsT
-	err := jsonfast.Unmarshal(input, &integrationStats)
+	err := json.Unmarshal(input, &integrationStats)
 	if err == nil {
 		for _, integrationStat := range integrationStats {
 			if len(integrationStat.StatTags) > 0 {
@@ -95,7 +75,7 @@ func CollectIntgTransformErrorStats(input []byte) {
 
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
-	transformRaw, err := jsonfast.Marshal(transformRawParams)
+	transformRaw, err := json.Marshal(transformRawParams)
 	if err != nil {
 		return err
 	}
@@ -159,36 +139,4 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 	}
 	retVal = outVal
 	return
-}
-
-// GetTransformerURL gets the transfomer base url endpoint
-func GetTransformerURL() string {
-	return destTransformURL
-}
-
-// GetDestinationURL returns node URL
-func GetDestinationURL(destType string) string {
-	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", destTransformURL, strings.ToLower(destType))
-	if slices.Contains(warehouseutils.WarehouseDestinations, destType) {
-		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
-		if destType == "RS" {
-			return destinationEndPoint + "?" + whSchemaVersionQueryParam
-		}
-		if destType == "CLICKHOUSE" {
-			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", config.GetBool("Warehouse.clickhouse.enableArraySupport", false)))
-			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
-		}
-		return destinationEndPoint + "?" + whSchemaVersionQueryParam
-	}
-	return destinationEndPoint
-}
-
-// GetUserTransformURL returns the port of running user transform
-func GetUserTransformURL() string {
-	return userTransformURL + "/customTransform"
-}
-
-// GetTrackingPlanValidationURL returns the port of running tracking plan validation
-func GetTrackingPlanValidationURL() string {
-	return destTransformURL + "/v0/validate"
 }

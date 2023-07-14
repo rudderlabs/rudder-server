@@ -700,7 +700,7 @@ func (rs *Redshift) loadTable(ctx context.Context, tableName string, tableSchema
 			  row_number() OVER (
 				PARTITION BY %[5]s
 				ORDER BY
-				  received_at ASC
+				  received_at DESC
 			  ) AS _rudder_staging_row_number
 			FROM
 			  %[1]q.%[4]q

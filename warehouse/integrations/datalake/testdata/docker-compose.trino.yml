@@ -1,0 +1,32 @@
+version: '3.7'
+services:
+  trino:
+    image: trinodb/trino:362
+    ports:
+      - "8080"
+    volumes:
+      - ./etc:/etc/trino/:ro
+    depends_on:
+      - hive-metastore
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  hive-metastore:
+    image: rudderstack/hive-metastore:latest
+    ports:
+      - "9083"
+    volumes:
+      - ./conf/metastore-site.xml:/opt/apache-hive-metastore-3.0.0-bin/conf/metastore-site.xml:ro
+    environment:
+      METASTORE_DB_HOSTNAME: jobsDb
+      METASTORE_TYPE: postgres
+    depends_on:
+      - jobsDb
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
