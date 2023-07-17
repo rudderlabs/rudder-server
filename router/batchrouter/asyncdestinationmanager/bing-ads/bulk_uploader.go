@@ -91,7 +91,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			continue
 		}
 
-		uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.HistogramType, map[string]string{
+		uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
 		})

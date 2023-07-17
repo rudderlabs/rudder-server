@@ -246,7 +246,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 	}
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.HistogramType, map[string]string{
+	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
