@@ -217,6 +217,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							continue
 						}
 						brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
+						brt.asyncStructCleanUp(destinationID)
 					}
 				}
 			}
@@ -253,7 +254,6 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
-					brt.asyncStructCleanUp(destinationID)
 				}
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 			}

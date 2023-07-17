@@ -504,14 +504,10 @@ var _ = Describe("Bing ads", func() {
 				StatusCode: 200,
 				Metadata: common.EventStatMeta{
 					FailedKeys: []int64{6},
-					ErrFailed:  nil,
 					FailedReasons: map[int64]string{
 						6: "EmailMustBeHashed",
 					},
-					WarningKeys:   nil,
-					ErrWarning:    nil,
 					SucceededKeys: []int64{5, 7},
-					ErrSuccess:    nil,
 				},
 			}
 			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)

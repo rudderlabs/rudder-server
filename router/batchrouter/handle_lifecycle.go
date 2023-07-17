@@ -140,9 +140,6 @@ func (brt *Handle) Setup(
 	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
 
 	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
-	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-		brt.initAsyncDestinationStruct(destination)
-	}
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
