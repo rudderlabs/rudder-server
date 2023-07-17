@@ -374,9 +374,8 @@ func (brt *Handle) backendConfigSubscriber() {
 								destinationsMap[destination.ID] = &router_utils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
 							}
-							brt.refreshDestination(destination)
-
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
+							brt.refreshDestination(destination)
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
 							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {

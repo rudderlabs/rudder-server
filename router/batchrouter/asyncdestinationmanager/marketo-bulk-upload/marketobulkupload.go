@@ -32,7 +32,7 @@ type MarketoBulkUploader struct {
 }
 
 func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
-	marketoBulkUpload := &MarketoBulkUploader{destName: destination.DestinationDefinition.Name, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), timeout: config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second)}
+	marketoBulkUpload := &MarketoBulkUploader{destName: destination.DestinationDefinition.Name, destinationConfig: destination.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
 	return marketoBulkUpload, nil
 }
 
