@@ -217,6 +217,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							continue
 						}
 						brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
+						brt.asyncStructCleanUp(destinationID)
 					}
 				}
 			}
@@ -253,7 +254,6 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
-					brt.asyncStructCleanUp(destinationID)
 				}
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 			}
@@ -378,7 +378,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rsourcesStats rsources.StatsCollector) {
 	jobParameters := []byte(fmt.Sprintf(`{"destination_id": %q}`, asyncOutput.DestinationID)) // TODO: there should be a consistent way of finding the actual job parameters
-	workspace := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
+	workspaceID := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var statusList []*jobsdb.JobStatusT
 	if len(asyncOutput.ImportingJobIDs) > 0 {
 		for _, jobId := range asyncOutput.ImportingJobIDs {
@@ -391,7 +391,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 				ErrorResponse: []byte(`{}`),
 				Parameters:    asyncOutput.ImportingParameters, // pollUrl remains here
 				JobParameters: jobParameters,
-				WorkspaceId:   workspace,
+				WorkspaceId:   workspaceID,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -407,7 +407,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 				ErrorResponse: stdjson.RawMessage(asyncOutput.SuccessResponse),
 				Parameters:    []byte(`{}`),
 				JobParameters: jobParameters,
-				WorkspaceId:   workspace,
+				WorkspaceId:   workspaceID,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -423,7 +423,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 				ErrorResponse: stdjson.RawMessage(asyncOutput.FailedReason),
 				Parameters:    []byte(`{}`),
 				JobParameters: jobParameters,
-				WorkspaceId:   workspace,
+				WorkspaceId:   workspaceID,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -439,7 +439,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 				ErrorResponse: stdjson.RawMessage(asyncOutput.AbortReason),
 				Parameters:    []byte(`{}`),
 				JobParameters: jobParameters,
-				WorkspaceId:   workspace,
+				WorkspaceId:   workspaceID,
 			}
 			statusList = append(statusList, &status)
 		}
