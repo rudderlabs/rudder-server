@@ -1,12 +1,17 @@
 package common
 
+import (
+	"fmt"
+)
+
 type InvalidManager struct{}
 
 func (f *InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
 	abortedJobIDs := append(asyncDestStruct.ImportingJobIDs, asyncDestStruct.FailedJobIDs...)
 	return AsyncUploadOutput{
-		AbortJobIDs:   abortedJobIDs,
-		AbortReason:   "Manager is not initialized",
+		AbortJobIDs: abortedJobIDs,
+		//AbortReason:   `{"error":"BingAds could not be initialized. Please check account settings."}`,
+		AbortReason:   `{"error":"` + fmt.Sprintf("%s could not be initialized. Please check account settings.", asyncDestStruct.Destination.Name) + `"}`,
 		DestinationID: asyncDestStruct.Destination.ID,
 		AbortCount:    len(abortedJobIDs),
 	}
