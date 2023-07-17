@@ -65,7 +65,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 						startPollTime := time.Now()
 						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 						pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(pollInput)
-						pollRespBytes, err := stdjson.Marshal(pollResp)
+						pollRespBytes, err := json.Marshal(pollResp)
 						if err != nil {
 							panic("JSON Marshal For Poll Response Failed" + err.Error())
 						}
