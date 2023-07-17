@@ -63,7 +63,6 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
 		// needs to be retried
-		// transformerConnectionStatus := 500
 		b.logger.Error("Error in Unmarshalling Poll Response: %w", err)
 		return common.PollStatusResponse{
 			StatusCode: 500,

@@ -185,7 +185,6 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	var completionStatus []bool
 	var failedJobURLs []string
 	var cumulativeCompletionStatus, cumulativeProgressStatus, cumulativeFailureStatus bool
-	// var statusCode int
 	requestIdsArray := common.GenerateArrayOfStrings(pollInput.ImportId)
 	for _, requestId := range requestIdsArray {
 		resp := b.PollSingleImport(requestId)
