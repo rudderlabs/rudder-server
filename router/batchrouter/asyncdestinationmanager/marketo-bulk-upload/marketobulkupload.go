@@ -28,10 +28,11 @@ type MarketoBulkUploader struct {
 	TransformUrl      string
 	PollUrl           string
 	logger            logger.Logger
+	timeout           time.Duration
 }
 
 func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
-	marketoBulkUpload := &MarketoBulkUploader{destName: destination.DestinationDefinition.Name, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
+	marketoBulkUpload := &MarketoBulkUploader{destName: destination.DestinationDefinition.Name, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), timeout: config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second)}
 	return marketoBulkUpload, nil
 }
 
@@ -51,7 +52,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			HasFailed:  true,
 		}
 	}
-	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
+	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, b.timeout)
 	if transformerConnectionStatus != 200 {
 		return common.PollStatusResponse{
 			StatusCode: transformerConnectionStatus,
@@ -110,7 +111,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+failedJobUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
+	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+failedJobUrl, payload, b.timeout)
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{
 			StatusCode: statusCode,
@@ -246,12 +247,12 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 	}
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.HistogramType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
 
-	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
+	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})

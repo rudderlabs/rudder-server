@@ -85,13 +85,13 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 
 		if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
-			b.logger.Error(`{"error" : "getting empty string in upload url or request id"}`)
+			b.logger.Error(`{"error" : "getting empty string in upload url or request id. Provide correct configuration credentials."}`)
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id", actionFile.Action))
+			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id. Provide correct configuration credentials.", actionFile.Action))
 			continue
 		}
 
-		uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+		uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.HistogramType, map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
 		})
@@ -109,7 +109,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 
 		if uploadBulkFileResp.RequestId == "" || uploadBulkFileResp.TrackingId == "" {
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id, ", actionFile.Action))
+			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id, Provide correct configuration credentials.", actionFile.Action))
 			continue
 		}
 		importIds = append(importIds, uploadBulkFileResp.RequestId)
@@ -131,6 +131,9 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			b.logger.Error("Error in removing zip file: %v", err)
 		}
 	}
+
+	fmt.Println("Successful Job Count", len(successJobs))
+	fmt.Println("Failed Job Count", len(append(asyncDestStruct.FailedJobIDs, failedJobs...)))
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     successJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
@@ -177,6 +180,7 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 }
 
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+	fmt.Println("Polling Bing Ads Bulk Upload")
 	var cumulativeResp common.PollStatusResponse
 	var completionStatus []bool
 	var failedJobURLs []string
@@ -248,6 +252,7 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 }
 
 func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
+	fmt.Println("Getting upload stats for Bing Ads Bulk Upload")
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
 	importList := UploadStatsInput.ImportingList

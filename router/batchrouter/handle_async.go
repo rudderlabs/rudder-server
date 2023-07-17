@@ -1,4 +1,3 @@
-// file related to marketo
 package batchrouter
 
 import (
@@ -217,7 +216,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							continue
 						}
 						brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
-						brt.asyncStructCleanUp(destinationID)
+						brt.asyncDestinationStruct[destinationID].UploadInProgress = false
 					}
 				}
 			}
@@ -242,7 +241,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 
 			for destinationID := range destinationsMap {
 				_, ok := brt.asyncDestinationStruct[destinationID]
-				if !ok {
+				if !ok || brt.asyncDestinationStruct[destinationID].UploadInProgress {
 					continue
 				}
 
@@ -253,7 +252,11 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
+					if uploadResponse.ImportingParameters != nil {
+						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
+					}
 					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
+					brt.asyncStructCleanUp(destinationID)
 				}
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 			}
@@ -294,8 +297,11 @@ func (brt *Handle) asyncStructCleanUp(destinationID string) {
 }
 
 func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
+	destinationID := batchJobs.Connection.Destination.ID
 	if brt.disableEgress {
-		out := common.AsyncUploadOutput{}
+		out := common.AsyncUploadOutput{
+			DestinationID: destinationID,
+		}
 		for _, job := range batchJobs.Jobs {
 			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
 			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.DisabledEgress.Error()) // skipcq: GO-R4002
@@ -309,13 +315,14 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		return
 	}
 
-	destinationID := batchJobs.Connection.Destination.ID
 	_, ok := brt.asyncDestinationStruct[destinationID]
 	if ok {
 		brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 		defer brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 		if brt.asyncDestinationStruct[destinationID].CanUpload {
-			out := common.AsyncUploadOutput{}
+			out := common.AsyncUploadOutput{
+				DestinationID: destinationID,
+			}
 			for _, job := range batchJobs.Jobs {
 				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
 				out.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
@@ -351,7 +358,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	brt.asyncDestinationStruct[destinationID].RsourcesStats.BeginProcessing(batchJobs.Jobs)
 	for _, job := range batchJobs.Jobs {
 		transformedData := common.GetTransformedData(job.EventPayload)
-		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch {
+		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch ||
+			!brt.asyncDestinationStruct[destinationID].UploadInProgress {
 			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
 			jobString = jobString + fileData + "\n"
@@ -359,7 +367,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
 			brt.asyncDestinationStruct[destinationID].URL = gjson.Get(string(job.EventPayload), "endpoint").String()
 		} else {
-			// brt.asyncDestinationStruct[destinationID].CanUpload = true
 			brt.logger.Debugf("BRT: Max Event Limit Reached.Stopped writing to File  %s", brt.asyncDestinationStruct[destinationID].FileName)
 			brt.asyncDestinationStruct[destinationID].URL = gjson.Get(string(job.EventPayload), "endpoint").String()
 			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job.JobID)
