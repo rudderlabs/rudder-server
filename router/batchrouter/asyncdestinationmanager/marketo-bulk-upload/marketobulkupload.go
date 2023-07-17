@@ -31,7 +31,7 @@ type MarketoBulkUploader struct {
 }
 
 func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
-	marketoBulkUpload := &MarketoBulkUploader{destName: destination.DestinationDefinition.Name, destinationConfig: destination.DestinationDefinition.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
+	marketoBulkUpload := &MarketoBulkUploader{destName: destination.DestinationDefinition.Name, destinationConfig: destination.Config, PollUrl: "/pollStatus", TransformUrl: config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")}
 	return marketoBulkUpload, nil
 }
 
@@ -51,7 +51,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			HasFailed:  true,
 		}
 	}
-	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second))
+	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(b.TransformUrl+b.PollUrl, payload, config.GetDuration(fmt.Sprintf("HttpClient.%s.timeout", b.destName), 30, time.Second))
 	if transformerConnectionStatus != 200 {
 		return common.PollStatusResponse{
 			StatusCode: transformerConnectionStatus,
