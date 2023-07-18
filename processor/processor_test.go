@@ -814,7 +814,6 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
 
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
@@ -970,7 +969,6 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
 
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
