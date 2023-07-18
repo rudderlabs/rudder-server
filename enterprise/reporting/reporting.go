@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -71,12 +72,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
-
-	sourcesWithEventNameTrackingDisabledEnv := config.GetString("SOURCES_WITH_EVENT_NAME_TRACKING_DISABLED", "")
-	sourcesWithEventNameTrackingDisabled := []string{}
-	if len(sourcesWithEventNameTrackingDisabledEnv) > 0 {
-		sourcesWithEventNameTrackingDisabled = strings.Split(sourcesWithEventNameTrackingDisabledEnv, ",")
-	}
+	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("SOURCES_WITH_EVENT_NAME_TRACKING_DISABLED", []string{})
 
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
@@ -534,20 +530,6 @@ func (r *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
 	return r.piiReportingSettings[workspaceID]
 }
 
-func (r *HandleT) IsEventNameTrackingDisabledForSource(sourceID string) bool {
-	for _, s := range r.sourcesWithEventNameTrackingDisabled {
-		if s == sourceID {
-			return true
-		}
-	}
-	return false
-}
-
-func transformMetricForEventNameTrackingDisabled(metric types.PUReportedMetric) types.PUReportedMetric {
-	metric.StatusDetail.EventName = metric.StatusDetail.EventType
-	return metric
-}
-
 func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	if len(metrics) == 0 {
 		return
@@ -588,8 +570,8 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 		workspaceID := r.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
 
-		if r.IsEventNameTrackingDisabledForSource(metric.ConnectionDetails.SourceID) {
-			metric = transformMetricForEventNameTrackingDisabled(metric)
+		if slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.ConnectionDetails.SourceID) {
+			metric.StatusDetail.EventName = metric.StatusDetail.EventType
 		}
 
 		if r.IsPIIReportingDisabled(workspaceID) {
