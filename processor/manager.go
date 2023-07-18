@@ -58,13 +58,10 @@ func (proc *LifecycleManager) Start() error {
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := proc.Handle.Start(currentCtx); err != nil {
-			proc.Handle.logger.Errorf("Error starting processor: %v", err)
-		}
-	}()
+	if err := proc.Handle.Start(currentCtx); err != nil {
+		proc.Handle.logger.Errorf("Error starting processor: %v", err)
+		return err
+	}
 	return nil
 }
 
