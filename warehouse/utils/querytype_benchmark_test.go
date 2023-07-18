@@ -5,9 +5,9 @@ import (
 )
 
 /*
-BenchmarkGetQueryType/expected-24			4665873			255.6 ns/op
-BenchmarkGetQueryType/unknown-24			921415			1299 ns/op
-BenchmarkGetQueryType/empty-24				932668			1262 ns/op
+BenchmarkGetQueryType/expected-24			4825515			248.1 ns/op
+BenchmarkGetQueryType/unknown-24			922964			1296 ns/op
+BenchmarkGetQueryType/empty-24				824426			1253 ns/op
 */
 func BenchmarkGetQueryType(b *testing.B) {
 	b.Run("expected", func(b *testing.B) {
@@ -15,7 +15,7 @@ func BenchmarkGetQueryType(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_ = GetQueryType(query)
+			_, _ = GetQueryType(query)
 		}
 	})
 	b.Run("unexpected", func(b *testing.B) {
@@ -23,7 +23,7 @@ func BenchmarkGetQueryType(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_ = GetQueryType(query)
+			_, _ = GetQueryType(query)
 		}
 	})
 	b.Run("empty", func(b *testing.B) {
@@ -31,7 +31,7 @@ func BenchmarkGetQueryType(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_ = GetQueryType(query)
+			_, _ = GetQueryType(query)
 		}
 	})
 }

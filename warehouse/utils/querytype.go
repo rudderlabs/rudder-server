@@ -43,13 +43,15 @@ func init() {
 }
 
 // GetQueryType returns the type of the query.
-func GetQueryType(query string) string {
+func GetQueryType(query string) (string, bool) {
 	var (
+		expected  bool
 		queryType = ""
 		submatch  = queryTypeRegex.FindStringSubmatch(query)
 	)
 
 	if len(submatch) > queryTypeIndex {
+		expected = true
 		queryType = strings.ToUpper(submatch[queryTypeIndex])
 		if queryType == "CREATE TEMPORARY TABLE" {
 			queryType = "CREATE TEMP TABLE"
@@ -67,5 +69,5 @@ func GetQueryType(query string) string {
 		queryType = "UNKNOWN"
 	}
 
-	return queryType
+	return queryType, expected
 }

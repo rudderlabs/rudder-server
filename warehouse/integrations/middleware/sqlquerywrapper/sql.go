@@ -222,9 +222,28 @@ func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
 
 func (db *DB) logQuery(query string, since time.Time) logQ {
 	return func() {
+		var (
+			sanitizedQuery string
+			keysAndValues  []any
+		)
+		createLogData := func() {
+			sanitizedQuery, _ = misc.ReplaceMultiRegex(query, db.secretsRegex)
+
+			keysAndValues = []any{
+				logfield.Query, sanitizedQuery,
+				logfield.QueryExecutionTime, db.since(since),
+			}
+			keysAndValues = append(keysAndValues, db.keysAndValues...)
+		}
+
 		if db.stats != nil {
+			var expected bool
 			tags := make(stats.Tags, len(db.keysAndValues)/2+1)
-			tags["query_type"] = warehouseutils.GetQueryType(query)
+			tags["query_type"], expected = warehouseutils.GetQueryType(query)
+			if !expected {
+				createLogData()
+				db.logger.Warnw("sql stats: unexpected query type", keysAndValues...)
+			}
 			for i := 0; i < len(db.keysAndValues); i += 2 {
 				key, ok := db.keysAndValues[i].(string)
 				if !ok {
@@ -242,14 +261,9 @@ func (db *DB) logQuery(query string, since time.Time) logQ {
 			return
 		}
 
-		sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
-
-		keysAndValues := []any{
-			logfield.Query, sanitizedQuery,
-			logfield.QueryExecutionTime, db.since(since),
+		if sanitizedQuery == "" {
+			createLogData()
 		}
-		keysAndValues = append(keysAndValues, db.keysAndValues...)
-
 		db.logger.Infow("executing query", keysAndValues...)
 	}
 }
