@@ -18,6 +18,7 @@ func TestGetQueryType(t *testing.T) {
 		{"update", "\t\n\n  \t\n\n  UpDaTe something", "UPDATE", true},
 		{"delete", "\t\n\n  \t\n\n  DeLeTe FROm something", "DELETE FROM", true},
 		{"insert", "\t\n\n  \t\n\n  InSerT INTO something", "INSERT INTO", true},
+		{"copy", "\t\n\n  \t\n\n  cOpY t1 from t2", "COPY", true},
 		{"create temp table 1", "\t\n\n  \t\n\n  create temp table t1", "CREATE TEMP TABLE", true},
 		{"create temp table 2", "\t\n\n  \t\n\n  create tempORARY table t1", "CREATE TEMP TABLE", true},
 		{"create database", "\t\n\n  \t\n\n  creATE dataBASE db1", "CREATE DATABASE", true},
