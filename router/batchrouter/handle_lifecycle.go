@@ -87,10 +87,10 @@ func (brt *Handle) Setup(
 	}); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
-
-	config.RegisterIntConfigVariable(10000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
+	// Bingads test
+	config.RegisterIntConfigVariable(100000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
-	// TODO: Revert
+	// Bingads test
 	config.RegisterDurationConfigVariable(2, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
@@ -140,9 +140,6 @@ func (brt *Handle) Setup(
 	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
 
 	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
-	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-		brt.initAsyncDestinationStruct(destination)
-	}
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
@@ -254,7 +251,7 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			"destType": destination.DestinationDefinition.Name,
 		})
 		destInitFailStat.Count(1)
-		return
+		manager = &common.InvalidManager{}
 	}
 	if !ok {
 		brt.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
@@ -377,9 +374,8 @@ func (brt *Handle) backendConfigSubscriber() {
 								destinationsMap[destination.ID] = &router_utils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
 							}
-							brt.refreshDestination(destination)
-
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
+							brt.refreshDestination(destination)
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
 							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {

@@ -109,7 +109,7 @@ var _ = Describe("Bing ads", func() {
 				Manager:         bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"Add:getting empty string in upload url or request id, \"}",
+				FailedReason:        "{\"error\":\"Add:getting empty string in upload url or request id, Provide correct configuration credentials.\"}",
 				ImportingJobIDs:     []int64{3, 4},
 				FailedJobIDs:        []int64{1, 2},
 				ImportingParameters: stdjson.RawMessage{},
@@ -216,7 +216,7 @@ var _ = Describe("Bing ads", func() {
 			}
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
-				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id,Add:getting empty string in upload url or request id\"}",
+				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id. Provide correct configuration credentials.,Add:getting empty string in upload url or request id. Provide correct configuration credentials.\"}",
 				FailedCount:         4,
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
@@ -486,7 +486,7 @@ var _ = Describe("Bing ads", func() {
 			clientI := Client{client: client, URL: modifiedURL}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 
-			UploadStatsInput := common.FetchUploadJobStatus{
+			UploadStatsInput := common.GetUploadStatsInput{
 				FailedJobURLs: modifiedURL,
 				ImportingList: []*jobsdb.JobT{
 					{
@@ -501,17 +501,13 @@ var _ = Describe("Bing ads", func() {
 				},
 			}
 			expectedResp := common.GetUploadStatsResponse{
-				Status: "200",
+				StatusCode: 200,
 				Metadata: common.EventStatMeta{
 					FailedKeys: []int64{6},
-					ErrFailed:  nil,
 					FailedReasons: map[int64]string{
 						6: "EmailMustBeHashed",
 					},
-					WarningKeys:   nil,
-					ErrWarning:    nil,
 					SucceededKeys: []int64{5, 7},
-					ErrSuccess:    nil,
 				},
 			}
 			recievedResponse := bulkUploader.GetUploadStats(UploadStatsInput)
@@ -599,7 +595,7 @@ var _ = Describe("Bing ads", func() {
 				Manager:         bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id, ,Add:getting empty string in upload url or request id, \"}",
+				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id, Provide correct configuration credentials.,Add:getting empty string in upload url or request id, Provide correct configuration credentials.\"}",
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				ImportingParameters: stdjson.RawMessage{},
 				ImportingCount:      0,

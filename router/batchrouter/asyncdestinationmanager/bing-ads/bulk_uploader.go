@@ -85,9 +85,9 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 
 		if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
-			b.logger.Error(`{"error" : "getting empty string in upload url or request id"}`)
+			b.logger.Error(`{"error" : "getting empty string in upload url or request id. Provide correct configuration credentials."}`)
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id", actionFile.Action))
+			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id. Provide correct configuration credentials.", actionFile.Action))
 			continue
 		}
 
@@ -109,7 +109,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 
 		if uploadBulkFileResp.RequestId == "" || uploadBulkFileResp.TrackingId == "" {
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id, ", actionFile.Action))
+			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id, Provide correct configuration credentials.", actionFile.Action))
 			continue
 		}
 		importIds = append(importIds, uploadBulkFileResp.RequestId)
@@ -131,6 +131,9 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			b.logger.Error("Error in removing zip file: %v", err)
 		}
 	}
+
+	fmt.Println("Successful Job Count", len(successJobs))
+	fmt.Println("Failed Job Count", len(append(asyncDestStruct.FailedJobIDs, failedJobs...)))
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     successJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
@@ -177,11 +180,11 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 }
 
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+	fmt.Println("Polling Bing Ads Bulk Upload")
 	var cumulativeResp common.PollStatusResponse
 	var completionStatus []bool
 	var failedJobURLs []string
 	var cumulativeCompletionStatus, cumulativeProgressStatus, cumulativeFailureStatus bool
-	// var statusCode int
 	requestIdsArray := common.GenerateArrayOfStrings(pollInput.ImportId)
 	for _, requestId := range requestIdsArray {
 		resp := b.PollSingleImport(requestId)
@@ -226,7 +229,7 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 		return common.GetUploadStatsResponse{}, err
 	}
 	eventStatsResponse := common.GetUploadStatsResponse{
-		Status: "200",
+		StatusCode: 200,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    lo.Keys(clientIDErrors),
 			FailedReasons: GetFailedReasons(clientIDErrors),
@@ -247,7 +250,8 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 	return eventStatsResponse, nil
 }
 
-func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUploadJobStatus) common.GetUploadStatsResponse {
+func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
+	fmt.Println("Getting upload stats for Bing Ads Bulk Upload")
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
 	importList := UploadStatsInput.ImportingList
@@ -255,38 +259,34 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.FetchUpload
 	for _, job := range importList {
 		initialEventList = append(initialEventList, job.JobID)
 	}
-	var eventStatsResponse common.GetUploadStatsResponse
+	eventStatsResponse := common.GetUploadStatsResponse{}
 	var failedJobIds []int64
 	var cumulativeFailedReasons map[int64]string
-	var status string
 	fileURLs := common.GenerateArrayOfStrings(UploadStatsInput.FailedJobURLs)
 	for _, fileURL := range fileURLs {
 		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
 			b.logger.Error("Error in downloading and unzipping the file: %v", err)
 			return common.GetUploadStatsResponse{
-				Status: "500",
+				StatusCode: 500,
 			}
 		}
 		response, err := b.GetUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
 		if err != nil {
 			b.logger.Error("Error in getting upload stats of single import: %v", err)
 			return common.GetUploadStatsResponse{
-				Status: "500",
+				StatusCode: 500,
 			}
 		}
 		cumulativeFailedReasons = lo.Assign(cumulativeFailedReasons, response.Metadata.FailedReasons)
 		failedJobIds = append(failedJobIds, response.Metadata.FailedKeys...)
-		status = response.Status
+		eventStatsResponse.StatusCode = response.StatusCode
 	}
 
-	eventStatsResponse = common.GetUploadStatsResponse{
-		Status: status,
-		Metadata: common.EventStatMeta{
-			FailedKeys:    failedJobIds,
-			FailedReasons: cumulativeFailedReasons,
-			SucceededKeys: GetSuccessJobIDs(failedJobIds, initialEventList),
-		},
+	eventStatsResponse.Metadata = common.EventStatMeta{
+		FailedKeys:    failedJobIds,
+		FailedReasons: cumulativeFailedReasons,
+		SucceededKeys: GetSuccessJobIDs(failedJobIds, initialEventList),
 	}
 
 	return eventStatsResponse

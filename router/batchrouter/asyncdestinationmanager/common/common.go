@@ -17,7 +17,7 @@ import (
 type AsyncDestinationManager interface {
 	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
 	Poll(pollInput AsyncPoll) PollStatusResponse
-	GetUploadStats(UploadStatsInput FetchUploadJobStatus) GetUploadStatsResponse
+	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 }
 
 var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
@@ -32,7 +32,6 @@ type PollStatusResponse struct {
 	WarningJobsURL string
 }
 type AsyncUploadOutput struct {
-	Key                 string
 	ImportingJobIDs     []int64
 	ImportingParameters stdjson.RawMessage
 	FailedJobIDs        []int64
@@ -48,9 +47,7 @@ type AsyncUploadOutput struct {
 }
 
 type AsyncPoll struct {
-	Config   map[string]interface{} `json:"config"`
-	ImportId string                 `json:"importId"`
-	DestType string                 `json:"destType"`
+	ImportId string `json:"importId"`
 }
 
 type ErrorResponse struct {
@@ -94,19 +91,20 @@ type ImportParameters struct {
 }
 
 type AsyncDestinationStruct struct {
-	ImportingJobIDs []int64
-	FailedJobIDs    []int64
-	Exists          bool
-	Size            int
-	CreatedAt       time.Time
-	FileName        string
-	Count           int
-	CanUpload       bool
-	UploadMutex     sync.RWMutex
-	URL             string
-	RsourcesStats   rsources.StatsCollector
-	Destination     *backendconfig.DestinationT
-	Manager         AsyncDestinationManager
+	ImportingJobIDs  []int64
+	FailedJobIDs     []int64
+	Exists           bool
+	Size             int
+	CreatedAt        time.Time
+	FileName         string
+	Count            int
+	CanUpload        bool
+	UploadInProgress bool
+	UploadMutex      sync.RWMutex
+	URL              string
+	RsourcesStats    rsources.StatsCollector
+	Destination      *backendconfig.DestinationT
+	Manager          AsyncDestinationManager
 }
 
 type AsyncFailedPayload struct {
@@ -117,7 +115,7 @@ type AsyncFailedPayload struct {
 	MetaData MetaDataT                `json:"metadata"`
 }
 
-type FetchUploadJobStatus struct {
+type GetUploadStatsInput struct {
 	FailedJobURLs      string
 	Parameters         stdjson.RawMessage
 	ImportingList      []*jobsdb.JobT
@@ -126,17 +124,14 @@ type FetchUploadJobStatus struct {
 
 type EventStatMeta struct {
 	FailedKeys    []int64
-	ErrFailed     error
 	WarningKeys   []int64
-	ErrWarning    error
 	SucceededKeys []int64
-	ErrSuccess    error
 	FailedReasons map[int64]string
 }
 
 type GetUploadStatsResponse struct {
-	Status   string        `json:"status"`
-	Metadata EventStatMeta `json:"metadata"`
+	StatusCode int           `json:"statusCode"`
+	Metadata   EventStatMeta `json:"metadata"`
 }
 
 func GetTransformedData(payload stdjson.RawMessage) string {
