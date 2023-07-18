@@ -33,7 +33,7 @@ type loadUsersTableResponse struct {
 }
 
 func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
-	pg.Logger.Infow("started loading",
+	pg.logger.Infow("started loading",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -53,7 +53,7 @@ func (pg *Postgres) LoadTable(ctx context.Context, tableName string) error {
 		return fmt.Errorf("loading table: %w", err)
 	}
 
-	pg.Logger.Infow("completed loading",
+	pg.logger.Infow("completed loading",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -88,7 +88,7 @@ func (pg *Postgres) loadTable(
 		stagingTableName,
 		tableName,
 	)
-	pg.Logger.Infow("creating temporary table",
+	pg.logger.Infow("creating temporary table",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -211,8 +211,8 @@ func (pg *Postgres) loadTable(
 		additionalJoinClause,
 	)
 
-	if !slices.Contains(pg.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
-		pg.Logger.Infow("deduplication",
+	if !slices.Contains(pg.config.skipDedupDestinationIDs, pg.Warehouse.Destination.ID) {
+		pg.logger.Infow("deduplication",
 			logfield.SourceID, pg.Warehouse.Source.ID,
 			logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 			logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -273,7 +273,7 @@ func (pg *Postgres) loadTable(
 		partitionKey,
 	)
 
-	pg.Logger.Infow("inserting records",
+	pg.logger.Infow("inserting records",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -295,7 +295,7 @@ func (pg *Postgres) loadTable(
 }
 
 func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
-	pg.Logger.Infow("started loading for identifies and users tables",
+	pg.logger.Infow("started loading for identifies and users tables",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -334,7 +334,7 @@ func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	pg.Logger.Infow("completed loading for users and identities table",
+	pg.logger.Infow("completed loading for users and identities table",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -367,7 +367,7 @@ func (pg *Postgres) loadUsersTable(
 		return loadUsersTableResponse{}
 	}
 
-	canSkipComputingLatestUserTraits := pg.skipComputingUserLatestTraits || slices.Contains(pg.skipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID)
+	canSkipComputingLatestUserTraits := pg.config.skipComputingUserLatestTraits || slices.Contains(pg.config.skipComputingUserLatestTraitsWorkspaceIDs, pg.Warehouse.WorkspaceID)
 	if canSkipComputingLatestUserTraits {
 		if _, err = pg.loadTable(ctx, tx, warehouseutils.UsersTable, usersSchemaInUpload); err != nil {
 			return loadUsersTableResponse{
@@ -447,7 +447,7 @@ func (pg *Postgres) loadUsersTable(
 		unionStagingTableName,
 	)
 
-	pg.Logger.Infow("creating union staging users table",
+	pg.logger.Infow("creating union staging users table",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -483,7 +483,7 @@ func (pg *Postgres) loadUsersTable(
 		unionStagingTableName,
 	)
 
-	pg.Logger.Debugw("creating temporary users table",
+	pg.logger.Debugw("creating temporary users table",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -516,7 +516,7 @@ func (pg *Postgres) loadUsersTable(
 		primaryKey,
 	)
 
-	pg.Logger.Infow("deduplication for users table",
+	pg.logger.Infow("deduplication for users table",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,
@@ -546,7 +546,7 @@ func (pg *Postgres) loadUsersTable(
 		usersStagingTableName,
 		strings.Join(append([]string{"id"}, userColNames...), ","),
 	)
-	pg.Logger.Infow("inserting records to users table",
+	pg.logger.Infow("inserting records to users table",
 		logfield.SourceID, pg.Warehouse.Source.ID,
 		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, pg.Warehouse.Destination.ID,

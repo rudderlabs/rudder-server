@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/compose-test/compose"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
@@ -416,8 +419,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 
 			t.Log("db:", pgResource.DBDsn)
 
-			rs := redshift.New()
-			redshift.WithConfig(rs, config.Default)
+			rs := redshift.New(config.Default, logger.NOP, stats.Default)
 
 			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace
