@@ -1584,49 +1584,51 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		statusList = append(statusList, &newStatus)
 	}
 
-	g, ctx := errgroup.WithContext(context.Background())
+	g, groupCtx := errgroup.WithContext(context.Background())
 
 	g.Go(func() error {
-		if len(eventSchemaJobs) > 0 {
-			err := misc.RetryWithNotify(
-				ctx,
-				proc.jobsDBCommandTimeout,
-				proc.jobdDBMaxRetries,
-				func(ctx context.Context) error {
-					return proc.eventSchemaDB.WithStoreSafeTx(
-						ctx,
-						func(tx jobsdb.StoreSafeTx) error {
-							return proc.eventSchemaDB.StoreInTx(ctx, tx, eventSchemaJobs)
-						},
-					)
-				}, proc.sendRetryStoreStats)
-			if err != nil {
-				return fmt.Errorf("store into event schema table failed with error: %v", err)
-			}
-			proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(eventSchemaJobs))
+		if len(eventSchemaJobs) == 0 {
+			return nil
 		}
+		err := misc.RetryWithNotify(
+			groupCtx,
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.eventSchemaDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						return proc.eventSchemaDB.StoreInTx(ctx, tx, eventSchemaJobs)
+					},
+				)
+			}, proc.sendRetryStoreStats)
+		if err != nil {
+			return fmt.Errorf("store into event schema table failed with error: %v", err)
+		}
+		proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(eventSchemaJobs))
 		return nil
 	})
 
 	g.Go(func() error {
-		if len(archivalJobs) > 0 {
-			err := misc.RetryWithNotify(
-				ctx,
-				proc.jobsDBCommandTimeout,
-				proc.jobdDBMaxRetries,
-				func(ctx context.Context) error {
-					return proc.archivalDB.WithStoreSafeTx(
-						ctx,
-						func(tx jobsdb.StoreSafeTx) error {
-							return proc.archivalDB.StoreInTx(ctx, tx, archivalJobs)
-						},
-					)
-				}, proc.sendRetryStoreStats)
-			if err != nil {
-				return fmt.Errorf("store into archival table failed with error: %v", err)
-			}
-			proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(archivalJobs))
+		if len(archivalJobs) == 0 {
+			return nil
 		}
+		err := misc.RetryWithNotify(
+			groupCtx,
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.archivalDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						return proc.archivalDB.StoreInTx(ctx, tx, archivalJobs)
+					},
+				)
+			}, proc.sendRetryStoreStats)
+		if err != nil {
+			return fmt.Errorf("store into archival table failed with error: %v", err)
+		}
+		proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(archivalJobs))
 		return nil
 	})
 
