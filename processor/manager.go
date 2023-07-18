@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -57,11 +58,17 @@ func (proc *LifecycleManager) Start() error {
 
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
-
-	if err := proc.Handle.Start(currentCtx); err != nil {
-		proc.Handle.logger.Errorf("Error starting processor: %v", err)
+	metric.Instance.Reset()
+	if err := proc.Handle.countPendingEvents(); err != nil {
 		return err
 	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := proc.Handle.Start(currentCtx); err != nil {
+			proc.Handle.logger.Errorf("Error starting processor: %v", err)
+		}
+	}()
 	return nil
 }
 

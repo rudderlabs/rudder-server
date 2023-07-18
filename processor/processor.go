@@ -452,10 +452,6 @@ func (proc *Handle) Setup(
 
 // Start starts this processor's main loops.
 func (proc *Handle) Start(ctx context.Context) error {
-	metric.Instance.Reset()
-	if err := proc.countPendingEvents(); err != nil {
-		return fmt.Errorf("counting pending events: %w", err)
-	}
 	g, ctx := errgroup.WithContext(ctx)
 	var err error
 	proc.logger.Infof("Starting processor in isolation mode: %s", proc.config.isolationMode)
