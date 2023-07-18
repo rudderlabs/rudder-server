@@ -161,7 +161,7 @@ func (wh *HandleT) hasLocalIdentityData(warehouse model.Warehouse) (exists bool)
 }
 
 func (wh *HandleT) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
-	whManager, err := manager.New(wh.destType)
+	whManager, err := manager.New(wh.destType, wh.conf, wh.Logger, wh.stats)
 	if err != nil {
 		panic(err)
 	}
@@ -399,7 +399,7 @@ func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse mod
 			upload = wh.initPrePopulateDestIdentitiesUpload(warehouse)
 		}
 
-		whManager, err := manager.New(wh.destType)
+		whManager, err := manager.New(wh.destType, wh.conf, wh.Logger, wh.stats)
 		if err != nil {
 			panic(err)
 		}
