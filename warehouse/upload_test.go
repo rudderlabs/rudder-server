@@ -209,7 +209,7 @@ var _ = Describe("Upload", Ordered, func() {
 		pool, err := dockertest.NewPool("")
 		Expect(err).To(BeNil())
 
-		pgResource = setupWarehouseJobs(pool, GinkgoT())
+		pgResource = setupWarehouseJobsDB(pool, GinkgoT())
 
 		initWarehouse()
 

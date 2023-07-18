@@ -16,7 +16,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -33,15 +32,17 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-type testingT interface {
+type testingT interface { // TODO replace with testing.TB
 	Setenv(key, value string)
 	Cleanup(func())
 	Log(...any)
+	Errorf(format string, args ...interface{})
+	FailNow()
 }
 
-func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *resource.PostgresResource {
+func setupWarehouseJobsDB(pool *dockertest.Pool, t testingT) *resource.PostgresResource {
 	pgResource, err := resource.SetupPostgres(pool, t)
-	Expect(err).To(BeNil())
+	require.NoError(t, err)
 
 	t.Log("db:", pgResource.DBDsn)
 
