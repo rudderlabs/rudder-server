@@ -35,37 +35,39 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 	return m.recorder
 }
 
-// Setup mocks base method.
-func (m *MockTransformer) Setup() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Setup")
-}
-
-// Setup indicates an expected call of Setup.
-func (mr *MockTransformerMockRecorder) Setup() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup))
-}
-
 // Transform mocks base method.
-func (m *MockTransformer) Transform(arg0 context.Context, arg1 []transformer.TransformerEventT, arg2 string, arg3 int) transformer.ResponseT {
+func (m *MockTransformer) Transform(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2, arg3)
-	ret0, _ := ret[0].(transformer.ResponseT)
+	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2)
+	ret0, _ := ret[0].(transformer.Response)
 	return ret0
 }
 
 // Transform indicates an expected call of Transform.
-func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2)
+}
+
+// UserTransform mocks base method.
+func (m *MockTransformer) UserTransform(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UserTransform", arg0, arg1, arg2)
+	ret0, _ := ret[0].(transformer.Response)
+	return ret0
+}
+
+// UserTransform indicates an expected call of UserTransform.
+func (mr *MockTransformerMockRecorder) UserTransform(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UserTransform", reflect.TypeOf((*MockTransformer)(nil).UserTransform), arg0, arg1, arg2)
 }
 
 // Validate mocks base method.
-func (m *MockTransformer) Validate(arg0 []transformer.TransformerEventT, arg1 string, arg2 int) transformer.ResponseT {
+func (m *MockTransformer) Validate(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Validate", arg0, arg1, arg2)
-	ret0, _ := ret[0].(transformer.ResponseT)
+	ret0, _ := ret[0].(transformer.Response)
 	return ret0
 }
 
