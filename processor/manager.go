@@ -59,7 +59,7 @@ func (proc *LifecycleManager) Start() error {
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
 	metric.Instance.Reset()
-	if err := proc.Handle.countPendingEvents(); err != nil {
+	if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
 		return err
 	}
 	wg.Add(1)
