@@ -452,10 +452,6 @@ func (proc *Handle) Setup(
 
 // Start starts this processor's main loops.
 func (proc *Handle) Start(ctx context.Context) error {
-	metric.Instance.Reset()
-	if err := proc.countPendingEvents(); err != nil {
-		return fmt.Errorf("counting pending events: %w", err)
-	}
 	g, ctx := errgroup.WithContext(ctx)
 	var err error
 	proc.logger.Infof("Starting processor in isolation mode: %s", proc.config.isolationMode)
@@ -2815,7 +2811,7 @@ func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]m
 	}
 }
 
-func (proc *Handle) countPendingEvents() error {
+func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "brt": proc.batchRouterDB}
 	var jobdDBQueryRequestTimeout time.Duration
 	var jobdDBMaxRetries int
@@ -2823,7 +2819,7 @@ func (proc *Handle) countPendingEvents() error {
 	config.RegisterIntConfigVariable(2, &jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Processor." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 
 	for tablePrefix, db := range dbs {
-		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
+		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(ctx,
 			jobdDBQueryRequestTimeout,
 			jobdDBMaxRetries,
 			func(ctx context.Context) (map[string]map[string]int, error) {
