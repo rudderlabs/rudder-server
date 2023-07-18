@@ -240,10 +240,7 @@ func TestLoadTable(t *testing.T) {
 				loadFiles = append(loadFiles, tc.additionalFiles...)
 				require.NotEmpty(t, loadFiles)
 
-				pg := New()
-				WithConfig(pg, c)
-
-				pg.Logger = logger.NOP
+				pg := New(c, logger.NOP, store)
 				pg.DB = db
 				pg.Namespace = namespace
 				pg.Warehouse = warehouse
@@ -365,10 +362,7 @@ func TestLoadTable(t *testing.T) {
 				loadFiles := cloneFiles(t, tc.mockFiles)
 				require.NotEmpty(t, loadFiles)
 
-				pg := New()
-				WithConfig(pg, c)
-
-				pg.Logger = logger.NOP
+				pg := New(c, logger.NOP, store)
 				pg.DB = db
 				pg.Namespace = namespace
 				pg.Warehouse = warehouse
@@ -543,8 +537,7 @@ func TestLoadUsersTable(t *testing.T) {
 			identifiesLoadFiles := cloneFiles(t, tc.mockIdentifiesFiles)
 			require.NotEmpty(t, identifiesLoadFiles)
 
-			pg := New()
-			WithConfig(pg, c)
+			pg := New(c, logger.NOP, store)
 
 			var (
 				identifiesSchemaInUpload = model.TableSchema{
@@ -573,7 +566,6 @@ func TestLoadUsersTable(t *testing.T) {
 				usersSchamaInUpload = tc.usersSchemaInUpload
 			}
 
-			pg.Logger = logger.NOP
 			pg.DB = db
 			pg.Namespace = namespace
 			pg.Warehouse = warehouse
