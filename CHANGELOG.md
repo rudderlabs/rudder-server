@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.2](https://github.com/rudderlabs/rudder-server/compare/v1.11.1...v1.11.2) (2023-07-19)
+
+
+### Miscellaneous
+
+* fix stat table prefix ([#3644](https://github.com/rudderlabs/rudder-server/issues/3644)) ([204a577](https://github.com/rudderlabs/rudder-server/commit/204a577b343ac4bd95a5dd462893e759495ee482))
+
 ## [1.11.1](https://github.com/rudderlabs/rudder-server/compare/v1.11.0...v1.11.1) (2023-07-19)
 
 
