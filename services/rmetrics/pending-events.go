@@ -20,8 +20,8 @@ func IncreasePendingEvents(tablePrefix, workspace, destType string, value float6
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Add(value)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Add(value)
 	if val := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value(); val < 0 {
-		fmt.Println("pending events count is negative", val)
-		fmt.Println(debug.Stack())
+		fmt.Println("pending events count is negative in increase", val)
+		fmt.Println(string(debug.Stack()))
 	}
 }
 
@@ -33,8 +33,8 @@ func DecreasePendingEvents(tablePrefix, workspace, destType string, value float6
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Sub(value)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Sub(value)
 	if val := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value(); val < 0 {
-		fmt.Println("pending events count is negative", val)
-		fmt.Println(debug.Stack())
+		fmt.Println("pending events count is negative in decrease", val)
+		fmt.Println(string(debug.Stack()))
 	}
 }
 
