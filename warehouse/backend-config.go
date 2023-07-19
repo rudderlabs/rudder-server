@@ -20,8 +20,6 @@ import (
 )
 
 // TODO: add tests
-// TODO: add graceful shutdown
-// TODO: add a ready mechanism to the getters
 func newBackendConfigManager(
 	c *config.Config, // TODO possibly use this to get all the needed variables
 	db *sql.DB,
@@ -139,7 +137,6 @@ func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan model.Wareh
 	return ch
 }
 
-// TODO add error management which should affect whether the initialConfigFetched channel is closed or not
 func (s *backendConfigManager) processData(ctx context.Context, data map[string]backendconfig.ConfigT) {
 	defer s.closeInitialConfigFetchedOnce.Do(func() {
 		close(s.initialConfigFetched)
@@ -292,7 +289,6 @@ func (s *backendConfigManager) WarehousesByDestID(destID string) []model.Warehou
 	return warehouses
 }
 
-// TODO add error
 func (s *backendConfigManager) attachSSHTunnellingInfo(
 	ctx context.Context,
 	upstream backendconfig.DestinationT,
