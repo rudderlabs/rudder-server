@@ -2831,11 +2831,7 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		for workspace := range pileUpStatMap {
-			for destType, jobCount := range pileUpStatMap[workspace] {
-				rmetrics.IncreasePendingEvents(tablePrefix, workspace, destType, float64(jobCount))
-			}
-		}
+		proc.IncreasePendingEvents(tablePrefix, pileUpStatMap)
 	}
 	return nil
 }
