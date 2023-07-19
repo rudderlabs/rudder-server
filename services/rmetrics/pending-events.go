@@ -17,10 +17,13 @@ func IncreasePendingEvents(tablePrefix, workspace, destType string, value float6
 	PendingEvents(tablePrefix, workspace, destType).Add(value)
 	PendingEvents(tablePrefix, All, destType).Add(value)
 	PendingEvents(tablePrefix, All, All).Add(value)
+	valInit := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value()
+	fmt.Println("pending events count is negative in increase", valInit)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Add(value)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Add(value)
-	if val := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value(); val < 0 {
-		fmt.Println("pending events count is negative in increase", val)
+	val := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value()
+	fmt.Println("pending events count is negative in increase", val)
+	if val < 0 {
 		fmt.Println(string(debug.Stack()))
 	}
 }
@@ -30,10 +33,13 @@ func DecreasePendingEvents(tablePrefix, workspace, destType string, value float6
 	PendingEvents(tablePrefix, workspace, destType).Sub(value)
 	PendingEvents(tablePrefix, All, destType).Sub(value)
 	PendingEvents(tablePrefix, All, All).Sub(value)
+	valInit := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value()
+	fmt.Println("pending events count is negative in decrease", valInit)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Sub(value)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Sub(value)
-	if val := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value(); val < 0 {
-		fmt.Println("pending events count is negative in decrease", val)
+	val := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value()
+	fmt.Println("pending events count is negative in decrease", val)
+	if val < 0 {
 		fmt.Println(string(debug.Stack()))
 	}
 }
