@@ -3,16 +3,20 @@ package warehouse
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"sync"
 	"sync/atomic"
 
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	bc "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -22,11 +26,12 @@ import (
 
 // backendConfigManager is used to handle the backend configuration in the Warehouse
 type backendConfigManager struct {
-	conf            *config.Config
-	db              *sql.DB
-	schema          *repo.WHSchema
-	backendConfig   bc.BackendConfig
-	enableTunneling bool
+	conf                       *config.Config
+	db                         *sql.DB
+	schema                     *repo.WHSchema
+	backendConfig              backendconfig.BackendConfig
+	internalControlPlaneClient cpclient.InternalControlPlane
+	logger                     logger.Logger
 
 	started              atomic.Bool
 	initialConfigFetched atomic.Bool
@@ -48,23 +53,36 @@ func newBackendConfigManager(
 	c *config.Config, // TODO possibly use this to get all the needed variables
 	db *sql.DB,
 	wrappedDB *sqlquerywrapper.DB,
-	backendConfig bc.BackendConfig,
-	enableTunneling bool,
+	bc backendconfig.BackendConfig,
+	l logger.Logger,
 ) *backendConfigManager {
 	if c == nil {
 		c = config.Default
 	}
-	if backendConfig == nil {
-		backendConfig = bc.DefaultBackendConfig
+	if bc == nil {
+		bc = backendconfig.DefaultBackendConfig
 	}
-	return &backendConfigManager{
-		conf:            c,
-		db:              db,
-		schema:          repo.NewWHSchemas(wrappedDB),
-		backendConfig:   backendConfig,
-		enableTunneling: enableTunneling,
-		connectionsMap:  make(map[string]map[string]model.Warehouse),
+	if l == nil {
+		l = logger.NOP
 	}
+	bcm := &backendConfigManager{
+		conf:           c,
+		db:             db,
+		schema:         repo.NewWHSchemas(wrappedDB),
+		backendConfig:  bc,
+		logger:         l,
+		connectionsMap: make(map[string]map[string]model.Warehouse),
+	}
+	if config.GetBool("ENABLE_TUNNELLING", true) {
+		bcm.internalControlPlaneClient = cpclient.NewInternalClientWithCache(
+			backendconfig.GetConfigBackendURL(),
+			cpclient.BasicAuth{
+				Username: c.GetString("CP_INTERNAL_API_USERNAME", ""),
+				Password: c.GetString("CP_INTERNAL_API_PASSWORD", ""),
+			},
+		)
+	}
+	return bcm
 }
 
 func (s *backendConfigManager) Start(ctx context.Context) {
@@ -72,13 +90,13 @@ func (s *backendConfigManager) Start(ctx context.Context) {
 		return // already started
 	}
 
-	ch := s.backendConfig.Subscribe(ctx, bc.TopicBackendConfig)
+	ch := s.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case data := <-ch:
-			s.processData(ctx, data.Data.(map[string]bc.ConfigT))
+			s.processData(ctx, data.Data.(map[string]backendconfig.ConfigT))
 		}
 	}
 }
@@ -93,12 +111,12 @@ func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan model.Wareh
 	return ch // TODO ctx
 }
 
-func (s *backendConfigManager) processData(ctx context.Context, data map[string]bc.ConfigT) {
+func (s *backendConfigManager) processData(ctx context.Context, data map[string]backendconfig.ConfigT) {
 	defer s.initialConfigFetched.Store(true)
 
 	var (
 		warehouses               []model.Warehouse
-		connectionFlags          bc.ConnectionFlags
+		connectionFlags          backendconfig.ConnectionFlags
 		sourceIDsByWorkspaceTemp = make(map[string][]string)
 	)
 	for workspaceID, wConfig := range data {
@@ -126,8 +144,8 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 					conf:         s.conf,
 					destType:     destination.DestinationDefinition.Name,
 				}
-				if s.enableTunneling {
-					destination = wh.attachSSHTunnellingInfo(ctx, destination)
+				if s.internalControlPlaneClient != nil {
+					destination = s.attachSSHTunnellingInfo(ctx, destination)
 				}
 
 				warehouse := model.Warehouse{
@@ -236,4 +254,38 @@ func (s *backendConfigManager) WarehousesByDestID(destID string) []model.Warehou
 		}
 	}
 	return warehouses
+}
+
+func (s *backendConfigManager) attachSSHTunnellingInfo(
+	ctx context.Context,
+	upstream backendconfig.DestinationT,
+) backendconfig.DestinationT {
+	// at destination level, do we have tunnelling enabled.
+	if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", upstream.Config); !tunnelEnabled {
+		return upstream
+	}
+
+	pkgLogger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
+	keys, err := s.internalControlPlaneClient.GetDestinationSSHKeys(ctx, upstream.ID)
+	if err != nil {
+		s.logger.Errorf("fetching ssh keys for destination: %s", err.Error())
+		return upstream
+	}
+
+	replica := backendconfig.DestinationT{}
+	if err := deepCopy(upstream, &replica); err != nil {
+		s.logger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
+		return upstream
+	}
+
+	replica.Config["sshPrivateKey"] = keys.PrivateKey
+	return replica
+}
+
+func deepCopy(src, dest interface{}) error {
+	byt, err := json.Marshal(src)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(byt, dest)
 }

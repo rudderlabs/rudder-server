@@ -95,8 +95,6 @@ var (
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	asyncWh                             *jobs.AsyncJobWh
-	configBackendURL                    string
-	enableTunnelling                    bool
 )
 
 var (
@@ -177,8 +175,6 @@ func loadConfig() {
 	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
-	enableTunnelling = config.GetBool("ENABLE_TUNNELLING", true)
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
@@ -279,41 +275,6 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		}
 		wh.workerChannelMapLock.Unlock()
 	}
-}
-
-func (wh *HandleT) attachSSHTunnellingInfo(
-	ctx context.Context,
-	upstream backendconfig.DestinationT,
-) backendconfig.DestinationT {
-	// at destination level, do we have tunnelling enabled.
-	if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", upstream.Config); !tunnelEnabled {
-		return upstream
-	}
-
-	pkgLogger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
-	keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, upstream.ID)
-	if err != nil {
-		pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
-		return upstream
-	}
-
-	replica := backendconfig.DestinationT{}
-	if err := deepCopy(upstream, &replica); err != nil {
-		pkgLogger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
-		return upstream
-	}
-
-	replica.Config["sshPrivateKey"] = keys.PrivateKey
-	return replica
-}
-
-func deepCopy(src, dest interface{}) error {
-	byt, err := json.Marshal(src)
-	if err != nil {
-		return err
-	}
-
-	return json.Unmarshal(byt, dest)
 }
 
 // getNamespace sets namespace name in the following order
@@ -820,14 +781,6 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
-
-	wh.cpInternalClient = cpclient.NewInternalClientWithCache(
-		configBackendURL,
-		cpclient.BasicAuth{
-			Username: wh.conf.GetString("CP_INTERNAL_API_USERNAME", ""),
-			Password: wh.conf.GetString("CP_INTERNAL_API_PASSWORD", ""),
-		},
-	)
 
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -1497,7 +1450,8 @@ func Start(ctx context.Context, app app.App) error {
 	}()
 
 	bcManager = newBackendConfigManager(
-		config.Default, dbHandle, wrappedDBHandle, backendconfig.DefaultBackendConfig, enableTunnelling,
+		config.Default, dbHandle, wrappedDBHandle, backendconfig.DefaultBackendConfig,
+		pkgLogger.Child("wh_bc_manager"),
 	)
 	rruntime.GoForWarehouse(func() {
 		bcManager.Start(ctx)
