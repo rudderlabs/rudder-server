@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -75,7 +79,7 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 		}
 	}
 
-	whManager, err := manager.New(warehouse.Type)
+	whManager, err := manager.New(warehouse.Type, config.Default, logger.NOP, stats.Default)
 	if err != nil {
 		return err
 	}

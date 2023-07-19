@@ -18,7 +18,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var UseGlueConfig = "useGlue"
+var useGlueConfig = "useGlue"
 
 // glue specific config
 var (
@@ -29,8 +29,8 @@ var (
 )
 
 var (
-	PartitionFolderRegex = regexp.MustCompile(`.*/(?P<name>.*)=(?P<value>.*)$`)
-	PartitionWindowRegex = regexp.MustCompile(`^(?P<name>.*)=(?P<value>.*)$`)
+	partitionFolderRegex = regexp.MustCompile(`.*/(?P<name>.*)=(?P<value>.*)$`)
+	partitionWindowRegex = regexp.MustCompile(`^(?P<name>.*)=(?P<value>.*)$`)
 )
 
 type GlueSchemaRepository struct {
@@ -39,16 +39,16 @@ type GlueSchemaRepository struct {
 	s3prefix   string
 	Warehouse  model.Warehouse
 	Namespace  string
-	Logger     logger.Logger
+	logger     logger.Logger
 }
 
-func NewGlueSchemaRepository(wh model.Warehouse) (*GlueSchemaRepository, error) {
+func NewGlueSchemaRepository(wh model.Warehouse, log logger.Logger) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
 		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
 		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
-		Logger:    logger.NewLogger().Child("warehouse").Child("integrations").Child("datalake").Child("schema-repository"),
+		logger:    log.Child("schema-repository"),
 	}
 
 	glueClient, err := getGlueClient(wh)
@@ -78,7 +78,7 @@ func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model
 		getTablesOutput, err = gl.GlueClient.GetTablesWithContext(ctx, getTablesInput)
 		if err != nil {
 			if _, ok := err.(*glue.EntityNotFoundException); ok {
-				gl.Logger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
+				gl.logger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
 				err = nil
 			}
 			return schema, unrecognizedSchema, err
@@ -122,7 +122,7 @@ func (gl *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
 		},
 	})
 	if _, ok := err.(*glue.AlreadyExistsException); ok {
-		gl.Logger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
+		gl.logger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
 		err = nil
 	}
 	return
@@ -254,7 +254,7 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 // partitions that are modified by the path in those loadFiles. It returns any error
 // reported by Glue
 func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error {
-	gl.Logger.Infof("Refreshing partitions for table: %s", tableName)
+	gl.logger.Infof("Refreshing partitions for table: %s", tableName)
 
 	// Skip if time window layout is not defined
 	if layout := warehouseutils.GetConfigValue("timeWindowLayout", gl.Warehouse); layout == "" {
@@ -279,8 +279,8 @@ func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName
 			continue
 		}
 
-		if partitionGroups, err = warehouseutils.CaptureRegexGroup(PartitionFolderRegex, locationFolder); err != nil {
-			gl.Logger.Warnf("Skipping refresh partitions for table %s with location %s: %v", tableName, locationFolder, err)
+		if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionFolderRegex, locationFolder); err != nil {
+			gl.logger.Warnf("Skipping refresh partitions for table %s with location %s: %v", tableName, locationFolder, err)
 			continue
 		}
 
@@ -315,7 +315,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName
 
 			partitionInputs = append(partitionInputs, locationsToPartition[location])
 		} else {
-			gl.Logger.Debugf("Partition %s already exists in table %s", location, tableName)
+			gl.logger.Debugf("Partition %s already exists in table %s", location, tableName)
 		}
 	}
 	if len(partitionInputs) == 0 {
@@ -327,7 +327,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName
 		return fmt.Errorf("update table: %w", err)
 	}
 
-	gl.Logger.Debugf("Refreshing %d partitions", len(partitionInputs))
+	gl.logger.Debugf("Refreshing %d partitions", len(partitionInputs))
 
 	if _, err = gl.GlueClient.BatchCreatePartitionWithContext(ctx, &glue.BatchCreatePartitionInput{
 		DatabaseName:       aws.String(gl.Namespace),
@@ -350,7 +350,7 @@ func (gl *GlueSchemaRepository) partitionColumns() (columns []*glue.Column, err 
 		return
 	}
 
-	if partitionGroups, err = warehouseutils.CaptureRegexGroup(PartitionWindowRegex, layout); err != nil {
+	if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionWindowRegex, layout); err != nil {
 		return columns, fmt.Errorf("capture partition window regex: %w", err)
 	}
 

@@ -904,7 +904,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	}
 
 	configKey := fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", warehouseutils.WHDestNameMap[job.upload.DestinationType])
-	if k, ok := config.GetStringMap(configKey, nil)[job.warehouse.WorkspaceID]; ok {
+	if k, ok := config.GetStringMap(configKey, nil)[strings.ToLower(job.warehouse.WorkspaceID)]; ok {
 		if load, ok := k.(float64); ok {
 			parallelLoads = int(load)
 		}
@@ -2090,7 +2090,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 		err        error
 	)
 
-	if repository, err = schemarepository.NewSchemaRepository(job.warehouse, job); err != nil {
+	if repository, err = schemarepository.NewSchemaRepository(job.warehouse, job, pkgLogger); err != nil {
 		return fmt.Errorf("create schema repository: %w", err)
 	}
 

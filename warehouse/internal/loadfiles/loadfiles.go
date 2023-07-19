@@ -144,7 +144,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	if publishBatchSize == 0 {
 		publishBatchSize = defaultPublishBatchSize
 	}
-	if size, ok := lf.publishBatchSizePerWorkspace[job.Warehouse.WorkspaceID]; ok {
+	if size, ok := lf.publishBatchSizePerWorkspace[strings.ToLower(job.Warehouse.WorkspaceID)]; ok {
 		publishBatchSize = size
 	}
 

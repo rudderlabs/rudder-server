@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
@@ -57,85 +60,51 @@ type WarehouseOperations interface {
 }
 
 // New is a Factory function that returns a Manager of a given destination-type
-func New(destType string) (Manager, error) {
+func New(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.New()
-		redshift.WithConfig(rs, config.Default)
-		return rs, nil
+		return redshift.New(conf, logger, stats), nil
 	case warehouseutils.BQ:
-		bq := bigquery.New()
-		bigquery.WithConfig(bq, config.Default)
-		return bq, nil
+		return bigquery.New(conf, logger), nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.New()
-		snowflake.WithConfig(sf, config.Default)
-		return sf, nil
+		return snowflake.New(conf, logger, stats), nil
 	case warehouseutils.POSTGRES:
-		pg := postgres.New()
-		postgres.WithConfig(pg, config.Default)
-		return pg, nil
+		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.New()
-		clickhouse.WithConfig(ch, config.Default)
-		return ch, nil
+		return clickhouse.New(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
-		ms := mssql.New()
-		mssql.WithConfig(ms, config.Default)
-		return ms, nil
+		return mssql.New(conf, logger), nil
 	case warehouseutils.AzureSynapse:
-		az := azuresynapse.New()
-		azuresynapse.WithConfig(az, config.Default)
-		return az, nil
+		return azuresynapse.New(conf, logger), nil
 	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
-		dl := datalake.New()
-		return dl, nil
+		return datalake.New(logger), nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.New()
-		deltalake.WithConfig(dl, config.Default)
-		return dl, nil
+		return deltalake.New(conf, logger, stats), nil
 	}
 	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
-func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
+func NewWarehouseOperations(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
-		rs := redshift.New()
-		redshift.WithConfig(rs, config.Default)
-		return rs, nil
+		return redshift.New(conf, logger, stats), nil
 	case warehouseutils.BQ:
-		bq := bigquery.New()
-		bigquery.WithConfig(bq, config.Default)
-		return bq, nil
+		return bigquery.New(conf, logger), nil
 	case warehouseutils.SNOWFLAKE:
-		sf := snowflake.New()
-		snowflake.WithConfig(sf, config.Default)
-		return sf, nil
+		return snowflake.New(conf, logger, stats), nil
 	case warehouseutils.POSTGRES:
-		pg := postgres.New()
-		postgres.WithConfig(pg, config.Default)
-		return pg, nil
+		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.New()
-		clickhouse.WithConfig(ch, config.Default)
-		return ch, nil
+		return clickhouse.New(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
-		ms := mssql.New()
-		mssql.WithConfig(ms, config.Default)
-		return ms, nil
+		return mssql.New(conf, logger), nil
 	case warehouseutils.AzureSynapse:
-		az := azuresynapse.New()
-		azuresynapse.WithConfig(az, config.Default)
-		return az, nil
+		return azuresynapse.New(conf, logger), nil
 	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
-		dl := datalake.New()
-		return dl, nil
+		return datalake.New(logger), nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.New()
-		deltalake.WithConfig(dl, config.Default)
-		return dl, nil
+		return deltalake.New(conf, logger, stats), nil
 	}
 	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }

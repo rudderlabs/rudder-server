@@ -9,7 +9,7 @@ import (
 )
 
 func TestReportViolations(t *testing.T) {
-	eventsFromTransformerResponse := func(response *transformer.ResponseT) (events []transformer.TransformerResponseT) {
+	eventsFromTransformerResponse := func(response *transformer.Response) (events []transformer.TransformerResponse) {
 		events = append(events, response.Events...)
 		events = append(events, response.FailedEvents...)
 		return
@@ -21,10 +21,10 @@ func TestReportViolations(t *testing.T) {
 			trackingPlanVersion int
 		)
 
-		response := transformer.ResponseT{
-			Events: []transformer.TransformerResponseT{
+		response := transformer.Response{
+			Events: []transformer.TransformerResponse{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MergedTpConfig: map[string]interface{}{
 							"propagateValidationErrors": "false",
 						},
@@ -34,9 +34,9 @@ func TestReportViolations(t *testing.T) {
 					},
 				},
 			},
-			FailedEvents: []transformer.TransformerResponseT{
+			FailedEvents: []transformer.TransformerResponse{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MergedTpConfig: map[string]interface{}{
 							"propagateValidationErrors": "false",
 						},
@@ -59,10 +59,10 @@ func TestReportViolations(t *testing.T) {
 	})
 
 	t.Run("Propagate validation errors", func(t *testing.T) {
-		response := transformer.ResponseT{
-			Events: []transformer.TransformerResponseT{
+		response := transformer.Response{
+			Events: []transformer.TransformerResponse{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MergedTpConfig: map[string]interface{}{
 							"propagateValidationErrors": "true",
 						},
@@ -70,7 +70,7 @@ func TestReportViolations(t *testing.T) {
 					Output: map[string]interface{}{
 						"context": map[string]interface{}{},
 					},
-					ValidationErrors: []transformer.ValidationErrorT{
+					ValidationErrors: []transformer.ValidationError{
 						{
 							Type: "Datatype-Mismatch",
 							Meta: map[string]string{
@@ -82,9 +82,9 @@ func TestReportViolations(t *testing.T) {
 					},
 				},
 			},
-			FailedEvents: []transformer.TransformerResponseT{
+			FailedEvents: []transformer.TransformerResponse{
 				{
-					Metadata: transformer.MetadataT{
+					Metadata: transformer.Metadata{
 						MergedTpConfig: map[string]interface{}{
 							"propagateValidationErrors": "true",
 						},
@@ -92,7 +92,7 @@ func TestReportViolations(t *testing.T) {
 					Output: map[string]interface{}{
 						"context": map[string]interface{}{},
 					},
-					ValidationErrors: []transformer.ValidationErrorT{
+					ValidationErrors: []transformer.ValidationError{
 						{
 							Type: "Datatype-Mismatch",
 							Meta: map[string]string{

@@ -4,7 +4,11 @@ import (
 	"context"
 	"sync"
 
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+  "github.com/rudderlabs/rudder-go-kit/stats/metric"
+
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -92,7 +96,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, er
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
-		Handle:           NewHandle(transformer.NewTransformer()),
+		Handle:           NewHandle(transformer.NewTransformer(config.Default, logger.NewLogger().Child("processor"), stats.Default)),
 		mainCtx:          ctx,
 		gatewayDB:        gwDb,
 		routerDB:         rtDb,

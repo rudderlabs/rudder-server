@@ -760,7 +760,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			return nil, err
 		}
 
-		whManager, err := manager.New(wh.destType)
+		whManager, err := manager.New(wh.destType, wh.conf, wh.Logger, wh.stats)
 		if err != nil {
 			return nil, err
 		}
@@ -1617,6 +1617,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 	if err != nil {
 		return err
 	}
+	dbHandle.SetMaxOpenConns(config.GetInt("Warehouse.maxOpenConnections", 20))
 
 	isDBCompatible, err := validators.IsPostgresCompatible(ctx, dbHandle)
 	if err != nil {
