@@ -2813,7 +2813,7 @@ func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]m
 }
 
 func (proc *Handle) countPendingEvents(ctx context.Context) error {
-	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "brt": proc.batchRouterDB}
+	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
 	var jobdDBQueryRequestTimeout time.Duration
 	var jobdDBMaxRetries int
 	config.RegisterDurationConfigVariable(600, &jobdDBQueryRequestTimeout, false, time.Second, []string{"JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
