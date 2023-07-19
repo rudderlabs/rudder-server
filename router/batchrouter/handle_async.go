@@ -108,7 +108,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 			uploadStatsResp := brt.asyncDestinationStruct[destinationID].Manager.GetUploadStats(getUploadStatsInput)
 			brt.asyncFailedJobsTimeStat.Since(startFailedJobsPollTime)
 
-			if uploadStatsResp.StatusCode != 200 {
+			if uploadStatsResp.StatusCode != http.StatusOK {
 				brt.logger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v", brt.destType, uploadStatsResp.StatusCode)
 				return
 			}
