@@ -196,12 +196,10 @@ func loadConfig() {
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
 func (wh *HandleT) workerIdentifier(warehouse model.Warehouse) (identifier string) {
-	identifier = fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
-
 	if wh.allowMultipleSourcesForJobsPickup {
-		identifier = fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
+		return warehouse.Source.ID + "_" + warehouse.Destination.ID + "_" + warehouse.Namespace
 	}
-	return
+	return warehouse.Destination.ID + "_" + warehouse.Namespace
 }
 
 func getDestinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
