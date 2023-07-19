@@ -60,6 +60,7 @@ type HandleT struct {
 	region                    string
 	sleepInterval             time.Duration
 	mainLoopSleepInterval     time.Duration
+	maxOpenConnections        int
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -78,8 +79,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
-
-	return &HandleT{
+	reportingHandle := &HandleT{
 		init:                      make(chan struct{}),
 		log:                       log,
 		clients:                   make(map[string]*types.Client),
@@ -93,6 +93,8 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 		mainLoopSleepInterval:     mainLoopSleepInterval,
 		region:                    config.GetString("region", ""),
 	}
+	config.RegisterIntConfigVariable(32, &reportingHandle.maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
+	return reportingHandle
 }
 
 func (r *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
@@ -149,6 +151,7 @@ func (r *HandleT) AddClient(ctx context.Context, c types.Config) {
 	if err != nil {
 		panic(err)
 	}
+	dbHandle.SetMaxOpenConns(r.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,

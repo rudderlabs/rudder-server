@@ -71,6 +71,7 @@ type ErrorDetailReporter struct {
 	sleepInterval             time.Duration
 	mainLoopSleepInterval     time.Duration
 	maxConcurrentRequests     int
+	maxOpenConnections        int
 	workspaceIDForSourceIDMap map[string]string
 	destinationIDMap          map[string]destDetail
 	srcWspMutex               sync.RWMutex
@@ -104,7 +105,7 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
 
-	return &ErrorDetailReporter{
+	errorDetailReporter := &ErrorDetailReporter{
 		reportingServiceURL:   reportingServiceURL,
 		Table:                 ErrorDetailReportsTable,
 		log:                   log,
@@ -123,6 +124,8 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 		clients:                   make(map[string]*types.Client),
 		errorDetailExtractor:      extractor,
 	}
+	config.RegisterIntConfigVariable(16, &errorDetailReporter.maxOpenConnections, false, 1, []string{"Reporting.errorReporting.maxOpenConnections"}...)
+	return errorDetailReporter
 }
 
 func (edRep *ErrorDetailReporter) AddClient(ctx context.Context, c types.Config) {
@@ -277,6 +280,7 @@ func (edRep *ErrorDetailReporter) migrate(c types.Config) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	dbHandle.SetMaxOpenConns(edRep.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:          dbHandle,
@@ -405,11 +409,13 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 				continue
 			}
 			deleteReportsStart := time.Now()
-			_, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
+			var delRows *sql.Rows
+			delRows, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
 				edRep.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
 			}
+			delRows.Close()
 		}
 
 		mainLoopTimer.Since(loopStart)
