@@ -165,7 +165,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 			}
 			brt.updateProcessedEventsMetrics(statusList)
 		}
-	} else if pollResp.StatusCode == 400 {
+	} else if pollResp.StatusCode == http.StatusBadRequest {
 		statusList := prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State})
 		if err := brt.updateJobStatuses(ctx, destinationID, statusList); err != nil {
 			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
