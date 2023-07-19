@@ -119,7 +119,7 @@ type (
 	JobID             int64
 )
 
-type HandleT struct {
+type HandleT struct { // TODO rename to "router"
 	destType                          string
 	warehouses                        []model.Warehouse
 	dbHandle                          *sqlquerywrapper.DB
@@ -136,7 +136,7 @@ type HandleT struct {
 	inProgressMap                     map[WorkerIdentifierT][]JobID
 	inProgressMapLock                 sync.RWMutex
 	noOfWorkers                       int
-	activeWorkerCount                 int32
+	activeWorkerCount                 int32 // TODO replace with atomic.Int32
 	maxConcurrentUploadJobs           int
 	allowMultipleSourcesForJobsPickup bool
 	workspaceBySourceIDs              map[string]string
