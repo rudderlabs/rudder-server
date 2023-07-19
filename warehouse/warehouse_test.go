@@ -75,8 +75,6 @@ func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMe
 	return mockStats, mockMeasurement
 }
 
-var _ = Describe("Warehouse", func() {})
-
 func TestUploadJob_ProcessingStats(t *testing.T) {
 	t.Parallel()
 
