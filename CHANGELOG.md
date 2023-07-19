@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.11.1](https://github.com/rudderlabs/rudder-server/compare/v1.11.0...v1.11.1) (2023-07-19)
+
+
+### Bug Fixes
+
+* **destination:** fix: add max-open connections & close deleted rows for reporting modules ([#3643](https://github.com/rudderlabs/rudder-server/issues/3643)) ([8e5a8c5](https://github.com/rudderlabs/rudder-server/commit/8e5a8c525b7d832d434117c8fbb6637727a90f06))
+
+
+### Miscellaneous
+
+* fix negative pending event count ([#3641](https://github.com/rudderlabs/rudder-server/issues/3641)) ([74d98fd](https://github.com/rudderlabs/rudder-server/commit/74d98fd6a1eccceb7f5ddcec095a311565d2f76b))
+
 ## [1.11.0](https://github.com/rudderlabs/rudder-server/compare/v1.10.0...v1.11.0) (2023-07-13)
 
 
