@@ -320,9 +320,9 @@ func (s *backendConfigManager) attachSSHTunnellingInfo(
 }
 
 func deepCopy(src, dest interface{}) error {
-	byt, err := json.Marshal(src)
+	buf, err := json.Marshal(src)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(byt, dest)
+	return json.Unmarshal(buf, dest)
 }
