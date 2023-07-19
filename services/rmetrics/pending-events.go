@@ -2,6 +2,7 @@ package rmetrics
 
 import (
 	"fmt"
+	"runtime/debug"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 )
@@ -18,6 +19,10 @@ func IncreasePendingEvents(tablePrefix, workspace, destType string, value float6
 	PendingEvents(tablePrefix, All, All).Add(value)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Add(value)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Add(value)
+	if val := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value(); val < 0 {
+		fmt.Println("pending events count is negative", val)
+		fmt.Println(debug.Stack())
+	}
 }
 
 // DecreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
@@ -27,6 +32,10 @@ func DecreasePendingEvents(tablePrefix, workspace, destType string, value float6
 	PendingEvents(tablePrefix, All, All).Sub(value)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Sub(value)
 	metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Sub(value)
+	if val := metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Value(); val < 0 {
+		fmt.Println("pending events count is negative", val)
+		fmt.Println(debug.Stack())
+	}
 }
 
 // PendingEvents gets the measurement for pending events metric
