@@ -69,17 +69,19 @@ type HandleT struct {
 
 func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
+	var maxOpenConnections int
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
+	config.RegisterIntConfigVariable(32, &maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
-	reportingHandle := &HandleT{
+	return &HandleT{
 		init:                      make(chan struct{}),
 		log:                       log,
 		clients:                   make(map[string]*types.Client),
@@ -92,9 +94,8 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 		sleepInterval:             sleepInterval,
 		mainLoopSleepInterval:     mainLoopSleepInterval,
 		region:                    config.GetString("region", ""),
+		maxOpenConnections:        maxOpenConnections,
 	}
-	config.RegisterIntConfigVariable(32, &reportingHandle.maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
-	return reportingHandle
 }
 
 func (r *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {

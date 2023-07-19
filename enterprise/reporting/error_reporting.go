@@ -93,6 +93,7 @@ type errorDetails struct {
 func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	var maxConcurrentRequests int
+	var maxOpenConnections int
 	tr := &http.Transport{}
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -101,11 +102,12 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
+	config.RegisterIntConfigVariable(16, &maxOpenConnections, false, 1, []string{"Reporting.errorReporting.maxOpenConnections"}...)
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
 
-	errorDetailReporter := &ErrorDetailReporter{
+	return &ErrorDetailReporter{
 		reportingServiceURL:   reportingServiceURL,
 		Table:                 ErrorDetailReportsTable,
 		log:                   log,
@@ -123,9 +125,8 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 		destinationIDMap:          make(map[string]destDetail),
 		clients:                   make(map[string]*types.Client),
 		errorDetailExtractor:      extractor,
+		maxOpenConnections:        maxOpenConnections,
 	}
-	config.RegisterIntConfigVariable(16, &errorDetailReporter.maxOpenConnections, false, 1, []string{"Reporting.errorReporting.maxOpenConnections"}...)
-	return errorDetailReporter
 }
 
 func (edRep *ErrorDetailReporter) AddClient(ctx context.Context, c types.Config) {
