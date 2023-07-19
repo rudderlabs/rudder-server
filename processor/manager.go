@@ -58,7 +58,6 @@ func (proc *LifecycleManager) Start() error {
 
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
-	proc.Handle.logger.Infof("Calling metrics instance reset in Start manager")
 	metric.Instance.Reset()
 	if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
 		return err

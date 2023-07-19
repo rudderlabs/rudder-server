@@ -553,7 +553,6 @@ func (proc *Handle) Shutdown() {
 	if proc.dedup != nil {
 		proc.dedup.Close()
 	}
-	proc.logger.Infof("Calling metrics instance reset in shutdown")
 	metric.Instance.Reset()
 }
 
