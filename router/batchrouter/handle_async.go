@@ -86,7 +86,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 		return
 	}
 	importingList := list.Jobs
-	if pollResp.StatusCode == 200 && pollResp.Complete {
+	if pollResp.StatusCode == http.StatusOK && pollResp.Complete {
 		// TODO: check about maxEventsInABatch
 		if !pollResp.HasFailed {
 			statusList := prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State})
