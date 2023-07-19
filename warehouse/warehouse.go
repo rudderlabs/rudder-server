@@ -260,6 +260,14 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJob) error {
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 	for warehouse := range bcManager.Subscribe(ctx) {
+		wh.configSubscriberLock.Lock()
+		wh.warehouses = append(wh.warehouses, warehouse) // TODO ??? why not use bcManager here ???
+		if wh.workspaceBySourceIDs == nil {
+			wh.workspaceBySourceIDs = make(map[string]string)
+		}
+		wh.workspaceBySourceIDs[warehouse.Source.ID] = warehouse.WorkspaceID
+		wh.configSubscriberLock.Unlock()
+
 		workerName := wh.workerIdentifier(warehouse)
 		wh.workerChannelMapLock.Lock()
 		// spawn one worker for each unique destID_namespace
