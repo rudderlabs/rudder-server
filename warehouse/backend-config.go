@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sync"
-	"sync/atomic"
 
 	"golang.org/x/exp/slices"
 
@@ -23,32 +22,6 @@ import (
 // TODO: add tests
 // TODO: add graceful shutdown
 // TODO: add a ready mechanism to the getters
-
-// backendConfigManager is used to handle the backend configuration in the Warehouse
-type backendConfigManager struct {
-	conf                       *config.Config
-	db                         *sql.DB
-	schema                     *repo.WHSchema
-	backendConfig              backendconfig.BackendConfig
-	internalControlPlaneClient cpclient.InternalControlPlane
-	logger                     logger.Logger
-
-	started              atomic.Bool
-	initialConfigFetched atomic.Bool
-	subscriptions        []chan model.Warehouse
-	subscriptionsMu      sync.Mutex
-
-	// variables to store the backend configuration
-	warehouses   []model.Warehouse
-	warehousesMu sync.RWMutex
-
-	connectionsMap   map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
-	connectionsMapMu sync.RWMutex
-
-	sourceIDsByWorkspace   map[string][]string // workspaceID -> []sourceIDs
-	sourceIDsByWorkspaceMu sync.RWMutex
-}
-
 func newBackendConfigManager(
 	c *config.Config, // TODO possibly use this to get all the needed variables
 	db *sql.DB,
@@ -66,12 +39,13 @@ func newBackendConfigManager(
 		l = logger.NOP
 	}
 	bcm := &backendConfigManager{
-		conf:           c,
-		db:             db,
-		schema:         repo.NewWHSchemas(wrappedDB),
-		backendConfig:  bc,
-		logger:         l,
-		connectionsMap: make(map[string]map[string]model.Warehouse),
+		conf:                 c,
+		db:                   db,
+		schema:               repo.NewWHSchemas(wrappedDB),
+		backendConfig:        bc,
+		logger:               l,
+		initialConfigFetched: make(chan struct{}),
+		connectionsMap:       make(map[string]map[string]model.Warehouse),
 	}
 	if config.GetBool("ENABLE_TUNNELLING", true) {
 		bcm.internalControlPlaneClient = cpclient.NewInternalClientWithCache(
@@ -85,34 +59,91 @@ func newBackendConfigManager(
 	return bcm
 }
 
+// backendConfigManager is used to handle the backend configuration in the Warehouse
+type backendConfigManager struct {
+	conf                       *config.Config
+	db                         *sql.DB
+	schema                     *repo.WHSchema
+	backendConfig              backendconfig.BackendConfig
+	internalControlPlaneClient cpclient.InternalControlPlane
+	logger                     logger.Logger
+
+	started                       bool
+	startedMu                     sync.Mutex
+	startedWg                     sync.WaitGroup
+	stopService                   func()
+	initialConfigFetched          chan struct{}
+	closeInitialConfigFetchedOnce sync.Once
+	subscriptions                 []chan model.Warehouse
+	subscriptionsMu               sync.Mutex
+
+	// variables to store the backend configuration
+	warehouses   []model.Warehouse
+	warehousesMu sync.RWMutex
+
+	connectionsMap   map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
+	connectionsMapMu sync.RWMutex
+
+	sourceIDsByWorkspace   map[string][]string // workspaceID -> []sourceIDs
+	sourceIDsByWorkspaceMu sync.RWMutex
+}
+
 func (s *backendConfigManager) Start(ctx context.Context) {
-	if !s.started.CompareAndSwap(false, true) {
-		return // already started
+	s.startedMu.Lock()
+	defer s.startedMu.Unlock()
+
+	if s.started {
+		return
 	}
 
-	ch := s.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case data := <-ch:
-			s.processData(ctx, data.Data.(map[string]backendconfig.ConfigT))
+	s.startedWg.Add(1)
+	go func() {
+		defer s.startedWg.Done()
+
+		var svcCtx context.Context
+		svcCtx, s.stopService = context.WithCancel(ctx)
+
+		ch := s.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
+		for {
+			select {
+			case <-svcCtx.Done():
+				return
+			case data := <-ch:
+				s.processData(svcCtx, data.Data.(map[string]backendconfig.ConfigT))
+			}
 		}
-	}
+	}()
+
+	s.started = true
 }
 
 func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan model.Warehouse {
 	s.subscriptionsMu.Lock()
 	defer s.subscriptionsMu.Unlock()
 
+	idx := len(s.subscriptions)
 	ch := make(chan model.Warehouse, 10)
 	s.subscriptions = append(s.subscriptions, ch)
 
-	return ch // TODO ctx
+	go func() {
+		<-ctx.Done()
+
+		s.subscriptionsMu.Lock()
+		defer s.subscriptionsMu.Unlock()
+
+		close(ch)
+
+		s.subscriptions = append(s.subscriptions[:idx], s.subscriptions[idx+1:]...)
+	}()
+
+	return ch
 }
 
+// TODO add error management which should affect whether the initialConfigFetched channel is closed or not
 func (s *backendConfigManager) processData(ctx context.Context, data map[string]backendconfig.ConfigT) {
-	defer s.initialConfigFetched.Store(true)
+	defer s.closeInitialConfigFetchedOnce.Do(func() {
+		close(s.initialConfigFetched)
+	})
 
 	var (
 		warehouses               []model.Warehouse
@@ -208,7 +239,12 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 }
 
 func (s *backendConfigManager) IsInitialized() bool {
-	return s.initialConfigFetched.Load()
+	select {
+	case <-s.initialConfigFetched:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *backendConfigManager) Connections() map[string]map[string]model.Warehouse {
@@ -256,6 +292,7 @@ func (s *backendConfigManager) WarehousesByDestID(destID string) []model.Warehou
 	return warehouses
 }
 
+// TODO add error
 func (s *backendConfigManager) attachSSHTunnellingInfo(
 	ctx context.Context,
 	upstream backendconfig.DestinationT,
