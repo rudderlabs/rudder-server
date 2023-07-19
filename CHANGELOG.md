@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.3](https://github.com/rudderlabs/rudder-server/compare/v1.11.2...v1.11.3) (2023-07-19)
+
+
+### Miscellaneous
+
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.301 to 1.44.302 ([#3646](https://github.com/rudderlabs/rudder-server/issues/3646)) ([b05d2d6](https://github.com/rudderlabs/rudder-server/commit/b05d2d64f7cc733b4d4af77d5ea33a018216d03d))
+* **deps:** bump google.golang.org/api from 0.131.0 to 0.132.0 ([#3647](https://github.com/rudderlabs/rudder-server/issues/3647)) ([ffb993e](https://github.com/rudderlabs/rudder-server/commit/ffb993e79e4de6aafe4ddc0a4c597545e0f856ad))
+
 ## [1.11.2](https://github.com/rudderlabs/rudder-server/compare/v1.11.1...v1.11.2) (2023-07-19)
 
 
