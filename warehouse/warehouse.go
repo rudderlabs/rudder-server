@@ -128,7 +128,7 @@ type HandleT struct { // TODO rename to "router"
 	uploadRepo                        *repo.Uploads
 	whSchemaRepo                      *repo.WHSchema
 	notifier                          pgnotifier.PGNotifier
-	isEnabled                         bool
+	isEnabled                         atomic.Bool
 	configSubscriberLock              sync.RWMutex
 	workerChannelMap                  map[string]chan *UploadJob
 	workerChannelMapLock              sync.RWMutex
@@ -136,7 +136,7 @@ type HandleT struct { // TODO rename to "router"
 	inProgressMap                     map[WorkerIdentifierT][]JobID
 	inProgressMapLock                 sync.RWMutex
 	noOfWorkers                       int
-	activeWorkerCount                 int32 // TODO replace with atomic.Int32
+	activeWorkerCount                 atomic.Int32
 	maxConcurrentUploadJobs           int
 	allowMultipleSourcesForJobsPickup bool
 	workspaceBySourceIDs              map[string]string
@@ -220,17 +220,15 @@ func getDestinationFromSlaveConnectionMap(destinationId, sourceId string) (model
 }
 
 func (wh *HandleT) getActiveWorkerCount() int {
-	return int(atomic.LoadInt32(&wh.activeWorkerCount))
+	return int(wh.activeWorkerCount.Load())
 }
 
 func (wh *HandleT) decrementActiveWorkers() {
-	// decrement number of workers actively engaged
-	atomic.AddInt32(&wh.activeWorkerCount, -1)
+	wh.activeWorkerCount.Add(-1)
 }
 
 func (wh *HandleT) incrementActiveWorkers() {
-	// increment number of workers actively engaged
-	atomic.AddInt32(&wh.activeWorkerCount, 1)
+	wh.activeWorkerCount.Add(1)
 }
 
 func (wh *HandleT) initWorker() chan *UploadJob {
@@ -521,7 +519,7 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse model.Warehouse) (e
 
 func (wh *HandleT) mainLoop(ctx context.Context) {
 	for {
-		if !wh.isEnabled {
+		if !wh.isEnabled.Load() {
 			select {
 			case <-ctx.Done():
 				return
@@ -731,12 +729,12 @@ func getBucketFolder(batchID, tableName string) string {
 
 // Enable enables a router :)
 func (wh *HandleT) Enable() {
-	wh.isEnabled = true
+	wh.isEnabled.Store(true)
 }
 
 // Disable disables a router:)
 func (wh *HandleT) Disable() {
-	wh.isEnabled = false
+	wh.isEnabled.Store(false)
 }
 
 func (wh *HandleT) Setup(ctx context.Context, whType string) error {
@@ -760,9 +758,6 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobID)
-	wh.tenantManager = multitenant.Manager{
-		BackendConfig: backendconfig.DefaultBackendConfig,
-	}
 	wh.stats = stats.Default
 
 	wh.uploadJobFactory = UploadJobFactory{
@@ -791,11 +786,6 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 
 	wh.backgroundCancel = cancel
 	wh.backgroundWait = g.Wait
-
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		wh.tenantManager.Run(ctx)
-		return nil
-	}))
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.backendConfigSubscriber(ctx)
@@ -877,17 +867,13 @@ func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.Conf
 					if !ok {
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 						wh = &HandleT{}
-						wh.configSubscriberLock.Lock()
 						if err := wh.Setup(ctx, destination.DestinationDefinition.Name); err != nil {
 							return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
 						}
-						wh.configSubscriberLock.Unlock()
 						dstToWhRouter[destination.DestinationDefinition.Name] = wh
 					} else {
 						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-						wh.configSubscriberLock.Lock()
 						wh.Enable()
-						wh.configSubscriberLock.Unlock()
 					}
 				}
 			}
@@ -904,9 +890,7 @@ func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.Conf
 		if _, ok := enabledDestinations[key]; !ok {
 			if wh, ok := dstToWhRouter[key]; ok {
 				pkgLogger.Info("Disabling a existing warehouse destination: ", key)
-				wh.configSubscriberLock.Lock()
 				wh.Disable()
-				wh.configSubscriberLock.Unlock()
 			}
 		}
 	}
