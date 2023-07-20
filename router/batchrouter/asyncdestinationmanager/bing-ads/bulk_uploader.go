@@ -180,12 +180,14 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 }
 
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-	fmt.Println("Polling Bing Ads Bulk Upload")
+	b.logger.Infof("Polling Bing Ads Bulk Upload")
 	var cumulativeResp common.PollStatusResponse
 	var completionStatus []bool
 	var failedJobURLs []string
 	var cumulativeCompletionStatus, cumulativeProgressStatus, cumulativeFailureStatus bool
-	requestIdsArray := common.GenerateArrayOfStrings(pollInput.ImportId)
+	requestIdsArray := lo.Reject(strings.Split(pollInput.ImportId, commaSeparator), func(url string, _ int) bool {
+		return url == ""
+	})
 	for _, requestId := range requestIdsArray {
 		resp := b.PollSingleImport(requestId)
 		if resp.StatusCode != 200 {
@@ -262,7 +264,11 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	eventStatsResponse := common.GetUploadStatsResponse{}
 	var failedJobIds []int64
 	var cumulativeFailedReasons map[int64]string
-	fileURLs := common.GenerateArrayOfStrings(UploadStatsInput.FailedJobURLs)
+	fileURLs := lo.Reject(strings.Split(UploadStatsInput.FailedJobURLs, commaSeparator), func(url string, _ int) bool {
+		return url == ""
+	})
+	fmt.Println("UploadStatsInput File URLs", UploadStatsInput.FailedJobURLs)
+	fmt.Println("File URLs", fileURLs)
 	for _, fileURL := range fileURLs {
 		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
