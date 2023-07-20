@@ -8,9 +8,8 @@ import (
 
 var (
 	// queryTypeIndex works for both regexes as long as the groups order is not changed
-	queryTypeIndex  int
-	queryTypeTokens string
-	queryTypeRegex  *regexp.Regexp
+	queryTypeIndex int
+	queryTypeRegex *regexp.Regexp
 
 	unknownQueryTypeRegex = regexp.MustCompile(`^(?i)\s*(?P<type>\w+)\s+`)
 )
@@ -23,11 +22,7 @@ func init() {
 		"ALTER TABLE", "ALTER SESSION",
 		"DROP TABLE",
 	}
-	queryTypeTokens = tokens[0]
-	for i := 1; i < len(tokens); i++ {
-		queryTypeTokens += "|" + tokens[i]
-	}
-	queryTypeRegex = regexp.MustCompile(`^(?i)\s*(?P<type>` + queryTypeTokens + `)\s+`)
+	queryTypeRegex = regexp.MustCompile(`^(?i)\s*(?P<type>` + strings.Join(tokens, "|") + `)\s+`)
 
 	var found bool
 	for i, name := range queryTypeRegex.SubexpNames() {
