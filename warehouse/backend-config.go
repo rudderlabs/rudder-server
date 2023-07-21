@@ -202,7 +202,7 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 
 				if destination.Config["sslMode"] == "verify-ca" {
 					if err := whutils.WriteSSLKeys(destination); err.IsError() {
-						wh.Logger.Error(err.Error())
+						s.logger.Error(err.Error())
 						persistSSLFileErrorStat(
 							workspaceID, wh.destType, destination.Name, destination.ID,
 							source.Name, source.ID, err.GetErrTag(),
