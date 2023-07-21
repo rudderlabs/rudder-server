@@ -104,7 +104,7 @@ var _ = Describe("Bing ads", func() {
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
-				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
@@ -143,7 +143,7 @@ var _ = Describe("Bing ads", func() {
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
-				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
@@ -203,7 +203,7 @@ var _ = Describe("Bing ads", func() {
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
-				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
@@ -280,7 +280,7 @@ var _ = Describe("Bing ads", func() {
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
-				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
@@ -472,7 +472,7 @@ var _ = Describe("Bing ads", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
-			errorsTemplateFilePath := filepath.Join(currentDir, "test-files/status-check.zip") // Path of the source file
+			errorsTemplateFilePath := filepath.Join(currentDir, "testdata/status-check.zip") // Path of the source file
 			// Create a test server with a custom handler function
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Set the appropriate headers for a zip file response
@@ -590,7 +590,7 @@ var _ = Describe("Bing ads", func() {
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
-				FileName:        filepath.Join(currentDir, "test-files/uploadData.txt"),
+				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
