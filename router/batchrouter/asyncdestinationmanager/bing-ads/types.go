@@ -39,11 +39,11 @@ type Data struct {
 }
 
 type DestinationConfig struct {
-	AudienceId               string   `json:"audienceId"`
-	CustomerAccountId        string   `json:"customerAccountId"`
-	CustomerId               string   `json:"customerId"`
+	AudienceID               string   `json:"audienceId"`
+	CustomerAccountID        string   `json:"customerAccountId"`
+	CustomerID               string   `json:"customerId"`
 	OneTrustCookieCategories []string `json:"oneTrustCookieCategories"`
-	RudderAccountId          string   `json:"rudderAccountId"`
+	RudderAccountID          string   `json:"rudderAccountId"`
 }
 
 type ActionFileInfo struct {

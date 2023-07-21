@@ -24,7 +24,7 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 	tokenSource := tokenSource{
 		workspaceID:     destination.WorkspaceID,
 		destinationName: destination.Name,
-		accountID:       destConfig.RudderAccountId,
+		accountID:       destConfig.RudderAccountID,
 		oauthClient:     oauthClient,
 	}
 	secret, err := tokenSource.generateToken()
@@ -33,8 +33,8 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 	}
 	sessionConfig := bingads.SessionConfig{
 		DeveloperToken: secret.Developer_token,
-		AccountId:      destConfig.CustomerAccountId,
-		CustomerId:     destConfig.CustomerId,
+		AccountId:      destConfig.CustomerAccountID,
+		CustomerId:     destConfig.CustomerID,
 		HTTPClient:     http.DefaultClient,
 		TokenSource:    &tokenSource,
 	}

@@ -131,8 +131,8 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
-				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, job.JobID) {
-					errorRespString := uploadStatsResp.Metadata.FailedReasons[job.JobID]
+				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) {
+					errorRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
 					errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
 					status = &jobsdb.JobStatusT{
 						JobID:         jobID,

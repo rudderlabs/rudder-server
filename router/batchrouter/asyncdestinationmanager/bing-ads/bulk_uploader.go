@@ -58,7 +58,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	var successJobs []int64
 	var importIds []string
 	var errors []string
-	actionFiles, err := b.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceId)
+	actionFiles, err := b.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceID)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
