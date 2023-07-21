@@ -112,10 +112,8 @@ func convertCsvToZip(actionFile *ActionFileInfo) error {
 	return nil
 }
 
-/*
-Populates the csv file only if it is within the file size limit 100mb and row number limit 4000000
-Otherwise event is appended to the failedJobs and will be retried.
-*/
+// populateZipFile only if it is within the file size limit 100mb and row number limit 4000000
+// Otherwise event is appended to the failedJobs and will be retried.
 func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, audienceId, line string, data Data) error {
 	newFileSize := actionFile.FileSize + int64(len(line))
 	if newFileSize < b.fileSizeLimit &&
