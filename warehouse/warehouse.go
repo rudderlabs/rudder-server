@@ -273,6 +273,9 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		// spawn one worker for each unique destID_namespace
 		// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
 		// to avoid creating goroutine for disabled sources/destinations
+		if wh.workerChannelMap == nil {
+			wh.workerChannelMap = make(map[string]chan *UploadJob)
+		}
 		if _, ok := wh.workerChannelMap[workerName]; !ok {
 			workerChan := wh.initWorker()
 			wh.workerChannelMap[workerName] = workerChan
@@ -760,7 +763,6 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 		return err
 	}
 	wh.Enable()
-	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobID)
 	wh.stats = stats.Default
 
