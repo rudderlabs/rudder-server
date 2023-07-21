@@ -72,10 +72,10 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	return asyncResponse
 }
 
-func (b *MarketoBulkUploader) GenerateFailedPayload(destConfig map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
+func (b *MarketoBulkUploader) GenerateFailedPayload(jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
 	var failedPayloadT common.AsyncFailedPayload
 	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
-	failedPayloadT.Config = destConfig
+	failedPayloadT.Config = b.destinationConfig
 	for index, job := range jobs {
 		failedPayloadT.Input[index] = make(map[string]interface{})
 		var message map[string]interface{}
@@ -105,7 +105,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	parameters := UploadStatsInput.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
-	payload := b.GenerateFailedPayload(b.destinationConfig, UploadStatsInput.ImportingList, importId, b.destName, csvHeaders)
+	payload := b.GenerateFailedPayload(UploadStatsInput.ImportingList, importId, b.destName, csvHeaders)
 	if payload == nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,

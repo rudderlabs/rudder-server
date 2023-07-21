@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
 func NewBingAdsBulkUploader(destName string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
@@ -123,7 +124,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if err != nil {
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
-	allErrors := `{"error":"` + strings.Join(errors, commaSeparator) + `"}`
+	allErrors := router_utils.EnhanceJSON([]byte(`{}`), "error", strings.Join(errors, commaSeparator))
 
 	for _, actionFile := range actionFiles {
 		err = os.Remove(actionFile.ZipFilePath)
@@ -132,12 +133,10 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 	}
 
-	fmt.Println("Successful Job Count", len(successJobs))
-	fmt.Println("Failed Job Count", len(append(asyncDestStruct.FailedJobIDs, failedJobs...)))
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     successJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
-		FailedReason:        allErrors,
+		FailedReason:        string(allErrors),
 		ImportingParameters: stdjson.RawMessage(importParameters),
 		ImportingCount:      len(successJobs),
 		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
@@ -180,7 +179,6 @@ func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStat
 }
 
 func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-	b.logger.Infof("Polling Bing Ads Bulk Upload")
 	var cumulativeResp common.PollStatusResponse
 	var completionStatus []bool
 	var failedJobURLs []string
@@ -253,7 +251,6 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 }
 
 func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	fmt.Println("Getting upload stats for Bing Ads Bulk Upload")
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
 	importList := UploadStatsInput.ImportingList
