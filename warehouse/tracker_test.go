@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/golang/mock/gomock"
@@ -157,7 +158,7 @@ func TestHandleT_Track(t *testing.T) {
 				},
 				NowSQL:   nowSQL,
 				stats:    store,
-				dbHandle: pgResource.DB,
+				dbHandle: sqlquerywrapper.New(pgResource.DB),
 				Logger:   logger.NOP,
 			}
 
@@ -267,7 +268,7 @@ func TestHandleT_CronTracker(t *testing.T) {
 			},
 			NowSQL:   "ABC",
 			stats:    memstats.New(),
-			dbHandle: pgResource.DB,
+			dbHandle: sqlquerywrapper.New(pgResource.DB),
 			Logger:   logger.NOP,
 		}
 		wh.warehouses = append(wh.warehouses, warehouse)

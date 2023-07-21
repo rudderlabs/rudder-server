@@ -176,6 +176,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Postgres {
 func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
 	middleware := sqlmiddleware.New(
 		db,
+		sqlmiddleware.WithStats(pg.stats),
 		sqlmiddleware.WithLogger(pg.logger),
 		sqlmiddleware.WithKeyAndValues(
 			logfield.SourceID, pg.Warehouse.Source.ID,

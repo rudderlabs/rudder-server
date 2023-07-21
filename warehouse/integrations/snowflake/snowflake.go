@@ -987,6 +987,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmiddl
 	}
 	middleware := sqlmiddleware.New(
 		db,
+		sqlmiddleware.WithStats(sf.stats),
 		sqlmiddleware.WithLogger(sf.logger),
 		sqlmiddleware.WithKeyAndValues(
 			logfield.SourceID, sf.Warehouse.Source.ID,
