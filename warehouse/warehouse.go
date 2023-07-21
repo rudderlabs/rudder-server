@@ -140,7 +140,6 @@ type HandleT struct { // TODO rename to "router" and move to "router.go"
 	maxConcurrentUploadJobs           int
 	allowMultipleSourcesForJobsPickup bool
 	workspaceBySourceIDs              map[string]string
-	tenantManager                     multitenant.Manager
 	stats                             stats.Stats
 	uploadJobFactory                  UploadJobFactory
 	Now                               func() time.Time
