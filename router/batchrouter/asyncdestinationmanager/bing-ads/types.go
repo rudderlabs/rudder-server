@@ -2,6 +2,7 @@ package bingads
 
 import (
 	"encoding/csv"
+	"fmt"
 	"net/http"
 
 	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
@@ -66,4 +67,10 @@ const clientIDSeparator = "<<>>"
 type ClientID struct {
 	JobID       int64
 	HashedEmail string
+}
+
+// returns the string representation of the clientID struct which is of format
+// jobId<<>>hashedEmail
+func (c *ClientID) ToString() string {
+	return fmt.Sprintf("%d%s%s", c.JobID, clientIDSeparator, c.HashedEmail)
 }

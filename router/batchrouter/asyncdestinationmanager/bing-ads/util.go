@@ -31,12 +31,6 @@ func newClientID(jobID int64, hashedEmail string) ClientID {
 	}
 }
 
-// returns the string representation of the clientID struct which is of format
-// jobId<<>>hashedEmail
-func (c *ClientID) ToString() string {
-	return fmt.Sprintf("%d%s%s", c.JobID, clientIDSeparator, c.HashedEmail)
-}
-
 /*
 returns the csv file and zip file path, along with the csv writer that
 contains the template of the uploadable file.
