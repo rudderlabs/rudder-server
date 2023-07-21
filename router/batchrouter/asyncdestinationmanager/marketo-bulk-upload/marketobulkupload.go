@@ -290,14 +290,9 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 		var parameters common.ImportParameters
 		parameters.ImportId = responseStruct.ImportId
-		url := responseStruct.PollUrl
-		parameters.PollUrl = &url
-		metaDataString, ok := responseStruct.Metadata["csvHeader"].(string)
-		if !ok {
-			parameters.MetaData = common.MetaDataT{CSVHeaders: ""}
-		} else {
-			parameters.MetaData = common.MetaDataT{CSVHeaders: metaDataString}
-		}
+		url := &parameters.PollUrl
+		metaDataString, _ := responseStruct.Metadata["csvHeader"].(string)
+		parameters.MetaData = common.MetaDataT{CSVHeaders: metaDataString}
 		importParameters, err := json.Marshal(parameters)
 		if err != nil {
 			return common.AsyncUploadOutput{
@@ -313,7 +308,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			ImportingJobIDs:     successfulJobIDs,
 			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
-			ImportingParameters: stdjson.RawMessage(importParameters),
+			ImportingParameters: importParameters,
 			ImportingCount:      len(importingJobIDs),
 			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID:       destinationID,
