@@ -119,7 +119,7 @@ type (
 	JobID             int64
 )
 
-type HandleT struct { // TODO rename to "router"
+type HandleT struct { // TODO rename to "router" and move to "router.go"
 	destType                          string
 	warehouses                        []model.Warehouse
 	dbHandle                          *sqlquerywrapper.DB
