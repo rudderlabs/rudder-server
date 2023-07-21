@@ -2,7 +2,6 @@ package warehouse
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"sync"
 
@@ -22,7 +21,6 @@ import (
 // TODO: add tests
 func newBackendConfigManager(
 	c *config.Config, // TODO possibly use this to get all the needed variables
-	db *sql.DB,
 	wrappedDB *sqlquerywrapper.DB,
 	bc backendconfig.BackendConfig,
 	l logger.Logger,
@@ -38,7 +36,7 @@ func newBackendConfigManager(
 	}
 	bcm := &backendConfigManager{
 		conf:                 c,
-		db:                   db,
+		db:                   wrappedDB,
 		schema:               repo.NewWHSchemas(wrappedDB),
 		backendConfig:        bc,
 		logger:               l,
@@ -60,7 +58,7 @@ func newBackendConfigManager(
 // backendConfigManager is used to handle the backend configuration in the Warehouse
 type backendConfigManager struct {
 	conf                       *config.Config
-	db                         *sql.DB
+	db                         *sqlquerywrapper.DB
 	schema                     *repo.WHSchema
 	backendConfig              backendconfig.BackendConfig
 	internalControlPlaneClient cpclient.InternalControlPlane
@@ -167,7 +165,7 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 				}
 
 				wh := &HandleT{
-					dbHandle:     s.db, // TODO replace with *sqlquerywrapper.DB?
+					dbHandle:     s.db,
 					whSchemaRepo: s.schema,
 					conf:         s.conf,
 					destType:     destination.DestinationDefinition.Name,

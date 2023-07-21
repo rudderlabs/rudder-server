@@ -640,7 +640,7 @@ func setupWarehouseGRPCTest(
 	pkgLogger = logger.NOP
 
 	bcManager = newBackendConfigManager(
-		config.Default, dbHandle, wrappedDBHandle, backendConfig.DefaultBackendConfig, nil,
+		config.Default, wrappedDBHandle, backendConfig.DefaultBackendConfig, nil,
 	)
 	resetBackendConfigManager := func() {
 		wh := model.Warehouse{

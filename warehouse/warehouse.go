@@ -1442,7 +1442,7 @@ func Start(ctx context.Context, app app.App) error {
 	}()
 
 	bcManager = newBackendConfigManager(
-		config.Default, dbHandle, wrappedDBHandle, backendconfig.DefaultBackendConfig,
+		config.Default, wrappedDBHandle, backendconfig.DefaultBackendConfig,
 		pkgLogger.Child("wh_bc_manager"),
 	)
 	rruntime.GoForWarehouse(func() {
