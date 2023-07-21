@@ -69,54 +69,6 @@ type Exporter struct {
 	Log  logger.Logger
 }
 
-func (e *Exporter) FullExporterLoop(ctx context.Context) error {
-	pollInterval := config.GetDuration("SuppressionExporter.fullExportInterval", 24, time.Hour)
-	tmpDir, err := misc.CreateTMPDIR()
-	if err != nil {
-		return fmt.Errorf("fullExporterLoop: %w", err)
-	}
-	repo, err := newBadgerDBInstance(path.Join(tmpDir, "fullsuppressionV2"), e.Log)
-	if err != nil {
-		return fmt.Errorf("fullExporterLoop: %w", err)
-	}
-	defer func() {
-		_ = repo.Stop()
-	}()
-
-	syncer, err := suppression.NewSyncer(
-		config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
-		e.Id,
-		repo,
-		suppression.WithLogger(e.Log),
-		suppression.WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
-		suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
-	)
-	if err != nil {
-		return fmt.Errorf("fullExporterLoop: %w", err)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			syncStart := time.Now()
-			if err := syncer.Sync(ctx); err != nil {
-				return fmt.Errorf("fullExporterLoop: %w", err)
-			}
-			stats.Default.NewStat("suppression_backup_service_full_sync_time", stats.TimerType).Since(syncStart)
-			exportStart := time.Now()
-			if err = Export(repo, e.File); err != nil {
-				return fmt.Errorf("fullExporterLoop: %w", err)
-			}
-			stats.Default.NewStat("suppression_backup_service_full_export_time", stats.TimerType).Since(exportStart)
-			if err = misc.SleepCtx(ctx, pollInterval); err != nil {
-				return fmt.Errorf("fullExporterLoop: %w", err)
-			}
-		}
-	}
-}
-
 func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 	pollInterval := config.GetDuration("SuppressionExporter.latestExportInterval", 24, time.Hour)
 	for {

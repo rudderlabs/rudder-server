@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
@@ -27,18 +26,23 @@ import (
 func TestSuppressionSetup(t *testing.T) {
 	tmpDir, err := backupDir(t.TempDir())
 	require.NoError(t, err)
+
 	srv := httptest.NewServer(httpHandler(t, tmpDir))
 	defer t.Cleanup(srv.Close)
+
 	t.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
 	t.Setenv("SUPPRESS_USER_BACKUP_SERVICE_URL", srv.URL)
 	t.Setenv("SUPPRESS_BACKUP_URL", srv.URL)
 	t.Setenv("SUPPRESS_USER_BACKEND_URL", srv.URL)
+
 	dir, err := os.MkdirTemp("/tmp", "rudder-server")
 	require.NoError(t, err)
 	t.Setenv("RUDDER_TMPDIR", dir)
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
+
 	config.Set("Diagnostics.enableDiagnostics", false)
+
 	admin.Init()
 	misc.Init()
 	diagnostics.Init()
@@ -50,41 +54,30 @@ func TestSuppressionSetup(t *testing.T) {
 
 	generateTestData(t, tmpDir)
 
-	t.Run(
-		"should setup badgerdb and syncer successfully after getting suppression from backup service",
-		func(t *testing.T) {
-			f := Factory{
-				EnterpriseToken: "token",
-				Log:             logger.NOP,
-			}
-			ctx, cancel := context.WithCancel(context.Background())
-			h, err := f.Setup(ctx, backendconfig.DefaultBackendConfig)
-			require.NoError(t, err, "Error in setting up suppression feature")
-			v := h.GetSuppressedUser("workspace-1", "user-1", "src-1")
-			require.NotNil(t, v)
-			require.Eventually(t, func() bool {
-				return h.GetSuppressedUser("workspace-2", "user-2", "src-4") != nil
-			}, time.Second*15, time.Millisecond*100, "User should be suppressed")
-			cancel()
-			time.Sleep(time.Second * 2)
-			h2, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
-			require.NoError(t, err, "Error in setting up suppression feature")
-			require.NotNil(t, h2.GetSuppressedUser("workspace-2", "user-2", "src-4"))
-		},
-	)
-	t.Run(
-		"should setup in-memory suppression db",
-		func(t *testing.T) {
-			f := Factory{
-				EnterpriseToken: "token",
-				Log:             logger.NOP,
-			}
-			t.Setenv("RSERVER_BACKEND_CONFIG_REGULATIONS_USE_BADGER_DB", "false")
-			h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
-			require.NoError(t, err, "Error in setting up suppression feature")
-			require.Nil(t, h.GetSuppressedUser("workspace-1", "user-1", "src-1"))
-		},
-	)
+	t.Run("should setup badgerdb and syncer successfully after getting suppression from backup service", func(t *testing.T) {
+		f := Factory{
+			EnterpriseToken: "token",
+			Log:             logger.NOP,
+		}
+
+		h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
+		require.NoError(t, err, "Error in setting up suppression feature")
+
+		v := h.GetSuppressedUser("workspace-1", "user-1", "src-1")
+		require.NotNil(t, v)
+	})
+
+	t.Run("should setup in-memory suppression db", func(t *testing.T) {
+		f := Factory{
+			EnterpriseToken: "token",
+			Log:             logger.NOP,
+		}
+		t.Setenv("RSERVER_BACKEND_CONFIG_REGULATIONS_USE_BADGER_DB", "false")
+
+		h, err := f.Setup(context.Background(), backendconfig.DefaultBackendConfig)
+		require.NoError(t, err, "Error in setting up suppression feature")
+		require.Nil(t, h.GetSuppressedUser("workspace-1", "user-1", "src-1"))
+	})
 }
 
 func httpHandler(t *testing.T, dir string) http.Handler {
@@ -92,7 +85,6 @@ func httpHandler(t *testing.T, dir string) http.Handler {
 	srvMux := chi.NewMux()
 
 	srvMux.Get("/workspaceConfig", getSingleTenantWorkspaceConfig)
-	srvMux.Get("/full-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, path.Join(dir, "full-export")) })
 	srvMux.Get("/latest-export", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, path.Join(dir, "latest-export")) })
 	srvMux.Get("/dataplane/workspaces/{workspace_id}/regulations/suppressions", getSuppressionFromManager)
 
@@ -156,22 +148,6 @@ func generateTestData(t *testing.T, tmpDir string) {
 		},
 	}
 	generateBackupFiles(t, tmpDir, "latest-export", repo, suppressions)
-
-	suppressions = append(suppressions, []model.Suppression{
-		{
-			Canceled:    false,
-			WorkspaceID: "workspace-2",
-			UserID:      "user-2",
-			SourceIDs:   []string{"src-3"},
-		},
-		{
-			Canceled:    false,
-			WorkspaceID: "workspace-2",
-			UserID:      "user-2",
-			SourceIDs:   []string{"src-4"},
-		},
-	}...)
-	generateBackupFiles(t, tmpDir, "full-export", repo, suppressions)
 }
 
 func backupDir(tmpDir string) (string, error) {

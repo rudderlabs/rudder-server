@@ -53,28 +53,14 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not get identity: %w", err)
 	}
-	fullExportBaseDir, err := exportPath()
-	if err != nil {
-		return fmt.Errorf("could not get export path: %w", err)
-	}
 	latestExportBaseDir, err := exportPath()
 	if err != nil {
 		return fmt.Errorf("could not get export path: %w", err)
 	}
 
-	fullExportFile := model.File{Path: path.Join(fullExportBaseDir, "full-export"), Mu: &sync.RWMutex{}}
 	latestExportFile := model.File{Path: path.Join(latestExportBaseDir, "latest-export"), Mu: &sync.RWMutex{}}
 
 	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		fullExporter := exporter.Exporter{
-			Id:   id,
-			File: fullExportFile,
-			Log:  pkgLogger,
-		}
-		return fullExporter.FullExporterLoop(gCtx)
-	})
-
 	g.Go(func() error {
 		latestExporter := exporter.Exporter{
 			Id:   id,
@@ -86,7 +72,7 @@ func Run(ctx context.Context) error {
 
 	var httpServer *http.Server
 	g.Go(func() error {
-		api := api.NewAPI(pkgLogger, fullExportFile, latestExportFile)
+		api := api.NewAPI(pkgLogger, latestExportFile)
 		httpServer = &http.Server{
 			Addr:              fmt.Sprintf(":%s", config.GetString("HTTP_PORT", "8000")),
 			Handler:           api.Handler(gCtx),

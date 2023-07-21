@@ -98,13 +98,7 @@ func TestExportLoop(t *testing.T) {
 	exportBaseDir, err := exportPath()
 	require.NoError(t, err)
 
-	fullExportFile := model.File{Path: path.Join(exportBaseDir, "full-export"), Mu: &sync.RWMutex{}}
 	latestExportFile := model.File{Path: path.Join(exportBaseDir, "latest-export"), Mu: &sync.RWMutex{}}
-	fullExporter := exporter.Exporter{
-		Id:   identifier,
-		File: fullExportFile,
-		Log:  logger.NOP,
-	}
 	latestExporter := exporter.Exporter{
 		Id:   identifier,
 		File: latestExportFile,
@@ -115,44 +109,27 @@ func TestExportLoop(t *testing.T) {
 	go func() {
 		require.NoError(t, latestExporter.LatestExporterLoop(ctx))
 	}()
-	go func() {
-		require.NoError(t, fullExporter.FullExporterLoop(ctx))
-	}()
-	t.Run("test full export", func(t *testing.T) {
-		require.Eventually(t, func() bool {
-			_, err := os.Stat(fullExportFile.Path)
-			if !os.IsNotExist(err) {
-				repo, err := suppression.NewBadgerRepository(path.Join(exportBaseDir, "full-export-restore"), logger.NOP)
-				require.NoError(t, err)
-				file, err := os.OpenFile(fullExportFile.Path, os.O_RDONLY, 0o400)
-				require.NoError(t, err)
-				err = repo.Restore(file)
-				require.NoError(t, err)
-				metadata, err := repo.Suppressed("workspace-1", "user-1", "src-1")
-				require.NoError(t, err)
-				return metadata != nil
-			}
-			return false
-		}, 3*time.Second, 10*time.Millisecond, "full export should be done in 10 seconds")
-	})
 	t.Run("test latest export", func(t *testing.T) {
 		require.Eventually(t, func() bool {
 			_, err := os.Stat(latestExportFile.Path)
-			if !os.IsNotExist(err) {
-
-				repo, err := suppression.NewBadgerRepository(path.Join(exportBaseDir, "latest-export-restore"), logger.NOP)
-				require.NoError(t, err)
-				file, err := os.OpenFile(latestExportFile.Path, os.O_RDONLY, 0o600)
-				require.NoError(t, err)
-				err = repo.Restore(file)
-				require.NoError(t, err)
-				metadata, err := repo.Suppressed("workspace-1", "user-1", "src-1")
-				require.NoError(t, err)
-				return metadata != nil
-			} else {
+			if os.IsNotExist(err) {
 				fmt.Println("err: ", err)
+				return false
 			}
-			return false
+
+			repo, err := suppression.NewBadgerRepository(path.Join(exportBaseDir, "latest-export-restore"), logger.NOP)
+			require.NoError(t, err)
+
+			file, err := os.OpenFile(latestExportFile.Path, os.O_RDONLY, 0o600)
+			require.NoError(t, err)
+
+			err = repo.Restore(file)
+			require.NoError(t, err)
+
+			metadata, err := repo.Suppressed("workspace-1", "user-1", "src-1")
+			require.NoError(t, err)
+
+			return metadata != nil
 		}, 3*time.Second, time.Millisecond*10, "latest export should be done in 10 seconds")
 	})
 	ctx.Done()
@@ -164,6 +141,7 @@ func exportPath() (baseDir string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
+
 	baseDir = path.Join(tmpDir, "exportV2")
 	err = os.MkdirAll(baseDir, 0o700)
 	if err != nil {

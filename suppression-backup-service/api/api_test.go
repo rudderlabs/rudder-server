@@ -39,7 +39,6 @@ func TestDataplaneAPIHandler(t *testing.T) {
 	logger.Reset()
 	misc.Init()
 	latestExportPostfix := "latest-export"
-	fullExportPostfix := "full-export"
 	tests := []struct {
 		name                 string
 		endpoint             string
@@ -54,7 +53,7 @@ func TestDataplaneAPIHandler(t *testing.T) {
 			endpoint:             "/full-export",
 			method:               http.MethodGet,
 			responseCode:         http.StatusOK,
-			expectedResponseBody: `this file contains full mock data exported by exporter.`,
+			expectedResponseBody: `this file contains latest mock data exported by exporter.`,
 		},
 		{
 			name:                 "get latest backup badgerdb file",
@@ -75,23 +74,22 @@ func TestDataplaneAPIHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
+
 			port, err := freeport.GetFreePort()
 			require.NoError(t, err)
+
 			baseUrl := fmt.Sprintf("http://localhost:%d", port)
 			req, err := http.NewRequest(tt.method, baseUrl+tt.endpoint, http.NoBody)
 			require.NoError(t, err)
+
 			resp := httptest.NewRecorder()
 			exportBaseDir, err := exportPath()
 			require.NoError(t, err)
-			defer os.RemoveAll(exportBaseDir)
+			defer func() { _ = os.RemoveAll(exportBaseDir) }()
 
 			latestGoldenFile, err := os.OpenFile("./testdata/latestExport.golden", os.O_RDONLY, 0o400)
 			require.NoError(t, err)
 			defer func() { _ = latestGoldenFile.Close() }()
-
-			fullGoldenFile, err := os.OpenFile("./testdata/fullExport.golden", os.O_RDONLY, 0o400)
-			require.NoError(t, err)
-			defer func() { _ = fullGoldenFile.Close() }()
 
 			latestExporterFile, err := os.Create(path.Join(exportBaseDir, latestExportPostfix))
 			require.NoError(t, err)
@@ -99,13 +97,11 @@ func TestDataplaneAPIHandler(t *testing.T) {
 			require.NoError(t, err)
 			latestExporterFile.Close()
 
-			fullExporterFile, err := os.Create(path.Join(exportBaseDir, fullExportPostfix))
-			require.NoError(t, err)
-			_, err = io.Copy(fullExporterFile, fullGoldenFile)
-			require.NoError(t, err)
-			fullExporterFile.Close()
+			api := api.NewAPI(
+				logger.NOP,
+				model.File{Path: path.Join(exportBaseDir, fmt.Sprint(latestExportPostfix+tt.random)), Mu: &sync.RWMutex{}},
+			)
 
-			api := api.NewAPI(logger.NOP, model.File{Path: path.Join(exportBaseDir, fullExportPostfix), Mu: &sync.RWMutex{}}, model.File{Path: path.Join(exportBaseDir, fmt.Sprint(latestExportPostfix+tt.random)), Mu: &sync.RWMutex{}})
 			api.Handler(context.Background()).ServeHTTP(resp, req)
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)

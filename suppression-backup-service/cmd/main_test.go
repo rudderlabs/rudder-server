@@ -47,26 +47,33 @@ func verifyBackup(t *testing.T, filePath, data string) {
 	subDirName, err := os.MkdirTemp(filePath, "")
 	defer func() { _ = os.RemoveAll(subDirName) }()
 	require.NoError(t, err)
+
 	repo, err := suppression.NewBadgerRepository(subDirName, logger.NOP)
 	require.NoError(t, err)
+
 	err = repo.Restore(strings.NewReader(data))
 	require.NoError(t, err)
+
 	isSuppressed, err := repo.Suppressed("workspace-1", "user-1", "src-1")
 	require.NoError(t, err)
 	require.NotNil(t, isSuppressed)
 }
 
-func TestMain(t *testing.T) {
+func TestRun(t *testing.T) {
 	config.Reset()
 	logger.Reset()
 	misc.Init()
+
 	srv := httptest.NewServer(handler(t))
 	defer t.Cleanup(srv.Close)
+
 	t.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
 	t.Setenv("SUPPRESS_USER_BACKEND_URL", srv.URL)
+
 	ctx := context.Background()
 	go func() { require.NoError(t, Run(ctx)) }()
+
 	tests := []struct {
 		name                 string
 		endpoint             string
@@ -75,13 +82,6 @@ func TestMain(t *testing.T) {
 		expectedResponseBody string
 		exportVerifyFileName string
 	}{
-		{
-			name:                 "full export e-2-e test",
-			endpoint:             "/full-export",
-			method:               http.MethodGet,
-			expectedResponseCode: http.StatusOK,
-			exportVerifyFileName: "full-export-restore",
-		},
 		{
 			name:                 "latest export e-2-e test",
 			endpoint:             "/latest-export",
@@ -118,6 +118,7 @@ func TestMain(t *testing.T) {
 
 func handler(t *testing.T) http.Handler {
 	t.Helper()
+
 	srvMux := chi.NewMux()
 	srvMux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

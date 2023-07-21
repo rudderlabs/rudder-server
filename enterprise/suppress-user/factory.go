@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"path/filepath"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -80,10 +79,9 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				return nil, err
 			}
 
-			subCtx, latestSyncCancel := context.WithCancel(ctx)
 			rruntime.Go(func() {
 				m.Log.Infof("Starting latest suppression sync")
-				latestSyncer.SyncLoop(subCtx)
+				latestSyncer.SyncLoop(ctx)
 				err = latestRepo.Stop()
 				if err != nil {
 					m.Log.Warnf("Latest Sync failed: could not stop repo: %w", err)
@@ -95,38 +93,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				m.Log.Info("Latest suppression sync stopped")
 			})
 
-			repo := &RepoSwitcher{Repository: latestRepo}
-			rruntime.Go(func() {
-				var fullSyncer *Syncer
-				var fullRepo Repository
-				var err error
-
-				m.retryIndefinitely(ctx,
-					func() error {
-						fullSyncer, fullRepo, err = m.newSyncerWithBadgerRepo(fullSuppressionPath, fullDataSeed, 0, identifier, pollInterval)
-						return err
-					}, 5*time.Second)
-
-				m.Log.Info("First full suppression sync started")
-				m.retryIndefinitely(ctx,
-					func() error { return fullSyncer.Sync(ctx) },
-					5*time.Second)
-				m.Log.Info("First full suppression sync done")
-
-				_, err = os.Create(filepath.Join(fullSuppressionPath, model.SyncDoneMarker))
-				if err != nil {
-					m.Log.Errorf("Could not create sync done marker: %w", err)
-				}
-				repo.Switch(fullRepo)
-				m.Log.Info("Switched to full suppression repository")
-				latestSyncCancel()
-				fullSyncer.SyncLoop(ctx)
-				err = fullRepo.Stop()
-				if err != nil {
-					m.Log.Warnf("Full Sync failed: could not stop repo: %w", err)
-				}
-			})
-			return newHandler(repo, m.Log), nil
+			return newHandler(latestRepo, m.Log), nil
 		} else {
 			m.Log.Info("fullSuppression repo is already synced with backup service, starting syncLoop")
 			syncer, fullRepo, err := m.newSyncerWithBadgerRepo(fullSuppressionPath, nil, 0, identifier, pollInterval)
@@ -227,10 +194,6 @@ func getRepoPath() (fullSuppressionPath, latestSuppressionPath string, err error
 
 func latestDataSeed() (io.ReadCloser, error) {
 	return seederSource("latest-export")
-}
-
-func fullDataSeed() (io.ReadCloser, error) {
-	return seederSource("full-export")
 }
 
 func seederSource(endpoint string) (io.ReadCloser, error) {
