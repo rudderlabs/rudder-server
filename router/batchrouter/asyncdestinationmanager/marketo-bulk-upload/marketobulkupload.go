@@ -3,7 +3,6 @@ package marketobulkupload
 import (
 	"bufio"
 	"encoding/json"
-	stdjson "encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -290,7 +289,6 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 		var parameters common.ImportParameters
 		parameters.ImportId = responseStruct.ImportId
-		url := &parameters.PollUrl
 		metaDataString, _ := responseStruct.Metadata["csvHeader"].(string)
 		parameters.MetaData = common.MetaDataT{CSVHeaders: metaDataString}
 		importParameters, err := json.Marshal(parameters)
