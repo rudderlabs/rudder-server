@@ -70,4 +70,3 @@ type BatchedJobs struct {
 	Connection *Connection
 	TimeWindow time.Time
 }
-
