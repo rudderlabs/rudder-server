@@ -132,7 +132,7 @@ type HandleT struct { // TODO rename to "router"
 	configSubscriberLock              sync.RWMutex
 	workerChannelMap                  map[string]chan *UploadJob
 	workerChannelMapLock              sync.RWMutex
-	initialConfigFetched              bool
+	initialConfigFetched              atomic.Bool
 	inProgressMap                     map[WorkerIdentifierT][]JobID
 	inProgressMapLock                 sync.RWMutex
 	noOfWorkers                       int
@@ -258,6 +258,8 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJob) error {
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 	for warehouse := range bcManager.Subscribe(ctx) {
+		wh.Logger.Info(`Received updated workspace config`)
+
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = append(wh.warehouses, warehouse) // TODO ??? why not use bcManager here ???
 		if wh.workspaceBySourceIDs == nil {
@@ -276,6 +278,8 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 			wh.workerChannelMap[workerName] = workerChan
 		}
 		wh.workerChannelMapLock.Unlock()
+
+		wh.initialConfigFetched.Store(true)
 	}
 }
 
@@ -664,7 +668,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 func (wh *HandleT) runUploadJobAllocator(ctx context.Context) {
 loop:
 	for {
-		if !wh.initialConfigFetched {
+		if !wh.initialConfigFetched.Load() {
 			select {
 			case <-ctx.Done():
 				break loop
