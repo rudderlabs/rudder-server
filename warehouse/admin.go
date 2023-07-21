@@ -58,12 +58,12 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	var warehouse model.Warehouse
 	srcMap, ok := bcManager.ConnectionSourcesMap(s.DestID) // TODO remove global variable
 	if !ok {
 		return errors.New("please specify a valid and existing destination ID")
 	}
 
+	var warehouse model.Warehouse
 	// use the sourceID-destID connection if sourceID is not empty
 	if s.SourceID != "" {
 		w, ok := srcMap[s.SourceID]
