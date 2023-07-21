@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	stdjson "encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -45,7 +46,7 @@ func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, 
 func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	payload, err := json.Marshal(pollInput)
 	if err != nil {
-		b.logger.Error("Error in Marshalling Poll Input: %w", err)
+		b.logger.Errorf("Error in Marshalling Poll Input: %v", err)
 		return common.PollStatusResponse{
 			StatusCode: 500,
 			HasFailed:  true,
@@ -62,7 +63,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
 		// needs to be retried
-		b.logger.Error("Error in Unmarshalling Poll Response: %w", err)
+		b.logger.Errorf("Error in Unmarshalling Poll Response: %v", err)
 		return common.PollStatusResponse{
 			StatusCode: 500,
 			HasFailed:  true,
@@ -81,7 +82,7 @@ func (b *MarketoBulkUploader) GenerateFailedPayload(destConfig map[string]interf
 		metadata := make(map[string]interface{})
 		err := json.Unmarshal([]byte(common.GetTransformedData(job.EventPayload)), &message)
 		if err != nil {
-			b.logger.Error("Error in Unmarshalling GetUploadStats Input : %w", err)
+			b.logger.Errorf("Error in Unmarshalling GetUploadStats Input : %v", err)
 			return nil
 		}
 		metadata["job_id"] = job.JobID
@@ -93,7 +94,7 @@ func (b *MarketoBulkUploader) GenerateFailedPayload(destConfig map[string]interf
 	failedPayloadT.MetaData = common.MetaDataT{CSVHeaders: csvHeaders}
 	payload, err := json.Marshal(failedPayloadT)
 	if err != nil {
-		b.logger.Error("Error in Marshalling GetUploadStats Input : %w", err)
+		b.logger.Errorf("Error in Marshalling GetUploadStats Input : %v", err)
 		return nil
 	}
 	return payload
@@ -262,7 +263,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	var bodyBytes []byte
 	var statusCode string
 	if statusCodeHTTP != 200 {
-		bodyBytes = []byte(`"error" : "HTTP Call to Transformer Returned Non 200"`)
+		bodyBytes = []byte(fmt.Sprintf(`"error": "HTTP Call to Transformer Returned Non 200. StatusCode: %d"`, statusCodeHTTP))
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
 			FailedReason:  string(bodyBytes),
