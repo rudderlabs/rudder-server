@@ -51,6 +51,7 @@ type Dynamic struct {
 	Router    lifecycle
 
 	SchemaForwarder lifecycle
+	Archiver        lifecycle
 
 	currentMode         servermode.Mode
 	currentWorkspaceIDs string
@@ -173,6 +174,9 @@ func (d *Dynamic) start() error {
 	if err := d.Processor.Start(); err != nil {
 		return fmt.Errorf("processor start: %w", err)
 	}
+	if err := d.Archiver.Start(); err != nil {
+		return fmt.Errorf("archiver start: %w", err)
+	}
 	if err := d.SchemaForwarder.Start(); err != nil {
 		return fmt.Errorf("jobs forwarder start: %w", err)
 	}
@@ -193,6 +197,8 @@ func (d *Dynamic) stop() {
 	start := time.Now()
 	d.Processor.Stop()
 	d.logger.Debug("Processor stopped")
+	d.Archiver.Stop()
+	d.logger.Debug("Archiver stopped")
 	d.Router.Stop()
 	d.logger.Debug("Router stopped")
 	d.SchemaForwarder.Stop()

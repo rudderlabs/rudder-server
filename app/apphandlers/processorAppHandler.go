@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
+	"github.com/rudderlabs/rudder-server/jobs_archival"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -194,6 +195,13 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 
+	archiveDB := jobsdb.NewForReadWrite(
+		"archive",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+	)
+
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
 		client, err := pulsar.NewClient(config.Default)
@@ -222,6 +230,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		errDBForRead,
 		errDBForWrite,
 		schemaDB,
+		archiveDB,
 		reportingI,
 		transientSources,
 		fileUploaderProvider,
@@ -269,6 +278,11 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		EventSchemaDB:    schemaDB,
 		Processor:        p,
 		Router:           rt,
+		Archiver: jobs_archival.New(
+			archiveDB,
+			fileUploaderProvider,
+			jobs_archival.WithAdaptiveLimit(adaptiveLimit),
+		),
 	}
 
 	g.Go(func() error {

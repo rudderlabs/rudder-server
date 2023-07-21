@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
+	"github.com/rudderlabs/rudder-server/jobs_archival"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -188,6 +189,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
 
+	archiveDB := jobsdb.NewForReadWrite(
+		"archive",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+	)
+
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
 		client, err := pulsar.NewClient(config.Default)
@@ -216,6 +224,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		errDBForRead,
 		errDBForWrite,
 		schemaDB,
+		archiveDB,
 		reportingI,
 		transientSources,
 		fileUploaderProvider,
@@ -262,6 +271,11 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		Processor:       proc,
 		Router:          rt,
 		SchemaForwarder: schemaForwarder,
+		Archiver: jobs_archival.New(
+			archiveDB,
+			fileUploaderProvider,
+			jobs_archival.WithAdaptiveLimit(adaptiveLimit),
+		),
 	}
 
 	rateLimiter, err := gwThrottler.New(stats.Default)
