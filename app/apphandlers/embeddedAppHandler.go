@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
+	"github.com/rudderlabs/rudder-server/jobs_archival"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -271,6 +272,11 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		Processor:       proc,
 		Router:          rt,
 		SchemaForwarder: schemaForwarder,
+		Archiver: jobs_archival.New(
+			archiveDB,
+			fileUploaderProvider,
+			jobs_archival.WithAdaptiveLimit(adaptiveLimit),
+		),
 	}
 
 	rateLimiter, err := gwThrottler.New(stats.Default)

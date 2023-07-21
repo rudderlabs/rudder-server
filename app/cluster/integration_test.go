@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jobs_archival"
 	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
@@ -180,6 +181,8 @@ func TestDynamicClusterManager(t *testing.T) {
 	defer gwDB.TearDown()
 	eschDB := jobsdb.NewForReadWrite("esch")
 	defer eschDB.TearDown()
+	archiveDB := jobsdb.NewForReadWrite("archive")
+	defer archiveDB.TearDown()
 	rtDB := jobsdb.NewForReadWrite("rt")
 	defer rtDB.TearDown()
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
@@ -263,6 +266,10 @@ func TestDynamicClusterManager(t *testing.T) {
 		EventSchemaDB:   eschDB,
 		ArchivalDB:      archDB,
 		SchemaForwarder: schemaForwarder,
+		Archiver: jobs_archival.New(
+			archiveDB,
+			nil,
+		),
 
 		Processor: processor,
 		Router:    router,

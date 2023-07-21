@@ -1034,7 +1034,22 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				nil,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1047,7 +1062,22 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				nil,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1065,7 +1095,22 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, nil, c.MockReportingI, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				c.MockReportingI,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1931,8 +1976,22 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			processor.config.featuresRetryMaxAttempts = 0
-
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				nil,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 
 			setMainLoopTimeout(processor, 1*time.Second)
 
@@ -1975,7 +2034,22 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			processor.config.featuresRetryMaxAttempts = 0
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, nil, c.MockReportingI, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				c.MockReportingI,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 			defer processor.Shutdown()
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 

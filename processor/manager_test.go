@@ -263,6 +263,8 @@ func TestProcessorManager(t *testing.T) {
 		defer gwDB.Stop()
 		require.NoError(t, eschDB.Start())
 		defer eschDB.Stop()
+		require.NoError(t, archiveDB.Start())
+		defer archiveDB.Stop()
 		require.NoError(t, rtDB.Start())
 		defer rtDB.Stop()
 		require.NoError(t, brtDB.Start())

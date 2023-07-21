@@ -1017,6 +1017,15 @@ func SleepCtx(ctx context.Context, delay time.Duration) error {
 	}
 }
 
+func AfterCtx(ctx context.Context, after func() <-chan time.Time) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-after():
+		return nil
+	}
+}
+
 func Unique(stringSlice []string) []string {
 	keys := make(map[string]struct{})
 	var list []string
