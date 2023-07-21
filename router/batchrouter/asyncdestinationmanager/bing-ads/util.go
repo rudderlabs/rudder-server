@@ -77,10 +77,6 @@ func convertCsvToZip(actionFile *ActionFileInfo) error {
 		os.Remove(actionFile.ZipFilePath)
 		return nil
 	}
-	// log the size here
-	// bingads test
-	fmt.Printf("Zipping file for action %s\n", actionFile.Action)
-	fmt.Println("Size of the file: ", actionFile.FileSize)
 	zipFile, err := os.Create(actionFile.ZipFilePath)
 	if err != nil {
 		return err

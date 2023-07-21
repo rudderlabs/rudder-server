@@ -41,7 +41,7 @@ import (
 
 // Setup initializes the batch router
 func (brt *Handle) Setup(
-	destination *backendconfig.DestinationT,
+	destType string,
 	backendConfig backendconfig.BackendConfig,
 	jobsDB, errorDB jobsdb.JobsDB,
 	reporting types.Reporting,
@@ -49,9 +49,9 @@ func (brt *Handle) Setup(
 	rsourcesService rsources.JobService,
 	debugger destinationdebugger.DestinationDebugger,
 ) {
-	brt.destType = destination.DestinationDefinition.Name
+	brt.destType = destType
 	brt.backendConfig = backendConfig
-	brt.logger = logger.NewLogger().Child("batchrouter").Child(destination.DestinationDefinition.Name)
+	brt.logger = logger.NewLogger().Child("batchrouter").Child(destType)
 
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
@@ -79,7 +79,7 @@ func (brt *Handle) Setup(
 	}
 	isolationMode := config.GetString("BatchRouter.isolationMode", string(defaultIsolationMode))
 	var err error
-	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destination.DestinationDefinition.Name, func(destinationID string) bool {
+	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destType, func(destinationID string) bool {
 		brt.configSubscriberMu.RLock()
 		defer brt.configSubscriberMu.RUnlock()
 		_, ok := brt.destinationsMap[destinationID]
@@ -87,10 +87,8 @@ func (brt *Handle) Setup(
 	}); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
-	// Bingads test
-	config.RegisterIntConfigVariable(100000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
+	config.RegisterIntConfigVariable(10000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
-	// Bingads test
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
@@ -131,7 +129,7 @@ func (brt *Handle) Setup(
 
 	asyncStatTags := map[string]string{
 		"module":   "batch_router",
-		"destType": destination.DestinationDefinition.Name,
+		"destType": destType,
 	}
 	brt.asyncPollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, asyncStatTags)
 	brt.asyncFailedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, asyncStatTags)
@@ -171,7 +169,7 @@ func (brt *Handle) Setup(
 		}),
 	)
 
-	brt.logger.Infof("BRT: Batch Router started: %s", destination.DestinationDefinition.Name)
+	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
 	// waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {

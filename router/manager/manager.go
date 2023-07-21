@@ -104,7 +104,7 @@ loop:
 							_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 							if !ok {
 								r.logger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
-								brt := batchrouterFactory.New(destination)
+								brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
 								brt.Start()
 								cleanup = append(cleanup, brt.Shutdown)
 								dstToBatchRouter[destination.DestinationDefinition.Name] = brt
