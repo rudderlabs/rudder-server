@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"net/http"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -19,10 +18,10 @@ func isSuccessStatus(status int) bool {
 }
 
 func isJobTerminated(status int) bool {
-	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
+	if status == 429 {
 		return false
 	}
-	return status >= http.StatusOK && status < http.StatusInternalServerError
+	return status >= 200 && status < 500
 }
 
 func nextAttemptAfter(attempt int, minRetryBackoff, maxRetryBackoff time.Duration) time.Duration {

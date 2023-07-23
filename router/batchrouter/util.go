@@ -3,7 +3,6 @@ package batchrouter
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -19,10 +18,10 @@ import (
 )
 
 func isJobTerminated(status int) bool {
-	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
+	if status == 429 {
 		return false
 	}
-	return status >= http.StatusOK && status < http.StatusInternalServerError
+	return status >= 200 && status < 500
 }
 
 func IsObjectStorageDestination(destType string) bool {
