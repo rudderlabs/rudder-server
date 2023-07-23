@@ -71,7 +71,6 @@ type ErrorDetailReporter struct {
 	sleepInterval             time.Duration
 	mainLoopSleepInterval     time.Duration
 	maxConcurrentRequests     int
-	maxOpenConnections        int
 	workspaceIDForSourceIDMap map[string]string
 	destinationIDMap          map[string]destDetail
 	srcWspMutex               sync.RWMutex
@@ -93,7 +92,6 @@ type errorDetails struct {
 func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	var maxConcurrentRequests int
-	var maxOpenConnections int
 	tr := &http.Transport{}
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -102,7 +100,6 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
-	config.RegisterIntConfigVariable(16, &maxOpenConnections, false, 1, []string{"Reporting.errorReporting.maxOpenConnections"}...)
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
@@ -125,7 +122,6 @@ func NewEdReporterFromEnvConfig() *ErrorDetailReporter {
 		destinationIDMap:          make(map[string]destDetail),
 		clients:                   make(map[string]*types.Client),
 		errorDetailExtractor:      extractor,
-		maxOpenConnections:        maxOpenConnections,
 	}
 }
 
@@ -281,7 +277,6 @@ func (edRep *ErrorDetailReporter) migrate(c types.Config) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	dbHandle.SetMaxOpenConns(edRep.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:          dbHandle,
@@ -410,13 +405,11 @@ func (edRep *ErrorDetailReporter) mainLoop(ctx context.Context, clientName strin
 				continue
 			}
 			deleteReportsStart := time.Now()
-			var delRows *sql.Rows
-			delRows, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
+			_, err = dbHandle.Query(`DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 			if err != nil {
 				edRep.log.Errorf(`[ Error Detail Reporting ]: Error deleting local reports from %s: %v`, ErrorDetailReportsTable, err)
 			}
-			delRows.Close()
 		}
 
 		mainLoopTimer.Since(loopStart)

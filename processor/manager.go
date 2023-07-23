@@ -7,7 +7,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
@@ -62,10 +61,7 @@ func (proc *LifecycleManager) Start() error {
 
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
-	metric.Instance.Reset()
-	if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
-		return err
-	}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
