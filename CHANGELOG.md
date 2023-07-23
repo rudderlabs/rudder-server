@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.11.3](https://github.com/rudderlabs/rudder-server/compare/v1.11.2...v1.11.3) (2023-07-23)
+
+
+### Bug Fixes
+
+* add index on reported_at column of reports table ([#3606](https://github.com/rudderlabs/rudder-server/issues/3606)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* cleanup for warehouse integration tests ([#3596](https://github.com/rudderlabs/rudder-server/issues/3596)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* redshift dedup pick latest entry ([#3603](https://github.com/rudderlabs/rudder-server/issues/3603)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* user transformations timeout ([#3583](https://github.com/rudderlabs/rudder-server/issues/3583)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* warehouse stringmap configs are lower case w.r.t viper ([#3592](https://github.com/rudderlabs/rudder-server/issues/3592)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+
+
+### Miscellaneous
+
+* add max connections to warehouse and pgnotifier ([#3597](https://github.com/rudderlabs/rudder-server/issues/3597)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* add provision to disable tracking event names from a source for reporting ([#3632](https://github.com/rudderlabs/rudder-server/issues/3632)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* added trino and spark test ([#3525](https://github.com/rudderlabs/rudder-server/issues/3525)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* cleanup integrations package ([#3635](https://github.com/rudderlabs/rudder-server/issues/3635)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump cloud.google.com/go/storage from 1.30.1 to 1.31.0 ([#3625](https://github.com/rudderlabs/rudder-server/issues/3625)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/apache/pulsar-client-go from 0.10.0 to 0.11.0 ([#3622](https://github.com/rudderlabs/rudder-server/issues/3622)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.295 to 1.44.299 ([#3615](https://github.com/rudderlabs/rudder-server/issues/3615)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.299 to 1.44.300 ([#3636](https://github.com/rudderlabs/rudder-server/issues/3636)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.300 to 1.44.301 ([#3640](https://github.com/rudderlabs/rudder-server/issues/3640)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.301 to 1.44.302 ([#3646](https://github.com/rudderlabs/rudder-server/issues/3646)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.301 to 1.44.302 ([#3646](https://github.com/rudderlabs/rudder-server/issues/3646)) ([b05d2d6](https://github.com/rudderlabs/rudder-server/commit/b05d2d64f7cc733b4d4af77d5ea33a018216d03d))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.302 to 1.44.304 ([#3650](https://github.com/rudderlabs/rudder-server/issues/3650)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.302 to 1.44.304 ([#3650](https://github.com/rudderlabs/rudder-server/issues/3650)) ([edc9396](https://github.com/rudderlabs/rudder-server/commit/edc9396dd8ca65ae7b0ae1a7ac273e4e5dfe716b))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.304 to 1.44.305 ([#3654](https://github.com/rudderlabs/rudder-server/issues/3654)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.44.304 to 1.44.305 ([#3654](https://github.com/rudderlabs/rudder-server/issues/3654)) ([366393e](https://github.com/rudderlabs/rudder-server/commit/366393e5bb42ae3437d88fa652ca31356748c590))
+* **deps:** bump github.com/confluentinc/confluent-kafka-go/v2 from 2.1.1 to 2.2.0 ([#3628](https://github.com/rudderlabs/rudder-server/issues/3628)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/go-chi/chi/v5 from 5.0.8 to 5.0.10 ([#3637](https://github.com/rudderlabs/rudder-server/issues/3637)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/iancoleman/strcase from 0.2.0 to 0.3.0 ([#3626](https://github.com/rudderlabs/rudder-server/issues/3626)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/minio/minio-go/v7 from 7.0.59 to 7.0.60 ([#3621](https://github.com/rudderlabs/rudder-server/issues/3621)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/minio/minio-go/v7 from 7.0.60 to 7.0.61 ([#3639](https://github.com/rudderlabs/rudder-server/issues/3639)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump github.com/segmentio/kafka-go from 0.4.40 to 0.4.42 ([#3620](https://github.com/rudderlabs/rudder-server/issues/3620)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump go.uber.org/atomic from 1.10.0 to 1.11.0 ([#3587](https://github.com/rudderlabs/rudder-server/issues/3587)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump go.uber.org/automaxprocs from 1.5.2 to 1.5.3 ([#3651](https://github.com/rudderlabs/rudder-server/issues/3651)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump go.uber.org/automaxprocs from 1.5.2 to 1.5.3 ([#3651](https://github.com/rudderlabs/rudder-server/issues/3651)) ([f9a19f3](https://github.com/rudderlabs/rudder-server/commit/f9a19f31558eed57dcd031f7c675f0ead52a1c98))
+* **deps:** bump golang.org/x/oauth2 from 0.9.0 to 0.10.0 ([#3585](https://github.com/rudderlabs/rudder-server/issues/3585)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump google.golang.org/api from 0.129.0 to 0.130.0 ([#3588](https://github.com/rudderlabs/rudder-server/issues/3588)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump google.golang.org/api from 0.130.0 to 0.131.0 ([#3627](https://github.com/rudderlabs/rudder-server/issues/3627)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump google.golang.org/api from 0.131.0 to 0.132.0 ([#3647](https://github.com/rudderlabs/rudder-server/issues/3647)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* **deps:** bump google.golang.org/api from 0.131.0 to 0.132.0 ([#3647](https://github.com/rudderlabs/rudder-server/issues/3647)) ([ffb993e](https://github.com/rudderlabs/rudder-server/commit/ffb993e79e4de6aafe4ddc0a4c597545e0f856ad))
+* **deps:** bump google.golang.org/grpc from 1.56.1 to 1.56.2 ([#3599](https://github.com/rudderlabs/rudder-server/issues/3599)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* merge release 1.11.2 in main branch ([#3655](https://github.com/rudderlabs/rudder-server/issues/3655)) ([91f9213](https://github.com/rudderlabs/rudder-server/commit/91f9213c1e112ca0d1b92c984c42786d17b8f006))
+* remove google cloud storage dependency for gcs datalake test using fake-gcs-server ([#3576](https://github.com/rudderlabs/rudder-server/issues/3576)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* revert merge release 1.11.2 in main branch ([#3656](https://github.com/rudderlabs/rudder-server/issues/3656)) ([3da54d1](https://github.com/rudderlabs/rudder-server/commit/3da54d1fb10d2e8888e0aa67b92f0e43a4dfd0e3))
+* warehouse sql stats ([#3638](https://github.com/rudderlabs/rudder-server/issues/3638)) ([4171517](https://github.com/rudderlabs/rudder-server/commit/4171517b8c896e033eb2267e631560a11e353ad4))
+* warehouse sql stats ([#3638](https://github.com/rudderlabs/rudder-server/issues/3638)) ([e20976d](https://github.com/rudderlabs/rudder-server/commit/e20976df8243a60ca64b02ea10f436986ef6064e))
+
 ## [1.11.2](https://github.com/rudderlabs/rudder-server/compare/v1.11.1...v1.11.2) (2023-07-19)
 
 
