@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -523,7 +526,7 @@ func createManager(ctx context.Context, dest *backendconfig.DestinationT) (manag
 		err        error
 	)
 
-	if operations, err = manager.NewWarehouseOperations(destType); err != nil {
+	if operations, err = manager.NewWarehouseOperations(destType, config.Default, pkgLogger, stats.Default); err != nil {
 		return nil, fmt.Errorf("getting manager: %w", err)
 	}
 

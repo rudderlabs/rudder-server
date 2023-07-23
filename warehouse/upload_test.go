@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/ory/dockertest/v3"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -366,9 +368,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 					t.Log("db:", pgResource.DBDsn)
 
-					rs := redshift.New()
-					redshift.WithConfig(rs, config.Default)
-
+					rs := redshift.New(config.Default, logger.NOP, stats.Default)
 					rs.DB = sqlmiddleware.New(pgResource.DB)
 					rs.Namespace = testNamespace
 
@@ -436,9 +436,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 
 			t.Log("db:", pgResource.DBDsn)
 
-			rs := redshift.New()
-			redshift.WithConfig(rs, config.Default)
-
+			rs := redshift.New(config.Default, logger.NOP, stats.Default)
 			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace
 

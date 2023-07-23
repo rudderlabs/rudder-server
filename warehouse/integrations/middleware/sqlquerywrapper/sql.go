@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
-
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type Opt func(*DB)
@@ -22,6 +24,7 @@ type logger interface {
 
 type DB struct {
 	*sql.DB
+	stats stats.Stats
 
 	since              func(time.Time) time.Duration
 	logger             logger
@@ -61,16 +64,20 @@ func (r *Rows) Err() error {
 type Row struct {
 	*sql.Row
 	context.CancelFunc
+	once sync.Once
 	logQ
 }
 
 func (r *Row) Scan(dest ...interface{}) error {
 	defer r.CancelFunc()
-	r.logQ()
+	r.once.Do(r.logQ)
 	return r.Row.Scan(dest...)
 }
 
+// Err provides a way for wrapping packages to check for
+// query errors without calling Scan.
 func (r *Row) Err() error {
+	r.once.Do(r.logQ)
 	return r.Row.Err()
 }
 
@@ -83,6 +90,12 @@ type Tx struct {
 func WithLogger(logger logger) Opt {
 	return func(s *DB) {
 		s.logger = logger
+	}
+}
+
+func WithStats(stats stats.Stats) Opt {
+	return func(s *DB) {
+		s.stats = stats
 	}
 }
 
@@ -209,6 +222,38 @@ func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
 
 func (db *DB) logQuery(query string, since time.Time) logQ {
 	return func() {
+		var (
+			sanitizedQuery string
+			keysAndValues  []any
+		)
+		createLogData := func() {
+			sanitizedQuery, _ = misc.ReplaceMultiRegex(query, db.secretsRegex)
+
+			keysAndValues = []any{
+				logfield.Query, sanitizedQuery,
+				logfield.QueryExecutionTime, db.since(since),
+			}
+			keysAndValues = append(keysAndValues, db.keysAndValues...)
+		}
+
+		if db.stats != nil {
+			var expected bool
+			tags := make(stats.Tags, len(db.keysAndValues)/2+1)
+			tags["query_type"], expected = warehouseutils.GetQueryType(query)
+			if !expected {
+				createLogData()
+				db.logger.Warnw("sql stats: unexpected query type", keysAndValues...)
+			}
+			for i := 0; i < len(db.keysAndValues); i += 2 {
+				key, ok := db.keysAndValues[i].(string)
+				if !ok {
+					continue
+				}
+				tags[key] = fmt.Sprint(db.keysAndValues[i+1])
+			}
+			db.stats.NewTaggedStat("wh_query_count", stats.CountType, tags).Increment()
+		}
+
 		if db.slowQueryThreshold <= 0 {
 			return
 		}
@@ -216,14 +261,9 @@ func (db *DB) logQuery(query string, since time.Time) logQ {
 			return
 		}
 
-		sanitizedQuery, _ := misc.ReplaceMultiRegex(query, db.secretsRegex)
-
-		keysAndValues := []any{
-			logfield.Query, sanitizedQuery,
-			logfield.QueryExecutionTime, db.since(since),
+		if sanitizedQuery == "" {
+			createLogData()
 		}
-		keysAndValues = append(keysAndValues, db.keysAndValues...)
-
 		db.logger.Infow("executing query", keysAndValues...)
 	}
 }

@@ -1,13 +1,13 @@
 package processor
 
 import (
+	"context"
 	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -22,7 +22,7 @@ type TrackingPlanStatT struct {
 
 // reportViolations It is going add violationErrors in context depending upon certain criteria:
 // 1. sourceSchemaConfig in Metadata.MergedTpConfig should be true
-func reportViolations(validateEvent *transformer.TransformerResponseT, trackingPlanId string, trackingPlanVersion int) {
+func reportViolations(validateEvent *transformer.TransformerResponse, trackingPlanId string, trackingPlanVersion int) {
 	if validateEvent.Metadata.MergedTpConfig["propagateValidationErrors"] == "false" {
 		return
 	}
@@ -40,7 +40,7 @@ func reportViolations(validateEvent *transformer.TransformerResponseT, trackingP
 // enhanceWithViolation It enhances extra information of ValidationErrors in context for:
 // 1. response.Events
 // 1. response.FailedEvents
-func enhanceWithViolation(response transformer.ResponseT, trackingPlanId string, trackingPlanVersion int) {
+func enhanceWithViolation(response transformer.Response, trackingPlanId string, trackingPlanVersion int) {
 	for i := range response.Events {
 		validatedEvent := &response.Events[i]
 		reportViolations(validatedEvent, trackingPlanId, trackingPlanVersion)
@@ -53,11 +53,11 @@ func enhanceWithViolation(response transformer.ResponseT, trackingPlanId string,
 }
 
 // validateEvents If the TrackingPlanId exist for a particular write key then we are going to Validate from the transformer.
-// The ResponseT will contain both the Events and FailedEvents
+// The Response will contain both the Events and FailedEvents
 // 1. eventsToTransform gets added to validatedEventsByWriteKey
 // 2. failedJobs gets added to validatedErrorJobs
-func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
-	validatedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEventT)
+func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEvent, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
+	validatedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEvent)
 	validatedReportMetrics := make([]*types.PUReportedMetric, 0)
 	validatedErrorJobs := make([]*jobsdb.JobT, 0)
 	trackingPlanEnabledMap := make(map[SourceIDT]bool)
@@ -72,20 +72,20 @@ func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]trans
 		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
 		if !isTpExists {
 			// pass on the jobs for transformation(User, Dest)
-			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
+			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEvent, 0)
 			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
 			continue
 		}
 
 		validationStart := time.Now()
-		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), proc.config.userTransformBatchSize)
+		response := proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize)
 		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
 		// This is a safety check we are adding so that if something unexpected comes from transformer
 		// We are ignoring it.
 		if (len(response.Events) + len(response.FailedEvents)) != len(eventList) {
-			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
+			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEvent, 0)
 			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
 			continue
 		}
@@ -122,16 +122,16 @@ func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]trans
 		if len(eventsToTransform) == 0 {
 			continue
 		}
-		validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
+		validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEvent, 0)
 		validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventsToTransform...)
 	}
 	return validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap
 }
 
-// makeCommonMetadataFromTransformerEvent Creates a new MetadataT instance
-func makeCommonMetadataFromTransformerEvent(transformerEvent *transformer.TransformerEventT) *transformer.MetadataT {
+// makeCommonMetadataFromTransformerEvent Creates a new Metadata instance
+func makeCommonMetadataFromTransformerEvent(transformerEvent *transformer.TransformerEvent) *transformer.Metadata {
 	metadata := transformerEvent.Metadata
-	commonMetaData := transformer.MetadataT{
+	commonMetaData := transformer.Metadata{
 		SourceID:        metadata.SourceID,
 		SourceType:      metadata.SourceType,
 		SourceCategory:  metadata.SourceCategory,
@@ -145,7 +145,7 @@ func makeCommonMetadataFromTransformerEvent(transformerEvent *transformer.Transf
 }
 
 // newValidationStat Creates a new TrackingPlanStatT instance
-func (proc *Handle) newValidationStat(metadata *transformer.MetadataT) *TrackingPlanStatT {
+func (proc *Handle) newValidationStat(metadata *transformer.Metadata) *TrackingPlanStatT {
 	tags := map[string]string{
 		"destination":         metadata.DestinationID,
 		"destType":            metadata.DestinationType,

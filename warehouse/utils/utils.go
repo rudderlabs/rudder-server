@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -141,6 +143,10 @@ var (
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
 	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
+
+	WarehouseDestinationMap = lo.SliceToMap(WarehouseDestinations, func(destination string) (string, struct{}) {
+		return destination, struct{}{}
+	})
 )
 
 var WHDestNameMap = map[string]string{

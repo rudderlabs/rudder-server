@@ -4,21 +4,23 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const MaxCharacterLimit = 65535
+const maxCharacterLimit = 65535
 
 var (
-	VarcharType  = fmt.Sprintf("varchar(%d)", MaxCharacterLimit)
+	varcharType  = fmt.Sprintf("varchar(%d)", maxCharacterLimit)
 	dataTypesMap = map[string]string{
 		"boolean":  "boolean",
 		"int":      "bigint",
 		"bigint":   "bigint",
 		"float":    "double",
-		"string":   VarcharType,
+		"string":   varcharType,
 		"datetime": "timestamp",
 	}
 	dataTypesMapToRudder = map[string]string{
@@ -26,7 +28,7 @@ var (
 		"bigint":       "int",
 		"double":       "float",
 		"varchar(512)": "string",
-		VarcharType:    "string",
+		varcharType:    "string",
 		"timestamp":    "datetime",
 		"string":       "string",
 	}
@@ -42,14 +44,14 @@ type SchemaRepository interface {
 }
 
 func UseGlue(w *model.Warehouse) bool {
-	glueConfig := warehouseutils.GetConfigValueBoolString(UseGlueConfig, *w)
+	glueConfig := warehouseutils.GetConfigValueBoolString(useGlueConfig, *w)
 	hasAWSRegion := misc.HasAWSRegionInConfig(w.Destination.Config)
 	return glueConfig == "true" && hasAWSRegion
 }
 
-func NewSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader) (SchemaRepository, error) {
+func NewSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader, logger logger.Logger) (SchemaRepository, error) {
 	if UseGlue(&wh) {
-		return NewGlueSchemaRepository(wh)
+		return NewGlueSchemaRepository(wh, logger)
 	}
 	return NewLocalSchemaRepository(wh, uploader)
 }
