@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/stretchr/testify/require"
@@ -49,7 +53,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 		t.Run("Known errors: "+destType, func(t *testing.T) {
 			t.Parallel()
 
-			m, err := manager.New(destType)
+			m, err := manager.New(destType, config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
 
 			er := &warehouse.ErrorHandler{Manager: m}
@@ -73,7 +77,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 		t.Run("UnKnown errors: "+destType, func(t *testing.T) {
 			t.Parallel()
 
-			m, err := manager.New(destType)
+			m, err := manager.New(destType, config.Default, logger.NOP, stats.Default)
 			require.NoError(t, err)
 
 			er := &warehouse.ErrorHandler{Manager: m}

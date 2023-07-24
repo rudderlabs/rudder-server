@@ -66,7 +66,7 @@ var (
 	webPort                             int
 	dbHandle                            *sql.DB
 	wrappedDBHandle                     *sqlquerywrapper.DB
-	dbHanndleTimeout                    time.Duration
+	dbHandleTimeout                     time.Duration
 	notifier                            pgnotifier.PGNotifier
 	tenantManager                       *multitenant.Manager
 	controlPlaneClient                  *controlplane.Client
@@ -132,7 +132,7 @@ type (
 type HandleT struct {
 	destType                          string
 	warehouses                        []model.Warehouse
-	dbHandle                          *sql.DB
+	dbHandle                          *sqlquerywrapper.DB
 	warehouseDBHandle                 *DB
 	stagingRepo                       *repo.StagingFiles
 	uploadRepo                        *repo.Uploads
@@ -205,7 +205,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
-	config.RegisterDurationConfigVariable(5, &dbHanndleTimeout, true, time.Minute, []string{"Warehouse.dbHanndleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
+	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 }
@@ -760,7 +760,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			return nil, err
 		}
 
-		whManager, err := manager.New(wh.destType)
+		whManager, err := manager.New(wh.destType, wh.conf, wh.Logger, wh.stats)
 		if err != nil {
 			return nil, err
 		}
@@ -866,7 +866,7 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.Logger = pkgLogger
 	wh.conf = config.Default
-	wh.dbHandle = dbHandle
+	wh.dbHandle = wrappedDBHandle
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
 	wh.warehouseDBHandle = NewWarehouseDB(wrappedDBHandle)
@@ -992,7 +992,7 @@ func minimalConfigSubscriber(ctx context.Context) {
 				for _, destination := range source.Destinations {
 					if slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 						wh := &HandleT{
-							dbHandle:     dbHandle,
+							dbHandle:     wrappedDBHandle,
 							destType:     destination.DestinationDefinition.Name,
 							whSchemaRepo: repo.NewWHSchemas(wrappedDBHandle),
 							conf:         config.Default,
@@ -1637,7 +1637,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 	wrappedDBHandle = sqlquerywrapper.New(
 		dbHandle,
 		sqlquerywrapper.WithLogger(pkgLogger.Child("dbHandle")),
-		sqlquerywrapper.WithQueryTimeout(dbHanndleTimeout),
+		sqlquerywrapper.WithQueryTimeout(dbHandleTimeout),
 	)
 
 	return setupTables(dbHandle)

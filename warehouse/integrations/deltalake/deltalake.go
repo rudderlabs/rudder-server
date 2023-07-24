@@ -125,36 +125,39 @@ var errorsMappings = []model.JobError{
 }
 
 type Deltalake struct {
-	DB                     *sqlmiddleware.DB
-	Namespace              string
-	ObjectStorage          string
-	Warehouse              model.Warehouse
-	Uploader               warehouseutils.Uploader
-	ConnectTimeout         time.Duration
-	Logger                 logger.Logger
-	Stats                  stats.Stats
-	LoadTableStrategy      string
-	EnablePartitionPruning bool
-	SlowQueryThreshold     time.Duration
-	MaxRetries             int
-	RetryMinWait           time.Duration
-	RetryMaxWait           time.Duration
-}
+	DB             *sqlmiddleware.DB
+	Namespace      string
+	ObjectStorage  string
+	Warehouse      model.Warehouse
+	Uploader       warehouseutils.Uploader
+	connectTimeout time.Duration
+	logger         logger.Logger
+	stats          stats.Stats
 
-func New() *Deltalake {
-	return &Deltalake{
-		Logger: logger.NewLogger().Child("warehouse").Child("integration").Child("deltalake"),
-		Stats:  stats.Default,
+	config struct {
+		loadTableStrategy      string
+		enablePartitionPruning bool
+		slowQueryThreshold     time.Duration
+		maxRetries             int
+		retryMinWait           time.Duration
+		retryMaxWait           time.Duration
 	}
 }
 
-func WithConfig(h *Deltalake, config *config.Config) {
-	h.LoadTableStrategy = config.GetString("Warehouse.deltalake.loadTableStrategy", mergeMode)
-	h.EnablePartitionPruning = config.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
-	h.SlowQueryThreshold = config.GetDuration("Warehouse.deltalake.slowQueryThreshold", 5, time.Minute)
-	h.MaxRetries = config.GetInt("Warehouse.deltalake.maxRetries", 10)
-	h.RetryMinWait = config.GetDuration("Warehouse.deltalake.retryMinWait", 1, time.Second)
-	h.RetryMaxWait = config.GetDuration("Warehouse.deltalake.retryMaxWait", 300, time.Second)
+func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
+	dl := &Deltalake{}
+
+	dl.logger = log.Child("integration").Child("deltalake")
+	dl.stats = stat
+
+	dl.config.loadTableStrategy = conf.GetString("Warehouse.deltalake.loadTableStrategy", mergeMode)
+	dl.config.enablePartitionPruning = conf.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
+	dl.config.slowQueryThreshold = conf.GetDuration("Warehouse.deltalake.slowQueryThreshold", 5, time.Minute)
+	dl.config.maxRetries = conf.GetInt("Warehouse.deltalake.maxRetries", 10)
+	dl.config.retryMinWait = conf.GetDuration("Warehouse.deltalake.retryMinWait", 1, time.Second)
+	dl.config.retryMaxWait = conf.GetDuration("Warehouse.deltalake.retryMaxWait", 300, time.Second)
+
+	return dl
 }
 
 // Setup sets up the warehouse
@@ -194,12 +197,12 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 			"ansi_mode": "false",
 		}),
 		dbsql.WithUserAgentEntry(userAgent),
-		dbsql.WithTimeout(d.ConnectTimeout),
+		dbsql.WithTimeout(d.connectTimeout),
 		dbsql.WithInitialNamespace(
 			warehouseutils.GetConfigValue(catalog, d.Warehouse),
 			"",
 		),
-		dbsql.WithRetries(d.MaxRetries, d.RetryMinWait, d.RetryMaxWait),
+		dbsql.WithRetries(d.config.maxRetries, d.config.retryMinWait, d.config.retryMaxWait),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating connector: %w", err)
@@ -212,7 +215,8 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	db := sql.OpenDB(connector)
 	middleware := sqlmiddleware.New(
 		db,
-		sqlmiddleware.WithLogger(d.Logger),
+		sqlmiddleware.WithStats(d.stats),
+		sqlmiddleware.WithLogger(d.logger),
 		sqlmiddleware.WithKeyAndValues(
 			logfield.SourceID, d.Warehouse.Source.ID,
 			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
@@ -221,8 +225,8 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
 			logfield.Schema, d.Namespace,
 		),
-		sqlmiddleware.WithSlowQueryThreshold(d.SlowQueryThreshold),
-		sqlmiddleware.WithQueryTimeout(d.ConnectTimeout),
+		sqlmiddleware.WithSlowQueryThreshold(d.config.slowQueryThreshold),
+		sqlmiddleware.WithQueryTimeout(d.connectTimeout),
 		sqlmiddleware.WithSecretsRegex(map[string]string{
 			"'awsKeyId' = '[^']*'":        "'awsKeyId' = '***'",
 			"'awsSecretKey' = '[^']*'":    "'awsSecretKey' = '***'",
@@ -241,7 +245,7 @@ func (d *Deltalake) CrashRecover(ctx context.Context) {
 func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) {
 	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
 	if err != nil {
-		d.Logger.Warnw("fetching tables for dropping dangling staging tables",
+		d.logger.Warnw("fetching tables for dropping dangling staging tables",
 			logfield.SourceID, d.Warehouse.Source.ID,
 			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
 			logfield.DestinationID, d.Warehouse.Destination.ID,
@@ -294,7 +298,7 @@ func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []strin
 	for _, stagingTable := range stagingTables {
 		err := d.dropTable(ctx, stagingTable)
 		if err != nil {
-			d.Logger.Warnw("dropping staging table",
+			d.logger.Warnw("dropping staging table",
 				logfield.SourceID, d.Warehouse.Source.ID,
 				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
 				logfield.DestinationID, d.Warehouse.Destination.ID,
@@ -515,7 +519,7 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 	// Handle error in case of single column
 	if len(columnsInfo) == 1 {
 		if err != nil && strings.Contains(err.Error(), columnsAlreadyExists) {
-			d.Logger.Infow("column already exists",
+			d.logger.Infow("column already exists",
 				logfield.SourceID, d.Warehouse.Source.ID,
 				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
 				logfield.DestinationID, d.Warehouse.Destination.ID,
@@ -565,7 +569,7 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		row  *sqlmiddleware.Row
 	)
 
-	d.Logger.Infow("started loading",
+	d.logger.Infow("started loading",
 		logfield.SourceID, d.Warehouse.Source.ID,
 		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, d.Warehouse.Destination.ID,
@@ -652,7 +656,7 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		return "", fmt.Errorf("running COPY command: %w", err)
 	}
 
-	if d.LoadTableStrategy == appendMode {
+	if d.config.loadTableStrategy == appendMode {
 		query = fmt.Sprintf(`
 			INSERT INTO %[1]s.%[2]s (%[4]s)
 			SELECT
@@ -739,7 +743,7 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		inserted int64
 	)
 
-	if d.LoadTableStrategy == appendMode {
+	if d.config.loadTableStrategy == appendMode {
 		err = row.Scan(&affected, &inserted)
 	} else {
 		err = row.Scan(&affected, &updated, &deleted, &inserted)
@@ -752,7 +756,7 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		return "", fmt.Errorf("running deduplication: %w", row.Err())
 	}
 
-	d.Stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
+	d.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
 		"sourceID":    d.Warehouse.Source.ID,
 		"sourceType":  d.Warehouse.Source.SourceDefinition.Name,
 		"destID":      d.Warehouse.Destination.ID,
@@ -761,7 +765,7 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 		"tableName":   tableName,
 	}).Count(int(updated))
 
-	d.Logger.Infow("completed loading",
+	d.logger.Infow("completed loading",
 		logfield.SourceID, d.Warehouse.Source.ID,
 		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, d.Warehouse.Destination.ID,
@@ -893,7 +897,7 @@ func (d *Deltalake) hasAWSCredentials() bool {
 
 // partitionQuery returns a query to fetch partitions for a table
 func (d *Deltalake) partitionQuery(ctx context.Context, tableName string) (string, error) {
-	if !d.EnablePartitionPruning {
+	if !d.config.enablePartitionPruning {
 		return "", nil
 	}
 
@@ -946,7 +950,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		usersSchemaInWarehouse      = d.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	)
 
-	d.Logger.Infow("started loading for identifies and users tables",
+	d.logger.Infow("started loading for identifies and users tables",
 		logfield.SourceID, d.Warehouse.Source.ID,
 		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, d.Warehouse.Destination.ID,
@@ -1042,7 +1046,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 
 	columnKeys := append([]string{`id`}, userColNames...)
 
-	if d.LoadTableStrategy == appendMode {
+	if d.config.loadTableStrategy == appendMode {
 		query = fmt.Sprintf(`
 			INSERT INTO %[1]s.%[2]s (%[4]s)
 			SELECT
@@ -1105,7 +1109,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		inserted int64
 	)
 
-	if d.LoadTableStrategy == appendMode {
+	if d.config.loadTableStrategy == appendMode {
 		err = row.Scan(&affected, &inserted)
 	} else {
 		err = row.Scan(&affected, &updated, &deleted, &inserted)
@@ -1125,7 +1129,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	d.Stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
+	d.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
 		"sourceID":    d.Warehouse.Source.ID,
 		"sourceType":  d.Warehouse.Source.SourceDefinition.Name,
 		"destID":      d.Warehouse.Destination.ID,
@@ -1134,7 +1138,7 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		"tableName":   warehouseutils.UsersTable,
 	}).Count(int(updated))
 
-	d.Logger.Infow("completed loading for users and identifies tables",
+	d.logger.Infow("completed loading for users and identifies tables",
 		logfield.SourceID, d.Warehouse.Source.ID,
 		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, d.Warehouse.Destination.ID,
@@ -1321,7 +1325,7 @@ func (d *Deltalake) LoadTestTable(ctx context.Context, location, tableName strin
 
 // SetConnectionTimeout sets the connection timeout
 func (d *Deltalake) SetConnectionTimeout(timeout time.Duration) {
-	d.ConnectTimeout = timeout
+	d.connectTimeout = timeout
 }
 
 // ErrorMappings returns the error mappings

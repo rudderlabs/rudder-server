@@ -11,36 +11,30 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"github.com/rudderlabs/rudder-server/services/alerta"
-
-	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-
-	"golang.org/x/exp/slices"
-
 	"github.com/cenkalti/backoff/v4"
+	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -69,7 +63,7 @@ type uploadState struct {
 type tableNameT string
 
 type UploadJobFactory struct {
-	dbHandle             *sql.DB
+	dbHandle             *sqlquerywrapper.DB
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
 	recovery             *service.Recovery
@@ -174,13 +168,9 @@ func setMaxParallelLoads() {
 }
 
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
-	wrappedDBHandle := sqlmiddleware.New(
-		f.dbHandle,
-		sqlmiddleware.WithQueryTimeout(dbHanndleTimeout),
-	)
 	return &UploadJob{
 		ctx:                  ctx,
-		dbHandle:             wrappedDBHandle,
+		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
 		recovery:             f.recovery,
 		pgNotifier:           f.pgNotifier,
@@ -1799,7 +1789,7 @@ func (job *UploadJob) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, 
 		job.upload.LoadFileStartID,
 		job.upload.LoadFileEndID,
 	}
-	rows, err := dbHandle.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
+	rows, err := wrappedDBHandle.QueryContext(job.ctx, sqlStatement, sqlStatementArgs...)
 	if err == sql.ErrNoRows {
 		err = nil
 		return
@@ -2090,7 +2080,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 		err        error
 	)
 
-	if repository, err = schemarepository.NewSchemaRepository(job.warehouse, job); err != nil {
+	if repository, err = schemarepository.NewSchemaRepository(job.warehouse, job, pkgLogger); err != nil {
 		return fmt.Errorf("create schema repository: %w", err)
 	}
 

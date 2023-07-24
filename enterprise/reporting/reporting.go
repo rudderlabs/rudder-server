@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -45,21 +46,23 @@ const (
 )
 
 type HandleT struct {
-	init                      chan struct{}
-	onceInit                  sync.Once
-	clients                   map[string]*types.Client
-	clientsMapLock            sync.RWMutex
-	log                       logger.Logger
-	reportingServiceURL       string
-	namespace                 string
-	workspaceID               string
-	instanceID                string
-	workspaceIDForSourceIDMap map[string]string
-	piiReportingSettings      map[string]bool
-	whActionsOnly             bool
-	region                    string
-	sleepInterval             time.Duration
-	mainLoopSleepInterval     time.Duration
+	init                                 chan struct{}
+	onceInit                             sync.Once
+	clients                              map[string]*types.Client
+	clientsMapLock                       sync.RWMutex
+	log                                  logger.Logger
+	reportingServiceURL                  string
+	namespace                            string
+	workspaceID                          string
+	instanceID                           string
+	workspaceIDForSourceIDMap            map[string]string
+	piiReportingSettings                 map[string]bool
+	whActionsOnly                        bool
+	region                               string
+	sleepInterval                        time.Duration
+	mainLoopSleepInterval                time.Duration
+	sourcesWithEventNameTrackingDisabled []string
+	maxOpenConnections                   int
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -68,30 +71,35 @@ type HandleT struct {
 
 func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
+	var maxOpenConnections int
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
+	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("Reporting.sourcesWithEventNameTrackingDisabled", []string{})
+
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
+	config.RegisterIntConfigVariable(32, &maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
-
 	return &HandleT{
-		init:                      make(chan struct{}),
-		log:                       log,
-		clients:                   make(map[string]*types.Client),
-		reportingServiceURL:       reportingServiceURL,
-		namespace:                 config.GetKubeNamespace(),
-		instanceID:                config.GetString("INSTANCE_ID", "1"),
-		workspaceIDForSourceIDMap: make(map[string]string),
-		piiReportingSettings:      make(map[string]bool),
-		whActionsOnly:             whActionsOnly,
-		sleepInterval:             sleepInterval,
-		mainLoopSleepInterval:     mainLoopSleepInterval,
-		region:                    config.GetString("region", ""),
+		init:                                 make(chan struct{}),
+		log:                                  log,
+		clients:                              make(map[string]*types.Client),
+		reportingServiceURL:                  reportingServiceURL,
+		namespace:                            config.GetKubeNamespace(),
+		instanceID:                           config.GetString("INSTANCE_ID", "1"),
+		workspaceIDForSourceIDMap:            make(map[string]string),
+		piiReportingSettings:                 make(map[string]bool),
+		whActionsOnly:                        whActionsOnly,
+		sleepInterval:                        sleepInterval,
+		mainLoopSleepInterval:                mainLoopSleepInterval,
+		region:                               config.GetString("region", ""),
+		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
+		maxOpenConnections:                   maxOpenConnections,
 	}
 }
 
@@ -149,6 +157,7 @@ func (r *HandleT) AddClient(ctx context.Context, c types.Config) {
 	if err != nil {
 		panic(err)
 	}
+	dbHandle.SetMaxOpenConns(r.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
@@ -564,6 +573,11 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	for _, metric := range metrics {
 		workspaceID := r.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
+
+		if slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.ConnectionDetails.SourceID) {
+			metric.StatusDetail.EventName = metric.StatusDetail.EventType
+		}
+
 		if r.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}

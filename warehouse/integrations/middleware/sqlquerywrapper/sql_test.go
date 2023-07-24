@@ -8,6 +8,8 @@ import (
 	"time"
 
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/google/uuid"
 
@@ -448,4 +450,31 @@ func TestQueryWrapper(t *testing.T) {
 		err = tx.Commit()
 		require.NoError(t, err)
 	})
+}
+
+func TestWithStats(t *testing.T) {
+	t.Parallel()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	pgResource, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+
+	s := memstats.New()
+
+	qw := New(
+		pgResource.DB,
+		WithKeyAndValues("k1", "v1", "k2", "v2"),
+		WithStats(s),
+	)
+	row := qw.QueryRowContext(context.Background(), "SELECT 1")
+	require.NoError(t, row.Err())
+
+	measurement := s.Get("wh_query_count", stats.Tags{
+		"k1":         "v1",
+		"k2":         "v2",
+		"query_type": "SELECT",
+	})
+	require.NotNilf(t, measurement, "measurement should not be nil")
 }
