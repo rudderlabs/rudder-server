@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -15,6 +16,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+
+	arch "github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -28,12 +32,14 @@ func TestJobsArchival(t *testing.T) {
 		goldenFileJobsFileName = "testdata/MultiWorkspaceBackupJobs.json.gz"
 		// goldenFileStatusFileName = "testdata/MultiWorkspaceBackupStatus.json.gz"
 		uniqueWorkspaces = 3
+		ctx, cancel      = context.WithCancel(context.Background())
 	)
+	defer cancel()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
 	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
+	// defer cleanup.Run()
 
 	postgresResource, err := resource.SetupPostgres(pool, cleanup)
 	require.NoError(t, err)
@@ -61,10 +67,20 @@ func TestJobsArchival(t *testing.T) {
 		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
 	}
 
-	jd := jobsdb.NewForReadWrite("gw")
+	arch.Init()
+	jobsdb.Init2()
+	jd := &jobsdb.HandleT{}
+	require.NoError(t, jd.Setup(
+		jobsdb.ReadWrite,
+		false,
+		"gw",
+		[]prebackup.Handler{},
+		nil,
+	))
 	require.NoError(t, jd.Start())
+	defer jd.Close()
 
-	require.NoError(t, jd.Store(context.Background(), jobs))
+	require.NoError(t, jd.Store(ctx, jobs))
 
 	storageSettings := map[string]fileuploader.StorageSettings{
 		"defaultWorkspaceID-1": {
@@ -123,7 +139,31 @@ func TestJobsArchival(t *testing.T) {
 		},
 	}
 	// fileuploaderProvider := fileuploader.NewStaticProvider(storageSettings)
-	_ = fileuploader.NewStaticProvider(storageSettings)
+	fileUploaderProvider := fileuploader.NewStaticProvider(storageSettings)
+	trigger := make(chan time.Time)
+	archiver := New(
+		jd, fileUploaderProvider,
+		WithArchiveTrigger(func() <-chan time.Time {
+			return trigger
+		},
+		),
+	)
+
+	require.NoError(t, archiver.Start())
+	defer archiver.Stop()
+
+	trigger <- time.Now()
+	trigger <- time.Now()
+
+	succeeded, err := jd.GetProcessed(
+		ctx,
+		jobsdb.GetQueryParamsT{
+			StateFilters: []string{jobsdb.Succeeded.State},
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, len(jobs), len(succeeded.Jobs))
+
 }
 
 func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {

@@ -51,6 +51,18 @@ func New(jobsDB jobsdb.JobsDB, storageProvider fileuploader.Provider, opts ...Op
 	for _, opt := range opts {
 		opt(a)
 	}
+	if a.archiveTrigger == nil {
+		a.archiveTrigger = func() <-chan time.Time {
+			return time.After(config.GetDuration(
+				"archival.ArchiveSleepDuration",
+				5,
+				time.Minute,
+			))
+		}
+	}
+	if a.limiter == nil {
+		a.limiter = func(i int64) int64 { return i }
+	}
 	return a
 }
 
@@ -59,6 +71,12 @@ type Option func(*archiver)
 func WithAdaptiveLimit(limiter payload.AdaptiveLimiterFunc) Option {
 	return func(a *archiver) {
 		a.limiter = limiter
+	}
+}
+
+func WithArchiveTrigger(trigger func() <-chan time.Time) Option {
+	return func(a *archiver) {
+		a.archiveTrigger = trigger
 	}
 }
 
@@ -86,16 +104,9 @@ func (a *archiver) Start() error {
 		defer workerPool.Shutdown()
 		// pinger loop
 		for {
-			a.archiveTrigger = func() <-chan time.Time {
-				return time.After(config.GetDuration(
-					"archival.ArchiveSleepDuration",
-					5,
-					time.Minute,
-				))
-			}
 			if err := misc.AfterCtx(ctx, a.archiveTrigger); err != nil {
 				a.log.Error("Failed to wait for archival trigger: ", err)
-				return nil
+				return err
 			}
 			sources, err := partitionsFunc(ctx, a.jobsDB)
 			if err != nil {
