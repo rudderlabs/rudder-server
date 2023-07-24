@@ -265,14 +265,14 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 		return url == ""
 	})
 	for _, fileURL := range fileURLs {
-		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
+		filePaths, err := b.downloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
 			b.logger.Error("Error in downloading and unzipping the file: %v", err)
 			return common.GetUploadStatsResponse{
 				StatusCode: 500,
 			}
 		}
-		response, err := b.GetUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
+		response, err := b.getUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
 		if err != nil {
 			b.logger.Error("Error in getting upload stats of single import: %v", err)
 			return common.GetUploadStatsResponse{
@@ -287,7 +287,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 	eventStatsResponse.Metadata = common.EventStatMeta{
 		FailedKeys:    failedJobIds,
 		FailedReasons: cumulativeFailedReasons,
-		SucceededKeys: GetSuccessJobIDs(failedJobIds, initialEventList),
+		SucceededKeys: getSuccessJobIDs(failedJobIds, initialEventList),
 	}
 
 	return eventStatsResponse

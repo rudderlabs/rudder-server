@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
+	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	oauth "github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 )
 
 func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oauth.Authorizer) (*BingAdsBulkUploader, error) {
@@ -21,27 +21,27 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}
 
-	tokenSource := tokenSource{
+	token := tokenSource{
 		workspaceID:     destination.WorkspaceID,
 		destinationName: destination.Name,
 		accountID:       destConfig.RudderAccountID,
 		oauthClient:     oauthClient,
 	}
-	secret, err := tokenSource.generateToken()
+	secret, err := token.generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate oauth token: %v", err)
 	}
 	sessionConfig := bingads.SessionConfig{
-		DeveloperToken: secret.Developer_token,
+		DeveloperToken: secret.developerToken,
 		AccountId:      destConfig.CustomerAccountID,
 		CustomerId:     destConfig.CustomerID,
 		HTTPClient:     http.DefaultClient,
-		TokenSource:    &tokenSource,
+		TokenSource:    &token,
 	}
 	session := bingads.NewSession(sessionConfig)
 
 	clientNew := Client{}
-	bingads := NewBingAdsBulkUploader(destination.DestinationDefinition.Name, bingads.NewBulkService(session), &clientNew)
+	bingUploader := NewBingAdsBulkUploader(destination.DestinationDefinition.Name, bingads.NewBulkService(session), &clientNew)
 	return bingads, nil
 }
 
