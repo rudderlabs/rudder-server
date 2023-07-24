@@ -105,7 +105,14 @@ start:
 			},
 			[]byte(fmt.Sprintf(`{"location": "not uploaded because - %v"}`, res.err)),
 		)
+		goto markStatus
 	}
+
+	statusList = getStatuses(
+		jobs,
+		func(*jobsdb.JobT) string { return jobsdb.Succeeded.State },
+		[]byte(fmt.Sprintf(`{"location": "%v"}`, res.location)),
+	)
 
 markStatus:
 	if err := w.jobsDB.UpdateJobStatus(w.lifecycle.ctx, statusList, nil, nil); err != nil {
