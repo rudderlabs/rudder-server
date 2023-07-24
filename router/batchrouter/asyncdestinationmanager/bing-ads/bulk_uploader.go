@@ -220,7 +220,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 }
 
 func (b *BingAdsBulkUploader) getUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, error) {
-	records, err := b.ReadPollResults(filePath)
+	records, err := b.readPollResults(filePath)
 	if err != nil {
 		return common.GetUploadStatsResponse{}, err
 	}

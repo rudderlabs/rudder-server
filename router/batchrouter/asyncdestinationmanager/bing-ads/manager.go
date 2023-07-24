@@ -42,7 +42,7 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 
 	clientNew := Client{}
 	bingUploader := NewBingAdsBulkUploader(destination.DestinationDefinition.Name, bingads.NewBulkService(session), &clientNew)
-	return bingads, nil
+	return bingUploader, nil
 }
 
 func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*BingAdsBulkUploader, error) {
