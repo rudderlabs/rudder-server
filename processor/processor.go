@@ -1496,7 +1496,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}
 
 			if proc.config.archivalEnabled &&
-				commonMetadataFromSingularEvent.SourceJobRunID != "" { // archival enabled
+				commonMetadataFromSingularEvent.SourceJobRunID == "" { // archival enabled
 				if payload := payloadFunc(); payload != nil {
 					archivalJobs = append(archivalJobs,
 						&jobsdb.JobT{
