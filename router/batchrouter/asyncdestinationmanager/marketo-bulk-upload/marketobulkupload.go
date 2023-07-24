@@ -120,7 +120,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	var failedJobsResponse map[string]interface{}
 	err := json.Unmarshal(failedBodyBytes, &failedJobsResponse)
 	if err != nil {
-		b.logger.Error("Error in Unmarshalling Failed Jobs Response: %w", err)
+		b.logger.Errorf("Error in Unmarshalling Failed Jobs Response: %v", err)
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
 		}

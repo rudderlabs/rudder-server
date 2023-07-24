@@ -137,7 +137,7 @@ The following map indicates the index->actionType mapping
 1-> Remove
 2-> Update
 */
-func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*ActionFileInfo, error) {
+func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*ActionFileInfo, error) {
 	textFile, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,7 @@ func (b *BingAdsBulkUploader) CreateZipFile(filePath, audienceId string) ([]*Act
 From the ResultFileUrl, it downloads the zip file and extracts the contents of the zip file
 and finally Provides file paths containing error information as an array string
 */
-func (b *BingAdsBulkUploader) DownloadAndGetUploadStatusFile(ResultFileUrl string) ([]string, error) {
+func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl string) ([]string, error) {
 	// the final status file needs to be downloaded
 	fileAccessUrl := ResultFileUrl
 	modifiedUrl := strings.ReplaceAll(fileAccessUrl, "&amp;", "&")
@@ -229,13 +229,13 @@ func (b *BingAdsBulkUploader) DownloadAndGetUploadStatusFile(ResultFileUrl strin
 		panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
 	}
 	// Extract the contents of the zip file to the output directory
-	filePaths, err := Unzip(tempFile.Name(), outputDir)
+	filePaths, err := unzip(tempFile.Name(), outputDir)
 	return filePaths, err
 }
 
 // unzips the file downloaded from bingads, which contains error informations
 // of a particular event.
-func Unzip(zipFile, targetDir string) ([]string, error) {
+func unzip(zipFile, targetDir string) ([]string, error) {
 	var filePaths []string
 
 	r, err := zip.OpenReader(zipFile)
@@ -292,7 +292,7 @@ In the below format (only adding relevant keys)
 		{"1<<>>client2", "error2", "Customer List Item Error"},
 	}
 */
-func (b *BingAdsBulkUploader) ReadPollResults(filePath string) ([][]string, error) {
+func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, error) {
 	// Open the CSV file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -373,7 +373,7 @@ In the below format:
 ** we are using map[int64]map[string]struct{} for storing the error messages
 ** because we want to avoid duplicate error messages
 */
-func ProcessPollStatusData(records [][]string) (map[int64]map[string]struct{}, error) {
+func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, error) {
 	clientIDIndex := -1
 	errorIndex := -1
 	typeIndex := 0
@@ -420,7 +420,7 @@ func ProcessPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 // GetUploadStats Related utils
 
 // get the list of unique error messages for a particular jobId.
-func GetFailedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]string {
+func getFailedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]string {
 	reasons := make(map[int64]string)
 	for key, errors := range clientIDErrors {
 		reasons[key] = strings.Join(lo.Keys(errors), commaSeparator)
@@ -430,7 +430,7 @@ func GetFailedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]st
 
 // filtering out failed jobIds from the total array of jobIds
 // in order to get jobIds of the successful jobs
-func GetSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
+func getSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 	successfulEvents, _ := lo.Difference(initialEventList, failedEventList)
 	return successfulEvents
 }
