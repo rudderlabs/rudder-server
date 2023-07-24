@@ -137,14 +137,14 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		ImportingJobIDs:     successJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
 		FailedReason:        string(allErrors),
-		ImportingParameters: stdjson.RawMessage(importParameters),
+		ImportingParameters: importParameters,
 		ImportingCount:      len(successJobs),
 		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
 		DestinationID:       destination.ID,
 	}
 }
 
-func (b *BingAdsBulkUploader) PollSingleImport(requestId string) common.PollStatusResponse {
+func (b *BingAdsBulkUploader) pollSingleImport(requestId string) common.PollStatusResponse {
 	uploadStatusResp, err := b.service.GetBulkUploadStatus(requestId)
 	if err != nil {
 		return common.PollStatusResponse{
@@ -187,7 +187,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		return url == ""
 	})
 	for _, requestId := range requestIdsArray {
-		resp := b.PollSingleImport(requestId)
+		resp := b.pollSingleImport(requestId)
 		if resp.StatusCode != 200 {
 			// if any of the request fails then the whole request fails
 			cumulativeResp = resp
@@ -219,12 +219,12 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	return cumulativeResp
 }
 
-func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, error) {
+func (b *BingAdsBulkUploader) getUploadStatsOfSingleImport(filePath string) (common.GetUploadStatsResponse, error) {
 	records, err := b.ReadPollResults(filePath)
 	if err != nil {
 		return common.GetUploadStatsResponse{}, err
 	}
-	clientIDErrors, err := ProcessPollStatusData(records)
+	clientIDErrors, err := processPollStatusData(records)
 	if err != nil {
 		return common.GetUploadStatsResponse{}, err
 	}
@@ -232,7 +232,7 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 		StatusCode: 200,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    lo.Keys(clientIDErrors),
-			FailedReasons: GetFailedReasons(clientIDErrors),
+			FailedReasons: getFailedReasons(clientIDErrors),
 		},
 	}
 
@@ -250,10 +250,10 @@ func (b *BingAdsBulkUploader) GetUploadStatsOfSingleImport(filePath string) (com
 	return eventStatsResponse, nil
 }
 
-func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
+func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	// considering importing jobs are the primary list of jobs sent
 	// making an array of those jobIds
-	importList := UploadStatsInput.ImportingList
+	importList := uploadStatsInput.ImportingList
 	var initialEventList []int64
 	for _, job := range importList {
 		initialEventList = append(initialEventList, job.JobID)
@@ -261,11 +261,9 @@ func (b *BingAdsBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	eventStatsResponse := common.GetUploadStatsResponse{}
 	var failedJobIds []int64
 	var cumulativeFailedReasons map[int64]string
-	fileURLs := lo.Reject(strings.Split(UploadStatsInput.FailedJobURLs, commaSeparator), func(url string, _ int) bool {
+	fileURLs := lo.Reject(strings.Split(uploadStatsInput.FailedJobURLs, commaSeparator), func(url string, _ int) bool {
 		return url == ""
 	})
-	fmt.Println("UploadStatsInput File URLs", UploadStatsInput.FailedJobURLs)
-	fmt.Println("File URLs", fileURLs)
 	for _, fileURL := range fileURLs {
 		filePaths, err := b.DownloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
