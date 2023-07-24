@@ -83,7 +83,6 @@ func CreateActionFileTemplate(csvFile *os.File, audienceId, actionType string) (
 		{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""},
 		{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("error in writing csv header: %v", err)
 	}

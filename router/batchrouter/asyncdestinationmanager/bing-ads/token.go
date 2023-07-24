@@ -12,10 +12,10 @@ import (
 )
 
 type secretStruct struct {
-	accessToken     string
-	refreshToken    string
-	developerToken string
-	expirationDate  string
+	AccessToken    string `json:"accessToken"`
+	RefreshToken   string `json:"refreshToken"`
+	DeveloperToken string `json:"developer_token"`
+	ExpirationDate string `json:"expirationDate"`
 }
 
 type tokenSource struct {
@@ -43,7 +43,7 @@ func (ts *tokenSource) generateToken() (*secretStruct, error) {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
 	currentTime := time.Now()
-	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.expirationDate)
+	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
 	if err != nil {
 		return nil, fmt.Errorf("error in parsing expirationDate: %w", err)
 	}
@@ -69,8 +69,8 @@ func (ts *tokenSource) Token() (*oauth2.Token, error) {
 	}
 
 	token := &oauth2.Token{
-		AccessToken:  secret.accessToken,
-		RefreshToken: secret.refreshToken,
+		AccessToken:  secret.AccessToken,
+		RefreshToken: secret.RefreshToken,
 		Expiry:       time.Now().Add(time.Hour), // Set the token expiry time
 	}
 	return token, nil

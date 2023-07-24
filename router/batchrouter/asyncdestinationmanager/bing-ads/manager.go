@@ -32,7 +32,7 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 		return nil, fmt.Errorf("failed to generate oauth token: %v", err)
 	}
 	sessionConfig := bingads.SessionConfig{
-		DeveloperToken: secret.developerToken,
+		DeveloperToken: secret.DeveloperToken,
 		AccountId:      destConfig.CustomerAccountID,
 		CustomerId:     destConfig.CustomerID,
 		HTTPClient:     http.DefaultClient,
