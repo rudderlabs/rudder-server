@@ -138,6 +138,9 @@ The following map indicates the index->actionType mapping
 2-> Update
 */
 func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*ActionFileInfo, error) {
+	if audienceId == "" {
+		return nil, fmt.Errorf("audienceId is empty")
+	}
 	textFile, err := os.Open(filePath)
 	if err != nil {
 		return nil, err

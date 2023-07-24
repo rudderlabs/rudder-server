@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func NewBingAdsBulkUploader(destName string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
@@ -35,30 +36,11 @@ The maximum size of the zip file is 100MB, if the size of the zip file exceeds 1
 */
 func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-	destConfig := DestinationConfig{}
-	jsonConfig, err := stdjson.Marshal(destination.Config)
-	if err != nil {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  fmt.Sprintf("got error while marshalling the destination config %v", err.Error()),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
-	}
-	err = stdjson.Unmarshal(jsonConfig, &destConfig)
-	if err != nil {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  fmt.Sprintf("got error while unmarshalling the destination config %v", err.Error()),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
-	}
 	var failedJobs []int64
 	var successJobs []int64
 	var importIds []string
 	var errors []string
-	actionFiles, err := b.createZipFile(asyncDestStruct.FileName, destConfig.AudienceID)
+	actionFiles, err := b.createZipFile(asyncDestStruct.FileName, misc.MapLookup(asyncDestStruct.Destination.Config, "audienceId").(string))
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
