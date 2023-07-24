@@ -48,12 +48,7 @@ func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	csvWriter := csv.NewWriter(csvFile)
-	err = csvWriter.WriteAll([][]string{
-		{"Type", "Status", "Id", "Parent Id", "Client Id", "Modified Time", "Name", "Description", "Scope", "Audience", "Action Type", "Sub Type", "Text"},
-		{"Format Version", "", "", "", "", "", "6.0", "", "", "", "", "", ""},
-		{"Customer List", "", audienceId, "", "", "", "", "", "", "", actionType, "", ""},
-	})
+	csvWriter, err := CreateActionFileTemplate(csvFile, audienceId, actionType)
 	if err != nil {
 		return nil, err
 	}
