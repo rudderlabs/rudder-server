@@ -108,7 +108,7 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 }
 
 // getLastUploadCreatedAt returns the start time of the last upload
-func (wh *HandleT) getLastUploadCreatedAt(warehouse model.Warehouse) time.Time {
+func (r *Router) getLastUploadCreatedAt(warehouse model.Warehouse) time.Time {
 	var t sql.NullTime
 	sqlStatement := fmt.Sprintf(`
 		SELECT
@@ -127,7 +127,7 @@ func (wh *HandleT) getLastUploadCreatedAt(warehouse model.Warehouse) time.Time {
 		warehouse.Source.ID,
 		warehouse.Destination.ID,
 	)
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
+	err := r.dbHandle.QueryRow(sqlStatement).Scan(&t)
 	if err != nil && err != sql.ErrNoRows {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -171,7 +171,7 @@ func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 }
 
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
-func (wh *HandleT) canCreateUpload(warehouse model.Warehouse) (bool, error) {
+func (r *Router) canCreateUpload(warehouse model.Warehouse) (bool, error) {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
 		return true, nil
@@ -203,7 +203,7 @@ func (wh *HandleT) canCreateUpload(warehouse model.Warehouse) (bool, error) {
 		}
 	}
 	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
-	lastUploadCreatedAt := wh.getLastUploadCreatedAt(warehouse)
+	lastUploadCreatedAt := r.getLastUploadCreatedAt(warehouse)
 	// start upload only if no upload has started in current window
 	// e.g. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
 	if lastUploadCreatedAt.Before(prevScheduledTime) {

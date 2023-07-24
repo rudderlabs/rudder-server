@@ -18,16 +18,16 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func (wh *HandleT) CronTracker(ctx context.Context) error {
+func (r *Router) CronTracker(ctx context.Context) error {
 	for {
 		var warehouses []model.Warehouse
 
-		wh.configSubscriberLock.RLock()
-		warehouses = append(warehouses, wh.warehouses...)
-		wh.configSubscriberLock.RUnlock()
+		r.configSubscriberLock.RLock()
+		warehouses = append(warehouses, r.warehouses...)
+		r.configSubscriberLock.RUnlock()
 
 		for _, warehouse := range warehouses {
-			if err := wh.Track(ctx, &warehouse, config.Default); err != nil {
+			if err := r.Track(ctx, &warehouse, config.Default); err != nil {
 				return fmt.Errorf(
 					"cron tracker failed for source: %s, destination: %s with error: %w",
 					warehouse.Source.ID,
@@ -39,9 +39,9 @@ func (wh *HandleT) CronTracker(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			wh.Logger.Infof("context is cancelled, stopped running tracking")
+			r.logger.Infof("context is cancelled, stopped running tracking")
 			return nil
-		case <-time.After(uploadStatusTrackFrequency):
+		case <-time.After(r.config.uploadStatusTrackFrequency):
 		}
 	}
 }
@@ -49,7 +49,7 @@ func (wh *HandleT) CronTracker(ctx context.Context) error {
 // Track tracks the status of the warehouse uploads for the corresponding cases:
 // 1. Staging files is not picked.
 // 2. Upload job is struck
-func (wh *HandleT) Track(ctx context.Context, warehouse *model.Warehouse, config *config.Config) error {
+func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *config.Config) error {
 	var (
 		query             string
 		queryArgs         []interface{}
@@ -64,17 +64,17 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *model.Warehouse, config
 		destination       = warehouse.Destination
 	)
 
-	if wh.NowSQL != "" {
-		NowSQL = wh.NowSQL
+	if r.nowSQL != "" {
+		NowSQL = r.nowSQL
 	}
-	if wh.Now != nil {
-		Now = wh.Now
+	if r.now != nil {
+		Now = r.now
 	}
 
 	tags := stats.Tags{
 		"workspaceId": warehouse.WorkspaceID,
 		"module":      moduleName,
-		"destType":    wh.destType,
+		"destType":    r.destType,
 		"warehouseID": misc.GetTagName(
 			destination.ID,
 			source.Name,
@@ -82,7 +82,7 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *model.Warehouse, config
 			misc.TailTruncateStr(source.ID, 6)),
 	}
 	statKey := "warehouse_track_upload_missing"
-	wh.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(0)
+	r.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(0)
 
 	if !source.Enabled || !destination.Enabled {
 		return nil
@@ -126,7 +126,7 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *model.Warehouse, config
 		timeWindow / time.Minute,
 	}
 
-	err := wh.dbHandle.QueryRowContext(ctx, query, queryArgs...).Scan(&createdAt)
+	err := r.dbHandle.QueryRowContext(ctx, query, queryArgs...).Scan(&createdAt)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -165,20 +165,20 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *model.Warehouse, config
 		createdAt.Time.Format(misc.RFC3339Milli),
 	}
 
-	err = wh.dbHandle.QueryRowContext(ctx, query, queryArgs...).Scan(&exists)
+	err = r.dbHandle.QueryRowContext(ctx, query, queryArgs...).Scan(&exists)
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("fetching last upload status for source: %s and destination: %s: %w", source.ID, destination.ID, err)
 	}
 
 	if !exists {
-		wh.Logger.Warnw("pending staging files not picked",
+		r.logger.Warnw("pending staging files not picked",
 			logfield.SourceID, source.ID,
 			logfield.SourceType, source.SourceDefinition.Name,
 			logfield.DestinationID, destination.ID,
 			logfield.DestinationType, destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, warehouse.WorkspaceID,
 		)
-		wh.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(1)
+		r.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(1)
 	}
 
 	return nil

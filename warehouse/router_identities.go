@@ -75,7 +75,7 @@ func isDestHistoricIdentitiesPopulateInProgress(warehouse model.Warehouse) bool 
 	return false
 }
 
-func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (upload model.Upload, found bool) {
+func (r *Router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (upload model.Upload, found bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 			id,
@@ -104,13 +104,13 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (
 		warehouseutils.WarehouseUploadsTable,
 		warehouse.Source.ID,
 		warehouse.Destination.ID,
-		wh.populateHistoricIdentitiesDestType(),
+		r.populateHistoricIdentitiesDestType(),
 		model.ExportedData,
 		model.Aborted,
 	)
 
 	var schema json.RawMessage
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(
+	err := r.dbHandle.QueryRow(sqlStatement).Scan(
 		&upload.ID,
 		&upload.Status,
 		&schema,
@@ -136,11 +136,11 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (
 	return
 }
 
-func (wh *HandleT) populateHistoricIdentitiesDestType() string {
-	return wh.destType + "_IDENTITY_PRE_LOAD"
+func (r *Router) populateHistoricIdentitiesDestType() string {
+	return r.destType + "_IDENTITY_PRE_LOAD"
 }
 
-func (wh *HandleT) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
+func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  EXISTS (
@@ -152,7 +152,7 @@ func (wh *HandleT) hasLocalIdentityData(warehouse model.Warehouse) (exists bool)
 `,
 		warehouseutils.IdentityMergeRulesTableName(warehouse),
 	)
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&exists)
+	err := r.dbHandle.QueryRow(sqlStatement).Scan(&exists)
 	if err != nil {
 		// TODO: Handle this
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
@@ -160,8 +160,8 @@ func (wh *HandleT) hasLocalIdentityData(warehouse model.Warehouse) (exists bool)
 	return
 }
 
-func (wh *HandleT) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
-	whManager, err := manager.New(wh.destType, wh.conf, wh.Logger, wh.stats)
+func (r *Router) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
+	whManager, err := manager.New(r.destType, r.conf, r.logger, r.stats)
 	if err != nil {
 		panic(err)
 	}
@@ -173,10 +173,10 @@ func (wh *HandleT) hasWarehouseData(ctx context.Context, warehouse model.Warehou
 	return !empty, nil
 }
 
-func (wh *HandleT) setupIdentityTables(ctx context.Context, warehouse model.Warehouse) {
+func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Warehouse) {
 	var name sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&name)
+	err := r.dbHandle.QueryRow(sqlStatement).Scan(&name)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -196,7 +196,7 @@ func (wh *HandleT) setupIdentityTables(ctx context.Context, warehouse model.Ware
 		`, warehouseutils.IdentityMergeRulesTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = r.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -210,7 +210,7 @@ func (wh *HandleT) setupIdentityTables(ctx context.Context, warehouse model.Ware
 		warehouseutils.IdentityMergeRulesTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = r.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -227,7 +227,7 @@ func (wh *HandleT) setupIdentityTables(ctx context.Context, warehouse model.Ware
 		warehouseutils.IdentityMappingsTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = r.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -244,7 +244,7 @@ func (wh *HandleT) setupIdentityTables(ctx context.Context, warehouse model.Ware
 		warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
 	)
 
-	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = r.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -255,7 +255,7 @@ func (wh *HandleT) setupIdentityTables(ctx context.Context, warehouse model.Ware
 		warehouseutils.IdentityMappingsTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = r.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
@@ -268,31 +268,31 @@ func (wh *HandleT) setupIdentityTables(ctx context.Context, warehouse model.Ware
 		warehouseutils.IdentityMappingsTableName(warehouse),
 	)
 
-	_, err = wh.dbHandle.ExecContext(ctx, sqlStatement)
+	_, err = r.dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 }
 
-func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) model.Upload {
+func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) model.Upload {
 	schema := make(model.Schema)
 	// TODO: DRY this code
 	identityRules := model.TableSchema{
-		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_type"):  "string",
-		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_value"): "string",
-		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_type"):  "string",
-		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_value"): "string",
+		warehouseutils.ToProviderCase(r.destType, "merge_property_1_type"):  "string",
+		warehouseutils.ToProviderCase(r.destType, "merge_property_1_value"): "string",
+		warehouseutils.ToProviderCase(r.destType, "merge_property_2_type"):  "string",
+		warehouseutils.ToProviderCase(r.destType, "merge_property_2_value"): "string",
 	}
-	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMergeRulesTable)] = identityRules
+	schema[warehouseutils.ToProviderCase(r.destType, warehouseutils.IdentityMergeRulesTable)] = identityRules
 
 	// add rudder_identity_mappings table
 	identityMappings := model.TableSchema{
-		warehouseutils.ToProviderCase(wh.destType, "merge_property_type"):  "string",
-		warehouseutils.ToProviderCase(wh.destType, "merge_property_value"): "string",
-		warehouseutils.ToProviderCase(wh.destType, "rudder_id"):            "string",
-		warehouseutils.ToProviderCase(wh.destType, "updated_at"):           "datetime",
+		warehouseutils.ToProviderCase(r.destType, "merge_property_type"):  "string",
+		warehouseutils.ToProviderCase(r.destType, "merge_property_value"): "string",
+		warehouseutils.ToProviderCase(r.destType, "rudder_id"):            "string",
+		warehouseutils.ToProviderCase(r.destType, "updated_at"):           "datetime",
 	}
-	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMappingsTable)] = identityMappings
+	schema[warehouseutils.ToProviderCase(r.destType, warehouseutils.IdentityMappingsTable)] = identityMappings
 
 	marshalledSchema, err := json.Marshal(schema)
 	if err != nil {
@@ -311,13 +311,13 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse
 	`, warehouseutils.WarehouseUploadsTable)
 
 	now := timeutil.Now()
-	row := wh.dbHandle.QueryRow(
+	row := r.dbHandle.QueryRow(
 		sqlStatement,
 		warehouse.Source.ID,
 		warehouse.Namespace,
 		warehouse.WorkspaceID,
 		warehouse.Destination.ID,
-		wh.populateHistoricIdentitiesDestType(),
+		r.populateHistoricIdentitiesDestType(),
 		model.Waiting,
 		marshalledSchema,
 		"{}",
@@ -342,32 +342,32 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse
 		WorkspaceID:     warehouse.WorkspaceID,
 		SourceID:        warehouse.Source.ID,
 		DestinationID:   warehouse.Destination.ID,
-		DestinationType: wh.populateHistoricIdentitiesDestType(),
+		DestinationType: r.populateHistoricIdentitiesDestType(),
 		Status:          model.Waiting,
 		UploadSchema:    schema,
 	}
 	return upload
 }
 
-func (*HandleT) setFailedStat(warehouse model.Warehouse, err error) {
+func (*Router) setFailedStat(warehouse model.Warehouse, err error) {
 	if err != nil {
 		warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Identifier).Count(1)
 	}
 }
 
-func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse model.Warehouse) {
+func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model.Warehouse) {
 	if isDestHistoricIdentitiesPopulated(warehouse) || isDestHistoricIdentitiesPopulateInProgress(warehouse) {
 		return
 	}
 
-	wh.setDestInProgress(warehouse, 0)
+	r.setDestInProgress(warehouse, 0)
 	setDestHistoricIdentitiesPopulateInProgress(warehouse, true)
 	rruntime.GoForWarehouse(func() {
 		var err error
-		defer wh.removeDestInProgress(warehouse, 0)
+		defer r.removeDestInProgress(warehouse, 0)
 		defer setDestHistoricIdentitiesPopulateInProgress(warehouse, false)
 		defer setDestHistoricIdentitiesPopulated(warehouse)
-		defer wh.setFailedStat(warehouse, err)
+		defer r.setFailedStat(warehouse, err)
 
 		// check for pending loads (populateHistoricIdentities)
 		var (
@@ -375,36 +375,36 @@ func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse mod
 			upload         model.Upload
 		)
 
-		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
+		upload, hasPendingLoad = r.getPendingPopulateIdentitiesLoad(warehouse)
 
 		if hasPendingLoad {
-			pkgLogger.Infof("[WH]: Found pending load (populateHistoricIdentities) for %s:%s", wh.destType, warehouse.Destination.ID)
+			pkgLogger.Infof("[WH]: Found pending load (populateHistoricIdentities) for %s:%s", r.destType, warehouse.Destination.ID)
 		} else {
-			if wh.hasLocalIdentityData(warehouse) {
-				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentities) for %s:%s as data exists locally", wh.destType, warehouse.Destination.ID)
+			if r.hasLocalIdentityData(warehouse) {
+				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentities) for %s:%s as data exists locally", r.destType, warehouse.Destination.ID)
 				return
 			}
 			var hasData bool
-			hasData, err = wh.hasWarehouseData(ctx, warehouse)
+			hasData, err = r.hasWarehouseData(ctx, warehouse)
 			if err != nil {
-				pkgLogger.Errorf(`[WH]: Error checking for data in %s:%s:%s, err: %s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name, err.Error())
+				pkgLogger.Errorf(`[WH]: Error checking for data in %s:%s:%s, err: %s`, r.destType, warehouse.Destination.ID, warehouse.Destination.Name, err.Error())
 				return
 			}
 			if !hasData {
-				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentities) for %s:%s as warehouse does not have any data", wh.destType, warehouse.Destination.ID)
+				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentities) for %s:%s as warehouse does not have any data", r.destType, warehouse.Destination.ID)
 				return
 			}
 			pkgLogger.Infof("[WH]: Did not find local identity tables..")
-			pkgLogger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
-			upload = wh.initPrePopulateDestIdentitiesUpload(warehouse)
+			pkgLogger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", r.destType, warehouse.Destination.ID)
+			upload = r.initPrePopulateDestIdentitiesUpload(warehouse)
 		}
 
-		whManager, err := manager.New(wh.destType, wh.conf, wh.Logger, wh.stats)
+		whManager, err := manager.New(r.destType, r.conf, r.logger, r.stats)
 		if err != nil {
 			panic(err)
 		}
 
-		job := wh.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
+		job := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 			Upload:    upload,
 			Warehouse: warehouse,
 		}, whManager)
@@ -430,7 +430,7 @@ func (wh *HandleT) populateHistoricIdentities(ctx context.Context, warehouse mod
 		}
 
 		whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
-			wh.destType, warehouse.Destination.ID,
+			r.destType, warehouse.Destination.ID,
 		))
 		err = whManager.Setup(ctx, job.warehouse, job)
 		if err != nil {
