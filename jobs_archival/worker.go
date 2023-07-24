@@ -33,6 +33,7 @@ func (w *worker) Work() bool {
 			PayloadSizeLimit:              w.limiter(payloadLimit()),
 			ParameterFilters:              sourceParam(w.partition),
 			EventsLimit:                   eventsLimit(),
+			JobsLimit:                     eventsLimit(),
 		}
 		toArchive           = true
 		res                 uploadResult
