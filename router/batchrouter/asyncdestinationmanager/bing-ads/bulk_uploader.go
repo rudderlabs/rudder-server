@@ -9,7 +9,7 @@ import (
 
 	"github.com/samber/lo"
 
-	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
+	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -58,7 +58,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	var successJobs []int64
 	var importIds []string
 	var errors []string
-	actionFiles, err := b.CreateZipFile(asyncDestStruct.FileName, destConfig.AudienceID)
+	actionFiles, err := b.createZipFile(asyncDestStruct.FileName, destConfig.AudienceID)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
