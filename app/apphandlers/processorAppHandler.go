@@ -280,7 +280,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Processor:        p,
 		Router:           rt,
 		Archiver: jobs_archival.New(
-			archiveDB,
+			archivalDB,
 			fileUploaderProvider,
 			jobs_archival.WithAdaptiveLimit(adaptiveLimit),
 		),

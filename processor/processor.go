@@ -598,7 +598,7 @@ func (proc *Handle) loadConfig() {
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	// EventSchemas2 feature.
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2Enabled, false, "EventSchemas2.enabled")
-	config.RegisterBoolConfigVariable(false, &proc.config.archivalEnabled, true, "ArchivalV2.enabled")
+	config.RegisterBoolConfigVariable(true, &proc.config.archivalEnabled, true, "ArchivalV2.enabled")
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2AllSources, false, "EventSchemas2.enableAllSources")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
@@ -1492,7 +1492,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			}
 
 			if proc.config.archivalEnabled &&
-				commonMetadataFromSingularEvent.SourceJobRunID != "" { // archival enabled
+				commonMetadataFromSingularEvent.SourceJobRunID == "" { // archival enabled
 				if payload := payloadFunc(); payload != nil {
 					archivalJobs = append(archivalJobs,
 						&jobsdb.JobT{

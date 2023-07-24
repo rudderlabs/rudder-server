@@ -273,7 +273,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		Router:          rt,
 		SchemaForwarder: schemaForwarder,
 		Archiver: jobs_archival.New(
-			archiveDB,
+			archivalDB,
 			fileUploaderProvider,
 			jobs_archival.WithAdaptiveLimit(adaptiveLimit),
 		),

@@ -32,7 +32,6 @@ type LifecycleManager struct {
 	batchRouterDB    *jobsdb.HandleT
 	readErrDB        *jobsdb.HandleT
 	writeErrDB       *jobsdb.HandleT
-	archiveDB        *jobsdb.HandleT
 	esDB             *jobsdb.HandleT
 	arcDB            *jobsdb.HandleT
 	clearDB          *bool

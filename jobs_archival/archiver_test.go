@@ -163,7 +163,6 @@ func TestJobsArchival(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, len(jobs), len(succeeded.Jobs))
-
 }
 
 func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
