@@ -207,6 +207,8 @@ func (d *Dynamic) stop() {
 	d.logger.Debug("Router stopped")
 	d.SchemaForwarder.Stop()
 	d.logger.Debug("JobsForwarder stopped")
+	d.Archiver.Stop()
+	d.logger.Debug("Archiver stopped")
 	d.Processor.Stop()
 	d.logger.Debug("Processor stopped")
 
