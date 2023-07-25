@@ -40,6 +40,7 @@ type archiver struct {
 	stopArchivalTrigger context.CancelFunc
 	archiveTrigger      func() <-chan time.Time
 	limiter             payload.AdaptiveLimiterFunc
+	archiveFrom         string
 }
 
 func New(jobsDB jobsdb.JobsDB, storageProvider fileuploader.Provider, opts ...Option) *archiver {
@@ -80,6 +81,12 @@ func WithArchiveTrigger(trigger func() <-chan time.Time) Option {
 	}
 }
 
+func WithArchiveFrom(from string) Option {
+	return func(a *archiver) {
+		a.archiveFrom = from
+	}
+}
+
 func (a *archiver) Start() error {
 	a.log.Info("Starting archiver")
 	partitionsFunc := isolation.GetSourceStrategy().ActivePartitions
@@ -109,6 +116,7 @@ func (a *archiver) Start() error {
 				return err
 			}
 			sources, err := partitionsFunc(ctx, a.jobsDB)
+			a.log.Infof("Archiving %v sources", sources)
 			if err != nil {
 				a.log.Error("Failed to fetch sources", err)
 				continue

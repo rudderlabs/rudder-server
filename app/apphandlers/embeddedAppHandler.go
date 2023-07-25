@@ -276,6 +276,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			archivalDB,
 			fileUploaderProvider,
 			jobs_archival.WithAdaptiveLimit(adaptiveLimit),
+			jobs_archival.WithArchiveFrom("gw"),
 		),
 	}
 

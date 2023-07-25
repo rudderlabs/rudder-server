@@ -77,7 +77,7 @@ start:
 		w.log.Errorf("failed to fetch storage preferences for workspaceID: %s - %w", jobs[0].WorkspaceId, err)
 		toArchive = false
 	}
-	if !storagePrefs.Backup(w.jobsDB.Identifier()) {
+	if !storagePrefs.Backup(w.archiveFrom) {
 		toArchive = false
 	}
 	var statusList []*jobsdb.JobStatusT
