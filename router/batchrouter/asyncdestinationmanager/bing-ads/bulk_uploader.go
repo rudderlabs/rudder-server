@@ -67,13 +67,6 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			continue
 		}
 
-		if urlResp.UploadUrl == "" || urlResp.RequestId == "" {
-			b.logger.Error(`{"error" : "getting empty string in upload url or request id. Provide correct configuration credentials."}`)
-			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id. Provide correct configuration credentials.", actionFile.Action))
-			continue
-		}
-
 		uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
@@ -90,11 +83,6 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			continue
 		}
 
-		if uploadBulkFileResp.RequestId == "" || uploadBulkFileResp.TrackingId == "" {
-			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
-			errors = append(errors, fmt.Sprintf("%s:getting empty string in upload url or request id, Provide correct configuration credentials.", actionFile.Action))
-			continue
-		}
 		importIds = append(importIds, uploadBulkFileResp.RequestId)
 		failedJobs = append(failedJobs, actionFile.FailedJobIDs...)
 		successJobs = append(successJobs, actionFile.SuccessfulJobIDs...)

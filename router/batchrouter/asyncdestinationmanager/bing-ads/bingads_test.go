@@ -80,10 +80,7 @@ var _ = Describe("Bing ads", func() {
 				TrackingId: "randomTrackingId1",
 				RequestId:  "randomRequestId1",
 			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(&bingads_sdk.UploadBulkFileResponse{
-				TrackingId: "",
-				RequestId:  "",
-			}, nil)
+			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload2", gomock.Any()).Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
 
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
 			if err != nil {
@@ -109,7 +106,7 @@ var _ = Describe("Bing ads", func() {
 				Manager:         bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"Add:getting empty string in upload url or request id, Provide correct configuration credentials.\"}",
+				FailedReason:        "{\"error\":\"Add:error in uploading the bulk file: unable to get bulk upload url, check your credentials\"}",
 				ImportingJobIDs:     []int64{3, 4},
 				FailedJobIDs:        []int64{1, 2},
 				ImportingParameters: stdjson.RawMessage{},
@@ -190,15 +187,9 @@ var _ = Describe("Bing ads", func() {
 			bingAdsService := mock_bulkservice.NewMockBulkServiceI(ctrl)
 			ClientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &ClientI)
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
-				UploadUrl: "",
-				RequestId: "",
-			}, nil)
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
 
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
-				UploadUrl: "",
-				RequestId: "",
-			}, nil)
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -216,7 +207,7 @@ var _ = Describe("Bing ads", func() {
 			}
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{3, 4, 1, 2},
-				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id. Provide correct configuration credentials.,Add:getting empty string in upload url or request id. Provide correct configuration credentials.\"}",
+				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: unable to get bulk upload url, check your credentials,Add:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
 				FailedCount:         4,
 				DestinationID:       destination.ID,
 				ImportingParameters: stdjson.RawMessage(importParameters),
@@ -562,14 +553,8 @@ var _ = Describe("Bing ads", func() {
 				UploadUrl: "http://localhost/upload",
 				RequestId: misc.FastUUID().URN(),
 			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(&bingads_sdk.UploadBulkFileResponse{
-				TrackingId: "",
-				RequestId:  "",
-			}, nil)
-			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(&bingads_sdk.UploadBulkFileResponse{
-				TrackingId: "",
-				RequestId:  "",
-			}, nil)
+			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("unable to upload bulk file, check your credentials"))
+			bingAdsService.EXPECT().UploadBulkFile("http://localhost/upload", gomock.Any()).Return(nil, fmt.Errorf("unable to upload bulk file, check your credentials"))
 
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
 			if err != nil {
@@ -595,7 +580,7 @@ var _ = Describe("Bing ads", func() {
 				Manager:         bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "{\"error\":\"Remove:getting empty string in upload url or request id, Provide correct configuration credentials.,Add:getting empty string in upload url or request id, Provide correct configuration credentials.\"}",
+				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: unable to upload bulk file, check your credentials,Add:error in uploading the bulk file: unable to upload bulk file, check your credentials\"}",
 				FailedJobIDs:        []int64{3, 4, 1, 2},
 				ImportingParameters: stdjson.RawMessage{},
 				ImportingCount:      0,
