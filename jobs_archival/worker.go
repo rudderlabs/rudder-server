@@ -213,6 +213,8 @@ func getStatuses(jobs []*jobsdb.JobT, stateFunc func(*jobsdb.JobT) string, respo
 			JobState:      stateFunc(job),
 			ErrorResponse: response,
 			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
 		}
 	})
 }
