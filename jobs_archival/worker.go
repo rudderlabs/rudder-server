@@ -187,10 +187,10 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	}
 	prefixes := []string{
 		w.partition,
+		w.archiveFrom,
 		fmt.Sprintf("%d-%d-%d", year, month, date),
 		fmt.Sprintf("%d", firstJobCreatedAt.Hour()),
 		instanceID,
-		w.archiveFrom,
 	}
 	uploadOutput, err := fileUploader.Upload(ctx, file, prefixes...)
 	if err != nil {
