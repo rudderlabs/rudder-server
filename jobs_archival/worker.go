@@ -187,8 +187,8 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	}
 	prefixes := []string{
 		w.partition,
-		fmt.Sprintf("date=%d-%d-%d", year, month, date),
-		fmt.Sprintf("hour=%d", firstJobCreatedAt.Hour()),
+		fmt.Sprintf("%d-%d-%d", year, month, date),
+		fmt.Sprintf("%d", firstJobCreatedAt.Hour()),
 		instanceID,
 		w.archiveFrom,
 	}
