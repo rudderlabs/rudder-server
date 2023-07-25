@@ -4,19 +4,24 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	arch "github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -26,20 +31,21 @@ import (
 
 func TestJobsArchival(t *testing.T) {
 	var (
-		// tc                       backupTestCase
-		prefix                 = "some-prefix"
-		minioResource          []*destination.MINIOResource
+		prefix        = "some-prefix"
+		minioResource []*destination.MINIOResource
+
+		// test data - contains jobs from 3 workspaces(1 - 1 source, 2 & 3 - 2 sources each)
 		goldenFileJobsFileName = "testdata/MultiWorkspaceBackupJobs.json.gz"
-		// goldenFileStatusFileName = "testdata/MultiWorkspaceBackupStatus.json.gz"
-		uniqueWorkspaces = 3
-		ctx, cancel      = context.WithCancel(context.Background())
+		uniqueWorkspaces       = 3
+		sourcesPerWorkspace    = []int{1, 2, 2}
+		ctx, cancel            = context.WithCancel(context.Background())
 	)
 	defer cancel()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
 	cleanup := &testhelper.Cleanup{}
-	// defer cleanup.Run()
+	defer cleanup.Run()
 
 	postgresResource, err := resource.SetupPostgres(pool, cleanup)
 	require.NoError(t, err)
@@ -50,15 +56,11 @@ func TestJobsArchival(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// create a unique temporary directory to allow for parallel test execution
-	// tmpDir := t.TempDir()
-
 	jobs, err := readGzipJobFile(goldenFileJobsFileName)
 	require.NoError(t, err)
 
 	{
 		t.Setenv("MINIO_SSL", "false")
-
 		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
 		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
 		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
@@ -69,7 +71,11 @@ func TestJobsArchival(t *testing.T) {
 
 	arch.Init()
 	jobsdb.Init2()
-	jd := &jobsdb.HandleT{}
+	misc.Init()
+	jd := &jobsdb.HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return make(chan time.Time)
+		}}
 	require.NoError(t, jd.Setup(
 		jobsdb.ReadWrite,
 		false,
@@ -95,7 +101,7 @@ func TestJobsArchival(t *testing.T) {
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
-				GatewayDumps:     false,
+				GatewayDumps:     true,
 				BatchRouterDumps: true,
 				RouterDumps:      true,
 				ProcErrorDumps:   true,
@@ -138,31 +144,77 @@ func TestJobsArchival(t *testing.T) {
 			},
 		},
 	}
-	// fileuploaderProvider := fileuploader.NewStaticProvider(storageSettings)
+
 	fileUploaderProvider := fileuploader.NewStaticProvider(storageSettings)
 	trigger := make(chan time.Time)
 	archiver := New(
 		jd, fileUploaderProvider,
-		WithArchiveTrigger(func() <-chan time.Time {
-			return trigger
-		},
+		WithArchiveTrigger(
+			func() <-chan time.Time {
+				return trigger
+			},
 		),
+		WithArchiveFrom("gw"),
 	)
 
 	require.NoError(t, archiver.Start())
 	defer archiver.Stop()
 
 	trigger <- time.Now()
-	trigger <- time.Now()
 
-	succeeded, err := jd.GetProcessed(
-		ctx,
-		jobsdb.GetQueryParamsT{
-			StateFilters: []string{jobsdb.Succeeded.State},
+	require.Eventually(
+		t,
+		func() bool {
+			succeeded, err := jd.GetProcessed(
+				ctx,
+				jobsdb.GetQueryParamsT{
+					IgnoreCustomValFiltersInQuery: true,
+					StateFilters:                  []string{jobsdb.Succeeded.State},
+					JobsLimit:                     eventsLimit(),
+					EventsLimit:                   eventsLimit(),
+					PayloadSizeLimit:              payloadLimit(),
+				},
+			)
+			require.NoError(t, err)
+			return len(jobs) == len(succeeded.Jobs)
 		},
+		30*time.Second,
+		1*time.Second,
 	)
-	require.NoError(t, err)
-	require.Equal(t, len(jobs), len(succeeded.Jobs))
+
+	downloadedJobs := make([]*jobsdb.JobT, 0)
+	for i := 0; i < uniqueWorkspaces; i++ {
+		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
+		fm, err := fileUploaderProvider.GetFileManager(workspace)
+		require.NoError(t, err)
+		fileIter := fm.ListFilesWithPrefix(context.Background(), "", prefix, 20)
+		files, err := getAllFileNames(fileIter)
+		require.NoError(t, err)
+		require.Equal(t, sourcesPerWorkspace[i], len(files))
+
+		for j, file := range files {
+			downloadFile, err := os.CreateTemp("", fmt.Sprintf("backedupfile%d%d", i, j))
+			require.NoError(t, err)
+			err = fm.Download(context.Background(), downloadFile, file)
+			require.NoError(t, err, file)
+			err = downloadFile.Close()
+			require.NoError(t, err)
+			dJobs, err := readGzipJobFile(downloadFile.Name())
+			fmt.Println(lo.Map(dJobs, func(j *jobsdb.JobT, _ int) int64 {
+				return j.JobID
+			}))
+			require.NoError(t, err)
+			cleanup.Cleanup(func() {
+				_ = os.Remove(downloadFile.Name())
+			})
+			downloadedJobs = append(downloadedJobs, dJobs...)
+		}
+	}
+	fmt.Println(lo.Map(downloadedJobs, func(j *jobsdb.JobT, _ int) int64 {
+		return j.JobID
+	}))
+	require.Equal(t, len(jobs), len(downloadedJobs))
+	require.ElementsMatch(t, jobs, downloadedJobs)
 }
 
 func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
@@ -191,15 +243,32 @@ func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
 		uuid := uuid.MustParse("69359037-9599-48e7-b8f2-48393c019135")
 		j := &jobsdb.JobT{
 			UUID:         uuid,
-			JobID:        gjson.GetBytes(lineByte, "job_id").Int(),
-			UserID:       gjson.GetBytes(lineByte, "user_id").String(),
-			CustomVal:    gjson.GetBytes(lineByte, "custom_val").String(),
-			Parameters:   []byte(gjson.GetBytes(lineByte, "parameters").String()),
-			EventCount:   int(gjson.GetBytes(lineByte, "event_count").Int()),
-			WorkspaceId:  gjson.GetBytes(lineByte, "workspace_id").String(),
-			EventPayload: []byte(gjson.GetBytes(lineByte, "event_payload").String()),
+			JobID:        gjson.GetBytes(lineByte, "JobID").Int(),
+			UserID:       gjson.GetBytes(lineByte, "UserID").String(),
+			CustomVal:    gjson.GetBytes(lineByte, "CustomVal").String(),
+			Parameters:   []byte(gjson.GetBytes(lineByte, "Parameters").String()),
+			EventCount:   int(gjson.GetBytes(lineByte, "EventCount").Int()),
+			WorkspaceId:  gjson.GetBytes(lineByte, "WorkspaceId").String(),
+			EventPayload: []byte(gjson.GetBytes(lineByte, "EventPayload").String()),
 		}
 		jobs = append(jobs, j)
 	}
 	return jobs, nil
+}
+
+func getAllFileNames(fileIter filemanager.ListSession) ([]string, error) {
+	files := make([]string, 0)
+	for {
+		fileInfo, err := fileIter.Next()
+		if err != nil {
+			return files, err
+		}
+		if len(fileInfo) == 0 {
+			break
+		}
+		for _, file := range fileInfo {
+			files = append(files, file.Key)
+		}
+	}
+	return files, nil
 }

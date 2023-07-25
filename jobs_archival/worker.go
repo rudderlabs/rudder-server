@@ -10,6 +10,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -26,6 +27,7 @@ type worker struct {
 }
 
 func (w *worker) Work() bool {
+	defer w.concLimiter.BeginWithPriority(w.partition, kitsync.LimiterPriorityValue(1))()
 	var (
 		params = jobsdb.GetQueryParamsT{
 			IgnoreCustomValFiltersInQuery: true,
@@ -72,11 +74,14 @@ start:
 	}
 
 	storagePrefs, err := w.storageProvider.GetStoragePreferences(jobs[0].WorkspaceId)
+	var reason string
 	if err != nil {
 		w.log.Errorf("failed to fetch storage preferences for workspaceID: %s - %w", jobs[0].WorkspaceId, err)
+		reason = fmt.Sprintf(`{"location": "not uploaded because - %v"}`, err)
 		toArchive = false
 	}
 	if !storagePrefs.Backup(w.archiveFrom) {
+		reason = fmt.Sprintf(`{"location": "not uploaded because storage disabled for %s"}`, w.archiveFrom)
 		toArchive = false
 	}
 	var statusList []*jobsdb.JobStatusT
@@ -84,7 +89,7 @@ start:
 		statusList = getStatuses(
 			jobs,
 			func(*jobsdb.JobT) string { return jobsdb.Aborted.State },
-			[]byte(`{"location": "not uploaded because storage not enabled/configured"}`),
+			[]byte(reason),
 		)
 		goto markStatus
 	}
@@ -145,7 +150,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt
 	workspaceID := jobs[0].WorkspaceId
 
-	w.log.Debugf("[Archival: storeErrorsToObjectStorage]: Starting logging to object storage - %s", w.partition)
+	w.log.Infof("[Archival: storeErrorsToObjectStorage]: Starting logging to object storage - %s", w.partition)
 
 	gzWriter := fileuploader.NewGzMultiFileWriter()
 	path := fmt.Sprintf(

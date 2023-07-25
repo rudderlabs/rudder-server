@@ -3,6 +3,7 @@ package jobs_archival
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -10,6 +11,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -41,6 +44,7 @@ type archiver struct {
 	archiveTrigger      func() <-chan time.Time
 	limiter             payload.AdaptiveLimiterFunc
 	archiveFrom         string
+	concLimiter         kitsync.Limiter
 }
 
 func New(jobsDB jobsdb.JobsDB, storageProvider fileuploader.Provider, opts ...Option) *archiver {
@@ -93,6 +97,13 @@ func (a *archiver) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.stopArchivalTrigger = cancel
 	g, ctx := errgroup.WithContext(ctx)
+	a.concLimiter = kitsync.NewLimiter(
+		ctx,
+		&sync.WaitGroup{},
+		"archival_limiter",
+		concurrency(),
+		stats.Default,
+	)
 	g.Go(func() error {
 		workerPool := workerpool.New(
 			ctx,
@@ -121,16 +132,9 @@ func (a *archiver) Start() error {
 				a.log.Error("Failed to fetch sources", err)
 				continue
 			}
-			g, _ := errgroup.WithContext(ctx)
-			g.SetLimit(concurrency())
 			for _, source := range sources {
-				source := source
-				g.Go(func() error {
-					workerPool.PingWorker(source)
-					return nil
-				})
+				workerPool.PingWorker(source)
 			}
-			_ = g.Wait()
 		}
 	})
 
