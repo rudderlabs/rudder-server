@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/samber/lo"
@@ -143,6 +142,7 @@ type uploadResult struct {
 
 func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResult {
 	firstJobCreatedAt := jobs[0].CreatedAt
+	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt
 	workspaceID := jobs[0].WorkspaceId
 
 	w.log.Debugf("[Archival: storeErrorsToObjectStorage]: Starting logging to object storage - %s", w.partition)
@@ -151,7 +151,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	path := fmt.Sprintf(
 		"%v%v.json.gz",
 		lo.Must(misc.CreateTMPDIR())+"/rudder-backups/",
-		fmt.Sprintf("%v", firstJobCreatedAt.Unix()),
+		fmt.Sprintf("%v-%v-%v", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID),
 	)
 
 	for _, job := range jobs {
@@ -181,15 +181,16 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	}
 
 	file, err := os.Open(path)
+	year, month, date := firstJobCreatedAt.Date()
 	if err != nil {
 		panic(err)
 	}
 	prefixes := []string{
 		w.partition,
-		firstJobCreatedAt.Format("2005-01-31"),
-		strconv.Itoa(firstJobCreatedAt.Hour()),
+		fmt.Sprintf("date=%d-%d-%d", year, month, date),
+		fmt.Sprintf("hour=%d", firstJobCreatedAt.Hour()),
 		instanceID,
-		w.jobsDB.Identifier(),
+		w.archiveFrom,
 	}
 	uploadOutput, err := fileUploader.Upload(ctx, file, prefixes...)
 	if err != nil {
