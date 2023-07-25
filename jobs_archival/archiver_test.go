@@ -75,7 +75,8 @@ func TestJobsArchival(t *testing.T) {
 	jd := &jobsdb.HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return make(chan time.Time)
-		}}
+		},
+	}
 	require.NoError(t, jd.Setup(
 		jobsdb.ReadWrite,
 		false,
