@@ -1717,10 +1717,6 @@ func (gateway *HandleT) replayRequestHandler(rh RequestHandler, w http.ResponseW
 		errorMessage = err.Error()
 		return
 	}
-	if err != nil {
-		errorMessage = err.Error()
-		return
-	}
 	errorMessage = rh.ProcessRequest(gateway, &w, r, "batch", payload, writeKey)
 
 	atomic.AddUint64(&gateway.ackCount, 1)
