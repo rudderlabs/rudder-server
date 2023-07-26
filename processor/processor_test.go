@@ -765,7 +765,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 							messages["message-1"],
 							messages["message-2"],
 						},
-						createMessagePayloadWithoutSources,
+						createMessagePayloadWithoutSources, // should be stored
 					),
 					EventCount:    2,
 					LastJobStatus: jobsdb.JobStatusT{},
@@ -807,7 +807,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 							messages["message-4"],
 							messages["message-5"],
 						},
-						createMessagePayload,
+						createMessagePayload, // shouldn't be stored to archivedb
 					),
 					EventCount: 3,
 					Parameters: createBatchParameters(SourceIDEnabledNoUT),
@@ -827,7 +827,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(3))
+					Expect(jobs).To(HaveLen(2))
 				})
 
 			processor := prepareHandle(NewHandle(mockTransformer))
@@ -955,7 +955,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal: gatewayCustomVal[0],
 					EventPayload: createBatchPayload(
-						SourceIDTransient,
+						WriteKeyTransient,
 						"2002-01-02T02:23:45.000Z",
 						[]mockEventData{
 							messages["message-3"],
@@ -3489,7 +3489,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		c.mockEventSchemasDB,
 		c.mockArchivalDB,
 		c.MockReportingI,
-		transientsource.NewEmptyService(),
+		transientsource.NewStaticService([]string{SourceIDTransient}),
 		fileuploader.NewDefaultProvider(),
 		c.MockRsourcesService,
 		destinationdebugger.NewNoOpService(),
