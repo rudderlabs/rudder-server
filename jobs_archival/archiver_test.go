@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
@@ -201,9 +200,6 @@ func TestJobsArchival(t *testing.T) {
 			err = downloadFile.Close()
 			require.NoError(t, err)
 			dJobs, err := readGzipJobFile(downloadFile.Name())
-			fmt.Println(lo.Map(dJobs, func(j *jobsdb.JobT, _ int) int64 {
-				return j.JobID
-			}))
 			require.NoError(t, err)
 			cleanup.Cleanup(func() {
 				_ = os.Remove(downloadFile.Name())
@@ -211,9 +207,6 @@ func TestJobsArchival(t *testing.T) {
 			downloadedJobs = append(downloadedJobs, dJobs...)
 		}
 	}
-	fmt.Println(lo.Map(downloadedJobs, func(j *jobsdb.JobT, _ int) int64 {
-		return j.JobID
-	}))
 	require.Equal(t, len(jobs), len(downloadedJobs))
 	require.ElementsMatch(t, jobs, downloadedJobs)
 }

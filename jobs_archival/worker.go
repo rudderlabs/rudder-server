@@ -47,9 +47,6 @@ start:
 	failed, err = w.jobsDB.GetToRetry(w.lifecycle.ctx, params)
 	if err != nil {
 		w.log.Errorf("failed to fetch jobs for backup - partition: %s - %w", w.partition, err)
-		if w.lifecycle.ctx.Err() != nil {
-			panic(err)
-		}
 		return false
 	}
 	limitReached = failed.LimitsReached
@@ -60,9 +57,6 @@ start:
 		unProcessed, err = w.jobsDB.GetUnprocessed(w.lifecycle.ctx, params)
 		if err != nil {
 			w.log.Errorf("failed to fetch unprocessed jobs for backup - partition: %s - %w", w.partition, err)
-			if w.lifecycle.ctx.Err() != nil {
-				panic(err)
-			}
 			return false
 		}
 		jobs = append(jobs, unProcessed.Jobs...)
@@ -97,13 +91,11 @@ start:
 	res = w.uploadJobs(w.lifecycle.ctx, jobs)
 	if res.err != nil {
 		w.log.Errorf("failed to upload jobs - partition: %s - %w", w.partition, res.err)
-		if w.lifecycle.ctx.Err() != nil {
-			panic(err)
-		}
+		maxAttempts := maxRetryAttempts()
 		statusList = getStatuses(
 			jobs,
 			func(job *jobsdb.JobT) string {
-				if job.LastJobStatus.AttemptNum >= maxRetryAttempts() {
+				if job.LastJobStatus.AttemptNum >= maxAttempts {
 					return jobsdb.Aborted.State
 				}
 				return jobsdb.Failed.State
@@ -122,9 +114,6 @@ start:
 markStatus:
 	if err := w.jobsDB.UpdateJobStatus(w.lifecycle.ctx, statusList, nil, nil); err != nil {
 		w.log.Errorf("failed to mark jobs' status - %w", err)
-		if w.lifecycle.ctx.Err() != nil {
-			panic(err)
-		}
 	}
 	if limitReached {
 		goto start
@@ -155,24 +144,33 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	gzWriter := fileuploader.NewGzMultiFileWriter()
 	path := fmt.Sprintf(
 		"%v%v.json.gz",
-		lo.Must(misc.CreateTMPDIR())+"/rudder-backups/",
+		lo.Must(misc.CreateTMPDIR())+"/rudder-backups/"+w.partition+"/",
 		fmt.Sprintf("%v-%v-%v", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID),
 	)
 
 	for _, job := range jobs {
 		rawJob, err := json.Marshal(job)
 		if err != nil {
-			panic(err)
+			return uploadResult{
+				err:      err,
+				location: "",
+			}
 		}
 		if _, err := gzWriter.Write(path, append(rawJob, '\n')); err != nil {
-			panic(err)
+			return uploadResult{
+				err:      err,
+				location: "",
+			}
 		}
 	}
 	err := gzWriter.Close()
 	if err != nil {
-		panic(err)
+		return uploadResult{
+			err:      err,
+			location: "",
+		}
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	fileUploader, err := w.storageProvider.GetFileManager(workspaceID)
 	if err != nil {
@@ -186,10 +184,14 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	}
 
 	file, err := os.Open(path)
-	year, month, date := firstJobCreatedAt.Date()
 	if err != nil {
-		panic(err)
+		return uploadResult{
+			err:      err,
+			location: "",
+		}
 	}
+	defer func() { _ = file.Close() }()
+	year, month, date := firstJobCreatedAt.Date()
 	prefixes := []string{
 		w.partition,
 		w.archiveFrom,
