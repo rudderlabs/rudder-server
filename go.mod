@@ -25,8 +25,8 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.52.0
-	cloud.google.com/go/pubsub v1.32.0
+	cloud.google.com/go/bigquery v1.53.0
+	cloud.google.com/go/pubsub v1.33.0
 	cloud.google.com/go/storage v1.31.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
@@ -34,7 +34,7 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.11.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.44.306
+	github.com/aws/aws-sdk-go v1.44.307
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -64,7 +64,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/mkmik/multierror v0.3.0
 	github.com/onsi/ginkgo/v2 v2.11.0
-	github.com/onsi/gomega v1.27.9
+	github.com/onsi/gomega v1.27.10
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/prometheus/client_model v0.4.0
@@ -95,8 +95,8 @@ require (
 	golang.org/x/exp v0.0.0-20230418202329-0354be287a23
 	golang.org/x/oauth2 v0.10.0
 	golang.org/x/sync v0.3.0
-	google.golang.org/api v0.132.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230711160842-782d3b101e98
+	google.golang.org/api v0.133.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771
 	google.golang.org/grpc v1.56.2
 	google.golang.org/protobuf v1.31.0
 )
