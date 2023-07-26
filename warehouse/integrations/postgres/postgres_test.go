@@ -186,10 +186,12 @@ func TestIntegration(t *testing.T) {
 			stagingFilePrefix     string
 		}{
 			{
-				name:              "Upload Job",
-				writeKey:          writeKey,
-				schema:            namespace,
-				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "Upload Job",
+				writeKey: writeKey,
+				schema:   namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:          sourceID,
 				destinationID:     destinationID,
 				stagingFilePrefix: "testdata/upload-job",
@@ -323,10 +325,12 @@ func TestIntegration(t *testing.T) {
 			stagingFilePrefix     string
 		}{
 			{
-				name:              "upload job through ssh tunnelling",
-				writeKey:          tunnelledWriteKey,
-				schema:            tunnelledNamespace,
-				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "upload job through ssh tunnelling",
+				writeKey: tunnelledWriteKey,
+				schema:   tunnelledNamespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:          tunnelledSourceID,
 				destinationID:     tunnelledDestinationID,
 				stagingFilePrefix: "testdata/upload-ssh-job",
