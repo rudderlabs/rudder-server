@@ -127,18 +127,6 @@ func (brt *Handle) Setup(
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.uploadedRawDataJobsCache = make(map[string]map[string]bool)
 
-	asyncStatTags := map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	}
-	brt.asyncPollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, asyncStatTags)
-	brt.asyncFailedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, asyncStatTags)
-	brt.asyncSuccessfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, asyncStatTags)
-	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
-	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
-
-	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
-
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
 	brt.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "brt_read",
@@ -207,6 +195,29 @@ func (brt *Handle) Setup(
 		return nil
 	}))
 
+	if slices.Contains(asyncDestinations, brt.destType) {
+		brt.startAsyncDestinationManager()
+	}
+
+	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		brt.backendConfigSubscriber()
+		return nil
+	}))
+}
+
+func (brt *Handle) startAsyncDestinationManager() {
+	asyncStatTags := map[string]string{
+		"module":   "batch_router",
+		"destType": brt.destType,
+	}
+	brt.asyncPollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, asyncStatTags)
+	brt.asyncFailedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, asyncStatTags)
+	brt.asyncSuccessfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, asyncStatTags)
+	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
+	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
+
+	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
+
 	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		brt.pollAsyncStatus(brt.backgroundCtx)
 		return nil
@@ -214,11 +225,6 @@ func (brt *Handle) Setup(
 
 	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		brt.asyncUploadWorker(brt.backgroundCtx)
-		return nil
-	}))
-
-	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		brt.backendConfigSubscriber()
 		return nil
 	}))
 }

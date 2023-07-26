@@ -198,30 +198,28 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 			brt.configSubscriberMu.RUnlock()
 
 			for destinationID := range destinationsMap {
-				if slices.Contains(asyncDestinations, brt.destType) {
-					brt.logger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
-					job, err := brt.getImportingJobs(ctx, destinationID, 1)
-					if err != nil {
-						// TODO: Add metrics
-						brt.logger.Errorf("Error while getting job for dest type: %s, err: %v", brt.destType, err)
+				brt.logger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
+				job, err := brt.getImportingJobs(ctx, destinationID, 1)
+				if err != nil {
+					// TODO: Add metrics
+					brt.logger.Errorf("Error while getting job for dest type: %s, err: %v", brt.destType, err)
+					continue
+				}
+				importingJobs := job.Jobs
+				if len(importingJobs) != 0 {
+					importingJob := importingJobs[0]
+					pollInput := getPollInput(importingJob)
+					startPollTime := time.Now()
+					brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
+					pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(pollInput)
+					brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
+					brt.asyncPollTimeStat.Since(startPollTime)
+					if pollResp.InProgress {
 						continue
 					}
-					importingJobs := job.Jobs
-					if len(importingJobs) != 0 {
-						importingJob := importingJobs[0]
-						pollInput := getPollInput(importingJob)
-						startPollTime := time.Now()
-						brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
-						pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(pollInput)
-						brt.logger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
-						brt.asyncPollTimeStat.Since(startPollTime)
-						if pollResp.InProgress {
-							continue
-						}
-						err = brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
-						if err == nil {
-							brt.asyncDestinationStruct[destinationID].UploadInProgress = false
-						}
+					err = brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
+					if err == nil {
+						brt.asyncDestinationStruct[destinationID].UploadInProgress = false
 					}
 				}
 			}
