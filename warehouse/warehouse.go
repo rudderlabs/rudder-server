@@ -132,7 +132,6 @@ type HandleT struct { // TODO rename to "router" and move to "router.go"
 	configSubscriberLock              sync.RWMutex
 	workerChannelMap                  map[string]chan *UploadJob
 	workerChannelMapLock              sync.RWMutex
-	initialConfigFetched              atomic.Bool
 	inProgressMap                     map[WorkerIdentifierT][]JobID
 	inProgressMapLock                 sync.RWMutex
 	noOfWorkers                       int
@@ -256,32 +255,38 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJob) error {
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
-	for warehouse := range bcManager.Subscribe(ctx) {
+	for warehouses := range bcManager.Subscribe(ctx) {
 		wh.Logger.Info(`Received updated workspace config`)
 
 		wh.configSubscriberLock.Lock()
-		wh.warehouses = append(wh.warehouses, warehouse) // TODO ??? why not use bcManager here ???
+		wh.warehouses = warehouses
 		if wh.workspaceBySourceIDs == nil {
 			wh.workspaceBySourceIDs = make(map[string]string)
 		}
-		wh.workspaceBySourceIDs[warehouse.Source.ID] = warehouse.WorkspaceID
+		for _, warehouse := range warehouses {
+			wh.workspaceBySourceIDs[warehouse.Source.ID] = warehouse.WorkspaceID
+		}
 		wh.configSubscriberLock.Unlock()
 
-		workerName := wh.workerIdentifier(warehouse)
 		wh.workerChannelMapLock.Lock()
-		// spawn one worker for each unique destID_namespace
-		// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
-		// to avoid creating goroutine for disabled sources/destinations
 		if wh.workerChannelMap == nil {
 			wh.workerChannelMap = make(map[string]chan *UploadJob)
 		}
-		if _, ok := wh.workerChannelMap[workerName]; !ok {
-			workerChan := wh.initWorker()
-			wh.workerChannelMap[workerName] = workerChan
+		for _, warehouse := range warehouses {
+			if warehouse.Destination.DestinationDefinition.Name != wh.destType {
+				continue
+			}
+
+			workerName := wh.workerIdentifier(warehouse)
+			// spawn one worker for each unique destID_namespace
+			// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
+			// to avoid creating goroutine for disabled sources/destinations
+			if _, ok := wh.workerChannelMap[workerName]; !ok {
+				workerChan := wh.initWorker()
+				wh.workerChannelMap[workerName] = workerChan
+			}
 		}
 		wh.workerChannelMapLock.Unlock()
-
-		wh.initialConfigFetched.Store(true)
 	}
 }
 
@@ -670,13 +675,11 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 func (wh *HandleT) runUploadJobAllocator(ctx context.Context) {
 loop:
 	for {
-		if !wh.initialConfigFetched.Load() {
-			select {
-			case <-ctx.Done():
-				break loop
-			case <-time.After(waitForConfig):
-			}
-			continue
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-bcManager.initialConfigFetched:
+			wh.Logger.Debugf("Initial config fetched in runUploadJobAllocator for %s", wh.destType)
 		}
 
 		availableWorkers := wh.noOfWorkers - wh.getActiveWorkerCount()

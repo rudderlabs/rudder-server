@@ -70,7 +70,7 @@ type backendConfigManager struct {
 	stopService                   func()
 	initialConfigFetched          chan struct{}
 	closeInitialConfigFetchedOnce sync.Once
-	subscriptions                 []chan model.Warehouse
+	subscriptions                 []chan []model.Warehouse
 	subscriptionsMu               sync.Mutex
 
 	// variables to store the backend configuration
@@ -113,12 +113,12 @@ func (s *backendConfigManager) Start(ctx context.Context) {
 	s.started = true
 }
 
-func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan model.Warehouse {
+func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan []model.Warehouse {
 	s.subscriptionsMu.Lock()
 	defer s.subscriptionsMu.Unlock()
 
 	idx := len(s.subscriptions)
-	ch := make(chan model.Warehouse, 10)
+	ch := make(chan []model.Warehouse, 10)
 	s.subscriptions = append(s.subscriptions, ch)
 
 	go func() {
@@ -161,6 +161,7 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 
 			for _, destination := range source.Destinations {
 				if !slices.Contains(whutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+					s.logger.Debugf("Not a warehouse destination, skipping %s", destination.DestinationDefinition.Name)
 					continue
 				}
 
@@ -184,12 +185,6 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 				}
 
 				warehouses = append(warehouses, warehouse)
-
-				s.subscriptionsMu.Lock()
-				for _, sub := range s.subscriptions {
-					sub <- warehouse
-				}
-				s.subscriptionsMu.Unlock()
 
 				s.connectionsMapMu.Lock()
 				if _, ok := s.connectionsMap[destination.ID]; !ok {
@@ -222,9 +217,16 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 	s.warehousesMu.Lock()
 	s.warehouses = warehouses // TODO how is this used? because we are duplicating data
 	s.warehousesMu.Unlock()
+
 	s.sourceIDsByWorkspaceMu.Lock()
 	s.sourceIDsByWorkspace = sourceIDsByWorkspaceTemp
 	s.sourceIDsByWorkspaceMu.Unlock()
+
+	s.subscriptionsMu.Lock()
+	for _, sub := range s.subscriptions {
+		sub <- warehouses
+	}
+	s.subscriptionsMu.Unlock()
 
 	if val, ok := connectionFlags.Services["warehouse"]; ok {
 		if UploadAPI.connectionManager != nil {
