@@ -868,6 +868,17 @@ func (*HandleT) getSourceIDForWriteKey(writeKey string) string {
 	return ""
 }
 
+func (*HandleT) getWriteKeyForSourceID(sourceID string) string {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if _, ok := sourceIDWriteKeyMap[sourceID]; ok {
+		return sourceIDWriteKeyMap[sourceID]
+	}
+
+	return ""
+}
+
 func (*HandleT) getSourceNameForWriteKey(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -1677,7 +1688,7 @@ func (gateway *HandleT) replayRequestHandler(rh RequestHandler, w http.ResponseW
 			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Error while handling request: %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
 		}
 	}()
-	writeKey := gateway.getSourceIDForWriteKey(sourceID)
+	writeKey := gateway.getWriteKeyForSourceID(sourceID)
 	if writeKey == "" {
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		stat := gwstats.SourceStat{
