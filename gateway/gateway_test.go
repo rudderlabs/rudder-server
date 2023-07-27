@@ -66,6 +66,9 @@ const (
 	sourceType2      = "sourceType2"
 	sdkLibrary       = "sdkLibrary"
 	sdkVersion       = "v1.2.3"
+
+	writeKeyForReplaySource = "writeKeyForReplaySource"
+	SourceIDForReplaySource = "sourceForReplaySource"
 )
 
 var (
@@ -97,6 +100,15 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			ID:       SourceIDEnabled,
 			WriteKey: WriteKeyEnabled,
+			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: sourceType2,
+			},
+			WorkspaceID: WorkspaceID,
+		},
+		{
+			ID:       SourceIDForReplaySource,
+			WriteKey: writeKeyForReplaySource,
 			Enabled:  true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Category: sourceType2,
@@ -419,6 +431,10 @@ var _ = Describe("Gateway", func() {
 
 			return validDataWithProperty
 		}
+		createValidBatchBody := func(customProperty, customValue string) []byte {
+			validData := createValidBody(customProperty, customValue)
+			return []byte(fmt.Sprintf(`{"batch":[%s]}`, string(validData)))
+		}
 		verifyEndpoint := func(endpoints []string, method string) {
 			client := &http.Client{}
 			for _, ep := range endpoints {
@@ -432,11 +448,16 @@ var _ = Describe("Gateway", func() {
 				if method == http.MethodGet {
 					req, err = http.NewRequest(method, url, nil)
 				} else {
-					req, err = http.NewRequest(method, url, bytes.NewBuffer(createValidBody("custom-property", "custom-value")))
+					if ep == "/internal/v1/replay" {
+						url = url + "/" + SourceIDForReplaySource
+						req, err = http.NewRequest(method, url, bytes.NewBuffer(createValidBatchBody("custom-property", "custom-value")))
+					} else {
+						req, err = http.NewRequest(method, url, bytes.NewBuffer(createValidBody("custom-property", "custom-value")))
+						req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
+					}
 				}
 				Expect(err).To(BeNil())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
 				resp, err := client.Do(req)
 				Expect(err).To(BeNil())
 
@@ -1365,6 +1386,7 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/v1/webhook",
 		"/beacon/v1/batch",
 		"/internal/v1/extract",
+		"/internal/v1/replay",
 		"/v1/warehouse/pending-events",
 		"/v1/warehouse/trigger-upload",
 		"/v1/warehouse/jobs",
