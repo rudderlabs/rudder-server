@@ -64,10 +64,6 @@ type backendConfigManager struct {
 	internalControlPlaneClient cpclient.InternalControlPlane
 	logger                     logger.Logger
 
-	started                       bool
-	startedMu                     sync.Mutex
-	startedWg                     sync.WaitGroup
-	stopService                   func()
 	initialConfigFetched          chan struct{}
 	closeInitialConfigFetchedOnce sync.Once
 	subscriptions                 []chan []model.Warehouse
@@ -85,32 +81,15 @@ type backendConfigManager struct {
 }
 
 func (s *backendConfigManager) Start(ctx context.Context) {
-	s.startedMu.Lock()
-	defer s.startedMu.Unlock()
-
-	if s.started {
-		return
-	}
-
-	s.startedWg.Add(1)
-	go func() {
-		defer s.startedWg.Done()
-
-		var svcCtx context.Context
-		svcCtx, s.stopService = context.WithCancel(ctx)
-
-		ch := s.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-		for {
-			select {
-			case <-svcCtx.Done():
-				return
-			case data := <-ch:
-				s.processData(svcCtx, data.Data.(map[string]backendconfig.ConfigT))
-			}
+	ch := s.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data := <-ch:
+			s.processData(ctx, data.Data.(map[string]backendconfig.ConfigT))
 		}
-	}()
-
-	s.started = true
+	}
 }
 
 func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan []model.Warehouse {
