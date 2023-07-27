@@ -45,7 +45,6 @@ func TestIntegration(t *testing.T) {
 
 	misc.Init()
 	validations.Init()
-	backendconfig.Init()
 	warehouseutils.Init()
 	encoding.Init()
 
@@ -161,10 +160,12 @@ func TestIntegration(t *testing.T) {
 			stagingFilePrefix                   string
 		}{
 			{
-				name:                          "Merge mode",
-				writeKey:                      writeKey,
-				schema:                        namespace,
-				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "Merge mode",
+				writeKey: writeKey,
+				schema:   namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
@@ -206,9 +207,11 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/sources-job",
 			},
 			{
-				name:                          "Append mode",
-				schema:                        namespace,
-				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:   "Append mode",
+				schema: namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				writeKey:                      writeKey,
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
@@ -227,9 +230,11 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 			},
 			{
-				name:                                "Append mode with custom partition",
-				schema:                              namespace,
-				tables:                              []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:   "Append mode with custom partition",
+				schema: namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				writeKey:                            writeKey,
 				sourceID:                            sourceID,
 				destinationID:                       destinationID,
