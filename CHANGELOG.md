@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.3](https://github.com/rudderlabs/rudder-server/compare/v1.11.2...v1.11.3) (2023-07-28)
+
+
+### Miscellaneous
+
+* add custom buckets to gateway.user_suppression_age ([#3679](https://github.com/rudderlabs/rudder-server/issues/3679)) ([d1bc95c](https://github.com/rudderlabs/rudder-server/commit/d1bc95c519832e392ea5d87ee13261264c4c7ebf))
+
 ## [1.11.2](https://github.com/rudderlabs/rudder-server/compare/v1.11.1...v1.11.2) (2023-07-19)
 
 
