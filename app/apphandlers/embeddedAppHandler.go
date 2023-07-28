@@ -188,6 +188,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
+	defer schemaDB.Close()
 
 	archivalDB := jobsdb.NewForReadWrite(
 		"arc",
@@ -195,6 +196,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
+	defer archivalDB.Close()
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
