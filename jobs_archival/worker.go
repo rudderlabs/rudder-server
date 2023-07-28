@@ -145,7 +145,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	path := fmt.Sprintf(
 		"%v%v.json.gz",
 		lo.Must(misc.CreateTMPDIR())+"/rudder-backups/"+w.partition+"/",
-		fmt.Sprintf("%v-%v-%v", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID),
+		fmt.Sprintf("%v_%v_%v", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID),
 	)
 
 	for _, job := range jobs {
