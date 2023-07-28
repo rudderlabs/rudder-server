@@ -80,7 +80,7 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/viper v1.15.0
 	github.com/stretchr/testify v1.8.4
-	github.com/tidwall/gjson v1.14.4
+	github.com/tidwall/gjson v1.15.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/viney-shih/go-lock v1.1.2
