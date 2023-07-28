@@ -42,8 +42,19 @@ func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, 
 	return marketoBulkUpload, nil
 }
 
+type marketoPollInputStruct struct {
+	ImportId   string                 `json:"importId"`
+	DestType   string                 `json:"destType"`
+	DestConfig map[string]interface{} `json:"config"`
+}
+
 func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-	payload, err := json.Marshal(pollInput)
+	var finalPollInput = marketoPollInputStruct{
+		ImportId:   pollInput.ImportId,
+		DestType:   "MARKETO_BULK_UPLOAD",
+		DestConfig: b.destinationConfig,
+	}
+	payload, err := json.Marshal(finalPollInput)
 	if err != nil {
 		b.logger.Errorf("Error in Marshalling Poll Input: %v", err)
 		return common.PollStatusResponse{
