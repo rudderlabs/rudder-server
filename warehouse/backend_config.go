@@ -101,7 +101,6 @@ func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan []model.War
 	s.subscriptionsMu.Lock()
 	defer s.subscriptionsMu.Unlock()
 
-	idx := len(s.subscriptions)
 	ch := make(chan []model.Warehouse, 10)
 	s.subscriptions = append(s.subscriptions, ch)
 
@@ -119,7 +118,12 @@ func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan []model.War
 
 		close(ch)
 
-		s.subscriptions = append(s.subscriptions[:idx], s.subscriptions[idx+1:]...)
+		for i, item := range s.subscriptions {
+			if item == ch {
+				s.subscriptions = append(s.subscriptions[:i], s.subscriptions[i+1:]...)
+				return
+			}
+		}
 	}()
 
 	return ch
