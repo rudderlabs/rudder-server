@@ -75,7 +75,7 @@ require (
 	github.com/rudderlabs/sql-tunnels v0.1.3
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.42
-	github.com/snowflakedb/gosnowflake v1.6.22
+	github.com/snowflakedb/gosnowflake v1.6.23
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/viper v1.15.0
@@ -122,7 +122,7 @@ require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/arrow/go/v11 v11.0.0 // indirect
-	github.com/apache/arrow/go/v12 v12.0.0 // indirect
+	github.com/apache/arrow/go/v12 v12.0.1 // indirect
 	github.com/apache/thrift v0.17.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.17.7 // indirect
