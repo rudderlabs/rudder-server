@@ -65,7 +65,6 @@ var (
 	lastProcessedMarkerExp              = expvar.NewMap("lastProcessedMarkerMap")
 	lastProcessedMarkerMapLock          sync.RWMutex
 	warehouseMode                       string
-	warehouseSyncFreqIgnore             bool
 	maxStagingFileReadBufferCapacityInK int
 	bcManager                           *backendConfigManager
 	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
@@ -119,7 +118,6 @@ func loadConfig() {
 	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	triggerUploadsMap = map[string]bool{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
@@ -208,17 +206,28 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 				if slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
-					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+					router, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-						wh = &Router{}
-						if err := wh.Setup(ctx, destination.DestinationDefinition.Name, config.Default, pkgLogger, stats.Default); err != nil {
+						router, err := NewRouter(
+							ctx,
+							destination.DestinationDefinition.Name,
+							config.Default,
+							pkgLogger,
+							stats.Default,
+							wrappedDBHandle,
+							notifier,
+							tenantManager,
+							controlPlaneClient,
+							bcManager,
+						)
+						if err != nil {
 							return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
 						}
-						dstToWhRouter[destination.DestinationDefinition.Name] = wh
+						dstToWhRouter[destination.DestinationDefinition.Name] = router
 					} else {
 						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-						wh.Enable()
+						router.Enable()
 					}
 				}
 			}

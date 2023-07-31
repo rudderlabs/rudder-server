@@ -10,6 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/controlplane"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
@@ -65,6 +68,9 @@ type Router struct {
 	backgroundGroup  errgroup.Group
 	backgroundWait   func() error
 
+	tenantManager *multitenant.Manager
+	bcManager     *backendConfigManager
+
 	config struct {
 		noOfWorkers                       int
 		maxConcurrentUploadJobs           int
@@ -76,30 +82,47 @@ type Router struct {
 		mainLoopSleep                     time.Duration
 		stagingFilesBatchSize             int
 		uploadStatusTrackFrequency        time.Duration
+		warehouseSyncFreqIgnore           bool
 	}
 }
 
-func (r *Router) Setup(ctx context.Context, destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) error {
+func NewRouter(
+	ctx context.Context,
+	destType string,
+	conf *config.Config,
+	logger logger.Logger,
+	stats stats.Stats,
+	db *sqlquerywrapper.DB,
+	pgNotifier pgnotifier.PGNotifier,
+	tenantManager *multitenant.Manager,
+	controlPlaneClient *controlplane.Client,
+	bcManager *backendConfigManager,
+) (*Router, error) {
+	r := &Router{}
+
 	r.conf = conf
 	r.stats = stats
 
 	r.logger = logger.Child(destType)
 	r.logger.Infof("WH: Warehouse Router started: %s", destType)
 
-	r.dbHandle = wrappedDBHandle
+	r.dbHandle = db
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
-	r.warehouseDBHandle = NewWarehouseDB(wrappedDBHandle)
-	r.stagingRepo = repo.NewStagingFiles(wrappedDBHandle)
-	r.uploadRepo = repo.NewUploads(wrappedDBHandle)
-	r.whSchemaRepo = repo.NewWHSchemas(wrappedDBHandle)
+	r.warehouseDBHandle = NewWarehouseDB(db)
+	r.stagingRepo = repo.NewStagingFiles(db)
+	r.uploadRepo = repo.NewUploads(db)
+	r.whSchemaRepo = repo.NewWHSchemas(db)
 
-	r.notifier = notifier
+	r.notifier = pgNotifier
+	r.tenantManager = tenantManager
+	r.bcManager = bcManager
 	r.destType = destType
-	err := r.resetInProgressJobs(ctx)
-	if err != nil {
-		return err
+
+	if err := r.resetInProgressJobs(ctx); err != nil {
+		return nil, err
 	}
+
 	r.Enable()
 	r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
 
@@ -110,26 +133,27 @@ func (r *Router) Setup(ctx context.Context, destType string, conf *config.Config
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             r.logger.Child("loadfile"),
-			Notifier:           &notifier,
-			StageRepo:          repo.NewStagingFiles(wrappedDBHandle),
-			LoadRepo:           repo.NewLoadFiles(wrappedDBHandle),
+			Notifier:           &pgNotifier,
+			StageRepo:          repo.NewStagingFiles(db),
+			LoadRepo:           repo.NewLoadFiles(db),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		recovery: service.NewRecovery(destType, repo.NewUploads(wrappedDBHandle)),
+		recovery: service.NewRecovery(destType, repo.NewUploads(db)),
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, config.Default)
 
 	whName := warehouseutils.WHDestNameMap[destType]
 	config.RegisterIntConfigVariable(8, &r.config.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(1, &r.config.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
-	config.RegisterBoolConfigVariable(false, &r.config.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
-	config.RegisterBoolConfigVariable(false, &r.config.enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterIntConfigVariable(8, &r.config.maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterDurationConfigVariable(5, &r.config.waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterDurationConfigVariable(5, &r.config.uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
 	config.RegisterDurationConfigVariable(5, &r.config.mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
 	config.RegisterIntConfigVariable(960, &r.config.stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterDurationConfigVariable(30, &r.config.uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
+	config.RegisterBoolConfigVariable(false, &r.config.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
+	config.RegisterBoolConfigVariable(false, &r.config.enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
+	config.RegisterBoolConfigVariable(false, &r.config.warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -155,7 +179,7 @@ func (r *Router) Setup(ctx context.Context, destType string, conf *config.Config
 		return r.CronTracker(ctx)
 	}))
 
-	return nil
+	return r, nil
 }
 
 // workerIdentifier get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -204,7 +228,7 @@ func (*Router) handleUploadJob(uploadJob *UploadJob) error {
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (r *Router) backendConfigSubscriber(ctx context.Context) {
-	for warehouses := range bcManager.Subscribe(ctx) {
+	for warehouses := range r.bcManager.Subscribe(ctx) {
 		r.logger.Info(`Received updated workspace config`)
 
 		warehouses = lo.Filter(warehouses, func(warehouse model.Warehouse, _ int) bool {
@@ -508,33 +532,70 @@ func (r *Router) mainLoop(ctx context.Context) {
 	}
 }
 
-func (r *Router) processingStats(availableWorkers int, jobStats model.UploadJobsStats) {
-	// Get pending jobs
-	pendingJobsStat := r.stats.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
-		"destType": r.destType,
-	})
-	pendingJobsStat.Gauge(int(jobStats.PendingJobs))
+func (r *Router) runUploadJobAllocator(ctx context.Context) {
+loop:
+	for {
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-r.bcManager.initialConfigFetched:
+			r.logger.Debugf("Initial config fetched in runUploadJobAllocator for %s", r.destType)
+		}
 
-	availableWorkersStat := r.stats.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
-		"destType": r.destType,
-	})
-	availableWorkersStat.Gauge(availableWorkers)
+		availableWorkers := r.config.noOfWorkers - r.getActiveWorkerCount()
+		if availableWorkers < 1 {
+			select {
+			case <-ctx.Done():
+				break loop
+			case <-time.After(r.config.waitForWorkerSleep):
+			}
+			continue
+		}
 
-	pickupLagStat := r.stats.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
-		"destType": r.destType,
-	})
-	pickupLagStat.SendTiming(jobStats.PickupLag)
+		inProgressNamespaces := r.getInProgressNamespaces()
+		r.logger.Debugf(`Current inProgress namespace identifiers for %s: %v`, r.destType, inProgressNamespaces)
 
-	pickupWaitTimeStat := r.stats.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
-		"destType": r.destType,
-	})
-	pickupWaitTimeStat.SendTiming(jobStats.PickupWaitTime)
+		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
+		if err != nil {
+			if errors.Is(err, context.Canceled) ||
+				errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(err.Error(), "pq: canceling statement due to user request") {
+				break loop
+			} else {
+				r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
+				panic(err)
+			}
+		}
+
+		for _, uploadJob := range uploadJobsToProcess {
+			r.setDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
+		}
+
+		for _, uploadJob := range uploadJobsToProcess {
+			workerName := r.workerIdentifier(uploadJob.warehouse)
+			r.workerChannelMapLock.RLock()
+			r.workerChannelMap[workerName] <- uploadJob
+			r.workerChannelMapLock.RUnlock()
+		}
+
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-time.After(r.config.uploadAllocatorSleep):
+		}
+	}
+
+	r.workerChannelMapLock.RLock()
+	for _, workerChannel := range r.workerChannelMap {
+		close(workerChannel)
+	}
+	r.workerChannelMapLock.RUnlock()
 }
 
-func (r *Router) getUploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJob, error) {
+func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJob, error) {
 	uploads, err := r.uploadRepo.GetToProcess(ctx, r.destType, availableWorkers, repo.ProcessOptions{
 		SkipIdentifiers:                   skipIdentifiers,
-		SkipWorkspaces:                    tenantManager.DegradedWorkspaces(),
+		SkipWorkspaces:                    r.tenantManager.DegradedWorkspaces(),
 		AllowMultipleSourcesForJobsPickup: r.config.allowMultipleSourcesForJobsPickup,
 	})
 	if err != nil {
@@ -589,7 +650,7 @@ func (r *Router) getUploadsToProcess(ctx context.Context, availableWorkers int, 
 
 	jobsStats, err := r.uploadRepo.UploadJobsStats(ctx, r.destType, repo.ProcessOptions{
 		SkipIdentifiers: skipIdentifiers,
-		SkipWorkspaces:  tenantManager.DegradedWorkspaces(),
+		SkipWorkspaces:  r.tenantManager.DegradedWorkspaces(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("processing stats: %w", err)
@@ -600,64 +661,27 @@ func (r *Router) getUploadsToProcess(ctx context.Context, availableWorkers int, 
 	return uploadJobs, nil
 }
 
-func (r *Router) runUploadJobAllocator(ctx context.Context) {
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		case <-bcManager.initialConfigFetched:
-			r.logger.Debugf("Initial config fetched in runUploadJobAllocator for %s", r.destType)
-		}
+func (r *Router) processingStats(availableWorkers int, jobStats model.UploadJobsStats) {
+	// Get pending jobs
+	pendingJobsStat := r.stats.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
+		"destType": r.destType,
+	})
+	pendingJobsStat.Gauge(int(jobStats.PendingJobs))
 
-		availableWorkers := r.config.noOfWorkers - r.getActiveWorkerCount()
-		if availableWorkers < 1 {
-			select {
-			case <-ctx.Done():
-				break loop
-			case <-time.After(r.config.waitForWorkerSleep):
-			}
-			continue
-		}
+	availableWorkersStat := r.stats.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
+		"destType": r.destType,
+	})
+	availableWorkersStat.Gauge(availableWorkers)
 
-		inProgressNamespaces := r.getInProgressNamespaces()
-		r.logger.Debugf(`Current inProgress namespace identifiers for %s: %v`, r.destType, inProgressNamespaces)
+	pickupLagStat := r.stats.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
+		"destType": r.destType,
+	})
+	pickupLagStat.SendTiming(jobStats.PickupLag)
 
-		uploadJobsToProcess, err := r.getUploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
-		if err != nil {
-			if errors.Is(err, context.Canceled) ||
-				errors.Is(err, context.DeadlineExceeded) ||
-				strings.Contains(err.Error(), "pq: canceling statement due to user request") {
-				break loop
-			} else {
-				r.logger.Errorf(`Error executing getUploadsToProcess: %v`, err)
-				panic(err)
-			}
-		}
-
-		for _, uploadJob := range uploadJobsToProcess {
-			r.setDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
-		}
-
-		for _, uploadJob := range uploadJobsToProcess {
-			workerName := r.workerIdentifier(uploadJob.warehouse)
-			r.workerChannelMapLock.RLock()
-			r.workerChannelMap[workerName] <- uploadJob
-			r.workerChannelMapLock.RUnlock()
-		}
-
-		select {
-		case <-ctx.Done():
-			break loop
-		case <-time.After(r.config.uploadAllocatorSleep):
-		}
-	}
-
-	r.workerChannelMapLock.RLock()
-	for _, workerChannel := range r.workerChannelMap {
-		close(workerChannel)
-	}
-	r.workerChannelMapLock.RUnlock()
+	pickupWaitTimeStat := r.stats.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
+		"destType": r.destType,
+	})
+	pickupWaitTimeStat.SendTiming(jobStats.PickupWaitTime)
 }
 
 // Enable enables a router :)

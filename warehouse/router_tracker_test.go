@@ -26,7 +26,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestHandleT_Track(t *testing.T) {
+func TestRouter_Track(t *testing.T) {
 	var (
 		workspaceID = "test-workspaceID"
 		sourceID    = "test-sourceID"
@@ -189,7 +189,7 @@ func TestHandleT_Track(t *testing.T) {
 	}
 }
 
-func TestHandleT_CronTracker(t *testing.T) {
+func TestRouter_CronTracker(t *testing.T) {
 	var (
 		workspaceID = "test-workspaceID"
 		sourceID    = "test-sourceID"

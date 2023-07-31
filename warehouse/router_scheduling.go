@@ -170,7 +170,7 @@ func (r *Router) canCreateUpload(warehouse model.Warehouse) (bool, error) {
 	if isUploadTriggered(warehouse) {
 		return true, nil
 	}
-	if warehouseSyncFreqIgnore {
+	if r.config.warehouseSyncFreqIgnore {
 		if uploadFrequencyExceeded(warehouse, "") {
 			return false, fmt.Errorf("ignore sync freq: upload frequency exceeded")
 		} else {
