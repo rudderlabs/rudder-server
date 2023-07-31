@@ -151,15 +151,15 @@ func TestHandleT_Track(t *testing.T) {
 				nowSQL = tc.NowSQL
 			}
 
-			handle := HandleT{
+			handle := Router{
 				destType: destType,
-				Now: func() time.Time {
+				now: func() time.Time {
 					return now
 				},
-				NowSQL:   nowSQL,
+				nowSQL:   nowSQL,
 				stats:    store,
 				dbHandle: sqlquerywrapper.New(pgResource.DB),
-				Logger:   logger.NOP,
+				logger:   logger.NOP,
 			}
 
 			err = handle.Track(ctx, &warehouse, conf)
@@ -208,8 +208,8 @@ func TestHandleT_CronTracker(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-		wh := HandleT{
-			Logger: mockLogger,
+		wh := Router{
+			logger: mockLogger,
 		}
 
 		mockLogger.EXPECT().Infof("context is cancelled, stopped running tracking").Times(1)
@@ -261,15 +261,15 @@ func TestHandleT_CronTracker(t *testing.T) {
 		now, err := time.Parse(misc.RFC3339Milli, "2022-12-06T06:19:00.169Z")
 		require.NoError(t, err)
 
-		wh := HandleT{
+		wh := Router{
 			destType: destType,
-			Now: func() time.Time {
+			now: func() time.Time {
 				return now
 			},
-			NowSQL:   "ABC",
+			nowSQL:   "ABC",
 			stats:    memstats.New(),
 			dbHandle: sqlquerywrapper.New(pgResource.DB),
-			Logger:   logger.NOP,
+			logger:   logger.NOP,
 		}
 		wh.warehouses = append(wh.warehouses, warehouse)
 

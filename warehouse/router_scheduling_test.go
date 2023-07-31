@@ -17,8 +17,6 @@ func initWarehouse() {
 	admin.Init()
 	logger.Reset()
 	Init()
-	Init2()
-	Init3()
 	Init4()
 }
 
@@ -124,13 +122,5 @@ var _ = Describe("Scheduling", func() {
 			"2006-01-02 15:04:05.999999 Z",
 			"2006-01-02 15:05:05.999999 Z",
 		),
-	)
-
-	DescribeTable("DurationBeforeNextAttempt", func(attempt int, expected time.Duration) {
-		Expect(DurationBeforeNextAttempt(int64(attempt))).To(Equal(expected))
-	},
-		Entry(nil, 0, time.Duration(0)),
-		Entry(nil, 1, time.Second*60),
-		Entry(nil, 2, time.Second*120),
 	)
 })

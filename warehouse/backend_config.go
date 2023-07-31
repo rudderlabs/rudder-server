@@ -53,6 +53,7 @@ func newBackendConfigManager(
 			},
 		)
 	}
+	bcm.shouldPopulateHistoricIdentities = c.GetBool("Warehouse.populateHistoricIdentities", false)
 	return bcm
 }
 
@@ -80,6 +81,8 @@ type backendConfigManager struct {
 
 	sourceIDsByWorkspace   map[string][]string // workspaceID -> []sourceIDs
 	sourceIDsByWorkspaceMu sync.RWMutex
+
+	shouldPopulateHistoricIdentities bool
 }
 
 func (s *backendConfigManager) Start(ctx context.Context) {
@@ -150,7 +153,7 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 					continue
 				}
 
-				wh := &HandleT{
+				wh := &Router{
 					dbHandle:     s.db,
 					whSchemaRepo: s.schema,
 					conf:         s.conf,
@@ -190,7 +193,7 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 
 				if whutils.IDResolutionEnabled() && slices.Contains(whutils.IdentityEnabledWarehouses, warehouse.Type) {
 					wh.setupIdentityTables(ctx, warehouse)
-					if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
+					if s.shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
 						// non-blocking populate historic identities
 						wh.populateHistoricIdentities(ctx, warehouse)
 					}

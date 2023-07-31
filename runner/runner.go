@@ -339,8 +339,6 @@ func runAllInit() {
 	jobsdb.Init()
 	jobsdb.Init2()
 	warehouse.Init()
-	warehouse.Init2()
-	warehouse.Init3()
 	warehouse.Init4()
 	warehouse.Init6()
 	warehousearchiver.Init()

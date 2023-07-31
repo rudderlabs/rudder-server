@@ -60,8 +60,6 @@ func initWarehouse() {
 	admin.Init()
 	logger.Reset()
 	Init()
-	Init2()
-	Init3()
 	Init4()
 	validations.Init()
 	misc.Init()
@@ -146,7 +144,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			ctx := context.Background()
 			store := memstats.New()
 
-			wh := HandleT{
+			wh := Router{
 				destType:     tc.destType,
 				stats:        store,
 				dbHandle:     sqlquerywrapper.New(pgResource.DB),
@@ -339,7 +337,7 @@ func Test_GetNamespace(t *testing.T) {
 			conf := config.New()
 			store := memstats.New()
 
-			wh := HandleT{
+			wh := Router{
 				destType:     tc.destType,
 				stats:        store,
 				dbHandle:     sqlquerywrapper.New(pgResource.DB),
