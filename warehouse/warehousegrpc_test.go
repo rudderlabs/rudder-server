@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/code"
@@ -639,8 +641,12 @@ func setupWarehouseGRPCTest(
 
 	pkgLogger = logger.NOP
 
+	tenantManager = &multitenant.Manager{
+		BackendConfig: backendConfig.DefaultBackendConfig,
+	}
+
 	bcManager = newBackendConfigManager(
-		config.Default, wrappedDBHandle, backendConfig.DefaultBackendConfig, nil,
+		config.Default, wrappedDBHandle, tenantManager, nil,
 	)
 	resetBackendConfigManager := func() {
 		wh := model.Warehouse{
