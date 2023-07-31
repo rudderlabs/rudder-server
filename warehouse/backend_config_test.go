@@ -244,4 +244,32 @@ func TestBackendConfigManager(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Many subscribers", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		numSubscribers := 1000
+		manyBCM := newBackendConfigManager(c, db, mockBackendConfig, logger.NOP)
+		subscriptionsChs := make([]<-chan []model.Warehouse, numSubscribers)
+
+		for i := 0; i < numSubscribers; i++ {
+			subscriptionsChs[i] = manyBCM.Subscribe(ctx)
+		}
+
+		go func() {
+			manyBCM.Start(ctx)
+		}()
+
+		for i := 0; i < numSubscribers; i++ {
+			require.Len(t, <-subscriptionsChs[i], 1)
+		}
+
+		cancel()
+
+		for i := 0; i < numSubscribers; i++ {
+			w, ok := <-subscriptionsChs[i]
+			require.Nil(t, w)
+			require.False(t, ok)
+		}
+	})
 }
