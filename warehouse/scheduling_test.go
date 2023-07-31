@@ -20,7 +20,6 @@ func initWarehouse() {
 	Init2()
 	Init3()
 	Init4()
-	Init5()
 }
 
 var _ = Describe("Scheduling", func() {

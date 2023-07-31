@@ -660,7 +660,7 @@ func setupWarehouseGRPCTest(
 	}
 	resetBackendConfigManager()
 
-	require.NoError(t, InitWarehouseAPI(pgResource.DB, logger.NOP))
+	require.NoError(t, InitWarehouseAPI(pgResource.DB, bcManager, logger.NOP))
 
 	return pgResource, resetBackendConfigManager
 }

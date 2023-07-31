@@ -88,7 +88,6 @@ var (
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
 	uploadAllocatorSleep                time.Duration
-	waitForConfig                       time.Duration
 	waitForWorkerSleep                  time.Duration
 	ShouldForceSetLowerVersion          bool
 	maxParallelJobCreation              int
@@ -181,7 +180,6 @@ func loadConfig() {
 	runningMode = config.GetString("Warehouse.runningMode", "")
 	config.RegisterDurationConfigVariable(30, &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterDurationConfigVariable(5, &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
-	config.RegisterDurationConfigVariable(5, &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
@@ -257,6 +255,10 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJob) error {
 func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 	for warehouses := range bcManager.Subscribe(ctx) {
 		wh.Logger.Info(`Received updated workspace config`)
+
+		warehouses = lo.Filter(warehouses, func(warehouse model.Warehouse, _ int) bool {
+			return warehouse.Destination.DestinationDefinition.Name == wh.destType
+		})
 
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = warehouses
@@ -1453,11 +1455,13 @@ func Start(ctx context.Context, app app.App) error {
 		bcManager.Start(ctx)
 	})
 
+	RegisterAdmin(bcManager, pkgLogger)
+
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
-			err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
 			if err != nil {
 				pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 				return err
@@ -1554,7 +1558,7 @@ func Start(ctx context.Context, app app.App) error {
 			return nil
 		}))
 
-		err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+		err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
 		if err != nil {
 			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 			return err
