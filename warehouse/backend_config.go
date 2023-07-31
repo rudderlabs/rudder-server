@@ -20,7 +20,6 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// TODO: add tests
 func newBackendConfigManager(
 	c *config.Config,
 	db *sqlquerywrapper.DB,
@@ -106,6 +105,12 @@ func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan []model.War
 	ch := make(chan []model.Warehouse, 10)
 	s.subscriptions = append(s.subscriptions, ch)
 
+	s.warehousesMu.Lock()
+	if len(s.warehouses) > 0 {
+		ch <- s.warehouses
+	}
+	s.warehousesMu.Unlock()
+
 	go func() {
 		<-ctx.Done()
 
@@ -126,26 +131,23 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 	})
 
 	var (
-		warehouses               []model.Warehouse
-		connectionFlags          backendconfig.ConnectionFlags
-		sourceIDsByWorkspaceTemp = make(map[string][]string)
+		warehouses           []model.Warehouse
+		connectionFlags      backendconfig.ConnectionFlags
+		sourceIDsByWorkspace = make(map[string][]string)
 	)
+
 	for workspaceID, wConfig := range data {
 		// the last connection flags should be enough, since they are all the same in multi-workspace environments
 		connectionFlags = wConfig.ConnectionFlags
-		// map source IDs to workspace IDs
-		workspaceBySourceIDs := make(map[string]string)
 
 		for _, source := range wConfig.Sources {
-			workspaceBySourceIDs[source.ID] = workspaceID
-
-			if _, ok := sourceIDsByWorkspaceTemp[workspaceID]; !ok {
-				sourceIDsByWorkspaceTemp[workspaceID] = make([]string, 0, len(wConfig.Sources))
+			if _, ok := sourceIDsByWorkspace[workspaceID]; !ok {
+				sourceIDsByWorkspace[workspaceID] = make([]string, 0, len(wConfig.Sources))
 			}
-			sourceIDsByWorkspaceTemp[workspaceID] = append(sourceIDsByWorkspaceTemp[workspaceID], source.ID)
+			sourceIDsByWorkspace[workspaceID] = append(sourceIDsByWorkspace[workspaceID], source.ID)
 
 			for _, destination := range source.Destinations {
-				if !slices.Contains(whutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+				if _, ok := warehouseutils.WarehouseDestinationMap[destination.DestinationDefinition.Name]; !ok {
 					s.logger.Debugf("Not a warehouse destination, skipping %s", destination.DestinationDefinition.Name)
 					continue
 				}
@@ -204,7 +206,7 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 	s.warehousesMu.Unlock()
 
 	s.sourceIDsByWorkspaceMu.Lock()
-	s.sourceIDsByWorkspace = sourceIDsByWorkspaceTemp
+	s.sourceIDsByWorkspace = sourceIDsByWorkspace
 	s.sourceIDsByWorkspaceMu.Unlock()
 
 	s.subscriptionsMu.Lock()

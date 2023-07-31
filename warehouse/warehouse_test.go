@@ -63,7 +63,6 @@ func initWarehouse() {
 	Init2()
 	Init3()
 	Init4()
-	Init5()
 	validations.Init()
 	misc.Init()
 }

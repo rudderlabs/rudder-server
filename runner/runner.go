@@ -342,7 +342,6 @@ func runAllInit() {
 	warehouse.Init2()
 	warehouse.Init3()
 	warehouse.Init4()
-	warehouse.Init5()
 	warehouse.Init6()
 	warehousearchiver.Init()
 	validations.Init()

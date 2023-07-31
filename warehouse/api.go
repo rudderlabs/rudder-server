@@ -107,6 +107,7 @@ type UploadAPIT struct {
 	warehouseDBHandle *DB
 	log               logger.Logger
 	connectionManager *controlplane.ConnectionManager
+	bcManager         *backendConfigManager
 	isMultiWorkspace  bool
 }
 
@@ -119,7 +120,7 @@ const (
 	NoSuchSync              = "No such sync exist"
 )
 
-func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
+func InitWarehouseAPI(dbHandle *sql.DB, bcManager *backendConfigManager, log logger.Logger) error {
 	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
 	if err != nil {
 		return err
@@ -161,6 +162,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 				})
 			},
 		},
+		bcManager: bcManager,
 	}
 	return nil
 }
@@ -528,8 +530,8 @@ func (uploadReq *UploadReq) validateReq() error {
 }
 
 func (uploadReq *UploadReq) authorizeSource(sourceID string) bool {
-	currentList := bcManager.SourceIDsByWorkspace()
-	authorizedSourceIDs, ok := currentList[uploadReq.WorkspaceID] // TODO remove global variable
+	currentList := uploadReq.API.bcManager.SourceIDsByWorkspace()
+	authorizedSourceIDs, ok := currentList[uploadReq.WorkspaceID]
 	if !ok {
 		pkgLogger.Errorf(`Could not find sourceID in workspace %q: %v`, uploadReq.WorkspaceID, currentList)
 		return false
@@ -541,7 +543,7 @@ func (uploadReq *UploadReq) authorizeSource(sourceID string) bool {
 
 func (uploadsReq *UploadsReq) authorizedSources() []string {
 	pkgLogger.Debugf(`Getting authorizedSourceIDs for workspace:%s`, uploadsReq.WorkspaceID)
-	return bcManager.SourceIDsByWorkspace()[uploadsReq.WorkspaceID] // TODO remove global variable
+	return uploadsReq.API.bcManager.SourceIDsByWorkspace()[uploadsReq.WorkspaceID]
 }
 
 func (uploadsReq *UploadsReq) getUploadsFromDB(ctx context.Context, isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
