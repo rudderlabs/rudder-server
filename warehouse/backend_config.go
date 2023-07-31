@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"sync"
 
+	"github.com/samber/lo"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -20,10 +22,10 @@ import (
 
 // TODO: add tests
 func newBackendConfigManager(
-	c *config.Config, // TODO possibly use this to get all the needed variables
-	wrappedDB *sqlquerywrapper.DB,
+	c *config.Config,
+	db *sqlquerywrapper.DB,
 	bc backendconfig.BackendConfig,
-	l logger.Logger,
+	log logger.Logger,
 ) *backendConfigManager {
 	if c == nil {
 		c = config.Default
@@ -31,21 +33,21 @@ func newBackendConfigManager(
 	if bc == nil {
 		bc = backendconfig.DefaultBackendConfig
 	}
-	if l == nil {
-		l = logger.NOP
+	if log == nil {
+		log = logger.NOP
 	}
 	bcm := &backendConfigManager{
 		conf:                 c,
-		db:                   wrappedDB,
-		schema:               repo.NewWHSchemas(wrappedDB),
+		db:                   db,
+		schema:               repo.NewWHSchemas(db),
 		backendConfig:        bc,
-		logger:               l,
+		logger:               log,
 		initialConfigFetched: make(chan struct{}),
 		connectionsMap:       make(map[string]map[string]model.Warehouse),
 	}
-	if config.GetBool("ENABLE_TUNNELLING", true) {
+	if c.GetBool("ENABLE_TUNNELLING", true) {
 		bcm.internalControlPlaneClient = cpclient.NewInternalClientWithCache(
-			backendconfig.GetConfigBackendURL(),
+			c.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 			cpclient.BasicAuth{
 				Username: c.GetString("CP_INTERNAL_API_USERNAME", ""),
 				Password: c.GetString("CP_INTERNAL_API_PASSWORD", ""),
@@ -66,8 +68,9 @@ type backendConfigManager struct {
 
 	initialConfigFetched          chan struct{}
 	closeInitialConfigFetchedOnce sync.Once
-	subscriptions                 []chan []model.Warehouse
-	subscriptionsMu               sync.Mutex
+
+	subscriptions   []chan []model.Warehouse
+	subscriptionsMu sync.Mutex
 
 	// variables to store the backend configuration
 	warehouses   []model.Warehouse
@@ -86,7 +89,10 @@ func (s *backendConfigManager) Start(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case data := <-ch:
+		case data, ok := <-ch:
+			if !ok {
+				return
+			}
 			s.processData(ctx, data.Data.(map[string]backendconfig.ConfigT))
 		}
 	}
@@ -246,26 +252,20 @@ func (s *backendConfigManager) SourceIDsByWorkspace() map[string][]string {
 func (s *backendConfigManager) WarehousesBySourceID(sourceID string) []model.Warehouse {
 	s.warehousesMu.RLock()
 	defer s.warehousesMu.RUnlock()
-	var warehouses []model.Warehouse
-	for _, wh := range s.warehouses {
-		if wh.Source.ID == sourceID {
-			warehouses = append(warehouses, wh)
-		}
-	}
-	return warehouses
+
+	return lo.Filter(s.warehouses, func(w model.Warehouse, _ int) bool {
+		return w.Source.ID == sourceID
+	})
 }
 
 // WarehousesByDestID gets all WHs for the given destination ID
 func (s *backendConfigManager) WarehousesByDestID(destID string) []model.Warehouse {
 	s.warehousesMu.RLock()
 	defer s.warehousesMu.RUnlock()
-	var warehouses []model.Warehouse
-	for _, wh := range s.warehouses {
-		if wh.Destination.ID == destID {
-			warehouses = append(warehouses, wh)
-		}
-	}
-	return warehouses
+
+	return lo.Filter(s.warehouses, func(w model.Warehouse, _ int) bool {
+		return w.Destination.ID == destID
+	})
 }
 
 func (s *backendConfigManager) attachSSHTunnellingInfo(
@@ -277,7 +277,8 @@ func (s *backendConfigManager) attachSSHTunnellingInfo(
 		return upstream
 	}
 
-	pkgLogger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
+	s.logger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
+
 	keys, err := s.internalControlPlaneClient.GetDestinationSSHKeys(ctx, upstream.ID)
 	if err != nil {
 		s.logger.Errorf("fetching ssh keys for destination: %s", err.Error())
