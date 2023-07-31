@@ -2,9 +2,14 @@ package warehouse
 
 import (
 	"context"
+	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
+
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
@@ -104,9 +109,13 @@ func TestBackendConfigManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bcm := newBackendConfigManager(c, db, mockBackendConfig, logger.NOP)
+	tenantManager = &multitenant.Manager{
+		BackendConfig: mockBackendConfig,
+	}
 
 	t.Run("Subscriptions", func(t *testing.T) {
+		bcm := newBackendConfigManager(c, db, tenantManager, logger.NOP)
+
 		require.False(t, bcm.IsInitialized())
 		require.Equal(t, bcm.Connections(), map[string]map[string]model.Warehouse{})
 
@@ -181,6 +190,8 @@ func TestBackendConfigManager(t *testing.T) {
 	})
 
 	t.Run("Tunnelling", func(t *testing.T) {
+		bcm := newBackendConfigManager(c, db, tenantManager, logger.NOP)
+
 		testCases := []struct {
 			name     string
 			input    backendconfig.DestinationT
@@ -244,4 +255,219 @@ func TestBackendConfigManager(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Many subscribers", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		numSubscribers := 1000
+		bcm := newBackendConfigManager(c, db, tenantManager, logger.NOP)
+		subscriptionsChs := make([]<-chan []model.Warehouse, numSubscribers)
+
+		for i := 0; i < numSubscribers; i++ {
+			subscriptionsChs[i] = bcm.Subscribe(ctx)
+		}
+
+		go func() {
+			bcm.Start(ctx)
+		}()
+
+		for i := 0; i < numSubscribers; i++ {
+			require.Len(t, <-subscriptionsChs[i], 1)
+		}
+
+		cancel()
+
+		for i := 0; i < numSubscribers; i++ {
+			w, ok := <-subscriptionsChs[i]
+			require.Nil(t, w)
+			require.False(t, ok)
+		}
+	})
+}
+
+func TestBackendConfigManager_Namespace(t *testing.T) {
+	testcases := []struct {
+		config            map[string]interface{}
+		source            backendconfig.SourceT
+		destination       backendconfig.DestinationT
+		expectedNamespace string
+		setConfig         bool
+	}{
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"database": "test_db",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.CLICKHOUSE,
+				},
+			},
+			expectedNamespace: "test_db",
+			setConfig:         false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.CLICKHOUSE,
+				},
+			},
+			expectedNamespace: "rudder",
+			setConfig:         false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "test_namespace",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destinationType-1",
+				},
+			},
+			expectedNamespace: "test_namespace",
+			setConfig:         false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "      test_namespace        ",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destinationType-1",
+				},
+			},
+			expectedNamespace: "test_namespace",
+			setConfig:         false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "##",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destinationType-1",
+				},
+			},
+			expectedNamespace: "stringempty",
+			setConfig:         false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"namespace": "##evrnvrv$vtr&^",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destinationType-1",
+				},
+			},
+			expectedNamespace: "evrnvrv_vtr",
+			setConfig:         false,
+		},
+		{
+			source: backendconfig.SourceT{},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destinationType-1",
+				},
+			},
+			expectedNamespace: "config_result",
+			setConfig:         true,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "test-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "test-destinationID",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destinationType-1",
+				},
+			},
+			expectedNamespace: "test-namespace",
+			setConfig:         false,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "random-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "random-destinationID",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destinationType-1",
+				},
+			},
+			expectedNamespace: "test_source",
+			setConfig:         false,
+		},
+		{
+			source: backendconfig.SourceT{
+				Name: "test-source",
+				ID:   "test-sourceID",
+			},
+			destination: backendconfig.DestinationT{
+				Config: map[string]interface{}{},
+				ID:     "test-destinationID",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "test-destinationType-1",
+				},
+			},
+			expectedNamespace: "config_result_test_source",
+			setConfig:         true,
+		},
+	}
+
+	for _, tc := range testcases {
+		tc := tc
+
+		t.Run("should return namespace", func(t *testing.T) {
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			pgResource, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+
+			db := sqlquerywrapper.New(
+				pgResource.DB,
+				sqlquerywrapper.WithLogger(logger.NOP),
+			)
+
+			err = (&migrator.Migrator{
+				Handle:          db.DB,
+				MigrationsTable: "wh_schema_migrations",
+			}).Migrate("warehouse")
+			require.NoError(t, err)
+
+			c := config.New()
+
+			if tc.setConfig {
+				c.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destination.DestinationDefinition.Name]), "config_result")
+			}
+
+			sqlStatement, err := os.ReadFile("testdata/sql/namespace_test.sql")
+			require.NoError(t, err)
+
+			_, err = pgResource.DB.Exec(string(sqlStatement))
+			require.NoError(t, err)
+
+			bcm := newBackendConfigManager(
+				c, db,
+				tenantManager,
+				logger.NOP,
+			)
+
+			namespace := bcm.namespace(context.Background(), tc.source, tc.destination)
+			require.Equal(t, tc.expectedNamespace, namespace)
+		})
+	}
 }

@@ -51,7 +51,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -260,6 +259,16 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 			return warehouse.Destination.DestinationDefinition.Name == wh.destType
 		})
 
+		for _, warehouse := range warehouses {
+			if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+				wh.setupIdentityTables(ctx, warehouse)
+				if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
+					// non-blocking populate historic identities
+					wh.populateHistoricIdentities(ctx, warehouse)
+				}
+			}
+		}
+
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = warehouses
 		if wh.workspaceBySourceIDs == nil {
@@ -275,10 +284,6 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 			wh.workerChannelMap = make(map[string]chan *UploadJob)
 		}
 		for _, warehouse := range warehouses {
-			if warehouse.Destination.DestinationDefinition.Name != wh.destType {
-				continue
-			}
-
 			workerName := wh.workerIdentifier(warehouse)
 			// spawn one worker for each unique destID_namespace
 			// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
@@ -290,46 +295,6 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		}
 		wh.workerChannelMapLock.Unlock()
 	}
-}
-
-// getNamespace sets namespace name in the following order
-//  1. user set name from destinationConfig
-//  2. from existing record in wh_schemas with same source + dest combo
-//  3. convert source name
-func (wh *HandleT) getNamespace(ctx context.Context, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
-	configMap := destination.Config
-	if wh.destType == warehouseutils.CLICKHOUSE {
-		if _, ok := configMap["database"].(string); ok {
-			return configMap["database"].(string)
-		}
-		return "rudder"
-	}
-	if configMap["namespace"] != nil {
-		namespace, _ := configMap["namespace"].(string)
-		if len(strings.TrimSpace(namespace)) > 0 {
-			return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, namespace))
-		}
-	}
-	// TODO: Move config to global level based on use case
-	namespacePrefix := wh.conf.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[wh.destType]), "")
-	if namespacePrefix != "" {
-		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
-	}
-
-	namespace, err := wh.whSchemaRepo.GetNamespace(ctx, source.ID, destination.ID)
-	if err != nil {
-		pkgLogger.Errorw("getting namespace",
-			logfield.SourceID, source.ID,
-			logfield.DestinationID, destination.ID,
-			logfield.DestinationType, destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, destination.WorkspaceID,
-		)
-		return ""
-	}
-	if namespace == "" {
-		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, source.Name))
-	}
-	return namespace
 }
 
 func (wh *HandleT) setDestInProgress(warehouse model.Warehouse, jobID int64) {
@@ -866,9 +831,7 @@ func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.Conf
 	pkgLogger.Debug("Got config from config-backend", config)
 
 	enabledDestinations := make(map[string]bool)
-	var connectionFlags backendconfig.ConnectionFlags
 	for _, wConfig := range config {
-		connectionFlags = wConfig.ConnectionFlags // the last connection flags should be enough, since they are all the same in multi-workspace environments
 		for _, source := range wConfig.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
@@ -887,11 +850,6 @@ func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.Conf
 					}
 				}
 			}
-		}
-	}
-	if val, ok := connectionFlags.Services["warehouse"]; ok {
-		if UploadAPI.connectionManager != nil {
-			UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
 		}
 	}
 
@@ -1447,12 +1405,23 @@ func Start(ctx context.Context, app app.App) error {
 		}
 	}()
 
+	g, ctx := errgroup.WithContext(ctx)
+
+	tenantManager = &multitenant.Manager{
+		BackendConfig: backendconfig.DefaultBackendConfig,
+	}
+	g.Go(func() error {
+		tenantManager.Run(ctx)
+		return nil
+	})
+
 	bcManager = newBackendConfigManager(
-		config.Default, wrappedDBHandle, backendconfig.DefaultBackendConfig,
+		config.Default, wrappedDBHandle, tenantManager,
 		pkgLogger.Child("wh_bc_manager"),
 	)
-	rruntime.GoForWarehouse(func() {
+	g.Go(func() error {
 		bcManager.Start(ctx)
+		return nil
 	})
 
 	RegisterAdmin(bcManager, pkgLogger)
@@ -1475,8 +1444,6 @@ func Start(ctx context.Context, app app.App) error {
 	if err != nil {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
-
-	g, ctx := errgroup.WithContext(ctx)
 
 	// Setting up reporting client
 	// only if standalone or embedded connecting to diff DB for warehouse
@@ -1528,14 +1495,6 @@ func Start(ctx context.Context, app app.App) error {
 			backendconfig.DefaultBackendConfig.Identity(),
 			controlplane.WithRegion(region),
 		)
-
-		tenantManager = &multitenant.Manager{
-			BackendConfig: backendconfig.DefaultBackendConfig,
-		}
-		g.Go(func() error {
-			tenantManager.Run(ctx)
-			return nil
-		})
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)

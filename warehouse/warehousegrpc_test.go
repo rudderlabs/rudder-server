@@ -3,6 +3,7 @@ package warehouse
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	"net/http"
 	"os"
 	"testing"
@@ -639,8 +640,12 @@ func setupWarehouseGRPCTest(
 
 	pkgLogger = logger.NOP
 
+	tenantManager = &multitenant.Manager{
+		BackendConfig: backendConfig.DefaultBackendConfig,
+	}
+
 	bcManager = newBackendConfigManager(
-		config.Default, wrappedDBHandle, backendConfig.DefaultBackendConfig, nil,
+		config.Default, wrappedDBHandle, tenantManager, nil,
 	)
 	resetBackendConfigManager := func() {
 		wh := model.Warehouse{
