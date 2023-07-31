@@ -109,7 +109,9 @@ func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan []model.War
 	s.subscriptions = append(s.subscriptions, ch)
 
 	s.warehousesMu.Lock()
-	ch <- s.warehouses
+	if len(s.warehouses) > 0 {
+		ch <- s.warehouses
+	}
 	s.warehousesMu.Unlock()
 
 	go func() {
