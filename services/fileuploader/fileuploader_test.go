@@ -2,7 +2,6 @@ package fileuploader
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 
@@ -125,7 +124,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	Expect(fm3.Prefix()).To(Equal("defaultPrefixWithStorageTTL"))
 
 	fm0, err := fileUploaderProvider.GetFileManager("testWorkspaceId-0")
-	Expect(err).To(Equal(fmt.Errorf(noStorageForWorkspaceErrorString, "testWorkspaceId-0")))
+	Expect(err).To(Equal(NoStorageForWorkspaceError))
 	Expect(fm0).To(BeNil())
 
 	storageSettings.Wait()
@@ -137,7 +136,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	))
 
 	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
-	Expect(err).To(Equal(fmt.Errorf(noStorageForWorkspaceErrorString, "testWorkspaceId-0")))
+	Expect(err).To(Equal(NoStorageForWorkspaceError))
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 
 	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-2")
@@ -251,6 +250,7 @@ func TestOverride(t *testing.T) {
 			"d": "5",
 		},
 	}
+
 	bucket = overrideWithSettings(config, settings, "wrk-1")
 	Expect(bucket.Config).To(Equal(map[string]interface{}{
 		"a":          "1",
