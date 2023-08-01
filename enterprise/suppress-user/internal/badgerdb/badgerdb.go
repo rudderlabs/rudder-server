@@ -240,6 +240,7 @@ func (b *Repository) start() (startErr error) {
 				b.log.Error("Failed to restore badgerdb", "error", err)
 				return err
 			}
+			b.log.Infow("Badgerdb finished restoring")
 			return nil
 		})
 		select {
@@ -249,7 +250,7 @@ func (b *Repository) start() (startErr error) {
 				return startErr
 			}
 		case <-time.After(b.maxSeedWait):
-			b.log.Warn("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
+			b.log.Warnf("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
 		}
 	}
 

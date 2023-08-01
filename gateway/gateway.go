@@ -793,6 +793,7 @@ func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) b
 	}
 	if metadata := gateway.suppressUserHandler.GetSuppressedUser(workspaceID, userID, sourceID); metadata != nil {
 		if !metadata.CreatedAt.IsZero() {
+			gateway.logger.Infow("user suppressed", "userID", userID, "createdAt", metadata.CreatedAt)
 			gateway.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{
 				"workspaceId": workspaceID,
 				"sourceID":    sourceID,
