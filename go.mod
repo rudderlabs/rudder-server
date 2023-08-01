@@ -34,7 +34,7 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.11.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.44.307
+	github.com/aws/aws-sdk-go v1.44.312
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -75,12 +75,12 @@ require (
 	github.com/rudderlabs/sql-tunnels v0.1.3
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.42
-	github.com/snowflakedb/gosnowflake v1.6.22
+	github.com/snowflakedb/gosnowflake v1.6.23
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/viper v1.15.0
 	github.com/stretchr/testify v1.8.4
-	github.com/tidwall/gjson v1.14.4
+	github.com/tidwall/gjson v1.15.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/viney-shih/go-lock v1.1.2
@@ -95,9 +95,9 @@ require (
 	golang.org/x/exp v0.0.0-20230418202329-0354be287a23
 	golang.org/x/oauth2 v0.10.0
 	golang.org/x/sync v0.3.0
-	google.golang.org/api v0.133.0
+	google.golang.org/api v0.134.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771
-	google.golang.org/grpc v1.56.2
+	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.31.0
 )
 
@@ -122,7 +122,7 @@ require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/arrow/go/v11 v11.0.0 // indirect
-	github.com/apache/arrow/go/v12 v12.0.0 // indirect
+	github.com/apache/arrow/go/v12 v12.0.1 // indirect
 	github.com/apache/thrift v0.17.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.17.7 // indirect
