@@ -449,8 +449,9 @@ var _ = Describe("Bing ads", func() {
 			}
 
 			expectedResp := common.PollStatusResponse{
-				HasFailed:  true,
-				StatusCode: 500,
+				HasFailed:     true,
+				StatusCode:    500,
+				FailedJobURLs: ",", // empty file
 			}
 			recievedResponse := bulkUploader.Poll(pollInput)
 

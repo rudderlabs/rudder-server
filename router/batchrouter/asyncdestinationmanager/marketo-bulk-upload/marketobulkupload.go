@@ -49,7 +49,7 @@ type marketoPollInputStruct struct {
 }
 
 func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-	var finalPollInput = marketoPollInputStruct{
+	finalPollInput := marketoPollInputStruct{
 		ImportId:   pollInput.ImportId,
 		DestType:   "MARKETO_BULK_UPLOAD",
 		DestConfig: b.destinationConfig,
@@ -211,7 +211,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		return destURL
 	}
 	destinationID := destination.ID
-	destinationUploadUrl := asyncDestStruct.URL
+	destinationUploadUrl := asyncDestStruct.DestinationUploadURL
 	url := resolveURL(b.transformUrl, destinationUploadUrl)
 	filePath := asyncDestStruct.FileName
 	destConfig := destination.Config
