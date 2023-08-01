@@ -175,14 +175,6 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 		}
 		brt.asyncAbortedJobCount.Count(len(statusList))
 		brt.updateProcessedEventsMetrics(statusList)
-	} else {
-		statusList := prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Failed.State})
-		if err := brt.updateJobStatuses(ctx, destinationID, statusList); err != nil {
-			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-			return err
-		}
-		brt.asyncFailedJobCount.Count(len(statusList))
-		brt.updateProcessedEventsMetrics(statusList)
 	}
 	return nil
 }
