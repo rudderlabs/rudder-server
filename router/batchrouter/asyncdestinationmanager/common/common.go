@@ -92,20 +92,20 @@ type ImportParameters struct {
 }
 
 type AsyncDestinationStruct struct {
-	ImportingJobIDs  []int64
-	FailedJobIDs     []int64
-	Exists           bool
-	Size             int
-	CreatedAt        time.Time
-	FileName         string
-	Count            int
-	CanUpload        bool
-	UploadInProgress bool
-	UploadMutex      sync.RWMutex
-	URL              string
-	RsourcesStats    rsources.StatsCollector
-	Destination      *backendconfig.DestinationT
-	Manager          AsyncDestinationManager
+	ImportingJobIDs      []int64
+	FailedJobIDs         []int64
+	Exists               bool
+	Size                 int
+	CreatedAt            time.Time
+	FileName             string
+	Count                int
+	CanUpload            bool
+	UploadInProgress     bool
+	UploadMutex          sync.RWMutex
+	DestinationUploadURL string
+	RsourcesStats        rsources.StatsCollector
+	Destination          *backendconfig.DestinationT
+	Manager              AsyncDestinationManager
 }
 
 type AsyncFailedPayload struct {

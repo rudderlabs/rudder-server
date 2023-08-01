@@ -216,7 +216,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		return destURL
 	}
 	destinationID := destination.ID
-	destinationUploadUrl := asyncDestStruct.URL
+	destinationUploadUrl := asyncDestStruct.DestinationUploadURL
 	url := resolveURL(b.transformUrl, destinationUploadUrl)
 	filePath := asyncDestStruct.FileName
 	destConfig := destination.Config

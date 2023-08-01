@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	uuid "github.com/google/uuid"
+	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -180,7 +180,7 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 
 	errJobs = st.storeErrorsToObjectStorage(jobsToFail)
 	require.Equal(t, 1, len(errJobs))
-	require.Equal(t, errJobs[0].errorOutput.Error.Error(), "no storage settings found for workspace: defaultWorkspaceID-5")
+	require.Equal(t, errJobs[0].errorOutput.Error, fileuploader.NoStorageForWorkspaceError)
 }
 
 func countJobsByWorkspace(jobs []*jobsdb.JobT) map[string]int {

@@ -40,7 +40,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	var successJobs []int64
 	var importIds []string
 	var errors []string
-	actionFiles, err := b.createZipFile(asyncDestStruct.FileName, misc.MapLookup(asyncDestStruct.Destination.Config, "audienceId").(string))
+	actionFiles, err := b.createZipFile(asyncDestStruct.FileName, misc.MapLookup(destination.Config, "audienceId").(string))
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -80,6 +80,12 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			b.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
 			errors = append(errors, fmt.Sprintf("%s:error in uploading the bulk file: %v", actionFile.Action, errorDuringUpload))
+
+			// remove the file that could not be uploaded
+			err = os.Remove(actionFile.ZipFilePath)
+			if err != nil {
+				b.logger.Error("Error in removing zip file: %v", err)
+			}
 			continue
 		}
 
@@ -152,17 +158,14 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	var cumulativeResp common.PollStatusResponse
 	var completionStatus []bool
 	var failedJobURLs []string
-	var cumulativeCompletionStatus, cumulativeProgressStatus, cumulativeFailureStatus bool
+	var pollStatusCode []int
+	var cumulativeProgressStatus, cumulativeFailureStatus bool
+	var cumulativeStatusCode int
 	requestIdsArray := lo.Reject(strings.Split(pollInput.ImportId, commaSeparator), func(url string, _ int) bool {
 		return url == ""
 	})
 	for _, requestId := range requestIdsArray {
 		resp := b.pollSingleImport(requestId)
-		if resp.StatusCode != 200 {
-			// if any of the request fails then the whole request fails
-			cumulativeResp = resp
-			return cumulativeResp
-		}
 		/*
 			Cumulative Response logic:
 			1. If any of the request is in progress then the whole request is in progress and it should retry
@@ -171,17 +174,22 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			4. if any of the requests are failed then the whole request is failed and retried
 			5. if all the requests are failed then the whole request is failed
 		*/
+		pollStatusCode = append(pollStatusCode, resp.StatusCode)
 		completionStatus = append(completionStatus, resp.Complete)
-		cumulativeCompletionStatus = !lo.Contains(completionStatus, false)
 		failedJobURLs = append(failedJobURLs, resp.FailedJobURLs)
 		cumulativeProgressStatus = cumulativeProgressStatus || resp.InProgress
 		cumulativeFailureStatus = cumulativeFailureStatus || resp.HasFailed
 	}
+	if lo.Contains(pollStatusCode, 500) {
+		cumulativeStatusCode = 500
+	} else {
+		cumulativeStatusCode = 200
+	}
 
 	cumulativeResp = common.PollStatusResponse{
-		Complete:      cumulativeCompletionStatus,
+		Complete:      !lo.Contains(completionStatus, false),
 		InProgress:    cumulativeProgressStatus,
-		StatusCode:    200,
+		StatusCode:    cumulativeStatusCode,
 		HasFailed:     cumulativeFailureStatus,
 		FailedJobURLs: strings.Join(failedJobURLs, commaSeparator), // creating a comma separated string of all the result file urls
 	}
