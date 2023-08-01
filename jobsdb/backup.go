@@ -4,19 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/cenkalti/backoff"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -552,8 +554,13 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 				return fmt.Errorf("scanning row failed with error : %w", err)
 			}
 			preferences, err := jd.fileUploaderProvider.GetStoragePreferences(workspaceID)
+			if errors.Is(err, fileuploader.NoStorageForWorkspaceError) {
+				offset++
+				jd.logger.Infof("getting storage preferences failed with error: %w for workspaceID: %s", err, workspaceID)
+				continue
+			}
 			if err != nil {
-				return fmt.Errorf("getting storage preferences failed with error : %w", err)
+				return fmt.Errorf("getting storage preferences failed with error: %w for workspaceID: %s", err, workspaceID)
 			}
 			if !preferences.Backup(jd.tablePrefix) {
 				offset++
@@ -561,9 +568,6 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 				continue
 			}
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
-			if err != nil {
-				return fmt.Errorf("error while appending '\n': %w", err)
-			}
 			path, err := pathFunc(workspaceID)
 			if err != nil {
 				return fmt.Errorf("error while getting path: %w", err)
