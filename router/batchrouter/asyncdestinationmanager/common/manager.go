@@ -20,6 +20,7 @@ func (f *InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUp
 func (f *InvalidManager) Poll(_ AsyncPoll) PollStatusResponse {
 	return PollStatusResponse{
 		StatusCode: 400,
+		Error:      "Invalid manager",
 	}
 }
 

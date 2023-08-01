@@ -49,7 +49,7 @@ type marketoPollInputStruct struct {
 }
 
 func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-	var finalPollInput = marketoPollInputStruct{
+	finalPollInput := marketoPollInputStruct{
 		ImportId:   pollInput.ImportId,
 		DestType:   "MARKETO_BULK_UPLOAD",
 		DestConfig: b.destinationConfig,
@@ -60,6 +60,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		return common.PollStatusResponse{
 			StatusCode: 500,
 			HasFailed:  true,
+			Error:      "Error in Marshalling Poll Input: " + err.Error(),
 		}
 	}
 	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(b.transformUrl+b.pollUrl, payload, b.timeout)
@@ -67,8 +68,11 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		return common.PollStatusResponse{
 			StatusCode: transformerConnectionStatus,
 			HasFailed:  true,
+			Error:      fmt.Sprintf("Error in Polling Status from Transformer. Status Code: %d", transformerConnectionStatus),
 		}
 	}
+
+	fmt.Println("[MARKETO] Poll Response: ", string(bodyBytes))
 	var asyncResponse common.PollStatusResponse
 	err = json.Unmarshal(bodyBytes, &asyncResponse)
 	if err != nil {
@@ -77,6 +81,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		return common.PollStatusResponse{
 			StatusCode: 500,
 			HasFailed:  true,
+			Error:      "Error in Unmarshalling Poll Response: " + err.Error(),
 		}
 	}
 	return asyncResponse

@@ -30,6 +30,7 @@ type PollStatusResponse struct {
 	HasWarning     bool
 	FailedJobURLs  string
 	WarningJobsURL string
+	Error          string `json:"error"`
 }
 type AsyncUploadOutput struct {
 	ImportingJobIDs     []int64
