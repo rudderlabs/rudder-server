@@ -166,10 +166,6 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	})
 	for _, requestId := range requestIdsArray {
 		resp := b.pollSingleImport(requestId)
-		// if resp.StatusCode != 200 {
-		// 	// if any of the request fails then the whole request fails
-		// 	return resp
-		// }
 		/*
 			Cumulative Response logic:
 			1. If any of the request is in progress then the whole request is in progress and it should retry
