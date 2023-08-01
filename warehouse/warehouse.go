@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -199,9 +198,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 	pkgLogger.Debug("Got config from config-backend", configMap)
 
 	enabledDestinations := make(map[string]bool)
-	var connectionFlags backendconfig.ConnectionFlags
 	for _, wConfig := range configMap {
-		connectionFlags = wConfig.ConnectionFlags // the last connection flags should be enough, since they are all the same in multi-workspace environments
 		for _, source := range wConfig.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
@@ -231,11 +228,6 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 					}
 				}
 			}
-		}
-	}
-	if val, ok := connectionFlags.Services["warehouse"]; ok {
-		if UploadAPI.connectionManager != nil {
-			UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
 		}
 	}
 
@@ -791,12 +783,23 @@ func Start(ctx context.Context, app app.App) error {
 		}
 	}()
 
+	g, ctx := errgroup.WithContext(ctx)
+
+	tenantManager = &multitenant.Manager{
+		BackendConfig: backendconfig.DefaultBackendConfig,
+	}
+	g.Go(func() error {
+		tenantManager.Run(ctx)
+		return nil
+	})
+
 	bcManager = newBackendConfigManager(
-		config.Default, wrappedDBHandle, backendconfig.DefaultBackendConfig,
+		config.Default, wrappedDBHandle, tenantManager,
 		pkgLogger.Child("wh_bc_manager"),
 	)
-	rruntime.GoForWarehouse(func() {
+	g.Go(func() error {
 		bcManager.Start(ctx)
+		return nil
 	})
 
 	RegisterAdmin(bcManager, pkgLogger)
@@ -819,8 +822,6 @@ func Start(ctx context.Context, app app.App) error {
 	if err != nil {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
-
-	g, ctx := errgroup.WithContext(ctx)
 
 	// Setting up reporting client
 	// only if standalone or embedded connecting to diff DB for warehouse
@@ -872,14 +873,6 @@ func Start(ctx context.Context, app app.App) error {
 			backendconfig.DefaultBackendConfig.Identity(),
 			controlplane.WithRegion(region),
 		)
-
-		tenantManager = &multitenant.Manager{
-			BackendConfig: backendconfig.DefaultBackendConfig,
-		}
-		g.Go(func() error {
-			tenantManager.Run(ctx)
-			return nil
-		})
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)

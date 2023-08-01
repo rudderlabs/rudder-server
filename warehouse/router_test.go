@@ -138,7 +138,7 @@ func TestRouter(t *testing.T) {
 		cp := controlplane.NewClient(s.URL, &identity.Namespace{},
 			controlplane.WithHTTPClient(s.Client()),
 		)
-		bcm := newBackendConfigManager(conf, db, mockBackendConfig, logger.NOP)
+		bcm := newBackendConfigManager(conf, db, tenantManager, logger.NOP)
 
 		notifier, err = pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
 		require.NoError(t, err)
