@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/exp/slices"
 	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
