@@ -89,14 +89,13 @@ func (w *worker) workLoop() {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
 			w.rt.destinationsMapMu.RLock()
-			var abortTag string
 			abort, abortReason := routerutils.ToBeDrained(job, parameters.DestinationID, w.rt.reloadableConfig.toAbortDestinationIDs, w.rt.destinationsMap)
-			abortTag = abortReason
+			abortTag := abortReason
 			w.rt.destinationsMapMu.RUnlock()
 			if !abort {
 				abort = w.retryLimitReached(&job.LastJobStatus)
 				abortReason = string(job.LastJobStatus.ErrorResponse)
-				abortTag = "retry_limit_reached"
+				abortTag = "retry limit reached"
 			}
 			if abort {
 				status := jobsdb.JobStatusT{
