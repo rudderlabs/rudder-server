@@ -77,7 +77,6 @@ type AsyncUploadT struct {
 
 type UploadStruct struct {
 	ImportId string                 `json:"importId"`
-	PollUrl  string                 `json:"pollURL"`
 	Metadata map[string]interface{} `json:"metadata"`
 }
 
@@ -86,7 +85,6 @@ type MetaDataT struct {
 }
 type ImportParameters struct {
 	ImportId string    `json:"importId"`
-	PollUrl  *string   `json:"pollURL"`
 	MetaData MetaDataT `json:"metadata"`
 }
 
