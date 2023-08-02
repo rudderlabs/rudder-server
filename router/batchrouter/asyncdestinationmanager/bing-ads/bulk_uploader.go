@@ -185,7 +185,10 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	} else {
 		cumulativeStatusCode = 200
 	}
-
+	cumulativeStatusCode = 500
+	//cumulativeProgressStatus = false
+	fmt.Println("statuscode:", cumulativeStatusCode)
+	fmt.Println("progress status", cumulativeProgressStatus)
 	cumulativeResp = common.PollStatusResponse{
 		Complete:      !lo.Contains(completionStatus, false),
 		InProgress:    cumulativeProgressStatus,

@@ -105,6 +105,7 @@ type AsyncDestinationStruct struct {
 	RsourcesStats        rsources.StatsCollector
 	Destination          *backendconfig.DestinationT
 	Manager              AsyncDestinationManager
+	AttemptNum           int
 }
 
 type AsyncFailedPayload struct {
