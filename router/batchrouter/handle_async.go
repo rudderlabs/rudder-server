@@ -339,9 +339,13 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			out := common.AsyncUploadOutput{
 				DestinationID: destinationID,
 			}
+			var minAttemptNumber int
 			for _, job := range batchJobs.Jobs {
 				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
 				out.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
+				if job.LastJobStatus.AttemptNum < minAttemptNumber {
+					minAttemptNumber = job.LastJobStatus.AttemptNum
+				}
 			}
 
 			// rsources stats
@@ -386,6 +390,9 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			brt.logger.Debugf("BRT: Max Event Limit Reached.Stopped writing to File  %s", brt.asyncDestinationStruct[destinationID].FileName)
 			brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
 			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job.JobID)
+		}
+		if job.LastJobStatus.AttemptNum < minAttemptNumber {
+			minAttemptNumber = job.LastJobStatus.AttemptNum
 		}
 	}
 	brt.asyncDestinationStruct[destinationID].AttemptNums = getAttemptNumbers(batchJobs.Jobs)
