@@ -343,15 +343,21 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			"destType": destType,
 		})
 		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs)
+		errorMessageFromTransformer := gjson.GetBytes(bodyBytes, "error").String()
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = common.AsyncUploadOutput{
 			AbortJobIDs:   abortedJobIDs,
 			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
-			FailedReason:  `{"error":"Jobs flowed over the prescribed limit"}`,
 			AbortReason:   string(bodyBytes),
 			AbortCount:    len(importingJobIDs),
 			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID: destinationID,
+		}
+		if errorMessageFromTransformer != "" {
+			uploadResponse.FailedReason = `{"error":"` + fmt.Sprintf("%s", errorMessageFromTransformer) + `"}`
+		} else {
+			uploadResponse.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
+
 		}
 	default:
 		uploadResponse = common.AsyncUploadOutput{
