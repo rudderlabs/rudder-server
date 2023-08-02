@@ -270,7 +270,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 	}
 }
 
-func (brt *Handle) asyncStructSetup(sourceID, destinationID string) {
+func (brt *Handle) asyncStructSetup(sourceID, destinationID string, minAttemptNumber int) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 
@@ -285,6 +285,7 @@ func (brt *Handle) asyncStructSetup(sourceID, destinationID string) {
 		panic(err)
 	}
 	brt.asyncDestinationStruct[destinationID].Exists = true
+	brt.asyncDestinationStruct[destinationID].AttemptNum = minAttemptNumber
 	brt.asyncDestinationStruct[destinationID].FileName = jsonPath
 	brt.asyncDestinationStruct[destinationID].CreatedAt = time.Now()
 	brt.asyncDestinationStruct[destinationID].RsourcesStats = rsources.NewStatsCollector(brt.rsourcesService)
@@ -301,6 +302,21 @@ func (brt *Handle) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].DestinationUploadURL = ""
 	brt.asyncDestinationStruct[destinationID].RsourcesStats = rsources.NewStatsCollector(brt.rsourcesService)
 	brt.asyncDestinationStruct[destinationID].AttemptNum = 0
+}
+
+func getMinAttemptNumber(jobs []*jobsdb.JobT) int {
+	if len(jobs) == 0 {
+		return 0
+	}
+
+	minAttemptNumber := jobs[0].LastJobStatus.AttemptNum
+	for _, job := range jobs {
+		if job.LastJobStatus.AttemptNum < minAttemptNumber {
+			minAttemptNumber = job.LastJobStatus.AttemptNum
+		}
+	}
+
+	return minAttemptNumber
 }
 
 func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
@@ -330,20 +346,16 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			out := common.AsyncUploadOutput{
 				DestinationID: destinationID,
 			}
-			var minAttemptNumber int
 			for _, job := range batchJobs.Jobs {
 				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
 				out.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
-				if job.LastJobStatus.AttemptNum < minAttemptNumber {
-					minAttemptNumber = job.LastJobStatus.AttemptNum
-				}
 			}
 
 			// rsources stats
 			rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 			rsourcesStats.BeginProcessing(batchJobs.Jobs)
 
-			brt.setMultipleJobStatus(out, rsourcesStats, minAttemptNumber)
+			brt.setMultipleJobStatus(out, rsourcesStats, getMinAttemptNumber(batchJobs.Jobs))
 			return
 		}
 	}
@@ -355,7 +367,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			defer asyncStruct.UploadMutex.Unlock()
 			brt.asyncDestinationStruct[destinationID] = asyncStruct
 		}
-		brt.asyncStructSetup(batchJobs.Connection.Source.ID, destinationID)
+
+		brt.asyncStructSetup(batchJobs.Connection.Source.ID, destinationID, getMinAttemptNumber(batchJobs.Jobs))
 	}
 
 	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].FileName, os.O_CREATE|os.O_WRONLY, 0o600)
@@ -365,7 +378,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	defer func() { _ = file.Close() }()
 	var jobString string
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
-	var minAttemptNumber int
 	brt.asyncDestinationStruct[destinationID].RsourcesStats.BeginProcessing(batchJobs.Jobs)
 	for _, job := range batchJobs.Jobs {
 		transformedData := common.GetTransformedData(job.EventPayload)
@@ -382,11 +394,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
 			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job.JobID)
 		}
-		if job.LastJobStatus.AttemptNum < minAttemptNumber {
-			minAttemptNumber = job.LastJobStatus.AttemptNum
-		}
 	}
-	brt.asyncDestinationStruct[destinationID].AttemptNum = minAttemptNumber
+	brt.asyncDestinationStruct[destinationID].AttemptNum = getMinAttemptNumber(batchJobs.Jobs)
 
 	_, err = file.WriteAt([]byte(jobString), int64(writeAtBytes))
 	// there can be some race condition with asyncUploadWorker
