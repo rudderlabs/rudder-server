@@ -355,12 +355,12 @@ func getAttemptNumbers(jobs []*jobsdb.JobT) map[int64]int {
 	return attemptNums
 }
 
-func getAttemptNumbers(jobs []*jobsdb.JobT) map[int64]int {
-	attemptNums := make(map[int64]int)
+func getFirstAttemptAts(jobs []*jobsdb.JobT) map[int64]time.Time {
+	firstAttemptedAts := make(map[int64]time.Time)
 	for _, job := range jobs {
-		attemptNums[job.JobID] = job.LastJobStatus.AttemptNum
+		firstAttemptedAts[job.JobID] = getFirstAttemptAtFromErrorResponse(job.LastJobStatus.ErrorResponse)
 	}
-	return attemptNums
+	return firstAttemptedAts
 }
 
 func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
