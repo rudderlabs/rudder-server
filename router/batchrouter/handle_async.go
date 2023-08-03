@@ -307,7 +307,8 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
-					brt.logger.Info("came in. upload respnse: ", uploadResponse)
+					brt.logger.Info("came in. upload respnse: %#v", uploadResponse)
+					brt.logger.Info("came in. upload respnse ImportingParameters: %s", string(uploadResponse.ImportingParameters))
 					if uploadResponse.ImportingParameters != nil {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
 					}
