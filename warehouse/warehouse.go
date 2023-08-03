@@ -195,8 +195,6 @@ func monitorDestRouters(ctx context.Context) error {
 }
 
 func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.ConfigT, dstToWhRouter map[string]*Router) error {
-	pkgLogger.Debug("Got config from config-backend", configMap)
-
 	enabledDestinations := make(map[string]bool)
 	for _, wConfig := range configMap {
 		for _, source := range wConfig.Sources {

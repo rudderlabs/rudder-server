@@ -53,7 +53,6 @@ func newBackendConfigManager(
 			},
 		)
 	}
-	bcm.shouldPopulateHistoricIdentities = c.GetBool("Warehouse.populateHistoricIdentities", false)
 	return bcm
 }
 
@@ -81,8 +80,6 @@ type backendConfigManager struct {
 
 	sourceIDsByWorkspace   map[string][]string // workspaceID -> []sourceIDs
 	sourceIDsByWorkspaceMu sync.RWMutex
-
-	shouldPopulateHistoricIdentities bool
 }
 
 func (s *backendConfigManager) Start(ctx context.Context) {

@@ -16,8 +16,9 @@ import (
 
 var (
 	scheduledTimesCache     map[string][]int
-	startUploadAlways       bool
 	scheduledTimesCacheLock sync.RWMutex
+
+	startUploadAlways bool
 )
 
 func init() {
