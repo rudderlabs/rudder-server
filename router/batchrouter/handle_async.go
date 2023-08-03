@@ -281,11 +281,13 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(10 * time.Millisecond):
+		case <-time.After(10 * time.Second):
 			brt.configSubscriberMu.RLock()
 			destinationsMap := brt.destinationsMap
 			uploadIntervalMap := brt.uploadIntervalMap
 			brt.configSubscriberMu.RUnlock()
+
+			brt.logger.Info("checking for upload")
 
 			for destinationID := range destinationsMap {
 				_, ok := brt.asyncDestinationStruct[destinationID]
