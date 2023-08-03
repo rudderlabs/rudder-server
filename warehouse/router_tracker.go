@@ -89,8 +89,8 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 	}
 
 	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
-	excludeWindowStartTime, excludeWindowEndTime := GetExcludeWindowStartEndTimes(excludeWindow)
-	if CheckCurrentTimeExistsInExcludeWindow(Now(), excludeWindowStartTime, excludeWindowEndTime) {
+	excludeWindowStartTime, excludeWindowEndTime := excludeWindowStartEndTimes(excludeWindow)
+	if checkCurrentTimeExistsInExcludeWindow(Now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return nil
 	}
 
