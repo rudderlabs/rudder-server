@@ -162,17 +162,18 @@ func (jd *HandleT) uploadDumps(ctx context.Context, dumps map[string]string) err
 	return g.Wait()
 }
 
-func (jd *HandleT) getRowCount(ctx context.Context, tableName string) (totalCount int64, err error) {
-	countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q where job_state in ('%s', '%s')`, tableName, Failed.State, Aborted.State)
-	if err = jd.dbHandle.QueryRowContext(ctx, countStmt).Scan(&totalCount); err != nil {
-		return 0, fmt.Errorf("error while getting row count: %w", err)
-	}
-	return totalCount, nil
-}
-
 func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobStatusTable
-	totalCount, err := jd.getRowCount(ctx, tableName)
+
+	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
+		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q where job_state in ('%s', '%s')`, tableName, Failed.State, Aborted.State)
+		if err = jd.dbHandle.QueryRowContext(ctx, countStmt).Scan(&totalCount); err != nil {
+			return 0, fmt.Errorf("error while getting row count: %w", err)
+		}
+		return totalCount, nil
+	}
+
+	totalCount, err := getRowCount(ctx)
 	if err != nil {
 		return err
 	}
@@ -214,7 +215,16 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 
 func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobTable
-	totalCount, err := jd.getRowCount(ctx, tableName)
+
+	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
+		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q`, tableName)
+		if err = jd.dbHandle.QueryRowContext(ctx, countStmt).Scan(&totalCount); err != nil {
+			return 0, fmt.Errorf("error while getting row count: %w", err)
+		}
+		return totalCount, nil
+	}
+
+	totalCount, err := getRowCount(ctx)
 	if err != nil {
 		return err
 	}
@@ -267,7 +277,16 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 
 func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobStatusTable
-	totalCount, err := jd.getRowCount(ctx, tableName)
+
+	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
+		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q`, tableName)
+		if err = jd.dbHandle.QueryRowContext(ctx, countStmt).Scan(&totalCount); err != nil {
+			return 0, fmt.Errorf("error while getting row count: %w", err)
+		}
+		return totalCount, nil
+	}
+
+	totalCount, err := getRowCount(ctx)
 	if err != nil {
 		return err
 	}
