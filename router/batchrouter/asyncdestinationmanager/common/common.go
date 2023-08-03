@@ -104,6 +104,7 @@ type AsyncDestinationStruct struct {
 	Destination          *backendconfig.DestinationT
 	Manager              AsyncDestinationManager
 	AttemptNums          map[int64]int
+	FirstAttemptedAts    map[int64]time.Time
 }
 
 type AsyncFailedPayload struct {
