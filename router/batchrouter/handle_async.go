@@ -39,6 +39,7 @@ func (brt *Handle) getImportingJobs(ctx context.Context, destinationID string, l
 }
 
 func (brt *Handle) updateJobStatuses(ctx context.Context, destinationID string, statusList []*jobsdb.JobStatusT) error {
+	// TODO send reports
 	parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}}
 	return misc.RetryWithNotify(ctx, brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
 		return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
@@ -295,10 +296,12 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 
+				brt.logger.Info("BRT: Async Upload Worker checking for upload for Destination ID: ", destinationID)
 				timeout := uploadIntervalMap[destinationID]
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
+					brt.logger.Info(uploadResponse)
 					if uploadResponse.ImportingParameters != nil {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
 					}
@@ -540,6 +543,8 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 			Value: asyncOutput.DestinationID,
 		},
 	}
+
+	// TODO send reports
 
 	// Mark the status of the jobs
 	err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) error {
