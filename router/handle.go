@@ -60,7 +60,7 @@ type Handle struct {
 	destType                string
 	guaranteeUserEventOrder bool
 	netClientTimeout        time.Duration
-	backendProxyTimeout     time.Duration
+	transformerTimeout      time.Duration
 	enableBatching          bool
 	noOfWorkers             int
 	barrierConcurrencyLimit int
