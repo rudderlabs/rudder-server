@@ -95,7 +95,7 @@ func (rt *Handle) Setup(
 
 	netClientTimeoutKeys := []string{"Router." + rt.destType + "." + "httpTimeout", "Router." + rt.destType + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
-	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
+	config.RegisterDurationConfigVariable(600, &rt.transformerTimeout, false, time.Second, "HttpClient.backendProxy.timeout", "HttpClient.routerTransformer.timeout")
 	rt.crashRecover()
 	rt.responseQ = make(chan workerJobStatus, rt.reloadableConfig.jobQueryBatchSize)
 	if rt.netHandle == nil {
@@ -135,7 +135,7 @@ func (rt *Handle) Setup(
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
 
-	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.backendProxyTimeout)
+	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 
