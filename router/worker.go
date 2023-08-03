@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -89,11 +90,12 @@ func (w *worker) workLoop() {
 			}
 			w.rt.destinationsMapMu.RLock()
 			abort, abortReason := routerutils.ToBeDrained(job, parameters.DestinationID, w.rt.reloadableConfig.toAbortDestinationIDs, w.rt.destinationsMap)
+			abortTag := abortReason
 			w.rt.destinationsMapMu.RUnlock()
-
 			if !abort {
 				abort = w.retryLimitReached(&job.LastJobStatus)
-				abortReason = "retry limit reached"
+				abortReason = string(job.LastJobStatus.ErrorResponse)
+				abortTag = "retry limit reached"
 			}
 			if abort {
 				status := jobsdb.JobStatusT{
@@ -116,7 +118,7 @@ func (w *worker) workLoop() {
 					"destType":    w.rt.destType,
 					"destId":      parameters.DestinationID,
 					"module":      "router",
-					"reasons":     abortReason,
+					"reasons":     abortTag,
 					"workspaceId": job.WorkspaceId,
 				}).Count(1)
 				continue
