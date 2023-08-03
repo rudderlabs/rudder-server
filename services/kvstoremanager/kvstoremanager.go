@@ -10,6 +10,7 @@ type KVStoreManager interface {
 	Connect()
 	Close() error
 	HMSet(key string, fields map[string]interface{}) error
+	HSet(key string, field string, value interface{}) error
 	StatusCode(err error) int
 	DeleteKey(key string) (err error)
 	HMGet(key string, fields ...string) (result []interface{}, err error)
@@ -39,13 +40,14 @@ func newManager(settings SettingsT) (m KVStoreManager) {
 	return m
 }
 
-func EventToKeyValue(jsonData json.RawMessage) (string, map[string]interface{}) {
+func EventToKeyValue(jsonData json.RawMessage) (string, string, map[string]interface{}) {
 	key := gjson.GetBytes(jsonData, "message.key").String()
 	result := gjson.GetBytes(jsonData, "message.fields").Map()
+	field := gjson.GetBytes(jsonData, "message.field").String()
 	fields := make(map[string]interface{})
 	for k, v := range result {
 		fields[k] = v.Str
 	}
 
-	return key, fields
+	return key, field, fields
 }

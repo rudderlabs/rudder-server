@@ -132,8 +132,14 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, client inter
 		statusCode, _, respBody = streamProducer.Produce(jsonData, config)
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
-		key, fields := kvstoremanager.EventToKeyValue(jsonData)
-		err := kvManager.HMSet(key, fields)
+		key, field, fields := kvstoremanager.EventToKeyValue(jsonData)
+		var err error
+		if field != "" {
+			// we are updating a single field in the hashmap
+			err = kvManager.HSet(key, field, fields)
+		} else {
+			err = kvManager.HMSet(key, fields)
+		}
 		statusCode = kvManager.StatusCode(err)
 		if err != nil {
 			respBody = err.Error()
