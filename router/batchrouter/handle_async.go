@@ -402,7 +402,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			}
 			for _, job := range batchJobs.Jobs {
 				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
-				out.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
+				out.FailedReason = `Jobs flowed over the prescribed limit`
 			}
 
 			// rsources stats
@@ -502,6 +502,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 	}
 	if len(asyncOutput.FailedJobIDs) > 0 {
 		for _, jobId := range asyncOutput.FailedJobIDs {
+			resp := misc.UpdateJSONWithNewKeyVal([]byte(`{}`), "error", asyncOutput.FailedReason)
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      jobsdb.Failed.State,
@@ -509,7 +510,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "500",
-				ErrorResponse: enhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(asyncOutput.FailedReason)),
+				ErrorResponse: enhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", resp),
 				Parameters:    []byte(`{}`),
 				JobParameters: jobParameters,
 				WorkspaceId:   workspaceID,

@@ -174,6 +174,10 @@ func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*Act
 		}
 
 	}
+	scannerErr := scanner.Err()
+	if scannerErr != nil {
+		return nil, scannerErr
+	}
 	actionFilesList := []*ActionFileInfo{}
 	for _, actionType := range actionTypes {
 		actionFile := actionFiles[actionType]
