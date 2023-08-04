@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -168,6 +169,8 @@ type HandleT struct {
 	recvCount                    uint64
 	backendConfig                backendconfig.BackendConfig
 	rateLimiter                  throttler.Throttler
+
+	sampler *sampler[string]
 
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.Measurement
@@ -653,7 +656,28 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			}
 		}
 
-		if isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
+		if isUserSuppressed, age := isUserSuppressed(workspaceId, userIDFromReq, sourceID); isUserSuppressed {
+			if !age.IsZero() {
+				gateway.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{
+					"workspaceId": workspaceId,
+					"sourceID":    sourceID,
+					"type":        eventTypeFromReq,
+				}).Since(age)
+
+				func() {
+					defer func() { _ = recover() }()                                                           // recover from panic if any
+					if time.Since(age) > 1460*time.Hour && gateway.sampler.Sample(sourceID+eventTypeFromReq) { // only sample suppressions older than 2 months
+						if gateway.sampler.Sample(sourceID + eventTypeFromReq) {
+							eventData, _ := json.Marshal(toSet)
+							tmpDir, _ := misc.CreateTMPDIR()
+							if f, err := os.CreateTemp(tmpDir, fmt.Sprintf("%s_%s_%dh_*.json", sourceID, eventTypeFromReq, int(time.Since(age).Hours()))); err == nil {
+								_, _ = f.Write(eventData)
+								_ = f.Close()
+							}
+						}
+					}
+				}()
+			}
 			suppressed = true
 			continue
 		}
@@ -774,33 +798,32 @@ func buildUserID(userIDHeader, anonIDFromReq, userIDFromReq string) string {
 }
 
 // memoizedIsUserSuppressed is a memoized version of isUserSuppressed
-func (gateway *HandleT) memoizedIsUserSuppressed() func(workspaceID, userID, sourceID string) bool {
-	cache := map[string]bool{}
-	return func(workspaceID, userID, sourceID string) bool {
+func (gateway *HandleT) memoizedIsUserSuppressed() func(workspaceID, userID, sourceID string) (bool, time.Time) {
+	type value struct {
+		val bool
+		ts  time.Time
+	}
+	cache := map[string]value{}
+	f := func(workspaceID, userID, sourceID string) (bool, time.Time) {
 		key := workspaceID + ":" + userID + ":" + sourceID
 		if val, ok := cache[key]; ok {
-			return val
+			return val.val, val.ts
 		}
-		val := gateway.isUserSuppressed(workspaceID, userID, sourceID)
-		cache[key] = val
-		return val
+		val, ts := gateway.isUserSuppressed(workspaceID, userID, sourceID)
+		cache[key] = value{val: val, ts: ts}
+		return val, ts
 	}
+	return f
 }
 
-func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) bool {
+func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) (bool, time.Time) {
 	if !enableSuppressUserFeature || gateway.suppressUserHandler == nil {
-		return false
+		return false, time.Time{}
 	}
 	if metadata := gateway.suppressUserHandler.GetSuppressedUser(workspaceID, userID, sourceID); metadata != nil {
-		if !metadata.CreatedAt.IsZero() {
-			gateway.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{
-				"workspaceId": workspaceID,
-				"sourceID":    sourceID,
-			}).Since(metadata.CreatedAt)
-		}
-		return true
+		return true, metadata.CreatedAt
 	}
-	return false
+	return false, time.Time{}
 }
 
 // checks for the presence of messageId in the event
@@ -1549,6 +1572,7 @@ func (gateway *HandleT) Setup(
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.Default
+	gateway.sampler = newSampler[string](config.GetDuration("Suppression.Sampler.Duration", 1, time.Minute), 1000)
 
 	gateway.rsourcesService = rsourcesService
 	gateway.sourcehandle = sourcehandle
