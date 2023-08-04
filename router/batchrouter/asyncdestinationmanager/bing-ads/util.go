@@ -153,6 +153,7 @@ func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*Act
 		}
 	}
 	scanner := bufio.NewScanner(textFile)
+	scanner.Buffer(nil, 5000*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		var data Data
