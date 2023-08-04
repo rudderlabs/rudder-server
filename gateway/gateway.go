@@ -88,7 +88,6 @@ var (
 	maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                                   time.Duration
 	writeKeysSourceMap                                                                map[string]backendconfig.SourceT
-	sourceIDWriteKeyMap                                                               map[string]string
 	enabledWriteKeyWebhookMap                                                         map[string]string
 	enabledWriteKeyWorkspaceMap                                                       map[string]string
 	configSubscriberLock                                                              sync.RWMutex
@@ -868,17 +867,6 @@ func (*HandleT) getSourceIDForWriteKey(writeKey string) string {
 	return ""
 }
 
-func (*HandleT) getWriteKeyForSourceID(sourceID string) string {
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-
-	if _, ok := sourceIDWriteKeyMap[sourceID]; ok {
-		return sourceIDWriteKeyMap[sourceID]
-	}
-
-	return ""
-}
-
 func (*HandleT) getSourceNameForWriteKey(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -947,10 +935,6 @@ func (gateway *HandleT) webAudienceListHandler(w http.ResponseWriter, r *http.Re
 
 func (gateway *HandleT) webExtractHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "extract")
-}
-
-func (gateway *HandleT) webReplayHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.replayRequestHandler(gateway.rrh, w, r, "replay")
 }
 
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -1340,7 +1324,6 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.Route("/internal/v1", func(r chi.Router) {
 		r.Post("/extract", gateway.webExtractHandler)
 		r.Get("/warehouse/fetch-tables", gateway.whProxy.ServeHTTP)
-		r.Post("/replay/{SourceID}", gateway.webReplayHandler)
 	})
 
 	srvMux.Route("/v1", func(r chi.Router) {
@@ -1448,7 +1431,6 @@ func (gateway *HandleT) backendConfigSubscriber() {
 	for data := range ch {
 		var (
 			newWriteKeysSourceMap          = map[string]backendconfig.SourceT{}
-			newSourceIDWriteKeyMap         = map[string]string{}
 			newEnabledWriteKeyWebhookMap   = map[string]string{}
 			newEnabledWriteKeyWorkspaceMap = map[string]string{}
 			newSourceIDToNameMap           = map[string]string{}
@@ -1458,7 +1440,6 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			for _, source := range wsConfig.Sources {
 				newSourceIDToNameMap[source.ID] = source.Name
 				newWriteKeysSourceMap[source.WriteKey] = source
-				newSourceIDWriteKeyMap[source.ID] = source.WriteKey
 
 				if source.Enabled {
 					newEnabledWriteKeyWorkspaceMap[source.WriteKey] = workspaceID
@@ -1471,7 +1452,6 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		}
 		configSubscriberLock.Lock()
 		writeKeysSourceMap = newWriteKeysSourceMap
-		sourceIDWriteKeyMap = newSourceIDWriteKeyMap
 		enabledWriteKeyWebhookMap = newEnabledWriteKeyWebhookMap
 		enabledWriteKeyWorkspaceMap = newEnabledWriteKeyWorkspaceMap
 		configSubscriberLock.Unlock()
@@ -1674,57 +1654,6 @@ func (gateway *HandleT) Shutdown() error {
 	}
 
 	return gateway.backgroundWait()
-}
-
-func (gateway *HandleT) replayRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
-	sourceID := chi.URLParam(r, "SourceID")
-	gateway.logger.LogRequest(r)
-	atomic.AddUint64(&gateway.recvCount, 1)
-	var errorMessage string
-	var err error
-	defer func() {
-		if errorMessage != "" {
-			http.Error(w, response.GetStatus(errorMessage), response.GetErrorStatusCode(errorMessage))
-			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Error while handling request: %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
-		}
-	}()
-	writeKey := gateway.getWriteKeyForSourceID(sourceID)
-	if writeKey == "" {
-		err = errors.New(response.NoWriteKeyInBasicAuth)
-		stat := gwstats.SourceStat{
-			Source:   "noWriteKey",
-			SourceID: sourceID,
-			WriteKey: "noWriteKey",
-			ReqType:  reqType,
-		}
-		stat.RequestFailed("noWriteKeyInBasicAuth")
-		stat.Report(gateway.stats)
-		errorMessage = err.Error()
-		return
-	}
-	payload, err := gateway.getPayloadFromRequest(r)
-	if err != nil {
-		stat := gwstats.SourceStat{
-			Source:      gateway.getSourceTagFromWriteKey(writeKey),
-			WriteKey:    writeKey,
-			ReqType:     reqType,
-			SourceID:    sourceID,
-			WorkspaceID: gateway.getWorkspaceForWriteKey(writeKey),
-			SourceType:  gateway.getSourceCategoryForWriteKey(writeKey),
-		}
-		stat.RequestFailed("requestBodyReadFailed")
-		stat.Report(gateway.stats)
-		errorMessage = err.Error()
-		return
-	}
-	errorMessage = rh.ProcessRequest(gateway, &w, r, "batch", payload, writeKey)
-
-	atomic.AddUint64(&gateway.ackCount, 1)
-	gateway.trackRequestMetrics(errorMessage)
-	httpWriteTime := gateway.stats.NewTaggedStat("gateway.http_write_time", stats.TimerType, stats.Tags{"reqType": reqType})
-	httpWriteStartTime := time.Now()
-	_, _ = w.Write([]byte(response.GetStatus(response.Ok)))
-	httpWriteTime.Since(httpWriteStartTime)
 }
 
 func WithContentType(contentType string, delegate http.HandlerFunc) http.HandlerFunc {
