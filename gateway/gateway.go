@@ -1572,7 +1572,7 @@ func (gateway *HandleT) Setup(
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.Default
-	gateway.sampler = newSampler[string](config.GetDuration("Suppression.Sampler.Duration", 1, time.Minute), 1000)
+	gateway.sampler = newSampler[string](config.GetDuration("Suppression.Sampler.Duration", 24, time.Hour), 10000)
 
 	gateway.rsourcesService = rsourcesService
 	gateway.sourcehandle = sourcehandle
