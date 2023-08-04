@@ -667,13 +667,11 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 				func() {
 					defer func() { _ = recover() }()                                                           // recover from panic if any
 					if time.Since(age) > 1460*time.Hour && gateway.sampler.Sample(sourceID+eventTypeFromReq) { // only sample suppressions older than 2 months
-						if gateway.sampler.Sample(sourceID + eventTypeFromReq) {
-							eventData, _ := json.Marshal(toSet)
-							tmpDir, _ := misc.CreateTMPDIR()
-							if f, err := os.CreateTemp(tmpDir, fmt.Sprintf("%s_%s_%dh_*.json", sourceID, eventTypeFromReq, int(time.Since(age).Hours()))); err == nil {
-								_, _ = f.Write(eventData)
-								_ = f.Close()
-							}
+						eventData, _ := json.Marshal(toSet)
+						tmpDir, _ := misc.CreateTMPDIR()
+						if f, err := os.CreateTemp(tmpDir, fmt.Sprintf("%s_%s_%dh_*.json", sourceID, eventTypeFromReq, int(time.Since(age).Hours()))); err == nil {
+							_, _ = f.Write(eventData)
+							_ = f.Close()
 						}
 					}
 				}()
