@@ -287,8 +287,6 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 			uploadIntervalMap := brt.uploadIntervalMap
 			brt.configSubscriberMu.RUnlock()
 
-			brt.logger.Info("checking for upload")
-
 			for destinationID := range destinationsMap {
 				_, ok := brt.asyncDestinationStruct[destinationID]
 				if !ok || brt.asyncDestinationStruct[destinationID].UploadInProgress {
@@ -298,17 +296,10 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 
-				brt.logger.Info("BRT: Async Upload Worker checking for upload for Destination ID: ", destinationID)
 				timeout := uploadIntervalMap[destinationID]
-				brt.logger.Info("BRT: Async Upload Worker timeout: ", timeout)
-				brt.logger.Info("BRT: Async Upload Worker timeElapsed: ", timeElapsed)
-				brt.logger.Info("BRT: Async Upload Worker canUpload: ", brt.asyncDestinationStruct[destinationID].CanUpload)
-				brt.logger.Info("BRT: Async Upload Worker exists: ", brt.asyncDestinationStruct[destinationID].Exists)
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
-					brt.logger.Info("came in. upload respnse: %#v", uploadResponse)
-					brt.logger.Info("came in. upload respnse ImportingParameters: %s", string(uploadResponse.ImportingParameters))
 					if uploadResponse.ImportingParameters != nil {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
 					}
