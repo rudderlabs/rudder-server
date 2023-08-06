@@ -112,7 +112,6 @@ AllowEventToDestTransformation lets the caller know if we need to allow the even
 Currently this method supports below validations(executed in the same order):
 
 1. Validate if messageType sent in event is included in SupportedMessageTypes["cloud"]
-
 2. Validate if the event is sendable to destination based on connectionMode, sourceType & messageType
 */
 func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEvent, supportedMsgTypes []string) (bool, *transformer.TransformerResponse) {
