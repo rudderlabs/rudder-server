@@ -19,25 +19,24 @@ func GetSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string
 	var supportedMessageTypes []string
 	if supportedTypes, ok := destination.DestinationDefinition.Config["supportedMessageTypes"]; ok {
 		if supportedTypesMap, ok := supportedTypes.(map[string]interface{}); ok {
-		    if supportedTypeInterface, ok := supportedTypesMap["cloud"].([]interface{}); ok {
-                supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
-                for _, supportedType := range supportedTypesArr {
-                    var skip bool
-                    switch supportedType {
-                    case "identify":
-                        skip = identifyDisabled(destination)
-                    default:
-                    }
-                    if !skip {
-                        supportedMessageTypes = append(supportedMessageTypes, supportedType)
-                    }
-                }
-                return supportedMessageTypes, true
-            }
-        }
-    }
-    
-    return nil, false
+			if supportedTypeInterface, ok := supportedTypesMap["cloud"].([]interface{}); ok {
+				supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
+				for _, supportedType := range supportedTypesArr {
+					var skip bool
+					switch supportedType {
+					case "identify":
+						skip = identifyDisabled(destination)
+					default:
+					}
+					if !skip {
+						supportedMessageTypes = append(supportedMessageTypes, supportedType)
+					}
+				}
+				return supportedMessageTypes, true
+			}
+		}
+	}
+	return nil, false
 }
 func identifyDisabled(destination *backendconfig.DestinationT) bool {
     if serverSideIdentify, flag := destination.Config["enableServerSideIdentify"]; flag {
