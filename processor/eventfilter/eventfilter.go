@@ -155,7 +155,7 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 		// Default behavior
 		// When something is missing in "supportedConnectionModes" or if "supportedConnectionModes" is not defined
 		// We would be checking for below things
-		// 1. Check if the event.type value is present in destination.DestinationDefinition.Config["supportedMessageTypes"]
+		// 1. Check if the event.type value is present in destination.DestinationDefinition.Config.supportedMessageTypes.["cloud"]
 		// 2. Check if the connectionMode of destination is cloud or hybrid(evaluated through `IsProcessorEnabled`)
 		// Only when 1 & 2 are true, we would allow the event to flow through to server
 		// As when this will be called, we would have already checked if event.type in supportedMessageTypes
