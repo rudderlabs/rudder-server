@@ -134,8 +134,8 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, client inter
 		var err error
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
 		if kvstoremanager.SupportsKeyUpdate(jsonData) {
-			hash, key, fields := kvstoremanager.EventToHashKeyValue(jsonData)
-			err = kvManager.HSet(hash, key, fields)
+			hash, key, value := kvstoremanager.EventToHashKeyValue(jsonData)
+			err = kvManager.HSet(hash, key, value)
 		} else {
 			key, fields := kvstoremanager.EventToKeyValue(jsonData)
 			err = kvManager.HMSet(key, fields)

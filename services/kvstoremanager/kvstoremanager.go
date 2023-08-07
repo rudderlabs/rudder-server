@@ -60,10 +60,10 @@ func EventToHashKeyValue(jsonData json.RawMessage) (string, string, map[string]i
 	result := gjson.GetBytes(jsonData, "message.fields").Map()
 	key := gjson.GetBytes(jsonData, "message.key").String()
 
-	fields := make(map[string]interface{})
+	value := make(map[string]interface{})
 	for k, v := range result {
-		fields[k] = v.Str
+		value[k] = v.Str
 	}
 
-	return hash, key, fields
+	return hash, key, value
 }
