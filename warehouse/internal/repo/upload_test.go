@@ -1000,3 +1000,62 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		require.EqualError(t, err, "pending table uploads: context canceled")
 	})
 }
+
+func TestUploads_ResetInProgress(t *testing.T) {
+	const (
+		sourceID        = "source_id"
+		destinationID   = "destination_id"
+		destinationType = "destination_type"
+	)
+
+	db, ctx := setupDB(t), context.Background()
+
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	t.Run("success", func(t *testing.T) {
+		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+		require.NoError(t, err)
+
+		uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			Status:          model.Waiting,
+		}, []*model.StagingFile{
+			{
+				ID:            stagingID,
+				SourceID:      sourceID,
+				DestinationID: destinationID,
+			},
+		})
+		require.NoError(t, err)
+
+		_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET in_progress = TRUE WHERE id = $1;`, uploadID)
+		require.NoError(t, err)
+
+		uploadsToProcess, err := repoUpload.GetToProcess(ctx, destinationType, 1, repo.ProcessOptions{})
+		require.NoError(t, err)
+		require.Len(t, uploadsToProcess, 0)
+
+		err = repoUpload.ResetInProgress(ctx, destinationType)
+		require.NoError(t, err)
+
+		uploadsToProcess, err = repoUpload.GetToProcess(ctx, destinationType, 1, repo.ProcessOptions{})
+		require.NoError(t, err)
+		require.Len(t, uploadsToProcess, 1)
+	})
+
+	t.Run("context cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		err := repoUpload.ResetInProgress(ctx, destinationType)
+		require.EqualError(t, err, "reset in progress: context canceled")
+	})
+}

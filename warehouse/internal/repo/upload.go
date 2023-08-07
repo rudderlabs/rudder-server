@@ -632,3 +632,21 @@ func (uploads *Uploads) PendingTableUploads(ctx context.Context, namespace strin
 	}
 	return pendingTableUploads, nil
 }
+
+func (uploads *Uploads) ResetInProgress(ctx context.Context, destType string) error {
+	_, err := uploads.db.ExecContext(ctx, `
+		UPDATE
+			`+uploadsTableName+`
+		SET
+			in_progress = FALSE
+		WHERE
+			destination_type = $1 AND
+			in_progress = TRUE;
+	`,
+		destType,
+	)
+	if err != nil {
+		return fmt.Errorf("reset in progress: %w", err)
+	}
+	return nil
+}
