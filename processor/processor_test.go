@@ -287,7 +287,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
 						Config: map[string]interface{}{
-							"supportedMessageTypes": []interface{}{"identify", "track"},
+							"supportedMessageTypes": map[string]interface{}{
+								"cloud": []interface{}{"identify", "track"},
+							},
 						},
 					},
 				},
@@ -1944,7 +1946,9 @@ var _ = Describe("Static Function Tests", func() {
 				IsProcessorEnabled: true, // assuming the mode is cloud/hybrid
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"identify", "track"},
+						"supportedMessageTypes": map[string]interface{}{
+							"cloud": []interface{}{"identify", "track"},
+						},
 					},
 				},
 			}
@@ -2277,7 +2281,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "page"},
+						"supportedMessageTypes": map[string]interface{}{
+							"cloud": []interface{}{"track", "group", "page"},
+						},
 						"supportedConnectionModes": map[string]interface{}{
 							"android": []interface{}{
 								"cloud",
@@ -2365,7 +2371,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedMessageTypes": map[string]interface{}{
+							"cloud": []interface{}{"track", "group", "alias"},
+						},
 						"supportedConnectionModes": map[string]interface{}{
 							"android": []interface{}{
 								"cloud",
@@ -2442,7 +2450,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedMessageTypes": map[string]interface{}{
+							"cloud": []interface{}{"track", "group", "alias"},
+						},
 						"supportedConnectionModes": map[string]interface{}{
 							"android": []interface{}{
 								"cloud",
@@ -2530,7 +2540,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedMessageTypes": map[string]interface{}{
+							"cloud": []interface{}{"track", "group", "alias"},
+						},
 						"supportedConnectionModes": map[string]interface{}{
 							"android": []interface{}{
 								"cloud",
@@ -2613,7 +2625,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedMessageTypes": map[string]interface{}{
+							"cloud": []interface{}{"track", "group", "alias"},
+						},
 						"supportedConnectionModes": map[string]interface{}{
 							"android": []interface{}{
 								"cloud",
@@ -2700,7 +2714,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
+						"supportedMessageTypes": map[string]interface{}{
+							"cloud": []interface{}{"track", "group", "alias"},
+						},
 						"supportedConnectionModes": map[string]interface{}{
 							"android": []interface{}{
 								"cloud",
