@@ -288,6 +288,7 @@ func TestBackendConfigManager(t *testing.T) {
 
 func TestBackendConfigManager_Namespace(t *testing.T) {
 	testcases := []struct {
+		name              string
 		config            map[string]interface{}
 		source            backendconfig.SourceT
 		destination       backendconfig.DestinationT
@@ -295,6 +296,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 		setConfig         bool
 	}{
 		{
+			name:   "clickhouse with database configured in config",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
 				Config: map[string]interface{}{
@@ -308,6 +310,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			setConfig:         false,
 		},
 		{
+			name:   "clickhouse without database configured in config",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
 				Config: map[string]interface{}{},
@@ -319,19 +322,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			setConfig:         false,
 		},
 		{
-			source: backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"namespace": "test_namespace",
-				},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: "test-destinationType-1",
-				},
-			},
-			expectedNamespace: "test_namespace",
-			setConfig:         false,
-		},
-		{
+			name:   "namespace only contains letters",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
 				Config: map[string]interface{}{
@@ -345,6 +336,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			setConfig:         false,
 		},
 		{
+			name:   "namespace only contains special characters",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
 				Config: map[string]interface{}{
@@ -358,6 +350,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			setConfig:         false,
 		},
 		{
+			name:   "namespace contains special characters and letters",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
 				Config: map[string]interface{}{
@@ -371,6 +364,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			setConfig:         false,
 		},
 		{
+			name:   "empty namespace but config is set",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
 				Config: map[string]interface{}{},
@@ -382,6 +376,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			setConfig:         true,
 		},
 		{
+			name: "empty namespace with picking from cache",
 			source: backendconfig.SourceT{
 				Name: "test-source",
 				ID:   "test-sourceID",
@@ -397,6 +392,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			setConfig:         false,
 		},
 		{
+			name: "destination config without namespace configured and custom dataset prefix is not configured",
 			source: backendconfig.SourceT{
 				Name: "test-source",
 				ID:   "random-sourceID",
@@ -412,6 +408,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			setConfig:         false,
 		},
 		{
+			name: "destination config without namespace configured and custom dataset prefix configured",
 			source: backendconfig.SourceT{
 				Name: "test-source",
 				ID:   "test-sourceID",
@@ -431,7 +428,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 	for _, tc := range testcases {
 		tc := tc
 
-		t.Run("should return namespace", func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
