@@ -40,14 +40,30 @@ func newManager(settings SettingsT) (m KVStoreManager) {
 	return m
 }
 
-func EventToKeyValue(jsonData json.RawMessage) (string, string, map[string]interface{}) {
+func EventToKeyValue(jsonData json.RawMessage) (string, map[string]interface{}) {
 	key := gjson.GetBytes(jsonData, "message.key").String()
 	result := gjson.GetBytes(jsonData, "message.fields").Map()
-	field := gjson.GetBytes(jsonData, "message.field").String()
 	fields := make(map[string]interface{})
 	for k, v := range result {
 		fields[k] = v.Str
 	}
 
-	return key, field, fields
+	return key, fields
+}
+
+func SupportsKeyUpdate(jsonData json.RawMessage) bool {
+	return gjson.GetBytes(jsonData, "message.field").Exists()
+}
+
+func EventToHashKeyValue(jsonData json.RawMessage) (string, string, map[string]interface{}) {
+	hash := gjson.GetBytes(jsonData, "message.hash").String()
+	result := gjson.GetBytes(jsonData, "message.fields").Map()
+	key := gjson.GetBytes(jsonData, "message.key").String()
+
+	fields := make(map[string]interface{})
+	for k, v := range result {
+		fields[k] = v.Str
+	}
+
+	return hash, key, fields
 }
