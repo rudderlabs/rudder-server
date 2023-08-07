@@ -80,9 +80,9 @@ type Transformer interface {
 }
 
 // NewTransformer creates a new transformer
-func NewTransformer(netClientTimeout, backendProxyTimeout time.Duration) Transformer {
+func NewTransformer(destinationTimeout, transformTimeout time.Duration) Transformer {
 	handle := &handle{}
-	handle.setup(netClientTimeout, backendProxyTimeout)
+	handle.setup(destinationTimeout, transformTimeout)
 	return handle
 }
 
