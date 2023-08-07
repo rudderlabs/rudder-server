@@ -1875,7 +1875,9 @@ var _ = Describe("Static Function Tests", func() {
 				IsProcessorEnabled: true,
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"identify"},
+						"supportedMessageTypes": map[string]interface{}{
+							"cloud": []interface{}{"identify"},
+						},
 					},
 				},
 			}
