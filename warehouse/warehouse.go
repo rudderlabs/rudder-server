@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/go-chi/chi/v5"
@@ -40,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -188,9 +189,9 @@ func monitorDestRouters(ctx context.Context) error {
 	}
 
 	g, _ := errgroup.WithContext(context.Background())
-	for _, wh := range dstToWhRouter {
-		wh := wh
-		g.Go(wh.Shutdown)
+	for _, router := range dstToWhRouter {
+		router := router
+		g.Go(router.Shutdown)
 	}
 	return g.Wait()
 }

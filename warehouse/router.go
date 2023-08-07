@@ -36,8 +36,7 @@ import (
 )
 
 type Router struct {
-	destType   string
-	warehouses []model.Warehouse
+	destType string
 
 	dbHandle          *sqlquerywrapper.DB
 	warehouseDBHandle *DB
@@ -45,8 +44,15 @@ type Router struct {
 	uploadRepo        *repo.Uploads
 	whSchemaRepo      *repo.WHSchema
 
-	notifier             pgnotifier.PGNotifier
-	isEnabled            atomic.Bool
+	notifier  pgnotifier.PGNotifier
+	isEnabled atomic.Bool
+
+	logger logger.Logger
+	conf   *config.Config
+	stats  stats.Stats
+
+	warehouses           []model.Warehouse
+	workspaceBySourceIDs map[string]string
 	configSubscriberLock sync.RWMutex
 
 	workerChannelMap     map[string]chan *UploadJob
@@ -55,21 +61,18 @@ type Router struct {
 	inProgressMap     map[WorkerIdentifierT][]JobID
 	inProgressMapLock sync.RWMutex
 
-	activeWorkerCount    atomic.Int32
-	workspaceBySourceIDs map[string]string
-	stats                stats.Stats
-	uploadJobFactory     UploadJobFactory
-	now                  func() time.Time
-	nowSQL               string
-	logger               logger.Logger
-	conf                 *config.Config
+	activeWorkerCount atomic.Int32
+	now               func() time.Time
+	nowSQL            string
 
-	backgroundCancel context.CancelFunc
-	backgroundGroup  errgroup.Group
-	backgroundWait   func() error
+	stopService func()
 
-	tenantManager *multitenant.Manager
-	bcManager     *backendConfigManager
+	backgroundGroup errgroup.Group
+	backgroundWait  func() error
+
+	tenantManager    *multitenant.Manager
+	bcManager        *backendConfigManager
+	uploadJobFactory UploadJobFactory
 
 	config struct {
 		noOfWorkers                       int
@@ -159,27 +162,27 @@ func NewRouter(
 	r.conf.RegisterBoolConfigVariable(false, &r.config.shouldPopulateHistoricIdentities, false, "Warehouse.populateHistoricIdentities")
 
 	ctx, cancel := context.WithCancel(ctx)
-	g, ctx := errgroup.WithContext(ctx)
+	g, gCtx := errgroup.WithContext(ctx)
 
-	r.backgroundCancel = cancel
+	r.stopService = cancel
 	r.backgroundWait = g.Wait
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.backendConfigSubscriber(ctx)
+		r.backendConfigSubscriber(gCtx)
 		return nil
 	}))
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.runUploadJobAllocator(ctx)
+		r.runUploadJobAllocator(gCtx)
 		return nil
 	}))
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		r.mainLoop(ctx)
+		r.mainLoop(gCtx)
 		return nil
 	}))
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return r.CronTracker(ctx)
+		return r.CronTracker(gCtx)
 	}))
 
 	return r, nil
@@ -238,17 +241,12 @@ func (r *Router) backendConfigSubscriber(ctx context.Context) {
 			r.workerChannelMap = make(map[string]chan *UploadJob)
 		}
 		for _, warehouse := range warehouses {
-			if warehouse.Destination.DestinationDefinition.Name != r.destType {
-				continue
-			}
-
 			workerName := r.workerIdentifier(warehouse)
 			// spawn one worker for each unique destID_namespace
 			// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
 			// to avoid creating goroutine for disabled sources/destinations
 			if _, ok := r.workerChannelMap[workerName]; !ok {
-				workerChan := r.initWorker()
-				r.workerChannelMap[workerName] = workerChan
+				r.workerChannelMap[workerName] = r.initWorker()
 			}
 		}
 		r.workerChannelMapLock.Unlock()
@@ -269,10 +267,12 @@ func (r *Router) initWorker() chan *UploadJob {
 		r.backgroundGroup.Go(func() error {
 			for uploadJob := range workerChan {
 				r.incrementActiveWorkers()
-				err := r.handleUploadJob(uploadJob)
+
+				err := uploadJob.run()
 				if err != nil {
 					r.logger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
 				}
+
 				r.removeDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
 				r.decrementActiveWorkers()
 			}
@@ -280,11 +280,6 @@ func (r *Router) initWorker() chan *UploadJob {
 		})
 	}
 	return workerChan
-}
-
-func (*Router) handleUploadJob(uploadJob *UploadJob) error {
-	// Process the upload job
-	return uploadJob.run()
 }
 
 func (r *Router) incrementActiveWorkers() {
@@ -300,15 +295,17 @@ func (r *Router) getActiveWorkerCount() int {
 }
 
 func (r *Router) setDestInProgress(warehouse model.Warehouse, jobID int64) {
-	identifier := r.workerIdentifier(warehouse)
 	r.inProgressMapLock.Lock()
 	defer r.inProgressMapLock.Unlock()
+
+	identifier := r.workerIdentifier(warehouse)
 	r.inProgressMap[WorkerIdentifierT(identifier)] = append(r.inProgressMap[WorkerIdentifierT(identifier)], JobID(jobID))
 }
 
 func (r *Router) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
 	r.inProgressMapLock.Lock()
 	defer r.inProgressMapLock.Unlock()
+
 	identifier := r.workerIdentifier(warehouse)
 	if idx, inProgress := r.checkInProgressMap(jobID, identifier); inProgress {
 		r.inProgressMap[WorkerIdentifierT(identifier)] = removeFromJobsIDT(r.inProgressMap[WorkerIdentifierT(identifier)], idx)
@@ -320,15 +317,17 @@ func removeFromJobsIDT(slice []JobID, idx int) []JobID {
 }
 
 func (r *Router) isUploadJobInProgress(warehouse model.Warehouse, jobID int64) (int, bool) {
-	identifier := r.workerIdentifier(warehouse)
 	r.inProgressMapLock.RLock()
 	defer r.inProgressMapLock.RUnlock()
+
+	identifier := r.workerIdentifier(warehouse)
 	return r.checkInProgressMap(jobID, identifier)
 }
 
 func (r *Router) getInProgressNamespaces() []string {
 	r.inProgressMapLock.RLock()
 	defer r.inProgressMapLock.RUnlock()
+
 	var identifiers []string
 	for k, v := range r.inProgressMap {
 		if len(v) >= r.config.maxConcurrentUploadJobs {
@@ -559,12 +558,13 @@ func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 			"destType":      warehouse.Destination.DestinationDefinition.Name,
 			"reason":        err.Error(),
 		}).Count(1)
+
 		r.logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded: %v", warehouse.Identifier, err)
 		return nil
 	}
 
 	priority := defaultUploadPriority
-	uploadID, uploadStatus, uploadPriority := r.getLatestUploadStatus(ctx, &warehouse)
+	uploadID, uploadStatus, uploadPriority := r.latestUploadStatus(ctx, &warehouse)
 	if uploadStatus == model.Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgress := r.isUploadJobInProgress(warehouse, uploadID); !inProgress {
@@ -610,11 +610,12 @@ func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 	return nil
 }
 
-func (r *Router) getLatestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
+func (r *Router) latestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
 	uploadID, status, priority, err := r.warehouseDBHandle.GetLatestUploadStatus(
 		ctx,
 		warehouse.Source.ID,
-		warehouse.Destination.ID)
+		warehouse.Destination.ID,
+	)
 	if err != nil {
 		r.logger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
 	}
@@ -687,6 +688,6 @@ func (r *Router) Disable() {
 }
 
 func (r *Router) Shutdown() error {
-	r.backgroundCancel()
+	r.stopService()
 	return r.backgroundWait()
 }

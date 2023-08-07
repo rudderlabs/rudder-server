@@ -208,13 +208,13 @@ func TestRouter_CronTracker(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-		wh := Router{
+		r := Router{
 			logger: mockLogger,
 		}
 
 		mockLogger.EXPECT().Infof("context is cancelled, stopped running tracking").Times(1)
 
-		err := wh.CronTracker(ctx)
+		err := r.CronTracker(ctx)
 		require.NoError(t, err)
 	})
 
@@ -261,7 +261,7 @@ func TestRouter_CronTracker(t *testing.T) {
 		now, err := time.Parse(misc.RFC3339Milli, "2022-12-06T06:19:00.169Z")
 		require.NoError(t, err)
 
-		wh := Router{
+		r := Router{
 			destType: destType,
 			now: func() time.Time {
 				return now
@@ -271,9 +271,9 @@ func TestRouter_CronTracker(t *testing.T) {
 			dbHandle: sqlquerywrapper.New(pgResource.DB),
 			logger:   logger.NOP,
 		}
-		wh.warehouses = append(wh.warehouses, warehouse)
+		r.warehouses = append(r.warehouses, warehouse)
 
-		err = wh.CronTracker(context.Background())
+		err = r.CronTracker(context.Background())
 		require.EqualError(t, err, errors.New("cron tracker failed for source: test-sourceID, destination: test-destinationID with error: fetching last upload time for source: test-sourceID and destination: test-destinationID: pq: column \"abc\" does not exist").Error())
 	})
 }
