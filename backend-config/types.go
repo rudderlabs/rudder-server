@@ -97,7 +97,7 @@ type ConfigT struct {
 	UpdatedAt       time.Time                    `json:"updatedAt"`
 }
 
-func (c ConfigT) SourcesMap() map[string]*SourceT {
+func (c *ConfigT) SourcesMap() map[string]*SourceT {
 	sourcesMap := make(map[string]*SourceT)
 	for _, source := range c.Sources {
 		sourcesMap[source.ID] = &source
@@ -105,7 +105,7 @@ func (c ConfigT) SourcesMap() map[string]*SourceT {
 	return sourcesMap
 }
 
-func (c ConfigT) DestinationsMap() map[string]*DestinationT {
+func (c *ConfigT) DestinationsMap() map[string]*DestinationT {
 	destinationsMap := make(map[string]*DestinationT)
 	for _, source := range c.Sources {
 		for _, destination := range source.Destinations {
