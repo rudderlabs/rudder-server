@@ -1,4 +1,4 @@
-package jobs_archival
+package archiver
 
 import (
 	"bufio"
@@ -12,9 +12,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
+	c "github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -148,13 +151,12 @@ func TestJobsArchival(t *testing.T) {
 	fileUploaderProvider := fileuploader.NewStaticProvider(storageSettings)
 	trigger := make(chan time.Time)
 	archiver := New(
-		jd, fileUploaderProvider,
+		jd, fileUploaderProvider, c.New(), stats.Default,
 		WithArchiveTrigger(
 			func() <-chan time.Time {
 				return trigger
 			},
 		),
-		WithArchiveFrom("gw"),
 	)
 
 	require.NoError(t, archiver.Start())
@@ -170,9 +172,9 @@ func TestJobsArchival(t *testing.T) {
 				jobsdb.GetQueryParamsT{
 					IgnoreCustomValFiltersInQuery: true,
 					StateFilters:                  []string{jobsdb.Succeeded.State},
-					JobsLimit:                     eventsLimit(),
-					EventsLimit:                   eventsLimit(),
-					PayloadSizeLimit:              payloadLimit(),
+					JobsLimit:                     1000,
+					EventsLimit:                   1000,
+					PayloadSizeLimit:              bytesize.GB,
 				},
 			)
 			require.NoError(t, err)

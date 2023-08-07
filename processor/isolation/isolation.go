@@ -37,10 +37,6 @@ type Strategy interface {
 	AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT)
 }
 
-func GetSourceStrategy() Strategy {
-	return sourceStrategy{}
-}
-
 // noneStrategy implements isolation at no level
 type noneStrategy struct{}
 

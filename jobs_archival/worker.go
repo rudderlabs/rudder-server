@@ -1,4 +1,4 @@
-package jobs_archival
+package archiver
 
 import (
 	"context"
@@ -8,59 +8,70 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/payload"
+)
+
+var (
+	sourceParam = func(sourceID string) []jobsdb.ParameterFilterT {
+		return []jobsdb.ParameterFilterT{{
+			Name:  "source_id",
+			Value: sourceID,
+		}}
+	}
 )
 
 type worker struct {
-	log       logger.Logger
-	partition string
-	*archiver
-	lifecycle struct {
+	log             logger.Logger
+	partition       string
+	archiveFrom     string
+	jobsDB          jobsdb.JobsDB
+	payloadLimiter  payload.AdaptiveLimiterFunc
+	storageProvider fileuploader.Provider
+	lifecycle       struct {
 		ctx    context.Context
 		cancel context.CancelFunc
 	}
+
+	jobFetchLimit, uploadLimit, statusUpdateLimit kitsync.Limiter
+
+	config struct {
+		payloadLimit     func() int64
+		maxRetryAttempts func() int
+		instanceID       string
+		eventsLimit      func() int
+		minSleep         time.Duration
+		maxSleep         time.Duration
+	}
+	lastUploadTime time.Time
 }
 
 func (w *worker) Work() bool {
-	defer w.concLimiter.BeginWithPriority(w.partition, kitsync.LimiterPriorityValue(1))()
+	defer w.jobFetchLimit.BeginWithPriority(w.partition, kitsync.LimiterPriorityValue(1))()
 	var (
 		params = jobsdb.GetQueryParamsT{
-			IgnoreCustomValFiltersInQuery: true,
-			PayloadSizeLimit:              w.limiter(payloadLimit()),
-			ParameterFilters:              sourceParam(w.partition),
-			EventsLimit:                   eventsLimit(),
-			JobsLimit:                     eventsLimit(),
+			PayloadSizeLimit: w.payloadLimiter(w.config.payloadLimit()),
+			ParameterFilters: sourceParam(w.partition),
+			EventsLimit:      w.config.eventsLimit(),
+			JobsLimit:        w.config.eventsLimit(),
 		}
-		toArchive           = true
-		res                 uploadResult
-		err                 error
-		failed, unProcessed jobsdb.JobsResult
-		jobs                []*jobsdb.JobT
-		limitReached        bool
+		toArchive    = true
+		location     string
+		err          error
+		jobs         []*jobsdb.JobT
+		limitReached bool
 	)
 start:
-	failed, err = w.jobsDB.GetToRetry(w.lifecycle.ctx, params)
+	jobs, limitReached, err = w.getJobs(params)
 	if err != nil {
 		w.log.Errorf("failed to fetch jobs for backup - partition: %s - %w", w.partition, err)
 		return false
-	}
-	limitReached = failed.LimitsReached
-	jobs = failed.Jobs
-	if !limitReached {
-		params.EventsLimit -= failed.EventsCount
-		params.PayloadSizeLimit -= failed.PayloadSize
-		unProcessed, err = w.jobsDB.GetUnprocessed(w.lifecycle.ctx, params)
-		if err != nil {
-			w.log.Errorf("failed to fetch unprocessed jobs for backup - partition: %s - %w", w.partition, err)
-			return false
-		}
-		jobs = append(jobs, unProcessed.Jobs...)
-		limitReached = unProcessed.LimitsReached
 	}
 
 	if len(jobs) == 0 {
@@ -74,8 +85,8 @@ start:
 		reason = fmt.Sprintf(`{"location": "not uploaded because - %v"}`, err)
 		toArchive = false
 	}
-	if !storagePrefs.Backup(w.archiveFrom) {
-		reason = fmt.Sprintf(`{"location": "not uploaded because storage disabled for %s"}`, w.archiveFrom)
+	if !storagePrefs.Backup("gw") {
+		reason = fmt.Sprintf(`{"location": "not uploaded because archival disabled for %s"}`, w.partition)
 		toArchive = false
 	}
 	var statusList []*jobsdb.JobStatusT
@@ -88,10 +99,10 @@ start:
 		goto markStatus
 	}
 
-	res = w.uploadJobs(w.lifecycle.ctx, jobs)
-	if res.err != nil {
-		w.log.Errorf("failed to upload jobs - partition: %s - %w", w.partition, res.err)
-		maxAttempts := maxRetryAttempts()
+	location, err = w.uploadJobs(w.lifecycle.ctx, jobs)
+	if err != nil {
+		w.log.Errorf("failed to upload jobs - partition: %s - %w", w.partition, err)
+		maxAttempts := w.config.maxRetryAttempts()
 		statusList = getStatuses(
 			jobs,
 			func(job *jobsdb.JobT) string {
@@ -100,7 +111,7 @@ start:
 				}
 				return jobsdb.Failed.State
 			},
-			[]byte(fmt.Sprintf(`{"location": "not uploaded because - %v"}`, res.err)),
+			[]byte(fmt.Sprintf(`{"location": "not uploaded because - %v"}`, err)),
 		)
 		goto markStatus
 	}
@@ -108,7 +119,7 @@ start:
 	statusList = getStatuses(
 		jobs,
 		func(*jobsdb.JobT) string { return jobsdb.Succeeded.State },
-		[]byte(fmt.Sprintf(`{"location": "%v"}`, res.location)),
+		[]byte(fmt.Sprintf(`{"location": "%v"}`, location)),
 	)
 
 markStatus:
@@ -122,19 +133,14 @@ markStatus:
 }
 
 func (w *worker) SleepDurations() (min, max time.Duration) {
-	return 0, 0
+	return w.config.minSleep, time.Until(w.lastUploadTime.Add(w.config.maxSleep))
 }
 
 func (w *worker) Stop() {
 	w.lifecycle.cancel()
 }
 
-type uploadResult struct {
-	location string
-	err      error
-}
-
-func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResult {
+func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, error) {
 	firstJobCreatedAt := jobs[0].CreatedAt
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt
 	workspaceID := jobs[0].WorkspaceId
@@ -149,26 +155,17 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 	)
 
 	for _, job := range jobs {
-		rawJob, err := json.Marshal(job)
+		j, err := marshalJob(job)
 		if err != nil {
-			return uploadResult{
-				err:      err,
-				location: "",
-			}
+			return "", fmt.Errorf("failed to marshal job - %w", err)
 		}
-		if _, err := gzWriter.Write(path, append(rawJob, '\n')); err != nil {
-			return uploadResult{
-				err:      err,
-				location: "",
-			}
+		if _, err := gzWriter.Write(path, append(j, '\n')); err != nil {
+			return "", fmt.Errorf("failed to write to file - %w", err)
 		}
 	}
 	err := gzWriter.Close()
 	if err != nil {
-		return uploadResult{
-			err:      err,
-			location: "",
-		}
+		return "", fmt.Errorf("failed to close file - %w", err)
 	}
 	defer func() { _ = os.Remove(path) }()
 
@@ -177,18 +174,12 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 		w.log.Errorf("Skipping Storing errors for workspace: %s - partition: %s since no file manager is found",
 			workspaceID, w.partition,
 		)
-		return uploadResult{
-			err:      err,
-			location: "",
-		}
+		return "", fmt.Errorf("failed to get file manager - %w", err)
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		return uploadResult{
-			err:      err,
-			location: "",
-		}
+		return "", fmt.Errorf("failed to open file %s - %w", path, err)
 	}
 	defer func() { _ = file.Close() }()
 	year, month, date := firstJobCreatedAt.Date()
@@ -197,21 +188,15 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) uploadResu
 		w.archiveFrom,
 		fmt.Sprintf("%d-%d-%d", year, month, date),
 		fmt.Sprintf("%d", firstJobCreatedAt.Hour()),
-		instanceID,
+		w.config.instanceID,
 	}
 	uploadOutput, err := fileUploader.Upload(ctx, file, prefixes...)
 	if err != nil {
 		w.log.Errorf("failed to upload file to object storage - %w", err)
-		return uploadResult{
-			err:      err,
-			location: "",
-		}
+		return "", fmt.Errorf("failed to upload file to object storage - %w", err)
 	}
 
-	return uploadResult{
-		err:      nil,
-		location: uploadOutput.Location,
-	}
+	return uploadOutput.Location, nil
 }
 
 func getStatuses(jobs []*jobsdb.JobT, stateFunc func(*jobsdb.JobT) string, response []byte) []*jobsdb.JobStatusT {
@@ -225,4 +210,40 @@ func getStatuses(jobs []*jobsdb.JobT, stateFunc func(*jobsdb.JobT) string, respo
 			RetryTime:     time.Now(),
 		}
 	})
+}
+
+func (w *worker) getJobs(params jobsdb.GetQueryParamsT) ([]*jobsdb.JobT, bool, error) {
+	failed, err := w.jobsDB.GetToRetry(w.lifecycle.ctx, params)
+	if err != nil {
+		w.log.Errorf("failed to fetch jobs for backup - partition: %s - %w", w.partition, err)
+		return nil, false, err
+	}
+	limitReached := failed.LimitsReached
+	jobs := failed.Jobs
+	if !limitReached {
+		params.EventsLimit -= failed.EventsCount
+		params.PayloadSizeLimit -= failed.PayloadSize
+		unProcessed, err := w.jobsDB.GetUnprocessed(w.lifecycle.ctx, params)
+		if err != nil {
+			w.log.Errorf("failed to fetch unprocessed jobs for backup - partition: %s - %w", w.partition, err)
+			return nil, false, err
+		}
+		jobs = append(jobs, unProcessed.Jobs...)
+		limitReached = unProcessed.LimitsReached
+	}
+	return jobs, limitReached, nil
+}
+
+func marshalJob(job *jobsdb.JobT) ([]byte, error) {
+	var J struct {
+		UserID       string          `json:"UserID"`
+		EventPayload json.RawMessage `json:"EventPayload"`
+		CreatedAt    time.Time       `json:"CreatedAt"`
+		MessageID    string          `json:"MessageID"`
+	}
+	J.UserID = job.UserID
+	J.EventPayload = job.EventPayload
+	J.CreatedAt = job.CreatedAt
+	J.MessageID = gjson.GetBytes(job.EventPayload, "messageId").String()
+	return json.Marshal(J)
 }

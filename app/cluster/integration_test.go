@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jobs_archival"
+	arc "github.com/rudderlabs/rudder-server/jobs_archival"
 	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
@@ -266,9 +266,10 @@ func TestDynamicClusterManager(t *testing.T) {
 		EventSchemaDB:   eschDB,
 		ArchivalDB:      archDB,
 		SchemaForwarder: schemaForwarder,
-		Archiver: jobs_archival.New(
+		Archiver: arc.New(
 			archiveDB,
 			nil,
+			config.Default,
 		),
 
 		Processor: processor,

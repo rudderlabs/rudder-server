@@ -12,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
-	"github.com/rudderlabs/rudder-server/jobs_archival"
+	archiver "github.com/rudderlabs/rudder-server/jobs_archival"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	schema_forwarder "github.com/rudderlabs/rudder-server/schema-forwarder"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -281,11 +281,14 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		ArchivalDB:       archivalDB,
 		Processor:        p,
 		Router:           rt,
-		Archiver: jobs_archival.New(
+		Archiver: archiver.New(
 			archivalDB,
 			fileUploaderProvider,
-			jobs_archival.WithAdaptiveLimit(adaptiveLimit),
-			jobs_archival.WithArchiveFrom("gw"),
+			config.New(),
+			stats.Default,
+			archiver.WithAdaptiveLimit(adaptiveLimit),
+			archiver.WithArchiveFrom("gw"),
+			archiver.WithPartitionStrategy(archiver.SourcePartition),
 		),
 	}
 
