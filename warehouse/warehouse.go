@@ -18,16 +18,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/go-chi/chi/v5"
+	"github.com/samber/lo"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -47,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
-	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
@@ -83,27 +78,20 @@ var (
 	minRetryAttempts                    int
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
-	connectionsMap                      map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
-	slaveConnectionsMap                 map[string]map[string]model.Warehouse // destID -> sourceID -> warehouse map
-	connectionsMapLock                  sync.RWMutex
+	bcManager                           *backendConfigManager
 	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
 	triggerUploadsMapLock               sync.RWMutex
-	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
-	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.Logger
 	tableCountQueryTimeout              time.Duration
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
 	uploadAllocatorSleep                time.Duration
-	waitForConfig                       time.Duration
 	waitForWorkerSleep                  time.Duration
 	ShouldForceSetLowerVersion          bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	asyncWh                             *jobs.AsyncJobWh
-	configBackendURL                    string
-	enableTunnelling                    bool
 )
 
 var (
@@ -129,7 +117,7 @@ type (
 	JobID             int64
 )
 
-type HandleT struct {
+type HandleT struct { // TODO rename to "router" and move to "router.go"
 	destType                          string
 	warehouses                        []model.Warehouse
 	dbHandle                          *sqlquerywrapper.DB
@@ -138,25 +126,22 @@ type HandleT struct {
 	uploadRepo                        *repo.Uploads
 	whSchemaRepo                      *repo.WHSchema
 	notifier                          pgnotifier.PGNotifier
-	isEnabled                         bool
+	isEnabled                         atomic.Bool
 	configSubscriberLock              sync.RWMutex
 	workerChannelMap                  map[string]chan *UploadJob
 	workerChannelMapLock              sync.RWMutex
-	initialConfigFetched              bool
 	inProgressMap                     map[WorkerIdentifierT][]JobID
 	inProgressMapLock                 sync.RWMutex
 	noOfWorkers                       int
-	activeWorkerCount                 int32
+	activeWorkerCount                 atomic.Int32
 	maxConcurrentUploadJobs           int
 	allowMultipleSourcesForJobsPickup bool
 	workspaceBySourceIDs              map[string]string
-	tenantManager                     multitenant.Manager
 	stats                             stats.Stats
 	uploadJobFactory                  UploadJobFactory
 	Now                               func() time.Time
 	NowSQL                            string
 	Logger                            logger.Logger
-	cpInternalClient                  cpclient.InternalControlPlane
 	conf                              *config.Config
 
 	backgroundCancel context.CancelFunc
@@ -184,22 +169,16 @@ func loadConfig() {
 	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
-	enableTunnelling = config.GetBool("ENABLE_TUNNELLING", true)
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(180, &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins"}...)
-	connectionsMap = map[string]map[string]model.Warehouse{}
-	slaveConnectionsMap = map[string]map[string]model.Warehouse{}
 	triggerUploadsMap = map[string]bool{}
-	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
 	runningMode = config.GetString("Warehouse.runningMode", "")
 	config.RegisterDurationConfigVariable(30, &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterDurationConfigVariable(5, &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
-	config.RegisterDurationConfigVariable(5, &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
@@ -212,19 +191,17 @@ func loadConfig() {
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
 func (wh *HandleT) workerIdentifier(warehouse model.Warehouse) (identifier string) {
-	identifier = fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
-
 	if wh.allowMultipleSourcesForJobsPickup {
-		identifier = fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
+		return warehouse.Source.ID + "_" + warehouse.Destination.ID + "_" + warehouse.Namespace
 	}
-	return
+	return warehouse.Destination.ID + "_" + warehouse.Namespace
 }
 
 func getDestinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
 	if destinationId == "" || sourceId == "" {
 		return model.Warehouse{}, errors.New("invalid Parameters")
 	}
-	sourceMap, ok := slaveConnectionsMap[destinationId]
+	sourceMap, ok := bcManager.ConnectionSourcesMap(destinationId)
 	if !ok {
 		return model.Warehouse{}, errors.New("invalid Destination Id")
 	}
@@ -238,17 +215,15 @@ func getDestinationFromSlaveConnectionMap(destinationId, sourceId string) (model
 }
 
 func (wh *HandleT) getActiveWorkerCount() int {
-	return int(atomic.LoadInt32(&wh.activeWorkerCount))
+	return int(wh.activeWorkerCount.Load())
 }
 
 func (wh *HandleT) decrementActiveWorkers() {
-	// decrement number of workers actively engaged
-	atomic.AddInt32(&wh.activeWorkerCount, -1)
+	wh.activeWorkerCount.Add(-1)
 }
 
 func (wh *HandleT) incrementActiveWorkers() {
-	// increment number of workers actively engaged
-	atomic.AddInt32(&wh.activeWorkerCount, 1)
+	wh.activeWorkerCount.Add(1)
 }
 
 func (wh *HandleT) initWorker() chan *UploadJob {
@@ -277,171 +252,49 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJob) error {
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
-	for configData := range wh.tenantManager.WatchConfig(ctx) {
-		var warehouses []model.Warehouse
-		sourceIDsByWorkspaceTemp := map[string][]string{}
-
-		workspaceBySourceIDs := map[string]string{}
-
+	for warehouses := range bcManager.Subscribe(ctx) {
 		wh.Logger.Info(`Received updated workspace config`)
-		for workspaceID, wConfig := range configData {
-			for _, source := range wConfig.Sources {
-				if _, ok := sourceIDsByWorkspaceTemp[workspaceID]; !ok {
-					sourceIDsByWorkspaceTemp[workspaceID] = []string{}
-				}
 
-				sourceIDsByWorkspaceTemp[workspaceID] = append(sourceIDsByWorkspaceTemp[workspaceID], source.ID)
-				workspaceBySourceIDs[source.ID] = workspaceID
+		warehouses = lo.Filter(warehouses, func(warehouse model.Warehouse, _ int) bool {
+			return warehouse.Destination.DestinationDefinition.Name == wh.destType
+		})
 
-				if len(source.Destinations) == 0 {
-					continue
-				}
-
-				for _, destination := range source.Destinations {
-
-					if destination.DestinationDefinition.Name != wh.destType {
-						continue
-					}
-
-					if enableTunnelling {
-						destination = wh.attachSSHTunnellingInfo(ctx, destination)
-					}
-
-					namespace := wh.getNamespace(ctx, source, destination)
-					warehouse := model.Warehouse{
-						WorkspaceID: workspaceID,
-						Source:      source,
-						Destination: destination,
-						Namespace:   namespace,
-						Type:        wh.destType,
-						Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
-					}
-					warehouses = append(warehouses, warehouse)
-
-					workerName := wh.workerIdentifier(warehouse)
-					wh.workerChannelMapLock.Lock()
-					// spawn one worker for each unique destID_namespace
-					// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
-					// to avoid creating goroutine for disabled sources/destinations
-					if _, ok := wh.workerChannelMap[workerName]; !ok {
-						workerChan := wh.initWorker()
-						wh.workerChannelMap[workerName] = workerChan
-					}
-					wh.workerChannelMapLock.Unlock()
-
-					connectionsMapLock.Lock()
-					if _, ok := connectionsMap[destination.ID]; !ok {
-						connectionsMap[destination.ID] = map[string]model.Warehouse{}
-					}
-					if _, ok := slaveConnectionsMap[destination.ID]; !ok {
-						slaveConnectionsMap[destination.ID] = map[string]model.Warehouse{}
-					}
-					if warehouse.Destination.Config["sslMode"] == "verify-ca" {
-						if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
-							wh.Logger.Error(err.Error())
-							persistSSLFileErrorStat(workspaceID, wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
-						}
-					}
-					connectionsMap[destination.ID][source.ID] = warehouse
-					slaveConnectionsMap[destination.ID][source.ID] = warehouse
-					connectionsMapLock.Unlock()
-
-					if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
-						wh.setupIdentityTables(ctx, warehouse)
-						if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
-							// non-blocking populate historic identities
-							wh.populateHistoricIdentities(ctx, warehouse)
-						}
-					}
+		for _, warehouse := range warehouses {
+			if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+				wh.setupIdentityTables(ctx, warehouse)
+				if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
+					// non-blocking populate historic identities
+					wh.populateHistoricIdentities(ctx, warehouse)
 				}
 			}
 		}
+
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = warehouses
-		wh.workspaceBySourceIDs = workspaceBySourceIDs
-		wh.Logger.Infof("Releasing config subscriber lock: %s", wh.destType)
+		if wh.workspaceBySourceIDs == nil {
+			wh.workspaceBySourceIDs = make(map[string]string)
+		}
+		for _, warehouse := range warehouses {
+			wh.workspaceBySourceIDs[warehouse.Source.ID] = warehouse.WorkspaceID
+		}
 		wh.configSubscriberLock.Unlock()
 
-		sourceIDsByWorkspaceLock.Lock()
-		sourceIDsByWorkspace = sourceIDsByWorkspaceTemp
-		sourceIDsByWorkspaceLock.Unlock()
-		wh.initialConfigFetched = true
-	}
-}
-
-func (wh *HandleT) attachSSHTunnellingInfo(
-	ctx context.Context,
-	upstream backendconfig.DestinationT,
-) backendconfig.DestinationT {
-	// at destination level, do we have tunnelling enabled.
-	if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", upstream.Config); !tunnelEnabled {
-		return upstream
-	}
-
-	pkgLogger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
-	keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, upstream.ID)
-	if err != nil {
-		pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
-		return upstream
-	}
-
-	replica := backendconfig.DestinationT{}
-	if err := deepCopy(upstream, &replica); err != nil {
-		pkgLogger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
-		return upstream
-	}
-
-	replica.Config["sshPrivateKey"] = keys.PrivateKey
-	return replica
-}
-
-func deepCopy(src, dest interface{}) error {
-	byt, err := json.Marshal(src)
-	if err != nil {
-		return err
-	}
-
-	return json.Unmarshal(byt, dest)
-}
-
-// getNamespace sets namespace name in the following order
-//  1. user set name from destinationConfig
-//  2. from existing record in wh_schemas with same source + dest combo
-//  3. convert source name
-func (wh *HandleT) getNamespace(ctx context.Context, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
-	configMap := destination.Config
-	if wh.destType == warehouseutils.CLICKHOUSE {
-		if _, ok := configMap["database"].(string); ok {
-			return configMap["database"].(string)
+		wh.workerChannelMapLock.Lock()
+		if wh.workerChannelMap == nil {
+			wh.workerChannelMap = make(map[string]chan *UploadJob)
 		}
-		return "rudder"
-	}
-	if configMap["namespace"] != nil {
-		namespace, _ := configMap["namespace"].(string)
-		if len(strings.TrimSpace(namespace)) > 0 {
-			return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, namespace))
+		for _, warehouse := range warehouses {
+			workerName := wh.workerIdentifier(warehouse)
+			// spawn one worker for each unique destID_namespace
+			// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
+			// to avoid creating goroutine for disabled sources/destinations
+			if _, ok := wh.workerChannelMap[workerName]; !ok {
+				workerChan := wh.initWorker()
+				wh.workerChannelMap[workerName] = workerChan
+			}
 		}
+		wh.workerChannelMapLock.Unlock()
 	}
-	// TODO: Move config to global level based on use case
-	namespacePrefix := wh.conf.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[wh.destType]), "")
-	if namespacePrefix != "" {
-		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
-	}
-
-	namespace, err := wh.whSchemaRepo.GetNamespace(ctx, source.ID, destination.ID)
-	if err != nil {
-		pkgLogger.Errorw("getting namespace",
-			logfield.SourceID, source.ID,
-			logfield.DestinationID, destination.ID,
-			logfield.DestinationType, destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, destination.WorkspaceID,
-		)
-		return ""
-	}
-	if namespace == "" {
-		return warehouseutils.ToProviderCase(wh.destType, warehouseutils.ToSafeNamespace(wh.destType, source.Name))
-	}
-	return namespace
 }
 
 func (wh *HandleT) setDestInProgress(warehouse model.Warehouse, jobID int64) {
@@ -644,7 +497,7 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse model.Warehouse) (e
 
 func (wh *HandleT) mainLoop(ctx context.Context) {
 	for {
-		if !wh.isEnabled {
+		if !wh.isEnabled.Load() {
 			select {
 			case <-ctx.Done():
 				return
@@ -789,13 +642,11 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 func (wh *HandleT) runUploadJobAllocator(ctx context.Context) {
 loop:
 	for {
-		if !wh.initialConfigFetched {
-			select {
-			case <-ctx.Done():
-				break loop
-			case <-time.After(waitForConfig):
-			}
-			continue
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-bcManager.initialConfigFetched:
+			wh.Logger.Debugf("Initial config fetched in runUploadJobAllocator for %s", wh.destType)
 		}
 
 		availableWorkers := wh.noOfWorkers - wh.getActiveWorkerCount()
@@ -854,12 +705,12 @@ func getBucketFolder(batchID, tableName string) string {
 
 // Enable enables a router :)
 func (wh *HandleT) Enable() {
-	wh.isEnabled = true
+	wh.isEnabled.Store(true)
 }
 
 // Disable disables a router:)
 func (wh *HandleT) Disable() {
-	wh.isEnabled = false
+	wh.isEnabled.Store(false)
 }
 
 func (wh *HandleT) Setup(ctx context.Context, whType string) error {
@@ -881,11 +732,7 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 		return err
 	}
 	wh.Enable()
-	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobID)
-	wh.tenantManager = multitenant.Manager{
-		BackendConfig: backendconfig.DefaultBackendConfig,
-	}
 	wh.stats = stats.Default
 
 	wh.uploadJobFactory = UploadJobFactory{
@@ -909,24 +756,11 @@ func (wh *HandleT) Setup(ctx context.Context, whType string) error {
 	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 
-	wh.cpInternalClient = cpclient.NewInternalClientWithCache(
-		configBackendURL,
-		cpclient.BasicAuth{
-			Username: wh.conf.GetString("CP_INTERNAL_API_USERNAME", ""),
-			Password: wh.conf.GetString("CP_INTERNAL_API_PASSWORD", ""),
-		},
-	)
-
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
 	wh.backgroundCancel = cancel
 	wh.backgroundWait = g.Wait
-
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		wh.tenantManager.Run(ctx)
-		return nil
-	}))
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.backendConfigSubscriber(ctx)
@@ -973,72 +807,6 @@ func (wh *HandleT) resetInProgressJobs(ctx context.Context) error {
 	return err
 }
 
-func minimalConfigSubscriber(ctx context.Context) {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-	for data := range ch {
-		pkgLogger.Debug("Got config from config-backend", data)
-		configData := data.Data.(map[string]backendconfig.ConfigT)
-
-		sourceIDsByWorkspaceTemp := map[string][]string{}
-
-		var connectionFlags backendconfig.ConnectionFlags
-		for workspaceID, wConfig := range configData {
-			connectionFlags = wConfig.ConnectionFlags // the last connection flags should be enough, since they are all the same in multi-workspace environments
-			for _, source := range wConfig.Sources {
-				if _, ok := sourceIDsByWorkspaceTemp[workspaceID]; !ok {
-					sourceIDsByWorkspaceTemp[workspaceID] = []string{}
-				}
-				sourceIDsByWorkspaceTemp[workspaceID] = append(sourceIDsByWorkspaceTemp[workspaceID], source.ID)
-				for _, destination := range source.Destinations {
-					if slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
-						wh := &HandleT{
-							dbHandle:     wrappedDBHandle,
-							destType:     destination.DestinationDefinition.Name,
-							whSchemaRepo: repo.NewWHSchemas(wrappedDBHandle),
-							conf:         config.Default,
-						}
-						namespace := wh.getNamespace(ctx, source, destination)
-
-						connectionsMapLock.Lock()
-						if _, ok := slaveConnectionsMap[destination.ID]; !ok {
-							slaveConnectionsMap[destination.ID] = map[string]model.Warehouse{}
-						}
-						if _, ok := connectionsMap[destination.ID]; !ok {
-							connectionsMap[destination.ID] = map[string]model.Warehouse{}
-						}
-						warehouse := model.Warehouse{
-							WorkspaceID: workspaceID,
-							Destination: destination,
-							Namespace:   namespace,
-							Type:        wh.destType,
-							Source:      source,
-							Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
-						}
-						if destination.Config["sslMode"] == "verify-ca" {
-							if err := warehouseutils.WriteSSLKeys(destination); err.IsError() {
-								wh.Logger.Error(err.Error())
-								persistSSLFileErrorStat(workspaceID, wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
-							}
-						}
-						slaveConnectionsMap[destination.ID][source.ID] = warehouse
-						connectionsMap[destination.ID][source.ID] = warehouse
-						connectionsMapLock.Unlock()
-					}
-				}
-			}
-		}
-		sourceIDsByWorkspaceLock.Lock()
-		sourceIDsByWorkspace = sourceIDsByWorkspaceTemp
-		sourceIDsByWorkspaceLock.Unlock()
-
-		if val, ok := connectionFlags.Services["warehouse"]; ok {
-			if UploadAPI.connectionManager != nil {
-				UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
-			}
-		}
-	}
-}
-
 // Gets the config from config backend and extracts enabled write keys
 func monitorDestRouters(ctx context.Context) error {
 	dstToWhRouter := make(map[string]*HandleT)
@@ -1063,9 +831,7 @@ func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.Conf
 	pkgLogger.Debug("Got config from config-backend", config)
 
 	enabledDestinations := make(map[string]bool)
-	var connectionFlags backendconfig.ConnectionFlags
 	for _, wConfig := range config {
-		connectionFlags = wConfig.ConnectionFlags // the last connection flags should be enough, since they are all the same in multi-workspace environments
 		for _, source := range wConfig.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
@@ -1074,25 +840,16 @@ func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.Conf
 					if !ok {
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 						wh = &HandleT{}
-						wh.configSubscriberLock.Lock()
 						if err := wh.Setup(ctx, destination.DestinationDefinition.Name); err != nil {
 							return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
 						}
-						wh.configSubscriberLock.Unlock()
 						dstToWhRouter[destination.DestinationDefinition.Name] = wh
 					} else {
 						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-						wh.configSubscriberLock.Lock()
 						wh.Enable()
-						wh.configSubscriberLock.Unlock()
 					}
 				}
 			}
-		}
-	}
-	if val, ok := connectionFlags.Services["warehouse"]; ok {
-		if UploadAPI.connectionManager != nil {
-			UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
 		}
 	}
 
@@ -1101,9 +858,7 @@ func onConfigDataEvent(ctx context.Context, config map[string]backendconfig.Conf
 		if _, ok := enabledDestinations[key]; !ok {
 			if wh, ok := dstToWhRouter[key]; ok {
 				pkgLogger.Info("Disabling a existing warehouse destination: ", key)
-				wh.configSubscriberLock.Lock()
 				wh.Disable()
-				wh.configSubscriberLock.Unlock()
 			}
 		}
 	}
@@ -1237,18 +992,8 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// trigger upload if there are pending events and triggerPendingUpload is true
 	if pendingEvents && triggerPendingUpload {
 		pkgLogger.Infof("[WH]: Triggering upload for all wh destinations connected to source '%s'", sourceID)
-		wh := make([]model.Warehouse, 0)
 
-		// get all wh destinations for given source id
-		connectionsMapLock.Lock()
-		for _, srcMap := range connectionsMap {
-			for srcID, w := range srcMap {
-				if srcID == sourceID {
-					wh = append(wh, w)
-				}
-			}
-		}
-		connectionsMapLock.Unlock()
+		wh := bcManager.WarehousesBySourceID(sourceID)
 
 		// return error if no such destinations found
 		if len(wh) == 0 {
@@ -1371,30 +1116,12 @@ func TriggerUploadHandler(sourceID, destID string) error {
 		return err
 	}
 
-	wh := make([]model.Warehouse, 0)
-
+	var wh []model.Warehouse
 	if sourceID != "" && destID == "" {
-		// get all wh destinations for given source id
-		connectionsMapLock.Lock()
-		for _, srcMap := range connectionsMap {
-			for srcID, w := range srcMap {
-				if srcID == sourceID {
-					wh = append(wh, w)
-				}
-			}
-		}
-		connectionsMapLock.Unlock()
+		wh = bcManager.WarehousesBySourceID(sourceID)
 	}
 	if destID != "" {
-		connectionsMapLock.Lock()
-		for destinationId, srcMap := range connectionsMap {
-			if destinationId == destID {
-				for _, w := range srcMap {
-					wh = append(wh, w)
-				}
-			}
-		}
-		connectionsMapLock.Unlock()
+		wh = bcManager.WarehousesByDestID(destID)
 	}
 
 	// return error if no such destinations found
@@ -1678,14 +1405,32 @@ func Start(ctx context.Context, app app.App) error {
 		}
 	}()
 
+	g, ctx := errgroup.WithContext(ctx)
+
+	tenantManager = &multitenant.Manager{
+		BackendConfig: backendconfig.DefaultBackendConfig,
+	}
+	g.Go(func() error {
+		tenantManager.Run(ctx)
+		return nil
+	})
+
+	bcManager = newBackendConfigManager(
+		config.Default, wrappedDBHandle, tenantManager,
+		pkgLogger.Child("wh_bc_manager"),
+	)
+	g.Go(func() error {
+		bcManager.Start(ctx)
+		return nil
+	})
+
+	RegisterAdmin(bcManager, pkgLogger)
+
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
-			rruntime.GoForWarehouse(func() {
-				minimalConfigSubscriber(ctx)
-			})
-			err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
 			if err != nil {
 				pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 				return err
@@ -1699,8 +1444,6 @@ func Start(ctx context.Context, app app.App) error {
 	if err != nil {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
-
-	g, ctx := errgroup.WithContext(ctx)
 
 	// Setting up reporting client
 	// only if standalone or embedded connecting to diff DB for warehouse
@@ -1736,10 +1479,6 @@ func Start(ctx context.Context, app app.App) error {
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			minimalConfigSubscriber(ctx)
-			return nil
-		}))
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return setupSlave(ctx)
 		}))
 	}
@@ -1756,14 +1495,6 @@ func Start(ctx context.Context, app app.App) error {
 			backendconfig.DefaultBackendConfig.Identity(),
 			controlplane.WithRegion(region),
 		)
-
-		tenantManager = &multitenant.Manager{
-			BackendConfig: backendconfig.DefaultBackendConfig,
-		}
-		g.Go(func() error {
-			tenantManager.Run(ctx)
-			return nil
-		})
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)
@@ -1786,7 +1517,7 @@ func Start(ctx context.Context, app app.App) error {
 			return nil
 		}))
 
-		err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+		err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
 		if err != nil {
 			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 			return err
