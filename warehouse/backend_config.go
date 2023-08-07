@@ -100,15 +100,15 @@ func (s *backendConfigManager) Start(ctx context.Context) {
 func (s *backendConfigManager) Subscribe(ctx context.Context) <-chan []model.Warehouse {
 	s.subscriptionsMu.Lock()
 	defer s.subscriptionsMu.Unlock()
-	s.warehousesMu.Lock()
-	defer s.warehousesMu.Unlock()
 
 	ch := make(chan []model.Warehouse, 10)
 	s.subscriptions = append(s.subscriptions, ch)
 
+	s.warehousesMu.Lock()
 	if len(s.warehouses) > 0 {
 		ch <- s.warehouses
 	}
+	s.warehousesMu.Unlock()
 
 	go func() {
 		<-ctx.Done()
@@ -249,6 +249,7 @@ func (s *backendConfigManager) namespace(ctx context.Context, source backendconf
 			logfield.DestinationID, destination.ID,
 			logfield.DestinationType, destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, destination.WorkspaceID,
+			logfield.Error, err.Error(),
 		)
 		return ""
 	}

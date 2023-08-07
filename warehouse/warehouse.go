@@ -1405,23 +1405,19 @@ func Start(ctx context.Context, app app.App) error {
 		}
 	}()
 
-	g, ctx := errgroup.WithContext(ctx)
-
 	tenantManager = &multitenant.Manager{
 		BackendConfig: backendconfig.DefaultBackendConfig,
 	}
-	g.Go(func() error {
+	rruntime.GoForWarehouse(func() {
 		tenantManager.Run(ctx)
-		return nil
 	})
 
 	bcManager = newBackendConfigManager(
 		config.Default, wrappedDBHandle, tenantManager,
 		pkgLogger.Child("wh_bc_manager"),
 	)
-	g.Go(func() error {
+	rruntime.GoForWarehouse(func() {
 		bcManager.Start(ctx)
-		return nil
 	})
 
 	RegisterAdmin(bcManager, pkgLogger)
@@ -1445,13 +1441,15 @@ func Start(ctx context.Context, app app.App) error {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
 
+	g, gCtx := errgroup.WithContext(ctx)
+
 	// Setting up reporting client
 	// only if standalone or embedded connecting to diff DB for warehouse
 	if (isStandAlone() && isMaster()) || (misc.GetConnectionString() != psqlInfo) {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WarehouseReportingClient})
+			reporting.AddClient(gCtx, types.Config{ConnInfo: psqlInfo, ClientName: types.WarehouseReportingClient})
 			return nil
 		}))
 	}
@@ -1459,14 +1457,14 @@ func Start(ctx context.Context, app app.App) error {
 	if isStandAlone() && isMaster() {
 		// Report warehouse features
 		g.Go(func() error {
-			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+			backendconfig.DefaultBackendConfig.WaitForConfig(gCtx)
 
 			c := controlplane.NewClient(
 				backendconfig.GetConfigBackendURL(),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
-			err := c.SendFeatures(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
+			err := c.SendFeatures(gCtx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
 			if err != nil {
 				pkgLogger.Errorf("error sending warehouse features: %v", err)
 			}
@@ -1479,7 +1477,7 @@ func Start(ctx context.Context, app app.App) error {
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return setupSlave(ctx)
+			return setupSlave(gCtx)
 		}))
 	}
 
@@ -1497,12 +1495,11 @@ func Start(ctx context.Context, app app.App) error {
 		)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return notifier.ClearJobs(ctx)
+			return notifier.ClearJobs(gCtx)
 		}))
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			err := monitorDestRouters(ctx)
-			return err
+			return monitorDestRouters(gCtx)
 		}))
 
 		archiver := &archive.Archiver{
@@ -1513,7 +1510,7 @@ func Start(ctx context.Context, app app.App) error {
 			Multitenant: tenantManager,
 		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			archive.CronArchiver(ctx, archiver)
+			archive.CronArchiver(gCtx, archiver)
 			return nil
 		}))
 
@@ -1522,7 +1519,7 @@ func Start(ctx context.Context, app app.App) error {
 			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 			return err
 		}
-		asyncWh = jobs.InitWarehouseJobsAPI(ctx, dbHandle, &notifier)
+		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, &notifier)
 		jobs.WithConfig(asyncWh, config.Default)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -1531,7 +1528,7 @@ func Start(ctx context.Context, app app.App) error {
 	}
 
 	g.Go(func() error {
-		return startWebHandler(ctx)
+		return startWebHandler(gCtx)
 	})
 
 	return g.Wait()
