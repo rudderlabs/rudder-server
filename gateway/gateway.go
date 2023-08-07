@@ -46,7 +46,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/middleware"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -201,6 +200,9 @@ type HandleT struct {
 	rsourcesService       rsources.JobService
 	sourcehandle          sourcedebugger.SourceDebugger
 	whProxy               http.Handler
+
+	configInitialised     bool
+	configInitialisedChan chan struct{}
 }
 
 // Part of the gateway module Setup call.
@@ -1307,7 +1309,7 @@ This function will block.
 */
 func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	gateway.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", webPort)
-	gateway.backendConfig.WaitForConfig(ctx)
+	<-gateway.configInitialisedChan
 	gateway.logger.Infof("WebHandler Starting on %d", webPort)
 	component := "gateway"
 	srvMux := chi.NewRouter()
@@ -1403,7 +1405,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 // StartAdminHandler for Admin Operations
 func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	gateway.logger.Infof("AdminHandler waiting for BackendConfig before starting on %d", adminWebPort)
-	gateway.backendConfig.WaitForConfig(ctx)
+	<-gateway.configInitialisedChan
 	gateway.logger.Infof("AdminHandler starting on %d", adminWebPort)
 	component := "gateway"
 	srvMux := chi.NewRouter()
@@ -1421,8 +1423,16 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func (gateway *HandleT) backendConfigSubscriber() {
-	ch := gateway.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+func (gateway *HandleT) backendConfigSubscriber(ctx context.Context) {
+	closeConfigChan := func(sources int) {
+		if !gateway.configInitialised {
+			gateway.logger.Infow("BackendConfig initialised", "sources", sources)
+			gateway.configInitialised = true
+			close(gateway.configInitialisedChan)
+		}
+	}
+	defer closeConfigChan(0)
+	ch := gateway.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
 	for data := range ch {
 		var (
 			newWriteKeysSourceMap          = map[string]backendconfig.SourceT{}
@@ -1450,6 +1460,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		enabledWriteKeyWebhookMap = newEnabledWriteKeyWebhookMap
 		enabledWriteKeyWorkspaceMap = newEnabledWriteKeyWorkspaceMap
 		configSubscriberLock.Unlock()
+		closeConfigChan(len(writeKeysSourceMap))
 	}
 }
 
@@ -1558,6 +1569,7 @@ func (gateway *HandleT) Setup(
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr, Timeout: gateway.httpTimeout}
 	gateway.netHandle = client
+	gateway.configInitialisedChan = make(chan struct{})
 
 	// For the lack of better stat type, using TimerType.
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.HistogramType)
@@ -1603,16 +1615,17 @@ func (gateway *HandleT) Setup(
 		gateway.eventSchemaHandler = event_schema.GetInstance()
 	}
 
-	rruntime.Go(func() {
-		gateway.backendConfigSubscriber()
-	})
-
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
 	gateway.backgroundCancel = cancel
 	gateway.backgroundWait = g.Wait
 	gateway.initUserWebRequestWorkers()
+
+	g.Go(misc.WithBugsnag(func() error {
+		gateway.backendConfigSubscriber(ctx)
+		return nil
+	}))
 
 	g.Go(misc.WithBugsnag(func() error {
 		gateway.runUserWebRequestWorkers(ctx)
