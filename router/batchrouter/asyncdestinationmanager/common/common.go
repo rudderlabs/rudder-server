@@ -78,7 +78,6 @@ type AsyncUploadT struct {
 
 type UploadStruct struct {
 	ImportId string                 `json:"importId"`
-	PollUrl  string                 `json:"pollURL"`
 	Metadata map[string]interface{} `json:"metadata"`
 }
 
@@ -87,7 +86,6 @@ type MetaDataT struct {
 }
 type ImportParameters struct {
 	ImportId string    `json:"importId"`
-	PollUrl  *string   `json:"pollURL"`
 	MetaData MetaDataT `json:"metadata"`
 }
 
@@ -106,6 +104,7 @@ type AsyncDestinationStruct struct {
 	RsourcesStats        rsources.StatsCollector
 	Destination          *backendconfig.DestinationT
 	Manager              AsyncDestinationManager
+	AttemptNums          map[int64]int
 }
 
 type AsyncFailedPayload struct {

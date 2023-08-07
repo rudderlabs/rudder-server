@@ -67,6 +67,7 @@ func prepareJobStatusList(importingList []*jobsdb.JobT, defaultStatus jobsdb.Job
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			JobState:      defaultStatus.JobState,
+			AttemptNum:    job.LastJobStatus.AttemptNum,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			ErrorCode:     defaultStatus.ErrorCode,
@@ -125,6 +126,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 					status = &jobsdb.JobStatusT{
 						JobID:         jobID,
 						JobState:      jobsdb.Succeeded.State,
+						AttemptNum:    job.LastJobStatus.AttemptNum,
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorResponse: []byte(fmt.Sprintf(`{"error":"%s"}`, pollResp.Error)),
@@ -138,6 +140,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 					status = &jobsdb.JobStatusT{
 						JobID:         jobID,
 						JobState:      jobsdb.Aborted.State,
+						AttemptNum:    job.LastJobStatus.AttemptNum,
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorResponse: errorResp,
@@ -250,7 +253,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 					if uploadResponse.ImportingParameters != nil {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
 					}
-					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats)
+					brt.setMultipleJobStatus(uploadResponse, brt.asyncDestinationStruct[destinationID].RsourcesStats, brt.asyncDestinationStruct[destinationID].AttemptNums)
 					brt.asyncStructCleanUp(destinationID)
 				}
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
@@ -259,7 +262,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 	}
 }
 
-func (brt *Handle) asyncStructSetup(sourceID, destinationID string) {
+func (brt *Handle) asyncStructSetup(sourceID, destinationID string, attemptNums map[int64]int) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 
@@ -274,6 +277,7 @@ func (brt *Handle) asyncStructSetup(sourceID, destinationID string) {
 		panic(err)
 	}
 	brt.asyncDestinationStruct[destinationID].Exists = true
+	brt.asyncDestinationStruct[destinationID].AttemptNums = attemptNums
 	brt.asyncDestinationStruct[destinationID].FileName = jsonPath
 	brt.asyncDestinationStruct[destinationID].CreatedAt = time.Now()
 	brt.asyncDestinationStruct[destinationID].RsourcesStats = rsources.NewStatsCollector(brt.rsourcesService)
@@ -289,6 +293,15 @@ func (brt *Handle) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].CanUpload = false
 	brt.asyncDestinationStruct[destinationID].DestinationUploadURL = ""
 	brt.asyncDestinationStruct[destinationID].RsourcesStats = rsources.NewStatsCollector(brt.rsourcesService)
+	brt.asyncDestinationStruct[destinationID].AttemptNums = make(map[int64]int)
+}
+
+func getAttemptNumbers(jobs []*jobsdb.JobT) map[int64]int {
+	attemptNums := make(map[int64]int)
+	for _, job := range jobs {
+		attemptNums[job.JobID] = job.LastJobStatus.AttemptNum
+	}
+	return attemptNums
 }
 
 func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
@@ -306,7 +319,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 		rsourcesStats.BeginProcessing(batchJobs.Jobs)
 
-		brt.setMultipleJobStatus(out, rsourcesStats)
+		brt.setMultipleJobStatus(out, rsourcesStats, getAttemptNumbers(batchJobs.Jobs))
 		return
 	}
 
@@ -327,7 +340,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 			rsourcesStats.BeginProcessing(batchJobs.Jobs)
 
-			brt.setMultipleJobStatus(out, rsourcesStats)
+			brt.setMultipleJobStatus(out, rsourcesStats, getAttemptNumbers(batchJobs.Jobs))
 			return
 		}
 	}
@@ -339,7 +352,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			defer asyncStruct.UploadMutex.Unlock()
 			brt.asyncDestinationStruct[destinationID] = asyncStruct
 		}
-		brt.asyncStructSetup(batchJobs.Connection.Source.ID, destinationID)
+
+		brt.asyncStructSetup(batchJobs.Connection.Source.ID, destinationID, getAttemptNumbers(batchJobs.Jobs))
 	}
 
 	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].FileName, os.O_CREATE|os.O_WRONLY, 0o600)
@@ -349,7 +363,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	defer func() { _ = file.Close() }()
 	var jobString string
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
-
 	brt.asyncDestinationStruct[destinationID].RsourcesStats.BeginProcessing(batchJobs.Jobs)
 	for _, job := range batchJobs.Jobs {
 		transformedData := common.GetTransformedData(job.EventPayload)
@@ -367,6 +380,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job.JobID)
 		}
 	}
+	brt.asyncDestinationStruct[destinationID].AttemptNums = getAttemptNumbers(batchJobs.Jobs)
 
 	_, err = file.WriteAt([]byte(jobString), int64(writeAtBytes))
 	// there can be some race condition with asyncUploadWorker
@@ -378,7 +392,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	}
 }
 
-func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rsourcesStats rsources.StatsCollector) {
+func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rsourcesStats rsources.StatsCollector, attemptNums map[int64]int) {
 	jobParameters := []byte(fmt.Sprintf(`{"destination_id": %q}`, asyncOutput.DestinationID)) // TODO: there should be a consistent way of finding the actual job parameters
 	workspaceID := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var statusList []*jobsdb.JobStatusT
@@ -387,6 +401,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      jobsdb.Importing.State,
+				AttemptNum:    attemptNums[jobId] + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "200",
@@ -403,6 +418,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      jobsdb.Succeeded.State,
+				AttemptNum:    attemptNums[jobId],
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "200",
@@ -419,6 +435,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      jobsdb.Failed.State,
+				AttemptNum:    attemptNums[jobId],
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "500",
@@ -435,6 +452,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, rs
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      jobsdb.Aborted.State,
+				AttemptNum:    attemptNums[jobId],
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "400",
