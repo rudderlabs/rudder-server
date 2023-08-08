@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -156,7 +158,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string) {
+func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 	statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 	var (
@@ -210,11 +212,11 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 
 	bc.curSourceJSONLock.Lock()
 	if !reflect.DeepEqual(bc.curSourceJSON, sourceJSON) {
-		if len(workspaces) > 0 {
-			pkgLogger.Infof("Workspace Config changed: %d", len(workspaces))
-		} else {
-			pkgLogger.Infof("Workspace Config changed")
-		}
+
+		pkgLogger.Infow("Workspace Config changed",
+			"workspaces", len(sourceJSON),
+			"sources", lo.Sum(lo.Map(lo.Values(sourceJSON), func(c ConfigT, _ int) int { return len(c.Sources) })),
+		)
 
 		if len(sourceJSON) == 1 { // only use diagnostics if there is one workspace
 			for _, wConfig := range sourceJSON {
@@ -236,9 +238,9 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 	bc.initializedLock.Unlock()
 }
 
-func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces string) {
+func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context) {
 	for {
-		bc.configUpdate(ctx, workspaces)
+		bc.configUpdate(ctx)
 
 		select {
 		case <-ctx.Done():
@@ -317,7 +319,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	return nil
 }
 
-func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string) {
+func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, _ string) {
 	var err error
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
@@ -352,7 +354,7 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string
 	}
 
 	rruntime.Go(func() {
-		bc.pollConfigUpdate(ctx, workspaces)
+		bc.pollConfigUpdate(ctx)
 		close(bc.blockChan)
 	})
 }

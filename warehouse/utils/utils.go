@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -141,6 +143,10 @@ var (
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
 	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
+
+	WarehouseDestinationMap = lo.SliceToMap(WarehouseDestinations, func(destination string) (string, struct{}) {
+		return destination, struct{}{}
+	})
 )
 
 var WHDestNameMap = map[string]string{
@@ -972,9 +978,9 @@ func ReadAsBool(key string, config map[string]interface{}) bool {
 }
 
 func GetConnectionTimeout(destType, destID string) time.Duration {
-	destIDLevelConfig := fmt.Sprintf("warehouse.%s.%s.connectionTimeout", destType, destID)
-	destTypeLevelConfig := fmt.Sprintf("warehouse.%s.connectionTimeout", destType)
-	warehouseLevelConfig := "warehouse.connectionTimeout"
+	destIDLevelConfig := fmt.Sprintf("Warehouse.%s.%s.connectionTimeout", destType, destID)
+	destTypeLevelConfig := fmt.Sprintf("Warehouse.%s.connectionTimeout", destType)
+	warehouseLevelConfig := "Warehouse.connectionTimeout"
 
 	defaultTimeout := int64(3)
 	defaultTimeoutUnits := time.Hour

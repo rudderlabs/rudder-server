@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -33,15 +31,17 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-type testingT interface {
+type testingT interface { // TODO replace with testing.TB
 	Setenv(key, value string)
 	Cleanup(func())
 	Log(...any)
+	Errorf(format string, args ...interface{})
+	FailNow()
 }
 
-func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *resource.PostgresResource {
+func setupWarehouseJobsDB(pool *dockertest.Pool, t testingT) *resource.PostgresResource {
 	pgResource, err := resource.SetupPostgres(pool, t)
-	Expect(err).To(BeNil())
+	require.NoError(t, err)
 
 	t.Log("db:", pgResource.DBDsn)
 
@@ -62,7 +62,6 @@ func initWarehouse() {
 	Init2()
 	Init3()
 	Init4()
-	Init5()
 	validations.Init()
 	misc.Init()
 }
@@ -73,8 +72,6 @@ func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMe
 	mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
 	return mockStats, mockMeasurement
 }
-
-var _ = Describe("Warehouse", func() {})
 
 func TestUploadJob_ProcessingStats(t *testing.T) {
 	t.Parallel()
@@ -151,7 +148,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			wh := HandleT{
 				destType:     tc.destType,
 				stats:        store,
-				dbHandle:     pgResource.DB,
+				dbHandle:     sqlquerywrapper.New(pgResource.DB),
 				whSchemaRepo: repo.NewWHSchemas(sqlquerywrapper.New(pgResource.DB)),
 			}
 			tenantManager = &multitenant.Manager{}
@@ -190,176 +187,6 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 				"destType": tc.destType,
 			})
 			require.EqualValues(t, m4.LastDuration(), tc.pickupWaitTime)
-		})
-	}
-}
-
-func Test_GetNamespace(t *testing.T) {
-	t.Parallel()
-
-	testcases := []struct {
-		config      map[string]interface{}
-		source      backendconfig.SourceT
-		destination backendconfig.DestinationT
-		destType    string
-		result      string
-		setConfig   bool
-	}{
-		{
-			source: backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"database": "test_db",
-				},
-			},
-			destType:  warehouseutils.CLICKHOUSE,
-			result:    "test_db",
-			setConfig: false,
-		},
-		{
-			source: backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
-			},
-			destType:  warehouseutils.CLICKHOUSE,
-			result:    "rudder",
-			setConfig: false,
-		},
-		{
-			source: backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"namespace": "test_namespace",
-				},
-			},
-			destType:  "test-destinationType-1",
-			result:    "test_namespace",
-			setConfig: false,
-		},
-		{
-			source: backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"namespace": "      test_namespace        ",
-				},
-			},
-			destType:  "test-destinationType-1",
-			result:    "test_namespace",
-			setConfig: false,
-		},
-		{
-			source: backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"namespace": "##",
-				},
-			},
-			destType:  "test-destinationType-1",
-			result:    "stringempty",
-			setConfig: false,
-		},
-		{
-			source: backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"namespace": "##evrnvrv$vtr&^",
-				},
-			},
-			destType:  "test-destinationType-1",
-			result:    "evrnvrv_vtr",
-			setConfig: false,
-		},
-		{
-			source: backendconfig.SourceT{},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
-			},
-			destType:  "test-destinationType-1",
-			result:    "config_result",
-			setConfig: true,
-		},
-		{
-			source: backendconfig.SourceT{
-				Name: "test-source",
-				ID:   "test-sourceID",
-			},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
-				ID:     "test-destinationID",
-			},
-			destType:  "test-destinationType-1",
-			result:    "test-namespace",
-			setConfig: false,
-		},
-		{
-			source: backendconfig.SourceT{
-				Name: "test-source",
-				ID:   "random-sourceID",
-			},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
-				ID:     "random-destinationID",
-			},
-			destType:  "test-destinationType-1",
-			result:    "test_source",
-			setConfig: false,
-		},
-		{
-			source: backendconfig.SourceT{
-				Name: "test-source",
-				ID:   "test-sourceID",
-			},
-			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
-				ID:     "test-destinationID",
-			},
-			destType:  "test-destinationType-1",
-			result:    "config_result_test_source",
-			setConfig: true,
-		},
-	}
-
-	for _, tc := range testcases {
-		tc := tc
-		t.Run("should return namespace", func(t *testing.T) {
-			t.Parallel()
-
-			pool, err := dockertest.NewPool("")
-			require.NoError(t, err)
-
-			pgResource, err := resource.SetupPostgres(pool, t)
-			require.NoError(t, err)
-
-			t.Log("db:", pgResource.DBDsn)
-
-			err = (&migrator.Migrator{
-				Handle:          pgResource.DB,
-				MigrationsTable: "wh_schema_migrations",
-			}).Migrate("warehouse")
-			require.NoError(t, err)
-
-			conf := config.New()
-			store := memstats.New()
-
-			wh := HandleT{
-				destType:     tc.destType,
-				stats:        store,
-				dbHandle:     pgResource.DB,
-				whSchemaRepo: repo.NewWHSchemas(sqlquerywrapper.New(pgResource.DB)),
-				conf:         conf,
-			}
-			if tc.setConfig {
-				conf.Set(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[tc.destType]), "config_result")
-			}
-
-			sqlStatement, err := os.ReadFile("testdata/sql/namespace_test.sql")
-			require.NoError(t, err)
-
-			_, err = pgResource.DB.Exec(string(sqlStatement))
-			require.NoError(t, err)
-
-			namespace := wh.getNamespace(context.Background(), tc.source, tc.destination)
-			require.Equal(t, tc.result, namespace)
 		})
 	}
 }
