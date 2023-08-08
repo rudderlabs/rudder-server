@@ -915,7 +915,7 @@ func (w *worker) accept(wj workerJob) {
 func (w *worker) trackStuckDelivery() chan struct{} {
 	var d time.Duration
 	if w.rt.reloadableConfig.transformerProxy {
-		d = (w.rt.backendProxyTimeout + w.rt.netClientTimeout) * 2
+		d = (w.rt.transformerTimeout + w.rt.netClientTimeout) * 2
 	} else {
 		d = w.rt.netClientTimeout * 2
 	}
