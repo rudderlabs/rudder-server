@@ -301,7 +301,7 @@ func CreateTMPDIR() (string, error) {
 		if err == nil {
 			tmpdirPath = fallbackPath
 			logOnce.Do(func() {
-				pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+				fmt.Printf("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
 			})
 		}
 	}

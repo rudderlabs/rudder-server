@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -74,7 +73,7 @@ func getPollInput(job *jobsdb.JobT) common.AsyncPoll {
 
 func enhanceErrorResponseWithFirstAttemptedAtt(msg stdjson.RawMessage, errorResp []byte) (time.Time, []byte) {
 	firstAttemptedAt := getFirstAttemptAtFromErrorResponse(msg)
-	return firstAttemptedAt, enhanceJsonWithTime(firstAttemptedAt, "firstAttemptedAt", errorResp)
+	return firstAttemptedAt, routerutils.EnhanceJsonWithTime(firstAttemptedAt, "firstAttemptedAt", errorResp)
 }
 
 func getFirstAttemptAtFromErrorResponse(msg stdjson.RawMessage) time.Time {
@@ -90,17 +89,6 @@ func getFirstAttemptAtFromErrorResponse(msg stdjson.RawMessage) time.Time {
 		firstAttemptedAt = time.Now()
 	}
 	return firstAttemptedAt
-}
-
-func enhanceJsonWithTime(t time.Time, key string, resp []byte) []byte {
-	firstAttemptedAtString := t.Format(misc.RFC3339Milli)
-
-	errorRespString, err := sjson.Set(string(resp), key, firstAttemptedAtString)
-	if err == nil {
-		resp = []byte(errorRespString)
-	}
-
-	return resp
 }
 
 func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultStatus jobsdb.JobStatusT) ([]*jobsdb.JobStatusT, []*jobsdb.JobT) {
@@ -568,7 +556,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "200",
-				ErrorResponse: enhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", routerutils.EmptyPayload),
+				ErrorResponse: routerutils.EnhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", routerutils.EmptyPayload),
 				Parameters:    asyncOutput.ImportingParameters,
 				JobParameters: originalJobParameters[jobId],
 				WorkspaceId:   workspaceID,
@@ -585,7 +573,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "200",
-				ErrorResponse: enhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(asyncOutput.SuccessResponse)),
+				ErrorResponse: routerutils.EnhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(asyncOutput.SuccessResponse)),
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: originalJobParameters[jobId],
 				WorkspaceId:   workspaceID,
@@ -604,7 +592,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "500",
-				ErrorResponse: enhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", resp),
+				ErrorResponse: routerutils.EnhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", resp),
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: originalJobParameters[jobId],
 				WorkspaceId:   workspaceID,
@@ -632,7 +620,7 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "400",
-				ErrorResponse: enhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(asyncOutput.AbortReason)),
+				ErrorResponse: routerutils.EnhanceJsonWithTime(firstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(asyncOutput.AbortReason)),
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: originalJobParameters[jobId],
 				WorkspaceId:   workspaceID,

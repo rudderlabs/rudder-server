@@ -73,7 +73,7 @@ func cleanUpAsyncDestinationsLogsDir() {
 		return
 	}
 
-	misc.RemoveContents(fmt.Sprintf("%v%v", tmpDirPath, localTmpDirName))
+	_ = misc.RemoveContents(fmt.Sprintf("%v%v", tmpDirPath, localTmpDirName))
 }
 
 // Gets the config from config backend and extracts enabled write-keys
