@@ -40,7 +40,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
 	github.com/denisenkom/go-mssqldb v0.12.3
-	github.com/dgraph-io/badger/v4 v4.1.0
+	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/docker/docker v23.0.4+incompatible
 	github.com/go-chi/chi/v5 v5.0.10
 	github.com/go-redis/redis v6.15.9+incompatible
