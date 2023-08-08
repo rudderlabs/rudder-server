@@ -12,10 +12,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
-	c "github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+
+	c "github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"

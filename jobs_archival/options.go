@@ -9,7 +9,7 @@ import (
 type config interface {
 	GetInt(key string, defaultValue int) (value int)
 	GetInt64(key string, defaultValue int64) (value int64)
-	GetString(key string, defaultValue string) (value string)
+	GetString(key, defaultValue string) (value string)
 	GetDuration(key string, defaultValueInTimescaleUnits int64, timeScale time.Duration) time.Duration
 }
 

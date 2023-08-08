@@ -18,14 +18,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/payload"
 )
 
-var (
-	sourceParam = func(sourceID string) []jobsdb.ParameterFilterT {
-		return []jobsdb.ParameterFilterT{{
-			Name:  "source_id",
-			Value: sourceID,
-		}}
-	}
-)
+var sourceParam = func(sourceID string) []jobsdb.ParameterFilterT {
+	return []jobsdb.ParameterFilterT{{
+		Name:  "source_id",
+		Value: sourceID,
+	}}
+}
 
 type worker struct {
 	log             logger.Logger
@@ -50,25 +48,18 @@ type worker struct {
 		maxSleep         time.Duration
 	}
 	lastUploadTime time.Time
+	queryParams    jobsdb.GetQueryParamsT
 }
 
 func (w *worker) Work() bool {
-	defer w.jobFetchLimit.BeginWithPriority(w.partition, kitsync.LimiterPriorityValue(1))()
+start:
 	var (
-		params = jobsdb.GetQueryParamsT{
-			PayloadSizeLimit: w.payloadLimiter(w.config.payloadLimit()),
-			ParameterFilters: sourceParam(w.partition),
-			EventsLimit:      w.config.eventsLimit(),
-			JobsLimit:        w.config.eventsLimit(),
-		}
-		toArchive    = true
 		location     string
 		err          error
 		jobs         []*jobsdb.JobT
 		limitReached bool
 	)
-start:
-	jobs, limitReached, err = w.getJobs(params)
+	jobs, limitReached, err = w.getJobs()
 	if err != nil {
 		w.log.Errorf("failed to fetch jobs for backup - partition: %s - %w", w.partition, err)
 		return false
@@ -78,32 +69,45 @@ start:
 		return false
 	}
 
-	storagePrefs, err := w.storageProvider.GetStoragePreferences(jobs[0].WorkspaceId)
+	if !(limitReached || time.Since(w.lastUploadTime) > w.config.maxSleep) {
+		return false
+	}
+
 	var reason string
+
+	storagePrefs, err := w.storageProvider.GetStoragePreferences(jobs[0].WorkspaceId)
 	if err != nil {
 		w.log.Errorf("failed to fetch storage preferences for workspaceID: %s - %w", jobs[0].WorkspaceId, err)
 		reason = fmt.Sprintf(`{"location": "not uploaded because - %v"}`, err)
-		toArchive = false
-	}
-	if !storagePrefs.Backup("gw") {
-		reason = fmt.Sprintf(`{"location": "not uploaded because archival disabled for %s"}`, w.partition)
-		toArchive = false
-	}
-	var statusList []*jobsdb.JobStatusT
-	if !toArchive {
-		statusList = getStatuses(
+		if err := w.markStatus(
 			jobs,
 			func(*jobsdb.JobT) string { return jobsdb.Aborted.State },
 			[]byte(reason),
-		)
-		goto markStatus
+		); err != nil {
+			w.log.Errorf("failed to mark unconfigured archive jobs' status - %w", err)
+			panic(err)
+		}
+		goto start
+	}
+	if !storagePrefs.Backup(w.archiveFrom) {
+		reason = fmt.Sprintf(`{"location": "not uploaded because %s-archival disabled for %s"}`, w.archiveFrom, w.partition)
+		if err := w.markStatus(
+			jobs,
+			func(*jobsdb.JobT) string { return jobsdb.Aborted.State },
+			[]byte(reason),
+		); err != nil {
+			w.log.Errorf("failed to mark archive disabled jobs' status - %w", err)
+			panic(err)
+		}
+		goto start
 	}
 
 	location, err = w.uploadJobs(w.lifecycle.ctx, jobs)
+	w.lastUploadTime = time.Now()
 	if err != nil {
 		w.log.Errorf("failed to upload jobs - partition: %s - %w", w.partition, err)
 		maxAttempts := w.config.maxRetryAttempts()
-		statusList = getStatuses(
+		if err := w.markStatus(
 			jobs,
 			func(job *jobsdb.JobT) string {
 				if job.LastJobStatus.AttemptNum >= maxAttempts {
@@ -112,19 +116,20 @@ start:
 				return jobsdb.Failed.State
 			},
 			[]byte(fmt.Sprintf(`{"location": "not uploaded because - %v"}`, err)),
-		)
-		goto markStatus
+		); err != nil {
+			w.log.Errorf("failed to mark failed jobs' status - %w", err)
+			panic(err)
+		}
+		return false
 	}
 
-	statusList = getStatuses(
+	if err := w.markStatus(
 		jobs,
 		func(*jobsdb.JobT) string { return jobsdb.Succeeded.State },
 		[]byte(fmt.Sprintf(`{"location": "%v"}`, location)),
-	)
-
-markStatus:
-	if err := w.jobsDB.UpdateJobStatus(w.lifecycle.ctx, statusList, nil, nil); err != nil {
-		w.log.Errorf("failed to mark jobs' status - %w", err)
+	); err != nil {
+		w.log.Errorf("failed to mark successful upload status - %w", err)
+		panic(err)
 	}
 	if limitReached {
 		goto start
@@ -141,11 +146,12 @@ func (w *worker) Stop() {
 }
 
 func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, error) {
+	defer w.uploadLimit.BeginWithPriority(w.partition, kitsync.LimiterPriorityValue(1))()
 	firstJobCreatedAt := jobs[0].CreatedAt
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt
 	workspaceID := jobs[0].WorkspaceId
 
-	w.log.Infof("[Archival: storeErrorsToObjectStorage]: Starting logging to object storage - %s", w.partition)
+	w.log.Debugf("[Archival: storeErrorsToObjectStorage]: Starting logging to object storage - %s", w.partition)
 
 	gzWriter := fileuploader.NewGzMultiFileWriter()
 	path := fmt.Sprintf(
@@ -212,7 +218,14 @@ func getStatuses(jobs []*jobsdb.JobT, stateFunc func(*jobsdb.JobT) string, respo
 	})
 }
 
-func (w *worker) getJobs(params jobsdb.GetQueryParamsT) ([]*jobsdb.JobT, bool, error) {
+func (w *worker) getJobs() ([]*jobsdb.JobT, bool, error) {
+	defer w.jobFetchLimit.BeginWithPriority(
+		w.partition, kitsync.LimiterPriorityValue(1),
+	)()
+	params := w.queryParams
+	params.PayloadSizeLimit = w.payloadLimiter(w.config.payloadLimit())
+	params.EventsLimit = w.config.eventsLimit()
+	params.JobsLimit = w.config.eventsLimit()
 	failed, err := w.jobsDB.GetToRetry(w.lifecycle.ctx, params)
 	if err != nil {
 		w.log.Errorf("failed to fetch jobs for backup - partition: %s - %w", w.partition, err)
@@ -246,4 +259,29 @@ func marshalJob(job *jobsdb.JobT) ([]byte, error) {
 	J.CreatedAt = job.CreatedAt
 	J.MessageID = gjson.GetBytes(job.EventPayload, "messageId").String()
 	return json.Marshal(J)
+}
+
+func (w *worker) markStatus(
+	jobs []*jobsdb.JobT, stateFunc func(*jobsdb.JobT) string, response []byte,
+) error {
+	defer w.statusUpdateLimit.BeginWithPriority(w.partition, kitsync.LimiterPriorityValue(1))()
+	return misc.RetryWithNotify(
+		w.lifecycle.ctx,
+		w.config.maxSleep,
+		w.config.maxRetryAttempts(),
+		func(ctx context.Context) error {
+			return w.jobsDB.UpdateJobStatus(
+				ctx,
+				getStatuses(jobs, stateFunc, response),
+				nil,
+				nil,
+			)
+		},
+		func(attempt int) {
+			w.log.Warnf(
+				"failed to mark %s-%s jobs' status - attempt: %v",
+				w.archiveFrom, w.partition, attempt,
+			)
+		},
+	)
 }

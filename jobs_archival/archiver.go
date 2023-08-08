@@ -150,6 +150,10 @@ func (a *archiver) Start() error {
 				w.config.minSleep = a.config.minWorkerSleep
 				w.config.maxSleep = a.config.maxWorkerSleep
 
+				queryParams := &jobsdb.GetQueryParamsT{}
+				a.partitionStrategy.augmentQueryParams(partition, queryParams)
+				w.queryParams = *queryParams
+
 				return w
 			},
 			a.log,
@@ -158,11 +162,6 @@ func (a *archiver) Start() error {
 		defer workerPool.Shutdown()
 		// pinger loop
 		for {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-a.archiveTrigger():
-			}
 			sources, err := a.partitionStrategy.activePartitions(ctx, a.jobsDB)
 			a.log.Infof("Archiving %ss: %v", a.partitionStrategy, sources)
 			if err != nil {
@@ -171,6 +170,12 @@ func (a *archiver) Start() error {
 			}
 			for _, source := range sources {
 				workerPool.PingWorker(source)
+			}
+
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-a.archiveTrigger():
 			}
 		}
 	})

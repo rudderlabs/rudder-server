@@ -30,6 +30,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -270,6 +271,7 @@ func TestDynamicClusterManager(t *testing.T) {
 			archiveDB,
 			nil,
 			config.Default,
+			stats.Default,
 		),
 
 		Processor: processor,
