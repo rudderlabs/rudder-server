@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/rruntime"
-
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/go-chi/chi/v5"
@@ -783,19 +781,23 @@ func Start(ctx context.Context, app app.App) error {
 		}
 	}()
 
+	g, gCtx := errgroup.WithContext(ctx)
+
 	tenantManager = &multitenant.Manager{
 		BackendConfig: backendconfig.DefaultBackendConfig,
 	}
-	rruntime.GoForWarehouse(func() {
-		tenantManager.Run(ctx)
+	g.Go(func() error {
+		tenantManager.Run(gCtx)
+		return nil
 	})
 
 	bcManager = newBackendConfigManager(
 		config.Default, wrappedDBHandle, tenantManager,
 		pkgLogger.Child("wh_bc_manager"),
 	)
-	rruntime.GoForWarehouse(func() {
-		bcManager.Start(ctx)
+	g.Go(func() error {
+		bcManager.Start(gCtx)
+		return nil
 	})
 
 	RegisterAdmin(bcManager, pkgLogger)
@@ -818,8 +820,6 @@ func Start(ctx context.Context, app app.App) error {
 	if err != nil {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
-
-	g, gCtx := errgroup.WithContext(ctx)
 
 	// Setting up reporting client
 	// only if standalone or embedded connecting to diff DB for warehouse
