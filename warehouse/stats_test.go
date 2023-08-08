@@ -33,7 +33,7 @@ var _ = Describe("Stats", Ordered, func() {
 		pool, err := dockertest.NewPool("")
 		Expect(err).To(BeNil())
 
-		pgResource = setupWarehouseJobs(pool, g)
+		pgResource = setupWarehouseJobsDB(pool, g)
 
 		initWarehouse()
 
