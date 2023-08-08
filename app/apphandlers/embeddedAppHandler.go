@@ -131,6 +131,18 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return err
 	}
 
+	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
+	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
+	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
+	gatewayDB := jobsdb.NewForWrite(
+		"gw",
+		jobsdb.WithClearDB(options.ClearDB),
+	)
+	if err = gatewayDB.Start(); err != nil {
+		return fmt.Errorf("could not start gateway: %w", err)
+	}
+	defer gatewayDB.Stop()
+
 	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
 	// Processor.
 	gwDBForProcessor := jobsdb.NewForRead(
@@ -269,18 +281,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("failed to create gw rate limiter: %w", err)
 	}
 	gw := gateway.HandleT{}
-	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
-	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
-	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
-	gatewayDB := jobsdb.NewForWrite(
-		"gw",
-		jobsdb.WithClearDB(options.ClearDB),
-	)
-	if err = gatewayDB.Start(); err != nil {
-		return fmt.Errorf("could not start gateway: %w", err)
-	}
-	defer gatewayDB.Stop()
-
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDBForWrite,
