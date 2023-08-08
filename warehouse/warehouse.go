@@ -213,7 +213,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 							pkgLogger,
 							stats.Default,
 							wrappedDBHandle,
-							notifier,
+							&notifier,
 							tenantManager,
 							controlPlaneClient,
 							bcManager,

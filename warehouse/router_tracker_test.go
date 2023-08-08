@@ -156,10 +156,10 @@ func TestRouter_Track(t *testing.T) {
 				now: func() time.Time {
 					return now
 				},
-				nowSQL:   nowSQL,
-				stats:    store,
-				dbHandle: sqlquerywrapper.New(pgResource.DB),
-				logger:   logger.NOP,
+				nowSQL:       nowSQL,
+				statsFactory: store,
+				dbHandle:     sqlquerywrapper.New(pgResource.DB),
+				logger:       logger.NOP,
 			}
 
 			err = handle.Track(ctx, &warehouse, conf)
@@ -266,10 +266,10 @@ func TestRouter_CronTracker(t *testing.T) {
 			now: func() time.Time {
 				return now
 			},
-			nowSQL:   "ABC",
-			stats:    memstats.New(),
-			dbHandle: sqlquerywrapper.New(pgResource.DB),
-			logger:   logger.NOP,
+			nowSQL:       "ABC",
+			statsFactory: memstats.New(),
+			dbHandle:     sqlquerywrapper.New(pgResource.DB),
+			logger:       logger.NOP,
 		}
 		r.warehouses = append(r.warehouses, warehouse)
 

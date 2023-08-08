@@ -82,7 +82,7 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 			misc.TailTruncateStr(source.ID, 6)),
 	}
 	statKey := "warehouse_track_upload_missing"
-	r.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(0)
+	r.statsFactory.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(0)
 
 	if !source.Enabled || !destination.Enabled {
 		return nil
@@ -178,7 +178,7 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 			logfield.DestinationType, destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, warehouse.WorkspaceID,
 		)
-		r.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(1)
+		r.statsFactory.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(1)
 	}
 
 	return nil

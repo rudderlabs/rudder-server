@@ -2,7 +2,6 @@ package warehouse
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -61,7 +60,7 @@ func TestRouter(t *testing.T) {
 	destinationID := "test-destination-id"
 	namespace := "test-namespace"
 	workspaceID := "test-workspace-id"
-	destinationType := "test-destination-type"
+	destinationType := warehouseutils.RS
 	workspaceIdentifier := "test-workspace-identifier"
 
 	createStagingFiles := func(t *testing.T, ctx context.Context, repoStaging *repo.StagingFiles, workspaceID, sourceID, destinationID string) []*model.StagingFileWithSchema {
@@ -125,7 +124,7 @@ func TestRouter(t *testing.T) {
 			logger.NOP,
 			stats.Default,
 			db,
-			notifier,
+			&notifier,
 			tenantManager,
 			cp,
 			bcm,
@@ -179,11 +178,12 @@ func TestRouter(t *testing.T) {
 		}
 
 		r := Router{}
+		r.now = time.Now
 		r.dbHandle = db
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.stats = memstats.New()
+		r.statsFactory = memstats.New()
 		r.config.stagingFilesBatchSize = 100
 		r.config.warehouseSyncFreqIgnore = true
 		r.config.enableJitterForSyncs = true
@@ -332,12 +332,14 @@ func TestRouter(t *testing.T) {
 			Identifier: "RS:test-source-id:test-destination-id-scheduler",
 		}
 
+		statsStore := memstats.New()
+
 		r := Router{}
 		r.dbHandle = db
+		r.statsFactory = statsStore
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.stats = memstats.New()
 		r.config.stagingFilesBatchSize = 100
 		r.config.warehouseSyncFreqIgnore = true
 		r.config.enableJitterForSyncs = true
@@ -345,8 +347,16 @@ func TestRouter(t *testing.T) {
 		r.config.maxParallelJobCreation = 100
 		r.destType = destinationType
 		r.logger = logger.NOP
+		r.now = func() time.Time {
+			return now.Add(time.Second)
+		}
 		r.warehouses = []model.Warehouse{warehouse}
-
+		r.stats.schedulerWarehouseLengthStat = r.statsFactory.NewTaggedStat("wh_scheduler.warehouse_length", stats.GaugeType, stats.Tags{
+			"destinationType": r.destType,
+		})
+		r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
+			"destinationType": r.destType,
+		})
 		r.Enable()
 
 		stagingFiles := createStagingFiles(t, ctx, repoStaging, workspaceID, sourceID, destinationID)
@@ -377,6 +387,10 @@ func TestRouter(t *testing.T) {
 		require.Equal(t, upload.Namespace, "test_namespace")
 		require.Equal(t, upload.Status, model.Waiting)
 		require.Equal(t, upload.Priority, 100)
+
+		require.Equal(t, statsStore.Get("wh_scheduler.warehouse_length", stats.Tags{
+			"destinationType": destinationType,
+		}).LastValue(), float64(1))
 	})
 
 	t.Run("UploadsToProcess", func(t *testing.T) {
@@ -428,7 +442,7 @@ func TestRouter(t *testing.T) {
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.stats = memstats.New()
+		r.statsFactory = memstats.New()
 		r.conf = config.Default
 		r.config.allowMultipleSourcesForJobsPickup = true
 		r.config.stagingFilesBatchSize = 100
@@ -440,9 +454,21 @@ func TestRouter(t *testing.T) {
 		}
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
-			stats:    r.stats,
+			stats:    r.statsFactory,
 			dbHandle: r.dbHandle,
 		}
+		r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
+			"destType": r.destType,
+		})
+		r.stats.processingAvailableWorkersStat = r.statsFactory.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
+			"destType": r.destType,
+		})
+		r.stats.processingPickupLagStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
+			"destType": r.destType,
+		})
+		r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
+			"destType": r.destType,
+		})
 
 		t.Run("no uploads", func(t *testing.T) {
 			ujs, err := r.uploadsToProcess(ctx, 1, []string{})
@@ -469,31 +495,26 @@ func TestRouter(t *testing.T) {
 		}
 
 		t.Run("with uploads", func(t *testing.T) {
-			t.Run("unsupported destination type", func(t *testing.T) {
-				r.destType = destinationType
-
-				createUpload(ctx, r.destType)
+			t.Run("unknown destination type", func(t *testing.T) {
+				createUpload(ctx, "test-destination-type")
 
 				ujs, err := r.uploadsToProcess(ctx, 1, []string{})
-				require.Errorf(t, err, errors.New("provider of type test-destination-type is not configured for WarehouseManager").Error())
-				require.Empty(t, ujs)
+				require.NoError(t, err)
+				require.Len(t, ujs, 0)
 			})
 
-			t.Run("supported destination type", func(t *testing.T) {
-				r.destType = warehouseutils.RS
-
-				createUpload(ctx, r.destType)
+			t.Run("known destination type", func(t *testing.T) {
+				createUpload(ctx, destinationType)
 
 				ujs, err := r.uploadsToProcess(ctx, 1, []string{})
 				require.NoError(t, err)
 				require.Len(t, ujs, 1)
 			})
 
-			t.Run("warehouse model does not exists", func(t *testing.T) {
+			t.Run("empty warehouses", func(t *testing.T) {
 				r.warehouses = []model.Warehouse{}
-				r.destType = warehouseutils.RS
 
-				createUpload(ctx, r.destType)
+				createUpload(ctx, destinationType)
 
 				ujs, err := r.uploadsToProcess(ctx, 1, []string{})
 				require.NoError(t, err)
@@ -553,7 +574,7 @@ func TestRouter(t *testing.T) {
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.stats = memstats.New()
+		r.statsFactory = memstats.New()
 		r.conf = config.Default
 		r.config.allowMultipleSourcesForJobsPickup = true
 		r.config.stagingFilesBatchSize = 100
@@ -569,13 +590,25 @@ func TestRouter(t *testing.T) {
 		r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
-			stats:    r.stats,
+			stats:    r.statsFactory,
 			dbHandle: r.dbHandle,
 		}
 		r.workerChannelMap = map[string]chan *UploadJob{
 			r.workerIdentifier(warehouse): make(chan *UploadJob, 1),
 		}
 		r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+		r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
+			"destType": r.destType,
+		})
+		r.stats.processingAvailableWorkersStat = r.statsFactory.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
+			"destType": r.destType,
+		})
+		r.stats.processingPickupLagStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
+			"destType": r.destType,
+		})
+		r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
+			"destType": r.destType,
+		})
 
 		close(r.bcManager.initialConfigFetched)
 
@@ -637,6 +670,180 @@ func TestRouter(t *testing.T) {
 				_, ok := <-workerChannel
 				require.False(t, ok)
 			}
+		})
+	})
+
+	t.Run("Preemptable", func(t *testing.T) {
+		t.Run("Processor with workers < 1", func(t *testing.T) {
+			pgResource, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+
+			t.Log("db:", pgResource.DBDsn)
+
+			err = (&migrator.Migrator{
+				Handle:          pgResource.DB,
+				MigrationsTable: "wh_schema_migrations",
+			}).Migrate("warehouse")
+			require.NoError(t, err)
+
+			db := sqlmiddleware.New(pgResource.DB)
+			wrappedDBHandle = db
+
+			now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			warehouse := model.Warehouse{
+				WorkspaceID: workspaceID,
+				Source: backendconfig.SourceT{
+					ID: sourceID,
+				},
+				Destination: backendconfig.DestinationT{
+					ID: destinationID,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: destinationType,
+					},
+					Config: map[string]interface{}{
+						"namespace": namespace,
+					},
+				},
+				Namespace:  "test_namespace",
+				Identifier: "RS:test-source-id:test-destination-id-processor",
+			}
+
+			ctrl := gomock.NewController(t)
+
+			r := Router{}
+			r.dbHandle = db
+			r.warehouseDBHandle = NewWarehouseDB(db)
+			r.uploadRepo = repoUpload
+			r.stagingRepo = repoStaging
+			r.statsFactory = memstats.New()
+			r.conf = config.Default
+			r.config.allowMultipleSourcesForJobsPickup = true
+			r.config.stagingFilesBatchSize = 100
+			r.config.warehouseSyncFreqIgnore = true
+			r.config.noOfWorkers = 0
+			r.config.waitForWorkerSleep = time.Second * 5
+			r.config.uploadAllocatorSleep = time.Millisecond * 100
+			r.destType = warehouseutils.RS
+			r.logger = logger.NOP
+			r.tenantManager = &multitenant.Manager{
+				BackendConfig: mocksBackendConfig.NewMockBackendConfig(ctrl),
+			}
+			r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
+			r.warehouses = []model.Warehouse{warehouse}
+			r.uploadJobFactory = UploadJobFactory{
+				stats:    r.statsFactory,
+				dbHandle: r.dbHandle,
+			}
+			r.workerChannelMap = map[string]chan *UploadJob{
+				r.workerIdentifier(warehouse): make(chan *UploadJob, 1),
+			}
+			r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
+			r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
+				"destType": r.destType,
+			})
+			r.stats.processingAvailableWorkersStat = r.statsFactory.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
+				"destType": r.destType,
+			})
+			r.stats.processingPickupLagStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
+				"destType": r.destType,
+			})
+			r.stats.processingPickupWaitTimeStat = r.statsFactory.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
+				"destType": r.destType,
+			})
+
+			close(r.bcManager.initialConfigFetched)
+
+			closeCh := make(chan struct{})
+
+			ctx, cancel := context.WithCancel(context.Background())
+
+			go func() {
+				r.runUploadJobAllocator(ctx)
+
+				close(closeCh)
+			}()
+
+			<-r.bcManager.initialConfigFetched
+
+			time.AfterFunc(100*time.Millisecond, func() {
+				cancel()
+
+				_, ok := <-closeCh
+				require.False(t, ok)
+			})
+		})
+
+		t.Run("Scheduler is not enabled", func(t *testing.T) {
+			pgResource, err := resource.SetupPostgres(pool, t)
+			require.NoError(t, err)
+
+			t.Log("db:", pgResource.DBDsn)
+
+			err = (&migrator.Migrator{
+				Handle:          pgResource.DB,
+				MigrationsTable: "wh_schema_migrations",
+			}).Migrate("warehouse")
+			require.NoError(t, err)
+
+			db := sqlmiddleware.New(pgResource.DB)
+			wrappedDBHandle = db
+
+			now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+
+			statsStore := memstats.New()
+
+			r := Router{}
+			r.dbHandle = db
+			r.statsFactory = statsStore
+			r.warehouseDBHandle = NewWarehouseDB(db)
+			r.uploadRepo = repoUpload
+			r.stagingRepo = repoStaging
+			r.config.stagingFilesBatchSize = 100
+			r.config.warehouseSyncFreqIgnore = true
+			r.config.enableJitterForSyncs = true
+			r.config.mainLoopSleep = time.Second * 5
+			r.config.maxParallelJobCreation = 100
+			r.destType = destinationType
+			r.logger = logger.NOP
+			r.now = func() time.Time {
+				return now.Add(time.Second)
+			}
+			r.stats.schedulerWarehouseLengthStat = r.statsFactory.NewTaggedStat("wh_scheduler.warehouse_length", stats.GaugeType, stats.Tags{
+				"destinationType": r.destType,
+			})
+			r.stats.schedulerTotalSchedulingTimeStat = r.statsFactory.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
+				"destinationType": r.destType,
+			})
+
+			closeCh := make(chan struct{})
+
+			ctx, cancel := context.WithCancel(context.Background())
+
+			go func() {
+				r.mainLoop(ctx)
+
+				close(closeCh)
+			}()
+
+			time.AfterFunc(100*time.Millisecond, func() {
+				cancel()
+
+				_, ok := <-closeCh
+				require.False(t, ok)
+			})
 		})
 	})
 
@@ -828,7 +1035,7 @@ func TestRouter(t *testing.T) {
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
-		r.stats = memstats.New()
+		r.statsFactory = memstats.New()
 		r.conf = config.Default
 		r.logger = logger.NOP
 		r.destType = warehouseutils.RS

@@ -650,3 +650,36 @@ func (uploads *Uploads) ResetInProgress(ctx context.Context, destType string) er
 	}
 	return nil
 }
+
+func (uploads *Uploads) LastCreatedAt(ctx context.Context, sourceID, destinationID string) (time.Time, error) {
+	row := uploads.db.QueryRowContext(ctx, `
+		SELECT
+			created_at
+		FROM
+		`+uploadsTableName+`
+		WHERE
+			source_id = $1 AND
+			destination_id = $2
+		ORDER BY
+			id DESC
+		LIMIT 1;
+	`,
+		sourceID,
+		destinationID,
+	)
+
+	var createdAt sql.NullTime
+
+	err := row.Scan(&createdAt)
+	if err == sql.ErrNoRows {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("last created at: %w", err)
+	}
+	if !createdAt.Valid {
+		return time.Time{}, nil
+	}
+
+	return createdAt.Time, nil
+}

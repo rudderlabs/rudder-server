@@ -1,7 +1,7 @@
 package warehouse
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"strconv"
 	"sync"
@@ -26,28 +26,32 @@ func init() {
 }
 
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
-func (r *Router) canCreateUpload(warehouse model.Warehouse) (bool, error) {
+func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
 		return true, nil
 	}
+
 	// return true if the upload was triggered
 	if isUploadTriggered(warehouse) {
 		return true, nil
 	}
+
 	if r.config.warehouseSyncFreqIgnore {
 		if uploadFrequencyExceeded(warehouse, "") {
 			return false, fmt.Errorf("ignore sync freq: upload frequency exceeded")
-		} else {
-			return true, nil
 		}
+		return true, nil
 	}
+
 	// gets exclude window start time and end time
 	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
 	excludeWindowStartTime, excludeWindowEndTime := excludeWindowStartEndTimes(excludeWindow)
-	if checkCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
+
+	if checkCurrentTimeExistsInExcludeWindow(r.now().UTC(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false, fmt.Errorf("exclude window: current time exists in exclude window")
 	}
+
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency == "" || syncStartAt == "" {
@@ -57,55 +61,32 @@ func (r *Router) canCreateUpload(warehouse model.Warehouse) (bool, error) {
 			return true, nil
 		}
 	}
-	prevScheduledTime := prevScheduledTime(syncFrequency, syncStartAt, time.Now())
-	lastUploadCreatedAt := r.lastUploadCreatedAt(warehouse)
+
+	prevScheduledTime := prevScheduledTime(syncFrequency, syncStartAt, r.now())
+	lastUploadCreatedAt, err := r.uploadRepo.LastCreatedAt(ctx, warehouse.Source.ID, warehouse.Destination.ID)
+	if err != nil {
+		return false, err
+	}
+
 	// start upload only if no upload has started in current window
 	// e.g. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
 	if lastUploadCreatedAt.Before(prevScheduledTime) {
 		return true, nil
-	} else {
-		return false, fmt.Errorf("before scheduled time")
 	}
-}
-
-// lastUploadCreatedAt returns the start time of the last upload
-func (r *Router) lastUploadCreatedAt(warehouse model.Warehouse) time.Time {
-	var t sql.NullTime
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  created_at
-		FROM
-		  %s
-		WHERE
-		  source_id = '%s'
-		  AND destination_id = '%s'
-		ORDER BY
-		  id DESC
-		LIMIT
-		  1;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		warehouse.Source.ID,
-		warehouse.Destination.ID,
-	)
-	err := r.dbHandle.QueryRow(sqlStatement).Scan(&t)
-	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-	}
-	if err == sql.ErrNoRows || !t.Valid {
-		return time.Time{} // zero value
-	}
-	return t.Time
+	return false, fmt.Errorf("before scheduled time")
 }
 
 func excludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
 	var startTime, endTime string
+
 	if st, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
 		startTime = st
 	}
+
 	if et, ok := excludeWindow[warehouseutils.ExcludeWindowEndTime].(string); ok {
 		endTime = et
 	}
+
 	return startTime, endTime
 }
 
@@ -118,6 +99,7 @@ func checkCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 	endTimeMins := timeutil.MinsOfDay(windowEndTime)
 
 	currentTimeMins := timeutil.GetElapsedMinsInThisDay(currentTime)
+
 	// startTime, currentTime, endTime: 05:09, 06:19, 09:07 - > window between this day 05:09 and 09:07
 	if startTimeMins < currentTimeMins && currentTimeMins < endTimeMins {
 		return true
@@ -132,6 +114,7 @@ func checkCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 	if startTimeMins < currentTimeMins && currentTimeMins > endTimeMins && startTimeMins > endTimeMins {
 		return true
 	}
+
 	return false
 }
 
@@ -174,13 +157,17 @@ func scheduledTimes(syncFrequency, syncStartAt string) []int {
 	scheduledTimesCacheLock.RLock()
 	cachedTimes, ok := scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)]
 	scheduledTimesCacheLock.RUnlock()
+
 	if ok {
 		return cachedTimes
 	}
+
 	syncStartAtInMin := timeutil.MinsOfDay(syncStartAt)
 	syncFrequencyInMin, _ := strconv.Atoi(syncFrequency)
 	times := []int{syncStartAtInMin}
+
 	counter := 1
+
 	for {
 		mins := syncStartAtInMin + counter*syncFrequencyInMin
 		if mins >= 1440 {
@@ -202,8 +189,10 @@ func scheduledTimes(syncFrequency, syncStartAt string) []int {
 	}
 
 	times = append(lo.Reverse(prependTimes), times...)
+
 	scheduledTimesCacheLock.Lock()
 	scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)] = times
 	scheduledTimesCacheLock.Unlock()
+
 	return times
 }

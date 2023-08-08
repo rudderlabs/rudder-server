@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -158,12 +157,7 @@ func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 }
 
 func (r *Router) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
-	whManager, err := manager.New(r.destType, r.conf, r.logger, r.stats)
-	if err != nil {
-		panic(err)
-	}
-
-	empty, err := whManager.IsEmpty(ctx, warehouse)
+	empty, err := r.integrationsManager.IsEmpty(ctx, warehouse)
 	if err != nil {
 		return false, err
 	}
@@ -347,9 +341,10 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 }
 
 func (*Router) setFailedStat(warehouse model.Warehouse, err error) {
-	if err != nil {
-		warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Identifier).Count(1)
+	if err == nil {
+		return
 	}
+	warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Identifier).Count(1)
 }
 
 func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model.Warehouse) {
@@ -396,15 +391,12 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 			upload = r.initPrePopulateDestIdentitiesUpload(warehouse)
 		}
 
-		whManager, err := manager.New(r.destType, r.conf, r.logger, r.stats)
-		if err != nil {
-			panic(err)
-		}
-
 		job := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 			Upload:    upload,
 			Warehouse: warehouse,
-		}, whManager)
+		},
+			r.integrationsManager,
+		)
 
 		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(ctx, job.upload.ID)
 		if tableUploadsErr != nil {
@@ -426,17 +418,17 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 			}
 		}
 
-		whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+		r.integrationsManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
 			r.destType, warehouse.Destination.ID,
 		))
-		err = whManager.Setup(ctx, job.warehouse, job)
+		err = r.integrationsManager.Setup(ctx, job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)
 			return
 		}
-		defer whManager.Cleanup(ctx)
+		defer r.integrationsManager.Cleanup(ctx)
 
-		err = job.schemaHandle.fetchSchemaFromWarehouse(ctx, whManager)
+		err = job.schemaHandle.fetchSchemaFromWarehouse(ctx, r.integrationsManager)
 		if err != nil {
 			r.logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)
