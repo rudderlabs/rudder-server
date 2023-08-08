@@ -18,12 +18,12 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// CronTracker Track the status of the staging file whether it has reached the terminal state or not for every warehouses
+// we pick the staging file which is oldest within the range NOW() - 2 * syncFrequency and NOW() - 3 * syncFrequency
 func (r *router) CronTracker(ctx context.Context) error {
 	for {
-		var warehouses []model.Warehouse
-
 		r.configSubscriberLock.RLock()
-		warehouses = append(warehouses, r.warehouses...)
+		warehouses := append([]model.Warehouse{}, r.warehouses...)
 		r.configSubscriberLock.RUnlock()
 
 		for _, warehouse := range warehouses {

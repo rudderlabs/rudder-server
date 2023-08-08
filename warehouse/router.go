@@ -397,9 +397,7 @@ loop:
 
 		for _, uploadJob := range uploadJobsToProcess {
 			r.setDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
-		}
 
-		for _, uploadJob := range uploadJobsToProcess {
 			workerName := r.workerIdentifier(uploadJob.warehouse)
 
 			r.workerChannelMapLock.RLock()
