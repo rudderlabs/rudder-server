@@ -753,7 +753,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			}
 
 			// rsources stats
-			err = brt.updateRudderSourcesStats(context.TODO(), tx, batchJobs.Jobs, statusList)
+			err = brt.updateRudderSourcesStats(ctx, tx, batchJobs.Jobs, statusList)
 			if err != nil {
 				return err
 			}
