@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
 type AsyncDestinationManager interface {
@@ -100,7 +99,6 @@ type AsyncDestinationStruct struct {
 	UploadInProgress      bool
 	UploadMutex           sync.RWMutex
 	DestinationUploadURL  string
-	RsourcesStats         rsources.StatsCollector
 	Destination           *backendconfig.DestinationT
 	Manager               AsyncDestinationManager
 	AttemptNums           map[int64]int
