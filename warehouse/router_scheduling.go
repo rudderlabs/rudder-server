@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/samber/lo"
@@ -18,7 +19,7 @@ var (
 	scheduledTimesCache     map[string][]int
 	scheduledTimesCacheLock sync.RWMutex
 
-	startUploadAlways bool
+	startUploadAlways atomic.Bool
 )
 
 func init() {
@@ -28,7 +29,7 @@ func init() {
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
 func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	// can be set from rudder-cli to force uploads always
-	if startUploadAlways {
+	if startUploadAlways.Load() {
 		return true, nil
 	}
 
