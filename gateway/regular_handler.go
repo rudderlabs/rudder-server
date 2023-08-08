@@ -6,15 +6,17 @@ import (
 )
 
 // RegularRequestHandler is an empty struct to capture non-import specific request handling functionality
-type RegularRequestHandler struct{}
+type RegularRequestHandler struct {
+	*Handle
+}
 
 // ProcessRequest throws a webRequest into the queue and waits for the response before returning
-func (*RegularRequestHandler) ProcessRequest(gateway *Handle, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+func (rrh *RegularRequestHandler) ProcessRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	done := make(chan string, 1)
 	start := time.Now()
-	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
-	gateway.addToWebRequestQWaitTime.SendTiming(time.Since(start))
-	defer gateway.processRequestTime.Since(start)
+	rrh.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
+	rrh.addToWebRequestQWaitTime.SendTiming(time.Since(start))
+	defer rrh.processRequestTime.Since(start)
 	errorMessage := <-done
 	return errorMessage
 }

@@ -118,8 +118,8 @@ func (gateway *Handle) Setup(
 	gateway.netHandle = &http.Client{Transport: &http.Transport{}, Timeout: gateway.conf.httpTimeout}
 	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, gateway.conf.maxDBBatchSize)
 	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, gateway.conf.maxDBWriterProcess)
-	gateway.irh = &ImportRequestHandler{}
-	gateway.rrh = &RegularRequestHandler{}
+	gateway.irh = &ImportRequestHandler{Handle: gateway}
+	gateway.rrh = &RegularRequestHandler{Handle: gateway}
 	gateway.webhookHandler = webhook.Setup(gateway, gateway.stats)
 	whURL, err := url.ParseRequestURI(misc.GetWarehouseURL())
 	if err != nil {

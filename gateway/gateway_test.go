@@ -1445,9 +1445,8 @@ func (gateway *Handle) getWorkspaceID(writeKey string) string {
 
 type mockRequestHandler struct{}
 
-func (mockRequestHandler) ProcessRequest(gateway *Handle, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+func (mockRequestHandler) ProcessRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	// deepsource ignore: Unused method arguments
-	_ = gateway
 	_ = w
 	_ = r
 	_ = reqType

@@ -582,10 +582,9 @@ func (gateway *Handle) printStats(ctx context.Context) {
 	}
 }
 
-// getPayloadFromRequest reads the request body and returns the payload's bytes or an error if the payload cannot be read
-// ProcessWebRequest is an Interface wrapper for webhook
+// ProcessWebRequest is an interface wrapper for webhook
 func (gateway *Handle) ProcessWebRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
-	return gateway.rrh.ProcessRequest(gateway, w, r, reqType, payload, writeKey)
+	return gateway.rrh.ProcessRequest(w, r, reqType, payload, writeKey)
 }
 
 // getPayloadAndWriteKey reads the request body and returns the payload's bytes and write key or an error if the payload cannot be read

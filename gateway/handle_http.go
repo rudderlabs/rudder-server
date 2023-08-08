@@ -39,7 +39,7 @@ func (gateway *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWrite
 		errorMessage = err.Error()
 		return
 	}
-	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
+	errorMessage = rh.ProcessRequest(&w, r, reqType, payload, writeKey)
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.TrackRequestMetrics(errorMessage)
 	if errorMessage != "" {
@@ -60,7 +60,10 @@ func (gateway *Handle) pixelWebRequestHandler(rh RequestHandler, w http.Response
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Error while handling request: %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+			gateway.logger.Infow("Error while handling request",
+				"ip", misc.GetIPFromReq(r),
+				"path", r.URL.Path,
+				"error", errorMessage)
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
@@ -68,7 +71,7 @@ func (gateway *Handle) pixelWebRequestHandler(rh RequestHandler, w http.Response
 		errorMessage = err.Error()
 		return
 	}
-	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
+	errorMessage = rh.ProcessRequest(&w, r, reqType, payload, writeKey)
 
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.TrackRequestMetrics(errorMessage)
