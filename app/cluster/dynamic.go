@@ -46,11 +46,13 @@ type Dynamic struct {
 	BatchRouterDB lifecycle
 	ErrorDB       lifecycle
 	EventSchemaDB lifecycle
+	ArchivalDB    lifecycle
 
 	Processor lifecycle
 	Router    lifecycle
 
 	SchemaForwarder lifecycle
+	Archiver        lifecycle
 
 	currentMode         servermode.Mode
 	currentWorkspaceIDs string
@@ -164,6 +166,9 @@ func (d *Dynamic) start() error {
 	if err := d.EventSchemaDB.Start(); err != nil {
 		return fmt.Errorf("event schemas db start: %w", err)
 	}
+	if err := d.ArchivalDB.Start(); err != nil {
+		return fmt.Errorf("archival db start: %w", err)
+	}
 	if err := d.RouterDB.Start(); err != nil {
 		return fmt.Errorf("router db start: %w", err)
 	}
@@ -172,6 +177,9 @@ func (d *Dynamic) start() error {
 	}
 	if err := d.Processor.Start(); err != nil {
 		return fmt.Errorf("processor start: %w", err)
+	}
+	if err := d.Archiver.Start(); err != nil {
+		return fmt.Errorf("archiver start: %w", err)
 	}
 	if err := d.SchemaForwarder.Start(); err != nil {
 		return fmt.Errorf("jobs forwarder start: %w", err)
@@ -191,10 +199,14 @@ func (d *Dynamic) stop() {
 	}
 	d.logger.Info("Stopping the server")
 	start := time.Now()
+	d.Processor.Stop()
+	d.logger.Debug("Processor stopped")
 	d.Router.Stop()
 	d.logger.Debug("Router stopped")
 	d.SchemaForwarder.Stop()
 	d.logger.Debug("JobsForwarder stopped")
+	d.Archiver.Stop()
+	d.logger.Debug("Archiver stopped")
 	d.Processor.Stop()
 	d.logger.Debug("Processor stopped")
 
@@ -204,6 +216,8 @@ func (d *Dynamic) stop() {
 	d.logger.Debug("RouterDB stopped")
 	d.EventSchemaDB.Stop()
 	d.logger.Debug("EventSchemasDB stopped")
+	d.ArchivalDB.Stop()
+	d.logger.Debug("ArchivalDB stopped")
 	d.GatewayDB.Stop()
 	d.logger.Debug("GatewayDB stopped")
 	d.ErrorDB.Stop()
