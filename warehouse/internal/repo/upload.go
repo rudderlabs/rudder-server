@@ -671,13 +671,10 @@ func (uploads *Uploads) LastCreatedAt(ctx context.Context, sourceID, destination
 	var createdAt sql.NullTime
 
 	err := row.Scan(&createdAt)
-	if err == sql.ErrNoRows {
-		return time.Time{}, nil
-	}
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		return time.Time{}, fmt.Errorf("last created at: %w", err)
 	}
-	if !createdAt.Valid {
+	if err == sql.ErrNoRows || !createdAt.Valid {
 		return time.Time{}, nil
 	}
 

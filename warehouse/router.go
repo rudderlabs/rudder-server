@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/services/controlplane"
@@ -25,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -35,7 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
-type Router struct {
+type router struct {
 	destType string
 
 	dbHandle          *sqlquerywrapper.DB
@@ -69,11 +70,10 @@ type Router struct {
 	backgroundGroup errgroup.Group
 	backgroundWait  func() error
 
-	tenantManager       *multitenant.Manager
-	bcManager           *backendConfigManager
-	integrationsManager manager.Manager
-	uploadJobFactory    UploadJobFactory
-	notifier            *pgnotifier.PGNotifier
+	tenantManager    *multitenant.Manager
+	bcManager        *backendConfigManager
+	uploadJobFactory UploadJobFactory
+	notifier         *pgnotifier.PGNotifier
 
 	config struct {
 		noOfWorkers                       int
@@ -101,7 +101,7 @@ type Router struct {
 	}
 }
 
-func NewRouter(
+func newRouter(
 	ctx context.Context,
 	destType string,
 	conf *config.Config,
@@ -112,8 +112,8 @@ func NewRouter(
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
-) (*Router, error) {
-	r := &Router{}
+) (*router, error) {
+	r := &router{}
 
 	r.conf = conf
 	r.statsFactory = statsFactory
@@ -135,13 +135,7 @@ func NewRouter(
 	r.destType = destType
 	r.now = time.Now
 
-	var err error
-
-	if err = r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
-		return nil, err
-	}
-
-	if r.integrationsManager, err = manager.New(r.destType, r.conf, r.logger, r.statsFactory); err != nil {
+	if err := r.uploadRepo.ResetInProgress(ctx, r.destType); err != nil {
 		return nil, err
 	}
 
@@ -225,7 +219,7 @@ func NewRouter(
 }
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
-func (r *Router) backendConfigSubscriber(ctx context.Context) {
+func (r *router) backendConfigSubscriber(ctx context.Context) {
 	for warehouses := range r.bcManager.Subscribe(ctx) {
 		r.logger.Info(`Received updated workspace config`)
 
@@ -274,14 +268,14 @@ func (r *Router) backendConfigSubscriber(ctx context.Context) {
 }
 
 // workerIdentifier get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
-func (r *Router) workerIdentifier(warehouse model.Warehouse) (identifier string) {
+func (r *router) workerIdentifier(warehouse model.Warehouse) (identifier string) {
 	if r.config.allowMultipleSourcesForJobsPickup {
 		return warehouse.Source.ID + "_" + warehouse.Destination.ID + "_" + warehouse.Namespace
 	}
 	return warehouse.Destination.ID + "_" + warehouse.Namespace
 }
 
-func (r *Router) initWorker() chan *UploadJob {
+func (r *router) initWorker() chan *UploadJob {
 	workerChan := make(chan *UploadJob, 1000)
 
 	for i := 0; i < r.config.maxConcurrentUploadJobs; i++ {
@@ -304,19 +298,19 @@ func (r *Router) initWorker() chan *UploadJob {
 	return workerChan
 }
 
-func (r *Router) incrementActiveWorkers() {
+func (r *router) incrementActiveWorkers() {
 	r.activeWorkerCount.Add(1)
 }
 
-func (r *Router) decrementActiveWorkers() {
+func (r *router) decrementActiveWorkers() {
 	r.activeWorkerCount.Add(-1)
 }
 
-func (r *Router) getActiveWorkerCount() int {
+func (r *router) getActiveWorkerCount() int {
 	return int(r.activeWorkerCount.Load())
 }
 
-func (r *Router) setDestInProgress(warehouse model.Warehouse, jobID int64) {
+func (r *router) setDestInProgress(warehouse model.Warehouse, jobID int64) {
 	r.inProgressMapLock.Lock()
 	defer r.inProgressMapLock.Unlock()
 
@@ -324,7 +318,7 @@ func (r *Router) setDestInProgress(warehouse model.Warehouse, jobID int64) {
 	r.inProgressMap[WorkerIdentifierT(identifier)] = append(r.inProgressMap[WorkerIdentifierT(identifier)], JobID(jobID))
 }
 
-func (r *Router) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
+func (r *router) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
 	r.inProgressMapLock.Lock()
 	defer r.inProgressMapLock.Unlock()
 
@@ -335,14 +329,14 @@ func (r *Router) removeDestInProgress(warehouse model.Warehouse, jobID int64) {
 	}
 }
 
-func (r *Router) isUploadJobInProgress(warehouse model.Warehouse, jobID int64) (int, bool) {
+func (r *router) isUploadJobInProgress(warehouse model.Warehouse, jobID int64) (int, bool) {
 	r.inProgressMapLock.RLock()
 	defer r.inProgressMapLock.RUnlock()
 
 	return r.checkInProgressMap(jobID, r.workerIdentifier(warehouse))
 }
 
-func (r *Router) getInProgressNamespaces() []string {
+func (r *router) getInProgressNamespaces() []string {
 	r.inProgressMapLock.RLock()
 	defer r.inProgressMapLock.RUnlock()
 
@@ -355,7 +349,7 @@ func (r *Router) getInProgressNamespaces() []string {
 	return identifiers
 }
 
-func (r *Router) checkInProgressMap(jobID int64, identifier string) (int, bool) {
+func (r *router) checkInProgressMap(jobID int64, identifier string) (int, bool) {
 	for idx, id := range r.inProgressMap[WorkerIdentifierT(identifier)] {
 		if jobID == int64(id) {
 			return idx, true
@@ -364,7 +358,7 @@ func (r *Router) checkInProgressMap(jobID int64, identifier string) (int, bool) 
 	return 0, false
 }
 
-func (r *Router) runUploadJobAllocator(ctx context.Context) {
+func (r *router) runUploadJobAllocator(ctx context.Context) {
 loop:
 	for {
 		select {
@@ -427,7 +421,7 @@ loop:
 	r.workerChannelMapLock.RUnlock()
 }
 
-func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJob, error) {
+func (r *router) uploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJob, error) {
 	uploads, err := r.uploadRepo.GetToProcess(ctx, r.destType, availableWorkers, repo.ProcessOptions{
 		SkipIdentifiers:                   skipIdentifiers,
 		SkipWorkspaces:                    r.tenantManager.DegradedWorkspaces(),
@@ -474,12 +468,17 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 			return nil, err
 		}
 
+		whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
+		if err != nil {
+			return nil, err
+		}
+
 		uploadJob := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 			Warehouse:    warehouse,
 			Upload:       upload,
 			StagingFiles: stagingFilesList,
 		},
-			r.integrationsManager,
+			whManager,
 		)
 
 		uploadJobs = append(uploadJobs, uploadJob)
@@ -498,14 +497,14 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 	return uploadJobs, nil
 }
 
-func (r *Router) processingStats(availableWorkers int, jobStats model.UploadJobsStats) {
+func (r *router) processingStats(availableWorkers int, jobStats model.UploadJobsStats) {
 	r.stats.processingPendingJobsStat.Gauge(int(jobStats.PendingJobs))
 	r.stats.processingAvailableWorkersStat.Gauge(availableWorkers)
 	r.stats.processingPickupLagStat.SendTiming(jobStats.PickupLag)
 	r.stats.processingPickupWaitTimeStat.SendTiming(jobStats.PickupWaitTime)
 }
 
-func (r *Router) mainLoop(ctx context.Context) {
+func (r *router) mainLoop(ctx context.Context) {
 	for {
 		if !r.isEnabled.Load() {
 			select {
@@ -559,7 +558,7 @@ func (r *Router) mainLoop(ctx context.Context) {
 	}
 }
 
-func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err error) {
+func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err error) {
 	if ok, err := r.canCreateUpload(ctx, warehouse); !ok {
 		r.statsFactory.NewTaggedStat("wh_scheduler.upload_sync_skipped", stats.CountType, stats.Tags{
 			"workspaceId":   warehouse.WorkspaceID,
@@ -623,7 +622,7 @@ func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 	return nil
 }
 
-func (r *Router) latestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
+func (r *router) latestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
 	uploadID, status, priority, err := r.warehouseDBHandle.GetLatestUploadStatus(
 		ctx,
 		warehouse.Source.ID,
@@ -636,14 +635,14 @@ func (r *Router) latestUploadStatus(ctx context.Context, warehouse *model.Wareho
 	return uploadID, status, priority
 }
 
-func (r *Router) uploadStartAfterTime() time.Time {
+func (r *router) uploadStartAfterTime() time.Time {
 	if r.config.enableJitterForSyncs {
 		return timeutil.Now().Add(time.Duration(rand.Intn(15)) * time.Second)
 	}
 	return r.now()
 }
 
-func (r *Router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse model.Warehouse, stagingFiles []*model.StagingFile, priority int, uploadStartAfter time.Time) error {
+func (r *router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse model.Warehouse, stagingFiles []*model.StagingFile, priority int, uploadStartAfter time.Time) error {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -691,16 +690,16 @@ func (r *Router) createUploadJobsFromStagingFiles(ctx context.Context, warehouse
 }
 
 // Enable enables a router :)
-func (r *Router) Enable() {
+func (r *router) Enable() {
 	r.isEnabled.Store(true)
 }
 
 // Disable disables a router:)
-func (r *Router) Disable() {
+func (r *router) Disable() {
 	r.isEnabled.Store(false)
 }
 
-func (r *Router) Shutdown() error {
+func (r *router) Shutdown() error {
 	r.stopService()
 	return r.backgroundWait()
 }

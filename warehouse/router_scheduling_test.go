@@ -191,7 +191,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			}
 			triggerUpload(w)
 
-			r := Router{}
+			r := router{}
 			canCreate, err := r.canCreateUpload(context.Background(), w)
 			require.NoError(t, err)
 			require.True(t, canCreate)
@@ -203,7 +203,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					Identifier: "test_identifier_first_upload",
 				}
 
-				r := Router{}
+				r := router{}
 				r.config.warehouseSyncFreqIgnore = true
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
@@ -217,7 +217,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				}
 				setLastProcessedMarker(w, time.Now())
 
-				r := Router{}
+				r := router{}
 				r.config.warehouseSyncFreqIgnore = true
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
@@ -231,7 +231,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				}
 				setLastProcessedMarker(w, time.Now().Add(-time.Hour))
 
-				r := Router{}
+				r := router{}
 				r.config.warehouseSyncFreqIgnore = true
 
 				canCreate, err := r.canCreateUpload(context.Background(), w)
@@ -253,7 +253,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 			}
 
-			r := Router{}
+			r := router{}
 			r.now = func() time.Time {
 				return time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
 			}
@@ -271,7 +271,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 			}
 
-			r := Router{}
+			r := router{}
 			r.now = time.Now
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
@@ -288,7 +288,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			}
 			setLastProcessedMarker(w, time.Now())
 
-			r := Router{}
+			r := router{}
 			r.now = time.Now
 
 			canCreate, err := r.canCreateUpload(context.Background(), w)
@@ -374,7 +374,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					}
 					setLastProcessedMarker(w, time.Now())
 
-					r := Router{}
+					r := router{}
 					r.uploadRepo = repoUpload
 					r.now = func() time.Time {
 						return tc.now

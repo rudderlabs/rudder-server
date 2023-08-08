@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -71,7 +73,7 @@ func isDestHistoricIdentitiesPopulateInProgress(warehouse model.Warehouse) bool 
 	return false
 }
 
-func (r *Router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (upload model.Upload, found bool) {
+func (r *router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (upload model.Upload, found bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 			id,
@@ -132,11 +134,11 @@ func (r *Router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (up
 	return
 }
 
-func (r *Router) populateHistoricIdentitiesDestType() string {
+func (r *router) populateHistoricIdentitiesDestType() string {
 	return r.destType + "_IDENTITY_PRE_LOAD"
 }
 
-func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
+func (r *router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  EXISTS (
@@ -156,15 +158,20 @@ func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 	return
 }
 
-func (r *Router) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
-	empty, err := r.integrationsManager.IsEmpty(ctx, warehouse)
+func (r *router) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
+	whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
+	if err != nil {
+		panic(err)
+	}
+
+	empty, err := whManager.IsEmpty(ctx, warehouse)
 	if err != nil {
 		return false, err
 	}
 	return !empty, nil
 }
 
-func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Warehouse) {
+func (r *router) setupIdentityTables(ctx context.Context, warehouse model.Warehouse) {
 	var name sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
 	err := r.dbHandle.QueryRow(sqlStatement).Scan(&name)
@@ -265,7 +272,7 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 	}
 }
 
-func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) model.Upload {
+func (r *router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) model.Upload {
 	schema := make(model.Schema)
 	// TODO: DRY this code
 	identityRules := model.TableSchema{
@@ -340,14 +347,14 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 	return upload
 }
 
-func (*Router) setFailedStat(warehouse model.Warehouse, err error) {
+func (*router) setFailedStat(warehouse model.Warehouse, err error) {
 	if err == nil {
 		return
 	}
 	warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Identifier).Count(1)
 }
 
-func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model.Warehouse) {
+func (r *router) populateHistoricIdentities(ctx context.Context, warehouse model.Warehouse) {
 	if isDestHistoricIdentitiesPopulated(warehouse) || isDestHistoricIdentitiesPopulateInProgress(warehouse) {
 		return
 	}
@@ -391,11 +398,16 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 			upload = r.initPrePopulateDestIdentitiesUpload(warehouse)
 		}
 
+		whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
+		if err != nil {
+			panic(err)
+		}
+
 		job := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 			Upload:    upload,
 			Warehouse: warehouse,
 		},
-			r.integrationsManager,
+			whManager,
 		)
 
 		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(ctx, job.upload.ID)
@@ -418,17 +430,17 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 			}
 		}
 
-		r.integrationsManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
+		whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
 			r.destType, warehouse.Destination.ID,
 		))
-		err = r.integrationsManager.Setup(ctx, job.warehouse, job)
+		err = whManager.Setup(ctx, job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)
 			return
 		}
-		defer r.integrationsManager.Cleanup(ctx)
+		defer whManager.Cleanup(ctx)
 
-		err = job.schemaHandle.fetchSchemaFromWarehouse(ctx, r.integrationsManager)
+		err = job.schemaHandle.fetchSchemaFromWarehouse(ctx, whManager)
 		if err != nil {
 			r.logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)

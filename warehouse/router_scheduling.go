@@ -26,7 +26,7 @@ func init() {
 }
 
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
-func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse) (bool, error) {
+func (r *router) canCreateUpload(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
 		return true, nil

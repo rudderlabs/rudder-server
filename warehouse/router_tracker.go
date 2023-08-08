@@ -18,7 +18,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func (r *Router) CronTracker(ctx context.Context) error {
+func (r *router) CronTracker(ctx context.Context) error {
 	for {
 		var warehouses []model.Warehouse
 
@@ -49,15 +49,13 @@ func (r *Router) CronTracker(ctx context.Context) error {
 // Track tracks the status of the warehouse uploads for the corresponding cases:
 // 1. Staging files is not picked.
 // 2. Upload job is struck
-func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *config.Config) error {
+func (r *router) Track(ctx context.Context, warehouse *model.Warehouse, config *config.Config) error {
 	var (
-		query             string
-		queryArgs         []interface{}
 		createdAt         sql.NullTime
 		exists            bool
 		syncFrequency     = "1440"
-		Now               = timeutil.Now
-		NowSQL            = "NOW()"
+		now               = timeutil.Now
+		nowSQL            = "NOW()"
 		failedStatusRegex = "%_failed"
 		timeWindow        = config.GetDuration("Warehouse.uploadBufferTimeInMin", 180, time.Minute)
 		source            = warehouse.Source
@@ -65,13 +63,13 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 	)
 
 	if r.nowSQL != "" {
-		NowSQL = r.nowSQL
+		nowSQL = r.nowSQL
 	}
 	if r.now != nil {
-		Now = r.now
+		now = r.now
 	}
 
-	tags := stats.Tags{
+	trackUploadMissingStat := r.statsFactory.NewTaggedStat("warehouse_track_upload_missing", stats.GaugeType, stats.Tags{
 		"workspaceId": warehouse.WorkspaceID,
 		"module":      moduleName,
 		"destType":    r.destType,
@@ -80,9 +78,8 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 			source.Name,
 			destination.Name,
 			misc.TailTruncateStr(source.ID, 6)),
-	}
-	statKey := "warehouse_track_upload_missing"
-	r.statsFactory.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(0)
+	})
+	trackUploadMissingStat.Gauge(0)
 
 	if !source.Enabled || !destination.Enabled {
 		return nil
@@ -90,7 +87,7 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 
 	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
 	excludeWindowStartTime, excludeWindowEndTime := excludeWindowStartEndTimes(excludeWindow)
-	if checkCurrentTimeExistsInExcludeWindow(Now(), excludeWindowStartTime, excludeWindowEndTime) {
+	if checkCurrentTimeExistsInExcludeWindow(now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return nil
 	}
 
@@ -101,7 +98,7 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 		timeWindow += time.Duration(value) * time.Minute
 	}
 
-	query = fmt.Sprintf(`
+	query := fmt.Sprintf(`
 				SELECT
 				  created_at
 				FROM
@@ -117,9 +114,9 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 				  1;
 				`,
 		warehouseutils.WarehouseStagingFilesTable,
-		NowSQL,
+		nowSQL,
 	)
-	queryArgs = []interface{}{
+	queryArgs := []interface{}{
 		source.ID,
 		destination.ID,
 		2 * timeWindow / time.Minute,
@@ -178,7 +175,8 @@ func (r *Router) Track(ctx context.Context, warehouse *model.Warehouse, config *
 			logfield.DestinationType, destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, warehouse.WorkspaceID,
 		)
-		r.statsFactory.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(1)
+
+		trackUploadMissingStat.Gauge(1)
 	}
 
 	return nil

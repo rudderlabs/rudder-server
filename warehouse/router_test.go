@@ -117,7 +117,7 @@ func TestRouter(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		r, err := NewRouter(
+		r, err := newRouter(
 			ctx,
 			destinationType,
 			config.Default,
@@ -177,7 +177,7 @@ func TestRouter(t *testing.T) {
 			Identifier: "RS:test-source-id:test-destination-id-create-jobs",
 		}
 
-		r := Router{}
+		r := router{}
 		r.now = time.Now
 		r.dbHandle = db
 		r.warehouseDBHandle = NewWarehouseDB(db)
@@ -334,7 +334,7 @@ func TestRouter(t *testing.T) {
 
 		statsStore := memstats.New()
 
-		r := Router{}
+		r := router{}
 		r.dbHandle = db
 		r.statsFactory = statsStore
 		r.warehouseDBHandle = NewWarehouseDB(db)
@@ -437,7 +437,7 @@ func TestRouter(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 
-		r := Router{}
+		r := router{}
 		r.dbHandle = db
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
@@ -569,7 +569,7 @@ func TestRouter(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 
-		r := Router{}
+		r := router{}
 		r.dbHandle = db
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
@@ -717,7 +717,7 @@ func TestRouter(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 
-			r := Router{}
+			r := router{}
 			r.dbHandle = db
 			r.warehouseDBHandle = NewWarehouseDB(db)
 			r.uploadRepo = repoUpload
@@ -805,7 +805,7 @@ func TestRouter(t *testing.T) {
 
 			statsStore := memstats.New()
 
-			r := Router{}
+			r := router{}
 			r.dbHandle = db
 			r.statsFactory = statsStore
 			r.warehouseDBHandle = NewWarehouseDB(db)
@@ -1030,7 +1030,7 @@ func TestRouter(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		r := Router{}
+		r := router{}
 		r.dbHandle = db
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload

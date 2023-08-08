@@ -151,7 +151,7 @@ func TestRouter_Track(t *testing.T) {
 				nowSQL = tc.NowSQL
 			}
 
-			handle := Router{
+			handle := router{
 				destType: destType,
 				now: func() time.Time {
 					return now
@@ -208,7 +208,7 @@ func TestRouter_CronTracker(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-		r := Router{
+		r := router{
 			logger: mockLogger,
 		}
 
@@ -261,7 +261,7 @@ func TestRouter_CronTracker(t *testing.T) {
 		now, err := time.Parse(misc.RFC3339Milli, "2022-12-06T06:19:00.169Z")
 		require.NoError(t, err)
 
-		r := Router{
+		r := router{
 			destType: destType,
 			now: func() time.Time {
 				return now

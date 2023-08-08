@@ -178,7 +178,7 @@ func getBucketFolder(batchID, tableName string) string {
 
 // Gets the config from config backend and extracts enabled write keys
 func monitorDestRouters(ctx context.Context) error {
-	dstToWhRouter := make(map[string]*Router)
+	dstToWhRouter := make(map[string]*router)
 
 	ch := tenantManager.WatchConfig(ctx)
 	for configData := range ch {
@@ -196,7 +196,7 @@ func monitorDestRouters(ctx context.Context) error {
 	return g.Wait()
 }
 
-func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.ConfigT, dstToWhRouter map[string]*Router) error {
+func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.ConfigT, dstToWhRouter map[string]*router) error {
 	enabledDestinations := make(map[string]bool)
 	for _, wConfig := range configMap {
 		for _, source := range wConfig.Sources {
@@ -206,7 +206,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 					router, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-						router, err := NewRouter(
+						router, err := newRouter(
 							ctx,
 							destination.DestinationDefinition.Name,
 							config.Default,
