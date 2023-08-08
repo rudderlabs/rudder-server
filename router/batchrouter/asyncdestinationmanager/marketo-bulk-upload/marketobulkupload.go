@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -142,8 +143,10 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	statusCode, ok := failedJobsResponse["status"].(int)
-	if !ok {
+	var marketoStatus int
+	if statusCodeFloat64, ok := failedJobsResponse["statusCode"].(float64); ok {
+		marketoStatus = int(statusCodeFloat64)
+	} else {
 		b.logger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", statusCode, string(failedBodyBytes))
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
@@ -163,16 +166,38 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 
 	if errFailed != nil || errWarning != nil || errSuccess != nil {
 		b.logger.Errorf("[Batch Router] Failed to get job IDs for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
-		statusCode = 500
+		return common.GetUploadStatsResponse{
+			StatusCode: 500,
+		}
+	}
+
+	failedReasonsMap := make(map[int64]string)
+	failedReasons, ok := metadata["failedReasons"].(map[string]interface{})
+	if !ok {
+		b.logger.Errorf("[Batch Router] Failed to typecast failedReasons for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
+		return common.GetUploadStatsResponse{
+			StatusCode: 500,
+		}
+	}
+	for jobID, reason := range failedReasons {
+		jobIDInt, err := strconv.ParseInt(strings.TrimPrefix(jobID, "jobID"), 10, 64)
+		if err != nil {
+			b.logger.Errorf("[Batch Router] Error converting jobID to int64: for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+			}
+		}
+		failedReasonsMap[jobIDInt] = reason.(string)
 	}
 
 	// Build the response body
 	return common.GetUploadStatsResponse{
-		StatusCode: statusCode,
+		StatusCode: marketoStatus,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    failedKeys,
 			WarningKeys:   warningKeys,
 			SucceededKeys: succeededKeys,
+			FailedReasons: failedReasonsMap,
 		},
 	}
 }
