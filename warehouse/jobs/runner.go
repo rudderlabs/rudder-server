@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -160,7 +159,6 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 	a.logger.Info("[WH-Jobs]: Starting async job runner")
 	defer a.logger.Info("[WH-Jobs]: Stopping AsyncJobRunner")
 
-	var wg sync.WaitGroup
 	for {
 		a.logger.Debug("[WH-Jobs]: Scanning for waiting async job")
 
@@ -201,24 +199,21 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 		}
 		asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobExecuting, err)
 		_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			select {
-			case <-ctx.Done():
-				a.logger.Infof("[WH-Jobs]: Context cancelled for async job runner")
-			case responses := <-ch:
-				a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
-				asyncJobsStatusMap := getAsyncStatusMapFromAsyncPayloads(pendingAsyncJobs)
-				a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
-				_ = a.updateAsyncJobs(ctx, asyncJobsStatusMap)
-			case <-time.After(a.asyncJobTimeOut):
-				a.logger.Errorf("Go Routine timed out waiting for a response from PgNotifier", pendingAsyncJobs[0].Id)
-				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
-				_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
-			}
-		}()
-		wg.Wait()
+
+		select {
+		case <-ctx.Done():
+			a.logger.Infof("[WH-Jobs]: Context cancelled for async job runner")
+			return nil
+		case responses := <-ch:
+			a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
+			asyncJobsStatusMap := getAsyncStatusMapFromAsyncPayloads(pendingAsyncJobs)
+			a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
+			_ = a.updateAsyncJobs(ctx, asyncJobsStatusMap)
+		case <-time.After(a.asyncJobTimeOut):
+			a.logger.Errorf("Go Routine timed out waiting for a response from PgNotifier", pendingAsyncJobs[0].Id)
+			asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
+			_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
+		}
 	}
 }
 
