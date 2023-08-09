@@ -183,8 +183,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 		  AND status = $2
 		  AND NOT workspace_id = ANY ( $3 )
 		LIMIT
-		  10000;
-`,
+		  10000;`,
 		pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
 	)
 
@@ -200,7 +199,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 	defer func() {
 		if err != nil {
 			a.Logger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
-			a.Stats.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
+			a.Stats.NewStat("warehouse.archiver.archiveFailed", stats.CountType).Increment()
 		}
 	}()
 	if err == sql.ErrNoRows {
@@ -210,6 +209,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("querying wh_uploads for archival: %w", err)
 	}
+
 	var uploadsToArchive []*uploadRecord
 	for rows.Next() {
 		var u uploadRecord
@@ -230,17 +230,12 @@ func (a *Archiver) Do(ctx context.Context) error {
 		}
 		uploadsToArchive = append(uploadsToArchive, &u)
 	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("scanning rows: %w", err)
-	}
-
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("closing rows after scanning wh_uploads for archival: %w", err)
 	}
 
 	var archivedUploads int
 	for _, u := range uploadsToArchive {
-
 		txn, err := a.DB.BeginTx(ctx, &sql.TxOptions{})
 		if err != nil {
 			a.Logger.Errorf(`Error creating txn in archiveUploadFiles. Error: %v`, err)
@@ -250,59 +245,17 @@ func (a *Archiver) Do(ctx context.Context) error {
 		hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetdata)
 
 		// archive staging files
-		stmt := fmt.Sprintf(`
-			SELECT
-			  id,
-			  location
-			FROM
-			  %s
-			WHERE
-			  source_id = '%s'
-			  AND destination_id = '%s'
-			  AND id >= %d
-			  and id <= %d;
-`,
-			warehouseutils.WarehouseStagingFilesTable,
-			u.sourceID,
-			u.destID,
-			u.startStagingFileId,
-			u.endStagingFileId,
-		)
-
-		stagingFileRows, err := txn.QueryContext(ctx, stmt)
+		stagingFileIDs, stagingFileLocations, err := a.getStagingFilesData(ctx, txn, u)
 		if err != nil {
-			a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
+			a.Logger.Errorf(`Error getting staging files data for upload %d: %v`, u.uploadID, err)
+			_ = txn.Rollback()
 			continue
 		}
-		defer stagingFileRows.Close()
-
-		var stagingFileIDs []int64
-		var stagingFileLocations []string
-		for stagingFileRows.Next() {
-			var stagingFileID int64
-			var stagingFileLocation string
-			err = stagingFileRows.Scan(
-				&stagingFileID,
-				&stagingFileLocation,
-			)
-			if err != nil {
-				txn.Rollback()
-				return fmt.Errorf("scanning staging file id: %w", err)
-			}
-			stagingFileIDs = append(stagingFileIDs, stagingFileID)
-			stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
-		}
-		if err := stagingFileRows.Err(); err != nil {
-			txn.Rollback()
-			return fmt.Errorf("iterating staging file ids: %w", err)
-		}
-		stagingFileRows.Close()
 
 		var storedStagingFilesLocation string
 		if len(stagingFileIDs) > 0 {
 			if !hasUsedRudderStorage {
-				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
+				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ",")) // TODO: use pq.Array
 				storedStagingFilesLocation, err = a.backupRecords(ctx, backupRecordsArgs{
 					tableName:      warehouseutils.WarehouseStagingFilesTable,
 					sourceID:       u.sourceID,
@@ -310,131 +263,172 @@ func (a *Archiver) Do(ctx context.Context) error {
 					tableFilterSQL: filterSQL,
 					uploadID:       u.uploadID,
 				})
-
 				if err != nil {
-					a.Logger.Errorf(`Error backing up staging files for upload:%d : %v`, u.uploadID, err)
-					txn.Rollback()
+					a.Logger.Errorf(`Error backing up staging files for upload: %d: %v`, u.uploadID, err)
+					_ = txn.Rollback()
 					continue
 				}
 			} else {
-				a.Logger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, u.uploadID)
-			}
+				a.Logger.Debugf(`Object storage not configured to archive upload related staging file records.`+
+					`Deleting the ones that need to be archived for upload: %d`, u.uploadID)
 
-			if hasUsedRudderStorage {
 				err = a.deleteFilesInStorage(ctx, stagingFileLocations)
 				if err != nil {
-					a.Logger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
-					txn.Rollback()
+					a.Logger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, err)
+					_ = txn.Rollback()
 					continue
 				}
 			}
 
 			// delete staging file records
-			stmt = fmt.Sprintf(`
+			stmt := fmt.Sprintf(`
 				DELETE FROM
 				  %s
 				WHERE
-				  id IN (%v);
-`,
-				warehouseutils.WarehouseStagingFilesTable,
-				misc.IntArrayToString(stagingFileIDs, ","),
+				  id IN ($1);`,
+				pq.QuoteIdentifier(warehouseutils.WarehouseStagingFilesTable),
 			)
-			_, err = txn.ExecContext(ctx, stmt)
+			_, err = txn.ExecContext(ctx, stmt, pq.Array(stagingFileIDs))
 			if err != nil {
 				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				continue
 			}
 
 			// delete load file records
-			stmt = fmt.Sprintf(`
-				DELETE FROM
-				  %s
-				WHERE
-				  staging_file_id = ANY($1) RETURNING location;
-`,
-				warehouseutils.WarehouseLoadFilesTable,
-			)
-			loadLocationRows, err := txn.QueryContext(ctx, stmt, pq.Array(stagingFileIDs))
-			if err != nil {
-				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-				txn.Rollback()
+			if err := a.deleteLoadFileRecords(ctx, txn, stagingFileIDs, hasUsedRudderStorage); err != nil {
+				a.Logger.Errorf("Error while deleting load file records for upload %d: %v", u.uploadID, err)
+				_ = txn.Rollback()
 				continue
 			}
-
-			defer loadLocationRows.Close()
-
-			if hasUsedRudderStorage {
-				var loadLocations []string
-				for loadLocationRows.Next() {
-					var loc string
-					err = loadLocationRows.Scan(&loc)
-					if err != nil {
-						txn.Rollback()
-						return fmt.Errorf("scanning load file location: %w", err)
-					}
-					loadLocations = append(loadLocations, loc)
-				}
-				if err := loadLocationRows.Err(); err != nil {
-					txn.Rollback()
-					return fmt.Errorf("iterating load file locations: %w", err)
-				}
-				loadLocationRows.Close()
-				var paths []string
-				for _, loc := range loadLocations {
-					u, err := url.Parse(loc)
-					if err != nil {
-						a.Logger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
-						txn.Rollback()
-						continue
-					}
-					paths = append(paths, u.Path[1:])
-				}
-				err = a.deleteFilesInStorage(ctx, paths)
-				if err != nil {
-					a.Logger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
-					txn.Rollback()
-					continue
-				}
-			}
-			loadLocationRows.Close()
 		}
 
 		// update upload metadata
 		u.uploadMetdata, _ = sjson.SetBytes(u.uploadMetdata, "archivedStagingAndLoadFiles", true)
-		stmt = fmt.Sprintf(`
-			UPDATE
-			  %s
-			SET
-			  metadata = $1
-			WHERE
-			  id = %d;
-`,
-			warehouseutils.WarehouseUploadsTable,
-			u.uploadID,
+		stmt := fmt.Sprintf(`
+			UPDATE %s
+			SET metadata = $1
+			WHERE id = $2;`,
+			pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
 		)
-		_, err = txn.ExecContext(ctx, stmt, u.uploadMetdata)
+		_, err = txn.ExecContext(ctx, stmt, u.uploadMetdata, u.uploadID)
 		if err != nil {
-			a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
+			a.Logger.Errorf(`Error running txn while archiving upload files. Query: %s Error: %v`, stmt, err)
+			_ = txn.Rollback()
 			continue
 		}
 
-		err = txn.Commit()
-		if err != nil {
-			txn.Rollback()
+		if err = txn.Commit(); err != nil {
+			a.Logger.Errorf(`Error committing txn while archiving upload files. Error: %v`, err)
+			_ = txn.Rollback()
 			continue
 		}
+
 		archivedUploads++
 		if storedStagingFilesLocation != "" {
-			a.Logger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, u.uploadID, storedStagingFilesLocation)
+			a.Logger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`,
+				u.uploadID, storedStagingFilesLocation,
+			)
 		}
 
 		a.Stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, stats.Tags{
 			"destination": u.destID,
 			"source":      u.sourceID,
-		}).Count(1)
+		}).Increment()
 	}
+
 	a.Logger.Infof(`Successfully archived %d uploads`, archivedUploads)
+
+	return nil
+}
+
+func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uploadRecord) ([]int64, []string, error) {
+	stmt := fmt.Sprintf(`
+		SELECT
+		  id,
+		  location
+		FROM
+		  %s
+		WHERE
+		  source_id = $1
+		  AND destination_id = $2
+		  AND id >= $3
+		  and id <= $4;`,
+		pq.QuoteIdentifier(warehouseutils.WarehouseStagingFilesTable),
+	)
+
+	stagingFileRows, err := txn.QueryContext(ctx, stmt,
+		u.sourceID,
+		u.destID,
+		u.startStagingFileId,
+		u.endStagingFileId,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot query staging files data: %w", err)
+	}
+	defer func() { _ = stagingFileRows.Close() }()
+
+	var (
+		stagingFileIDs       []int64
+		stagingFileLocations []string
+	)
+	for stagingFileRows.Next() {
+		var (
+			stagingFileID       int64
+			stagingFileLocation string
+		)
+		err = stagingFileRows.Scan(
+			&stagingFileID,
+			&stagingFileLocation,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("scanning staging file id: %w", err)
+		}
+		stagingFileIDs = append(stagingFileIDs, stagingFileID)
+		stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
+	}
+
+	return stagingFileIDs, stagingFileLocations, nil
+}
+
+func (a *Archiver) deleteLoadFileRecords(
+	ctx context.Context, txn *sql.Tx, stagingFileIDs []int64, hasUsedRudderStorage bool,
+) error {
+	stmt := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE staging_file_id = ANY($1) RETURNING location;`,
+		pq.QuoteIdentifier(warehouseutils.WarehouseLoadFilesTable),
+	)
+	loadLocationRows, err := txn.QueryContext(ctx, stmt, pq.Array(stagingFileIDs))
+	if err != nil {
+		return fmt.Errorf("cannot delete load files with staging_file_id = %+v: %w", stagingFileIDs, err)
+	}
+
+	defer func() { _ = loadLocationRows.Close() }()
+
+	if !hasUsedRudderStorage {
+		return nil // no need to delete files in rudder storage
+	}
+
+	var loadLocations []string
+	for loadLocationRows.Next() {
+		var loc string
+		if err = loadLocationRows.Scan(&loc); err != nil {
+			return fmt.Errorf("cannot scan load file location: %w", err)
+		}
+
+		u, err := url.Parse(loc)
+		if err != nil {
+			return fmt.Errorf("cannot parse load file location %q: %w", loc, err)
+		}
+
+		loadLocations = append(loadLocations, u.Path[1:])
+	}
+
+	err = a.deleteFilesInStorage(ctx, loadLocations)
+	if err != nil {
+		return fmt.Errorf("error deleting files in storage: %w", err)
+	}
+
 	return nil
 }
