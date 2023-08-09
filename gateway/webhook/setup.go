@@ -1,4 +1,4 @@
-//go:generate mockgen --build_flags=--mod=mod -destination=./../mocks/mockwebhook.go -package mockwebhook github.com/rudderlabs/rudder-server/gateway/webhook GatewayI
+//go:generate mockgen --build_flags=--mod=mod -destination=./../mocks/mockwebhook.go -package mockwebhook github.com/rudderlabs/rudder-server/gateway/webhook Gateway
 
 package webhook
 
@@ -13,17 +13,17 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type GatewayI interface {
+type Gateway interface {
 	IncrementRecvCount(count uint64)
 	IncrementAckCount(count uint64)
 	TrackRequestMetrics(errorMessage string)
-	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, writeKey string) string
-	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
-	NewSourceStat(writeKey, reqType string) *gwstats.SourceStat
+	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
+	NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType string) *gwstats.SourceStat
 	SaveWebhookFailures([]*model.FailedWebhookPayload) error
 }
 
@@ -42,7 +42,7 @@ func newWebhookStats() *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle GatewayI, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
+func Setup(gwHandle Gateway, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat}
 	webhook.requestQ = make(map[string]chan *webhookT)
 	webhook.batchRequestQ = make(chan *batchWebhookT)
