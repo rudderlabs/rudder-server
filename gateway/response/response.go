@@ -56,6 +56,10 @@ const (
 	ContextDeadlineExceeded = "context deadline exceeded"
 	// GatewayTimeout - Gateway timeout
 	GatewayTimeout = "Gateway timeout"
+	// NoSourceIdInHeader - Failed to read source id from header
+	NoSourceIdInHeader = "Failed to read source id from header"
+	// InvalidSourceID - Invalid source id
+	InvalidSourceID = "Invalid source id"
 
 	transPixelResponse = "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x21\xF9\x04" +
 		"\x01\x00\x00\x00\x00\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3B"
@@ -73,6 +77,9 @@ var statusMap = map[string]status{
 	InvalidWriteKey:         {message: InvalidWriteKey, code: http.StatusUnauthorized},
 	SourceDisabled:          {message: SourceDisabled, code: http.StatusNotFound},
 	InvalidJSON:             {message: InvalidJSON, code: http.StatusBadRequest},
+	NoSourceIdInHeader:      {message: NoSourceIdInHeader, code: http.StatusUnauthorized},
+	InvalidSourceID:         {message: InvalidSourceID, code: http.StatusUnauthorized},
+
 	// webhook specific status
 	InvalidWebhookSource:                           {message: InvalidWebhookSource, code: http.StatusNotFound},
 	SourceTransformerFailed:                        {message: SourceTransformerFailed, code: http.StatusBadRequest},

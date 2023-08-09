@@ -34,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	webhookModel "github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -63,12 +64,18 @@ const (
 	NormalUserID     = "normal-user-1"
 	WorkspaceID      = "workspace"
 	sourceType1      = "sourceType1"
-	sourceType2      = "sourceType2"
+	sourceType2      = "webhook"
 	sdkLibrary       = "sdkLibrary"
 	sdkVersion       = "v1.2.3"
 )
 
 var (
+	rCtxEnabled = &gwtypes.AuthRequestContext{
+		WriteKey:       WriteKeyEnabled,
+		SourceID:       SourceIDEnabled,
+		WorkspaceID:    WorkspaceID,
+		SourceCategory: sourceType2,
+	}
 	testTimeout = 15 * time.Second
 	sdkContext  = fmt.Sprintf(
 		`"context":{"library":{"name": %[1]q, "version":%[2]q}}`,
@@ -91,6 +98,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			WriteKey: WriteKeyDisabled,
 			Enabled:  false,
 			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name:     SourceIDDisabled,
 				Category: sourceType1,
 			},
 		},
@@ -99,6 +107,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name:     SourceIDEnabled,
 				Category: sourceType2,
 			},
 			WorkspaceID: WorkspaceID,
@@ -172,7 +181,6 @@ func initGW() {
 }
 
 var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
-	gateway := &Handle{}
 	_ = DescribeTable("newDSIdx tests",
 		func(inputKey, value string) {
 			testValidBody := `{"batch":[
@@ -183,7 +191,7 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 		                {"anonymousId":"anon_id_2","event":"event_2_2"},
 		                {"anonymousId":"anon_id_1","event":"event_1_3"}
 		            ]}`
-			response, payloadError := gateway.getUsersPayload([]byte(testValidBody))
+			response, payloadError := getUsersPayload([]byte(testValidBody))
 			key, err := misc.GetMD5UUID(inputKey)
 			Expect(string(response[key.String()])).To(Equal(value))
 			Expect(err).To(BeNil())
@@ -247,18 +255,18 @@ var _ = Describe("Gateway Enterprise", func() {
 		It("should not accept events from suppress users", func() {
 			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 			// Why GET
-			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "OK")
+			expectHandlerResponse((gateway.webBatchHandler()), authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "OK", "batch")
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
 						"gateway.write_key_suppressed_requests",
 						map[string]string{
-							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
-							"writeKey":    WriteKeyEnabled,
+							"source":      rCtxEnabled.SourceTag(),
+							"sourceID":    rCtxEnabled.SourceID,
+							"workspaceId": rCtxEnabled.WorkspaceID,
+							"writeKey":    rCtxEnabled.WriteKey,
 							"reqType":     "batch",
-							"sourceType":  sourceType2,
+							"sourceType":  rCtxEnabled.SourceCategory,
 							"sdkVersion":  "",
 						},
 					)
@@ -272,8 +280,8 @@ var _ = Describe("Gateway Enterprise", func() {
 					stat := statsStore.Get(
 						"gateway.user_suppression_age",
 						map[string]string{
-							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
+							"sourceID":    rCtxEnabled.SourceID,
+							"workspaceId": rCtxEnabled.WorkspaceID,
 						},
 					)
 					return stat != nil
@@ -304,25 +312,26 @@ var _ = Describe("Gateway Enterprise", func() {
 
 			// Why GET
 			expectHandlerResponse(
-				gateway.webBatchHandler,
+				gateway.webBatchHandler(),
 				authorizedRequest(
 					WriteKeyEnabled,
 					bytes.NewBufferString(allowedUserEventData),
 				),
 				http.StatusOK,
 				"OK",
+				"batch",
 			)
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
 						"gateway.write_key_successful_requests",
 						map[string]string{
-							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
-							"writeKey":    WriteKeyEnabled,
+							"source":      rCtxEnabled.SourceTag(),
+							"sourceID":    rCtxEnabled.SourceID,
+							"workspaceId": rCtxEnabled.WorkspaceID,
+							"writeKey":    rCtxEnabled.WriteKey,
 							"reqType":     "batch",
-							"sourceType":  sourceType2,
+							"sourceType":  rCtxEnabled.SourceCategory,
 							"sdkVersion":  sdkStatTag,
 						},
 					)
@@ -334,8 +343,8 @@ var _ = Describe("Gateway Enterprise", func() {
 			stat := statsStore.Get(
 				"gateway.user_suppression_age",
 				map[string]string{
-					"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-					"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
+					"sourceID":    rCtxEnabled.SourceID,
+					"workspaceId": rCtxEnabled.WorkspaceID,
 				},
 			)
 			Expect(stat).To(BeNil())
@@ -405,7 +414,7 @@ var _ = Describe("Gateway", func() {
 			waitForBackendConfigInit(gateway)
 			gateway.irh = mockRequestHandler{}
 			gateway.rrh = mockRequestHandler{}
-			gateway.webhookHandler = c.mockWebhook
+			gateway.webhook = c.mockWebhook
 			statsStore = memstats.New()
 			gateway.stats = statsStore
 		})
@@ -431,7 +440,7 @@ var _ = Describe("Gateway", func() {
 				var req *http.Request
 				var err error
 				if ep == "/beacon/v1/batch" {
-					url = url + "?writeKey=WriteKeyEnabled"
+					url = url + "?writeKey=" + WriteKeyEnabled
 				}
 
 				if method == http.MethodGet {
@@ -444,8 +453,7 @@ var _ = Describe("Gateway", func() {
 				req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
 				resp, err := client.Do(req)
 				Expect(err).To(BeNil())
-
-				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)))
+				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)), "endpoint: "+ep)
 
 			}
 		}
@@ -607,18 +615,19 @@ var _ = Describe("Gateway", func() {
 							bytes.NewBuffer(validBody)),
 						http.StatusOK,
 						"OK",
+						handlerType,
 					)
 					Eventually(
 						func() bool {
 							stat := statsStore.Get(
 								"gateway.write_key_successful_requests",
 								map[string]string{
-									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-									"workspaceId": gateway.getWorkspaceForWriteKey(WriteKeyEnabled),
-									"writeKey":    WriteKeyEnabled,
+									"source":      rCtxEnabled.SourceTag(),
+									"sourceID":    rCtxEnabled.SourceID,
+									"workspaceId": rCtxEnabled.WorkspaceID,
+									"writeKey":    rCtxEnabled.WriteKey,
 									"reqType":     handlerType,
-									"sourceType":  sourceType2,
+									"sourceType":  rCtxEnabled.SourceCategory,
 									"sdkVersion":  sdkStatTag,
 								},
 							)
@@ -663,7 +672,7 @@ var _ = Describe("Gateway", func() {
 			})
 
 			expectHandlerResponse(
-				gateway.webBatchHandler,
+				gateway.webBatchHandler(),
 				authorizedRequest(
 					WriteKeyEnabled,
 					bytes.NewBufferString(
@@ -699,15 +708,16 @@ var _ = Describe("Gateway", func() {
 				),
 				http.StatusOK,
 				"OK",
+				"batch",
 			)
 
 			tags := stats.Tags{
-				"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-				"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-				"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
-				"writeKey":    WriteKeyEnabled,
+				"source":      rCtxEnabled.SourceTag(),
+				"sourceID":    rCtxEnabled.SourceID,
+				"workspaceId": rCtxEnabled.WorkspaceID,
+				"writeKey":    rCtxEnabled.WriteKey,
 				"reqType":     "batch",
-				"sourceType":  sourceType2,
+				"sourceType":  rCtxEnabled.SourceCategory,
 				"sdkVersion":  sdkStatTag,
 			}
 			GinkgoWriter.Println("tags: %v", tags)
@@ -767,7 +777,7 @@ var _ = Describe("Gateway", func() {
 			mockCall.Do(func(context.Context, interface{}, interface{}) { tFunc() })
 
 			expectHandlerResponse(
-				gateway.webAliasHandler,
+				gateway.webAliasHandler(),
 				authorizedRequest(
 					WriteKeyEnabled,
 					bytes.NewBufferString(
@@ -776,18 +786,19 @@ var _ = Describe("Gateway", func() {
 				),
 				http.StatusOK,
 				"OK",
+				"alias",
 			)
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
 						"gateway.write_key_successful_requests",
 						map[string]string{
-							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
-							"writeKey":    WriteKeyEnabled,
+							"source":      rCtxEnabled.SourceTag(),
+							"sourceID":    rCtxEnabled.SourceID,
+							"workspaceId": rCtxEnabled.WorkspaceID,
+							"writeKey":    rCtxEnabled.WriteKey,
 							"reqType":     "alias",
-							"sourceType":  sourceType2,
+							"sourceType":  rCtxEnabled.SourceCategory,
 							"sdkVersion":  sdkStatTag,
 						},
 					)
@@ -799,22 +810,23 @@ var _ = Describe("Gateway", func() {
 		It("should reject messages if rate limit is reached for workspace", func() {
 			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 			expectHandlerResponse(
-				gateway.webAliasHandler,
+				gateway.webAliasHandler(),
 				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")),
 				http.StatusTooManyRequests,
 				response.TooManyRequests+"\n",
+				"alias",
 			)
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
 						"gateway.write_key_dropped_requests",
 						map[string]string{
-							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
-							"writeKey":    WriteKeyEnabled,
+							"source":      rCtxEnabled.SourceTag(),
+							"sourceID":    rCtxEnabled.SourceID,
+							"workspaceId": rCtxEnabled.WorkspaceID,
+							"writeKey":    rCtxEnabled.WriteKey,
 							"reqType":     "alias",
-							"sourceType":  sourceType2,
+							"sourceType":  rCtxEnabled.SourceCategory,
 							"sdkVersion":  "",
 						},
 					)
@@ -864,6 +876,7 @@ var _ = Describe("Gateway", func() {
 					unauthorizedRequest(nil),
 					http.StatusUnauthorized,
 					response.NoWriteKeyInBasicAuth+"\n",
+					reqType,
 				)
 				Eventually(
 					func() bool {
@@ -871,7 +884,7 @@ var _ = Describe("Gateway", func() {
 							"gateway.write_key_failed_requests",
 							map[string]string{
 								"source":      "noWriteKey",
-								"sourceID":    gateway.getSourceIDForWriteKey(""),
+								"sourceID":    "noWriteKey",
 								"workspaceId": "",
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
@@ -894,6 +907,7 @@ var _ = Describe("Gateway", func() {
 					authorizedRequest(WriteKeyEmpty, nil),
 					http.StatusUnauthorized,
 					response.NoWriteKeyInBasicAuth+"\n",
+					reqType,
 				)
 				Eventually(
 					func() bool {
@@ -901,8 +915,8 @@ var _ = Describe("Gateway", func() {
 							"gateway.write_key_failed_requests",
 							map[string]string{
 								"source":      "noWriteKey",
-								"sourceID":    gateway.getSourceIDForWriteKey(""),
-								"workspaceId": gateway.getWorkspaceID(""),
+								"sourceID":    "noWriteKey",
+								"workspaceId": "",
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
 								"reason":      "noWriteKeyInBasicAuth",
@@ -934,19 +948,20 @@ var _ = Describe("Gateway", func() {
 					),
 					http.StatusBadRequest,
 					response.NotRudderEvent+"\n",
+					handlerType,
 				)
 				Eventually(
 					func() bool {
 						stat := statsStore.Get(
 							"gateway.write_key_failed_requests",
 							map[string]string{
-								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-								"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
-								"writeKey":    WriteKeyEnabled,
+								"source":      rCtxEnabled.SourceTag(),
+								"sourceID":    rCtxEnabled.SourceID,
+								"workspaceId": rCtxEnabled.WorkspaceID,
+								"writeKey":    rCtxEnabled.WriteKey,
 								"reqType":     reqType,
 								"reason":      response.NotRudderEvent,
-								"sourceType":  sourceType2,
+								"sourceType":  rCtxEnabled.SourceCategory,
 								"sdkVersion":  "",
 							},
 						)
@@ -973,19 +988,20 @@ var _ = Describe("Gateway", func() {
 						),
 						http.StatusBadRequest,
 						response.NonIdentifiableRequest+"\n",
+						handlerType,
 					)
 					Eventually(
 						func() bool {
 							stat := statsStore.Get(
 								"gateway.write_key_failed_requests",
 								map[string]string{
-									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-									"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
-									"writeKey":    WriteKeyEnabled,
+									"source":      rCtxEnabled.SourceTag(),
+									"sourceID":    rCtxEnabled.SourceID,
+									"workspaceId": rCtxEnabled.WorkspaceID,
+									"writeKey":    rCtxEnabled.WriteKey,
 									"reqType":     reqType,
 									"reason":      response.NonIdentifiableRequest,
-									"sourceType":  sourceType2,
+									"sourceType":  rCtxEnabled.SourceCategory,
 									"sdkVersion":  "",
 								},
 							)
@@ -998,9 +1014,9 @@ var _ = Describe("Gateway", func() {
 
 		It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
 			extractHandlers := map[string]http.HandlerFunc{
-				"batch":   gateway.webBatchHandler,
-				"import":  gateway.webImportHandler,
-				"extract": gateway.webExtractHandler,
+				"batch":   gateway.webBatchHandler(),
+				"import":  gateway.webImportHandler(),
+				"extract": gateway.webExtractHandler(),
 			}
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
@@ -1023,20 +1039,21 @@ var _ = Describe("Gateway", func() {
 					),
 					http.StatusOK,
 					"OK",
+					handlerType,
 				)
 			}
 		})
 
 		It("should reject requests without request body", func() {
-			for _, handler := range allHandlers(gateway) {
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), http.StatusBadRequest, response.RequestBodyNil+"\n")
+			for handlerType, handler := range allHandlers(gateway) {
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, nil), http.StatusBadRequest, response.RequestBodyNil+"\n", handlerType)
 			}
 		})
 
 		It("should reject requests without valid json in request body", func() {
-			for _, handler := range allHandlers(gateway) {
+			for handlerType, handler := range allHandlers(gateway) {
 				invalidBody := "not-a-valid-json"
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), http.StatusBadRequest, response.InvalidJSON+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(invalidBody)), http.StatusBadRequest, response.InvalidJSON+"\n", handlerType)
 			}
 		})
 
@@ -1054,7 +1071,7 @@ var _ = Describe("Gateway", func() {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
 				}
 				if handlerType != "audiencelist" {
-					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), http.StatusRequestEntityTooLarge, response.RequestBodyTooLarge+"\n")
+					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), http.StatusRequestEntityTooLarge, response.RequestBodyTooLarge+"\n", handlerType)
 				}
 			}
 		})
@@ -1065,7 +1082,7 @@ var _ = Describe("Gateway", func() {
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), http.StatusUnauthorized, response.InvalidWriteKey+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), http.StatusUnauthorized, response.InvalidWriteKey+"\n", handlerType)
 			}
 		})
 
@@ -1075,7 +1092,7 @@ var _ = Describe("Gateway", func() {
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), http.StatusNotFound, response.SourceDisabled+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), http.StatusNotFound, response.SourceDisabled+"\n", handlerType)
 			}
 		})
 
@@ -1100,19 +1117,20 @@ var _ = Describe("Gateway", func() {
 						),
 						http.StatusInternalServerError,
 						"tx error"+"\n",
+						handlerType,
 					)
 					Eventually(
 						func() bool {
 							stat := statsStore.Get(
 								"gateway.write_key_failed_requests",
 								map[string]string{
-									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
-									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-									"workspaceId": gateway.getWorkspaceID(WriteKeyEnabled),
-									"writeKey":    WriteKeyEnabled,
+									"source":      rCtxEnabled.SourceTag(),
+									"sourceID":    rCtxEnabled.SourceID,
+									"workspaceId": rCtxEnabled.WorkspaceID,
+									"writeKey":    rCtxEnabled.WriteKey,
 									"reqType":     handlerType,
 									"reason":      "storeFailed",
-									"sourceType":  sourceType2,
+									"sourceType":  rCtxEnabled.SourceCategory,
 									"sdkVersion":  sdkStatTag,
 								},
 							)
@@ -1140,14 +1158,17 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should return a robots.txt", func() {
-			expectHandlerResponse(gateway.robotsHandler, nil, http.StatusOK, "User-agent: * \nDisallow: / \n")
+			req := httptest.NewRequest("GET", "/robots.txt", nil)
+			expectHandlerResponse(gateway.robotsHandler, req, http.StatusOK, "User-agent: * \nDisallow: / \n", "robots")
 		})
 	})
 
 	Context("jobDataFromRequest", func() {
 		var (
-			gateway      *Handle
-			someWriteKey = "someWriteKey"
+			gateway *Handle
+			arctx   = &gwtypes.AuthRequestContext{
+				WriteKey: "someWriteKey",
+			}
 			userIDHeader = "userIDHeader"
 		)
 		BeforeEach(func() {
@@ -1165,7 +1186,7 @@ var _ = Describe("Gateway", func() {
 		It("returns invalid JSON in case of invalid JSON payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
-				writeKey:       someWriteKey,
+				authContext:    arctx,
 				done:           make(chan<- string),
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(``),
@@ -1178,7 +1199,7 @@ var _ = Describe("Gateway", func() {
 		It("drops non-identifiable requests if userID and anonID are not present in the request payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
-				writeKey:       WriteKeyEnabled,
+				authContext:    rCtxEnabled,
 				done:           make(chan<- string),
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(`{"batch": [{"type": "track"}]}`),
@@ -1202,7 +1223,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
-				writeKey:       WriteKeyEnabled,
+				authContext:    rCtxEnabled,
 				done:           make(chan<- string),
 				userIDHeader:   userIDHeader,
 				requestPayload: payload,
@@ -1224,7 +1245,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			req = &webRequestT{
 				reqType:        "batch",
-				writeKey:       WriteKeyEnabled,
+				authContext:    rCtxEnabled,
 				done:           make(chan<- string),
 				userIDHeader:   userIDHeader,
 				requestPayload: payload,
@@ -1236,7 +1257,7 @@ var _ = Describe("Gateway", func() {
 		It("allows extract events even if userID and anonID are not present in the request payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
-				writeKey:       WriteKeyEnabled,
+				authContext:    rCtxEnabled,
 				done:           make(chan<- string),
 				userIDHeader:   userIDHeader,
 				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
@@ -1298,16 +1319,16 @@ var _ = Describe("Gateway", func() {
 
 			reqs := make([]*webhookModel.FailedWebhookPayload, 2)
 			reqs[0] = &webhookModel.FailedWebhookPayload{
-				WriteKey:   WriteKeyEnabled,
-				Payload:    []byte(`{"a1": "b1"}`),
-				SourceType: "cio",
-				Reason:     "err1",
+				RequestContext: rCtxEnabled,
+				Payload:        []byte(`{"a1": "b1"}`),
+				SourceType:     "cio",
+				Reason:         "err1",
 			}
 			reqs[1] = &webhookModel.FailedWebhookPayload{
-				WriteKey:   WriteKeyEnabled,
-				Payload:    []byte(`{"a2": "b2"}`),
-				SourceType: "af",
-				Reason:     "err2",
+				RequestContext: rCtxEnabled,
+				Payload:        []byte(`{"a2": "b2"}`),
+				SourceType:     "af",
+				Reason:         "err2",
 			}
 			err := gateway.SaveWebhookFailures(reqs)
 			Expect(err).To(BeNil())
@@ -1336,17 +1357,20 @@ func authorizedRequest(username string, body io.Reader) *http.Request {
 	return req
 }
 
-func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, responseStatus int, responseBody string) {
-	testutils.RunTestWithTimeout(func() {
+func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, responseStatus int, responseBody, reqType string) {
+	var body string
+	Eventually(func() int {
 		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req)
-
-		bodyBytes, _ := io.ReadAll(rr.Body)
-		body := string(bodyBytes)
-
-		Expect(rr.Result().StatusCode).To(Equal(responseStatus))
-		Expect(body).To(Equal(responseBody))
-	}, testTimeout)
+		handler.ServeHTTP(rr, req.Clone(context.Background()))
+		if rr.Body != nil {
+			bodyBytes, _ := io.ReadAll(rr.Body)
+			body = string(bodyBytes)
+		} else {
+			body = ""
+		}
+		return rr.Result().StatusCode
+	}).Should(Equal(responseStatus), fmt.Sprintf("reqType: %s", reqType))
+	Expect(body).To(Equal(responseBody), fmt.Sprintf("reqType: %s", reqType))
 }
 
 // return all endpoints as key and method as value
@@ -1390,18 +1414,18 @@ func endpointsToVerify() ([]string, []string, []string) {
 	return getEndpoints, postEndpoints, deleteEndpoints
 }
 
-func allHandlers(gateway *Handle) map[string]http.HandlerFunc {
+func allHandlers(gw *Handle) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"alias":        gateway.webAliasHandler,
-		"batch":        gateway.webBatchHandler,
-		"group":        gateway.webGroupHandler,
-		"identify":     gateway.webIdentifyHandler,
-		"page":         gateway.webPageHandler,
-		"screen":       gateway.webScreenHandler,
-		"track":        gateway.webTrackHandler,
-		"import":       gateway.webImportHandler,
-		"audiencelist": gateway.webAudienceListHandler,
-		"extract":      gateway.webExtractHandler,
+		"alias":        gw.webAliasHandler(),
+		"batch":        gw.webBatchHandler(),
+		"group":        gw.webGroupHandler(),
+		"identify":     gw.webIdentifyHandler(),
+		"page":         gw.webPageHandler(),
+		"screen":       gw.webScreenHandler(),
+		"track":        gw.webTrackHandler(),
+		"import":       gw.webImportHandler(),
+		"audiencelist": gw.webAudienceListHandler(),
+		"extract":      gw.webExtractHandler(),
 	}
 }
 
@@ -1427,7 +1451,7 @@ func TestContentTypeFunction(t *testing.T) {
 		// setting it custom to verify that next handler is called
 		w.WriteHeader(expectedStatus)
 	})
-	handlerToTest := WithContentType(expectedContentType, nextHandler)
+	handlerToTest := withContentType(expectedContentType, nextHandler)
 	respRecorder := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "http://testing", nil)
 
@@ -1437,29 +1461,17 @@ func TestContentTypeFunction(t *testing.T) {
 	require.Equal(t, expectedStatus, respRecorder.Code, "actual response code different than expected.")
 }
 
-func (gateway *Handle) getWorkspaceID(writeKey string) string {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
-	return gateway.conf.enabledWriteKeyWorkspaceMap[writeKey]
-}
-
 type mockRequestHandler struct{}
 
-func (mockRequestHandler) ProcessRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
-	// deepsource ignore: Unused method arguments
-	_ = w
-	_ = r
-	_ = reqType
-	_ = payload
-	_ = writeKey
+func (mockRequestHandler) ProcessRequest(_ *http.ResponseWriter, _ *http.Request, _ string, _ []byte, _ *gwtypes.AuthRequestContext) string {
 	return ""
 }
 
-func waitForBackendConfigInit(gateway *Handle) {
+func waitForBackendConfigInit(gw *Handle) {
 	Eventually(
 		func() bool {
 			select {
-			case <-gateway.backendConfigInitialisedChan:
+			case <-gw.backendConfigInitialisedChan:
 				return true
 			default:
 				return false
