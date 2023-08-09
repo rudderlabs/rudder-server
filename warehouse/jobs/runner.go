@@ -8,15 +8,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -141,16 +140,13 @@ func (a *AsyncJobWh) InitAsyncJobRunner() error {
 
 func (a *AsyncJobWh) cleanUpAsyncTable(ctx context.Context) error {
 	a.logger.Info("[WH-Jobs]: Cleaning up the zombie asyncjobs")
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE status=$2 or status=$3`, warehouseutils.WarehouseAsyncJobTable)
+	sqlStatement := fmt.Sprintf(
+		`UPDATE %s SET status=$1 WHERE status=$2 or status=$3`,
+		pq.QuoteIdentifier(warehouseutils.WarehouseAsyncJobTable),
+	)
 	a.logger.Debugf("[WH-Jobs]: resetting up async jobs table query %s", sqlStatement)
-	rows, err := a.dbHandle.QueryContext(ctx, sqlStatement, WhJobWaiting, WhJobExecuting, WhJobFailed)
-	if err != nil {
-		return err
-	}
-	if rows.Err() != nil {
-		return rows.Err()
-	}
-	return rows.Close()
+	_, err := a.dbHandle.ExecContext(ctx, sqlStatement, WhJobWaiting, WhJobExecuting, WhJobFailed)
+	return err
 }
 
 /*
