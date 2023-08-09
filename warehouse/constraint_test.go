@@ -1,37 +1,35 @@
-package warehouse_test
+package warehouse
 
 import (
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	. "github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var _ = Describe("Constraint", func() {
-	config.Reset()
-	logger.Reset()
-	Init6()
-
-	DescribeTable("DurationBeforeNextAttempt", func(destinationType string, brEvent *BatchRouterEvent, columnName string, expected *ConstraintsViolation) {
-		cv := ViolatedConstraints(destinationType, brEvent, columnName)
-		Expect(cv.IsViolated).To(Equal(expected.IsViolated))
-		Expect(cv.ViolatedIdentifier).Should(HavePrefix(expected.ViolatedIdentifier))
-	},
-		Entry(nil, warehouseutils.RS, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.POSTGRES, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.CLICKHOUSE, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.MSSQL, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.AzureSynapse, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.DELTALAKE, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.S3Datalake, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.GCSDatalake, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.AzureDatalake, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.BQ, &BatchRouterEvent{}, "id", &ConstraintsViolation{}),
-		Entry(nil, warehouseutils.BQ,
+func TestConstraintsManager(t *testing.T) {
+	testCases := []struct {
+		destinationType string
+		brEvent         *BatchRouterEvent
+		columnName      string
+		expected        *constraintsViolation
+	}{
+		{warehouseutils.RS, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.POSTGRES, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.CLICKHOUSE, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.MSSQL, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.AzureSynapse, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.DELTALAKE, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.S3Datalake, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.GCSDatalake, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.AzureDatalake, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{warehouseutils.BQ, &BatchRouterEvent{}, "id", &constraintsViolation{}},
+		{
+			warehouseutils.BQ,
 			&BatchRouterEvent{
 				Metadata: Metadata{
 					Table: "rudder_identity_merge_rules",
@@ -45,12 +43,13 @@ var _ = Describe("Constraint", func() {
 					"merge_property_1_value": "xdequlyaotmwomivhsngqfiokpvdzvqfbelljpzhqgldgforwnsuuobsilwneviwyeidqyotgddenilpjkfwzecyagyyrgslwppjgdbetcogbtryoozefbwaghpgscdqktwkogsmvuiefmanfckhyuyezxmmwpgxdulvwqowtdoantflxmusglrlvmgdmcyugcijolssywjskrsntrtimyngeppuwlmfnltznzioijmtnyuiiqfbvoyealmaovuqsamfdsndqcotpwvxmdhuwedzsuxxmmnopdebjztinacn",
 				},
 			}, "merge_property_1_value",
-			&ConstraintsViolation{
-				IsViolated:         true,
-				ViolatedIdentifier: "rudder-discards-",
+			&constraintsViolation{
+				isViolated:         true,
+				violatedIdentifier: "rudder-discards-",
 			},
-		),
-		Entry(nil, warehouseutils.BQ,
+		},
+		{
+			warehouseutils.BQ,
 			&BatchRouterEvent{
 				Metadata: Metadata{
 					Table: "rudder_identity_merge_rules",
@@ -64,10 +63,21 @@ var _ = Describe("Constraint", func() {
 					"merge_property_1_value": "wopubjftfnqapctttpsfassyvbesjypimpmtweoxuifhzcxcigbhwpxkrijqqgbeehgepsplbcguztgdtipsobxoxnrqifrrbaiofkjgxilidrvffnymfqzixlubaipofijtmacswuzrgwwkvatscn",
 				},
 			}, "merge_property_1_value",
-			&ConstraintsViolation{
-				IsViolated:         false,
-				ViolatedIdentifier: "",
+			&constraintsViolation{
+				isViolated:         false,
+				violatedIdentifier: "",
 			},
-		),
-	)
-})
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.destinationType, func(t *testing.T) {
+			t.Parallel()
+
+			cm := newConstraintsManager(config.Default)
+			cv := cm.violatedConstraints(tc.destinationType, tc.brEvent, tc.columnName)
+			require.Equal(t, tc.expected.isViolated, cv.isViolated)
+			require.True(t, strings.HasPrefix(cv.violatedIdentifier, tc.expected.violatedIdentifier))
+		})
+	}
+}

@@ -340,7 +340,6 @@ func runAllInit() {
 	jobsdb.Init2()
 	warehouse.Init()
 	warehouse.Init4()
-	warehouse.Init6()
 	warehousearchiver.Init()
 	validations.Init()
 	webhook.Init()
