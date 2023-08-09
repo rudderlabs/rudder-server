@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
 type AsyncDestinationManager interface {
@@ -90,21 +89,22 @@ type ImportParameters struct {
 }
 
 type AsyncDestinationStruct struct {
-	ImportingJobIDs      []int64
-	FailedJobIDs         []int64
-	Exists               bool
-	Size                 int
-	CreatedAt            time.Time
-	FileName             string
-	Count                int
-	CanUpload            bool
-	UploadInProgress     bool
-	UploadMutex          sync.RWMutex
-	DestinationUploadURL string
-	RsourcesStats        rsources.StatsCollector
-	Destination          *backendconfig.DestinationT
-	Manager              AsyncDestinationManager
-	AttemptNums          map[int64]int
+	ImportingJobIDs       []int64
+	FailedJobIDs          []int64
+	Exists                bool
+	Size                  int
+	CreatedAt             time.Time
+	FileName              string
+	Count                 int
+	CanUpload             bool
+	UploadInProgress      bool
+	UploadMutex           sync.RWMutex
+	DestinationUploadURL  string
+	Destination           *backendconfig.DestinationT
+	Manager               AsyncDestinationManager
+	AttemptNums           map[int64]int
+	FirstAttemptedAts     map[int64]time.Time
+	OriginalJobParameters map[int64]stdjson.RawMessage
 }
 
 type AsyncFailedPayload struct {

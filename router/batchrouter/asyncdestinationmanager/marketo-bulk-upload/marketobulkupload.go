@@ -303,10 +303,9 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	var bodyBytes []byte
 	var statusCode string
 	if statusCodeHTTP != 200 {
-		bodyBytes = []byte(fmt.Sprintf(`"error": "HTTP Call to Transformer Returned Non 200. StatusCode: %d"`, statusCodeHTTP))
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  string(bodyBytes),
+			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, statusCodeHTTP),
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
@@ -346,7 +345,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		uploadResponse = common.AsyncUploadOutput{
 			ImportingJobIDs:     successfulJobIDs,
 			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
-			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
+			FailedReason:        `Jobs flowed over the prescribed limit`,
 			ImportingParameters: importParameters,
 			ImportingCount:      len(importingJobIDs),
 			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
@@ -373,6 +372,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		uploadResponse = common.AsyncUploadOutput{
 			AbortJobIDs:   abortedJobIDs,
 			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
+			FailedReason:  `Jobs flowed over the prescribed limit`,
 			AbortReason:   string(bodyBytes),
 			AbortCount:    len(importingJobIDs),
 			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),

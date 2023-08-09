@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.4](https://github.com/rudderlabs/rudder-server/compare/v1.11.3...v1.11.4) (2023-08-08)
+
+
+### Bug Fixes
+
+* **jobsdb:** when running in embedded mode migration fails with column workspace_id does not exist ([#3714](https://github.com/rudderlabs/rudder-server/issues/3714)) ([744cfd6](https://github.com/rudderlabs/rudder-server/commit/744cfd6f7dc6f3ebf1d28a71fd2582b5b0ca1355))
+
 ## [1.11.3](https://github.com/rudderlabs/rudder-server/compare/v1.11.2...v1.11.3) (2023-07-28)
 
 

@@ -34,13 +34,13 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.11.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.44.315
+	github.com/aws/aws-sdk-go v1.44.318
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
 	github.com/denisenkom/go-mssqldb v0.12.3
-	github.com/dgraph-io/badger/v4 v4.1.0
+	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/docker/docker v23.0.4+incompatible
 	github.com/go-chi/chi/v5 v5.0.10
 	github.com/go-redis/redis v6.15.9+incompatible
@@ -93,10 +93,10 @@ require (
 	go.uber.org/goleak v1.2.1
 	golang.org/x/crypto v0.11.0
 	golang.org/x/exp v0.0.0-20230418202329-0354be287a23
-	golang.org/x/oauth2 v0.10.0
+	golang.org/x/oauth2 v0.11.0
 	golang.org/x/sync v0.3.0
-	google.golang.org/api v0.134.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771
+	google.golang.org/api v0.135.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230726155614-23370e0ffb3e
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.31.0
 )
@@ -276,7 +276,7 @@ require (
 	go.uber.org/multierr v1.9.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/net v0.12.0 // indirect
+	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/term v0.8.0 // indirect
 	golang.org/x/text v0.11.0 // indirect

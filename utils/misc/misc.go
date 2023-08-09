@@ -249,6 +249,26 @@ func (r *RFP) matches(currDir string) (match bool, err error) {
 	return
 }
 
+// RemoveContents removes all the contents of the directory
+func RemoveContents(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	names, err := d.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		err = os.RemoveAll(filepath.Join(dir, name))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // RemoveEmptyFolderStructureForFilePath recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
 func RemoveEmptyFolderStructureForFilePath(fp string) {
 	if fp == "" {
@@ -281,7 +301,7 @@ func CreateTMPDIR() (string, error) {
 		if err == nil {
 			tmpdirPath = fallbackPath
 			logOnce.Do(func() {
-				pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+				fmt.Printf("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
 			})
 		}
 	}
