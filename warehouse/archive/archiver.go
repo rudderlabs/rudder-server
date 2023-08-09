@@ -72,7 +72,7 @@ type Archiver struct {
 }
 
 func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (backupLocation string, err error) {
-	a.Logger.Infof("Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,",
+	a.Logger.Infof("[Archiver]: Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,",
 		args.uploadID, args.sourceID, args.destID, args.tableName,
 	)
 
@@ -135,7 +135,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	}
 
 	backupLocation, err = tableJSONArchiver.Do()
-	a.Logger.Infof(`Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`,
+	a.Logger.Infof(`[Archiver]: Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`,
 		args.uploadID, args.sourceID, args.destID, args.tableName,
 	)
 
@@ -154,7 +154,7 @@ func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string)
 
 	err = fManager.Delete(ctx, locations)
 	if err != nil {
-		a.Logger.Errorf("Error in deleting objects in Rudder S3: %v", err)
+		a.Logger.Errorf("[Archiver]: Error in deleting objects in Rudder S3: %v", err)
 	}
 	return err
 }
