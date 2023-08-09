@@ -262,7 +262,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 		var storedStagingFilesLocation string
 		if len(stagingFileIDs) > 0 {
 			if !hasUsedRudderStorage {
-				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ",")) // TODO: use pq.Array
+				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
 				storedStagingFilesLocation, err = a.backupRecords(ctx, backupRecordsArgs{
 					tableName:      warehouseutils.WarehouseStagingFilesTable,
 					sourceID:       u.sourceID,
