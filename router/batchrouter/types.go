@@ -70,18 +70,3 @@ type BatchedJobs struct {
 	Connection *Connection
 	TimeWindow time.Time
 }
-
-type AsyncPoll struct {
-	Config   map[string]interface{} `json:"config"`
-	ImportId string                 `json:"importId"`
-	DestType string                 `json:"destType"`
-}
-
-type AsyncStatusResponse struct {
-	Success        bool
-	StatusCode     int
-	HasFailed      bool
-	HasWarning     bool
-	FailedJobsURL  string
-	WarningJobsURL string
-}
