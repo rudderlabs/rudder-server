@@ -49,7 +49,7 @@ func RegisterAdmin(bcManager *backendConfigManager, logger logger.Logger) {
 
 // TriggerUpload sets uploads to start without delay
 func (*Admin) TriggerUpload(off bool, reply *string) error {
-	startUploadAlways = !off
+	startUploadAlways.Store(!off)
 	if off {
 		*reply = "Turned off explicit warehouse upload triggers.\nWarehouse uploads will continue to be done as per schedule in control plane."
 	} else {
