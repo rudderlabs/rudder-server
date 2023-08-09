@@ -7,6 +7,7 @@ import (
 )
 
 type config interface {
+	IsSet(key string) bool
 	GetInt(key string, defaultValue int) (value int)
 	GetInt64(key string, defaultValue int64) (value int64)
 	GetString(key, defaultValue string) (value string)
@@ -24,12 +25,6 @@ func WithAdaptiveLimit(limiter payload.AdaptiveLimiterFunc) Option {
 func WithArchiveTrigger(trigger func() <-chan time.Time) Option {
 	return func(a *archiver) {
 		a.archiveTrigger = trigger
-	}
-}
-
-func WithPartitionStrategy(partitionType string) Option {
-	return func(a *archiver) {
-		a.partitionStrategy = getPartitionStrategy(partitionType)
 	}
 }
 

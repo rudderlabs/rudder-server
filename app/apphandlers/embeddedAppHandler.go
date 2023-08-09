@@ -293,8 +293,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			config,
 			stats.Default,
 			archiver.WithAdaptiveLimit(adaptiveLimit),
-			archiver.WithArchiveFrom("gw"),
-			archiver.WithPartitionStrategy(archiver.SourcePartition),
 		),
 	}
 

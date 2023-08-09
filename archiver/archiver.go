@@ -2,7 +2,6 @@ package archiver
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -26,20 +25,19 @@ type archiver struct {
 
 	archiveTrigger           func() <-chan time.Time
 	adaptivePayloadLimitFunc payload.AdaptiveLimiterFunc
-	partitionStrategy        partitionStrategy
 
 	stopArchivalTrigger context.CancelFunc
-	limiterWaitGroup    *sync.WaitGroup
+	waitGroup           *errgroup.Group
 
 	archiveFrom string
 	config      struct {
 		concurrency      func() int
 		payloadLimit     func() int64
-		maxRetryAttempts func() int
+		jobsdbMaxRetries func() int
 		instanceID       string
 		eventsLimit      func() int
 		minWorkerSleep   time.Duration
-		maxWorkerSleep   time.Duration
+		uploadFrequency  time.Duration
 	}
 }
 
@@ -55,6 +53,16 @@ func New(
 		storageProvider: storageProvider,
 		log:             logger.NewLogger().Child("archiver"),
 		statHandle:      statHandle,
+
+		archiveFrom: "gw",
+		archiveTrigger: func() <-chan time.Time {
+			return time.After(c.GetDuration(
+				"archival.ArchiveSleepDuration",
+				30,
+				time.Second,
+			))
+		},
+		adaptivePayloadLimitFunc: func(i int64) int64 { return i },
 	}
 
 	a.config.concurrency = func() int {
@@ -63,36 +71,21 @@ func New(
 	a.config.payloadLimit = func() int64 {
 		return c.GetInt64("archival.ArchivePayloadSizeLimit", 1*bytesize.GB)
 	}
-	a.config.maxRetryAttempts = func() int {
-		return c.GetInt("archival.MaxRetryAttempts", 3)
+	a.config.jobsdbMaxRetries = func() int {
+		if c.IsSet("JobsDB.Archiver.MaxRetries") {
+			return c.GetInt("JobsDB.Archiver.MaxRetries", 3)
+		}
+		return c.GetInt("JobsDB.MaxRetries", 3)
 	}
 	a.config.eventsLimit = func() int {
 		return c.GetInt("archival.ArchiveEventsLimit", 100000)
 	}
 	a.config.instanceID = c.GetString("INSTANCE_ID", "1")
 	a.config.minWorkerSleep = c.GetDuration("archival.MinWorkerSleep", 1, time.Minute)
-	a.config.maxWorkerSleep = c.GetDuration("archival.MaxWorkerSleep", 5, time.Minute)
+	a.config.uploadFrequency = c.GetDuration("archival.UploadFrequency", 5, time.Minute)
 
 	for _, opt := range opts {
 		opt(a)
-	}
-
-	if a.archiveTrigger == nil {
-		a.archiveTrigger = func() <-chan time.Time {
-			return time.After(c.GetDuration(
-				"archival.ArchiveSleepDuration",
-				30,
-				time.Second,
-			))
-		}
-	}
-	if a.adaptivePayloadLimitFunc == nil {
-		a.adaptivePayloadLimitFunc = func(i int64) int64 { return i }
-	}
-	if a.partitionStrategy == nil {
-		a.partitionStrategy = getPartitionStrategy(
-			c.GetString("archival.PartitionStrategy", SourcePartition),
-		)
 	}
 
 	return a
@@ -103,26 +96,27 @@ func (a *archiver) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.stopArchivalTrigger = cancel
 	g, ctx := errgroup.WithContext(ctx)
-	a.limiterWaitGroup = &sync.WaitGroup{}
+	a.waitGroup = g
 
+	var limiterGroup sync.WaitGroup
 	jobFetchLimit := kitsync.NewLimiter(
 		ctx,
-		a.limiterWaitGroup,
-		"arc_work_jobFetch",
+		&limiterGroup,
+		"arc_fetch",
 		a.config.concurrency(),
 		a.statHandle,
 	)
 	uploadLimit := kitsync.NewLimiter(
 		ctx,
-		a.limiterWaitGroup,
-		"arc_work_upload",
+		&limiterGroup,
+		"arc_upload",
 		a.config.concurrency(),
 		a.statHandle,
 	)
 	statusUpdateLimit := kitsync.NewLimiter(
 		ctx,
-		a.limiterWaitGroup,
-		"arc_work_statusUpdate",
+		&limiterGroup,
+		"arc_update",
 		a.config.concurrency(),
 		a.statHandle,
 	)
@@ -130,42 +124,41 @@ func (a *archiver) Start() error {
 	g.Go(func() error {
 		workerPool := workerpool.New(
 			ctx,
-			func(partition string) workerpool.Worker {
+			func(sourceID string) workerpool.Worker {
 				w := &worker{
-					partition:           partition,
-					jobsDB:              a.jobsDB,
-					log:                 a.log.Child(fmt.Sprintf("archiveWorker-%s", partition)),
-					jobFetchLimiter:     jobFetchLimit,
-					uploadLimiter:       uploadLimit,
-					statusUpdateLimiter: statusUpdateLimit,
-					storageProvider:     a.storageProvider,
-					archiveFrom:         a.archiveFrom,
-					payloadLimitFunc:    a.adaptivePayloadLimitFunc,
+					sourceID:         sourceID,
+					jobsDB:           a.jobsDB,
+					log:              a.log.Child("worker").With("sourceID", sourceID),
+					fetchLimiter:     jobFetchLimit,
+					uploadLimiter:    uploadLimit,
+					updateLimiter:    statusUpdateLimit,
+					storageProvider:  a.storageProvider,
+					archiveFrom:      a.archiveFrom,
+					payloadLimitFunc: a.adaptivePayloadLimitFunc,
 				}
 				w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(ctx)
 				w.config.payloadLimit = a.config.payloadLimit
-				w.config.maxRetryAttempts = a.config.maxRetryAttempts
 				w.config.instanceID = a.config.instanceID
 				w.config.eventsLimit = a.config.eventsLimit
 				w.config.minSleep = a.config.minWorkerSleep
-				w.config.maxSleep = a.config.maxWorkerSleep
+				w.config.uploadFrequency = a.config.uploadFrequency
 
-				queryParams := &jobsdb.GetQueryParamsT{}
-				a.partitionStrategy.augmentQueryParams(partition, queryParams)
+				queryParams := &jobsdb.GetQueryParamsT{
+					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "source_id", Value: sourceID}},
+				}
 				w.queryParams = *queryParams
 
 				return w
 			},
 			a.log,
-			workerpool.WithIdleTimeout(2*a.config.maxWorkerSleep),
+			workerpool.WithIdleTimeout(2*a.config.uploadFrequency),
 		)
 		defer workerPool.Shutdown()
 		// pinger loop
 		for {
-			sources, err := a.partitionStrategy.activePartitions(ctx, a.jobsDB)
-			a.log.Infof("Archiving %ss: %v", a.partitionStrategy, sources)
+			sources, err := a.jobsDB.GetDistinctParameterValues(ctx, "source_id")
 			if err != nil {
-				a.log.Error("Failed to fetch sources", err)
+				a.log.Errorw("Failed to fetch sources", "error", err)
 				continue
 			}
 			for _, source := range sources {
@@ -179,6 +172,10 @@ func (a *archiver) Start() error {
 			}
 		}
 	})
+	g.Go(func() error {
+		limiterGroup.Wait()
+		return nil
+	})
 
 	return nil
 }
@@ -186,5 +183,5 @@ func (a *archiver) Start() error {
 func (a *archiver) Stop() {
 	a.log.Info("Stopping archiver")
 	a.stopArchivalTrigger()
-	a.limiterWaitGroup.Wait()
+	_ = a.waitGroup.Wait()
 }

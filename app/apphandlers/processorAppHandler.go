@@ -284,11 +284,9 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		Archiver: archiver.New(
 			archivalDB,
 			fileUploaderProvider,
-			config.New(),
+			config.Default,
 			stats.Default,
 			archiver.WithAdaptiveLimit(adaptiveLimit),
-			archiver.WithArchiveFrom("gw"),
-			archiver.WithPartitionStrategy(archiver.SourcePartition),
 		),
 	}
 
