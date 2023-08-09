@@ -237,6 +237,9 @@ func (a *Archiver) Do(ctx context.Context) error {
 		}
 		uploadsToArchive = append(uploadsToArchive, &u)
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scanning wh_uploads rows: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("closing rows after scanning wh_uploads for archival: %w", err)
 	}
@@ -392,6 +395,9 @@ func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uplo
 		stagingFileIDs = append(stagingFileIDs, stagingFileID)
 		stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
 	}
+	if err = stagingFileRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterating staging file ids: %w", err)
+	}
 
 	return stagingFileIDs, stagingFileLocations, nil
 }
@@ -428,6 +434,9 @@ func (a *Archiver) deleteLoadFileRecords(
 		}
 
 		loadLocations = append(loadLocations, u.Path[1:])
+	}
+	if err = loadLocationRows.Err(); err != nil {
+		return fmt.Errorf("iterating load file locations: %w", err)
 	}
 
 	err = a.deleteFilesInStorage(ctx, loadLocations)
