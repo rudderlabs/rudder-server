@@ -135,22 +135,23 @@ func (brt *Handle) getParamertsFromJobs(jobs []*jobsdb.JobT) map[int64]stdjson.R
 
 func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID string,
 	importingJob *jobsdb.JobT, pollResp common.PollStatusResponse,
-) error {
+) (error, []*jobsdb.JobStatusT) {
+	var statusList []*jobsdb.JobStatusT
 	list, err := brt.getImportingJobs(ctx, destinationID, brt.maxEventsInABatch)
 	if err != nil {
-		return err
+		return err, statusList
 	}
 	importingList := list.Jobs
 	if pollResp.StatusCode == http.StatusOK && pollResp.Complete {
 		if !pollResp.HasFailed {
-			statusList, _ := brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State})
+			statusList, _ = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State})
 			if err := brt.updateJobStatuses(ctx, destinationID, importingList, importingList, statusList); err != nil {
 				brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-				return err
+				return err, statusList
 			}
 			brt.asyncSuccessfulJobCount.Count(len(statusList))
 			brt.updateProcessedEventsMetrics(statusList)
-			return nil
+			return nil, statusList
 		} else {
 			getUploadStatsInput := common.GetUploadStatsInput{
 				FailedJobURLs: pollResp.FailedJobURLs,
@@ -164,7 +165,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 
 			if uploadStatsResp.StatusCode != http.StatusOK {
 				brt.logger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v", brt.destType, uploadStatsResp.StatusCode)
-				return errors.New("failed to fetch failed jobs")
+				return errors.New("failed to fetch failed jobs"), statusList
 			}
 
 			var completedJobsList []*jobsdb.JobT
@@ -221,7 +222,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 			}
 			if err := brt.updateJobStatuses(ctx, destinationID, importingList, completedJobsList, statusList); err != nil {
 				brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-				return err
+				return err, statusList
 			}
 			brt.updateProcessedEventsMetrics(statusList)
 		}
@@ -229,7 +230,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 		statusList, _ := brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", "poll failed with status code 400")})
 		if err := brt.updateJobStatuses(ctx, destinationID, importingList, importingList, statusList); err != nil {
 			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-			return err
+			return err, statusList
 		}
 		brt.asyncAbortedJobCount.Count(len(statusList))
 		brt.updateProcessedEventsMetrics(statusList)
@@ -237,12 +238,13 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 		statusList, abortedJobsList := brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Failed.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", "poll failed")})
 		if err := brt.updateJobStatuses(ctx, destinationID, importingList, abortedJobsList, statusList); err != nil {
 			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-			return err
+			return err, statusList
 		}
 		brt.asyncFailedJobCount.Count(len(statusList))
 		brt.updateProcessedEventsMetrics(statusList)
 	}
-	return nil
+
+	return nil, statusList
 }
 
 func (brt *Handle) pollAsyncStatus(ctx context.Context) {
@@ -267,6 +269,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 				if len(importingJobs) != 0 {
 					importingJob := importingJobs[0]
 					pollInput := getPollInput(importingJob)
+					sourceID := gjson.GetBytes(importingJob.Parameters, "source_id").String()
 					startPollTime := time.Now()
 					brt.logger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
 					pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(pollInput)
@@ -275,9 +278,10 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 					if pollResp.InProgress {
 						continue
 					}
-					err = brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
+					err, statusList := brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
 					if err == nil {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = false
+						brt.recordAsyncDestinationDeliveryStatus(sourceID, destinationID, statusList)
 					}
 				}
 			}
@@ -435,11 +439,15 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	}
 	defer func() { _ = file.Close() }()
 	var jobString string
+	var overFlow bool
+	var overFlownJobs []*jobsdb.JobT
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
+	allowedSize := brt.maxPayloadSizeInBytes
 	for _, job := range batchJobs.Jobs {
 		transformedData := common.GetTransformedData(job.EventPayload)
-		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch ||
-			!brt.asyncDestinationStruct[destinationID].UploadInProgress {
+		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch &&
+			!brt.asyncDestinationStruct[destinationID].UploadInProgress &&
+			brt.asyncDestinationStruct[destinationID].Size < allowedSize {
 			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
 			jobString = jobString + fileData + "\n"
@@ -447,18 +455,38 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
 			brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
 		} else {
-			brt.logger.Debugf("BRT: Max Event Limit Reached. Stopped writing to File  %s", brt.asyncDestinationStruct[destinationID].FileName)
-			brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
-			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job.JobID)
+			overFlow = true
+			overFlownJobs = append(overFlownJobs, job)
 		}
 	}
-	brt.asyncDestinationStruct[destinationID].AttemptNums = getAttemptNumbers(batchJobs.Jobs)
-	brt.asyncDestinationStruct[destinationID].FirstAttemptedAts = getFirstAttemptAts(batchJobs.Jobs)
-	brt.asyncDestinationStruct[destinationID].OriginalJobParameters = getOriginalJobParameters(batchJobs.Jobs)
+
+	if len(overFlownJobs) > 0 {
+		out := common.AsyncUploadOutput{
+			DestinationID: destinationID,
+		}
+		for _, job := range overFlownJobs {
+			out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
+			out.FailedReason = `Jobs flowed over the prescribed limit`
+		}
+
+		brt.setMultipleJobStatus(out, false, getAttemptNumbers(batchJobs.Jobs), getFirstAttemptAts(batchJobs.Jobs), getOriginalJobParameters(batchJobs.Jobs))
+	}
+
+	newAttemptNums := getAttemptNumbers(batchJobs.Jobs)
+	for jobID, attemptNum := range newAttemptNums {
+		brt.asyncDestinationStruct[destinationID].AttemptNums[jobID] = attemptNum
+	}
+	newFirstAttemptedAts := getFirstAttemptAts(batchJobs.Jobs)
+	for jobID, firstAttemptedAt := range newFirstAttemptedAts {
+		brt.asyncDestinationStruct[destinationID].FirstAttemptedAts[jobID] = firstAttemptedAt
+	}
+	newOriginalJobParameters := getOriginalJobParameters(batchJobs.Jobs)
+	for jobID, originalJobParameter := range newOriginalJobParameters {
+		brt.asyncDestinationStruct[destinationID].OriginalJobParameters[jobID] = originalJobParameter
+	}
 
 	_, err = file.WriteAt([]byte(jobString), int64(writeAtBytes))
-	// there can be some race condition with asyncUploadWorker
-	if brt.asyncDestinationStruct[destinationID].Count >= brt.maxEventsInABatch {
+	if overFlow {
 		brt.asyncDestinationStruct[destinationID].CanUpload = true
 	}
 	if err != nil {
@@ -667,6 +695,14 @@ func (brt *Handle) setMultipleJobStatus(asyncOutput common.AsyncUploadOutput, at
 		panic(err)
 	}
 	brt.updateProcessedEventsMetrics(statusList)
+
+	if attempted {
+		var sourceID string
+		if len(statusList) > 0 {
+			sourceID = gjson.GetBytes(originalJobParameters[statusList[0].JobID], "source_id").String()
+		}
+		brt.recordAsyncDestinationDeliveryStatus(sourceID, asyncOutput.DestinationID, statusList)
+	}
 }
 
 func (brt *Handle) GetWorkspaceIDForDestID(destID string) string {

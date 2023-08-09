@@ -101,7 +101,9 @@ type UploadJob struct {
 	refreshPartitionBatchSize int
 	retryTimeWindow           time.Duration
 	minRetryAttempts          int
-	DisableAlter              bool
+	disableAlter              bool
+	minUploadBackoff          time.Duration
+	maxUploadBackoff          time.Duration
 
 	errorHandler ErrorHandler
 }
@@ -169,6 +171,23 @@ func setMaxParallelLoads() {
 }
 
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
+	var minUploadBackoff, maxUploadBackoff, retryTimeWindow time.Duration
+	if config.IsSet("Warehouse.minUploadBackoff") {
+		minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoff", 60, time.Second)
+	} else {
+		minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", 60, time.Second)
+	}
+	if config.IsSet("Warehouse.maxUploadBackoff") {
+		maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoff", 1800, time.Second)
+	} else {
+		maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", 1800, time.Second)
+	}
+	if config.IsSet("Warehouse.retryTimeWindow") {
+		retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindow", 180, time.Minute)
+	} else {
+		retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", 180, time.Minute)
+	}
+
 	return &UploadJob{
 		ctx:                  ctx,
 		dbHandle:             f.dbHandle,
@@ -195,8 +214,10 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 
 		refreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
 		retryTimeWindow:           retryTimeWindow,
-		minRetryAttempts:          minRetryAttempts,
-		DisableAlter:              config.GetBool("Warehouse.disableAlter", false),
+		minRetryAttempts:          config.GetInt("Warehouse.minRetryAttempts", 3),
+		disableAlter:              config.GetBool("Warehouse.disableAlter", false),
+		minUploadBackoff:          minUploadBackoff,
+		maxUploadBackoff:          maxUploadBackoff,
 
 		alertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
@@ -782,7 +803,7 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseu
 }
 
 func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) error {
-	if job.DisableAlter {
+	if job.disableAlter {
 		pkgLogger.Debugw("skipping alter columns to warehouse",
 			logfield.SourceID, job.warehouse.Source.ID,
 			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
@@ -1649,7 +1670,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 
 	metadata := repo.ExtractUploadMetadata(job.upload)
 
-	metadata.NextRetryTime = job.now().Add(DurationBeforeNextAttempt(upload.Attempts + 1))
+	metadata.NextRetryTime = job.now().Add(job.durationBeforeNextAttempt(upload.Attempts + 1))
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
@@ -1753,6 +1774,21 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	}
 
 	return state, err
+}
+
+func (job *UploadJob) durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc.)
+	var d time.Duration
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = job.minUploadBackoff
+	b.MaxInterval = job.maxUploadBackoff
+	b.MaxElapsedTime = 0
+	b.Multiplier = 2
+	b.RandomizationFactor = 0
+	b.Reset()
+	for index := int64(0); index < attempt; index++ {
+		d = b.NextBackOff()
+	}
+	return d
 }
 
 func (job *UploadJob) validateDestinationCredentials() (bool, error) {
