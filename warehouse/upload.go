@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -908,7 +909,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
 
-	var alteredSchemaInAtLeastOneTable bool
+	var alteredSchemaInAtLeastOneTable atomic.Bool
 	loadChan := make(chan struct{}, parallelLoads)
 
 	var (
@@ -951,7 +952,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		rruntime.GoForWarehouse(func() {
 			alteredSchema, err := job.loadTable(tName)
 			if alteredSchema {
-				alteredSchemaInAtLeastOneTable = true
+				alteredSchemaInAtLeastOneTable.Store(true)
 			}
 
 			if err != nil {
@@ -965,7 +966,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	}
 	wg.Wait()
 
-	if alteredSchemaInAtLeastOneTable {
+	if alteredSchemaInAtLeastOneTable.Load() {
 		pkgLogger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
 		_ = job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse)
 	}

@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
-	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -342,7 +341,6 @@ func runAllInit() {
 	warehouse.Init2()
 	warehouse.Init3()
 	warehouse.Init4()
-	warehouse.Init5()
 	warehouse.Init6()
 	warehousearchiver.Init()
 	validations.Init()
@@ -355,7 +353,6 @@ func runAllInit() {
 	kafka.Init()
 	customdestinationmanager.Init()
 	routertransformer.Init()
-	gateway.Init()
 	alert.Init()
 	oauth.Init()
 }
