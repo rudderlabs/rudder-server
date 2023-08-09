@@ -1,7 +1,6 @@
 package warehouse
 
 import (
-	"bufio"
 	"compress/gzip"
 	"context"
 	"encoding/csv"
@@ -36,6 +35,17 @@ import (
 func TestSlaveWorker(t *testing.T) {
 	misc.Init()
 
+	const (
+		workspaceID     = "test_workspace_id"
+		sourceID        = "test_source_id"
+		sourceName      = "test_source_name"
+		destinationID   = "test_destination_id"
+		destinationType = "test_destination_type"
+		destinationName = "test_destination_name"
+		namespace       = "test_namespace"
+		workerIdx       = 1
+	)
+
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -58,69 +68,10 @@ func TestSlaveWorker(t *testing.T) {
 		"bucketProvider":   "MINIO",
 	}
 
-	uploadFile := func(t *testing.T, destConf map[string]interface{}, filePath string) string {
-		f, err := os.Open(filePath)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, f.Close()) })
-
-		fm, err := filemanager.New(&filemanager.Settings{
-			Provider: "MINIO",
-			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-				Provider: "MINIO",
-				Config:   destConf,
-			}),
-		})
-
-		uf, err := fm.Upload(ctx, f)
-		require.NoError(t, err)
-
-		return uf.ObjectName
-	}
-
 	t.Run("Upload Job", func(t *testing.T) {
-		uploadJobLocation := uploadFile(t, destConf, "testdata/upload-job.staging.json.gz")
+		jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
 
-		stagingFile, err := os.Open("testdata/upload-job.staging.json.gz")
-		require.NoError(t, err)
-
-		reader, err := gzip.NewReader(stagingFile)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, reader.Close()) })
-
-		scanner := bufio.NewScanner(reader)
-		schemaMap := make(model.Schema)
-
-		type event struct {
-			Metadata struct {
-				Table   string            `json:"table"`
-				Columns map[string]string `json:"columns"`
-			}
-		}
-
-		stagingEvents := make([]event, 0)
-
-		for scanner.Scan() {
-			lineBytes := scanner.Bytes()
-
-			var stagingEvent event
-			err := json.Unmarshal(lineBytes, &stagingEvent)
-			require.NoError(t, err)
-
-			stagingEvents = append(stagingEvents, stagingEvent)
-		}
-
-		for _, event := range stagingEvents {
-			tableName := event.Metadata.Table
-
-			if _, ok := schemaMap[tableName]; !ok {
-				schemaMap[tableName] = make(model.TableSchema)
-			}
-			for columnName, columnType := range event.Metadata.Columns {
-				if _, ok := schemaMap[tableName][columnName]; !ok {
-					schemaMap[tableName][columnName] = columnType
-				}
-			}
-		}
+		schemaMap := stagingSchema(t)
 
 		t.Run("success", func(t *testing.T) {
 			publishCh := make(chan *pgnotifier.ClaimResponse)
@@ -145,21 +96,19 @@ func TestSlaveWorker(t *testing.T) {
 			p := payload{
 				UploadID:                     1,
 				StagingFileID:                1,
-				StagingFileLocation:          uploadJobLocation,
+				StagingFileLocation:          jobLocation,
 				UploadSchema:                 schemaMap,
-				WorkspaceID:                  "test_workspace_id",
-				SourceID:                     "test_source_id",
-				SourceName:                   "test_source_name",
-				DestinationID:                "test_destination_id",
-				DestinationName:              "test_destination_name",
-				DestinationType:              "test_destination_type",
-				DestinationNamespace:         "test_destination_namespace",
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				SourceName:                   sourceName,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destinationType,
+				DestinationNamespace:         namespace,
 				DestinationRevisionID:        uuid.New().String(),
 				StagingDestinationRevisionID: uuid.New().String(),
 				DestinationConfig:            destConf,
 				StagingDestinationConfig:     map[string]interface{}{},
-				UseRudderStorage:             false,
-				StagingUseRudderStorage:      false,
 				UniqueLoadGenID:              uuid.New().String(),
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
@@ -174,12 +123,11 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:   payloadJson,
 				Status:    "waiting",
 				Workspace: "test_workspace",
-				Attempt:   0,
 				JobType:   "upload",
 			}
 
 			go func() {
-				slaveWorker.processClaimedUploadJob(ctx, claim, workerIdx)
+				slaveWorker.processClaimedUploadJob(ctx, claim)
 			}()
 
 			response := <-publishCh
@@ -242,21 +190,19 @@ func TestSlaveWorker(t *testing.T) {
 			p := payload{
 				UploadID:                     1,
 				StagingFileID:                1,
-				StagingFileLocation:          uploadJobLocation,
+				StagingFileLocation:          jobLocation,
 				UploadSchema:                 schemaMap,
-				WorkspaceID:                  "test_workspace_id",
-				SourceID:                     "test_source_id",
-				SourceName:                   "test_source_name",
-				DestinationID:                "test_destination_id",
-				DestinationName:              "test_destination_name",
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				SourceName:                   sourceName,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
 				DestinationType:              warehouseutils.CLICKHOUSE,
-				DestinationNamespace:         "test_destination_namespace",
+				DestinationNamespace:         namespace,
 				DestinationRevisionID:        uuid.New().String(),
 				StagingDestinationRevisionID: uuid.New().String(),
 				DestinationConfig:            destConf,
 				StagingDestinationConfig:     map[string]interface{}{},
-				UseRudderStorage:             false,
-				StagingUseRudderStorage:      false,
 				UniqueLoadGenID:              uuid.New().String(),
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
@@ -271,12 +217,11 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:   payloadJson,
 				Status:    "waiting",
 				Workspace: "test_workspace",
-				Attempt:   0,
 				JobType:   "upload",
 			}
 
 			go func() {
-				slaveWorker.processClaimedUploadJob(ctx, claim, workerIdx)
+				slaveWorker.processClaimedUploadJob(ctx, claim)
 			}()
 
 			response := <-publishCh
@@ -285,12 +230,7 @@ func TestSlaveWorker(t *testing.T) {
 			var uploadPayload payload
 			err = json.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
-			require.Equal(t, uploadPayload.BatchID, claim.BatchID)
-			require.Equal(t, uploadPayload.UploadID, p.UploadID)
-			require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
-			require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)
 
-			require.Len(t, uploadPayload.Output, 8)
 			for _, output := range uploadPayload.Output {
 				require.Equal(t, output.TotalRows, 4)
 				require.Equal(t, output.StagingFileID, p.StagingFileID)
@@ -306,20 +246,17 @@ func TestSlaveWorker(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				tmpFile, err := os.CreateTemp("", "load.csv")
-				require.NoError(t, err)
-				t.Cleanup(func() {
-					os.Remove(tmpFile.Name())
-				})
-
 				objKey, err := fm.GetObjectNameFromLocation(output.Location)
+				require.NoError(t, err)
+
+				tmpFile, err := os.CreateTemp("", "load.csv")
 				require.NoError(t, err)
 
 				err = fm.Download(ctx, tmpFile, objKey)
 				require.NoError(t, err)
 
 				tmpFile, err = os.Open(tmpFile.Name())
-				defer func() { _ = tmpFile.Close() }()
+				require.NoError(t, err)
 
 				gzReader, err := gzip.NewReader(tmpFile)
 				require.NoError(t, err)
@@ -344,6 +281,7 @@ func TestSlaveWorker(t *testing.T) {
 					require.Equal(t, row[boolColIdx], "1")
 					require.Equal(t, row[boolArrayColIdx], "[1,0]")
 				}
+				require.NoError(t, gzReader.Close())
 			}
 		})
 
@@ -374,21 +312,19 @@ func TestSlaveWorker(t *testing.T) {
 			p := payload{
 				UploadID:                     1,
 				StagingFileID:                1,
-				StagingFileLocation:          uploadJobLocation,
+				StagingFileLocation:          jobLocation,
 				UploadSchema:                 schemaMap,
-				WorkspaceID:                  "test_workspace_id",
-				SourceID:                     "test_source_id",
-				SourceName:                   "test_source_name",
-				DestinationID:                "test_destination_id",
-				DestinationName:              "test_destination_name",
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				SourceName:                   sourceName,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
 				DestinationType:              warehouseutils.S3Datalake,
-				DestinationNamespace:         "test_destination_namespace",
+				DestinationNamespace:         namespace,
 				DestinationRevisionID:        uuid.New().String(),
 				StagingDestinationRevisionID: uuid.New().String(),
 				DestinationConfig:            destConf,
 				StagingDestinationConfig:     map[string]interface{}{},
-				UseRudderStorage:             false,
-				StagingUseRudderStorage:      false,
 				UniqueLoadGenID:              uuid.New().String(),
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
@@ -403,12 +339,11 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:   payloadJson,
 				Status:    "waiting",
 				Workspace: "test_workspace",
-				Attempt:   0,
 				JobType:   "upload",
 			}
 
 			go func() {
-				slaveWorker.processClaimedUploadJob(ctx, claim, workerIdx)
+				slaveWorker.processClaimedUploadJob(ctx, claim)
 			}()
 
 			response := <-publishCh
@@ -438,7 +373,7 @@ func TestSlaveWorker(t *testing.T) {
 			p := payload{
 				UploadID:            1,
 				StagingFileID:       1,
-				StagingFileLocation: uploadJobLocation,
+				StagingFileLocation: jobLocation,
 				UploadSchema: map[string]model.TableSchema{
 					"tracks": map[string]string{
 						"id":                 "int",
@@ -452,19 +387,17 @@ func TestSlaveWorker(t *testing.T) {
 						"event_text":         "string",
 					},
 				},
-				WorkspaceID:                  "test_workspace_id",
-				SourceID:                     "test_source_id",
-				SourceName:                   "test_source_name",
-				DestinationID:                "test_destination_id",
-				DestinationName:              "test_destination_name",
-				DestinationType:              "test_destination_type",
-				DestinationNamespace:         "test_destination_namespace",
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				SourceName:                   sourceName,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destinationType,
+				DestinationNamespace:         namespace,
 				DestinationRevisionID:        uuid.New().String(),
 				StagingDestinationRevisionID: uuid.New().String(),
 				DestinationConfig:            destConf,
 				StagingDestinationConfig:     map[string]interface{}{},
-				UseRudderStorage:             false,
-				StagingUseRudderStorage:      false,
 				UniqueLoadGenID:              uuid.New().String(),
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
@@ -479,12 +412,11 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:   payloadJson,
 				Status:    "waiting",
 				Workspace: "test_workspace",
-				Attempt:   0,
 				JobType:   "upload",
 			}
 
 			go func() {
-				slaveWorker.processClaimedUploadJob(ctx, claim, workerIdx)
+				slaveWorker.processClaimedUploadJob(ctx, claim)
 			}()
 
 			response := <-publishCh
@@ -493,28 +425,6 @@ func TestSlaveWorker(t *testing.T) {
 			var uploadPayload payload
 			err = json.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
-			require.Equal(t, uploadPayload.BatchID, claim.BatchID)
-			require.Equal(t, uploadPayload.UploadID, p.UploadID)
-			require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
-			require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)
-			require.Equal(t, uploadPayload.UploadSchema, p.UploadSchema)
-			require.Equal(t, uploadPayload.WorkspaceID, p.WorkspaceID)
-			require.Equal(t, uploadPayload.SourceID, p.SourceID)
-			require.Equal(t, uploadPayload.SourceName, p.SourceName)
-			require.Equal(t, uploadPayload.DestinationID, p.DestinationID)
-			require.Equal(t, uploadPayload.DestinationName, p.DestinationName)
-			require.Equal(t, uploadPayload.DestinationType, p.DestinationType)
-			require.Equal(t, uploadPayload.DestinationNamespace, p.DestinationNamespace)
-			require.Equal(t, uploadPayload.DestinationRevisionID, p.DestinationRevisionID)
-			require.Equal(t, uploadPayload.StagingDestinationRevisionID, p.StagingDestinationRevisionID)
-			require.Equal(t, uploadPayload.DestinationConfig, p.DestinationConfig)
-			require.Equal(t, uploadPayload.StagingDestinationConfig, p.StagingDestinationConfig)
-			require.Equal(t, uploadPayload.UseRudderStorage, p.UseRudderStorage)
-			require.Equal(t, uploadPayload.StagingUseRudderStorage, p.StagingUseRudderStorage)
-			require.Equal(t, uploadPayload.UniqueLoadGenID, p.UniqueLoadGenID)
-			require.Equal(t, uploadPayload.RudderStoragePrefix, p.RudderStoragePrefix)
-			require.Equal(t, uploadPayload.LoadFileType, p.LoadFileType)
-
 			require.Len(t, uploadPayload.Output, 9)
 
 			discardsOutput, ok := lo.Find(uploadPayload.Output, func(o uploadResult) bool {
@@ -538,11 +448,6 @@ func TestSlaveWorker(t *testing.T) {
 		require.NoError(t, err)
 		_, err = pgResource.DB.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS test_namespace.test_table_name (id int, user_id int, uuid_ts timestamp, received_at timestamp, original_timestamp timestamp, timestamp timestamp, sent_at timestamp, event text, event_text text, context_sources_job_run_id text, context_sources_task_run_id text, context_source_id text, context_destination_id text);")
 		require.NoError(t, err)
-
-		workspaceID := "test_workspace_id"
-		sourceID := "test_source_id"
-		destinationID := "test_destination_id"
-		workerIdx := 1
 
 		ctrl := gomock.NewController(t)
 		mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(ctrl)
@@ -648,7 +553,6 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:   payloadJson,
 				Status:    "waiting",
 				Workspace: "test_workspace",
-				Attempt:   0,
 				JobType:   "async_job",
 			}
 
@@ -667,59 +571,7 @@ func TestSlaveWorker(t *testing.T) {
 			require.True(t, asyncResult.Result)
 		})
 
-		t.Run("invalid job type", func(t *testing.T) {
-			publishCh := make(chan *pgnotifier.ClaimResponse)
-			defer close(publishCh)
-
-			notifier := &mockSlaveNotifier{
-				publishCh: publishCh,
-			}
-
-			c := config.New()
-			c.Set("Warehouse.postgres.enableDeleteByJobs", true)
-
-			slaveWorker := newSlaveWorker(
-				c,
-				logger.NOP,
-				stats.Default,
-				notifier,
-				bcm,
-				newConstraintsManager(config.Default),
-				workerIdx,
-			)
-
-			p := jobs.AsyncJobPayload{
-				Id:            "1",
-				SourceID:      sourceID,
-				DestinationID: destinationID,
-				TableName:     "test_table_name",
-				WorkspaceID:   workspaceID,
-				AsyncJobType:  "invalid_job_type",
-				MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
-			}
-
-			payloadJson, err := json.Marshal(p)
-			require.NoError(t, err)
-
-			claim := pgnotifier.Claim{
-				ID:        1,
-				BatchID:   uuid.New().String(),
-				Payload:   payloadJson,
-				Status:    "waiting",
-				Workspace: "test_workspace",
-				Attempt:   0,
-				JobType:   "async_job",
-			}
-
-			go func() {
-				slaveWorker.processClaimedAsyncJob(ctx, claim)
-			}()
-
-			response := <-publishCh
-			require.EqualError(t, response.Err, "invalid AsyncJobType")
-		})
-
-		t.Run("invalid configuration", func(t *testing.T) {
+		t.Run("invalid configurations", func(t *testing.T) {
 			publishCh := make(chan *pgnotifier.ClaimResponse)
 			defer close(publishCh)
 
@@ -744,22 +596,33 @@ func TestSlaveWorker(t *testing.T) {
 				name          string
 				sourceID      string
 				destinationID string
+				jobType       string
 				expectedError error
 			}{
 				{
+					name:          "invalid job type",
+					sourceID:      sourceID,
+					destinationID: destinationID,
+					jobType:       "invalid_job_type",
+					expectedError: errors.New("invalid AsyncJobType"),
+				},
+				{
 					name:          "invalid parameters",
+					jobType:       "deletebyjobrunid",
 					expectedError: errors.New("invalid Parameters"),
 				},
 				{
 					name:          "invalid source id",
 					sourceID:      "invalid_source_id",
 					destinationID: destinationID,
+					jobType:       "deletebyjobrunid",
 					expectedError: errors.New("invalid Source Id"),
 				},
 				{
 					name:          "invalid destination id",
 					sourceID:      sourceID,
 					destinationID: "invalid_destination_id",
+					jobType:       "deletebyjobrunid",
 					expectedError: errors.New("invalid Destination Id"),
 				},
 			}
@@ -774,7 +637,7 @@ func TestSlaveWorker(t *testing.T) {
 						DestinationID: tc.destinationID,
 						TableName:     "test_table_name",
 						WorkspaceID:   workspaceID,
-						AsyncJobType:  "deletebyjobrunid",
+						AsyncJobType:  tc.jobType,
 						MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 					}
 

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -130,7 +132,7 @@ func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.S
 		stats:      stat,
 		since:      time.Since,
 		logger:     log,
-		now:        time.Now,
+		now:        timeutil.Now,
 	}
 
 	if conf.IsSet("Warehouse.slaveUploadTimeout") {
@@ -184,12 +186,12 @@ func (jr *jobRun) counterStat(name string, extraTags ...warehouseutils.Tag) stat
 
 // getStagingFilePath Get download path for the job. Also creates missing directories for this path
 func (jr *jobRun) getStagingFilePath(index int) (string, error) {
-	dirName := fmt.Sprintf(`/%s/_%s/`, misc.RudderWarehouseJsonUploadsTmp, strconv.Itoa(index))
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		return "", fmt.Errorf("creating tmp dir: %w", err)
 	}
 
+	dirName := "/" + misc.RudderWarehouseJsonUploadsTmp + "/" + "_" + strconv.Itoa(index) + "/"
 	filePath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, jr.job.DestinationType, jr.job.DestinationID) + jr.job.StagingFileLocation
 	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
 		return "", fmt.Errorf("creating staging file directory: %w", err)
@@ -223,11 +225,11 @@ func (jr *jobRun) downloadStagingFile(ctx context.Context) error {
 		if err = downloader.Download(ctx, file, jr.job.StagingFileLocation); err != nil {
 			return fmt.Errorf("downloading staging file from %s: %w", jr.job.StagingFileLocation, err)
 		}
-		jr.downloadStagingFileStat.Since(downloadStart)
-
 		if err = file.Close(); err != nil {
 			return fmt.Errorf("closing file after download: %w", err)
 		}
+
+		jr.downloadStagingFileStat.Since(downloadStart)
 
 		fileInfo, err := os.Stat(jr.stagingFilePath)
 		if err != nil {

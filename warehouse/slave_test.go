@@ -28,15 +28,15 @@ type mockSlaveNotifier struct {
 	maintenanceErr error
 }
 
-func (m *mockSlaveNotifier) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan pgnotifier.Claim {
+func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) chan pgnotifier.Claim {
 	return m.subscriberCh
 }
 
-func (m *mockSlaveNotifier) UpdateClaimedEvent(claim *pgnotifier.Claim, response *pgnotifier.ClaimResponse) {
+func (m *mockSlaveNotifier) UpdateClaimedEvent(_ *pgnotifier.Claim, response *pgnotifier.ClaimResponse) {
 	m.publishCh <- response
 }
 
-func (m *mockSlaveNotifier) RunMaintenanceWorker(ctx context.Context) error {
+func (m *mockSlaveNotifier) RunMaintenanceWorker(context.Context) error {
 	return m.maintenanceErr
 }
 
@@ -65,72 +65,12 @@ func TestSlave(t *testing.T) {
 		"bucketProvider":   "MINIO",
 	}
 
-	uploadFile := func(t *testing.T, destConf map[string]interface{}, filePath string) string {
-		f, err := os.Open(filePath)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, f.Close()) })
+	jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
 
-		fm, err := filemanager.New(&filemanager.Settings{
-			Provider: "MINIO",
-			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-				Provider: "MINIO",
-				Config:   destConf,
-			}),
-		})
-
-		uf, err := fm.Upload(ctx, f)
-		require.NoError(t, err)
-
-		return uf.ObjectName
-	}
-
-	jobLocation := uploadFile(t, destConf, "testdata/upload-job.staging.json.gz")
-
-	stagingFile, err := os.Open("testdata/upload-job.staging.json.gz")
-	require.NoError(t, err)
-
-	reader, err := gzip.NewReader(stagingFile)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, reader.Close()) })
-
-	scanner := bufio.NewScanner(reader)
-	schemaMap := make(model.Schema)
-
-	type event struct {
-		Metadata struct {
-			Table   string            `json:"table"`
-			Columns map[string]string `json:"columns"`
-		}
-	}
-
-	stagingEvents := make([]event, 0)
-
-	for scanner.Scan() {
-		lineBytes := scanner.Bytes()
-
-		var stagingEvent event
-		err := json.Unmarshal(lineBytes, &stagingEvent)
-		require.NoError(t, err)
-
-		stagingEvents = append(stagingEvents, stagingEvent)
-	}
-
-	for _, event := range stagingEvents {
-		tableName := event.Metadata.Table
-
-		if _, ok := schemaMap[tableName]; !ok {
-			schemaMap[tableName] = make(model.TableSchema)
-		}
-		for columnName, columnType := range event.Metadata.Columns {
-			if _, ok := schemaMap[tableName][columnName]; !ok {
-				schemaMap[tableName][columnName] = columnType
-			}
-		}
-	}
+	schemaMap := stagingSchema(t)
 
 	publishCh := make(chan *pgnotifier.ClaimResponse)
 	subscriberCh := make(chan pgnotifier.Claim)
-
 	defer close(publishCh)
 	defer close(subscriberCh)
 
@@ -172,8 +112,6 @@ func TestSlave(t *testing.T) {
 		StagingDestinationRevisionID: uuid.New().String(),
 		DestinationConfig:            destConf,
 		StagingDestinationConfig:     map[string]interface{}{},
-		UseRudderStorage:             false,
-		StagingUseRudderStorage:      false,
 		UniqueLoadGenID:              uuid.New().String(),
 		RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 		LoadFileType:                 "csv",
@@ -188,7 +126,6 @@ func TestSlave(t *testing.T) {
 		Payload:   payloadJson,
 		Status:    "waiting",
 		Workspace: "test_workspace",
-		Attempt:   0,
 		JobType:   "upload",
 	}
 
@@ -218,4 +155,79 @@ func TestSlave(t *testing.T) {
 			require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
 		}
 	}
+}
+
+func uploadFile(t testing.TB, ctx context.Context, destConf map[string]interface{}, filePath string) string {
+	t.Helper()
+
+	f, err := os.Open(filePath)
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, f.Close())
+	}()
+
+	fm, err := filemanager.New(&filemanager.Settings{
+		Provider: "MINIO",
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider: "MINIO",
+			Config:   destConf,
+		}),
+	})
+	require.NoError(t, err)
+
+	uploadFile, err := fm.Upload(ctx, f)
+	require.NoError(t, err)
+
+	return uploadFile.ObjectName
+}
+
+func stagingSchema(t testing.TB) model.Schema {
+	t.Helper()
+
+	stagingFile, err := os.Open("testdata/staging.json.gz")
+	require.NoError(t, err)
+
+	reader, err := gzip.NewReader(stagingFile)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, reader.Close())
+	}()
+
+	scanner := bufio.NewScanner(reader)
+	schemaMap := make(model.Schema)
+
+	type event struct {
+		Metadata struct {
+			Table   string            `json:"table"`
+			Columns map[string]string `json:"columns"`
+		}
+	}
+
+	stagingEvents := make([]event, 0)
+
+	for scanner.Scan() {
+		lineBytes := scanner.Bytes()
+
+		var stagingEvent event
+		err := json.Unmarshal(lineBytes, &stagingEvent)
+		require.NoError(t, err)
+
+		stagingEvents = append(stagingEvents, stagingEvent)
+	}
+
+	for _, event := range stagingEvents {
+		tableName := event.Metadata.Table
+
+		if _, ok := schemaMap[tableName]; !ok {
+			schemaMap[tableName] = make(model.TableSchema)
+		}
+		for columnName, columnType := range event.Metadata.Columns {
+			if _, ok := schemaMap[tableName][columnName]; !ok {
+				schemaMap[tableName][columnName] = columnType
+			}
+		}
+	}
+
+	return schemaMap
 }

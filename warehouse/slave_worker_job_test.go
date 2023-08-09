@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -143,6 +145,8 @@ func TestSlaveJob(t *testing.T) {
 		minioResource, err := destination.SetupMINIO(pool, t)
 		require.NoError(t, err)
 
+		ctx := context.Background()
+
 		conf := map[string]interface{}{
 			"bucketName":       minioResource.BucketName,
 			"accessKeyID":      minioResource.AccessKey,
@@ -157,31 +161,30 @@ func TestSlaveJob(t *testing.T) {
 			"bucketProvider":   provider,
 		}
 
-		p := payload{
-			WorkspaceID:     workspaceID,
-			SourceID:        sourceID,
-			DestinationID:   destinationID,
-			DestinationName: destinationName,
-			DestinationType: destType,
-		}
-
-		fm, err := p.fileManager(conf, false)
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: "MINIO",
+			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider: "MINIO",
+				Config:   conf,
+			}),
+		})
 		require.NoError(t, err)
-
-		ctx := context.Background()
 
 		uf, err := fm.Upload(ctx, f)
 		require.NoError(t, err)
 
-		now := time.Now()
-
 		t.Run("download", func(t *testing.T) {
-			jr := newJobRun(p, config.Default, logger.NOP, stats.Default)
-			jr.job.StagingFileLocation = uf.ObjectName
-			jr.job.DestinationConfig = conf
-			jr.now = func() time.Time {
-				return now
+			p := payload{
+				WorkspaceID:         workspaceID,
+				SourceID:            sourceID,
+				DestinationID:       destinationID,
+				DestinationName:     destinationName,
+				DestinationType:     destType,
+				DestinationConfig:   conf,
+				StagingFileLocation: uf.ObjectName,
 			}
+
+			jr := newJobRun(p, config.Default, logger.NOP, stats.Default)
 
 			defer jr.cleanup()
 
@@ -194,15 +197,59 @@ func TestSlaveJob(t *testing.T) {
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
+			p := payload{
+				WorkspaceID:         workspaceID,
+				SourceID:            sourceID,
+				DestinationID:       destinationID,
+				DestinationName:     destinationName,
+				DestinationType:     destType,
+				DestinationConfig:   conf,
+				StagingFileLocation: uf.ObjectName,
+			}
+
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			jr := newJobRun(p, config.Default, logger.NOP, stats.Default)
-			jr.job.StagingFileLocation = uf.ObjectName
-			jr.job.DestinationConfig = conf
-			jr.now = func() time.Time {
-				return now
+			statsStore := memstats.New()
+
+			jr := newJobRun(p, config.Default, logger.NOP, statsStore)
+
+			defer jr.cleanup()
+
+			jr.stagingFilePath, err = jr.getStagingFilePath(1)
+			require.NoError(t, err)
+
+			err = jr.downloadStagingFile(ctx)
+			require.ErrorIs(t, err, context.Canceled)
+
+			m := statsStore.Get("worker_processing_download_staging_file_failed", stats.Tags{
+				"module":   moduleName,
+				"destID":   destinationID,
+				"destType": destType,
+			})
+			require.EqualValues(t, m.LastValue(), 0)
+		})
+
+		t.Run("download twice failed", func(t *testing.T) {
+			p := payload{
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destType,
+				DestinationConfig:            conf,
+				StagingDestinationConfig:     conf,
+				StagingFileLocation:          uf.ObjectName,
+				DestinationRevisionID:        uuid.New().String(),
+				StagingDestinationRevisionID: uuid.New().String(),
 			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			statsStore := memstats.New()
+
+			jr := newJobRun(p, config.Default, logger.NOP, statsStore)
 
 			defer jr.cleanup()
 
@@ -212,26 +259,30 @@ func TestSlaveJob(t *testing.T) {
 
 			err = jr.downloadStagingFile(ctx)
 			require.ErrorIs(t, err, context.Canceled)
+
+			m := statsStore.Get("worker_processing_download_staging_file_failed", stats.Tags{
+				"module":   moduleName,
+				"destID":   destinationID,
+				"destType": destType,
+			})
+			require.EqualValues(t, 1, m.LastValue())
 		})
 
 		t.Run("download twice succeeded", func(t *testing.T) {
 			p := payload{
-				WorkspaceID:     workspaceID,
-				SourceID:        sourceID,
-				DestinationID:   destinationID,
-				DestinationName: destinationName,
-				DestinationType: destType,
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destType,
+				DestinationConfig:            map[string]interface{}{},
+				StagingDestinationConfig:     conf,
+				StagingFileLocation:          uf.ObjectName,
+				DestinationRevisionID:        uuid.New().String(),
+				StagingDestinationRevisionID: uuid.New().String(),
 			}
 
 			jr := newJobRun(p, config.Default, logger.NOP, stats.Default)
-			jr.job.StagingFileLocation = uf.ObjectName
-			jr.job.DestinationRevisionID = uuid.New().String()
-			jr.job.DestinationConfig = map[string]interface{}{}
-			jr.job.StagingDestinationRevisionID = uuid.New().String()
-			jr.job.StagingDestinationConfig = conf
-			jr.now = func() time.Time {
-				return now
-			}
 
 			defer jr.cleanup()
 
@@ -241,30 +292,6 @@ func TestSlaveJob(t *testing.T) {
 
 			err = jr.downloadStagingFile(ctx)
 			require.NoError(t, err)
-		})
-
-		t.Run("download twice failed", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-
-			jr := newJobRun(p, config.Default, logger.NOP, stats.Default)
-			jr.job.StagingFileLocation = uf.ObjectName
-			jr.job.DestinationConfig = conf
-			jr.job.DestinationRevisionID = uuid.New().String()
-			jr.job.StagingDestinationRevisionID = uuid.New().String()
-			jr.job.StagingDestinationConfig = conf
-			jr.now = func() time.Time {
-				return now
-			}
-
-			defer jr.cleanup()
-
-			jr.stagingFilePath, err = jr.getStagingFilePath(1)
-			require.NoError(t, err)
-			require.Contains(t, jr.stagingFilePath, "rudder-warehouse-json-uploads-tmp/_1/POSTGRES_test-destination-id/staging.dump")
-
-			err = jr.downloadStagingFile(ctx)
-			require.ErrorIs(t, err, context.Canceled)
 		})
 	})
 
@@ -283,11 +310,6 @@ func TestSlaveJob(t *testing.T) {
 		}
 
 		jr := newJobRun(p, config.Default, logger.NOP, stats.Default)
-		jr.outputFileWritersMap = make(map[string]encoding.LoadFileWriter)
-		jr.tableEventCountMap = make(map[string]int)
-		jr.now = func() time.Time {
-			return time.Now()
-		}
 
 		defer jr.cleanup()
 
@@ -355,14 +377,13 @@ func TestSlaveJob(t *testing.T) {
 			discardWriter,
 		)
 		require.NoError(t, err)
+
 		require.Equal(t, discardWriter.data, []string{
 			"loaded_at,test_discard_column,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,2020-04-27T20:00:00.000Z",
 			"loaded_at,uuid_ts,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,2020-04-27T20:00:00.000Z",
 			"loaded_at,loaded_at,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,2020-04-27T20:00:00.000Z",
 			"loaded_at,test_constrains,2020-04-27T20:00:00.000Z,test_violated_identifier,test_table,2020-04-27T20:00:00.000Z",
 		})
-
-		t.Log(discardWriter.data)
 	})
 
 	t.Run("upload load files", func(t *testing.T) {

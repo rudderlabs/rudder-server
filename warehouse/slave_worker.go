@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -90,9 +89,9 @@ func newSlaveWorker(
 		"workerId": fmt.Sprintf("%d", workerIdx),
 	}
 	s.stats.workerIdleTime = s.statsFactory.NewTaggedStat("worker_idle_time", stats.TimerType, tags)
+	s.stats.workerClaimProcessingTime = s.statsFactory.NewTaggedStat("worker_claim_processing_time", stats.TimerType, tags)
 	s.stats.workerClaimProcessingSucceeded = s.statsFactory.NewTaggedStat("worker_claim_processing_succeeded", stats.CountType, tags)
 	s.stats.workerClaimProcessingFailed = s.statsFactory.NewTaggedStat("worker_claim_processing_failed", stats.CountType, tags)
-	s.stats.workerClaimProcessingTime = s.statsFactory.NewTaggedStat("worker_claim_processing_time", stats.TimerType, tags)
 	return s
 }
 
@@ -113,7 +112,7 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan pgnoti
 		case jobs.AsyncJobType:
 			sw.processClaimedAsyncJob(ctx, claimedJob)
 		default:
-			sw.processClaimedUploadJob(ctx, claimedJob, sw.workerIdx)
+			sw.processClaimedUploadJob(ctx, claimedJob)
 		}
 
 		sw.log.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v",
@@ -126,12 +125,10 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan pgnoti
 	}
 }
 
-func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob pgnotifier.Claim, workerIndex int) {
+func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob pgnotifier.Claim) {
 	sw.stats.workerClaimProcessingTime.RecordDuration()()
 
 	handleErr := func(err error, claim pgnotifier.Claim) {
-		sw.log.Errorf("[WH]: Error processing claim: %v", err)
-
 		sw.stats.workerClaimProcessingFailed.Increment()
 
 		sw.notifier.UpdateClaimedEvent(&claim, &pgnotifier.ClaimResponse{
@@ -153,7 +150,7 @@ func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob p
 	sw.log.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
 
 	job.BatchID = claimedJob.BatchID
-	job.Output, err = sw.processStagingFile(ctx, job, workerIndex)
+	job.Output, err = sw.processStagingFile(ctx, job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -179,7 +176,7 @@ func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob p
 // 3. Uploads these load files to Object storage
 // 4. Save entries for the generated load files in wh_load_files table
 // 5. Delete the staging and load files from tmp directory
-func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload, workerIndex int) ([]uploadResult, error) {
+func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]uploadResult, error) {
 	processStartTime := time.Now()
 
 	jr := newJobRun(job, sw.conf, sw.log, sw.statsFactory)
@@ -191,8 +188,8 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload, work
 	)
 
 	defer func() {
-		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
-		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(sw.workerIdx)}).Count(1)
+		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(sw.workerIdx)}).Since(processStartTime)
 
 		jr.cleanup()
 	}()
@@ -203,7 +200,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload, work
 		interfaceSliceSample []interface{}
 	)
 
-	if jr.stagingFilePath, err = jr.getStagingFilePath(workerIndex); err != nil {
+	if jr.stagingFilePath, err = jr.getStagingFilePath(sw.workerIdx); err != nil {
 		return nil, err
 	}
 	if err = jr.downloadStagingFile(ctx); err != nil {
@@ -211,12 +208,11 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload, work
 	}
 	if jr.stagingFileReader, err = jr.reader(); errors.Is(err, io.EOF) {
 		return nil, nil
-	}
-	if err != nil {
+	} else if err != nil {
 		return nil, err
 	}
 
-	jr.uuidTS = timeutil.Now()
+	jr.uuidTS = jr.now()
 
 	// Initialize Discards Table
 	discardsTable := job.discardsTable()
