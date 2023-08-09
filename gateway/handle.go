@@ -76,6 +76,7 @@ type Handle struct {
 	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
 	irh                          RequestHandler
 	rrh                          RequestHandler
+	rerh                         RequestHandler
 	webhookHandler               webhook.Webhook
 	whProxy                      http.Handler
 	suppressUserHandler          types.UserSuppression
@@ -121,10 +122,10 @@ type Handle struct {
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
 // This is done so that requests with a userID keep going to the same worker, which would maintain the consistency in event ordering.
-func (gateway *Handle) findUserWebRequestWorker(userID string) *userWebRequestWorkerT {
-	index := int(math.Abs(float64(misc.GetHash(userID) % gateway.conf.maxUserWebRequestWorkerProcess)))
+func (gw *Handle) findUserWebRequestWorker(userID string) *userWebRequestWorkerT {
+	index := int(math.Abs(float64(misc.GetHash(userID) % gw.conf.maxUserWebRequestWorkerProcess)))
 
-	userWebRequestWorker := gateway.userWebRequestWorkers[index]
+	userWebRequestWorker := gw.userWebRequestWorkers[index]
 	if userWebRequestWorker == nil {
 		panic(fmt.Errorf("worker is nil"))
 	}
@@ -137,24 +138,24 @@ func (gateway *Handle) findUserWebRequestWorker(userID string) *userWebRequestWo
 //	batches them together and queues the batch of webreqs in the `batchRequestQ` channel of the worker
 //
 // Every webRequestWorker keeps doing this concurrently.
-func (gateway *Handle) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
+func (gw *Handle) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
 	for {
 		reqBuffer, numWebRequests, bufferTime, isWebRequestQOpen := lo.BufferWithTimeout(
 			userWebRequestWorker.webRequestQ,
-			gateway.conf.maxUserWebRequestBatchSize,
-			gateway.conf.userWebRequestBatchTimeout,
+			gw.conf.maxUserWebRequestBatchSize,
+			gw.conf.userWebRequestBatchTimeout,
 		)
 		if numWebRequests > 0 {
-			if numWebRequests == gateway.conf.maxUserWebRequestBatchSize {
+			if numWebRequests == gw.conf.maxUserWebRequestBatchSize {
 				userWebRequestWorker.bufferFullStat.Count(1)
 			}
-			if bufferTime >= gateway.conf.userWebRequestBatchTimeout {
+			if bufferTime >= gw.conf.userWebRequestBatchTimeout {
 				userWebRequestWorker.timeOutStat.Count(1)
 			}
 			breq := batchWebRequestT{batchRequest: reqBuffer}
 			start := time.Now()
 			userWebRequestWorker.batchRequestQ <- &breq
-			gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
+			gw.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
 		}
 		if !isWebRequestQOpen {
 			close(userWebRequestWorker.batchRequestQ)
@@ -163,14 +164,14 @@ func (gateway *Handle) userWebRequestBatcher(userWebRequestWorker *userWebReques
 	}
 }
 
-func (gateway *Handle) NewSourceStat(writeKey, reqType string) *gwstats.SourceStat {
+func (gw *Handle) NewSourceStat(writeKey, reqType string) *gwstats.SourceStat {
 	return &gwstats.SourceStat{
-		Source:      gateway.getSourceTagFromWriteKey(writeKey),
-		SourceID:    gateway.getSourceIDForWriteKey(writeKey),
+		Source:      gw.getSourceTagFromWriteKey(writeKey),
+		SourceID:    gw.getSourceIDForWriteKey(writeKey),
 		WriteKey:    writeKey,
 		ReqType:     reqType,
-		WorkspaceID: gateway.getWorkspaceForWriteKey(writeKey),
-		SourceType:  gateway.getSourceCategoryForWriteKey(writeKey),
+		WorkspaceID: gw.getWorkspaceForWriteKey(writeKey),
+		SourceType:  gw.getSourceCategoryForWriteKey(writeKey),
 	}
 }
 
@@ -180,7 +181,7 @@ func (gateway *Handle) NewSourceStat(writeKey, reqType string) *gwstats.SourceSt
 //	from the `dbwriterWorker`s that batch them and write to the db.
 //
 // Finally sends responses(error) if any back to the webRequests over their `done` channels
-func (gateway *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
+func (gw *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {
 		var jobBatches [][]*jobsdb.JobT
 		jobIDReqMap := make(map[uuid.UUID]*webRequestT)
@@ -192,11 +193,11 @@ func (gateway *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWeb
 		batchStart := time.Now()
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
-			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
+			sourceTag := gw.getSourceTagFromWriteKey(writeKey)
 			if _, ok := sourceStats[sourceTag]; !ok {
-				sourceStats[sourceTag] = gateway.NewSourceStat(writeKey, req.reqType)
+				sourceStats[sourceTag] = gw.NewSourceStat(writeKey, req.reqType)
 			}
-			jobData, err := gateway.getJobDataFromRequest(req)
+			jobData, err := gw.getJobDataFromRequest(req)
 			sourceStats[sourceTag].Version = jobData.version
 			sourceStats[sourceTag].RequestEventsBot(jobData.botEvents)
 			if err != nil {
@@ -234,7 +235,7 @@ func (gateway *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWeb
 
 		errorMessagesMap := make(map[uuid.UUID]string)
 		if len(jobBatches) > 0 {
-			gateway.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{
+			gw.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{
 				jobBatches:  jobBatches,
 				respChannel: userWebRequestWorker.reponseQ,
 			}
@@ -254,14 +255,14 @@ func (gateway *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWeb
 		}
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
-			gateway.sourcehandle.RecordEvent(eventBatch.writeKey, eventBatch.data)
+			gw.sourcehandle.RecordEvent(eventBatch.writeKey, eventBatch.data)
 		}
 
 		userWebRequestWorker.batchTimeStat.Since(batchStart)
-		gateway.batchSizeStat.Observe(float64(len(breq.batchRequest)))
+		gw.batchSizeStat.Observe(float64(len(breq.batchRequest)))
 
 		for _, v := range sourceStats {
-			v.Report(gateway.stats)
+			v.Report(gw.stats)
 		}
 	}
 }
@@ -275,12 +276,12 @@ func (gateway *Handle) userWebRequestWorkerProcess(userWebRequestWorker *userWeb
 // - the payload doesn't contain a valid identifier (userId, anonymousId)
 // - the payload is too large
 // - user in the payload is not allowed to send events (suppressed)
-func (gateway *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, err error) {
+func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, err error) {
 	var (
 		writeKey = req.writeKey
-		sourceID = gateway.getSourceIDForWriteKey(writeKey)
+		sourceID = gw.getSourceIDForWriteKey(writeKey)
 		// Should be function of body
-		workspaceId  = gateway.getWorkspaceForWriteKey(writeKey)
+		workspaceId  = gw.getWorkspaceForWriteKey(writeKey)
 		userIDHeader = req.userIDHeader
 		ipAddr       = req.ipAddr
 		body         = req.requestPayload
@@ -292,7 +293,7 @@ func (gateway *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFrom
 		return
 	}
 
-	gateway.requestSizeStat.Observe(float64(len(body)))
+	gw.requestSizeStat.Observe(float64(len(body)))
 	if req.reqType != "batch" {
 		body, err = sjson.SetBytes(body, "type", req.reqType)
 		if err != nil {
@@ -305,22 +306,22 @@ func (gateway *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFrom
 	eventsBatch := gjson.GetBytes(body, "batch").Array()
 	jobData.numEvents = len(eventsBatch)
 
-	if !gateway.isValidWriteKey(writeKey) {
+	if !gw.isValidWriteKey(writeKey) {
 		err = errors.New(response.InvalidWriteKey)
 		return
 	}
 
-	if !gateway.isWriteKeyEnabled(writeKey) {
+	if !gw.isWriteKeyEnabled(writeKey) {
 		err = errors.New(response.SourceDisabled)
 		return
 	}
 
-	if gateway.conf.enableRateLimit {
+	if gw.conf.enableRateLimit {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-		ok, errCheck := gateway.rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
+		ok, errCheck := gw.rateLimiter.CheckLimitReached(context.TODO(), workspaceId)
 		if errCheck != nil {
-			gateway.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
-			gateway.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
+			gw.stats.NewTaggedStat("gw.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
+			gw.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
 		}
 		if ok {
 			return jobData, errRequestDropped
@@ -344,7 +345,7 @@ func (gateway *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFrom
 		containsAudienceList, suppressed bool
 	)
 
-	isUserSuppressed := gateway.memoizedIsUserSuppressed()
+	isUserSuppressed := gw.memoizedIsUserSuppressed()
 	for idx, v := range eventsBatch {
 		toSet, ok := v.Value().(map[string]interface{})
 		if !ok {
@@ -359,7 +360,7 @@ func (gateway *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFrom
 			"type",
 		).(string)
 
-		if gateway.isNonIdentifiable(anonIDFromReq, userIDFromReq, eventTypeFromReq) {
+		if gw.isNonIdentifiable(anonIDFromReq, userIDFromReq, eventTypeFromReq) {
 			err = errors.New(response.NonIdentifiableRequest)
 			return
 		}
@@ -437,7 +438,7 @@ func (gateway *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFrom
 		return
 	}
 
-	if len(body) > gateway.conf.maxReqSize && !containsAudienceList {
+	if len(body) > gw.conf.maxReqSize && !containsAudienceList {
 		err = errors.New(response.RequestBodyTooLarge)
 		return
 	}
@@ -449,15 +450,15 @@ func (gateway *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFrom
 	}
 	marshalledParams, err = json.Marshal(params)
 	if err != nil {
-		gateway.logger.Errorf(
+		gw.logger.Errorf(
 			"[Gateway] Failed to marshal parameters map. Parameters: %+v",
 			params,
 		)
 		marshalledParams = []byte(
-			`{"error": "rudder-server gateway failed to marshal params"}`,
+			`{"error": "rudder-server gw failed to marshal params"}`,
 		)
 	}
-	if !gateway.conf.allowBatchSplitting {
+	if !gw.conf.allowBatchSplitting {
 		// instead of multiple jobs with one event, create one job with all events
 		out = []jobObject{
 			{
@@ -509,13 +510,13 @@ func (gateway *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFrom
 	return
 }
 
-func (gateway *Handle) isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
+func (gw *Handle) isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
 	if eventType == extractEvent {
 		// extract event is allowed without user id and anonymous id
 		return false
 	}
 	if anonIDFromReq == "" && userIDFromReq == "" {
-		return !gateway.conf.allowReqsWithoutUserIDAndAnonymousID
+		return !gw.conf.allowReqsWithoutUserIDAndAnonymousID
 	}
 	return false
 }
@@ -528,27 +529,27 @@ func buildUserID(userIDHeader, anonIDFromReq, userIDFromReq string) string {
 }
 
 // memoizedIsUserSuppressed is a memoized version of isUserSuppressed
-func (gateway *Handle) memoizedIsUserSuppressed() func(workspaceID, userID, sourceID string) bool {
+func (gw *Handle) memoizedIsUserSuppressed() func(workspaceID, userID, sourceID string) bool {
 	cache := map[string]bool{}
 	return func(workspaceID, userID, sourceID string) bool {
 		key := workspaceID + ":" + userID + ":" + sourceID
 		if val, ok := cache[key]; ok {
 			return val
 		}
-		val := gateway.isUserSuppressed(workspaceID, userID, sourceID)
+		val := gw.isUserSuppressed(workspaceID, userID, sourceID)
 		cache[key] = val
 		return val
 	}
 }
 
 // isUserSuppressed checks if the user is suppressed or not
-func (gateway *Handle) isUserSuppressed(workspaceID, userID, sourceID string) bool {
-	if !gateway.conf.enableSuppressUserFeature || gateway.suppressUserHandler == nil {
+func (gw *Handle) isUserSuppressed(workspaceID, userID, sourceID string) bool {
+	if !gw.conf.enableSuppressUserFeature || gw.suppressUserHandler == nil {
 		return false
 	}
-	if metadata := gateway.suppressUserHandler.GetSuppressedUser(workspaceID, userID, sourceID); metadata != nil {
+	if metadata := gw.suppressUserHandler.GetSuppressedUser(workspaceID, userID, sourceID); metadata != nil {
 		if !metadata.CreatedAt.IsZero() {
-			gateway.stats.NewTaggedStat("gateway.user_suppression_age", stats.TimerType, stats.Tags{
+			gw.stats.NewTaggedStat("gw.user_suppression_age", stats.TimerType, stats.Tags{
 				"workspaceId": workspaceID,
 				"sourceID":    sourceID,
 			}).Since(metadata.CreatedAt)
@@ -568,7 +569,7 @@ func fillMessageID(event map[string]interface{}) {
 }
 
 // printStats prints a debug log containing received and acked events every 10 seconds
-func (gateway *Handle) printStats(ctx context.Context) {
+func (gw *Handle) printStats(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -576,24 +577,24 @@ func (gateway *Handle) printStats(ctx context.Context) {
 		case <-time.After(10 * time.Second):
 		}
 
-		recvCount := atomic.LoadUint64(&gateway.recvCount)
-		ackCount := atomic.LoadUint64(&gateway.ackCount)
-		gateway.logger.Debug("Gateway Recv/Ack ", recvCount, ackCount)
+		recvCount := atomic.LoadUint64(&gw.recvCount)
+		ackCount := atomic.LoadUint64(&gw.ackCount)
+		gw.logger.Debug("Gateway Recv/Ack ", recvCount, ackCount)
 	}
 }
 
 // ProcessWebRequest is an interface wrapper for webhook
-func (gateway *Handle) ProcessWebRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
-	return gateway.rrh.ProcessRequest(w, r, reqType, payload, writeKey)
+func (gw *Handle) ProcessWebRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+	return gw.rrh.ProcessRequest(w, r, reqType, payload, writeKey)
 }
 
 // getPayloadAndWriteKey reads the request body and returns the payload's bytes and write key or an error if the payload cannot be read
 // or the write key is not present in the request
 // TODO: split this function into two
-func (gateway *Handle) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
+func (gw *Handle) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
 	var err error
 	writeKey, _, ok := r.BasicAuth()
-	sourceID := gateway.getSourceIDForWriteKey(writeKey)
+	sourceID := gw.getSourceIDForWriteKey(writeKey)
 	if !ok || writeKey == "" {
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 
@@ -604,40 +605,40 @@ func (gateway *Handle) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Requ
 			ReqType:  reqType,
 		}
 		stat.RequestFailed("noWriteKeyInBasicAuth")
-		stat.Report(gateway.stats)
+		stat.Report(gw.stats)
 
 		return []byte{}, "", err
 	}
-	payload, err := gateway.getPayloadFromRequest(r)
+	payload, err := gw.getPayloadFromRequest(r)
 	if err != nil {
 		stat := gwstats.SourceStat{
-			Source:      gateway.getSourceTagFromWriteKey(writeKey),
+			Source:      gw.getSourceTagFromWriteKey(writeKey),
 			WriteKey:    writeKey,
 			ReqType:     reqType,
 			SourceID:    sourceID,
-			WorkspaceID: gateway.getWorkspaceForWriteKey(writeKey),
-			SourceType:  gateway.getSourceCategoryForWriteKey(writeKey),
+			WorkspaceID: gw.getWorkspaceForWriteKey(writeKey),
+			SourceType:  gw.getSourceCategoryForWriteKey(writeKey),
 		}
 		stat.RequestFailed("requestBodyReadFailed")
-		stat.Report(gateway.stats)
+		stat.Report(gw.stats)
 
 		return []byte{}, writeKey, err
 	}
 	return payload, writeKey, err
 }
 
-func (gateway *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
+func (gw *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
 		return []byte{}, errors.New(response.RequestBodyNil)
 	}
 
 	start := time.Now()
-	defer gateway.bodyReadTimeStat.Since(start)
+	defer gw.bodyReadTimeStat.Since(start)
 
 	payload, err := io.ReadAll(r.Body)
 	_ = r.Body.Close()
 	if err != nil {
-		gateway.logger.Errorf(
+		gw.logger.Errorf(
 			"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n:%v",
 			r.Header.Get("Content-Length"),
 			string(payload),
@@ -648,7 +649,7 @@ func (gateway *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	return payload, nil
 }
 
-// getPayloadFromRequest reads the request body and returns event payloads grouped by user id
+// getUsersPayload reads the request body and returns event payloads grouped by user id
 // for performance see: https://github.com/rudderlabs/rudder-server/pull/2040
 func (*Handle) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
 	if !gjson.ValidBytes(requestPayload) {
@@ -690,36 +691,36 @@ func (*Handle) getUsersPayload(requestPayload []byte) (map[string][]byte, error)
 }
 
 // TrackRequestMetrics updates the track counters (success and failure counts)
-func (gateway *Handle) TrackRequestMetrics(errorMessage string) {
+func (gw *Handle) TrackRequestMetrics(errorMessage string) {
 	if diagnostics.EnableGatewayMetric {
-		gateway.trackCounterMu.Lock()
-		defer gateway.trackCounterMu.Unlock()
+		gw.trackCounterMu.Lock()
+		defer gw.trackCounterMu.Unlock()
 		if errorMessage != "" {
-			gateway.trackFailureCount = gateway.trackFailureCount + 1
+			gw.trackFailureCount = gw.trackFailureCount + 1
 		} else {
-			gateway.trackSuccessCount = gateway.trackSuccessCount + 1
+			gw.trackSuccessCount = gw.trackSuccessCount + 1
 		}
 	}
 }
 
 // collectMetrics collects the gateway metrics and sends them using diagnostics
-func (gateway *Handle) collectMetrics(ctx context.Context) {
+func (gw *Handle) collectMetrics(ctx context.Context) {
 	if diagnostics.EnableGatewayMetric {
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-gateway.diagnosisTicker.C:
-				gateway.trackCounterMu.Lock()
-				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
+			case <-gw.diagnosisTicker.C:
+				gw.trackCounterMu.Lock()
+				if gw.trackSuccessCount > 0 || gw.trackFailureCount > 0 {
 					diagnostics.Diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
-						diagnostics.GatewaySuccess: gateway.trackSuccessCount,
-						diagnostics.GatewayFailure: gateway.trackFailureCount,
+						diagnostics.GatewaySuccess: gw.trackSuccessCount,
+						diagnostics.GatewayFailure: gw.trackFailureCount,
 					})
-					gateway.trackSuccessCount = 0
-					gateway.trackFailureCount = 0
+					gw.trackSuccessCount = 0
+					gw.trackFailureCount = 0
 				}
-				gateway.trackCounterMu.Unlock()
+				gw.trackCounterMu.Unlock()
 			}
 		}
 	}
@@ -770,52 +771,52 @@ func (*Handle) setWebPayload(r *http.Request, qp url.Values, reqType string) err
 addToWebRequestQ finds the worker for a particular userID and queues the webrequest with the worker(pushes the req into the webRequestQ channel of the worker).
 They are further batched together in userWebRequestBatcher
 */
-func (gateway *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
-	userIDHeader := req.Header.Get("AnonymousId")
+func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
+	userIDHeader := req.Header.Get(anonymousIDHeader)
 	workerKey := userIDHeader
 	if userIDHeader == "" {
 		// If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
 		workerKey = uuid.New().String()
-		gateway.emptyAnonIdHeaderStat.Increment()
+		gw.emptyAnonIdHeaderStat.Increment()
 	}
-	userWebRequestWorker := gateway.findUserWebRequestWorker(workerKey)
+	userWebRequestWorker := gw.findUserWebRequestWorker(workerKey)
 	ipAddr := misc.GetIPFromReq(req)
 	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr, userIDHeader: userIDHeader}
 	userWebRequestWorker.webRequestQ <- &webReq
 }
 
 // IncrementRecvCount increments the received count for gateway requests
-func (gateway *Handle) IncrementRecvCount(count uint64) {
-	atomic.AddUint64(&gateway.recvCount, count)
+func (gw *Handle) IncrementRecvCount(count uint64) {
+	atomic.AddUint64(&gw.recvCount, count)
 }
 
 // IncrementAckCount increments the acknowledged count for gateway requests
-func (gateway *Handle) IncrementAckCount(count uint64) {
-	atomic.AddUint64(&gateway.ackCount, count)
+func (gw *Handle) IncrementAckCount(count uint64) {
+	atomic.AddUint64(&gw.ackCount, count)
 }
 
 // GetWebhookSourceDefName returns the webhook source definition name by write key
-func (gateway *Handle) GetWebhookSourceDefName(writeKey string) (name string, ok bool) {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
-	name, ok = gateway.conf.enabledWriteKeyWebhookMap[writeKey]
+func (gw *Handle) GetWebhookSourceDefName(writeKey string) (name string, ok bool) {
+	gw.conf.configSubscriberLock.RLock()
+	defer gw.conf.configSubscriberLock.RUnlock()
+	name, ok = gw.conf.enabledWriteKeyWebhookMap[writeKey]
 	return
 }
 
 // SaveErrors saves errors to the error db
-func (gateway *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error {
+func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error {
 	jobs := make([]*jobsdb.JobT, 0, len(reqs))
 	for _, req := range reqs {
 		params := map[string]interface{}{
-			"source_id":   gateway.getSourceIDForWriteKey(req.WriteKey),
+			"source_id":   gw.getSourceIDForWriteKey(req.WriteKey),
 			"stage":       "webhook",
 			"source_type": req.SourceType,
 			"reason":      req.Reason,
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
-			gateway.logger.Errorf("[Gateway] Failed to marshal parameters map. Parameters: %+v", params)
-			marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
+			gw.logger.Errorf("[Gateway] Failed to marshal parameters map. Parameters: %+v", params)
+			marshalledParams = []byte(`{"error": "rudder-server gw failed to marshal params"}`)
 		}
 
 		jobs = append(jobs, &jobsdb.JobT{
@@ -825,11 +826,11 @@ func (gateway *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) e
 			CustomVal:    "WEBHOOK",
 			EventPayload: req.Payload,
 			EventCount:   1,
-			WorkspaceId:  gateway.getWorkspaceForWriteKey(req.WriteKey),
+			WorkspaceId:  gw.getWorkspaceForWriteKey(req.WriteKey),
 		})
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), gateway.conf.WriteTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
 	defer cancel()
-	return gateway.errDB.Store(ctx, jobs)
+	return gw.errDB.Store(ctx, jobs)
 }

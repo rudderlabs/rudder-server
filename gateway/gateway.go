@@ -17,6 +17,9 @@ const (
 	eventStreamSourceCategory = "eventStream"
 	extractEvent              = "extract"
 	customVal                 = "GW"
+	jobRunIDHeader            = "X-Rudder-Job-Run-Id"
+	taskRunIDHeader           = "X-Rudder-Task-Run-Id"
+	anonymousIDHeader         = "AnonymousId"
 )
 
 var (

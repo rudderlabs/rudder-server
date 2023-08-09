@@ -137,13 +137,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		s := time.Now()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
 			bytes.NewBuffer(rawJSON))
-
-		if err == nil {
-			// If no err returned by client.Post, reading body.
-			// If reading body fails, retrying.
-			respData, err = io.ReadAll(resp.Body)
-		}
-
 		if err != nil {
 			trans.transformRequestTimerStat.SendTiming(time.Since(s))
 			reqFailed = true
@@ -159,13 +152,15 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if reqFailed {
 			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
 		}
-
+		// If no err returned by client.Post, reading body.
+		// If reading body fails, retrying.
+		respData, err = io.ReadAll(resp.Body)
 		trans.transformRequestTimerStat.SendTiming(time.Since(s))
 		break
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
+		trans.logger.Errorf("[Router Transformer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 	}
 
 	if resp.StatusCode == http.StatusOK {
@@ -178,7 +173,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
 		}
 
-		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
+		trans.logger.Debugf("[Router Transformer] :: output payload : %s", string(respData))
 
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)

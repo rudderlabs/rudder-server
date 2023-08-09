@@ -140,10 +140,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 			a.log.Warnf("Gateway shutdown error: %v", err)
 		}
 	}()
-
-	g.Go(func() error {
-		return gw.StartAdminHandler(ctx)
-	})
 	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
 	})

@@ -1437,13 +1437,19 @@ func TestContentTypeFunction(t *testing.T) {
 	require.Equal(t, expectedStatus, respRecorder.Code, "actual response code different than expected.")
 }
 
-func (gateway *Handle) getWorkspaceID(writeKey string) string {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
-	return gateway.conf.enabledWriteKeyWorkspaceMap[writeKey]
+func (gw *Handle) getWorkspaceID(writeKey string) string {
+	gw.conf.configSubscriberLock.RLock()
+	defer gw.conf.configSubscriberLock.RUnlock()
+	return gw.conf.enabledWriteKeyWorkspaceMap[writeKey]
 }
 
 type mockRequestHandler struct{}
+
+func (mockRequestHandler) AuthenticateRequest(r *http.Request, reqType string) (string, string, error) {
+	// deepsource ignore: Unused method arguments
+	_ = r
+	return "", "", nil
+}
 
 func (mockRequestHandler) ProcessRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	// deepsource ignore: Unused method arguments

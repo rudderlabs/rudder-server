@@ -1421,6 +1421,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := misc.GetStringifiedData(singularEvent["messageId"])
+			sourceJobRunID, _ := misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
 			source, sourceError := proc.getSourceByWriteKey(writeKey)
 			if sourceError != nil {
 				proc.logger.Errorf("Dropping Job since Source not found for writeKey %q: %v", writeKey, sourceError)
@@ -1430,8 +1431,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			if proc.config.enableDedup {
 				payload, _ := jsonfast.Marshal(singularEvent)
 				messageSize := int64(len(payload))
-				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: messageId, Value: messageSize}); !ok {
-					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
+				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: buildDedupKey(messageId, sourceJobRunID), Value: messageSize}); !ok {
+					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", buildDedupKey(messageId, sourceJobRunID))
 					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 					continue
 				}
@@ -2810,4 +2811,8 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		proc.IncreasePendingEvents(tablePrefix, pileUpStatMap)
 	}
 	return nil
+}
+
+func buildDedupKey(messageID, jobRunID string) string {
+	return fmt.Sprintf("%s:%s", messageID, jobRunID)
 }

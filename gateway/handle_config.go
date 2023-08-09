@@ -2,18 +2,18 @@ package gateway
 
 import "github.com/rudderlabs/rudder-server/utils/misc"
 
-func (gateway *Handle) getSourceTagFromWriteKey(writeKey string) string {
-	sourceName := gateway.getSourceNameForWriteKey(writeKey)
+func (gw *Handle) getSourceTagFromWriteKey(writeKey string) string {
+	sourceName := gw.getSourceNameForWriteKey(writeKey)
 	sourceTag := misc.GetTagName(writeKey, sourceName)
 	return sourceTag
 }
 
-func (gateway *Handle) getSourceCategoryForWriteKey(writeKey string) (category string) {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
+func (gw *Handle) getSourceCategoryForWriteKey(writeKey string) (category string) {
+	gw.conf.configSubscriberLock.RLock()
+	defer gw.conf.configSubscriberLock.RUnlock()
 
-	if _, ok := gateway.conf.writeKeysSourceMap[writeKey]; ok {
-		category = gateway.conf.writeKeysSourceMap[writeKey].SourceDefinition.Category
+	if _, ok := gw.conf.writeKeysSourceMap[writeKey]; ok {
+		category = gw.conf.writeKeysSourceMap[writeKey].SourceDefinition.Category
 		if category == "" {
 			category = eventStreamSourceCategory
 		}
@@ -21,50 +21,50 @@ func (gateway *Handle) getSourceCategoryForWriteKey(writeKey string) (category s
 	return
 }
 
-func (gateway *Handle) getWorkspaceForWriteKey(writeKey string) string {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
+func (gw *Handle) getWorkspaceForWriteKey(writeKey string) string {
+	gw.conf.configSubscriberLock.RLock()
+	defer gw.conf.configSubscriberLock.RUnlock()
 
-	if _, ok := gateway.conf.enabledWriteKeyWorkspaceMap[writeKey]; ok {
-		return gateway.conf.enabledWriteKeyWorkspaceMap[writeKey]
+	if _, ok := gw.conf.enabledWriteKeyWorkspaceMap[writeKey]; ok {
+		return gw.conf.enabledWriteKeyWorkspaceMap[writeKey]
 	}
 	return ""
 }
 
-func (gateway *Handle) isValidWriteKey(writeKey string) bool {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
+func (gw *Handle) isValidWriteKey(writeKey string) bool {
+	gw.conf.configSubscriberLock.RLock()
+	defer gw.conf.configSubscriberLock.RUnlock()
 
-	_, ok := gateway.conf.writeKeysSourceMap[writeKey]
+	_, ok := gw.conf.writeKeysSourceMap[writeKey]
 	return ok
 }
 
-func (gateway *Handle) isWriteKeyEnabled(writeKey string) bool {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
-	if source, ok := gateway.conf.writeKeysSourceMap[writeKey]; ok {
+func (gw *Handle) isWriteKeyEnabled(writeKey string) bool {
+	gw.conf.configSubscriberLock.RLock()
+	defer gw.conf.configSubscriberLock.RUnlock()
+	if source, ok := gw.conf.writeKeysSourceMap[writeKey]; ok {
 		return source.Enabled
 	}
 	return false
 }
 
-func (gateway *Handle) getSourceIDForWriteKey(writeKey string) string {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
+func (gw *Handle) getSourceIDForWriteKey(writeKey string) string {
+	gw.conf.configSubscriberLock.RLock()
+	defer gw.conf.configSubscriberLock.RUnlock()
 
-	if _, ok := gateway.conf.writeKeysSourceMap[writeKey]; ok {
-		return gateway.conf.writeKeysSourceMap[writeKey].ID
+	if _, ok := gw.conf.writeKeysSourceMap[writeKey]; ok {
+		return gw.conf.writeKeysSourceMap[writeKey].ID
 	}
 
 	return ""
 }
 
-func (gateway *Handle) getSourceNameForWriteKey(writeKey string) string {
-	gateway.conf.configSubscriberLock.RLock()
-	defer gateway.conf.configSubscriberLock.RUnlock()
+func (gw *Handle) getSourceNameForWriteKey(writeKey string) string {
+	gw.conf.configSubscriberLock.RLock()
+	defer gw.conf.configSubscriberLock.RUnlock()
 
-	if _, ok := gateway.conf.writeKeysSourceMap[writeKey]; ok {
-		return gateway.conf.writeKeysSourceMap[writeKey].Name
+	if _, ok := gw.conf.writeKeysSourceMap[writeKey]; ok {
+		return gw.conf.writeKeysSourceMap[writeKey].Name
 	}
 
 	return "-notFound-"

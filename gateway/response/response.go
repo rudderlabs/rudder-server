@@ -16,6 +16,8 @@ const (
 	TooManyRequests = "Max Requests Limit reached"
 	// NoWriteKeyInBasicAuth - Failed to read writeKey from header
 	NoWriteKeyInBasicAuth = "Failed to read writeKey from header"
+	// NoSourceIDInHeader - Failed to read sourceID from header
+	NoSourceIDInHeader = "Failed to read sourceID from header"
 	// NoWriteKeyInQueryParams - Failed to read writeKey from Query Params
 	NoWriteKeyInQueryParams = "Failed to read writeKey from Query Params"
 	// RequestBodyReadFailed - Failed to read body from request
@@ -67,6 +69,7 @@ var statusMap = map[string]status{
 	InvalidRequestMethod:    {message: InvalidRequestMethod, code: http.StatusBadRequest},
 	TooManyRequests:         {message: TooManyRequests, code: http.StatusTooManyRequests},
 	NoWriteKeyInBasicAuth:   {message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized},
+	NoSourceIDInHeader:      {message: NoSourceIDInHeader, code: http.StatusUnauthorized},
 	NoWriteKeyInQueryParams: {message: NoWriteKeyInQueryParams, code: http.StatusUnauthorized},
 	RequestBodyReadFailed:   {message: RequestBodyReadFailed, code: http.StatusInternalServerError},
 	RequestBodyTooLarge:     {message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge},
