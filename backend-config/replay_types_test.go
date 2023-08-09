@@ -53,12 +53,6 @@ func TestApplyReplayConfig(t *testing.T) {
 		require.Equal(t, "er-s-1", c.Sources[1].ID)
 		require.Equal(t, "er-s-1", c.Sources[1].WriteKey)
 		require.Equal(t, map[string]interface{}{}, c.Sources[1].Config)
-
-		require.Equal(t, "replay", c.Sources[1].SourceDefinition.ID)
-		require.Equal(t, "replay", c.Sources[1].SourceDefinition.Name)
-		require.Equal(t, "replay", c.Sources[1].SourceDefinition.Category)
-		require.Equal(t, "replay", c.Sources[1].SourceDefinition.Type)
-
 		require.Len(t, c.Sources[1].Destinations, 1)
 		require.Equal(t, "er-d-1", c.Sources[1].Destinations[0].ID)
 	})
@@ -132,12 +126,6 @@ func TestApplyReplayConfig(t *testing.T) {
 		require.Equal(t, "er-s-1", c.Sources[1].ID)
 		require.Equal(t, "er-s-1", c.Sources[1].WriteKey)
 		require.Equal(t, map[string]interface{}{}, c.Sources[1].Config)
-
-		require.Equal(t, "replay", c.Sources[1].SourceDefinition.ID)
-		require.Equal(t, "replay", c.Sources[1].SourceDefinition.Name)
-		require.Equal(t, "replay", c.Sources[1].SourceDefinition.Category)
-		require.Equal(t, "replay", c.Sources[1].SourceDefinition.Type)
-
 		require.Len(t, c.Sources[1].Destinations, 1)
 		require.Equal(t, "er-d-1", c.Sources[1].Destinations[0].ID)
 	})

@@ -25,12 +25,6 @@ func (config *ConfigT) ApplyReplaySources() {
 			newSource.ID = id
 			newSource.WriteKey = id
 			newSource.EventSchemasEnabled = false
-			newSource.SourceDefinition = SourceDefinitionT{
-				ID:       "replay",
-				Name:     "replay",
-				Category: "replay",
-				Type:     "replay",
-			}
 			newSource.Config = lo.OmitByKeys(newSource.Config, []string{"eventUpload"}) // no event uploads for replay sources for now
 			newSource.Destinations = nil                                                // destinations are added later
 			return &newSource
