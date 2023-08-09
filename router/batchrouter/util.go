@@ -3,7 +3,6 @@ package batchrouter
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -17,13 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-func isJobTerminated(status int) bool {
-	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
-		return false
-	}
-	return status >= http.StatusOK && status < http.StatusInternalServerError
-}
 
 func IsObjectStorageDestination(destType string) bool {
 	return slices.Contains(objectStoreDestinations, destType)

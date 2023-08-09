@@ -29,7 +29,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
@@ -47,7 +47,6 @@ import (
 
 type Handle struct {
 	destType string
-
 	// dependencies
 
 	logger             logger.Logger
@@ -68,6 +67,7 @@ type Handle struct {
 	// configuration
 
 	maxEventsInABatch            int
+	maxPayloadSizeInBytes        int
 	maxFailedCountForJob         int
 	asyncUploadTimeout           time.Duration
 	retryTimeWindow              time.Duration
@@ -126,7 +126,7 @@ type Handle struct {
 
 	diagnosisTicker          *time.Ticker
 	uploadedRawDataJobsCache map[string]map[string]bool
-	asyncDestinationStruct   map[string]*asyncdestinationmanager.AsyncDestinationStruct
+	asyncDestinationStruct   map[string]*common.AsyncDestinationStruct
 
 	asyncPollTimeStat       stats.Measurement
 	asyncFailedJobsTimeStat stats.Measurement
@@ -754,7 +754,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			}
 
 			// rsources stats
-			err = brt.updateRudderSourcesStats(context.TODO(), tx, batchJobs.Jobs, statusList)
+			err = brt.updateRudderSourcesStats(ctx, tx, batchJobs.Jobs, statusList)
 			if err != nil {
 				return err
 			}

@@ -177,6 +177,7 @@ var _ = Describe("BatchRouter", func() {
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &Handle{}
 			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+
 			batchrouter.readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 

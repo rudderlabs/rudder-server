@@ -98,6 +98,17 @@ func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 	return resp
 }
 
+func EnhanceJsonWithTime(t time.Time, key string, resp []byte) []byte {
+	firstAttemptedAtString := t.Format(misc.RFC3339Milli)
+
+	errorRespString, err := sjson.Set(string(resp), key, firstAttemptedAtString)
+	if err == nil {
+		resp = []byte(errorRespString)
+	}
+
+	return resp
+}
+
 func IsNotEmptyString(s string) bool {
 	return len(strings.TrimSpace(s)) > 0
 }
