@@ -67,6 +67,7 @@ type Handle struct {
 	// configuration
 
 	maxEventsInABatch            int
+	maxPayloadSizeInBytes        int
 	maxFailedCountForJob         int
 	asyncUploadTimeout           time.Duration
 	retryTimeWindow              time.Duration

@@ -439,11 +439,15 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	}
 	defer func() { _ = file.Close() }()
 	var jobString string
+	var overFlow bool
+	var overFlownJobs []*jobsdb.JobT
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
+	allowedSize := brt.maxPayloadSizeInBytes
 	for _, job := range batchJobs.Jobs {
 		transformedData := common.GetTransformedData(job.EventPayload)
-		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch ||
-			!brt.asyncDestinationStruct[destinationID].UploadInProgress {
+		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch &&
+			!brt.asyncDestinationStruct[destinationID].UploadInProgress &&
+			brt.asyncDestinationStruct[destinationID].Size < allowedSize {
 			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
 			jobString = jobString + fileData + "\n"
@@ -451,18 +455,38 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
 			brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
 		} else {
-			brt.logger.Debugf("BRT: Max Event Limit Reached. Stopped writing to File  %s", brt.asyncDestinationStruct[destinationID].FileName)
-			brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
-			brt.asyncDestinationStruct[destinationID].FailedJobIDs = append(brt.asyncDestinationStruct[destinationID].FailedJobIDs, job.JobID)
+			overFlow = true
+			overFlownJobs = append(overFlownJobs, job)
 		}
 	}
-	brt.asyncDestinationStruct[destinationID].AttemptNums = getAttemptNumbers(batchJobs.Jobs)
-	brt.asyncDestinationStruct[destinationID].FirstAttemptedAts = getFirstAttemptAts(batchJobs.Jobs)
-	brt.asyncDestinationStruct[destinationID].OriginalJobParameters = getOriginalJobParameters(batchJobs.Jobs)
+
+	if len(overFlownJobs) > 0 {
+		out := common.AsyncUploadOutput{
+			DestinationID: destinationID,
+		}
+		for _, job := range overFlownJobs {
+			out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
+			out.FailedReason = `Jobs flowed over the prescribed limit`
+		}
+
+		brt.setMultipleJobStatus(out, false, getAttemptNumbers(batchJobs.Jobs), getFirstAttemptAts(batchJobs.Jobs), getOriginalJobParameters(batchJobs.Jobs))
+	}
+
+	newAttemptNums := getAttemptNumbers(batchJobs.Jobs)
+	for jobID, attemptNum := range newAttemptNums {
+		brt.asyncDestinationStruct[destinationID].AttemptNums[jobID] = attemptNum
+	}
+	newFirstAttemptedAts := getFirstAttemptAts(batchJobs.Jobs)
+	for jobID, firstAttemptedAt := range newFirstAttemptedAts {
+		brt.asyncDestinationStruct[destinationID].FirstAttemptedAts[jobID] = firstAttemptedAt
+	}
+	newOriginalJobParameters := getOriginalJobParameters(batchJobs.Jobs)
+	for jobID, originalJobParameter := range newOriginalJobParameters {
+		brt.asyncDestinationStruct[destinationID].OriginalJobParameters[jobID] = originalJobParameter
+	}
 
 	_, err = file.WriteAt([]byte(jobString), int64(writeAtBytes))
-	// there can be some race condition with asyncUploadWorker
-	if brt.asyncDestinationStruct[destinationID].Count >= brt.maxEventsInABatch {
+	if overFlow {
 		brt.asyncDestinationStruct[destinationID].CanUpload = true
 	}
 	if err != nil {
