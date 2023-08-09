@@ -117,8 +117,10 @@ func TestArchiver(t *testing.T) {
 			mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
 
 			if tc.archived {
-				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(4).Return(mockMeasurement)
-				mockMeasurement.EXPECT().Count(1).Times(4)
+				mockStats.EXPECT().NewTaggedStat(
+					gomock.Any(), gomock.Any(), gomock.Any(),
+				).Times(4).Return(mockMeasurement)
+				mockMeasurement.EXPECT().Increment().Times(4)
 			}
 
 			now := time.Now().Truncate(time.Second)
