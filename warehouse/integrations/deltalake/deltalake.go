@@ -757,12 +757,13 @@ func (d *Deltalake) loadTable(ctx context.Context, tableName string, tableSchema
 	}
 
 	d.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-		"sourceID":    d.Warehouse.Source.ID,
-		"sourceType":  d.Warehouse.Source.SourceDefinition.Name,
-		"destID":      d.Warehouse.Destination.ID,
-		"destType":    d.Warehouse.Destination.DestinationDefinition.Name,
-		"workspaceId": d.Warehouse.WorkspaceID,
-		"tableName":   tableName,
+		"sourceID":       d.Warehouse.Source.ID,
+		"sourceType":     d.Warehouse.Source.SourceDefinition.Name,
+		"sourceCategory": d.Warehouse.Source.SourceDefinition.Category,
+		"destID":         d.Warehouse.Destination.ID,
+		"destType":       d.Warehouse.Destination.DestinationDefinition.Name,
+		"workspaceId":    d.Warehouse.WorkspaceID,
+		"tableName":      tableName,
 	}).Count(int(updated))
 
 	d.logger.Infow("completed loading",
@@ -1130,12 +1131,13 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	d.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-		"sourceID":    d.Warehouse.Source.ID,
-		"sourceType":  d.Warehouse.Source.SourceDefinition.Name,
-		"destID":      d.Warehouse.Destination.ID,
-		"destType":    d.Warehouse.Destination.DestinationDefinition.Name,
-		"workspaceId": d.Warehouse.WorkspaceID,
-		"tableName":   warehouseutils.UsersTable,
+		"sourceID":       d.Warehouse.Source.ID,
+		"sourceType":     d.Warehouse.Source.SourceDefinition.Name,
+		"sourceCategory": d.Warehouse.Source.SourceDefinition.Category,
+		"destID":         d.Warehouse.Destination.ID,
+		"destType":       d.Warehouse.Destination.DestinationDefinition.Name,
+		"workspaceId":    d.Warehouse.WorkspaceID,
+		"tableName":      warehouseutils.UsersTable,
 	}).Count(int(updated))
 
 	d.logger.Infow("completed loading for users and identifies tables",
