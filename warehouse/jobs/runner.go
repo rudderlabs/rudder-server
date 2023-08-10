@@ -5,18 +5,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -141,16 +139,13 @@ func (a *AsyncJobWh) InitAsyncJobRunner() error {
 
 func (a *AsyncJobWh) cleanUpAsyncTable(ctx context.Context) error {
 	a.logger.Info("[WH-Jobs]: Cleaning up the zombie asyncjobs")
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE status=$2 or status=$3`, warehouseutils.WarehouseAsyncJobTable)
+	sqlStatement := fmt.Sprintf(
+		`UPDATE %s SET status=$1 WHERE status=$2 or status=$3`,
+		pq.QuoteIdentifier(warehouseutils.WarehouseAsyncJobTable),
+	)
 	a.logger.Debugf("[WH-Jobs]: resetting up async jobs table query %s", sqlStatement)
-	rows, err := a.dbHandle.QueryContext(ctx, sqlStatement, WhJobWaiting, WhJobExecuting, WhJobFailed)
-	if err != nil {
-		return err
-	}
-	if rows.Err() != nil {
-		return rows.Err()
-	}
-	return rows.Close()
+	_, err := a.dbHandle.ExecContext(ctx, sqlStatement, WhJobWaiting, WhJobExecuting, WhJobFailed)
+	return err
 }
 
 /*
@@ -164,7 +159,6 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 	a.logger.Info("[WH-Jobs]: Starting async job runner")
 	defer a.logger.Info("[WH-Jobs]: Stopping AsyncJobRunner")
 
-	var wg sync.WaitGroup
 	for {
 		a.logger.Debug("[WH-Jobs]: Scanning for waiting async job")
 
@@ -205,24 +199,21 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 		}
 		asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobExecuting, err)
 		_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			select {
-			case <-ctx.Done():
-				a.logger.Infof("[WH-Jobs]: Context cancelled for async job runner")
-			case responses := <-ch:
-				a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
-				asyncJobsStatusMap := getAsyncStatusMapFromAsyncPayloads(pendingAsyncJobs)
-				a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
-				_ = a.updateAsyncJobs(ctx, asyncJobsStatusMap)
-			case <-time.After(a.asyncJobTimeOut):
-				a.logger.Errorf("Go Routine timed out waiting for a response from PgNotifier", pendingAsyncJobs[0].Id)
-				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
-				_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
-			}
-		}()
-		wg.Wait()
+
+		select {
+		case <-ctx.Done():
+			a.logger.Infof("[WH-Jobs]: Context cancelled for async job runner")
+			return nil
+		case responses := <-ch:
+			a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
+			asyncJobsStatusMap := getAsyncStatusMapFromAsyncPayloads(pendingAsyncJobs)
+			a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
+			_ = a.updateAsyncJobs(ctx, asyncJobsStatusMap)
+		case <-time.After(a.asyncJobTimeOut):
+			a.logger.Errorf("Go Routine timed out waiting for a response from PgNotifier", pendingAsyncJobs[0].Id)
+			asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
+			_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
+		}
 	}
 }
 
