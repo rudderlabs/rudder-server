@@ -98,6 +98,7 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 		pkgLogger.Errorf("Error while parsing request: %v", err)
 		return config, err
 	}
+	sourcesJSON.ApplyReplaySources()
 	workspaceID := sourcesJSON.WorkspaceID
 
 	wc.workspaceIDOnce.Do(func() {

@@ -145,6 +145,8 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 				))
 			}
 			workspace = &previousConfig
+		} else {
+			workspace.ApplyReplaySources()
 		}
 
 		// always set connection flags to true for hosted and multi-tenant warehouse service
