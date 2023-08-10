@@ -34,7 +34,7 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.11.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.44.318
+	github.com/aws/aws-sdk-go v1.44.319
 	github.com/bugsnag/bugsnag-go/v2 v2.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -51,7 +51,7 @@ require (
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-retryablehttp v0.7.4
-	github.com/hashicorp/golang-lru/v2 v2.0.4
+	github.com/hashicorp/golang-lru/v2 v2.0.5
 	github.com/hashicorp/yamux v0.1.1
 	github.com/iancoleman/strcase v0.3.0
 	github.com/jeremywohl/flatten v1.0.1
@@ -71,7 +71,7 @@ require (
 	github.com/rs/cors v1.9.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/compose-test v0.1.2
-	github.com/rudderlabs/rudder-go-kit v0.15.4
+	github.com/rudderlabs/rudder-go-kit v0.15.5
 	github.com/rudderlabs/sql-tunnels v0.1.3
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.42
@@ -91,21 +91,21 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.5.3
 	go.uber.org/goleak v1.2.1
-	golang.org/x/crypto v0.11.0
+	golang.org/x/crypto v0.12.0
 	golang.org/x/exp v0.0.0-20230418202329-0354be287a23
 	golang.org/x/oauth2 v0.11.0
 	golang.org/x/sync v0.3.0
-	google.golang.org/api v0.135.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230726155614-23370e0ffb3e
+	google.golang.org/api v0.136.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230807174057-1744710a1577
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.31.0
 )
 
 require (
-	cloud.google.com/go v0.110.4 // indirect
-	cloud.google.com/go/compute v1.20.1 // indirect
+	cloud.google.com/go v0.110.6 // indirect
+	cloud.google.com/go/compute v1.23.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
-	cloud.google.com/go/iam v1.1.0 // indirect
+	cloud.google.com/go/iam v1.1.1 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/AthenZ/athenz v1.10.39 // indirect
@@ -277,14 +277,14 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.14.0 // indirect
-	golang.org/x/sys v0.10.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
 	golang.org/x/term v0.8.0 // indirect
-	golang.org/x/text v0.11.0 // indirect
+	golang.org/x/text v0.12.0 // indirect
 	golang.org/x/tools v0.9.3 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20230706204954-ccb25ca9f130 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20230706204954-ccb25ca9f130 // indirect
+	google.golang.org/genproto v0.0.0-20230803162519-f966b187b2e5 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20230803162519-f966b187b2e5 // indirect
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/jcmturner/aescts.v1 v1.0.1 // indirect
