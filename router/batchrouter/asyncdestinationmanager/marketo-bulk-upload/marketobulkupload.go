@@ -367,16 +367,15 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		uploadResponse = common.AsyncUploadOutput{
 			AbortJobIDs:   abortedJobIDs,
 			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
-			FailedReason:  `Jobs flowed over the prescribed limit`,
 			AbortReason:   string(bodyBytes),
 			AbortCount:    len(importingJobIDs),
 			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID: destinationID,
 		}
 		if errorMessageFromTransformer != "" {
-			uploadResponse.FailedReason = `{"error":"` + fmt.Sprintf("%s", errorMessageFromTransformer) + `"}`
+			uploadResponse.FailedReason = errorMessageFromTransformer
 		} else {
-			uploadResponse.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
+			uploadResponse.FailedReason = `Jobs flowed over the prescribed limit`
 
 		}
 	default:
