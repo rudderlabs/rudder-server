@@ -1,6 +1,8 @@
 package logfield
 
 import (
+	"sync"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
@@ -59,32 +61,46 @@ var (
 	}
 )
 
-func NewLogger(component string, l logger.Logger) *Logger {
-	return &Logger{component: component, logger: l}
+func NewLogger(component string, l logger.Logger) Logger {
+	return Logger{component: component, logger: l}
 }
 
 type Logger struct {
 	component string
 	logger    logger.Logger
+	once      sync.Once
+}
+
+func (l *Logger) init() {
+	l.once.Do(func() {
+		if l.logger == nil {
+			l.logger = logger.NOP
+		}
+	})
 }
 
 func (l *Logger) Infow(msg string, kvs ...KeyValue) {
+	l.init()
 	l.logger.Infow(msg, l.keyAndValues(kvs)...)
 }
 
 func (l *Logger) Debugw(msg string, kvs ...KeyValue) {
+	l.init()
 	l.logger.Debugw(msg, l.keyAndValues(kvs)...)
 }
 
 func (l *Logger) Errorw(msg string, kvs ...KeyValue) {
+	l.init()
 	l.logger.Errorw(msg, l.keyAndValues(kvs)...)
 }
 
 func (l *Logger) Warnw(msg string, kvs ...KeyValue) {
+	l.init()
 	l.logger.Warnw(msg, l.keyAndValues(kvs)...)
 }
 
 func (l *Logger) Fatalw(msg string, kvs ...KeyValue) {
+	l.init()
 	l.logger.Fatalw(msg, l.keyAndValues(kvs)...)
 }
 

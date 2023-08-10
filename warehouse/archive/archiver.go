@@ -65,7 +65,7 @@ type uploadRecord struct {
 type Archiver struct {
 	DB          *sql.DB
 	Stats       stats.Stats
-	Logger      *lf.Logger
+	Logger      lf.Logger
 	FileManager filemanager.Factory
 	Multitenant *multitenant.Manager
 }
