@@ -747,7 +747,7 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 		tablePrefix: tablePrefix,
 		JobMaxAge: func() time.Duration {
 			return config.GetDuration(
-				fmt.Sprintf("JobsDB.%s.jobMaxAge", tablePrefix),
+				"JobsDB.jobMaxAge",
 				720,
 				time.Hour,
 			)
@@ -812,6 +812,12 @@ func (jd *HandleT) init() {
 	if jd.TriggerJobCleanUp == nil {
 		jd.TriggerJobCleanUp = func() <-chan time.Time {
 			return time.After(jobCleanupFrequency)
+		}
+	}
+
+	if jd.JobMaxAge == nil {
+		jd.JobMaxAge = func() time.Duration {
+			return config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
 		}
 	}
 

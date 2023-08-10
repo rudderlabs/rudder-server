@@ -142,6 +142,7 @@ func (a *archiver) Start() error {
 				w.config.eventsLimit = a.config.eventsLimit
 				w.config.minSleep = a.config.minWorkerSleep
 				w.config.uploadFrequency = a.config.uploadFrequency
+				w.config.jobsdbMaxRetries = a.config.jobsdbMaxRetries
 
 				queryParams := &jobsdb.GetQueryParamsT{
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "source_id", Value: sourceID}},
