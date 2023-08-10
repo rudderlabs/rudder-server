@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -208,6 +209,11 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithJobMaxAge(
+			func() time.Duration {
+				return config.GetDuration("archival.jobRetention", 24, time.Hour)
+			},
+		),
 	)
 	defer archivalDB.Close()
 

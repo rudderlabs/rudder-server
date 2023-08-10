@@ -491,7 +491,7 @@ type HandleT struct {
 	refreshDSTimeout time.Duration
 
 	TriggerJobCleanUp func() <-chan time.Time
-	JobMaxAge         time.Duration
+	JobMaxAge         func() time.Duration
 
 	lifecycle struct {
 		mu      sync.Mutex
@@ -537,7 +537,6 @@ func (jd *HandleT) registerBackUpSettings() {
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
 	config.RegisterDurationConfigVariable(10, &jd.refreshDSTimeout, true, time.Minute, "JobsDB.refreshDS.timeout")
-	config.RegisterDurationConfigVariable(720, &jd.JobMaxAge, false, time.Hour, "JobsDB.jobMaxAge")
 	config.RegisterDurationConfigVariable(10, &jd.migrateDSTimeout, true, time.Minute, "JobsDB.migrateDS.timeout")
 
 	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
@@ -724,6 +723,12 @@ func WithFileUploaderProvider(fileUploaderProvider fileuploader.Provider) OptsFu
 	}
 }
 
+func WithJobMaxAge(maxAgeFunc func() time.Duration) OptsFunc {
+	return func(jd *HandleT) {
+		jd.JobMaxAge = maxAgeFunc
+	}
+}
+
 func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
 	return newOwnerType(Read, tablePrefix, opts...)
 }
@@ -740,6 +745,13 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 	j := &HandleT{
 		ownerType:   ownerType,
 		tablePrefix: tablePrefix,
+		JobMaxAge: func() time.Duration {
+			return config.GetDuration(
+				fmt.Sprintf("JobsDB.%s.jobMaxAge", tablePrefix),
+				720,
+				time.Hour,
+			)
+		},
 	}
 
 	for _, fn := range opts {
