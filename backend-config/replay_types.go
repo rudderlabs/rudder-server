@@ -23,6 +23,7 @@ func (config *ConfigT) ApplyReplaySources() {
 			}
 			newSource := *s
 			newSource.ID = id
+			newSource.OriginalID = s.ID
 			newSource.WriteKey = id
 			newSource.EventSchemasEnabled = false
 			newSource.Config = lo.OmitByKeys(newSource.Config, []string{"eventUpload"}) // no event uploads for replay sources for now

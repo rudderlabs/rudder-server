@@ -59,6 +59,7 @@ type DestinationT struct {
 
 type SourceT struct {
 	ID                         string
+	OriginalID                 string
 	Name                       string
 	SourceDefinition           SourceDefinitionT
 	Config                     map[string]interface{}
