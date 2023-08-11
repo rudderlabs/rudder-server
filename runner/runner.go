@@ -47,7 +47,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
-	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -339,8 +338,6 @@ func runAllInit() {
 	jobsdb.Init2()
 	warehouse.Init()
 	warehouse.Init4()
-	warehouse.Init6()
-	warehousearchiver.Init()
 	validations.Init()
 	webhook.Init()
 	asyncdestinationmanager.Init()

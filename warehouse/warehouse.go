@@ -58,13 +58,11 @@ var (
 	notifier                            pgnotifier.PGNotifier
 	tenantManager                       *multitenant.Manager
 	controlPlaneClient                  *controlplane.Client
-	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	lastProcessedMarkerMap              map[string]int64
 	lastProcessedMarkerExp              = expvar.NewMap("lastProcessedMarkerMap")
 	lastProcessedMarkerMapLock          sync.RWMutex
 	warehouseMode                       string
-	maxStagingFileReadBufferCapacityInK int
 	bcManager                           *backendConfigManager
 	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
 	triggerUploadsMapLock               sync.RWMutex
@@ -107,7 +105,6 @@ func Init4() {
 func loadConfig() {
 	// Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
-	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	lastProcessedMarkerMap = map[string]int64{}
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
@@ -118,7 +115,6 @@ func loadConfig() {
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	triggerUploadsMap = map[string]bool{}
-	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
 	runningMode = config.GetString("Warehouse.runningMode", "")
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
@@ -126,23 +122,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-}
-
-func getDestinationFromSlaveConnectionMap(destinationId, sourceId string) (model.Warehouse, error) {
-	if destinationId == "" || sourceId == "" {
-		return model.Warehouse{}, errors.New("invalid Parameters")
-	}
-	sourceMap, ok := bcManager.ConnectionSourcesMap(destinationId)
-	if !ok {
-		return model.Warehouse{}, errors.New("invalid Destination Id")
-	}
-
-	conn, ok := sourceMap[sourceId]
-	if !ok {
-		return model.Warehouse{}, errors.New("invalid Source Id")
-	}
-
-	return conn, nil
 }
 
 func getUploadFreqInS(syncFrequency string) int64 {
@@ -862,7 +841,9 @@ func Start(ctx context.Context, app app.App) error {
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return setupSlave(gCtx)
+			cm := newConstraintsManager(config.Default)
+			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm)
+			return slave.setupSlave(gCtx)
 		}))
 	}
 
@@ -887,15 +868,15 @@ func Start(ctx context.Context, app app.App) error {
 			return monitorDestRouters(gCtx)
 		}))
 
-		archiver := &archive.Archiver{
-			DB:          dbHandle,
-			Stats:       stats.Default,
-			Logger:      pkgLogger.Child("archiver"),
-			FileManager: filemanager.New,
-			Multitenant: tenantManager,
-		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			archive.CronArchiver(gCtx, archiver)
+			archive.CronArchiver(gCtx, archive.New(
+				config.Default,
+				pkgLogger,
+				stats.Default,
+				dbHandle,
+				filemanager.New,
+				tenantManager,
+			))
 			return nil
 		}))
 
