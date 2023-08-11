@@ -12,7 +12,7 @@ import (
 
 // RequestHandler interface for abstracting out server-side import request processing and rest of the calls
 type RequestHandler interface {
-	ProcessRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, si *gwtypes.AuthRequestContext) string
+	ProcessRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, arctx *gwtypes.AuthRequestContext) string
 }
 
 // webRequestT acts as a basic unit for web requests.
