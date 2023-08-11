@@ -887,15 +887,15 @@ func Start(ctx context.Context, app app.App) error {
 			return monitorDestRouters(gCtx)
 		}))
 
-		archiver := &archive.Archiver{
-			DB:          dbHandle,
-			Stats:       stats.Default,
-			Logger:      pkgLogger.Child("archiver"),
-			FileManager: filemanager.New,
-			Multitenant: tenantManager,
-		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			archive.CronArchiver(gCtx, archiver)
+			archive.CronArchiver(gCtx, archive.New(
+				config.Default,
+				pkgLogger,
+				stats.Default,
+				dbHandle,
+				filemanager.New,
+				tenantManager,
+			))
 			return nil
 		}))
 

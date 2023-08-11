@@ -27,22 +27,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	archiveUploadRelatedRecords bool
-	uploadsArchivalTimeInDays   int
-	archiverTickerTime          time.Duration
-)
-
-func Init() {
-	loadConfigArchiver()
-}
-
-func loadConfigArchiver() {
-	config.RegisterBoolConfigVariable(true, &archiveUploadRelatedRecords, true, "Warehouse.archiveUploadRelatedRecords")
-	config.RegisterIntConfigVariable(5, &uploadsArchivalTimeInDays, true, 1, "Warehouse.uploadsArchivalTimeInDays")
-	config.RegisterDurationConfigVariable(360, &archiverTickerTime, true, time.Minute, []string{"Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin"}...) // default 6 hours
-}
-
 type backupRecordsArgs struct {
 	tableName      string
 	tableFilterSQL string
@@ -64,21 +48,58 @@ type uploadRecord struct {
 }
 
 type Archiver struct {
-	DB          *sql.DB
-	Stats       stats.Stats
-	Logger      logger.Logger
-	FileManager filemanager.Factory
-	Multitenant *multitenant.Manager
+	db            *sql.DB
+	stats         stats.Stats
+	log           logger.Logger
+	conf          *config.Config
+	fileManager   filemanager.Factory
+	tenantManager *multitenant.Manager
+
+	config struct {
+		archiveUploadRelatedRecords bool
+		uploadsArchivalTimeInDays   int
+		archiverTickerTime          time.Duration
+		backupRowsBatchSize         int
+	}
+
+	archiveFailedStat stats.Measurement
+}
+
+func New(
+	conf *config.Config,
+	log logger.Logger,
+	stat stats.Stats,
+	db *sql.DB,
+	fileManager filemanager.Factory,
+	tenantManager *multitenant.Manager,
+) *Archiver {
+	a := &Archiver{
+		conf:          conf,
+		log:           log.Child("archiver"),
+		stats:         stat,
+		db:            db,
+		fileManager:   fileManager,
+		tenantManager: tenantManager,
+	}
+
+	conf.RegisterBoolConfigVariable(true, &a.config.archiveUploadRelatedRecords, true, "Warehouse.archiveUploadRelatedRecords")
+	conf.RegisterIntConfigVariable(5, &a.config.uploadsArchivalTimeInDays, true, 1, "Warehouse.uploadsArchivalTimeInDays")
+	conf.RegisterIntConfigVariable(100, &a.config.backupRowsBatchSize, true, 1, "Warehouse.Archiver.backupRowsBatchSize")
+	conf.RegisterDurationConfigVariable(360, &a.config.archiverTickerTime, true, time.Minute, []string{"Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin"}...) // default 6 hours
+
+	a.archiveFailedStat = a.stats.NewStat("warehouse.archiver.archiveFailed", stats.CountType)
+
+	return a
 }
 
 func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (backupLocation string, err error) {
-	a.Logger.Infof("[Archiver]: Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,",
+	a.log.Infof("[Archiver]: Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,",
 		args.uploadID, args.sourceID, args.destID, args.tableName,
 	)
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		a.Logger.Errorf("[Archiver]: Failed to create tmp DIR")
+		a.log.Errorf("[Archiver]: Failed to create tmp DIR")
 		return
 	}
 	backupPathDirName := "/" + misc.RudderArchives + "/"
@@ -94,13 +115,13 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	)
 	defer misc.RemoveFilePaths(path)
 
-	fManager, err := a.FileManager(&filemanager.Settings{
-		Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanagerutil.GetProviderConfigForBackupsFromEnv(ctx, config.Default),
+	fManager, err := a.fileManager(&filemanager.Settings{
+		Provider: a.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+		Config:   filemanagerutil.GetProviderConfigForBackupsFromEnv(ctx, a.conf),
 	})
 	if err != nil {
 		err = fmt.Errorf("error in creating a file manager for:%s. Error: %w",
-			config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err,
+			a.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err,
 		)
 		return
 	}
@@ -127,15 +148,15 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 		tablearchiver.OffsetAction,
 	)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
-		DbHandle:      a.DB,
-		Pagination:    config.GetInt("Warehouse.Archiver.backupRowsBatchSize", 100),
+		DbHandle:      a.db,
+		Pagination:    a.config.backupRowsBatchSize,
 		QueryTemplate: tmpl,
 		OutputPath:    path,
 		FileManager:   fManager,
 	}
 
 	backupLocation, err = tableJSONArchiver.Do()
-	a.Logger.Infof(`[Archiver]: Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`,
+	a.log.Infof(`[Archiver]: Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`,
 		args.uploadID, args.sourceID, args.destID, args.tableName,
 	)
 
@@ -143,7 +164,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 }
 
 func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string) error {
-	fManager, err := a.FileManager(&filemanager.Settings{
+	fManager, err := a.fileManager(&filemanager.Settings{
 		Provider: warehouseutils.S3,
 		Config:   misc.GetRudderObjectStorageConfig(""),
 	})
@@ -154,7 +175,7 @@ func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string)
 
 	err = fManager.Delete(ctx, locations)
 	if err != nil {
-		a.Logger.Errorf("[Archiver]: Error in deleting objects in Rudder S3: %v", err)
+		a.log.Errorf("[Archiver]: Error in deleting objects in Rudder S3: %v", err)
 	}
 	return err
 }
@@ -164,7 +185,7 @@ func (*Archiver) usedRudderStorage(metadata []byte) bool {
 }
 
 func (a *Archiver) Do(ctx context.Context) error {
-	a.Logger.Infof(`[Archiver]: Started archiving for warehouse`)
+	a.log.Infof(`[Archiver]: Started archiving for warehouse`)
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  id,
@@ -196,21 +217,21 @@ func (a *Archiver) Do(ctx context.Context) error {
 
 	// empty workspace id should be excluded as a safety measure
 	skipWorkspaceIDs := []string{""}
-	skipWorkspaceIDs = append(skipWorkspaceIDs, a.Multitenant.DegradedWorkspaces()...)
+	skipWorkspaceIDs = append(skipWorkspaceIDs, a.tenantManager.DegradedWorkspaces()...)
 
-	rows, err := a.DB.QueryContext(ctx, sqlStatement,
-		fmt.Sprintf("%d DAY", uploadsArchivalTimeInDays),
+	rows, err := a.db.QueryContext(ctx, sqlStatement,
+		fmt.Sprintf("%d DAY", a.config.uploadsArchivalTimeInDays),
 		model.ExportedData,
 		pq.Array(skipWorkspaceIDs),
 	)
 	defer func() {
 		if err != nil {
-			a.Logger.Errorf(`[Archiver]: Error occurred while archiving for warehouse uploads with error: %v`, err)
-			a.Stats.NewStat("warehouse.archiver.archiveFailed", stats.CountType).Increment()
+			a.log.Errorf(`[Archiver]: Error occurred while archiving for warehouse uploads with error: %v`, err)
+			a.archiveFailedStat.Increment()
 		}
 	}()
 	if err == sql.ErrNoRows {
-		a.Logger.Debugf(`[Archiver]: No uploads found for archival. Query: %s`, sqlStatement)
+		a.log.Debugf(`[Archiver]: No uploads found for archival. Query: %s`, sqlStatement)
 		return nil
 	}
 	if err != nil {
@@ -232,7 +253,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 			&u.workspaceID,
 		)
 		if err != nil {
-			a.Logger.Errorf(`[Archiver]: Error scanning wh_upload for archival. Error: %v`, err)
+			a.log.Errorf(`[Archiver]: Error scanning wh_upload for archival. Error: %v`, err)
 			continue
 		}
 		uploadsToArchive = append(uploadsToArchive, &u)
@@ -246,9 +267,9 @@ func (a *Archiver) Do(ctx context.Context) error {
 
 	var archivedUploads int
 	for _, u := range uploadsToArchive {
-		txn, err := a.DB.BeginTx(ctx, &sql.TxOptions{})
+		txn, err := a.db.BeginTx(ctx, &sql.TxOptions{})
 		if err != nil {
-			a.Logger.Errorf(`[Archiver]: Error creating txn in archiveUploadFiles. Error: %v`, err)
+			a.log.Errorf(`[Archiver]: Error creating txn in archiveUploadFiles. Error: %v`, err)
 			continue
 		}
 
@@ -257,7 +278,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 		// archive staging files
 		stagingFileIDs, stagingFileLocations, err := a.getStagingFilesData(ctx, txn, u)
 		if err != nil {
-			a.Logger.Errorf(`[Archiver]: Error getting staging files data for upload %d: %v`, u.uploadID, err)
+			a.log.Errorf(`[Archiver]: Error getting staging files data for upload %d: %v`, u.uploadID, err)
 			_ = txn.Rollback()
 			continue
 		}
@@ -274,17 +295,17 @@ func (a *Archiver) Do(ctx context.Context) error {
 					uploadID:       u.uploadID,
 				})
 				if err != nil {
-					a.Logger.Errorf(`[Archiver]: Error backing up staging files for upload: %d: %v`, u.uploadID, err)
+					a.log.Errorf(`[Archiver]: Error backing up staging files for upload: %d: %v`, u.uploadID, err)
 					_ = txn.Rollback()
 					continue
 				}
 			} else {
-				a.Logger.Debugf(`[Archiver]: Object storage not configured to archive upload related staging file records.`+
+				a.log.Debugf(`[Archiver]: Object storage not configured to archive upload related staging file records.`+
 					`Deleting the ones that need to be archived for upload: %d`, u.uploadID)
 
 				err = a.deleteFilesInStorage(ctx, stagingFileLocations)
 				if err != nil {
-					a.Logger.Errorf(`[Archiver]: Error deleting staging files from Rudder S3. Error: %v`, err)
+					a.log.Errorf(`[Archiver]: Error deleting staging files from Rudder S3. Error: %v`, err)
 					_ = txn.Rollback()
 					continue
 				}
@@ -298,14 +319,14 @@ func (a *Archiver) Do(ctx context.Context) error {
 			)
 			_, err = txn.ExecContext(ctx, stmt, pq.Array(stagingFileIDs))
 			if err != nil {
-				a.Logger.Errorf(`[Archiver]: Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+				a.log.Errorf(`[Archiver]: Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 				_ = txn.Rollback()
 				continue
 			}
 
 			// delete load file records
 			if err := a.deleteLoadFileRecords(ctx, txn, stagingFileIDs, hasUsedRudderStorage); err != nil {
-				a.Logger.Errorf("[Archiver]: Error while deleting load file records for upload %d: %v", u.uploadID, err)
+				a.log.Errorf("[Archiver]: Error while deleting load file records for upload %d: %v", u.uploadID, err)
 				_ = txn.Rollback()
 				continue
 			}
@@ -321,31 +342,31 @@ func (a *Archiver) Do(ctx context.Context) error {
 		)
 		_, err = txn.ExecContext(ctx, stmt, u.uploadMetdata, u.uploadID)
 		if err != nil {
-			a.Logger.Errorf(`[Archiver]: Error running txn while archiving upload files. Query: %s Error: %v`, stmt, err)
+			a.log.Errorf(`[Archiver]: Error running txn while archiving upload files. Query: %s Error: %v`, stmt, err)
 			_ = txn.Rollback()
 			continue
 		}
 
 		if err = txn.Commit(); err != nil {
-			a.Logger.Errorf(`[Archiver]: Error committing txn while archiving upload files. Error: %v`, err)
+			a.log.Errorf(`[Archiver]: Error committing txn while archiving upload files. Error: %v`, err)
 			_ = txn.Rollback()
 			continue
 		}
 
 		archivedUploads++
 		if storedStagingFilesLocation != "" {
-			a.Logger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`,
+			a.log.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`,
 				u.uploadID, storedStagingFilesLocation,
 			)
 		}
 
-		a.Stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, stats.Tags{
+		a.stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, stats.Tags{
 			"destination": u.destID,
 			"source":      u.sourceID,
 		}).Increment()
 	}
 
-	a.Logger.Infof(`[Archiver]: Successfully archived %d uploads`, archivedUploads)
+	a.log.Infof(`[Archiver]: Successfully archived %d uploads`, archivedUploads)
 
 	return nil
 }
