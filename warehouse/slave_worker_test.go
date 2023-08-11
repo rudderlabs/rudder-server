@@ -74,14 +74,12 @@ func TestSlaveWorker(t *testing.T) {
 		schemaMap := stagingSchema(t)
 
 		t.Run("success", func(t *testing.T) {
-			publishCh := make(chan *pgnotifier.ClaimResponse)
-			defer close(publishCh)
+			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
-				publishCh: publishCh,
+				subscribeCh: subscribeCh,
 			}
-
-			workerIdx := 1
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
@@ -126,11 +124,14 @@ func TestSlaveWorker(t *testing.T) {
 				JobType:   "upload",
 			}
 
+			claimedJobDone := make(chan struct{})
 			go func() {
+				defer close(claimedJobDone)
+
 				slaveWorker.processClaimedUploadJob(ctx, claim)
 			}()
 
-			response := <-publishCh
+			response := <-subscribeCh
 			require.NoError(t, response.Err)
 
 			var uploadPayload payload
@@ -165,17 +166,17 @@ func TestSlaveWorker(t *testing.T) {
 				require.Equal(t, output.DestinationRevisionID, p.DestinationRevisionID)
 				require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
 			}
+
+			<-claimedJobDone
 		})
 
 		t.Run("clickhouse bool", func(t *testing.T) {
-			publishCh := make(chan *pgnotifier.ClaimResponse)
-			defer close(publishCh)
+			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
-				publishCh: publishCh,
+				subscribeCh: subscribeCh,
 			}
-
-			workerIdx := 1
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
@@ -220,11 +221,14 @@ func TestSlaveWorker(t *testing.T) {
 				JobType:   "upload",
 			}
 
+			claimedJobDone := make(chan struct{})
 			go func() {
+				defer close(claimedJobDone)
+
 				slaveWorker.processClaimedUploadJob(ctx, claim)
 			}()
 
-			response := <-publishCh
+			response := <-subscribeCh
 			require.NoError(t, response.Err)
 
 			var uploadPayload payload
@@ -283,17 +287,17 @@ func TestSlaveWorker(t *testing.T) {
 				}
 				require.NoError(t, gzReader.Close())
 			}
+
+			<-claimedJobDone
 		})
 
 		t.Run("schema limit exceeded", func(t *testing.T) {
-			publishCh := make(chan *pgnotifier.ClaimResponse)
-			defer close(publishCh)
+			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
-				publishCh: publishCh,
+				subscribeCh: subscribeCh,
 			}
-
-			workerIdx := 1
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
@@ -342,23 +346,26 @@ func TestSlaveWorker(t *testing.T) {
 				JobType:   "upload",
 			}
 
+			claimedJobDone := make(chan struct{})
 			go func() {
+				defer close(claimedJobDone)
+
 				slaveWorker.processClaimedUploadJob(ctx, claim)
 			}()
 
-			response := <-publishCh
+			response := <-subscribeCh
 			require.EqualError(t, response.Err, "staging file schema limit exceeded for stagingFileID: 1, actualCount: 21")
+
+			<-claimedJobDone
 		})
 
 		t.Run("discards", func(t *testing.T) {
-			publishCh := make(chan *pgnotifier.ClaimResponse)
-			defer close(publishCh)
+			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
-				publishCh: publishCh,
+				subscribeCh: subscribeCh,
 			}
-
-			workerIdx := 1
 
 			slaveWorker := newSlaveWorker(
 				config.Default,
@@ -415,11 +422,14 @@ func TestSlaveWorker(t *testing.T) {
 				JobType:   "upload",
 			}
 
+			claimedJobDone := make(chan struct{})
 			go func() {
+				defer close(claimedJobDone)
+
 				slaveWorker.processClaimedUploadJob(ctx, claim)
 			}()
 
-			response := <-publishCh
+			response := <-subscribeCh
 			require.NoError(t, response.Err)
 
 			var uploadPayload payload
@@ -435,6 +445,8 @@ func TestSlaveWorker(t *testing.T) {
 			require.Equal(t, discardsOutput.StagingFileID, p.StagingFileID)
 			require.Equal(t, discardsOutput.DestinationRevisionID, p.DestinationRevisionID)
 			require.Equal(t, discardsOutput.UseRudderStorage, p.StagingUseRudderStorage)
+
+			<-claimedJobDone
 		})
 	})
 
@@ -507,18 +519,23 @@ func TestSlaveWorker(t *testing.T) {
 			BackendConfig: mockBackendConfig,
 		}
 		bcm := newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP)
+
+		setupCh := make(chan struct{})
 		go func() {
+			defer close(setupCh)
+
 			bcm.Start(ctx)
 		}()
 
 		<-bcm.initialConfigFetched
+		<-setupCh
 
 		t.Run("success", func(t *testing.T) {
-			publishCh := make(chan *pgnotifier.ClaimResponse)
-			defer close(publishCh)
+			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
-				publishCh: publishCh,
+				subscribeCh: subscribeCh,
 			}
 
 			c := config.New()
@@ -556,11 +573,14 @@ func TestSlaveWorker(t *testing.T) {
 				JobType:   "async_job",
 			}
 
+			claimedJobDone := make(chan struct{})
 			go func() {
+				defer close(claimedJobDone)
+
 				slaveWorker.processClaimedAsyncJob(ctx, claim)
 			}()
 
-			response := <-publishCh
+			response := <-subscribeCh
 			require.NoError(t, response.Err)
 
 			var asyncResult asyncJobRunResult
@@ -569,14 +589,16 @@ func TestSlaveWorker(t *testing.T) {
 
 			require.Equal(t, "1", asyncResult.ID)
 			require.True(t, asyncResult.Result)
+
+			<-claimedJobDone
 		})
 
 		t.Run("invalid configurations", func(t *testing.T) {
-			publishCh := make(chan *pgnotifier.ClaimResponse)
-			defer close(publishCh)
+			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
-				publishCh: publishCh,
+				subscribeCh: subscribeCh,
 			}
 
 			c := config.New()
@@ -654,12 +676,17 @@ func TestSlaveWorker(t *testing.T) {
 						JobType:   "async_job",
 					}
 
+					claimedJobDone := make(chan struct{})
 					go func() {
+						defer close(claimedJobDone)
+
 						slaveWorker.processClaimedAsyncJob(ctx, claim)
 					}()
 
-					response := <-publishCh
+					response := <-subscribeCh
 					require.EqualError(t, response.Err, tc.expectedError.Error())
+
+					<-claimedJobDone
 				})
 			}
 		})

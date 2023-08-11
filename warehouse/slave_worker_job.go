@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"go.uber.org/atomic"
@@ -63,17 +65,11 @@ func (p *payload) columnName(columnName string) string {
 
 // sortedColumnMapForAllTables Sort columns per table to maintain same order in load file (needed in case of csv load file)
 func (p *payload) sortedColumnMapForAllTables() map[string][]string {
-	sortedTableColumnMap := make(map[string][]string)
-
-	for tableName, columnMap := range p.UploadSchema {
-		sortedTableColumnMap[tableName] = []string{}
-		for k := range columnMap {
-			sortedTableColumnMap[tableName] = append(sortedTableColumnMap[tableName], k)
-		}
-		sort.Strings(sortedTableColumnMap[tableName])
-	}
-
-	return sortedTableColumnMap
+	return lo.MapValues(p.UploadSchema, func(value model.TableSchema, key string) []string {
+		columns := lo.Keys(value)
+		sort.Strings(columns)
+		return columns
+	})
 }
 
 func (p *payload) fileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {

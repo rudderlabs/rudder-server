@@ -86,7 +86,7 @@ func newSlaveWorker(
 
 	tags := stats.Tags{
 		"module":   moduleName,
-		"workerId": fmt.Sprintf("%d", workerIdx),
+		"workerId": strconv.Itoa(workerIdx),
 	}
 	s.stats.workerIdleTime = s.statsFactory.NewTaggedStat("worker_idle_time", stats.TimerType, tags)
 	s.stats.workerClaimProcessingTime = s.statsFactory.NewTaggedStat("worker_claim_processing_time", stats.TimerType, tags)
@@ -98,30 +98,36 @@ func newSlaveWorker(
 func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan pgnotifier.Claim, slaveID string) {
 	workerIdleTimeStart := time.Now()
 
-	for claimedJob := range notificationChan {
-		sw.stats.workerIdleTime.Since(workerIdleTimeStart)
+	for {
+		select {
+		case <-ctx.Done():
+			sw.log.Infof("[WH]: Slave worker-%d-%s is shutting down", sw.workerIdx, slaveID)
+			return
+		case claimedJob := <-notificationChan:
+			sw.stats.workerIdleTime.Since(workerIdleTimeStart)
 
-		sw.log.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s",
-			claimedJob.ID,
-			sw.workerIdx,
-			slaveID,
-			claimedJob.JobType,
-		)
+			sw.log.Debugf("[WH]: Successfully claimed job:%d by slave worker-%d-%s & job type %s",
+				claimedJob.ID,
+				sw.workerIdx,
+				slaveID,
+				claimedJob.JobType,
+			)
 
-		switch claimedJob.JobType {
-		case jobs.AsyncJobType:
-			sw.processClaimedAsyncJob(ctx, claimedJob)
-		default:
-			sw.processClaimedUploadJob(ctx, claimedJob)
+			switch claimedJob.JobType {
+			case jobs.AsyncJobType:
+				sw.processClaimedAsyncJob(ctx, claimedJob)
+			default:
+				sw.processClaimedUploadJob(ctx, claimedJob)
+			}
+
+			sw.log.Infof("[WH]: Successfully processed job:%d by slave worker-%d-%s",
+				claimedJob.ID,
+				sw.workerIdx,
+				slaveID,
+			)
+
+			workerIdleTimeStart = time.Now()
 		}
-
-		sw.log.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v",
-			claimedJob.ID,
-			sw.workerIdx,
-			slaveID,
-		)
-
-		workerIdleTimeStart = time.Now()
 	}
 }
 
@@ -285,7 +291,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 			if job.DestinationType == warehouseutils.CLICKHOUSE {
 				switch columnType {
-				case "boolean":
+				case string(model.BooleanDataType):
 					newColumnVal := 0
 
 					if k, ok := columnVal.(bool); ok {
@@ -295,7 +301,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 					}
 
 					columnVal = newColumnVal
-				case "array(boolean)":
+				case string(model.ArrayOfBooleanDatatype):
 					if boolValue, ok := columnVal.([]interface{}); ok {
 						newColumnVal := make([]interface{}, len(boolValue))
 

@@ -30,15 +30,18 @@ import (
 
 func TestSlaveJobPayload(t *testing.T) {
 	t.Run("pickup staging configuration", func(t *testing.T) {
-		inputs := []struct {
+		testCases := []struct {
+			name     string
 			job      *payload
 			expected bool
 		}{
 			{
+				name:     "empty payload",
 				job:      &payload{},
 				expected: false,
 			},
 			{
+				name: "same staging and destination revision id",
 				job: &payload{
 					StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 					DestinationRevisionID:        "1liYatjkkCEVkEMYUmSWOE9eZ4n",
@@ -46,6 +49,7 @@ func TestSlaveJobPayload(t *testing.T) {
 				expected: false,
 			},
 			{
+				name: "different staging and destination revision id",
 				job: &payload{
 					StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 					DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
@@ -53,6 +57,7 @@ func TestSlaveJobPayload(t *testing.T) {
 				expected: false,
 			},
 			{
+				name: "different staging and destination revision id with staging config",
 				job: &payload{
 					StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 					DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
@@ -61,9 +66,15 @@ func TestSlaveJobPayload(t *testing.T) {
 				expected: true,
 			},
 		}
-		for _, input := range inputs {
-			got := input.job.pickupStagingConfiguration()
-			require.Equal(t, got, input.expected)
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				require.Equal(t, tc.job.pickupStagingConfiguration(), tc.expected)
+			})
 		}
 	})
 

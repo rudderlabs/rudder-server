@@ -13,24 +13,21 @@ import (
 
 func TestConstraintsManager(t *testing.T) {
 	testCases := []struct {
+		name            string
 		destinationType string
 		brEvent         *BatchRouterEvent
 		columnName      string
 		expected        *constraintsViolation
 	}{
-		{warehouseutils.RS, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.POSTGRES, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.CLICKHOUSE, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.MSSQL, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.AzureSynapse, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.DELTALAKE, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.S3Datalake, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.GCSDatalake, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.AzureDatalake, &BatchRouterEvent{}, "id", &constraintsViolation{}},
-		{warehouseutils.BQ, &BatchRouterEvent{}, "id", &constraintsViolation{}},
 		{
-			warehouseutils.BQ,
-			&BatchRouterEvent{
+			name:            "Unsupported destination type",
+			destinationType: warehouseutils.RS,
+			expected:        &constraintsViolation{},
+		},
+		{
+			name:            "Violates index constraint",
+			destinationType: warehouseutils.BQ,
+			brEvent: &BatchRouterEvent{
 				Metadata: Metadata{
 					Table: "rudder_identity_merge_rules",
 					Columns: model.TableSchema{
@@ -42,15 +39,17 @@ func TestConstraintsManager(t *testing.T) {
 					"merge_property_1_type":  "xdopqvvuprdwzekiuscckloityeitccatjcjzloyoftujlgzblytbdgnyarxtbwsbtioqlmawfnnrkemlzulxjzvbfpgkjwqdnfjfkodjmanubkpxsbyvzpkonfisutvkyeqlckesjafsdfjzjoayosxjkinwemicmusrwlcwkmzrwxysjxstqcdehetvscihxqrbieogqijsyvqwidupjfnvhvibqnqlvwujwmonuljejjcpvyedcxdediqviyevaiooeyhcztplpakprbparizdjmrnwuajzyfdejhseym",
 					"merge_property_1_value": "xdequlyaotmwomivhsngqfiokpvdzvqfbelljpzhqgldgforwnsuuobsilwneviwyeidqyotgddenilpjkfwzecyagyyrgslwppjgdbetcogbtryoozefbwaghpgscdqktwkogsmvuiefmanfckhyuyezxmmwpgxdulvwqowtdoantflxmusglrlvmgdmcyugcijolssywjskrsntrtimyngeppuwlmfnltznzioijmtnyuiiqfbvoyealmaovuqsamfdsndqcotpwvxmdhuwedzsuxxmmnopdebjztinacn",
 				},
-			}, "merge_property_1_value",
-			&constraintsViolation{
+			},
+			columnName: "merge_property_1_value",
+			expected: &constraintsViolation{
 				isViolated:         true,
 				violatedIdentifier: "rudder-discards-",
 			},
 		},
 		{
-			warehouseutils.BQ,
-			&BatchRouterEvent{
+			name:            "Does not violates index constraint",
+			destinationType: warehouseutils.BQ,
+			brEvent: &BatchRouterEvent{
 				Metadata: Metadata{
 					Table: "rudder_identity_merge_rules",
 					Columns: model.TableSchema{
@@ -62,18 +61,16 @@ func TestConstraintsManager(t *testing.T) {
 					"merge_property_1_type":  "uhqoxesrjrdjqrgnyorocsdccjmlsoolufqijertjqxzytnqiqwptahpokhbucbydkxtwamwbgcnphevaktfzfeovzelyzhxmsttgvqkarplokecfngtwoazrtgevraaegduykpcalgwfzgkjcarwf",
 					"merge_property_1_value": "wopubjftfnqapctttpsfassyvbesjypimpmtweoxuifhzcxcigbhwpxkrijqqgbeehgepsplbcguztgdtipsobxoxnrqifrrbaiofkjgxilidrvffnymfqzixlubaipofijtmacswuzrgwwkvatscn",
 				},
-			}, "merge_property_1_value",
-			&constraintsViolation{
-				isViolated:         false,
-				violatedIdentifier: "",
 			},
+			columnName: "merge_property_1_value",
+			expected:   &constraintsViolation{},
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 
-		t.Run(tc.destinationType, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			cm := newConstraintsManager(config.Default)

@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -23,17 +25,17 @@ import (
 )
 
 type mockSlaveNotifier struct {
-	publishCh      chan *pgnotifier.ClaimResponse
-	subscriberCh   chan pgnotifier.Claim
+	subscribeCh    chan *pgnotifier.ClaimResponse
+	publishCh      chan pgnotifier.Claim
 	maintenanceErr error
 }
 
 func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) chan pgnotifier.Claim {
-	return m.subscriberCh
+	return m.publishCh
 }
 
 func (m *mockSlaveNotifier) UpdateClaimedEvent(_ *pgnotifier.Claim, response *pgnotifier.ClaimResponse) {
-	m.publishCh <- response
+	m.subscribeCh <- response
 }
 
 func (m *mockSlaveNotifier) RunMaintenanceWorker(context.Context) error {
@@ -49,7 +51,7 @@ func TestSlave(t *testing.T) {
 	minioResource, err := destination.SetupMINIO(pool, t)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	destConf := map[string]interface{}{
 		"bucketName":       minioResource.BucketName,
@@ -69,14 +71,14 @@ func TestSlave(t *testing.T) {
 
 	schemaMap := stagingSchema(t)
 
-	publishCh := make(chan *pgnotifier.ClaimResponse)
-	subscriberCh := make(chan pgnotifier.Claim)
+	publishCh := make(chan pgnotifier.Claim)
+	subscriberCh := make(chan *pgnotifier.ClaimResponse)
 	defer close(publishCh)
 	defer close(subscriberCh)
 
 	notifier := &mockSlaveNotifier{
-		publishCh:    publishCh,
-		subscriberCh: subscriberCh,
+		publishCh:   publishCh,
+		subscribeCh: subscriberCh,
 	}
 
 	workers := 4
@@ -92,7 +94,10 @@ func TestSlave(t *testing.T) {
 	)
 	slave.config.noOfSlaveWorkerRoutines = workers
 
+	setupDone := make(chan struct{})
 	go func() {
+		defer close(setupDone)
+
 		require.NoError(t, slave.setupSlave(ctx))
 	}()
 
@@ -129,32 +134,41 @@ func TestSlave(t *testing.T) {
 		JobType:   "upload",
 	}
 
-	go func() {
+	g, _ := errgroup.WithContext(ctx)
+	g.Go(func() error {
 		for i := 0; i < workerJobs; i++ {
-			subscriberCh <- claim
+			publishCh <- claim
 		}
-	}()
+		return nil
+	})
+	g.Go(func() error {
+		for i := 0; i < workerJobs; i++ {
+			response := <-subscriberCh
 
-	for i := 0; i < workerJobs; i++ {
-		response := <-publishCh
-		require.NoError(t, response.Err)
+			require.NoError(t, response.Err)
 
-		var uploadPayload payload
-		err = json.Unmarshal(response.Payload, &uploadPayload)
-		require.NoError(t, err)
-		require.Equal(t, uploadPayload.BatchID, claim.BatchID)
-		require.Equal(t, uploadPayload.UploadID, p.UploadID)
-		require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
-		require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)
+			var uploadPayload payload
+			err := json.Unmarshal(response.Payload, &uploadPayload)
+			require.NoError(t, err)
+			require.Equal(t, uploadPayload.BatchID, claim.BatchID)
+			require.Equal(t, uploadPayload.UploadID, p.UploadID)
+			require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
+			require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)
 
-		require.Len(t, uploadPayload.Output, 8)
-		for _, output := range uploadPayload.Output {
-			require.Equal(t, output.TotalRows, 4)
-			require.Equal(t, output.StagingFileID, p.StagingFileID)
-			require.Equal(t, output.DestinationRevisionID, p.DestinationRevisionID)
-			require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
+			require.Len(t, uploadPayload.Output, 8)
+			for _, output := range uploadPayload.Output {
+				require.Equal(t, output.TotalRows, 4)
+				require.Equal(t, output.StagingFileID, p.StagingFileID)
+				require.Equal(t, output.DestinationRevisionID, p.DestinationRevisionID)
+				require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
+			}
 		}
-	}
+		return nil
+	})
+	require.NoError(t, g.Wait())
+
+	cancel()
+	<-setupDone
 }
 
 func uploadFile(t testing.TB, ctx context.Context, destConf map[string]interface{}, filePath string) string {
