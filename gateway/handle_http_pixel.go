@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"time"
 
 	"github.com/tidwall/sjson"
 
@@ -56,7 +55,7 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 			pr.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
 
 			// convert the pixel request(r) to a web request(req)
-			if err := preparePixelPayload(pr, queryParams, reqType); err == nil {
+			if err := gw.preparePixelPayload(pr, queryParams, reqType); err == nil {
 				pw := newPixelWriter() // create a new writer since the pixel is going to be written to the client regardless of the next handler's response
 				next(pw, pr)
 				if pw.status != http.StatusOK {
@@ -77,10 +76,10 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 }
 
 // preparePixelPayload reads a pixel GET request and maps it to a proper payload in the request's body
-func preparePixelPayload(r *http.Request, qp url.Values, reqType string) error {
+func (gw *Handle) preparePixelPayload(r *http.Request, qp url.Values, reqType string) error {
 	// add default fields to body
 	body := []byte(`{"channel": "web","integrations": {"All": true}}`)
-	currentTime := time.Now()
+	currentTime := gw.now()
 	body, _ = sjson.SetBytes(body, "originalTimestamp", currentTime)
 	body, _ = sjson.SetBytes(body, "sentAt", currentTime)
 
