@@ -4,35 +4,11 @@ import (
 	"sync"
 	"time"
 
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
-
-type Payload struct {
-	BatchID                      string
-	UploadID                     int64
-	StagingFileID                int64
-	StagingFileLocation          string
-	UploadSchema                 model.Schema
-	WorkspaceID                  string
-	SourceID                     string
-	SourceName                   string
-	DestinationID                string
-	DestinationName              string
-	DestinationType              string
-	DestinationNamespace         string
-	DestinationRevisionID        string
-	StagingDestinationRevisionID string
-	DestinationConfig            map[string]interface{}
-	StagingDestinationConfig     interface{}
-	UseRudderStorage             bool
-	StagingUseRudderStorage      bool
-	UniqueLoadGenID              string
-	RudderStoragePrefix          string
-	Output                       []uploadResult
-	LoadFilePrefix               string // prefix for the load file name
-	LoadFileType                 string
-}
 
 type LoadFileJob struct {
 	StagingFile                *model.StagingFile
@@ -47,6 +23,20 @@ type LoadFileJob struct {
 type BatchRouterEvent struct {
 	Metadata Metadata `json:"metadata"`
 	Data     Data     `json:"data"`
+}
+
+func (event *BatchRouterEvent) GetColumnInfo(columnName string) (columnInfo warehouseutils.ColumnInfo, ok bool) {
+	columnVal, ok := event.Data[columnName]
+	if !ok {
+		return warehouseutils.ColumnInfo{}, false
+	}
+
+	columnType, ok := event.Metadata.Columns[columnName]
+	if !ok {
+		return warehouseutils.ColumnInfo{}, false
+	}
+
+	return warehouseutils.ColumnInfo{Value: columnVal, Type: columnType}, true
 }
 
 type Metadata struct {
