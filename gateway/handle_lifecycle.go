@@ -112,6 +112,7 @@ func (gw *Handle) Setup(
 	gw.processRequestTime = gw.stats.NewStat("gateway.process_request_time", stats.TimerType)
 	gw.emptyAnonIdHeaderStat = gw.stats.NewStat("gateway.empty_anonymous_id_header", stats.CountType)
 
+	gw.now = time.Now
 	gw.diagnosisTicker = time.NewTicker(gw.conf.diagnosisTickerTime)
 	gw.netHandle = &http.Client{Transport: &http.Transport{}, Timeout: gw.conf.httpTimeout}
 	gw.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, gw.conf.maxDBBatchSize)

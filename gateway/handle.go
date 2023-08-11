@@ -78,6 +78,7 @@ type Handle struct {
 	backgroundWait               func() error
 	userWebRequestWorkers        []*userWebRequestWorkerT
 	backendConfigInitialisedChan chan struct{}
+	now                          func() time.Time
 
 	// other state
 
