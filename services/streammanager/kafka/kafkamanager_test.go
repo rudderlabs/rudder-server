@@ -1333,10 +1333,10 @@ func registerSchema(t *testing.T, schemaName, schemaPath string, c schemaregistr
 
 	buf, err := os.ReadFile(schemaPath)
 	require.NoError(t, err)
-	arctx := schemaregistry.SchemaInfo{Schema: string(buf)}
+	si := schemaregistry.SchemaInfo{Schema: string(buf)}
 
 	require.Eventuallyf(t, func() bool {
-		schemaID, err = c.Register(schemaName, arctx, true)
+		schemaID, err = c.Register(schemaName, si, true)
 		return err == nil
 	}, 30*time.Second, 100*time.Millisecond, "failed to register schema %s: %v", schemaName, err)
 
