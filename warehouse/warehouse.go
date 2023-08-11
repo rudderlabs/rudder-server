@@ -179,31 +179,36 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 		for _, source := range wConfig.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
-				if slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
-					router, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-						router, err := newRouter(
-							ctx,
-							destination.DestinationDefinition.Name,
-							config.Default,
-							pkgLogger,
-							stats.Default,
-							wrappedDBHandle,
-							&notifier,
-							tenantManager,
-							controlPlaneClient,
-							bcManager,
-						)
-						if err != nil {
-							return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
-						}
-						dstToWhRouter[destination.DestinationDefinition.Name] = router
-					} else {
-						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-						router.Enable()
-					}
+
+				if !slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+					continue
 				}
+
+				router, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+				if ok {
+					pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+					router.Enable()
+					continue
+				}
+
+				pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+
+				router, err := newRouter(
+					ctx,
+					destination.DestinationDefinition.Name,
+					config.Default,
+					pkgLogger,
+					stats.Default,
+					wrappedDBHandle,
+					&notifier,
+					tenantManager,
+					controlPlaneClient,
+					bcManager,
+				)
+				if err != nil {
+					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
+				}
+				dstToWhRouter[destination.DestinationDefinition.Name] = router
 			}
 		}
 	}
@@ -800,8 +805,10 @@ func Start(ctx context.Context, app app.App) error {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
 
-	// Setting up reporting client
-	// only if standalone or embedded connecting to diff DB for warehouse
+	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
+	// A different DB for warehouse is used when:
+	// 1. MultiTenant (uses RDS)
+	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
 	if (isStandAlone() && isMaster()) || (misc.GetConnectionString() != psqlInfo) {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
@@ -861,15 +868,15 @@ func Start(ctx context.Context, app app.App) error {
 			return monitorDestRouters(gCtx)
 		}))
 
-		archiver := &archive.Archiver{
-			DB:          dbHandle,
-			Stats:       stats.Default,
-			Logger:      pkgLogger.Child("archiver"),
-			FileManager: filemanager.New,
-			Multitenant: tenantManager,
-		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			archive.CronArchiver(gCtx, archiver)
+			archive.CronArchiver(gCtx, archive.New(
+				config.Default,
+				pkgLogger,
+				stats.Default,
+				dbHandle,
+				filemanager.New,
+				tenantManager,
+			))
 			return nil
 		}))
 

@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/golang/mock/gomock"
 	"github.com/minio/minio-go"
 	"github.com/stretchr/testify/require"
@@ -114,11 +116,13 @@ func TestArchiver(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			mockStats := mock_stats.NewMockStats(ctrl)
+			mockStats.EXPECT().NewStat(gomock.Any(), gomock.Any()).Times(1)
+
 			mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
 
 			if tc.archived {
 				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(4).Return(mockMeasurement)
-				mockMeasurement.EXPECT().Count(1).Times(4)
+				mockMeasurement.EXPECT().Increment().Times(4)
 			}
 
 			now := time.Now().Truncate(time.Second)
@@ -143,15 +147,16 @@ func TestArchiver(t *testing.T) {
 			`, tc.workspaceID, now)
 			require.NoError(t, err)
 
-			archiver := archive.Archiver{
-				DB:          pgResource.DB,
-				Stats:       mockStats,
-				Logger:      logger.NOP,
-				FileManager: filemanager.New,
-				Multitenant: &multitenant.Manager{
+			archiver := archive.New(
+				config.Default,
+				logger.NOP,
+				mockStats,
+				pgResource.DB,
+				filemanager.New,
+				&multitenant.Manager{
 					DegradedWorkspaceIDs: tc.degradedWorkspaceIDs,
 				},
-			}
+			)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()

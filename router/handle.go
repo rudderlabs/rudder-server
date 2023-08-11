@@ -532,6 +532,7 @@ func (rt *Handle) findWorkerSlot(workers []*worker, job *jobsdb.JobT, blockedOrd
 	}
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
 	slot.Release()
+	blockedOrderKeys[orderKey] = struct{}{}
 	return nil, types.ErrBarrierExists
 	//#EndJobOrder
 }
