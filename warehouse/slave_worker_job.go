@@ -102,6 +102,7 @@ type jobRun struct {
 	identifier           string
 	since                func(time.Time) time.Duration
 	logger               logger.Logger
+	encodingManager      *encoding.Manager
 
 	now func() time.Time
 
@@ -121,14 +122,15 @@ type jobRun struct {
 	}
 }
 
-func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.Stats) jobRun {
+func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.Stats, encodingManager *encoding.Manager) jobRun {
 	jr := jobRun{
-		job:        job,
-		identifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
-		stats:      stat,
-		since:      time.Since,
-		logger:     log,
-		now:        timeutil.Now,
+		job:             job,
+		identifier:      warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
+		stats:           stat,
+		since:           time.Since,
+		logger:          log,
+		now:             timeutil.Now,
+		encodingManager: encodingManager,
 	}
 
 	if conf.IsSet("Warehouse.slaveUploadTimeout") {
@@ -405,16 +407,9 @@ func (jr *jobRun) writer(tableName string) (encoding.LoadFileWriter, error) {
 		return writer, nil
 	}
 
-	var err error
-	var writer encoding.LoadFileWriter
-
 	outputFilePath := jr.loadFilePath(tableName)
 
-	if jr.job.LoadFileType == warehouseutils.LoadFileTypeParquet {
-		writer, err = encoding.CreateParquetWriter(jr.job.UploadSchema[tableName], outputFilePath, jr.job.DestinationType)
-	} else {
-		writer, err = misc.CreateGZ(outputFilePath)
-	}
+	writer, err := jr.encodingManager.NewLoadFileWriter(jr.job.LoadFileType, outputFilePath, jr.job.UploadSchema[tableName], jr.job.DestinationType)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +462,7 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal int
 		}
 	}
 	if hasID && hasReceivedAt {
-		eventLoader := encoding.GetNewEventLoader(jr.job.DestinationType, jr.job.LoadFileType, discardWriter)
+		eventLoader := jr.encodingManager.NewEventLoader(discardWriter, jr.job.LoadFileType, jr.job.DestinationType)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)

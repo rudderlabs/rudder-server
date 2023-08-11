@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
@@ -70,6 +72,7 @@ type UploadJobFactory struct {
 	recovery             *service.Recovery
 	pgNotifier           *pgnotifier.PGNotifier
 	stats                stats.Stats
+	encodingManager      *encoding.Manager
 }
 
 type UploadJob struct {
@@ -105,7 +108,8 @@ type UploadJob struct {
 	minUploadBackoff          time.Duration
 	maxUploadBackoff          time.Duration
 
-	errorHandler ErrorHandler
+	errorHandler    ErrorHandler
+	encodingManager *encoding.Manager
 }
 
 type UploadColumn struct {
@@ -224,7 +228,8 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		),
 		now: timeutil.Now,
 
-		errorHandler: ErrorHandler{whManager},
+		errorHandler:    ErrorHandler{whManager},
+		encodingManager: f.encodingManager,
 	}
 }
 
@@ -772,6 +777,7 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 		job.upload.ID,
 		job.whManager,
 		downloader.NewDownloader(&job.warehouse, job, 8),
+		job.encodingManager,
 	)
 	if populateHistoricIdentities {
 		return idr.ResolveHistoricIdentities(job.ctx)

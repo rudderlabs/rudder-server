@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
@@ -117,18 +119,9 @@ func TestRouter(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		r, err := newRouter(
-			ctx,
-			destinationType,
-			config.Default,
-			logger.NOP,
-			stats.Default,
-			db,
-			&notifier,
-			tenantManager,
-			cp,
-			bcm,
-		)
+		em := encoding.NewManager(config.Default)
+
+		r, err := newRouter(ctx, destinationType, config.Default, logger.NOP, stats.Default, db, &notifier, tenantManager, cp, bcm, em)
 		require.NoError(t, err)
 
 		cancel()

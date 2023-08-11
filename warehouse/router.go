@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"golang.org/x/exp/slices"
@@ -112,6 +114,7 @@ func newRouter(
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
+	encodingManager *encoding.Manager,
 ) (*router, error) {
 	r := &router{}
 
@@ -154,7 +157,8 @@ func newRouter(
 			LoadRepo:           repo.NewLoadFiles(db),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		recovery: service.NewRecovery(destType, r.uploadRepo),
+		recovery:        service.NewRecovery(destType, r.uploadRepo),
+		encodingManager: encodingManager,
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)
 
