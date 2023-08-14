@@ -12,23 +12,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
-	provider       = warehouseutils.SNOWFLAKE
+	provider       = whutils.SNOWFLAKE
 	tableNameLimit = 127
 )
 
@@ -60,11 +58,11 @@ var partitionKeyMap = map[string]string{
 }
 
 var (
-	usersTable              = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.UsersTable)
-	identifiesTable         = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentifiesTable)
-	discardsTable           = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.DiscardsTable)
-	identityMergeRulesTable = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMergeRulesTable)
-	identityMappingsTable   = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMappingsTable)
+	usersTable              = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.UsersTable)
+	identifiesTable         = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.IdentifiesTable)
+	discardsTable           = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.DiscardsTable)
+	identityMergeRulesTable = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.IdentityMergeRulesTable)
+	identityMappingsTable   = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.IdentityMappingsTable)
 )
 
 var errorsMappings = []model.JobError{
@@ -138,7 +136,7 @@ type credentials struct {
 }
 
 type tableLoadResp struct {
-	db           *sqlmiddleware.DB
+	db           *sqlmw.DB
 	stagingTable string
 }
 
@@ -147,12 +145,12 @@ type optionalCreds struct {
 }
 
 type Snowflake struct {
-	DB             *sqlmiddleware.DB
+	DB             *sqlmw.DB
 	Namespace      string
 	CloudProvider  string
 	ObjectStorage  string
 	Warehouse      model.Warehouse
-	Uploader       warehouseutils.Uploader
+	Uploader       whutils.Uploader
 	connectTimeout time.Duration
 	logger         logger.Logger
 	stats          stats.Stats
@@ -266,16 +264,16 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (sf *Snowflake) authString() string {
 	var auth string
-	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(storageIntegration, sf.Warehouse) == "") {
-		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && whutils.GetConfigValue(storageIntegration, sf.Warehouse) == "") {
+		tempAccessKeyId, tempSecretAccessKey, token, _ := whutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
-		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue(storageIntegration, sf.Warehouse))
+		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, whutils.GetConfigValue(storageIntegration, sf.Warehouse))
 	}
 	return auth
 }
 
-func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) (err error) {
 	for _, tb := range tableNames {
 		sf.logger.Infof("SF: Cleaning up the following tables in snowflake for SF:%s", tb)
 		sqlStatement := fmt.Sprintf(`
@@ -312,7 +310,7 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, skipClosingDBSession bool) (tableLoadResp, error) {
 	var (
 		csvObjectLocation string
-		db                *sqlmiddleware.DB
+		db                *sqlmw.DB
 		err               error
 	)
 
@@ -336,14 +334,14 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		defer func() { _ = db.Close() }()
 	}
 
-	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	strKeys := whutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
-	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+	sortedColumnNames := whutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
 		return fmt.Sprintf(`%q`, name)
 	}, ",")
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
+	stagingTableName := whutils.StagingTableName(provider, tableName, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;
 `,
@@ -366,7 +364,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	if err != nil {
 		return tableLoadResp{}, fmt.Errorf("getting sample load file location: %w", err)
 	}
-	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
+	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
@@ -433,10 +431,10 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		partitionKey = column
 	}
 
-	stagingColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
+	stagingColumnNames := whutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
 		return fmt.Sprintf(`staging.%q`, name)
 	}, ",")
-	columnsWithValues := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
+	columnsWithValues := whutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
 		return fmt.Sprintf(`original.%[1]q = staging.%[1]q`, name)
 	}, ",")
 
@@ -540,7 +538,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) (err error
 	sf.logger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
 
 	sf.logger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
-	var loadFile warehouseutils.LoadFile
+	var loadFile whutils.LoadFile
 	loadFile, err = sf.Uploader.GetSingleLoadFile(ctx, identityMergeRulesTable)
 	if err != nil {
 		return err
@@ -553,7 +551,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) (err error
 	}
 
 	sortedColumnNames := strings.Join([]string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}, ",")
-	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
+	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s.%q`, schemaIdentifier, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
@@ -579,7 +577,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) (err error
 func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) (err error) {
 	sf.logger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
 	sf.logger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
-	var loadFile warehouseutils.LoadFile
+	var loadFile whutils.LoadFile
 
 	loadFile, err = sf.Uploader.GetSingleLoadFile(ctx, identityMappingsTable)
 	if err != nil {
@@ -593,7 +591,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) (err error) 
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := warehouseutils.StagingTableName(provider, identityMappingsTable, tableNameLimit)
+	stagingTableName := whutils.StagingTableName(provider, identityMappingsTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q`, schemaIdentifier, stagingTableName, identityMappingsTable)
 
 	sf.logger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
@@ -611,7 +609,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) (err error) 
 		return
 	}
 
-	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
+	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement = fmt.Sprintf(`COPY INTO %v("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s.%q`, schemaIdentifier, stagingTableName), loadLocation, sf.authString())
 
@@ -706,7 +704,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := warehouseutils.StagingTableName(provider, usersTable, tableNameLimit)
+	stagingTableName := whutils.StagingTableName(provider, usersTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[1]s.%[2]q AS (
 		  SELECT
@@ -764,7 +762,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
 		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
 		logfield.Namespace, sf.Namespace,
-		logfield.TableName, warehouseutils.UsersTable,
+		logfield.TableName, whutils.UsersTable,
 		logfield.StagingTableName, stagingTableName,
 		logfield.Query, sqlStatement,
 	)
@@ -776,7 +774,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
 			logfield.Namespace, sf.Namespace,
-			logfield.TableName, warehouseutils.UsersTable,
+			logfield.TableName, whutils.UsersTable,
 			logfield.Error, err.Error(),
 		)
 
@@ -830,7 +828,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
 		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
 		logfield.Namespace, sf.Namespace,
-		logfield.TableName, warehouseutils.UsersTable,
+		logfield.TableName, whutils.UsersTable,
 		logfield.Query, sqlStatement,
 	)
 
@@ -843,7 +841,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
 			logfield.Namespace, sf.Namespace,
-			logfield.TableName, warehouseutils.UsersTable,
+			logfield.TableName, whutils.UsersTable,
 			logfield.Query, sqlStatement,
 			logfield.Error, row.Err().Error(),
 		)
@@ -861,7 +859,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
 			logfield.Namespace, sf.Namespace,
-			logfield.TableName, warehouseutils.UsersTable,
+			logfield.TableName, whutils.UsersTable,
 			logfield.Query, sqlStatement,
 			logfield.Error, err.Error(),
 		)
@@ -878,7 +876,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 		"destID":         sf.Warehouse.Destination.ID,
 		"destType":       sf.Warehouse.Destination.DestinationDefinition.Name,
 		"workspaceId":    sf.Warehouse.WorkspaceID,
-		"tableName":      warehouseutils.UsersTable,
+		"tableName":      whutils.UsersTable,
 	}).Count(int(updated))
 
 	sf.logger.Infow("completed loading for users and identifies tables",
@@ -896,7 +894,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	}
 }
 
-func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmiddleware.DB, error) {
+func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB, error) {
 	cred := sf.getConnectionCredentials(opts)
 	urlConfig := snowflake.Config{
 		Account:     cred.account,
@@ -929,11 +927,11 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmiddl
 	if err != nil {
 		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
 	}
-	middleware := sqlmiddleware.New(
+	middleware := sqlmw.New(
 		db,
-		sqlmiddleware.WithStats(sf.stats),
-		sqlmiddleware.WithLogger(sf.logger),
-		sqlmiddleware.WithKeyAndValues(
+		sqlmw.WithStats(sf.stats),
+		sqlmw.WithLogger(sf.logger),
+		sqlmw.WithKeyAndValues(
 			logfield.SourceID, sf.Warehouse.Source.ID,
 			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
 			logfield.DestinationID, sf.Warehouse.Destination.ID,
@@ -941,9 +939,9 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmiddl
 			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
 			logfield.Schema, sf.Namespace,
 		),
-		sqlmiddleware.WithSlowQueryThreshold(sf.config.slowQueryThreshold),
-		sqlmiddleware.WithQueryTimeout(sf.connectTimeout),
-		sqlmiddleware.WithSecretsRegex(map[string]string{
+		sqlmw.WithSlowQueryThreshold(sf.config.slowQueryThreshold),
+		sqlmw.WithQueryTimeout(sf.connectTimeout),
+		sqlmw.WithSecretsRegex(map[string]string{
 			"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
 			"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
 			"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
@@ -979,7 +977,7 @@ func (sf *Snowflake) DropTable(ctx context.Context, tableName string) (err error
 	return
 }
 
-func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsInfo []whutils.ColumnInfo) (err error) {
 	var (
 		query            string
 		queryBuilder     strings.Builder
@@ -1067,7 +1065,7 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 			// TODO: Handle case for missing anonymous_id, user_id columns
 			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s.%q LIMIT %d OFFSET %d`, toSelectFields, schemaIdentifier, tableName, batchSize, offset)
 			sf.logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
-			var rows *sqlmiddleware.Rows
+			var rows *sqlmw.Rows
 			rows, err = sf.DB.QueryContext(ctx, sqlStatement)
 			if err != nil {
 				return
@@ -1160,23 +1158,23 @@ func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (em
 
 func (sf *Snowflake) getConnectionCredentials(opts optionalCreds) credentials {
 	return credentials{
-		account:    warehouseutils.GetConfigValue(account, sf.Warehouse),
-		warehouse:  warehouseutils.GetConfigValue(warehouse, sf.Warehouse),
-		database:   warehouseutils.GetConfigValue(database, sf.Warehouse),
-		user:       warehouseutils.GetConfigValue(user, sf.Warehouse),
-		role:       warehouseutils.GetConfigValue(role, sf.Warehouse),
-		password:   warehouseutils.GetConfigValue(password, sf.Warehouse),
+		account:    whutils.GetConfigValue(account, sf.Warehouse),
+		warehouse:  whutils.GetConfigValue(warehouse, sf.Warehouse),
+		database:   whutils.GetConfigValue(database, sf.Warehouse),
+		user:       whutils.GetConfigValue(user, sf.Warehouse),
+		role:       whutils.GetConfigValue(role, sf.Warehouse),
+		password:   whutils.GetConfigValue(password, sf.Warehouse),
 		schemaName: opts.schemaName,
 		timeout:    sf.connectTimeout,
 	}
 }
 
-func (sf *Snowflake) Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
+func (sf *Snowflake) Setup(ctx context.Context, warehouse model.Warehouse, uploader whutils.Uploader) (err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
+	sf.CloudProvider = whutils.SnowflakeCloudProvider(warehouse.Destination.Config)
 	sf.Uploader = uploader
-	sf.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
+	sf.ObjectStorage = whutils.ObjectStorageType(whutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
 
 	sf.DB, err = sf.connect(ctx, optionalCreds{})
 	return err
@@ -1238,9 +1236,9 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, model.Schem
 			if _, ok := unrecognizedSchema[tableName]; !ok {
 				unrecognizedSchema[tableName] = make(map[string]string)
 			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
+			unrecognizedSchema[tableName][columnName] = whutils.MissingDatatype
 
-			warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &sf.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			whutils.WHCounterStat(whutils.RudderMissingDatatype, &sf.Warehouse, whutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -1284,9 +1282,9 @@ func (sf *Snowflake) GetTotalCountInTable(ctx context.Context, tableName string)
 func (sf *Snowflake) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
-	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
-	sf.ObjectStorage = warehouseutils.ObjectStorageType(
-		warehouseutils.SNOWFLAKE,
+	sf.CloudProvider = whutils.SnowflakeCloudProvider(warehouse.Destination.Config)
+	sf.ObjectStorage = whutils.ObjectStorageType(
+		whutils.SNOWFLAKE,
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config),
 	)
@@ -1299,7 +1297,7 @@ func (sf *Snowflake) Connect(ctx context.Context, warehouse model.Warehouse) (cl
 }
 
 func (sf *Snowflake) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, _ string) (err error) {
-	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, location)
+	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`,
