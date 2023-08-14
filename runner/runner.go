@@ -336,7 +336,6 @@ func runAllInit() {
 	pgnotifier.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
-	warehouse.Init()
 	warehouse.Init4()
 	validations.Init()
 	webhook.Init()
