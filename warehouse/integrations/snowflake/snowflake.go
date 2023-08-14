@@ -178,7 +178,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 		loadTableStrategy = loadTableStrategyMergeMode
 		sf.logger.Errorw(
 			"Received invalid loadTableStrategy, defaulting to MERGE mode",
-			"loadTableStrategy", loadTableStrategy,
+			logfield.LoadTableStrategy, loadTableStrategy,
 		)
 	}
 
@@ -324,6 +324,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
 		logfield.Namespace, sf.Namespace,
 		logfield.TableName, tableName,
+		logfield.LoadTableStrategy, sf.config.loadTableStrategy,
 	}
 	sf.logger.Infow("started loading", logFields...)
 
@@ -369,16 +370,19 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
-	sqlStatement = fmt.Sprintf(`
-		COPY INTO
+	copyTargetTable := stagingTableName
+	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
+		copyTargetTable = tableName
+	}
+	sqlStatement = fmt.Sprintf(
+		`COPY INTO
 			%v(%v)
 		FROM
 		  '%v' %s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
-		TRUNCATECOLUMNS = TRUE;
-`,
-		fmt.Sprintf(`%s.%q`, schemaIdentifier, stagingTableName),
+		TRUNCATECOLUMNS = TRUE;`,
+		fmt.Sprintf(`%s.%q`, schemaIdentifier, copyTargetTable),
 		sortedColumnNames,
 		loadFolder,
 		sf.authString(),
@@ -401,6 +405,15 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 			append(logFields, logfield.Query, sanitisedQuery, logfield.Error, err.Error()),
 		)
 		return tableLoadResp{}, fmt.Errorf("copy into table: %w", err)
+	}
+
+	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
+		sf.logger.Infow("completed loading", logFields...)
+
+		return tableLoadResp{
+			db:           db,
+			stagingTable: stagingTableName,
+		}, nil
 	}
 
 	var (
@@ -487,23 +500,17 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 }
 
 func (sf *Snowflake) mergeIntoStmt(
-	schemaIdentifier,
-	tableName,
-	stagingTableName,
+	schemaIdentifier, tableName, stagingTableName,
 	partitionKey,
-	primaryKey,
-	additionalJoinClause,
-	sortedColumnNames,
-	stagingColumnNames,
+	primaryKey, additionalJoinClause,
+	sortedColumnNames, stagingColumnNames,
 	updateSet string,
 ) string {
 	return fmt.Sprintf(`MERGE INTO %[1]s.%[2]q AS original USING (
-	  SELECT
-		*
+	  SELECT *
 	  FROM
 		(
-		  SELECT
-			*,
+		  SELECT *,
 			row_number() OVER (
 			  PARTITION BY %[4]s
 			  ORDER BY
@@ -521,14 +528,10 @@ func (sf *Snowflake) mergeIntoStmt(
 	  INSERT (%[7]s) VALUES (%[8]s)
 	WHEN MATCHED THEN
 	  UPDATE SET %[9]s;`,
-		schemaIdentifier,
-		tableName,
-		stagingTableName,
+		schemaIdentifier, tableName, stagingTableName,
 		partitionKey,
-		primaryKey,
-		additionalJoinClause,
-		sortedColumnNames,
-		stagingColumnNames,
+		primaryKey, additionalJoinClause,
+		sortedColumnNames, stagingColumnNames,
 		updateSet,
 	)
 }
