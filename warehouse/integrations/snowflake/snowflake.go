@@ -316,7 +316,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		err               error
 	)
 
-	sf.logger.Infow("started loading",
+	logFields := []interface{}{
 		logfield.SourceID, sf.Warehouse.Source.ID,
 		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
 		logfield.DestinationID, sf.Warehouse.Destination.ID,
@@ -324,7 +324,8 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
 		logfield.Namespace, sf.Namespace,
 		logfield.TableName, tableName,
-	)
+	}
+	sf.logger.Infow("started loading", logFields...)
 
 	if db, err = sf.connect(ctx, optionalCreds{schemaName: sf.Namespace}); err != nil {
 		return tableLoadResp{}, fmt.Errorf("connect: %w", err)
@@ -351,28 +352,12 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	)
 
 	sf.logger.Debugw("creating temporary table",
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
-		logfield.TableName, tableName,
-		logfield.StagingTableName, stagingTableName,
+		append(logFields, logfield.StagingTableName, stagingTableName)...,
 	)
 	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.logger.Warnw("failure creating temporary table",
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Namespace, sf.Namespace,
-			logfield.TableName, tableName,
-			logfield.StagingTableName, stagingTableName,
-			logfield.Error, err.Error(),
+			append(logFields, logfield.StagingTableName, stagingTableName, logfield.Error, err.Error())...,
 		)
-
 		return tableLoadResp{}, fmt.Errorf("create temporary table: %w", err)
 	}
 
@@ -408,27 +393,12 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		sanitisedQuery = ""
 	}
 	sf.logger.Infow("copy command",
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
-		logfield.TableName, tableName,
-		logfield.Query, sanitisedQuery,
+		append(logFields, logfield.Query, sanitisedQuery)...,
 	)
 
 	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.logger.Warnw("failure running COPY command",
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Namespace, sf.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, sanitisedQuery,
-			logfield.Error, err.Error(),
+			append(logFields, logfield.Query, sanitisedQuery, logfield.Error, err.Error()),
 		)
 		return tableLoadResp{}, fmt.Errorf("copy into table: %w", err)
 	}
@@ -480,43 +450,20 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	)
 
 	sf.logger.Infow("deduplication",
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
-		logfield.TableName, tableName,
-		logfield.Query, sqlStatement,
+		append(logFields, logfield.Query, sqlStatement)...,
 	)
 
 	row := db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
 		sf.logger.Warnw("failure running deduplication",
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Namespace, sf.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, sqlStatement,
-			logfield.Error, row.Err().Error(),
+			append(logFields, logfield.Query, sqlStatement, logfield.Error, row.Err().Error())...,
 		)
 		return tableLoadResp{}, fmt.Errorf("merge into table: %w", row.Err())
 	}
 
 	if err = row.Scan(&inserted, &updated); err != nil {
 		sf.logger.Warnw("getting rows affected for dedup",
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Namespace, sf.Namespace,
-			logfield.TableName, tableName,
-			logfield.Query, sqlStatement,
-			logfield.Error, err.Error(),
+			append(logFields, logfield.Query, sqlStatement, logfield.Error, err.Error())...,
 		)
 		return tableLoadResp{}, fmt.Errorf("getting rows affected for dedup: %w", err)
 	}
@@ -531,22 +478,12 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		"tableName":      tableName,
 	}).Count(int(updated))
 
-	sf.logger.Infow("completed loading",
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
-		logfield.TableName, tableName,
-	)
+	sf.logger.Infow("completed loading", logFields...)
 
-	res := tableLoadResp{
+	return tableLoadResp{
 		db:           db,
 		stagingTable: stagingTableName,
-	}
-
-	return res, nil
+	}, nil
 }
 
 func (sf *Snowflake) mergeIntoStmt(
