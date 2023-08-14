@@ -436,17 +436,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			`{"error": "rudder-server gateway failed to marshal params"}`,
 		)
 	}
-	if !gw.conf.allowBatchSplitting {
-		// instead of multiple jobs with one event, create one job with all events
-		out = []jobObject{
-			{
-				userID: out[0].userID,
-				events: lo.Map(out, func(userEvent jobObject, _ int) map[string]interface{} {
-					return userEvent.events[0]
-				}),
-			},
-		}
-	}
 	jobs := make([]*jobsdb.JobT, 0)
 	for _, userEvent := range out {
 		var (
@@ -460,11 +449,15 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 				WriteKey   string                   `json:"writeKey"`
 				ReceivedAt string                   `json:"receivedAt"`
 			}
+			recievedAt, ok := userEvent.events[0]["receivedAt"].(string)
+			if !ok {
+				recievedAt = time.Now().Format(misc.RFC3339Milli)
+			}
 			singularEventBatch := SingularEventBatch{
 				Batch:      userEvent.events,
 				RequestIP:  ipAddr,
 				WriteKey:   arctx.WriteKey,
-				ReceivedAt: time.Now().Format(misc.RFC3339Milli),
+				ReceivedAt: recievedAt,
 			}
 			payload, err = json.Marshal(singularEventBatch)
 			if err != nil {

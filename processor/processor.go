@@ -119,8 +119,8 @@ type Handle struct {
 		maxEventsToProcess        int
 		transformBatchSize        int
 		userTransformBatchSize    int
-		writeKeyDestinationMap    map[string][]backendconfig.DestinationT
-		writeKeySourceMap         map[string]backendconfig.SourceT
+		sourceIdDestinationMap    map[string][]backendconfig.DestinationT
+		sourceIdSourceMap         map[string]backendconfig.SourceT
 		workspaceLibrariesMap     map[string]backendconfig.LibrariesT
 		destinationIDtoTypeMap    map[string]string
 		destConsentCategories     map[string][]string
@@ -710,16 +710,16 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		var (
 			destConsentCategories  = make(map[string][]string)
 			workspaceLibrariesMap  = make(map[string]backendconfig.LibrariesT, len(config))
-			writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
-			writeKeySourceMap      = map[string]backendconfig.SourceT{}
+			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
+			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
 			destinationIDtoTypeMap = make(map[string]string)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
-				writeKeySourceMap[source.WriteKey] = *source
+				sourceIdSourceMap[source.ID] = *source
 				if source.Enabled {
-					writeKeyDestinationMap[source.WriteKey] = source.Destinations
+					sourceIdDestinationMap[source.ID] = source.Destinations
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
@@ -732,8 +732,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.configSubscriberLock.Lock()
 		proc.config.destConsentCategories = destConsentCategories
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
-		proc.config.writeKeyDestinationMap = writeKeyDestinationMap
-		proc.config.writeKeySourceMap = writeKeySourceMap
+		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
+		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.destinationIDtoTypeMap = destinationIDtoTypeMap
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
@@ -755,24 +755,24 @@ func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.Libr
 	return proc.config.workspaceLibrariesMap[workspaceID]
 }
 
-func (proc *Handle) getSourceByWriteKey(writeKey string) (*backendconfig.SourceT, error) {
+func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT, error) {
 	var err error
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
-	source, ok := proc.config.writeKeySourceMap[writeKey]
+	source, ok := proc.config.sourceIdSourceMap[sourceId]
 	if !ok {
 		err = errors.New("source not found for writeKey")
-		proc.logger.Errorf(`Processor : source not found for writeKey: %s`, writeKey)
+		proc.logger.Errorf(`Processor : source not found for writeKey: %s`, sourceId)
 	}
 	return &source, err
 }
 
-func (proc *Handle) getEnabledDestinations(writeKey, destinationName string) []backendconfig.DestinationT {
+func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	var enabledDests []backendconfig.DestinationT
-	for i := range proc.config.writeKeyDestinationMap[writeKey] {
-		dest := &proc.config.writeKeyDestinationMap[writeKey][i]
+	for i := range proc.config.sourceIdDestinationMap[sourceId] {
+		dest := &proc.config.sourceIdDestinationMap[sourceId][i]
 		if destinationName == dest.DestinationDefinition.Name && dest.Enabled {
 			enabledDests = append(enabledDests, *dest)
 		}
@@ -780,12 +780,12 @@ func (proc *Handle) getEnabledDestinations(writeKey, destinationName string) []b
 	return enabledDests
 }
 
-func (proc *Handle) getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig.DestinationDefinitionT {
+func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[string]backendconfig.DestinationDefinitionT {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	enabledDestinationTypes := make(map[string]backendconfig.DestinationDefinitionT)
-	for i := range proc.config.writeKeyDestinationMap[writeKey] {
-		destination := &proc.config.writeKeyDestinationMap[writeKey][i]
+	for i := range proc.config.sourceIdDestinationMap[sourceId] {
+		destination := &proc.config.sourceIdDestinationMap[sourceId][i]
 		if destination.Enabled {
 			enabledDestinationTypes[destination.DestinationDefinition.DisplayName] = destination.DestinationDefinition
 		}
@@ -836,9 +836,9 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
-	commonMetadata.SourceJobRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
+	commonMetadata.SourceJobRunID = gjson.GetBytes(batchEvent.Parameters, "source_job_run_id").String()
 	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
-	commonMetadata.SourceTaskRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_run_id").(string)
+	commonMetadata.SourceTaskRunID = gjson.GetBytes(batchEvent.Parameters, "source_task_run_id").String()
 	commonMetadata.RecordID = misc.MapLookup(singularEvent, "recordId")
 
 	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
@@ -1288,7 +1288,7 @@ func (proc *Handle) getFailedEventJobs(response transformer.Response, commonMeta
 	return failedEventsToStore, failedMetrics, failedCountMap
 }
 
-func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, writeKey string) {
+func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, sourceId string) {
 	// Any panics in this function are captured and ignore sending the stat
 	defer func() {
 		if r := recover(); r != nil {
@@ -1297,10 +1297,15 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, w
 	}()
 	var eventType string
 	var eventName string
+	source, err := proc.getSourceBySourceID(sourceId)
+	if err != nil {
+		proc.logger.Errorf("[Processor] Failed to get source by source id: %s", sourceId)
+		return
+	}
 	if val, ok := event["type"]; ok {
 		eventType = val.(string)
 		tags := map[string]string{
-			"writeKey":   writeKey,
+			"writeKey":   source.WriteKey,
 			"event_type": eventType,
 		}
 		statEventType := proc.statsFactory.NewSampledTaggedStat("processor.event_type", stats.CountType, tags)
@@ -1316,7 +1321,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, w
 				}
 			}
 			tagsDetailed := map[string]string{
-				"writeKey":   writeKey,
+				"writeKey":   source.WriteKey,
 				"event_type": eventType,
 				"event_name": eventName,
 			}
@@ -1374,7 +1379,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 	var statusList []*jobsdb.JobStatusT
 	groupedEvents := make(map[string][]transformer.TransformerEvent)
-	groupedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEvent)
+	groupedEventsBySourceId := make(map[SourceIDT][]transformer.TransformerEvent)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
@@ -1413,17 +1418,22 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			proc.logger.Warnf("json parsing of event payload for %s: %v", batchEvent.JobID, err)
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 		}
-
-		writeKey := gatewayBatchEvent.WriteKey
+		var eventParams types.EventParams
+		err = jsonfast.Unmarshal(batchEvent.Parameters, &eventParams)
+		if err != nil {
+			proc.logger.Warnf("json parsing of event params for %s: %v", batchEvent.JobID, err)
+			eventParams = types.EventParams{}
+		}
+		sourceId := eventParams.SourceId
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := misc.GetStringifiedData(singularEvent["messageId"])
-			source, sourceError := proc.getSourceByWriteKey(writeKey)
+			source, sourceError := proc.getSourceBySourceID(sourceId)
 			if sourceError != nil {
-				proc.logger.Errorf("Dropping Job since Source not found for writeKey %q: %v", writeKey, sourceError)
+				proc.logger.Errorf("Dropping Job since Source not found for writeKey %q: %v", sourceId, sourceError)
 				continue
 			}
 
@@ -1438,7 +1448,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				uniqueMessageIds[messageId] = struct{}{}
 			}
 
-			proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
+			proc.updateSourceEventStatsDetailed(singularEvent, sourceId)
 
 			// We count this as one, not destination specific ones
 			totalEvents++
@@ -1511,12 +1521,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 			// Getting all the destinations which are enabled for this
 			// event
-			if !proc.isDestinationAvailable(singularEvent, writeKey) {
+			if !proc.isDestinationAvailable(singularEvent, sourceId) {
 				continue
 			}
 
-			if _, ok := groupedEventsByWriteKey[WriteKeyT(writeKey)]; !ok {
-				groupedEventsByWriteKey[WriteKeyT(writeKey)] = make([]transformer.TransformerEvent, 0)
+			if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
+				groupedEventsBySourceId[SourceIDT(sourceId)] = make([]transformer.TransformerEvent, 0)
 			}
 			shallowEventCopy := transformer.TransformerEvent{}
 			shallowEventCopy.Message = singularEvent
@@ -1534,7 +1544,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
 			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 
-			groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
+			groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 			if proc.isReportingEnabled() {
 				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) })
@@ -1623,7 +1633,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
 	validateEventsStart := time.Now()
-	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
+	validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsBySourceId, eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
 	defer proc.stats.validateEventsTime.SendTiming(validateEventsTime)
 
@@ -1635,23 +1645,23 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// TRACKING PLAN - END
 
 	// The below part further segregates events by sourceID and DestinationID.
-	for writeKeyT, eventList := range validatedEventsByWriteKey {
+	for sourceIdT, eventList := range validatedEventsBySourceId {
 		for idx := range eventList {
 			event := &eventList[idx]
-			writeKey := string(writeKeyT)
+			sourceId := string(sourceIdT)
 			singularEvent := event.Message
 
-			backendEnabledDestTypes := proc.getBackendEnabledDestinationTypes(writeKey)
+			backendEnabledDestTypes := proc.getBackendEnabledDestinationTypes(sourceId)
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
-			source, _ := proc.getSourceByWriteKey(writeKey)
+			source, _ := proc.getSourceBySourceID(sourceId)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
 				enabledDestinationsList := proc.filterDestinations(
 					singularEvent,
-					proc.getEnabledDestinations(writeKey, *destType),
+					proc.getEnabledDestinations(sourceId, *destType),
 				)
 
 				// Adding a singular event multiple times if there are multiple destinations of same type
@@ -2720,10 +2730,10 @@ func (proc *Handle) filterDestinations(
 // check if event has eligible destinations to send to
 //
 // event will be dropped if no destination is found
-func (proc *Handle) isDestinationAvailable(event types.SingularEventT, writeKey string) bool {
+func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId string) bool {
 	enabledDestTypes := integrations.FilterClientIntegrations(
 		event,
-		proc.getBackendEnabledDestinationTypes(writeKey),
+		proc.getBackendEnabledDestinationTypes(sourceId),
 	)
 	if len(enabledDestTypes) == 0 {
 		proc.logger.Debug("No enabled destination types")
@@ -2736,7 +2746,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, writeKey 
 			lo.Map(
 				enabledDestTypes,
 				func(destType string, _ int) []backendconfig.DestinationT {
-					return proc.getEnabledDestinations(writeKey, destType)
+					return proc.getEnabledDestinations(sourceId, destType)
 				},
 			),
 		),

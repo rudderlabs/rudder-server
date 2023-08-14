@@ -9,12 +9,13 @@ import (
 	"strconv"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/rs/cors"
 	"github.com/samber/lo"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/chiware"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -371,6 +372,8 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	srvMux.Route("/internal", func(r chi.Router) {
 		r.Post("/v1/extract", gw.webExtractHandler())
 		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
+		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
+		r.Post("/v1/replay", gw.webReplayHandler())
 	})
 
 	srvMux.Route("/v1", func(r chi.Router) {
