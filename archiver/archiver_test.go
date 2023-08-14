@@ -48,19 +48,18 @@ func TestJobsArchival(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
 	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
 
 	postgresResource, err := resource.SetupPostgres(pool, cleanup)
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to setup postgres resource")
 
 	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
 		minioResource[i], err = destination.SetupMINIO(pool, cleanup)
-		require.NoError(t, err)
+		require.NoError(t, err, "failed to setup minio resource")
 	}
 
 	jobs, err := readGzipJobFile(goldenFileJobsFileName)
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to read jobs file")
 
 	{
 		t.Setenv("MINIO_SSL", "false")
@@ -88,7 +87,6 @@ func TestJobsArchival(t *testing.T) {
 		nil,
 	))
 	require.NoError(t, jd.Start())
-	defer jd.Close()
 
 	require.NoError(t, jd.Store(ctx, jobs))
 
@@ -164,7 +162,6 @@ func TestJobsArchival(t *testing.T) {
 	)
 
 	require.NoError(t, archiver.Start())
-	defer archiver.Stop()
 
 	trigger <- time.Now()
 
@@ -214,7 +211,10 @@ func TestJobsArchival(t *testing.T) {
 		}
 	}
 	require.Equal(t, len(jobs), len(downloadedJobs))
-	// require.ElementsMatch(t, jobs, downloadedJobs)
+	archiver.Stop()
+	jd.Stop()
+	jd.Close()
+	cleanup.Run()
 }
 
 func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
