@@ -16,6 +16,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -29,19 +33,16 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 )
 
 func TestArchiverIsolation(t *testing.T) {
-	ArchivalScenario(t, 20, 15, 1000)
+	ArchivalScenario(t, 20, 15, 1000, true)
 }
 
 func BenchmarkArchiverIsolation(b *testing.B) {
 	benchFunc := func(b *testing.B, numWorkspace, numSourcesPerWorkspace, numJobsPerSource int) {
 		title := fmt.Sprintf(
-			"numWorkspaces: %d - maxSourcePerWorkspace: %d - maxJobsPerSource: %d - totalJobs: %d",
+			"numWorkspaces: %d - numSourcePerWorkspace: %d - numJobsPerSource: %d - totalJobs: %d",
 			numWorkspace,
 			numSourcesPerWorkspace,
 			numJobsPerSource,
@@ -49,7 +50,7 @@ func BenchmarkArchiverIsolation(b *testing.B) {
 		)
 		b.Run(title, func(b *testing.B) {
 			start := time.Now()
-			ArchivalScenario(b, numWorkspace, numSourcesPerWorkspace, numJobsPerSource)
+			ArchivalScenario(b, numWorkspace, numSourcesPerWorkspace, numJobsPerSource, false)
 			b.ReportMetric(time.Since(start).Seconds(), "overall_duration_seconds")
 		})
 	}
@@ -112,7 +113,13 @@ func dummyConfig(
 // 1. inserts jobs into gw_jobsdb for numWorkspaces and [1, maxSourcesPerWorkspace] sources per workspace
 // 2. run rudder-server with a config for above workspaces
 // 3. checks for archives in minio for each source
-func ArchivalScenario(t testing.TB, numWorkspace, numSourcesPerWorkspace, numJobsPerSource int) {
+func ArchivalScenario(
+	t testing.TB,
+	numWorkspace,
+	numSourcesPerWorkspace,
+	numJobsPerSource int,
+	verifyArchives bool,
+) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	pool, err := dockertest.NewPool("")
@@ -267,9 +274,11 @@ func ArchivalScenario(t testing.TB, numWorkspace, numSourcesPerWorkspace, numJob
 		}
 	}
 
-	for _, wsConfig := range configMap {
-		for _, source := range wsConfig.Sources {
-			verify(source.ID)
+	if verifyArchives {
+		for _, wsConfig := range configMap {
+			for _, source := range wsConfig.Sources {
+				verify(source.ID)
+			}
 		}
 	}
 
@@ -277,7 +286,10 @@ func ArchivalScenario(t testing.TB, numWorkspace, numSourcesPerWorkspace, numJob
 	<-svcDone
 }
 
-func configBackendServer(t testing.TB, configMap map[string]backendconfig.ConfigT) *httptest.Server {
+func configBackendServer(
+	t testing.TB,
+	configMap map[string]backendconfig.ConfigT,
+) *httptest.Server {
 	data, err := json.Marshal(configMap)
 	require.NoError(t, err, "failed to marshal config map")
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -295,7 +307,11 @@ func configBackendServer(t testing.TB, configMap map[string]backendconfig.Config
 	}))
 }
 
-func insertJobs(t testing.TB, configMap map[string]backendconfig.ConfigT, numJobsPerSource int) (map[string][]*jobsdb.JobT, int) {
+func insertJobs(
+	t testing.TB,
+	configMap map[string]backendconfig.ConfigT,
+	numJobsPerSource int,
+) (map[string][]*jobsdb.JobT, int) {
 	jobsdb.Init()
 	jobsdb.Init2()
 	t.Log(misc.GetConnectionString())
