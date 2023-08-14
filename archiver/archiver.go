@@ -44,7 +44,7 @@ type archiver struct {
 func New(
 	jobsDB jobsdb.JobsDB,
 	storageProvider fileuploader.Provider,
-	c config,
+	c configGetter,
 	statHandle stats.Stats,
 	opts ...Option,
 ) *archiver {
