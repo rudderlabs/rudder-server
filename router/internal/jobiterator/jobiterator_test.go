@@ -13,10 +13,10 @@ import (
 func TestJobIterator(t *testing.T) {
 	t.Run("iterate without any jobs", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs)
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
 		// first batch will return no jobs
 		m.jobs = []*jobsdb.JobT{}
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 		require.False(t, it.HasNext(), "it shouldn't have next")
 		require.False(t, it.HasNext(), "it shouldn't have next for the second time")
 		require.Equal(t, 1, m.count, "expected 1 call of get jobs to be performed")
@@ -27,7 +27,7 @@ func TestJobIterator(t *testing.T) {
 
 	t.Run("iterate without discarding any job", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs)
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
 		// first batch will return 2 jobs from workspace A and 2 jobs from workspace B
 		m.jobs = []*jobsdb.JobT{
 			{JobID: 2, WorkspaceId: "A"},
@@ -35,7 +35,7 @@ func TestJobIterator(t *testing.T) {
 			{JobID: 1, WorkspaceId: "A"},
 			{JobID: 4, WorkspaceId: "B"},
 		}
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 		require.True(t, it.HasNext(), "it should have next")
 
 		var count int
@@ -57,7 +57,7 @@ func TestJobIterator(t *testing.T) {
 
 	t.Run("iterate, discard one job and fetch one more", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs)
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
 		// first batch will return 2 jobs from workspace A and 2 jobs from workspace B
 		m.jobs = []*jobsdb.JobT{
 			{JobID: 2, WorkspaceId: "A"},
@@ -66,7 +66,7 @@ func TestJobIterator(t *testing.T) {
 			{JobID: 4, WorkspaceId: "B"},
 		}
 
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 
 		require.True(t, it.HasNext())
 
@@ -76,7 +76,7 @@ func TestJobIterator(t *testing.T) {
 		}
 
 		discardedJobID := int64(2)
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 1}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 1}
 
 		var count int
 		var previousJob *jobsdb.JobT
@@ -100,7 +100,7 @@ func TestJobIterator(t *testing.T) {
 
 	t.Run("iterate, discard one job but nothing more to fetch", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs)
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
 		// first batch will return 2 jobs from workspace A and 2 jobs from workspace B
 		m.jobs = []*jobsdb.JobT{
 			{JobID: 2, WorkspaceId: "A"},
@@ -109,14 +109,14 @@ func TestJobIterator(t *testing.T) {
 			{JobID: 4, WorkspaceId: "B"},
 		}
 
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 		require.True(t, it.HasNext())
 
 		// 2nd batch should return no jobs
 		m.jobs = []*jobsdb.JobT{}
 
 		discardedJobID := int64(2)
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 1}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 1}
 
 		var count int
 		var previousJob *jobsdb.JobT
@@ -137,7 +137,7 @@ func TestJobIterator(t *testing.T) {
 
 	t.Run("iterate, discard one job from each workspace and fetch one more from each", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs)
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
 		// first batch will return 2 jobs from workspace A and 2 jobs from workspace B
 		m.jobs = []*jobsdb.JobT{
 			{JobID: 2, WorkspaceId: "A"},
@@ -146,7 +146,7 @@ func TestJobIterator(t *testing.T) {
 			{JobID: 4, WorkspaceId: "B"},
 		}
 
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 		require.True(t, it.HasNext())
 
 		// 2nd batch should return 1 job from workspace A and 1 job from workspace B
@@ -157,7 +157,7 @@ func TestJobIterator(t *testing.T) {
 
 		discardedJobIDA := int64(2)
 		discardedJobIDB := int64(4)
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 2}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 2}
 
 		var count int
 		var previousJob *jobsdb.JobT
@@ -178,14 +178,14 @@ func TestJobIterator(t *testing.T) {
 
 	t.Run("iterate, discard one job but don't fetch more due to maxQueries", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs, WithMaxQueries(1))
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs, WithMaxQueries(1))
 		// first batch will return 2 jobs from workspace A
 		m.jobs = []*jobsdb.JobT{
 			{JobID: 1, WorkspaceId: "A"},
 			{JobID: 2, WorkspaceId: "A"},
 		}
 
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 
 		require.True(t, it.HasNext())
 
@@ -195,7 +195,7 @@ func TestJobIterator(t *testing.T) {
 		}
 
 		discardedJobID := int64(2)
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 1}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 1}
 
 		var count int
 		var previousJob *jobsdb.JobT
@@ -216,14 +216,14 @@ func TestJobIterator(t *testing.T) {
 
 	t.Run("iterate, discard one job but don't fetch more due to discardedPercentageTolerance", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs, WithDiscardedPercentageTolerance(50))
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs, WithDiscardedPercentageTolerance(50))
 		// first batch will return 2 jobs from workspace A
 		m.jobs = []*jobsdb.JobT{
 			{JobID: 1, WorkspaceId: "A"},
 			{JobID: 2, WorkspaceId: "A"},
 		}
 
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 
 		require.True(t, it.HasNext())
 
@@ -233,7 +233,7 @@ func TestJobIterator(t *testing.T) {
 		}
 
 		discardedJobID := int64(2)
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 1}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 1}
 
 		var count int
 		var previousJob *jobsdb.JobT
@@ -254,24 +254,24 @@ func TestJobIterator(t *testing.T) {
 
 	t.Run("error during query causes a panic", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs)
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
 		// first batch will fail
 		m.fail = true
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 
 		require.Panics(t, func() { it.HasNext() })
 	})
 
 	t.Run("out-of-order events during iterator's next causes panic", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
-		it := New(jobsdb.GetQueryParamsT{JobsLimit: 5}, m.GetJobs)
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
 		// first batch will return 2 jobs from workspace A
 		m.jobs = []*jobsdb.JobT{
 			{JobID: 1, WorkspaceId: "A", LastJobStatus: jobsdb.JobStatusT{}},
 			{JobID: 3, WorkspaceId: "A", LastJobStatus: jobsdb.JobStatusT{JobState: jobsdb.Waiting.State}},
 		}
 
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 5}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
 
 		require.True(t, it.HasNext())
 
@@ -281,7 +281,7 @@ func TestJobIterator(t *testing.T) {
 		}
 
 		discardedJobID := int64(3)
-		m.expectedParams = &jobsdb.GetQueryParamsT{JobsLimit: 1}
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 1}
 
 		var count int
 		var previousJob *jobsdb.JobT
@@ -307,12 +307,12 @@ func TestJobIterator(t *testing.T) {
 type mockGetJobs struct {
 	t              *testing.T
 	count          int
-	expectedParams *jobsdb.GetQueryParamsT
+	expectedParams *jobsdb.GetQueryParams
 	jobs           []*jobsdb.JobT
 	fail           bool
 }
 
-func (m *mockGetJobs) GetJobs(_ context.Context, params jobsdb.GetQueryParamsT, resumeFrom jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
+func (m *mockGetJobs) GetJobs(_ context.Context, params jobsdb.GetQueryParams, resumeFrom jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
 	m.count++
 	if m.expectedParams != nil {
 		require.Equalf(m.t, *m.expectedParams, params, "expect call %d to get jobs to be performed with the expected params", m.count)
