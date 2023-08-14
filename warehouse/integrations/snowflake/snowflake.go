@@ -42,6 +42,9 @@ const (
 	role               = "role"
 	password           = "password"
 	application        = "Rudderstack_Warehouse"
+
+	loadTableStrategyMergeMode  = "MERGE"
+	loadTableStrategyAppendMode = "APPEND"
 )
 
 var primaryKeyMap = map[string]string{
@@ -155,6 +158,7 @@ type Snowflake struct {
 	stats          stats.Stats
 
 	config struct {
+		loadTableStrategy  string
 		slowQueryThreshold time.Duration
 		enableDeleteByJobs bool
 	}
@@ -165,6 +169,18 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 
 	sf.logger = log.Child("integrations").Child("snowflake")
 	sf.stats = stat
+
+	loadTableStrategy := conf.GetString("Warehouse.deltalake.loadTableStrategy", loadTableStrategyMergeMode)
+	switch loadTableStrategy {
+	case loadTableStrategyMergeMode, loadTableStrategyAppendMode:
+		sf.config.loadTableStrategy = loadTableStrategy
+	default:
+		loadTableStrategy = loadTableStrategyMergeMode
+		sf.logger.Errorw(
+			"Received invalid loadTableStrategy, defaulting to MERGE mode",
+			"loadTableStrategy", loadTableStrategy,
+		)
+	}
 
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
