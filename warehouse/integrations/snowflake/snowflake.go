@@ -445,84 +445,23 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		additionalJoinClause = fmt.Sprintf(`AND original.%[1]q = staging.%[1]q AND original.%[2]q = staging.%[2]q`, "TABLE_NAME", "COLUMN_NAME")
 	}
 
-	if keepLatestRecordOnDedup {
-		sqlStatement = fmt.Sprintf(`
-			MERGE INTO %[9]s.%[1]q AS original USING (
-			  SELECT
-				*
-			  FROM
-				(
-				  SELECT
-					*,
-					row_number() OVER (
-					  PARTITION BY %[8]s
-					  ORDER BY
-						RECEIVED_AT DESC
-					) AS _rudder_staging_row_number
-				  FROM
-					%[9]s.%[2]q
-				) AS q
-			  WHERE
-				_rudder_staging_row_number = 1
-			) AS staging ON (
-			  original.%[3]q = staging.%[3]q %[7]s
-			)
-			WHEN NOT MATCHED THEN
-			  INSERT (%[4]s) VALUES (%[5]s)
-			WHEN MATCHED THEN
-			  UPDATE SET %[6]s;
-`,
-			tableName,
-			stagingTableName,
-			primaryKey,
-			sortedColumnNames,
-			stagingColumnNames,
-			columnsWithValues,
-			additionalJoinClause,
-			partitionKey,
-			schemaIdentifier,
-		)
-	} else {
+	updateSet := columnsWithValues
+	if !keepLatestRecordOnDedup {
 		// This is being added in order to get the updates count
-		dummyColumnWithValues := fmt.Sprintf(`original.%[1]q = original.%[1]q`, strKeys[0])
-
-		sqlStatement = fmt.Sprintf(`
-			MERGE INTO %[8]s.%[1]q AS original USING (
-			  SELECT
-				*
-			  FROM
-				(
-				  SELECT
-					*,
-					row_number() OVER (
-					  PARTITION BY %[7]s
-					  ORDER BY
-						RECEIVED_AT DESC
-					) AS _rudder_staging_row_number
-				  FROM
-					%[8]s.%[2]q
-				) AS q
-			  WHERE
-				_rudder_staging_row_number = 1
-			) AS staging ON (
-			  original.%[3]q = staging.%[3]q %[6]s
-			)
-			WHEN NOT MATCHED THEN
-			  INSERT (%[4]s) VALUES (%[5]s)
-			WHEN MATCHED THEN
-			  UPDATE SET %[9]s;
-`,
-			tableName,
-			stagingTableName,
-			primaryKey,
-			sortedColumnNames,
-			stagingColumnNames,
-			additionalJoinClause,
-			partitionKey,
-			schemaIdentifier,
-			dummyColumnWithValues,
-		)
+		updateSet = fmt.Sprintf(`original.%[1]q = original.%[1]q`, strKeys[0])
 	}
+
+	sqlStatement = sf.mergeIntoStmt(
+		schemaIdentifier,
+		tableName,
+		stagingTableName,
+		partitionKey,
+		primaryKey,
+		additionalJoinClause,
+		sortedColumnNames,
+		stagingColumnNames,
+		updateSet,
+	)
 
 	sf.logger.Infow("deduplication",
 		logfield.SourceID, sf.Warehouse.Source.ID,
@@ -592,6 +531,53 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	}
 
 	return res, nil
+}
+
+func (sf *Snowflake) mergeIntoStmt(
+	schemaIdentifier,
+	tableName,
+	stagingTableName,
+	partitionKey,
+	primaryKey,
+	additionalJoinClause,
+	sortedColumnNames,
+	stagingColumnNames,
+	updateSet string,
+) string {
+	return fmt.Sprintf(`MERGE INTO %[1]s.%[2]q AS original USING (
+	  SELECT
+		*
+	  FROM
+		(
+		  SELECT
+			*,
+			row_number() OVER (
+			  PARTITION BY %[4]s
+			  ORDER BY
+				RECEIVED_AT DESC
+			) AS _rudder_staging_row_number
+		  FROM
+			%[1]s.%[3]q
+		) AS q
+	  WHERE
+		_rudder_staging_row_number = 1
+	) AS staging ON (
+	  original.%[5]q = staging.%[5]q %[6]s
+	)
+	WHEN NOT MATCHED THEN
+	  INSERT (%[7]s) VALUES (%[8]s)
+	WHEN MATCHED THEN
+	  UPDATE SET %[9]s;`,
+		schemaIdentifier,
+		tableName,
+		stagingTableName,
+		partitionKey,
+		primaryKey,
+		additionalJoinClause,
+		sortedColumnNames,
+		stagingColumnNames,
+		updateSet,
+	)
 }
 
 func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) (err error) {
