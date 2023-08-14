@@ -169,11 +169,10 @@ func TestIntegration(t *testing.T) {
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 	t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_SLOW_QUERY_THRESHOLD", "0s")
 
-	svcDone := make(chan struct{})
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	svcDone := make(chan struct{})
 	go func() {
 		r := runner.New(runner.ReleaseInfo{})
 		_ = r.Run(ctx, []string{"snowflake-integration-test"})
@@ -308,9 +307,7 @@ func TestIntegration(t *testing.T) {
 				dsn, err := sfdb.DSN(&urlConfig)
 				require.NoError(t, err)
 
-				db, err := sql.Open("snowflake", dsn)
-				require.NoError(t, err)
-				require.NoError(t, db.Ping())
+				db := getSnowflakeDB(t, dsn)
 
 				t.Cleanup(func() {
 					require.Eventually(t,
@@ -408,9 +405,7 @@ func TestIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		db, err := sql.Open("snowflake", dsn)
-		require.NoError(t, err)
-		require.NoError(t, db.Ping())
+		db := getSnowflakeDB(t, dsn)
 
 		t.Cleanup(func() {
 			require.Eventually(t,
@@ -456,4 +451,12 @@ func TestIntegration(t *testing.T) {
 		}
 		testhelper.VerifyConfigurationTest(t, dest)
 	})
+}
+
+func getSnowflakeDB(t testing.TB, dsn string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("snowflake", dsn)
+	require.NoError(t, err)
+	require.NoError(t, db.Ping())
+	return db
 }
