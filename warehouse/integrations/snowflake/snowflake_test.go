@@ -12,29 +12,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/compose-test/compose"
-
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-
-	snowflakedb "github.com/snowflakedb/gosnowflake"
-
-	"github.com/rudderlabs/compose-test/testcompose"
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
+	sfdb "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/compose-test/testcompose"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type testCredentials struct {
@@ -94,28 +86,28 @@ func TestIntegration(t *testing.T) {
 
 	misc.Init()
 	validations.Init()
-	warehouseutils.Init()
+	whutils.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
-	workspaceID := warehouseutils.RandHex()
-	sourceID := warehouseutils.RandHex()
-	destinationID := warehouseutils.RandHex()
-	writeKey := warehouseutils.RandHex()
-	caseSensitiveSourceID := warehouseutils.RandHex()
-	caseSensitiveDestinationID := warehouseutils.RandHex()
-	caseSensitiveWriteKey := warehouseutils.RandHex()
-	rbacSourceID := warehouseutils.RandHex()
-	rbacDestinationID := warehouseutils.RandHex()
-	rbacWriteKey := warehouseutils.RandHex()
-	sourcesSourceID := warehouseutils.RandHex()
-	sourcesDestinationID := warehouseutils.RandHex()
-	sourcesWriteKey := warehouseutils.RandHex()
+	workspaceID := whutils.RandHex()
+	sourceID := whutils.RandHex()
+	destinationID := whutils.RandHex()
+	writeKey := whutils.RandHex()
+	caseSensitiveSourceID := whutils.RandHex()
+	caseSensitiveDestinationID := whutils.RandHex()
+	caseSensitiveWriteKey := whutils.RandHex()
+	rbacSourceID := whutils.RandHex()
+	rbacDestinationID := whutils.RandHex()
+	rbacWriteKey := whutils.RandHex()
+	sourcesSourceID := whutils.RandHex()
+	sourcesDestinationID := whutils.RandHex()
+	sourcesWriteKey := whutils.RandHex()
 
-	destType := warehouseutils.SNOWFLAKE
+	destType := whutils.SNOWFLAKE
 
 	namespace := testhelper.RandSchema(destType)
 	rbacNamespace := testhelper.RandSchema(destType)
@@ -191,7 +183,7 @@ func TestIntegration(t *testing.T) {
 	t.Cleanup(func() { <-svcDone })
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
+	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, 100*time.Millisecond, "serviceHealthEndpoint")
 
 	t.Run("Event flow", func(t *testing.T) {
 		jobsDB := testhelper.JobsDB(t, jobsDBPort)
@@ -216,10 +208,12 @@ func TestIntegration(t *testing.T) {
 			stagingFilePrefix             string
 		}{
 			{
-				name:          "Upload Job with Normal Database",
-				writeKey:      writeKey,
-				schema:        namespace,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "Upload Job with Normal Database",
+				writeKey: writeKey,
+				schema:   namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:      sourceID,
 				destinationID: destinationID,
 				cred:          credentials,
@@ -233,10 +227,12 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job",
 			},
 			{
-				name:          "Upload Job with Role",
-				writeKey:      rbacWriteKey,
-				schema:        rbacNamespace,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "Upload Job with Role",
+				writeKey: rbacWriteKey,
+				schema:   rbacNamespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:      rbacSourceID,
 				destinationID: rbacDestinationID,
 				cred:          rbacCredentials,
@@ -250,10 +246,12 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job-with-role",
 			},
 			{
-				name:          "Upload Job with Case Sensitive Database",
-				writeKey:      caseSensitiveWriteKey,
-				schema:        caseSensitiveNamespace,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "Upload Job with Case Sensitive Database",
+				writeKey: caseSensitiveWriteKey,
+				schema:   caseSensitiveNamespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:      caseSensitiveSourceID,
 				destinationID: caseSensitiveDestinationID,
 				cred:          credentials,
@@ -298,7 +296,7 @@ func TestIntegration(t *testing.T) {
 				cred := tc.cred
 				cred.Database = tc.database
 
-				urlConfig := snowflakedb.Config{
+				urlConfig := sfdb.Config{
 					Account:   cred.Account,
 					User:      cred.User,
 					Role:      cred.Role,
@@ -307,7 +305,7 @@ func TestIntegration(t *testing.T) {
 					Warehouse: cred.Warehouse,
 				}
 
-				dsn, err := snowflakedb.DSN(&urlConfig)
+				dsn, err := sfdb.DSN(&urlConfig)
 				require.NoError(t, err)
 
 				db, err := sql.Open("snowflake", dsn)
@@ -315,13 +313,14 @@ func TestIntegration(t *testing.T) {
 				require.NoError(t, db.Ping())
 
 				t.Cleanup(func() {
-					require.Eventually(t, func() bool {
-						if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema)); err != nil {
-							t.Logf("error deleting schema: %v", err)
-							return false
-						}
-						return true
-					},
+					require.Eventually(t,
+						func() bool {
+							if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema)); err != nil {
+								t.Logf("error deleting schema: %v", err)
+								return false
+							}
+							return true
+						},
 						time.Minute,
 						time.Second,
 					)
@@ -399,7 +398,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
-		dsn, err := snowflakedb.DSN(&snowflakedb.Config{
+		dsn, err := sfdb.DSN(&sfdb.Config{
 			Account:   credentials.Account,
 			User:      credentials.User,
 			Role:      credentials.Role,
@@ -414,13 +413,14 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, db.Ping())
 
 		t.Cleanup(func() {
-			require.Eventually(t, func() bool {
-				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
-					t.Logf("error deleting schema: %v", err)
-					return false
-				}
-				return true
-			},
+			require.Eventually(t,
+				func() bool {
+					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
+						t.Logf("error deleting schema: %v", err)
+						return false
+					}
+					return true
+				},
 				time.Minute,
 				time.Second,
 			)
