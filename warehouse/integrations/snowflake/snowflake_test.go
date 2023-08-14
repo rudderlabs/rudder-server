@@ -292,16 +292,13 @@ func TestIntegration(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				cred := tc.cred
-				cred.Database = tc.database
-
 				urlConfig := sfdb.Config{
-					Account:   cred.Account,
-					User:      cred.User,
-					Role:      cred.Role,
-					Password:  cred.Password,
-					Database:  cred.Database,
-					Warehouse: cred.Warehouse,
+					Account:   tc.cred.Account,
+					User:      tc.cred.User,
+					Role:      tc.cred.Role,
+					Password:  tc.cred.Password,
+					Database:  tc.database,
+					Warehouse: tc.cred.Warehouse,
 				}
 
 				dsn, err := sfdb.DSN(&urlConfig)
@@ -319,7 +316,7 @@ func TestIntegration(t *testing.T) {
 							return true
 						},
 						time.Minute,
-						time.Second,
+						100*time.Millisecond,
 					)
 				})
 
@@ -417,7 +414,7 @@ func TestIntegration(t *testing.T) {
 					return true
 				},
 				time.Minute,
-				time.Second,
+				100*time.Millisecond,
 			)
 		})
 
