@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -176,7 +176,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 		loadTableStrategy = loadTableStrategyMergeMode
 		sf.logger.Errorw(
 			"Received invalid loadTableStrategy, defaulting to MERGE mode",
-			logfield.LoadTableStrategy, loadTableStrategy,
+			lf.LoadTableStrategy, loadTableStrategy,
 		)
 	}
 
@@ -315,14 +315,14 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	)
 
 	logFields := []interface{}{
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
-		logfield.TableName, tableName,
-		logfield.LoadTableStrategy, sf.config.loadTableStrategy,
+		lf.SourceID, sf.Warehouse.Source.ID,
+		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+		lf.DestinationID, sf.Warehouse.Destination.ID,
+		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+		lf.Namespace, sf.Namespace,
+		lf.TableName, tableName,
+		lf.LoadTableStrategy, sf.config.loadTableStrategy,
 	}
 	sf.logger.Infow("started loading", logFields...)
 
@@ -351,11 +351,11 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	)
 
 	sf.logger.Debugw("creating temporary table",
-		append(logFields, logfield.StagingTableName, stagingTableName)...,
+		append(logFields, lf.StagingTableName, stagingTableName)...,
 	)
 	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.logger.Warnw("failure creating temporary table",
-			append(logFields, logfield.StagingTableName, stagingTableName, logfield.Error, err.Error())...,
+			append(logFields, lf.StagingTableName, stagingTableName, lf.Error, err.Error())...,
 		)
 		return tableLoadResp{}, fmt.Errorf("create temporary table: %w", err)
 	}
@@ -395,12 +395,12 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		sanitisedQuery = ""
 	}
 	sf.logger.Infow("copy command",
-		append(logFields, logfield.Query, sanitisedQuery)...,
+		append(logFields, lf.Query, sanitisedQuery)...,
 	)
 
 	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.logger.Warnw("failure running COPY command",
-			append(logFields, logfield.Query, sanitisedQuery, logfield.Error, err.Error()),
+			append(logFields, lf.Query, sanitisedQuery, lf.Error, err.Error()),
 		)
 		return tableLoadResp{}, fmt.Errorf("copy into table: %w", err)
 	}
@@ -461,20 +461,20 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	)
 
 	sf.logger.Infow("deduplication",
-		append(logFields, logfield.Query, sqlStatement)...,
+		append(logFields, lf.Query, sqlStatement)...,
 	)
 
 	row := db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
 		sf.logger.Warnw("failure running deduplication",
-			append(logFields, logfield.Query, sqlStatement, logfield.Error, row.Err().Error())...,
+			append(logFields, lf.Query, sqlStatement, lf.Error, row.Err().Error())...,
 		)
 		return tableLoadResp{}, fmt.Errorf("merge into table: %w", row.Err())
 	}
 
 	if err = row.Scan(&inserted, &updated); err != nil {
 		sf.logger.Warnw("getting rows affected for dedup",
-			append(logFields, logfield.Query, sqlStatement, logfield.Error, err.Error())...,
+			append(logFields, lf.Query, sqlStatement, lf.Error, err.Error())...,
 		)
 		return tableLoadResp{}, fmt.Errorf("getting rows affected for dedup: %w", err)
 	}
@@ -535,7 +535,7 @@ func (sf *Snowflake) mergeIntoStmt(
 }
 
 func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
-	sf.logger.Infow("Fetching load file location", logfield.TableName, identityMergeRulesTable)
+	sf.logger.Infow("Fetching load file location", lf.TableName, identityMergeRulesTable)
 
 	loadFile, err := sf.Uploader.GetSingleLoadFile(ctx, identityMergeRulesTable)
 	if err != nil {
@@ -545,7 +545,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 	dbHandle, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
 		sf.logger.Errorw("Error establishing connection for copying table",
-			logfield.TableName, identityMergeRulesTable, logfield.Error, err.Error(),
+			lf.TableName, identityMergeRulesTable, lf.Error, err.Error(),
 		)
 		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
 	}
@@ -573,88 +573,118 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
 	})
 	if regexErr == nil {
-		sf.logger.Infow("Copying identity merge rules into table",
-			logfield.TableName, identityMergeRulesTable, logfield.Query, sanitisedSQLStmt,
+		sf.logger.Infow("Copying identity merge rules for table",
+			lf.TableName, identityMergeRulesTable, lf.Query, sanitisedSQLStmt,
 		)
 	}
 
 	if _, err = dbHandle.ExecContext(ctx, sqlStatement); err != nil {
-		sf.logger.Errorw("Error while copying identity merge rules into table",
-			logfield.TableName, identityMergeRulesTable, logfield.Error, err.Error(),
+		sf.logger.Errorw("Error while copying identity merge rules for table",
+			lf.TableName, identityMergeRulesTable, lf.Error, err.Error(),
 		)
 		return fmt.Errorf("cannot copy into table %q: %w", identityMergeRulesTable, err)
 	}
 
-	sf.logger.Infow("Completed load for table", logfield.TableName, identityMergeRulesTable)
+	sf.logger.Infow("Completed load for table", lf.TableName, identityMergeRulesTable)
 
 	return nil
 }
 
-func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) (err error) {
-	sf.logger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
-	sf.logger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
-	var loadFile whutils.LoadFile
+func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
+	sf.logger.Infow("Fetching load file location", lf.TableName, identityMappingsTable)
 
-	loadFile, err = sf.Uploader.GetSingleLoadFile(ctx, identityMappingsTable)
+	loadFile, err := sf.Uploader.GetSingleLoadFile(ctx, identityMappingsTable)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot get load file location for %q: %w", identityMappingsTable, err)
 	}
 
 	dbHandle, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
-		sf.logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMappingsTable, err)
-		return
+		sf.logger.Errorw("Error establishing connection for copying table",
+			lf.TableName, identityMappingsTable, lf.Error, err.Error(),
+		)
+		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := whutils.StagingTableName(provider, identityMappingsTable, tableNameLimit)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q`, schemaIdentifier, stagingTableName, identityMappingsTable)
+	sqlStatement := fmt.Sprintf(
+		`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q`,
+		schemaIdentifier, stagingTableName, identityMappingsTable,
+	)
 
-	sf.logger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
+	sf.logger.Infow("Creating temporary table", lf.TableName, identityMappingsTable, lf.Query, sqlStatement)
 	_, err = dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		sf.logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", identityMappingsTable, err)
-		return
+		sf.logger.Errorw("Error creating temporary table", lf.TableName, identityMappingsTable, lf.Error, err.Error())
+		return fmt.Errorf("cannot create temporary table like %s.%q: %w", schemaIdentifier, identityMappingsTable, err)
 	}
 
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s.%q ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, schemaIdentifier, stagingTableName)
-	sf.logger.Infof("SF: Adding autoincrement column for table:%s at %s\n", stagingTableName, sqlStatement)
+	sqlStatement = fmt.Sprintf(
+		`ALTER TABLE %s.%q ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`,
+		schemaIdentifier, stagingTableName,
+	)
+	sf.logger.Infow("Adding autoincrement column", lf.TableName, stagingTableName, lf.Query, sqlStatement)
 	_, err = dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil && !checkAndIgnoreAlreadyExistError(err) {
-		sf.logger.Errorf("SF: Error adding autoincrement column for table:%s: %v\n", stagingTableName, err)
-		return
+		sf.logger.Errorw("Error adding autoincrement column", lf.TableName, stagingTableName, lf.Error, err.Error())
+		return fmt.Errorf("cannot add autoincrement column to %s.%q: %w", schemaIdentifier, stagingTableName, err)
 	}
 
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
-	sqlStatement = fmt.Sprintf(`COPY INTO %v("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s.%q`, schemaIdentifier, stagingTableName), loadLocation, sf.authString())
+	sqlStatement = fmt.Sprintf(
+		`COPY INTO %s.%q("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
+		FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
+		TRUNCATECOLUMNS = TRUE`,
+		schemaIdentifier, stagingTableName,
+		loadLocation,
+		sf.authString(),
+	)
 
-	sf.logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
+	sf.logger.Infow("Copying identity mappings for table", lf.TableName, identityMappingsTable, lf.Query, sqlStatement)
 	_, err = dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		sf.logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		return
+		sf.logger.Errorw("Error running COPY for table",
+			lf.TableName, identityMappingsTable, lf.Query, sqlStatement, lf.Error, err.Error(),
+		)
+		return fmt.Errorf("cannot run copy into %s.%q: %v", schemaIdentifier, stagingTableName, err)
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[3]s.%[1]q AS original
-									USING (
-										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "ID" DESC) AS _rudder_staging_row_number FROM %[3]s.%[2]q
-										) AS q WHERE _rudder_staging_row_number = 1
-									) AS staging
-									ON (original."MERGE_PROPERTY_TYPE" = staging."MERGE_PROPERTY_TYPE" AND original."MERGE_PROPERTY_VALUE" = staging."MERGE_PROPERTY_VALUE")
-									WHEN MATCHED THEN
-									UPDATE SET original."RUDDER_ID" = staging."RUDDER_ID", original."UPDATED_AT" =  staging."UPDATED_AT"
-									WHEN NOT MATCHED THEN
-									INSERT ("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") VALUES (staging."MERGE_PROPERTY_TYPE", staging."MERGE_PROPERTY_VALUE", staging."RUDDER_ID", staging."UPDATED_AT")`, identityMappingsTable, stagingTableName, schemaIdentifier)
-	sf.logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
+	sqlStatement = fmt.Sprintf(
+		`MERGE INTO %[3]s.%[1]q AS original
+		USING (
+			SELECT * FROM (
+				SELECT *, row_number() OVER (
+					PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "ID" DESC
+				) AS _rudder_staging_row_number FROM %[3]s.%[2]q
+			) AS q WHERE _rudder_staging_row_number = 1
+		) AS staging
+		ON (
+			original."MERGE_PROPERTY_TYPE" = staging."MERGE_PROPERTY_TYPE" AND
+			original."MERGE_PROPERTY_VALUE" = staging."MERGE_PROPERTY_VALUE"
+		)
+		WHEN MATCHED THEN
+		UPDATE SET original."RUDDER_ID" = staging."RUDDER_ID", original."UPDATED_AT" =  staging."UPDATED_AT"
+		WHEN NOT MATCHED THEN
+		INSERT ("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
+		VALUES (
+			staging."MERGE_PROPERTY_TYPE", staging."MERGE_PROPERTY_VALUE", staging."RUDDER_ID", staging."UPDATED_AT"
+		);`,
+		identityMappingsTable, stagingTableName, schemaIdentifier,
+	)
+	sf.logger.Infow("Merge records for dedup for table", lf.TableName, identityMappingsTable, lf.Query, sqlStatement)
 	_, err = dbHandle.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		sf.logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		return
+		sf.logger.Errorw("Error running MERGE for dedup",
+			lf.TableName, identityMappingsTable, lf.Query, sqlStatement, lf.Error, err.Error(),
+		)
+		return fmt.Errorf("cannot run merge for dedup into %s.%q: %w", schemaIdentifier, identityMappingsTable, err)
 	}
-	sf.logger.Infof("SF: Complete load for table:%s\n", identityMappingsTable)
-	return
+
+	sf.logger.Infow("Complete load for table", lf.TableName, identityMappingsTable)
+
+	return nil
 }
 
 func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
@@ -672,12 +702,12 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	)
 
 	sf.logger.Infow("started loading for identifies and users tables",
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
+		lf.SourceID, sf.Warehouse.Source.ID,
+		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+		lf.DestinationID, sf.Warehouse.Destination.ID,
+		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+		lf.Namespace, sf.Namespace,
 	)
 
 	resp, err := sf.loadTable(ctx, identifiesTable, identifiesSchema, true)
@@ -772,26 +802,26 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	)
 
 	sf.logger.Infow("creating staging table for users",
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
-		logfield.TableName, whutils.UsersTable,
-		logfield.StagingTableName, stagingTableName,
-		logfield.Query, sqlStatement,
+		lf.SourceID, sf.Warehouse.Source.ID,
+		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+		lf.DestinationID, sf.Warehouse.Destination.ID,
+		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+		lf.Namespace, sf.Namespace,
+		lf.TableName, whutils.UsersTable,
+		lf.StagingTableName, stagingTableName,
+		lf.Query, sqlStatement,
 	)
 	if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.logger.Warnw("failure creating staging table for users",
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Namespace, sf.Namespace,
-			logfield.TableName, whutils.UsersTable,
-			logfield.Error, err.Error(),
+			lf.SourceID, sf.Warehouse.Source.ID,
+			lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+			lf.DestinationID, sf.Warehouse.Destination.ID,
+			lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+			lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+			lf.Namespace, sf.Namespace,
+			lf.TableName, whutils.UsersTable,
+			lf.Error, err.Error(),
 		)
 
 		return map[string]error{
@@ -838,28 +868,28 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	)
 
 	sf.logger.Infow("deduplication",
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
-		logfield.TableName, whutils.UsersTable,
-		logfield.Query, sqlStatement,
+		lf.SourceID, sf.Warehouse.Source.ID,
+		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+		lf.DestinationID, sf.Warehouse.Destination.ID,
+		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+		lf.Namespace, sf.Namespace,
+		lf.TableName, whutils.UsersTable,
+		lf.Query, sqlStatement,
 	)
 
 	row := resp.db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
 		sf.logger.Warnw("failure running deduplication",
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Namespace, sf.Namespace,
-			logfield.TableName, whutils.UsersTable,
-			logfield.Query, sqlStatement,
-			logfield.Error, row.Err().Error(),
+			lf.SourceID, sf.Warehouse.Source.ID,
+			lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+			lf.DestinationID, sf.Warehouse.Destination.ID,
+			lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+			lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+			lf.Namespace, sf.Namespace,
+			lf.TableName, whutils.UsersTable,
+			lf.Query, sqlStatement,
+			lf.Error, row.Err().Error(),
 		)
 
 		return map[string]error{
@@ -869,15 +899,15 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	}
 	if err = row.Scan(&inserted, &updated); err != nil {
 		sf.logger.Warnw("getting rows affected for dedup",
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Namespace, sf.Namespace,
-			logfield.TableName, whutils.UsersTable,
-			logfield.Query, sqlStatement,
-			logfield.Error, err.Error(),
+			lf.SourceID, sf.Warehouse.Source.ID,
+			lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+			lf.DestinationID, sf.Warehouse.Destination.ID,
+			lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+			lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+			lf.Namespace, sf.Namespace,
+			lf.TableName, whutils.UsersTable,
+			lf.Query, sqlStatement,
+			lf.Error, err.Error(),
 		)
 		return map[string]error{
 			identifiesTable: nil,
@@ -896,12 +926,12 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	}).Count(int(updated))
 
 	sf.logger.Infow("completed loading for users and identifies tables",
-		logfield.SourceID, sf.Warehouse.Source.ID,
-		logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, sf.Warehouse.Destination.ID,
-		logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-		logfield.Namespace, sf.Namespace,
+		lf.SourceID, sf.Warehouse.Source.ID,
+		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+		lf.DestinationID, sf.Warehouse.Destination.ID,
+		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+		lf.Namespace, sf.Namespace,
 	)
 
 	return map[string]error{
@@ -948,12 +978,12 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		sqlmw.WithStats(sf.stats),
 		sqlmw.WithLogger(sf.logger),
 		sqlmw.WithKeyAndValues(
-			logfield.SourceID, sf.Warehouse.Source.ID,
-			logfield.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, sf.Warehouse.Destination.ID,
-			logfield.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, sf.Warehouse.WorkspaceID,
-			logfield.Schema, sf.Namespace,
+			lf.SourceID, sf.Warehouse.Source.ID,
+			lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
+			lf.DestinationID, sf.Warehouse.Destination.ID,
+			lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
+			lf.WorkspaceID, sf.Warehouse.WorkspaceID,
+			lf.Schema, sf.Namespace,
 		),
 		sqlmw.WithSlowQueryThreshold(sf.config.slowQueryThreshold),
 		sqlmw.WithQueryTimeout(sf.connectTimeout),
