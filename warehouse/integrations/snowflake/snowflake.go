@@ -168,7 +168,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 	sf.logger = log.Child("integrations").Child("snowflake")
 	sf.stats = stat
 
-	loadTableStrategy := conf.GetString("Warehouse.deltalake.loadTableStrategy", loadTableStrategyMergeMode)
+	loadTableStrategy := conf.GetString("Warehouse.snowflake.loadTableStrategy", loadTableStrategyMergeMode)
 	switch loadTableStrategy {
 	case loadTableStrategyMergeMode, loadTableStrategyAppendMode:
 		sf.config.loadTableStrategy = loadTableStrategy
