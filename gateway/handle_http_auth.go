@@ -19,16 +19,7 @@ func (gw *Handle) writeKeyAuth(delegate http.HandlerFunc) http.HandlerFunc {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var errorMessage string
 		defer func() {
-			if errorMessage != "" {
-				status := response.GetErrorStatusCode(errorMessage)
-				responseBody := response.GetStatus(errorMessage)
-				gw.logger.Infow("response",
-					"ip", misc.GetIPFromReq(r),
-					"path", r.URL.Path,
-					"status", status,
-					"body", responseBody)
-				http.Error(w, responseBody, status)
-			}
+			gw.handleHttpError(w, r, errorMessage)
 		}()
 		writeKey, _, ok := r.BasicAuth()
 		if !ok || writeKey == "" {
@@ -66,16 +57,7 @@ func (gw *Handle) webhookAuth(delegate http.HandlerFunc) http.HandlerFunc {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var errorMessage string
 		defer func() {
-			if errorMessage != "" {
-				status := response.GetErrorStatusCode(errorMessage)
-				responseBody := response.GetStatus(errorMessage)
-				gw.logger.Infow("response",
-					"ip", misc.GetIPFromReq(r),
-					"path", r.URL.Path,
-					"status", status,
-					"body", responseBody)
-				http.Error(w, responseBody, status)
-			}
+			gw.handleHttpError(w, r, errorMessage)
 		}()
 
 		var writeKey string
@@ -91,7 +73,7 @@ func (gw *Handle) webhookAuth(delegate http.HandlerFunc) http.HandlerFunc {
 				WriteKey: "noWriteKey",
 				ReqType:  reqType,
 			}
-			stat.RequestFailed("noWriteKeyInBasicAuth")
+			stat.RequestFailed("noWriteKeyInQueryParams")
 			stat.Report(gw.stats)
 			errorMessage = response.NoWriteKeyInQueryParams
 			return
@@ -118,16 +100,7 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var errorMessage string
 		defer func() {
-			if errorMessage != "" {
-				status := response.GetErrorStatusCode(errorMessage)
-				responseBody := response.GetStatus(errorMessage)
-				gw.logger.Infow("response",
-					"ip", misc.GetIPFromReq(r),
-					"path", r.URL.Path,
-					"status", status,
-					"body", responseBody)
-				http.Error(w, responseBody, status)
-			}
+			gw.handleHttpError(w, r, errorMessage)
 		}()
 		sourceID := r.Header.Get("X-Rudder-Source-Id")
 		if sourceID == "" {
@@ -139,7 +112,7 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 			}
 			stat.RequestFailed("noSourceIdInHeader")
 			stat.Report(gw.stats)
-			errorMessage = response.NoWriteKeyInBasicAuth
+			errorMessage = response.NoSourceIdInHeader
 			return
 		}
 		arctx := gw.authRequestContextForSourceID(sourceID)
@@ -253,4 +226,17 @@ func sourceToRequestContext(s backendconfig.SourceT) *gwtypes.AuthRequestContext
 		arctx.SourceCategory = eventStreamSourceCategory
 	}
 	return arctx
+}
+
+func (gw *Handle) handleHttpError(w http.ResponseWriter, r *http.Request, errorMessage string) {
+	if errorMessage != "" {
+		status := response.GetErrorStatusCode(errorMessage)
+		responseBody := response.GetStatus(errorMessage)
+		gw.logger.Infow("response",
+			"ip", misc.GetIPFromReq(r),
+			"path", r.URL.Path,
+			"status", status,
+			"body", responseBody)
+		http.Error(w, responseBody, status)
+	}
 }

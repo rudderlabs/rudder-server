@@ -37,30 +37,6 @@ func (m *MockGateway) EXPECT() *MockGatewayMockRecorder {
 	return m.recorder
 }
 
-// IncrementAckCount mocks base method.
-func (m *MockGateway) IncrementAckCount(arg0 uint64) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "IncrementAckCount", arg0)
-}
-
-// IncrementAckCount indicates an expected call of IncrementAckCount.
-func (mr *MockGatewayMockRecorder) IncrementAckCount(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementAckCount", reflect.TypeOf((*MockGateway)(nil).IncrementAckCount), arg0)
-}
-
-// IncrementRecvCount mocks base method.
-func (m *MockGateway) IncrementRecvCount(arg0 uint64) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "IncrementRecvCount", arg0)
-}
-
-// IncrementRecvCount indicates an expected call of IncrementRecvCount.
-func (mr *MockGatewayMockRecorder) IncrementRecvCount(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementRecvCount", reflect.TypeOf((*MockGateway)(nil).IncrementRecvCount), arg0)
-}
-
 // NewSourceStat mocks base method.
 func (m *MockGateway) NewSourceStat(arg0 *types.AuthRequestContext, arg1 string) *stats.SourceStat {
 	m.ctrl.T.Helper()

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"net/http"
-	"sync/atomic"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -96,7 +95,6 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 	gw.logger.LogRequest(r)
-	atomic.AddUint64(&gw.recvCount, 1)
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
@@ -117,7 +115,6 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 		return
 	}
 	errorMessage = rh.ProcessRequest(&w, r, reqType, payload, arctx)
-	atomic.AddUint64(&gw.ackCount, 1)
 	gw.TrackRequestMetrics(errorMessage)
 	if errorMessage != "" {
 		return

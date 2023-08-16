@@ -109,14 +109,12 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	}
 	pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, reason)
 	http.Error(w, reason, statusCode)
-	webhook.gwHandle.IncrementAckCount(1)
 }
 
 func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 	pkgLogger.LogRequest(r)
-	webhook.gwHandle.IncrementRecvCount(1)
 	atomic.AddUint64(&webhook.recvCount, 1)
 	sourceDefName := arctx.SourceDefName
 
@@ -210,7 +208,6 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Wait for batcher process to be done
 	resp := <-done
-	webhook.gwHandle.IncrementAckCount(1)
 	atomic.AddUint64(&webhook.ackCount, 1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
