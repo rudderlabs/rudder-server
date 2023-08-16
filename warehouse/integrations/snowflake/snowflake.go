@@ -534,27 +534,38 @@ func (sf *Snowflake) mergeIntoStmt(
 	)
 }
 
-func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) (err error) {
-	sf.logger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
+func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
+	sf.logger.Infow("Fetching load file location", logfield.TableName, identityMergeRulesTable)
 
-	sf.logger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
-	var loadFile whutils.LoadFile
-	loadFile, err = sf.Uploader.GetSingleLoadFile(ctx, identityMergeRulesTable)
+	loadFile, err := sf.Uploader.GetSingleLoadFile(ctx, identityMergeRulesTable)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot get load file location for %q: %w", identityMergeRulesTable, err)
 	}
 
 	dbHandle, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
-		sf.logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMergeRulesTable, err)
-		return
+		sf.logger.Errorw("Error establishing connection for copying table",
+			logfield.TableName, identityMergeRulesTable, logfield.Error, err.Error(),
+		)
+		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
 	}
 
-	sortedColumnNames := strings.Join([]string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}, ",")
+	sortedColumnNames := strings.Join([]string{
+		"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE",
+	}, ",")
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s.%q`, schemaIdentifier, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
+	sqlStatement := fmt.Sprintf(`
+		COPY INTO %s.%q(%v)
+		FROM '%v'
+		%s
+		PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
+		TRUNCATECOLUMNS = TRUE;`,
+		schemaIdentifier, identityMergeRulesTable, sortedColumnNames,
+		loadLocation,
+		sf.authString(),
+	)
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -562,16 +573,21 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) (err error
 		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
 	})
 	if regexErr == nil {
-		sf.logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sanitisedSQLStmt)
+		sf.logger.Infow("Copying identity merge rules into table",
+			logfield.TableName, identityMergeRulesTable, logfield.Query, sanitisedSQLStmt,
+		)
 	}
 
-	_, err = dbHandle.ExecContext(ctx, sqlStatement)
-	if err != nil {
-		sf.logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		return
+	if _, err = dbHandle.ExecContext(ctx, sqlStatement); err != nil {
+		sf.logger.Errorw("Error while copying identity merge rules into table",
+			logfield.TableName, identityMergeRulesTable, logfield.Error, err.Error(),
+		)
+		return fmt.Errorf("cannot copy into table %q: %w", identityMergeRulesTable, err)
 	}
-	sf.logger.Infof("SF: Complete load for table:%s\n", identityMergeRulesTable)
-	return
+
+	sf.logger.Infow("Completed load for table", logfield.TableName, identityMergeRulesTable)
+
+	return nil
 }
 
 func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) (err error) {
