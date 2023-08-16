@@ -56,6 +56,8 @@ const (
 	WriteKeyInvalid           = "invalid-write-key"
 	WriteKeyEmpty             = ""
 	SourceIDEnabled           = "enabled-source"
+	ReplaySourceID            = "replay-source"
+	ReplayWriteKey            = "replay-source"
 	SourceIDDisabled          = "disabled-source"
 	TestRemoteAddressWithPort = "test.com:80"
 	TestRemoteAddress         = "test.com"
@@ -106,6 +108,17 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:       SourceIDEnabled,
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name:     SourceIDEnabled,
+				Category: sourceType2,
+			},
+			WorkspaceID: WorkspaceID,
+		},
+		{
+			ID:             ReplaySourceID,
+			WriteKey:       ReplayWriteKey,
+			Enabled:        true,
+			IsReplaySource: true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name:     SourceIDEnabled,
 				Category: sourceType2,
@@ -255,7 +268,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		It("should not accept events from suppress users", func() {
 			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 			// Why GET
-			expectHandlerResponse((gateway.webBatchHandler()), authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "OK", "batch")
+			expectHandlerResponse(gateway.webBatchHandler(), authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "OK", "batch")
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
@@ -450,7 +463,11 @@ var _ = Describe("Gateway", func() {
 				}
 				Expect(err).To(BeNil())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
+				if ep == "/internal/v1/replay" {
+					req.Header.Set("X-Rudder-Source-Id", ReplaySourceID)
+				} else {
+					req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(WriteKeyEnabled+":")))
+				}
 				resp, err := client.Do(req)
 				Expect(err).To(BeNil())
 				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)), "endpoint: "+ep)
@@ -1399,10 +1416,12 @@ func endpointsToVerify() ([]string, []string, []string) {
 		"/v1/merge",
 		"/v1/group",
 		"/v1/import",
-		"/v1/audiencelist",
+		"/v1/audiencelist", // Get rid of this over time and use the /internal endpoint
 		"/v1/webhook",
 		"/beacon/v1/batch",
 		"/internal/v1/extract",
+		"/internal/v1/replay",
+		"/internal/v1/audiencelist",
 		"/v1/warehouse/pending-events",
 		"/v1/warehouse/trigger-upload",
 		"/v1/warehouse/jobs",

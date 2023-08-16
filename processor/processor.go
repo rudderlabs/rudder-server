@@ -822,9 +822,9 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT) *transformer.Metadata {
+func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
-	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	commonMetadata.SourceID = source.ID
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = misc.GetInstanceID()
@@ -835,9 +835,9 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
-	commonMetadata.SourceJobRunID = gjson.GetBytes(batchEvent.Parameters, "source_job_run_id").String()
+	commonMetadata.SourceJobRunID = eventParams.SourceJobRunId
 	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
-	commonMetadata.SourceTaskRunID = gjson.GetBytes(batchEvent.Parameters, "source_task_run_id").String()
+	commonMetadata.SourceTaskRunID = eventParams.SourceTaskRunId
 	commonMetadata.RecordID = misc.MapLookup(singularEvent, "recordId")
 
 	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
@@ -1302,7 +1302,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 		return
 	}
 	if val, ok := event["type"]; ok {
-		eventType = val.(string)
+		eventType, _ = val.(string)
 		tags := map[string]string{
 			"writeKey":   source.WriteKey,
 			"event_type": eventType,
@@ -1314,7 +1314,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 				eventName = eventType
 			} else {
 				if val, ok := event["event"]; ok {
-					eventName = val.(string)
+					eventName, _ = val.(string)
 				} else {
 					eventName = eventType
 				}
@@ -1439,8 +1439,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			if proc.config.enableDedup {
 				payload, _ := jsonfast.Marshal(singularEvent)
 				messageSize := int64(len(payload))
-				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: messageId, Value: messageSize}); !ok {
-					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
+				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
+				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: dedupKey, Value: messageSize}); !ok {
+					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
 					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 					continue
 				}
@@ -1461,6 +1462,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				batchEvent,
 				receivedAt,
 				source,
+				eventParams,
 			)
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {

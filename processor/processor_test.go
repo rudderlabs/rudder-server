@@ -511,7 +511,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					),
 					EventCount:    2,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+					Parameters:    createBatchParametersWithoutSources(SourceIDEnabledNoUT),
 				},
 				{
 					UUID:          uuid.New(),
@@ -552,7 +552,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 						createMessagePayload,
 					),
 					EventCount: 3,
-					Parameters: createBatchParameters(SourceIDEnabledNoUT),
+					Parameters: createBatchParametersWithoutSources(SourceIDEnabledNoUT),
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -569,7 +569,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					Expect(jobs).To(HaveLen(5))
 				})
 
 			processor := prepareHandle(NewHandle(mockTransformer))
@@ -751,11 +751,11 @@ var _ = Describe("Processor", Ordered, func() {
 						[]mockEventData{
 							messages["message-1"],
 							messages["message-2"],
-						}, createMessagePayload,
+						}, createMessagePayloadWithoutSources,
 					),
 					EventCount:    2,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+					Parameters:    createBatchParametersWithoutSources(SourceIDEnabledNoUT),
 				},
 				{
 					UUID:          uuid.New(),
@@ -793,10 +793,10 @@ var _ = Describe("Processor", Ordered, func() {
 							messages["message-4"],
 							messages["message-5"],
 						},
-						createMessagePayload,
+						createMessagePayloadWithoutSources,
 					),
 					EventCount: 3,
-					Parameters: createBatchParameters(SourceIDEnabledNoUT),
+					Parameters: createBatchParametersWithoutSources(SourceIDEnabledNoUT),
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -944,11 +944,11 @@ var _ = Describe("Processor", Ordered, func() {
 							messages["message-1"],
 							messages["message-2"],
 						},
-						createMessagePayload,
+						createMessagePayloadWithoutSources,
 					),
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabledOnlyUT),
+					Parameters:    createBatchParametersWithoutSources(SourceIDEnabledOnlyUT),
 				},
 				{
 					UUID:         uuid.New(),
@@ -984,10 +984,10 @@ var _ = Describe("Processor", Ordered, func() {
 							messages["message-4"],
 							messages["message-5"],
 						},
-						createMessagePayload,
+						createMessagePayloadWithoutSources,
 					),
 					EventCount: 1,
-					Parameters: createBatchParameters(SourceIDEnabledOnlyUT),
+					Parameters: createBatchParametersWithoutSources(SourceIDEnabledOnlyUT),
 				},
 			}
 
@@ -1120,7 +1120,7 @@ var _ = Describe("Processor", Ordered, func() {
 					),
 					EventCount:    2,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
+					Parameters:    createBatchParametersWithoutSources(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -1137,7 +1137,7 @@ var _ = Describe("Processor", Ordered, func() {
 						createMessagePayloadWithSameMessageId,
 					),
 					EventCount: 1,
-					Parameters: createBatchParameters(SourceIDEnabled),
+					Parameters: createBatchParametersWithoutSources(SourceIDEnabled),
 				},
 			}
 
@@ -1213,7 +1213,7 @@ var _ = Describe("Processor", Ordered, func() {
 						createMessagePayload,
 					),
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
+					Parameters:    createBatchParametersWithoutSources(SourceIDEnabled),
 				},
 			}
 
@@ -1348,7 +1348,7 @@ var _ = Describe("Processor", Ordered, func() {
 						createMessagePayload,
 					),
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
+					Parameters:    createBatchParametersWithoutSources(SourceIDEnabled),
 				},
 			}
 
@@ -1473,7 +1473,7 @@ var _ = Describe("Processor", Ordered, func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  payload,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabledNoUT2),
+					Parameters:    createBatchParametersWithoutSources(SourceIDEnabledNoUT2),
 				},
 			}
 
@@ -1632,12 +1632,12 @@ var _ = Describe("Processor", Ordered, func() {
 				len(processor.filterDestinations(
 					event,
 					processor.getEnabledDestinations(
-						WriteKey3,
+						SourceID3,
 						"destination-definition-name-enabled",
 					),
 				)),
 			).To(Equal(3)) // all except dest-1
-			Expect(processor.isDestinationAvailable(event, WriteKey3)).To(BeTrue())
+			Expect(processor.isDestinationAvailable(event, SourceID3)).To(BeTrue())
 		})
 	})
 })
@@ -2832,7 +2832,7 @@ func createBatchPayload(writeKey, receivedAt string, events []mockEventData, eve
 	))
 }
 
-func createBatchParameters(sourceId string) []byte {
+func createBatchParametersWithoutSources(sourceId string) []byte {
 	return []byte(fmt.Sprintf(`{"source_id":%q}`, sourceId))
 }
 
@@ -2886,9 +2886,6 @@ func assertDestinationTransform(
 	) transformer.Response {
 		defer GinkgoRecover()
 
-		fmt.Println("clientEvents:", len(clientEvents))
-		fmt.Println("expect:", expectations.events)
-
 		Expect(clientEvents).To(HaveLen(expectations.events))
 
 		messageIDs := make([]string, 0)
@@ -2912,7 +2909,11 @@ func assertDestinationTransform(
 				rawEvent, err := json.Marshal(event)
 				Expect(err).ToNot(HaveOccurred())
 				recordID := gjson.GetBytes(rawEvent, "message.recordId").Value()
-				Expect(event.Metadata.RecordID).To(Equal(recordID))
+				if recordID == nil {
+					Expect(event.Metadata.RecordID).To(BeNil())
+				} else {
+					Expect(event.Metadata.RecordID).To(Equal(recordID))
+				}
 				jobRunID := gjson.GetBytes(rawEvent, "message.context.sources.job_run_id").String()
 				Expect(event.Metadata.SourceJobRunID).To(Equal(jobRunID))
 				taskRunID := gjson.GetBytes(rawEvent, "message.context.sources.task_run_id").String()
