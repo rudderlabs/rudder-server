@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/golang/mock/gomock"
@@ -25,7 +26,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestHandleT_Track(t *testing.T) {
+func TestRouter_Track(t *testing.T) {
 	var (
 		workspaceID = "test-workspaceID"
 		sourceID    = "test-sourceID"
@@ -150,15 +151,15 @@ func TestHandleT_Track(t *testing.T) {
 				nowSQL = tc.NowSQL
 			}
 
-			handle := HandleT{
+			handle := router{
 				destType: destType,
-				Now: func() time.Time {
+				now: func() time.Time {
 					return now
 				},
-				NowSQL:   nowSQL,
-				stats:    store,
-				dbHandle: pgResource.DB,
-				Logger:   logger.NOP,
+				nowSQL:       nowSQL,
+				statsFactory: store,
+				dbHandle:     sqlquerywrapper.New(pgResource.DB),
+				logger:       logger.NOP,
 			}
 
 			err = handle.Track(ctx, &warehouse, conf)
@@ -188,7 +189,7 @@ func TestHandleT_Track(t *testing.T) {
 	}
 }
 
-func TestHandleT_CronTracker(t *testing.T) {
+func TestRouter_CronTracker(t *testing.T) {
 	var (
 		workspaceID = "test-workspaceID"
 		sourceID    = "test-sourceID"
@@ -207,13 +208,13 @@ func TestHandleT_CronTracker(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
-		wh := HandleT{
-			Logger: mockLogger,
+		r := router{
+			logger: mockLogger,
 		}
 
 		mockLogger.EXPECT().Infof("context is cancelled, stopped running tracking").Times(1)
 
-		err := wh.CronTracker(ctx)
+		err := r.CronTracker(ctx)
 		require.NoError(t, err)
 	})
 
@@ -260,19 +261,19 @@ func TestHandleT_CronTracker(t *testing.T) {
 		now, err := time.Parse(misc.RFC3339Milli, "2022-12-06T06:19:00.169Z")
 		require.NoError(t, err)
 
-		wh := HandleT{
+		r := router{
 			destType: destType,
-			Now: func() time.Time {
+			now: func() time.Time {
 				return now
 			},
-			NowSQL:   "ABC",
-			stats:    memstats.New(),
-			dbHandle: pgResource.DB,
-			Logger:   logger.NOP,
+			nowSQL:       "ABC",
+			statsFactory: memstats.New(),
+			dbHandle:     sqlquerywrapper.New(pgResource.DB),
+			logger:       logger.NOP,
 		}
-		wh.warehouses = append(wh.warehouses, warehouse)
+		r.warehouses = append(r.warehouses, warehouse)
 
-		err = wh.CronTracker(context.Background())
+		err = r.CronTracker(context.Background())
 		require.EqualError(t, err, errors.New("cron tracker failed for source: test-sourceID, destination: test-destinationID with error: fetching last upload time for source: test-sourceID and destination: test-destinationID: pq: column \"abc\" does not exist").Error())
 	})
 }

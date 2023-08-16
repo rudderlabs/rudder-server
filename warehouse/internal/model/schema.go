@@ -9,13 +9,14 @@ type (
 )
 
 const (
-	StringDataType  SchemaType = "string"
-	BooleanDataType SchemaType = "boolean"
-	IntDataType     SchemaType = "int"
-	BigIntDataType  SchemaType = "bigint"
-	FloatDataType   SchemaType = "float"
-	JSONDataType    SchemaType = "json"
-	TextDataType    SchemaType = "text"
+	StringDataType         SchemaType = "string"
+	BooleanDataType        SchemaType = "boolean"
+	IntDataType            SchemaType = "int"
+	BigIntDataType         SchemaType = "bigint"
+	FloatDataType          SchemaType = "float"
+	JSONDataType           SchemaType = "json"
+	TextDataType           SchemaType = "text"
+	ArrayOfBooleanDatatype SchemaType = "array(boolean)"
 )
 
 type WHSchema struct {

@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"fmt"
 
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -10,11 +11,12 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD"}
+	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD", "BINGADS_AUDIENCE"}
 	warehouseDestinations     = []string{
 		"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL",
 		"AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE",
@@ -63,6 +65,17 @@ func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 	}
 }
 
+func cleanUpAsyncDestinationsLogsDir() {
+	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
+
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		return
+	}
+
+	_ = misc.RemoveContents(fmt.Sprintf("%v%v", tmpDirPath, localTmpDirName))
+}
+
 // Gets the config from config backend and extracts enabled write-keys
 func (r *LifecycleManager) monitorDestRouters(
 	ctx context.Context, routerFactory *router.Factory, batchrouterFactory *batchrouter.Factory,
@@ -79,6 +92,9 @@ func (r *LifecycleManager) monitorDestRouters(
 	// to its subscribers in separate goroutines to prevent blocking.
 	routerFactory.RouterDB.FailExecuting()
 	batchrouterFactory.RouterDB.FailExecuting()
+
+	// Remove all contents of aysnc destinations logs directory
+	cleanUpAsyncDestinationsLogsDir()
 
 loop:
 	for {

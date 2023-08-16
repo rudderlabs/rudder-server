@@ -16,7 +16,7 @@ type StorageSettings struct {
 	Preferences backendconfig.StoragePreferences
 }
 
-var noStorageForWorkspaceErrorString string = "no storage settings found for workspace: %s"
+var NoStorageForWorkspaceError = fmt.Errorf("no storage settings found for workspace")
 
 // Provider is an interface that provides file managers and storage preferences for a given workspace.
 type Provider interface {
@@ -67,7 +67,7 @@ func (p *provider) getStorageSettings(workspaceID string) (StorageSettings, erro
 	defer p.mu.RUnlock()
 	settings, ok := p.storageSettings[workspaceID]
 	if !ok {
-		return StorageSettings{}, fmt.Errorf(noStorageForWorkspaceErrorString, workspaceID)
+		return StorageSettings{}, NoStorageForWorkspaceError
 	}
 	return settings, nil
 }

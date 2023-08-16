@@ -1,4 +1,4 @@
-package bigquery_test
+package bingads
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestBigquery(t *testing.T) {
+func TestBingads(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Bigquery Suite")
+	RunSpecs(t, "Bingads Suite")
 }

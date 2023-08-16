@@ -209,7 +209,7 @@ var _ = Describe("Upload", Ordered, func() {
 		pool, err := dockertest.NewPool("")
 		Expect(err).To(BeNil())
 
-		pgResource = setupWarehouseJobs(pool, GinkgoT())
+		pgResource = setupWarehouseJobsDB(pool, GinkgoT())
 
 		initWarehouse()
 
@@ -694,4 +694,42 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 			"current_succeeded_table_1": pendingTables[4],
 		})
 	})
+}
+
+func TestUploadJob_DurationBeforeNextAttempt(t *testing.T) {
+	testCases := []struct {
+		name     string
+		attempt  int
+		expected time.Duration
+	}{
+		{
+			name:     "attempt 0",
+			attempt:  0,
+			expected: time.Duration(0),
+		},
+		{
+			name:     "attempt 1",
+			attempt:  1,
+			expected: time.Second * 60,
+		},
+		{
+			name:     "attempt 2",
+			attempt:  2,
+			expected: time.Second * 120,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			job := &UploadJob{
+				minUploadBackoff: time.Second * 60,
+				maxUploadBackoff: time.Second * 1800,
+			}
+			require.Equal(t, tc.expected, job.durationBeforeNextAttempt(int64(tc.attempt)))
+		})
+	}
 }

@@ -198,29 +198,6 @@ func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (er
 	return nil
 }
 
-func (jr *jobRun) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
-	tags := stats.Tags{
-		"module":      moduleName,
-		"destType":    jr.job.DestinationType,
-		"warehouseID": warehouseTagName(jr.job.DestinationID, jr.job.SourceName, jr.job.DestinationName, jr.job.SourceID),
-		"workspaceId": jr.job.WorkspaceID,
-		"destID":      jr.job.DestinationID,
-		"sourceID":    jr.job.SourceID,
-	}
-	for _, extraTag := range extraTags {
-		tags[extraTag.Name] = extraTag.Value
-	}
-	return tags
-}
-
-func (jr *jobRun) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	return jr.stats.NewTaggedStat(name, stats.TimerType, jr.buildTags(extraTags...))
-}
-
-func (jr *jobRun) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	return jr.stats.NewTaggedStat(name, stats.CountType, jr.buildTags(extraTags...))
-}
-
 func persistSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
 	tags := stats.Tags{
 		"workspaceId":   workspaceID,

@@ -86,7 +86,7 @@ type TransformerEvent struct {
 }
 
 func isJobTerminated(status int) bool {
-	if status == http.StatusTooManyRequests {
+	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
 		return false
 	}
 	return status >= http.StatusOK && status < http.StatusInternalServerError
@@ -204,7 +204,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxHTTPConnections = conf.GetInt("Processor.maxHTTPConnections", 100)
 	trans.config.maxHTTPIdleConnections = conf.GetInt("Processor.maxHTTPIdleConnections", 5)
 	trans.config.disableKeepAlives = conf.GetBool("Transformer.Client.disableKeepAlives", true)
-	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 30, time.Second)
+	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 
 	trans.config.destTransformationURL = conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	trans.config.userTransformationURL = conf.GetString("USER_TRANSFORM_URL", trans.config.destTransformationURL)
