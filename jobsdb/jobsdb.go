@@ -745,13 +745,6 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 	j := &HandleT{
 		ownerType:   ownerType,
 		tablePrefix: tablePrefix,
-		JobMaxAge: func() time.Duration {
-			return config.GetDuration(
-				"JobsDB.jobMaxAge",
-				720,
-				time.Hour,
-			)
-		},
 	}
 
 	for _, fn := range opts {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"time"
 
 	"github.com/samber/lo"
@@ -45,12 +46,13 @@ type worker struct {
 }
 
 func (w *worker) Work() bool {
-	log := w.log.With("sourceID", w.sourceID)
 start:
-
 	jobs, limitReached, err := w.getJobs()
 	if err != nil {
-		log.Errorw("failed to fetch jobs for archiving", "error", err)
+		if w.lifecycle.ctx.Err() == nil {
+			panic(err)
+		}
+		w.log.Errorw("failed to fetch jobs for archiving", "error", err)
 		return false
 	}
 
@@ -63,14 +65,14 @@ start:
 	}
 
 	workspaceID := jobs[0].WorkspaceId
-	log = log.With("workspaceID", workspaceID)
+	log := w.log.With("workspaceID", workspaceID)
 	storagePrefs, err := w.storageProvider.GetStoragePreferences(workspaceID)
 	if err != nil {
 		log.Errorw("failed to fetch storage preferences", "error", err)
 		if err := w.markStatus(
 			jobs,
 			jobsdb.Aborted.State,
-			errJson(err),
+			errJSON(err),
 		); err != nil {
 			if w.lifecycle.ctx.Err() != nil {
 				return false
@@ -88,7 +90,7 @@ start:
 		if err := w.markStatus(
 			jobs,
 			jobsdb.Aborted.State,
-			errJson(fmt.Errorf("%s archival disabled for workspace %s", w.archiveFrom, workspaceID)),
+			errJSON(fmt.Errorf("%s archival disabled for workspace %s", w.archiveFrom, workspaceID)),
 		); err != nil {
 			if w.lifecycle.ctx.Err() != nil {
 				return false
@@ -112,7 +114,7 @@ start:
 	if err := w.markStatus(
 		jobs,
 		jobsdb.Succeeded.State,
-		locationJson(location),
+		locationJSON(location),
 	); err != nil {
 		if w.lifecycle.ctx.Err() != nil {
 			return false
@@ -142,38 +144,37 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	firstJobCreatedAt := jobs[0].CreatedAt.UTC()
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt.UTC()
 	workspaceID := jobs[0].WorkspaceId
-	log := w.log.With("workspaceID", workspaceID)
 
 	gzWriter := fileuploader.NewGzMultiFileWriter()
-	path := fmt.Sprintf(
-		"%v%v.json.gz",
-		lo.Must(misc.CreateTMPDIR())+"/rudder-backups/"+w.sourceID+"/",
-		fmt.Sprintf("%v_%v_%v", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID),
+	filePath := path.Join(
+		lo.Must(misc.CreateTMPDIR()),
+		"rudder-backups",
+		w.sourceID,
+		fmt.Sprintf("%d_%d_%s.json.gz", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID),
 	)
 
 	for _, job := range jobs {
 		j, err := marshalJob(job)
 		if err != nil {
-			return "", fmt.Errorf("failed to marshal job: %w", err)
+			return "", fmt.Errorf("marshal job: %w", err)
 		}
-		if _, err := gzWriter.Write(path, append(j, '\n')); err != nil {
-			return "", fmt.Errorf("failed to write to file: %w", err)
+		if _, err := gzWriter.Write(filePath, append(j, '\n')); err != nil {
+			return "", fmt.Errorf("write to file: %w", err)
 		}
 	}
 	if err := gzWriter.Close(); err != nil {
-		return "", fmt.Errorf("failed to close file: %w", err)
+		return "", fmt.Errorf("close writer: %w", err)
 	}
-	defer func() { _ = os.Remove(path) }()
+	defer func() { _ = os.Remove(filePath) }()
 
 	fileUploader, err := w.storageProvider.GetFileManager(workspaceID)
 	if err != nil {
-		log.Errorw("Skipping storing errors since no file manager is found", "error", err)
-		return "", fmt.Errorf("failed to get file manager: %w", err)
+		return "", fmt.Errorf("no file manager found: %w", err)
 	}
 
-	file, err := os.Open(path)
+	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file %s: %w", path, err)
+		return "", fmt.Errorf("open file %s: %w", filePath, err)
 	}
 	defer func() { _ = file.Close() }()
 	prefixes := []string{
@@ -185,8 +186,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	}
 	uploadOutput, err := fileUploader.Upload(ctx, file, prefixes...)
 	if err != nil {
-		log.Errorw("failed to upload file to object storage", "error", err)
-		return "", fmt.Errorf("failed to upload file to object storage - %w", err)
+		return "", fmt.Errorf("upload file to object storage - %w", err)
 	}
 
 	return uploadOutput.Location, nil
@@ -251,13 +251,17 @@ func (w *worker) markStatus(
 	)
 }
 
-func errJson(err error) []byte {
-	m := map[string]string{"error": err.Error()}
+func errJSON(err error) []byte {
+	m := struct {
+		Error string `json:"error"`
+	}{
+		Error: err.Error(),
+	}
 	b, _ := json.Marshal(m)
 	return b
 }
 
-func locationJson(location string) []byte {
+func locationJSON(location string) []byte {
 	m := map[string]string{"location": location}
 	b, _ := json.Marshal(m)
 	return b

@@ -38,10 +38,10 @@ func TestJobsArchival(t *testing.T) {
 		minioResource []*destination.MINIOResource
 
 		// test data - contains jobs from 3 workspaces(1 - 1 source, 2 & 3 - 2 sources each)
-		goldenFileJobsFileName = "testdata/MultiWorkspaceBackupJobs.json.gz"
-		uniqueWorkspaces       = 3
-		sourcesPerWorkspace    = []int{1, 2, 2}
-		ctx, cancel            = context.WithCancel(context.Background())
+		seedJobsFileName    = "testdata/MultiWorkspaceBackupJobs.json.gz"
+		uniqueWorkspaces    = 3
+		sourcesPerWorkspace = []int{1, 2, 2}
+		ctx, cancel         = context.WithCancel(context.Background())
 	)
 	defer cancel()
 
@@ -58,7 +58,7 @@ func TestJobsArchival(t *testing.T) {
 		require.NoError(t, err, "failed to setup minio resource")
 	}
 
-	jobs, err := readGzipJobFile(goldenFileJobsFileName)
+	jobs, err := readGzipJobFile(seedJobsFileName)
 	require.NoError(t, err, "failed to read jobs file")
 
 	{
