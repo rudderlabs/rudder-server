@@ -29,15 +29,14 @@ func verifyEventsInStagingFiles(t testing.TB, testConfig *TestConfig) {
 
 	sqlStatement := `
 		SELECT
-			COALESCE(SUM(total_events)) AS sum
+			SUM(total_events) AS sum
 		FROM
 			wh_staging_files
 		WHERE
 		   	workspace_id = $1 AND
 		   	source_id = $2 AND
 		   	destination_id = $3 AND
-		   	created_at > $4;
-	`
+		   	created_at > $4;`
 	t.Logf("Checking events in staging files for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s", testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID, testConfig.TimestampBeforeSendingEvents, sqlStatement)
 
 	count := sql.NullInt64{}
@@ -70,15 +69,14 @@ func verifyEventsInLoadFiles(t testing.TB, testConfig *TestConfig) {
 
 		sqlStatement := `
 			SELECT
-			   COALESCE(SUM(total_events)) AS sum
+			   SUM(total_events) AS sum
 			FROM
 			   wh_load_files
 			WHERE
 			   source_id = $1
 			   AND destination_id = $2
 			   AND created_at > $3
-			   AND table_name = $4;
-		`
+			   AND table_name = $4;`
 		t.Logf("Checking events in load files for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s", testConfig.SourceID, testConfig.DestinationID, testConfig.TimestampBeforeSendingEvents, warehouseutils.ToProviderCase(testConfig.DestinationType, table), sqlStatement)
 
 		operation := func() bool {
@@ -110,7 +108,7 @@ func verifyEventsInTableUploads(t testing.TB, testConfig *TestConfig) {
 
 		sqlStatement := `
 			SELECT
-			   COALESCE(SUM(total_events)) AS sum
+			   SUM(total_events) AS sum
 			FROM
 			   wh_table_uploads
 			   LEFT JOIN
@@ -122,8 +120,7 @@ func verifyEventsInTableUploads(t testing.TB, testConfig *TestConfig) {
 			   wh_uploads.destination_id = $3 AND
 			   wh_uploads.created_at > $4 AND
 			   wh_table_uploads.table_name = $5 AND
-			   wh_table_uploads.status = 'exported_data';
-		`
+			   wh_table_uploads.status = 'exported_data';`
 		t.Logf("Checking events in table uploads for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s", testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID, testConfig.TimestampBeforeSendingEvents, warehouseutils.ToProviderCase(testConfig.DestinationType, table), sqlStatement)
 
 		operation := func() bool {
