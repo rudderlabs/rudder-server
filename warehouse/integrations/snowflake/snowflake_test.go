@@ -309,16 +309,14 @@ func TestIntegration(t *testing.T) {
 				db := getSnowflakeDB(t, dsn)
 
 				t.Cleanup(func() {
-					require.Eventually(t,
+					var err error
+					require.Eventuallyf(t,
 						func() bool {
-							if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema)); err != nil {
-								t.Logf("error deleting schema: %v", err)
-								return false
-							}
-							return true
+							_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
+							return err == nil
 						},
-						time.Minute,
-						100*time.Millisecond,
+						time.Minute, 100*time.Millisecond,
+						"error deleting schema: %v", err,
 					)
 				})
 
@@ -407,16 +405,14 @@ func TestIntegration(t *testing.T) {
 		db := getSnowflakeDB(t, dsn)
 
 		t.Cleanup(func() {
-			require.Eventually(t,
+			var err error
+			require.Eventuallyf(t,
 				func() bool {
-					if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
-						t.Logf("error deleting schema: %v", err)
-						return false
-					}
-					return true
+					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
+					return err == nil
 				},
-				time.Minute,
-				100*time.Millisecond,
+				time.Minute, 100*time.Millisecond,
+				"error deleting schema: %v", err,
 			)
 		})
 
