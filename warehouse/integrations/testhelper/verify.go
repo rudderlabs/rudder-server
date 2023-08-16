@@ -42,14 +42,18 @@ func verifyEventsInStagingFiles(t testing.TB, testConfig *TestConfig) {
 	)
 
 	var err error
-	var count int64
-	expectedCount := int64(testConfig.StagingFilesEventsMap["wh_staging_files"])
+	var count int
+	expectedCount := testConfig.StagingFilesEventsMap["wh_staging_files"]
 
 	operation := func() bool {
 		err = testConfig.JobsDB.QueryRow(sqlStatement,
 			testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID,
 			testConfig.TimestampBeforeSendingEvents,
 		).Scan(&count)
+
+		if err == nil && count != expectedCount {
+			t.Logf("Expected staging files events count is %d, got %d", expectedCount, count)
+		}
 
 		return err == nil && count == expectedCount
 	}
@@ -84,8 +88,8 @@ func verifyEventsInLoadFiles(t testing.TB, testConfig *TestConfig) {
 		)
 
 		var err error
-		var count int64
-		expectedCount := int64(testConfig.LoadFilesEventsMap[table])
+		var count int
+		expectedCount := testConfig.LoadFilesEventsMap[table]
 
 		operation := func() bool {
 			err = testConfig.JobsDB.QueryRow(sqlStatement,
@@ -93,10 +97,15 @@ func verifyEventsInLoadFiles(t testing.TB, testConfig *TestConfig) {
 				whutils.ToProviderCase(testConfig.DestinationType, table),
 			).Scan(&count)
 
+			if err == nil && count != expectedCount {
+				t.Logf("Expected load files events count for table %q is %d, got %d", expectedCount, count)
+			}
+
 			return err == nil && count == expectedCount
 		}
+		// Expected load files events count for table _groups is 0, got 0: <nil>
 		require.Eventuallyf(t, operation, WaitFor10Minute, DefaultQueryFrequency,
-			"Expected load files events count for table %s is %d, got %d: %v",
+			"Expected load files events count for table %q is %d, got %d: %v",
 			table, expectedCount, count, err,
 		)
 	}
@@ -134,18 +143,22 @@ func verifyEventsInTableUploads(t testing.TB, testConfig *TestConfig) {
 		)
 
 		var err error
-		var count int64
-		expectedCount := int64(testConfig.TableUploadsEventsMap[table])
+		var count int
+		expectedCount := testConfig.TableUploadsEventsMap[table]
 		operation := func() bool {
 			err = testConfig.JobsDB.QueryRow(sqlStatement,
 				testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID,
 				testConfig.TimestampBeforeSendingEvents, whutils.ToProviderCase(testConfig.DestinationType, table),
 			).Scan(&count)
 
+			if err == nil && count != expectedCount {
+				t.Logf("Expected table uploads events count for table %q is %d, got %d", table, expectedCount, count)
+			}
+
 			return err == nil && count == expectedCount
 		}
 		require.Eventuallyf(t, operation, WaitFor10Minute, DefaultQueryFrequency,
-			"Expected table uploads events count for table %s is %d, got %d: %v",
+			"Expected table uploads events count for table %q is %d, got %d: %v",
 			table, expectedCount, count, err,
 		)
 	}
@@ -190,6 +203,14 @@ func verifyEventsInWareHouse(t testing.TB, testConfig *TestConfig) {
 		require.Eventuallyf(t,
 			func() bool {
 				count, err = queryCount(testConfig.Client, sqlStatement)
+
+				if err == nil && count != expectedCount {
+					t.Logf("Expected %d events in WH (schema: %s, table: %s, userID: %s), got %d", expectedCount,
+						testConfig.Schema, whutils.ToProviderCase(testConfig.DestinationType, table), testConfig.UserID,
+						count,
+					)
+				}
+
 				return err == nil && count == expectedCount
 			}, WaitFor10Minute, DefaultQueryFrequency,
 			"Expected %d events in WH (schema: %s, table: %s, userID: %s), got %d: %v",
