@@ -162,29 +162,37 @@ func TestIntegration(t *testing.T) {
 	}
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
-	testhelper.EnhanceWithDefaultEnvs(t)
-	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_MAX_PARALLEL_LOADS", "8")
-	t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_ENABLE_DELETE_BY_JOBS", "true")
-	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-	t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_SLOW_QUERY_THRESHOLD", "0s")
+	bootstrap := func(appendMode bool) func() {
+		loadTableStrategy := "MERGE"
+		if appendMode {
+			loadTableStrategy = "APPEND"
+		}
+		testhelper.EnhanceWithDefaultEnvs(t)
+		t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
+		t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
+		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_MAX_PARALLEL_LOADS", "8")
+		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_ENABLE_DELETE_BY_JOBS", "true")
+		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_LOAD_TABLE_STRATEGY", loadTableStrategy)
+		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
+		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
+		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_SLOW_QUERY_THRESHOLD", "0s")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
 
-	svcDone := make(chan struct{})
-	go func() {
-		r := runner.New(runner.ReleaseInfo{})
-		_ = r.Run(ctx, []string{"snowflake-integration-test"})
+		svcDone := make(chan struct{})
+		go func() {
+			r := runner.New(runner.ReleaseInfo{})
+			_ = r.Run(ctx, []string{"snowflake-integration-test"})
 
-		close(svcDone)
-	}()
-	t.Cleanup(func() { <-svcDone })
+			close(svcDone)
+		}()
+		t.Cleanup(func() { <-svcDone })
 
-	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, 100*time.Millisecond, "serviceHealthEndpoint")
+		serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
+		health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, 100*time.Millisecond, "serviceHealthEndpoint")
+
+		return cancel
+	}
 
 	t.Run("Event flow", func(t *testing.T) {
 		jobsDB := testhelper.JobsDB(t, jobsDBPort)
@@ -203,10 +211,13 @@ func TestIntegration(t *testing.T) {
 			loadFilesEventsMap            testhelper.EventsCountMap
 			tableUploadsEventsMap         testhelper.EventsCountMap
 			warehouseEventsMap            testhelper.EventsCountMap
+			warehouseEventsMap2           testhelper.EventsCountMap
 			cred                          *testCredentials
 			database                      string
 			asyncJob                      bool
 			stagingFilePrefix             string
+			appendMode                    bool
+			customUserID                  string
 		}{
 			{
 				name:     "Upload Job with Normal Database",
@@ -286,13 +297,32 @@ func TestIntegration(t *testing.T) {
 				asyncJob:              true,
 				stagingFilePrefix:     "testdata/sources-job",
 			},
+			{
+				name:                          "Upload Job in append mode",
+				writeKey:                      writeKey,
+				schema:                        namespace,
+				tables:                        []string{"tracks"},
+				sourceID:                      sourceID,
+				destinationID:                 destinationID,
+				cred:                          credentials,
+				database:                      database,
+				stagingFilesEventsMap:         testhelper.EventsCountMap{"wh_staging_files": 1},
+				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{"wh_staging_files": 1},
+				loadFilesEventsMap:            map[string]int{"tracks": 1},
+				tableUploadsEventsMap:         map[string]int{"tracks": 1},
+				warehouseEventsMap:            map[string]int{"tracks": 1},
+				warehouseEventsMap2:           map[string]int{"tracks": 2},
+				stagingFilePrefix:             "testdata/append-job",
+				appendMode:                    true,
+				customUserID:                  testhelper.GetUserId("append_test"),
+			},
 		}
 
 		for _, tc := range testcase {
 			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
+				cancel := bootstrap(tc.appendMode)
+				defer cancel()
 
 				urlConfig := sfdb.Config{
 					Account:   tc.cred.Account,
@@ -337,6 +367,10 @@ func TestIntegration(t *testing.T) {
 				}
 
 				t.Log("verifying test case 1")
+				userID := tc.customUserID
+				if userID == "" {
+					userID = testhelper.GetUserId(destType)
+				}
 				ts1 := testhelper.TestConfig{
 					WriteKey:              tc.writeKey,
 					Schema:                tc.schema,
@@ -356,11 +390,19 @@ func TestIntegration(t *testing.T) {
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
-					UserID:                testhelper.GetUserId(destType),
+					UserID:                userID,
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
+				userID = tc.customUserID
+				if userID == "" {
+					userID = testhelper.GetUserId(destType)
+				}
+				whEventsMap := tc.warehouseEventsMap2
+				if whEventsMap == nil {
+					whEventsMap = tc.warehouseEventsMap
+				}
 				ts2 := testhelper.TestConfig{
 					WriteKey:              tc.writeKey,
 					Schema:                tc.schema,
@@ -370,7 +412,7 @@ func TestIntegration(t *testing.T) {
 					StagingFilesEventsMap: tc.stagingFilesModifiedEventsMap,
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
+					WarehouseEventsMap:    whEventsMap,
 					AsyncJob:              tc.asyncJob,
 					Config:                conf,
 					WorkspaceID:           workspaceID,
@@ -381,7 +423,7 @@ func TestIntegration(t *testing.T) {
 					JobRunID:              misc.FastUUID().String(),
 					TaskRunID:             misc.FastUUID().String(),
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
-					UserID:                testhelper.GetUserId(destType),
+					UserID:                userID,
 				}
 				if tc.asyncJob {
 					ts2.UserID = ts1.UserID
