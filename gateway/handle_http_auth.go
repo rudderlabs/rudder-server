@@ -156,6 +156,52 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// replaySourceIDAuth middleware to authenticate sourceID in the X-Rudder-Source-Id header.
+// If the sourceID is valid, i.e. it is a replay source and enabled, the source auth info is added to the request context.
+// If the sourceID is invalid, the request is rejected.
+func (gw *Handle) replaySourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
+		var errorMessage string
+		defer func() {
+			if errorMessage != "" {
+				status := response.GetErrorStatusCode(errorMessage)
+				responseBody := response.GetStatus(errorMessage)
+				gw.logger.Infow("response",
+					"ip", misc.GetIPFromReq(r),
+					"path", r.URL.Path,
+					"status", status,
+					"body", responseBody)
+				http.Error(w, responseBody, status)
+			}
+		}()
+		sourceID := r.Header.Get("X-Rudder-Source-Id")
+		if sourceID == "" {
+			stat := gwstats.SourceStat{
+				Source:   "noSourceID",
+				SourceID: "noSourceID",
+				WriteKey: "noSourceID",
+				ReqType:  reqType,
+			}
+			stat.RequestFailed("noSourceIdInHeader")
+			stat.Report(gw.stats)
+			errorMessage = response.NoWriteKeyInBasicAuth
+			return
+		}
+		arctx := gw.authRequestContextForReplaySourceID(sourceID)
+		if arctx == nil {
+			errorMessage = response.InvalidReplaySource
+			return
+		}
+		if !arctx.SourceEnabled {
+			errorMessage = response.SourceDisabled
+			return
+		}
+		augmentAuthRequestContext(arctx, r)
+		delegate.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))
+	}
+}
+
 // augmentAuthRequestContext adds source job run id and task run id from the request to the authentication context.
 func augmentAuthRequestContext(arctx *gwtypes.AuthRequestContext, r *http.Request) {
 	arctx.SourceJobRunID = r.Header.Get("X-Rudder-Job-Run-Id")
@@ -167,6 +213,16 @@ func (gw *Handle) authRequestContextForSourceID(sourceID string) *gwtypes.AuthRe
 	gw.configSubscriberLock.RLock()
 	defer gw.configSubscriberLock.RUnlock()
 	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return sourceToRequestContext(s)
+	}
+	return nil
+}
+
+// authRequestContextForReplaySourceID gets request context for a given replay sourceID. If the sourceID is invalid, returns nil.
+func (gw *Handle) authRequestContextForReplaySourceID(sourceID string) *gwtypes.AuthRequestContext {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.replaySourceIDSourceMap[sourceID]; ok {
 		return sourceToRequestContext(s)
 	}
 	return nil

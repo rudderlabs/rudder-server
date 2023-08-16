@@ -69,6 +69,7 @@ type SourceT struct {
 	WriteKey                   string
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 	Transient                  bool
+	IsReplaySource             bool
 	EventSchemasEnabled        bool
 }
 

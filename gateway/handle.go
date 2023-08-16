@@ -91,9 +91,10 @@ type Handle struct {
 	trackFailureCount int
 
 	// backendconfig state
-	configSubscriberLock sync.RWMutex
-	writeKeysSourceMap   map[string]backendconfig.SourceT
-	sourceIDSourceMap    map[string]backendconfig.SourceT
+	configSubscriberLock    sync.RWMutex
+	writeKeysSourceMap      map[string]backendconfig.SourceT
+	sourceIDSourceMap       map[string]backendconfig.SourceT
+	replaySourceIDSourceMap map[string]backendconfig.SourceT
 
 	conf struct { // configuration parameters
 		httpTimeout                                                                       time.Duration

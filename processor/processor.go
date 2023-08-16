@@ -232,7 +232,6 @@ type MetricMetadata struct {
 }
 
 type (
-	WriteKeyT string
 	SourceIDT string
 )
 
@@ -761,8 +760,8 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 	defer proc.config.configSubscriberLock.RUnlock()
 	source, ok := proc.config.sourceIdSourceMap[sourceId]
 	if !ok {
-		err = errors.New("source not found for writeKey")
-		proc.logger.Errorf(`Processor : source not found for writeKey: %s`, sourceId)
+		err = errors.New("source not found for sourceId")
+		proc.logger.Errorf(`Processor : source not found for sourceId: %s`, sourceId)
 	}
 	return &source, err
 }
@@ -1433,7 +1432,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			messageId := misc.GetStringifiedData(singularEvent["messageId"])
 			source, sourceError := proc.getSourceBySourceID(sourceId)
 			if sourceError != nil {
-				proc.logger.Errorf("Dropping Job since Source not found for writeKey %q: %v", sourceId, sourceError)
+				proc.logger.Errorf("Dropping Job since Source not found for sourceId %q: %v", sourceId, sourceError)
 				continue
 			}
 
