@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/rudderlabs/rudder-server/compare/v1.12.0...v1.12.1) (2023-08-16)
+
+
+### Miscellaneous
+
+* bingads safetypecast ([#3750](https://github.com/rudderlabs/rudder-server/issues/3750)) ([6204c3e](https://github.com/rudderlabs/rudder-server/commit/6204c3e3e8796a38e9c21906bcc088a1dd2e454f))
+
 ## [1.12.0](https://github.com/rudderlabs/rudder-server/compare/v1.11.2...v1.12.0) (2023-08-14)
 
 
