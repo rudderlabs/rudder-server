@@ -98,7 +98,7 @@ func verifyEventsInLoadFiles(t testing.TB, testConfig *TestConfig) {
 			).Scan(&count)
 
 			if err == nil && count != expectedCount {
-				t.Logf("Expected load files events count for table %q is %d, got %d", expectedCount, count)
+				t.Logf("Expected load files events count for table %q is %d, got %d", table, expectedCount, count)
 			}
 
 			return err == nil && count == expectedCount
