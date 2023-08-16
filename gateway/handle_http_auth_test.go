@@ -245,7 +245,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Failed to read writeKey from header\n", string(body))
+			require.Equal(t, "Failed to read source id from header\n", string(body))
 		})
 
 		t.Run("invalid writeKey", func(t *testing.T) {

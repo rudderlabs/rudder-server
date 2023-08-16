@@ -159,10 +159,6 @@ func (gw *Handle) Setup(
 		return nil
 	}))
 	g.Go(misc.WithBugsnag(func() error {
-		gw.printStats(ctx)
-		return nil
-	}))
-	g.Go(misc.WithBugsnag(func() error {
 		gw.collectMetrics(ctx)
 		return nil
 	}))

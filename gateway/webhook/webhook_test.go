@@ -64,8 +64,6 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 		bt.sourceTransformerURL = transformerServer.URL
 	})
 
-	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
-	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
@@ -111,8 +109,6 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 		bt.sourceTransformerURL = transformerServer.URL
 	})
 
-	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
-	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
@@ -156,8 +152,6 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 		bt.sourceTransformerURL = transformerServer.URL
 	})
 
-	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
-	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
@@ -200,8 +194,6 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 	webhookHandler := Setup(mockGW, stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformerURL = transformerServer.URL
 	})
-	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
-	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
@@ -244,8 +236,6 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 	webhookHandler := Setup(mockGW, stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformerURL = transformerServer.URL
 	})
-	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
-	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
@@ -293,8 +283,6 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	webhookHandler := Setup(mockGW, stats.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformerURL = transformerServer.URL
 	})
-	mockGW.EXPECT().IncrementRecvCount(gomock.Any()).Times(1)
-	mockGW.EXPECT().IncrementAckCount(gomock.Any()).Times(1)
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
