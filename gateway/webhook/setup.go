@@ -19,8 +19,6 @@ import (
 )
 
 type Gateway interface {
-	IncrementRecvCount(count uint64)
-	IncrementAckCount(count uint64)
 	TrackRequestMetrics(errorMessage string)
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
 	NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType string) *gwstats.SourceStat

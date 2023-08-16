@@ -83,8 +83,6 @@ type Handle struct {
 	// other state
 
 	backendConfigInitialised bool
-	ackCount                 uint64
-	recvCount                uint64
 
 	trackCounterMu    sync.Mutex // protects trackSuccessCount and trackFailureCount
 	trackSuccessCount int
