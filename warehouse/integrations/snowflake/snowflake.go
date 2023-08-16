@@ -687,7 +687,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	return nil
 }
 
-func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
+func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	var (
 		identifiesSchema = sf.Uploader.GetTableSchemaInUpload(identifiesTable)
 		usersSchema      = sf.Uploader.GetTableSchemaInUpload(usersTable)
@@ -701,14 +701,15 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 		updated             int64
 	)
 
-	sf.logger.Infow("started loading for identifies and users tables",
+	logFields := []interface{}{
 		lf.SourceID, sf.Warehouse.Source.ID,
 		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
 		lf.DestinationID, sf.Warehouse.Destination.ID,
 		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
 		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
 		lf.Namespace, sf.Namespace,
-	)
+	}
+	sf.logger.Infow("started loading for identifies and users tables", logFields...)
 
 	resp, err := sf.loadTable(ctx, identifiesTable, identifiesSchema, true)
 	if err != nil {
@@ -742,8 +743,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 			  ORDER BY
 				RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING
 				AND UNBOUNDED FOLLOWING
-			) AS %[1]q
-`,
+			) AS %[1]q`,
 			colName,
 		)
 		firstValProps = append(firstValProps, firstValPropsQuery)
@@ -753,45 +753,28 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	stagingTableName := whutils.StagingTableName(provider, usersTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[1]s.%[2]q AS (
-		  SELECT
-			DISTINCT *
-		  FROM
-			(
-			  SELECT
-				"ID",
-				%[3]s
-			  FROM
-				(
-				  (
-					SELECT
-					  "ID",
-					  %[6]s
-					FROM
-					  %[1]s.%[4]q
-					WHERE
-					  "ID" in (
-						SELECT
-						  "USER_ID"
-						FROM
-						  %[1]s.%[5]q
-						WHERE
-						  "USER_ID" IS NOT NULL
-					  )
-				  )
-				  UNION
+			SELECT DISTINCT *
+			FROM (
+				SELECT "ID", %[3]s
+				FROM (
 					(
-					  SELECT
-						"USER_ID",
-						%[7]s
-					  FROM
-						%[1]s.%[5]q
-					  WHERE
-						"USER_ID" IS NOT NULL
+						SELECT "ID", %[6]s
+						FROM %[1]s.%[4]q
+						WHERE "ID" IN (
+							SELECT "USER_ID"
+							FROM %[1]s.%[5]q
+							WHERE "USER_ID" IS NOT NULL
+						)
+					)
+					UNION
+					(
+						SELECT "USER_ID", %[7]s
+						FROM %[1]s.%[5]q
+						WHERE "USER_ID" IS NOT NULL
 					)
 				)
 			)
-		);
-`,
+		);`,
 		schemaIdentifier,
 		stagingTableName,
 		strings.Join(firstValProps, ","),
@@ -801,29 +784,14 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 		strings.Join(identifyColNames, ","),
 	)
 
+	logFields = append(logFields, lf.TableName, whutils.UsersTable)
 	sf.logger.Infow("creating staging table for users",
-		lf.SourceID, sf.Warehouse.Source.ID,
-		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
-		lf.Namespace, sf.Namespace,
-		lf.TableName, whutils.UsersTable,
-		lf.StagingTableName, stagingTableName,
-		lf.Query, sqlStatement,
+		append(logFields, lf.StagingTableName, stagingTableName, lf.Query, sqlStatement)...,
 	)
 	if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.logger.Warnw("failure creating staging table for users",
-			lf.SourceID, sf.Warehouse.Source.ID,
-			lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			lf.DestinationID, sf.Warehouse.Destination.ID,
-			lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			lf.WorkspaceID, sf.Warehouse.WorkspaceID,
-			lf.Namespace, sf.Namespace,
-			lf.TableName, whutils.UsersTable,
-			lf.Error, err.Error(),
+			append(logFields, lf.Error, err.Error())...,
 		)
-
 		return map[string]error{
 			identifiesTable: nil,
 			usersTable:      fmt.Errorf("creating staging table for users: %w", err),
@@ -847,17 +815,11 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 
 	sqlStatement = fmt.Sprintf(`
 		MERGE INTO %[7]s.%[1]q AS original USING (
-		  SELECT
-			%[3]s
-		  FROM
-			%[7]s.%[2]q
+			SELECT %[3]s
+			FROM %[7]s.%[2]q
 		) AS staging ON (original.%[4]s = staging.%[4]s)
-		WHEN NOT MATCHED THEN
-			INSERT (%[3]s) VALUES (%[6]s)
-		WHEN MATCHED THEN
-			UPDATE SET %[5]s;
-;
-`,
+		WHEN NOT MATCHED THEN INSERT (%[3]s) VALUES (%[6]s)
+		WHEN MATCHED THEN UPDATE SET %[5]s;`,
 		usersTable,
 		stagingTableName,
 		columnNamesStr,
@@ -867,31 +829,13 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 		schemaIdentifier,
 	)
 
-	sf.logger.Infow("deduplication",
-		lf.SourceID, sf.Warehouse.Source.ID,
-		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
-		lf.Namespace, sf.Namespace,
-		lf.TableName, whutils.UsersTable,
-		lf.Query, sqlStatement,
-	)
+	sf.logger.Infow("deduplication", append(logFields, lf.Query, sqlStatement)...)
 
 	row := resp.db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
 		sf.logger.Warnw("failure running deduplication",
-			lf.SourceID, sf.Warehouse.Source.ID,
-			lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			lf.DestinationID, sf.Warehouse.Destination.ID,
-			lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			lf.WorkspaceID, sf.Warehouse.WorkspaceID,
-			lf.Namespace, sf.Namespace,
-			lf.TableName, whutils.UsersTable,
-			lf.Query, sqlStatement,
-			lf.Error, row.Err().Error(),
+			append(logFields, lf.Query, sqlStatement, lf.Error, row.Err().Error())...,
 		)
-
 		return map[string]error{
 			identifiesTable: nil,
 			usersTable:      fmt.Errorf("running deduplication: %w", row.Err()),
@@ -899,15 +843,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	}
 	if err = row.Scan(&inserted, &updated); err != nil {
 		sf.logger.Warnw("getting rows affected for dedup",
-			lf.SourceID, sf.Warehouse.Source.ID,
-			lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-			lf.DestinationID, sf.Warehouse.Destination.ID,
-			lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-			lf.WorkspaceID, sf.Warehouse.WorkspaceID,
-			lf.Namespace, sf.Namespace,
-			lf.TableName, whutils.UsersTable,
-			lf.Query, sqlStatement,
-			lf.Error, err.Error(),
+			append(logFields, lf.Query, sqlStatement, lf.Error, err.Error())...,
 		)
 		return map[string]error{
 			identifiesTable: nil,
@@ -925,14 +861,7 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 		"tableName":      whutils.UsersTable,
 	}).Count(int(updated))
 
-	sf.logger.Infow("completed loading for users and identifies tables",
-		lf.SourceID, sf.Warehouse.Source.ID,
-		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
-		lf.Namespace, sf.Namespace,
-	)
+	sf.logger.Infow("Completed loading for users and identifies tables", logFields...)
 
 	return map[string]error{
 		identifiesTable: nil,
@@ -1298,10 +1227,6 @@ func (sf *Snowflake) Cleanup(context.Context) {
 	if sf.DB != nil {
 		_ = sf.DB.Close()
 	}
-}
-
-func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
-	return sf.loadUserTables(ctx)
 }
 
 func (sf *Snowflake) LoadTable(ctx context.Context, tableName string) error {
