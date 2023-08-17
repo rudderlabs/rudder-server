@@ -126,7 +126,7 @@ func (wp *workerPool) worker(partition string) *internalWorker {
 	defer wp.workersMu.Unlock()
 	w, ok := wp.workers[partition]
 	if !ok {
-		wp.logger.Infof("adding worker in the pool for partition: %q", partition)
+		wp.logger.Debugf("adding worker in the pool for partition: %q", partition)
 		w = newInternalWorker(partition, wp.logger, wp.supplier(partition))
 		wp.workers[partition] = w
 	}
@@ -148,10 +148,10 @@ func (wp *workerPool) startCleanupLoop() {
 			for partition, w := range wp.workers {
 				idleTime := w.IdleSince()
 				if !idleTime.IsZero() && time.Since(idleTime) > wp.idleTimeout {
-					wp.logger.Infof("destroying idle worker for partition: %q", partition)
+					wp.logger.Debugf("destroying idle worker for partition: %q", partition)
 					w.Stop()
 					delete(wp.workers, partition)
-					wp.logger.Infof("removed idle worker from pool for partition: %q", partition)
+					wp.logger.Debugf("removed idle worker from pool for partition: %q", partition)
 				}
 			}
 			wp.workersMu.Unlock()
