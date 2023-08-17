@@ -27,9 +27,7 @@ func (config *ConfigT) ApplyReplaySources() {
 			newSource.WriteKey = id
 			newSource.EventSchemasEnabled = false
 			newSource.Config = lo.OmitByKeys(newSource.Config, []string{"eventUpload"}) // no event uploads for replay sources for now
-			newSource.Destinations = nil
-			newSource.IsReplaySource = true
-			// destinations are added later
+			newSource.Destinations = nil                                                // destinations are added later
 			return &newSource
 		}), []*SourceT{nil})
 		destinations := lo.OmitByValues(lo.MapValues(replay.Destinations, func(value EventReplayDestination, id string) *DestinationT {

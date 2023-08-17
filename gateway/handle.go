@@ -89,10 +89,9 @@ type Handle struct {
 	trackFailureCount int
 
 	// backendconfig state
-	configSubscriberLock    sync.RWMutex
-	writeKeysSourceMap      map[string]backendconfig.SourceT
-	sourceIDSourceMap       map[string]backendconfig.SourceT
-	replaySourceIDSourceMap map[string]backendconfig.SourceT
+	configSubscriberLock sync.RWMutex
+	writeKeysSourceMap   map[string]backendconfig.SourceT
+	sourceIDSourceMap    map[string]backendconfig.SourceT
 
 	conf struct { // configuration parameters
 		httpTimeout                                                                       time.Duration
@@ -111,7 +110,6 @@ type Handle struct {
 		IdleTimeout                          time.Duration
 		allowReqsWithoutUserIDAndAnonymousID bool
 		gwAllowPartialWriteWithErrors        bool
-		allowBatchSplitting                  bool
 	}
 }
 
@@ -448,15 +446,15 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 				WriteKey   string                   `json:"writeKey"`
 				ReceivedAt string                   `json:"receivedAt"`
 			}
-			recievedAt, ok := userEvent.events[0]["receivedAt"].(string)
+			receivedAt, ok := userEvent.events[0]["receivedAt"].(string)
 			if !ok {
-				recievedAt = time.Now().Format(misc.RFC3339Milli)
+				receivedAt = time.Now().Format(misc.RFC3339Milli)
 			}
 			singularEventBatch := SingularEventBatch{
 				Batch:      userEvent.events,
 				RequestIP:  ipAddr,
 				WriteKey:   arctx.WriteKey,
-				ReceivedAt: recievedAt,
+				ReceivedAt: receivedAt,
 			}
 			payload, err = json.Marshal(singularEventBatch)
 			if err != nil {

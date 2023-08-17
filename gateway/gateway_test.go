@@ -115,10 +115,10 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			WorkspaceID: WorkspaceID,
 		},
 		{
-			ID:             ReplaySourceID,
-			WriteKey:       ReplayWriteKey,
-			Enabled:        true,
-			IsReplaySource: true,
+			ID:         ReplaySourceID,
+			WriteKey:   ReplayWriteKey,
+			Enabled:    true,
+			OriginalID: ReplaySourceID,
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: SourceIDEnabled,
 			},

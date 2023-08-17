@@ -69,8 +69,11 @@ type SourceT struct {
 	WriteKey                   string
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 	Transient                  bool
-	IsReplaySource             bool
 	EventSchemasEnabled        bool
+}
+
+func (s *SourceT) IsReplaySource() bool {
+	return s.OriginalID != ""
 }
 
 type WorkspaceRegulationT struct {

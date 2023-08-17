@@ -92,7 +92,6 @@ func (gw *Handle) Setup(
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	config.RegisterBoolConfigVariable(false, &gw.conf.allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
 	config.RegisterBoolConfigVariable(true, &gw.conf.gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
-	config.RegisterBoolConfigVariable(true, &gw.conf.allowBatchSplitting, true, "Gateway.allowBatchSplitting")
 	config.RegisterDurationConfigVariable(0, &gw.conf.ReadTimeout, false, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
 	config.RegisterDurationConfigVariable(0, &gw.conf.ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(10, &gw.conf.WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
@@ -196,18 +195,14 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 	ch := gw.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
 	for data := range ch {
 		var (
-			writeKeysSourceMap      = map[string]backendconfig.SourceT{}
-			sourceIDSourceMap       = map[string]backendconfig.SourceT{}
-			replaySourceIDSourceMap = map[string]backendconfig.SourceT{}
+			writeKeysSourceMap = map[string]backendconfig.SourceT{}
+			sourceIDSourceMap  = map[string]backendconfig.SourceT{}
 		)
 		configData := data.Data.(map[string]backendconfig.ConfigT)
 		for _, wsConfig := range configData {
 			for _, source := range wsConfig.Sources {
 				writeKeysSourceMap[source.WriteKey] = source
 				sourceIDSourceMap[source.ID] = source
-				if source.IsReplaySource {
-					replaySourceIDSourceMap[source.ID] = source
-				}
 				if source.Enabled && source.SourceDefinition.Category == "webhook" {
 					gw.webhook.Register(source.SourceDefinition.Name)
 				}
@@ -216,7 +211,6 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 		gw.configSubscriberLock.Lock()
 		gw.writeKeysSourceMap = writeKeysSourceMap
 		gw.sourceIDSourceMap = sourceIDSourceMap
-		gw.replaySourceIDSourceMap = replaySourceIDSourceMap
 		gw.configSubscriberLock.Unlock()
 		closeConfigChan(len(gw.writeKeysSourceMap))
 	}

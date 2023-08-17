@@ -1425,8 +1425,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		var eventParams types.EventParams
 		err = jsonfast.Unmarshal(batchEvent.Parameters, &eventParams)
 		if err != nil {
-			proc.logger.Warnf("json parsing of event params for %s: %v", batchEvent.JobID, err)
-			eventParams = types.EventParams{}
+			panic(err)
 		}
 		sourceId := eventParams.SourceId
 		requestIP := gatewayBatchEvent.RequestIP
