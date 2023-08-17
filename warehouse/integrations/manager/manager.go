@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
@@ -19,11 +19,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type Manager interface {
@@ -67,7 +64,7 @@ func New(destType string, conf *config.Config, logger logger.Logger, stats stats
 	case warehouseutils.BQ:
 		return bigquery.New(conf, logger), nil
 	case warehouseutils.SNOWFLAKE:
-		return snowflake.New(conf, logger, stats), nil
+		return snowflake.New(conf, logger, stats)
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:
@@ -92,7 +89,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 	case warehouseutils.BQ:
 		return bigquery.New(conf, logger), nil
 	case warehouseutils.SNOWFLAKE:
-		return snowflake.New(conf, logger, stats), nil
+		return snowflake.New(conf, logger, stats)
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
 	case warehouseutils.CLICKHOUSE:

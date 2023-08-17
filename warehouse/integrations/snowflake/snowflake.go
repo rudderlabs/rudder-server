@@ -162,7 +162,7 @@ type Snowflake struct {
 	}
 }
 
-func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
+func New(conf *config.Config, log logger.Logger, stat stats.Stats) (*Snowflake, error) {
 	sf := &Snowflake{}
 
 	sf.logger = log.Child("integrations").Child("snowflake")
@@ -173,17 +173,15 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 	case loadTableStrategyMergeMode, loadTableStrategyAppendMode:
 		sf.config.loadTableStrategy = loadTableStrategy
 	default:
-		loadTableStrategy = loadTableStrategyMergeMode
-		sf.logger.Errorw(
-			"Received invalid loadTableStrategy, defaulting to MERGE mode",
-			lf.LoadTableStrategy, loadTableStrategy,
+		return nil, fmt.Errorf("loadTableStrategy out of the known domain [%+v]: %v",
+			[]string{loadTableStrategyMergeMode, loadTableStrategyAppendMode}, loadTableStrategy,
 		)
 	}
 
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
 
-	return sf
+	return sf, nil
 }
 
 func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
