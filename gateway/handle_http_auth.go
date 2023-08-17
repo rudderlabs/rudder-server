@@ -136,7 +136,7 @@ func (gw *Handle) replaySourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc
 	return gw.sourceIDAuth(func(w http.ResponseWriter, r *http.Request) {
 		arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 		s, ok := gw.sourceIDSourceMap[arctx.SourceID]
-		if !ok && !s.IsReplaySource() {
+		if !ok || !s.IsReplaySource() {
 			gw.handleHttpError(w, r, response.InvalidReplaySource)
 			return
 		}
@@ -180,6 +180,7 @@ func sourceToRequestContext(s backendconfig.SourceT) *gwtypes.AuthRequestContext
 		SourceName:     s.Name,
 		SourceCategory: s.SourceDefinition.Category,
 		SourceDefName:  s.SourceDefinition.Name,
+		ReplaySource:   s.IsReplaySource(),
 	}
 	if arctx.SourceCategory == "" {
 		arctx.SourceCategory = eventStreamSourceCategory

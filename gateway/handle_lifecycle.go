@@ -359,6 +359,10 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	gw.logger.Infof("WebHandler Starting on %d", gw.conf.webPort)
 	component := "gateway"
 	srvMux := chi.NewRouter()
+	// rudder-sources new APIs
+	rsourcesHandler := rsources_http.NewHandler(
+		gw.rsourcesService,
+		gw.logger.Child("rsources"))
 	srvMux.Use(
 		chiware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(gw.conf.maxConcurrentRequests),
@@ -369,7 +373,9 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Get("/v1/warehouse/fetch-tables", gw.whProxy.ServeHTTP)
 		r.Post("/v1/audiencelist", gw.webAudienceListHandler())
 		r.Post("/v1/replay", gw.webReplayHandler())
+		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 	})
+	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 
 	srvMux.Route("/v1", func(r chi.Router) {
 		r.Post("/alias", gw.webAliasHandler())
@@ -420,12 +426,6 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 			r.Get("/event-models/json-schemas", withContentType("application/json; charset=utf-8", gw.eventSchemaController(gw.eventSchemaHandler.GetJsonSchemas)))
 		})
 	}
-
-	// rudder-sources new APIs
-	rsourcesHandler := rsources_http.NewHandler(
-		gw.rsourcesService,
-		gw.logger.Child("rsources"))
-	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  func(_ string) bool { return true },

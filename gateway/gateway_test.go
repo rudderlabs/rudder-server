@@ -1403,6 +1403,8 @@ func endpointsToVerify() ([]string, []string, []string) {
 		// TODO: Remove this endpoint once sources change is released
 		"/v1/warehouse/fetch-tables",
 		"/internal/v1/warehouse/fetch-tables",
+		"/internal/v1/job-status/123",
+		"/internal/v1/job-status/123/failed-records",
 	}
 
 	postEndpoints := []string{

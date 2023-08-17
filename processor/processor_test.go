@@ -558,7 +558,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -588,7 +588,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:          uuid.New(),
@@ -599,7 +599,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -618,7 +618,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 						createMessagePayload,
 					),
 					EventCount: 3,
-					Parameters: createBatchParameters(SourceIDEnabledNoUT),
+					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -635,7 +635,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(5))
+					Expect(jobs).To(HaveLen(2))
 				})
 
 			c.mockArchivalDB.EXPECT().
@@ -759,7 +759,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -789,7 +789,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:          uuid.New(),
@@ -800,7 +800,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -819,7 +819,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 						createMessagePayload, // shouldn't be stored to archivedb
 					),
 					EventCount: 3,
-					Parameters: createBatchParameters(SourceIDEnabledNoUT),
+					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -836,7 +836,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(5))
+					Expect(jobs).To(HaveLen(2))
 				})
 
 			processor := prepareHandle(NewHandle(mockTransformer))
@@ -914,7 +914,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -944,7 +944,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:          uuid.New(),
@@ -955,7 +955,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -1150,6 +1150,7 @@ var _ = Describe("Processor", Ordered, func() {
 					expectedSentAt:            "2000-01-02T01:23:00.000Z",
 					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
 					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+					params:                    map[string]string{"source_id": "enabled-source-no-ut"},
 				},
 				// this message should not be delivered to destination A
 				"message-2": {
@@ -1159,6 +1160,7 @@ var _ = Describe("Processor", Ordered, func() {
 					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
 					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
 					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+					params:                    map[string]string{"source_id": "enabled-source-no-ut"},
 				},
 				// this message should be delivered to all destinations
 				"message-3": {
@@ -1169,6 +1171,7 @@ var _ = Describe("Processor", Ordered, func() {
 					expectedSentAt:     "2000-03-02T01:23:15.000Z",
 					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
 					integrations:       map[string]bool{"All": true},
+					params:             map[string]string{"source_id": "enabled-source-no-ut", "source_job_run_id": "job_run_id_1", "source_task_run_id": "task_run_id_1"},
 				},
 				// this message should be delivered to all destinations (default All value)
 				"message-4": {
@@ -1178,6 +1181,7 @@ var _ = Describe("Processor", Ordered, func() {
 					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
 					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
 					integrations:              map[string]bool{},
+					params:                    map[string]string{"source_id": "enabled-source-no-ut", "source_job_run_id": "job_run_id_1", "source_task_run_id": "task_run_id_1"},
 				},
 				// this message should not be delivered to any destination
 				"message-5": {
@@ -1185,6 +1189,7 @@ var _ = Describe("Processor", Ordered, func() {
 					jobid:              2010,
 					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
 					integrations:       map[string]bool{"All": false},
+					params:             map[string]string{"source_id": "enabled-source-no-ut", "source_job_run_id": "job_run_id_1", "source_task_run_id": "task_run_id_1"},
 				},
 			}
 
@@ -1198,7 +1203,7 @@ var _ = Describe("Processor", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -1227,7 +1232,7 @@ var _ = Describe("Processor", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:          uuid.New(),
@@ -1238,7 +1243,7 @@ var _ = Describe("Processor", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -1257,7 +1262,7 @@ var _ = Describe("Processor", Ordered, func() {
 						createMessagePayloadWithoutSources,
 					),
 					EventCount: 3,
-					Parameters: createBatchParameters(SourceIDEnabledNoUT),
+					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -1316,6 +1321,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
+			c.MockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(nil)
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
 					gomock.Any(),
@@ -1328,7 +1334,7 @@ var _ = Describe("Processor", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(5))
+					Expect(jobs).To(HaveLen(2))
 				})
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -1405,7 +1411,7 @@ var _ = Describe("Processor", Ordered, func() {
 					EventPayload:  nil,
 					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -1434,7 +1440,7 @@ var _ = Describe("Processor", Ordered, func() {
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: nil,
 					EventCount:   1,
-					Parameters:   nil,
+					Parameters:   createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:         uuid.New(),
@@ -1444,7 +1450,7 @@ var _ = Describe("Processor", Ordered, func() {
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: nil,
 					EventCount:   1,
-					Parameters:   nil,
+					Parameters:   createBatchParameters(SourceIDEnabled),
 				},
 				{
 					UUID:      uuid.New(),
@@ -3329,6 +3335,7 @@ type mockEventData struct {
 	expectedSentAt            string
 	expectedReceivedAt        string
 	integrations              map[string]bool
+	params                    map[string]string
 }
 
 type transformExpectation struct {
@@ -3381,10 +3388,9 @@ func createBatchParameters(sourceId string) []byte {
 	return []byte(fmt.Sprintf(`{"source_id":%q}`, sourceId))
 }
 
-//
-//func createBatchParametersWithSources(sourceId string) []byte {
-//	return []byte(fmt.Sprintf(`{"source_job_run_id":"job_run_id_1","source_id":%q,"source_task_run_id":"task_run_id_1"}`, sourceId))
-//}
+func createBatchParametersWithSources(sourceId string) []byte {
+	return []byte(fmt.Sprintf(`{"source_id":%q,"source_job_run_id":"job_run_id_1","source_task_run_id":"task_run_id_1"}`, sourceId))
+}
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string) {
 	Expect(status.JobID).To(Equal(job.JobID))
@@ -3464,9 +3470,9 @@ func assertDestinationTransform(
 				} else {
 					Expect(event.Metadata.RecordID).To(Equal(recordID))
 				}
-				jobRunID := gjson.GetBytes(rawEvent, "message.context.sources.job_run_id").String()
+				jobRunID := messages[messageID].params["source_job_run_id"]
 				Expect(event.Metadata.SourceJobRunID).To(Equal(jobRunID))
-				taskRunID := gjson.GetBytes(rawEvent, "message.context.sources.task_run_id").String()
+				taskRunID := messages[messageID].params["source_task_run_id"]
 				Expect(event.Metadata.SourceTaskRunID).To(Equal(taskRunID))
 				sourcesJobID := gjson.GetBytes(rawEvent, "message.context.sources.job_id").String()
 				Expect(event.Metadata.SourceJobID).To(Equal(sourcesJobID))
