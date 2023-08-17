@@ -61,6 +61,7 @@ type HandleT struct {
 	region                               string
 	sleepInterval                        time.Duration
 	mainLoopSleepInterval                time.Duration
+	dbQueryTimeout                       time.Duration
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
 
@@ -70,7 +71,7 @@ type HandleT struct {
 }
 
 func NewFromEnvConfig(log logger.Logger) *HandleT {
-	var sleepInterval, mainLoopSleepInterval time.Duration
+	var sleepInterval, mainLoopSleepInterval, dbQueryTimeout time.Duration
 	var maxOpenConnections int
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -78,6 +79,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
+	config.RegisterDurationConfigVariable(10, &dbQueryTimeout, true, time.Second, "Reporting.dbQueryTimeout")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
 	config.RegisterIntConfigVariable(32, &maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
 	// only send reports for wh actions sources if whActionsOnly is configured
@@ -100,6 +102,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 		region:                               config.GetString("region", ""),
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 		maxOpenConnections:                   maxOpenConnections,
+		dbQueryTimeout:                       dbQueryTimeout,
 	}
 }
 
@@ -218,9 +221,18 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 	}
 
 	queryStart := time.Now()
-	err = dbHandle.QueryRow(sqlStatement).Scan(&queryMin)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
+
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		if err == context.DeadlineExceeded {
+			stats.Default.NewTaggedStat(
+				"db_query_timeout", stats.CountType, stats.Tags{"query": "get_min_reported_at"},
+			).Count(1)
+		} else {
+			panic(err)
+		}
 	}
 	r.getMinReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
@@ -374,6 +386,19 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 	r.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
 	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
+
+	lastReportedAt := time.Now().UTC().Unix() / 60
+	go func() {
+		// for montering reports pileups
+		for {
+			currentMs := time.Now().UTC().Unix() / 60
+			stats.Default.NewStat(
+				"reporting_metrics_pileup", stats.GaugeType,
+			).Gauge(fmt.Sprintf("delta: %d, current: %d, lastReportedAt: %d", currentMs-lastReportedAt, currentMs, lastReportedAt))
+			time.Sleep(5 * time.Second)
+		}
+	}()
+
 	for {
 		if ctx.Err() != nil {
 			r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
@@ -388,6 +413,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		getReportsTimer.Since(getReportsStart)
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
+			lastReportedAt = currentMs
 			select {
 			case <-ctx.Done():
 				r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
@@ -397,6 +423,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			continue
 		}
 
+		lastReportedAt = reportedAt
 		getAggregatedReportsStart := time.Now()
 		metrics := r.getAggregatedReports(reports)
 		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
