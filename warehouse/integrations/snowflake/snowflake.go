@@ -406,7 +406,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 
 		return tableLoadResp{
 			db:           db,
-			stagingTable: stagingTableName,
+			stagingTable: copyTargetTable,
 		}, nil
 	}
 
@@ -759,7 +759,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 			);`,
 			schemaIdentifier, usersTable,
 			strings.Join(userColNames, ","),
-			identifiesTable,
+			resp.stagingTable,
 		)
 		sf.logger.Infow("copying users data", append(logFields, lf.Query, sqlStatement)...)
 		if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
