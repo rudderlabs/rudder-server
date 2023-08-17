@@ -180,7 +180,7 @@ func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
 			if err != nil {
 				return nil, err
 			}
-			jobs := lo.Filter(jobsResult.Jobs, func(job *JobT, _ int) bool { return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge)) })
+			jobs := lo.Filter(jobsResult.Jobs, func(job *JobT, _ int) bool { return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge())) })
 			if len(jobs) > 0 {
 				afterJobID = &(jobs[len(jobs)-1].JobID)
 				res = append(res, jobs...)
