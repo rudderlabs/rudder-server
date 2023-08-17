@@ -309,13 +309,10 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
 				tableUploadsEventsMap:         map[string]int{"identifies": 1, "users": 1, "tracks": 1},
 				warehouseEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
-				// users has 3 because at the first run "identifies" has 1 and that 1 is copied to "users".
-				// in the 2nd run another record is added to "identifies" which it now has 2. we copy those 2 over
-				// to "users" (which already had one from the previous run) so 2 + 1 = 3
-				warehouseEventsMap2: map[string]int{"identifies": 2, "users": 3, "tracks": 2},
-				stagingFilePrefix:   "testdata/append-job",
-				appendMode:          true,
-				customUserID:        testhelper.GetUserId("append_test"),
+				warehouseEventsMap2:           map[string]int{"identifies": 2, "users": 2, "tracks": 2},
+				stagingFilePrefix:             "testdata/append-job",
+				appendMode:                    true,
+				customUserID:                  testhelper.GetUserId("append_test"),
 			},
 		}
 

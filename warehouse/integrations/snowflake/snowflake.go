@@ -749,8 +749,10 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 
 	schemaIdentifier := sf.schemaIdentifier()
 	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
+		// doing an INSERT OVERWRITE because we used APPEND for the IDENTIFIES table as well and
+		// the COPY INTO command does not give us any reference as to what was added
 		sqlStatement := fmt.Sprintf(`
-			INSERT INTO %[1]s.%[2]q	("ID", %[3]s)
+			INSERT OVERWRITE INTO %[1]s.%[2]q ("ID", %[3]s)
 			SELECT DISTINCT *
 			FROM (
 				SELECT "USER_ID" as "ID", %[3]s
