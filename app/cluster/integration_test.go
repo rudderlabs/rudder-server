@@ -42,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
@@ -165,8 +164,6 @@ func initJobsDB() {
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
-	archiver.Init()
 	Init()
 }
 
