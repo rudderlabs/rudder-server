@@ -159,6 +159,9 @@ func (a *archiver) Start() error {
 		for {
 			sources, err := a.jobsDB.GetDistinctParameterValues(ctx, "source_id")
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				a.log.Errorw("Failed to fetch sources", "error", err)
 				continue
 			}

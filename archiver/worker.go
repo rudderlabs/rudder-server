@@ -49,11 +49,11 @@ func (w *worker) Work() bool {
 start:
 	jobs, limitReached, err := w.getJobs()
 	if err != nil {
-		if w.lifecycle.ctx.Err() == nil {
-			panic(err)
+		if w.lifecycle.ctx.Err() != nil {
+			return false
 		}
 		w.log.Errorw("failed to fetch jobs for archiving", "error", err)
-		return false
+		panic(err)
 	}
 
 	if len(jobs) == 0 {
@@ -156,9 +156,11 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	for _, job := range jobs {
 		j, err := marshalJob(job)
 		if err != nil {
+			_ = gzWriter.Close()
 			return "", fmt.Errorf("marshal job: %w", err)
 		}
 		if _, err := gzWriter.Write(filePath, append(j, '\n')); err != nil {
+			_ = gzWriter.Close()
 			return "", fmt.Errorf("write to file: %w", err)
 		}
 	}
