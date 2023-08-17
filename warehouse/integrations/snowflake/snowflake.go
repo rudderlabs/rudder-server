@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -124,6 +126,15 @@ var errorsMappings = []model.JobError{
 	},
 }
 
+type duplicateMessage struct {
+	id         string
+	receivedAt time.Time
+}
+
+func (m *duplicateMessage) String() string {
+	return fmt.Sprintf("%s@%s", m.id, m.receivedAt.Format("2006-01-02 15:04:05"))
+}
+
 type credentials struct {
 	account    string
 	warehouse  string
@@ -159,6 +170,11 @@ type Snowflake struct {
 		loadTableStrategy  string
 		slowQueryThreshold time.Duration
 		enableDeleteByJobs bool
+
+		debugDuplicateWorkspaceIDs   []string
+		debugDuplicateTables         []string
+		debugDuplicateIntervalInDays int
+		debugDuplicateLimit          int
 	}
 }
 
@@ -182,6 +198,12 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
+	sf.config.debugDuplicateWorkspaceIDs = conf.GetStringSlice("Warehouse.snowflake.debugDuplicateWorkspaceIDs", nil)
+	sf.config.debugDuplicateIntervalInDays = conf.GetInt("Warehouse.snowflake.debugDuplicateIntervalInDays", 30)
+	sf.config.debugDuplicateLimit = conf.GetInt("Warehouse.snowflake.debugDuplicateLimit", 100)
+	sf.config.debugDuplicateTables = lo.Map(conf.GetStringSlice("Warehouse.snowflake.debugDuplicateTables", nil), func(item string, index int) string {
+		return strings.ToUpper(item)
+	})
 
 	return sf
 }
@@ -489,6 +511,21 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		"tableName":      tableName,
 	}).Count(int(updated))
 
+	if updated > 0 {
+		sampleDuplicateMessages, err := sf.sampleDuplicateMessages(ctx, db, tableName, stagingTableName)
+		if err != nil {
+			sf.logger.Warnw("failed to sample duplicate rows",
+				append(logFields, lf.Error, err)...,
+			)
+		} else {
+			sf.logger.Infow("sample duplicate rows",
+				append(logFields, lf.UploadJobID, ctx.Value("uploadID"), lf.SampleDuplicateMessages, lo.Map(sampleDuplicateMessages, func(item duplicateMessage, index int) string {
+					return item.String()
+				}))...,
+			)
+		}
+	}
+
 	sf.logger.Infow("completed loading", logFields...)
 
 	return tableLoadResp{
@@ -532,6 +569,66 @@ func (sf *Snowflake) mergeIntoStmt(
 		sortedColumnNames, stagingColumnNames,
 		updateSet,
 	)
+}
+
+func (sf *Snowflake) sampleDuplicateMessages(ctx context.Context, db *sqlmw.DB, mainTableName, stagingTableName string) ([]duplicateMessage, error) {
+	if !lo.Contains(sf.config.debugDuplicateWorkspaceIDs, sf.Warehouse.WorkspaceID) {
+		return nil, nil
+	}
+	if !lo.Contains(sf.config.debugDuplicateTables, mainTableName) {
+		return nil, nil
+	}
+
+	identifier := sf.schemaIdentifier()
+	mainTable := fmt.Sprintf("%s.%q", identifier, mainTableName)
+	stagingTable := fmt.Sprintf("%s.%q", identifier, stagingTableName)
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT
+			ID,
+			RECEIVED_AT
+		FROM
+			`+mainTable+`
+		WHERE
+		  	RECEIVED_AT > (SELECT DATEADD(day,-?,current_date())) AND
+		  	ID IN (
+				SELECT
+			  		ID
+				FROM
+			  		`+stagingTable+`
+		  	)
+		LIMIT
+		  ?;
+`,
+		sf.config.debugDuplicateIntervalInDays,
+		sf.config.debugDuplicateLimit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying for duplicate rows: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var duplicateMessagesIDs []duplicateMessage
+	for rows.Next() {
+		var id string
+		var receivedAt time.Time
+
+		if err := rows.Scan(&id, &receivedAt); err != nil {
+			return nil, fmt.Errorf("scanning duplicate row: %w", err)
+		}
+
+		duplicateMessagesIDs = append(duplicateMessagesIDs, duplicateMessage{
+			id:         id,
+			receivedAt: receivedAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over duplicate rows: %w", err)
+	}
+
+	return duplicateMessagesIDs, nil
 }
 
 func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
