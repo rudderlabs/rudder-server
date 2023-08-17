@@ -753,12 +753,14 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 			INSERT OVERWRITE INTO %[1]s.%[2]q ("ID", %[3]s)
 			SELECT DISTINCT *
 			FROM (
-				SELECT "USER_ID" as "ID", %[3]s
-				FROM %[1]s.%[4]q
+				SELECT "USER_ID" as "ID", %[4]s
+				FROM %[1]s.%[5]q
 				WHERE "USER_ID" IS NOT NULL
 			);`,
-			schemaIdentifier, usersTable,
+			schemaIdentifier,
+			usersTable,
 			strings.Join(userColNames, ","),
+			strings.Join(firstValProps, ","),
 			resp.stagingTable,
 		)
 		sf.logger.Infow("copying users data", append(logFields, lf.Query, sqlStatement)...)

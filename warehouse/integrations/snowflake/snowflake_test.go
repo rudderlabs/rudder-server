@@ -309,7 +309,7 @@ func TestIntegration(t *testing.T) {
 				loadFilesEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
 				tableUploadsEventsMap:         map[string]int{"identifies": 1, "users": 1, "tracks": 1},
 				warehouseEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
-				warehouseEventsMap2:           map[string]int{"identifies": 2, "users": 2, "tracks": 2},
+				warehouseEventsMap2:           map[string]int{"identifies": 2, "users": 1, "tracks": 2},
 				stagingFilePrefix:             "testdata/append-job",
 				appendMode:                    true,
 				customUserID:                  testhelper.GetUserId("append_test"),
