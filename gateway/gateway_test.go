@@ -120,8 +120,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			Enabled:        true,
 			IsReplaySource: true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
-				Name:     SourceIDEnabled,
-				Category: sourceType2,
+				Name: SourceIDEnabled,
 			},
 			WorkspaceID: WorkspaceID,
 		},
