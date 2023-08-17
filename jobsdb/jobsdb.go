@@ -684,7 +684,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(24, &jobCleanupFrequency, true, time.Hour, []string{"JobsDB.jobCleanupFrequency"}...)
 }
 
-func Init2() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("jobsdb")
 }
@@ -1008,11 +1008,6 @@ func (jd *HandleT) readerSetup(ctx context.Context, l lock.LockToken) {
 	jd.startBackupDSLoop(ctx)
 	jd.startMigrateDSLoop(ctx)
 	jd.startCleanupLoop(ctx)
-
-	g.Go(misc.WithBugsnag(func() error {
-		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
-		return nil
-	}))
 }
 
 func (jd *HandleT) writerSetup(ctx context.Context, l lock.LockToken) {
@@ -1041,11 +1036,6 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 	jd.startBackupDSLoop(ctx)
 	jd.startMigrateDSLoop(ctx)
 	jd.startCleanupLoop(ctx)
-
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
-		return nil
-	}))
 }
 
 // Stop stops the background goroutines and waits until they finish.
