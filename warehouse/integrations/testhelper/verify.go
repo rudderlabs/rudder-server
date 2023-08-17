@@ -2,6 +2,7 @@ package testhelper
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -42,8 +43,8 @@ func verifyEventsInStagingFiles(t testing.TB, testConfig *TestConfig) {
 	)
 
 	var err error
-	var count int
-	expectedCount := testConfig.StagingFilesEventsMap["wh_staging_files"]
+	var count sql.NullInt64
+	expectedCount := int64(testConfig.StagingFilesEventsMap["wh_staging_files"])
 
 	operation := func() bool {
 		err = testConfig.JobsDB.QueryRow(sqlStatement,
@@ -51,11 +52,11 @@ func verifyEventsInStagingFiles(t testing.TB, testConfig *TestConfig) {
 			testConfig.TimestampBeforeSendingEvents,
 		).Scan(&count)
 
-		if err == nil && count != expectedCount {
-			t.Logf("Expected staging files events count is %d, got %d", expectedCount, count)
+		if err == nil && count.Int64 != expectedCount {
+			t.Logf("Expected staging files events count is %d, got %d", expectedCount, count.Int64)
 		}
 
-		return err == nil && count == expectedCount
+		return err == nil && count.Int64 == expectedCount
 	}
 	require.Eventuallyf(t, operation, WaitFor2Minute, DefaultQueryFrequency,
 		"Expected staging files events count is %d, got %d: %v",
@@ -88,8 +89,8 @@ func verifyEventsInLoadFiles(t testing.TB, testConfig *TestConfig) {
 		)
 
 		var err error
-		var count int
-		expectedCount := testConfig.LoadFilesEventsMap[table]
+		var count sql.NullInt64
+		expectedCount := int64(testConfig.LoadFilesEventsMap[table])
 
 		operation := func() bool {
 			err = testConfig.JobsDB.QueryRow(sqlStatement,
@@ -97,11 +98,13 @@ func verifyEventsInLoadFiles(t testing.TB, testConfig *TestConfig) {
 				whutils.ToProviderCase(testConfig.DestinationType, table),
 			).Scan(&count)
 
-			if err == nil && count != expectedCount {
-				t.Logf("Expected load files events count for table %q is %d, got %d", table, expectedCount, count)
+			if err == nil && count.Int64 != expectedCount {
+				t.Logf("Expected load files events count for table %q is %d, got %d",
+					table, expectedCount, count.Int64,
+				)
 			}
 
-			return err == nil && count == expectedCount
+			return err == nil && count.Int64 == expectedCount
 		}
 		// Expected load files events count for table _groups is 0, got 0: <nil>
 		require.Eventuallyf(t, operation, WaitFor10Minute, DefaultQueryFrequency,
@@ -143,19 +146,21 @@ func verifyEventsInTableUploads(t testing.TB, testConfig *TestConfig) {
 		)
 
 		var err error
-		var count int
-		expectedCount := testConfig.TableUploadsEventsMap[table]
+		var count sql.NullInt64
+		expectedCount := int64(testConfig.TableUploadsEventsMap[table])
 		operation := func() bool {
 			err = testConfig.JobsDB.QueryRow(sqlStatement,
 				testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID,
 				testConfig.TimestampBeforeSendingEvents, whutils.ToProviderCase(testConfig.DestinationType, table),
 			).Scan(&count)
 
-			if err == nil && count != expectedCount {
-				t.Logf("Expected table uploads events count for table %q is %d, got %d", table, expectedCount, count)
+			if err == nil && count.Int64 != expectedCount {
+				t.Logf("Expected table uploads events count for table %q is %d, got %d",
+					table, expectedCount, count.Int64,
+				)
 			}
 
-			return err == nil && count == expectedCount
+			return err == nil && count.Int64 == expectedCount
 		}
 		require.Eventuallyf(t, operation, WaitFor10Minute, DefaultQueryFrequency,
 			"Expected table uploads events count for table %q is %d, got %d: %v",

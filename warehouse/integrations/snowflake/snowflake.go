@@ -342,9 +342,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 
 	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := whutils.StagingTableName(provider, tableName, tableNameLimit)
-	sqlStatement := fmt.Sprintf(`
-		CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;
-`,
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
 		schemaIdentifier,
 		stagingTableName,
 		tableName,
@@ -374,13 +372,13 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	}
 	sqlStatement = fmt.Sprintf(
 		`COPY INTO
-			%v(%v)
+			%s.%q(%v)
 		FROM
 		  '%v' %s
 		PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
 		TRUNCATECOLUMNS = TRUE;`,
-		fmt.Sprintf(`%s.%q`, schemaIdentifier, copyTargetTable),
+		schemaIdentifier, copyTargetTable,
 		sortedColumnNames,
 		loadFolder,
 		sf.authString(),
@@ -460,9 +458,7 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		updateSet,
 	)
 
-	sf.logger.Infow("deduplication",
-		append(logFields, lf.Query, sqlStatement)...,
-	)
+	sf.logger.Infow("deduplication", append(logFields, lf.Query, sqlStatement)...)
 
 	row := db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
@@ -708,6 +704,8 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
 		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
 		lf.Namespace, sf.Namespace,
+		lf.TableName, whutils.UsersTable,
+		lf.LoadTableStrategy, sf.config.loadTableStrategy,
 	}
 	sf.logger.Infow("started loading for identifies and users tables", logFields...)
 
@@ -750,6 +748,38 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
+	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
+		sqlStatement := fmt.Sprintf(`
+			INSERT INTO %[1]s.%[2]q	("ID", %[3]s)
+			SELECT DISTINCT *
+			FROM (
+				SELECT "USER_ID" as "ID", %[3]s
+				FROM %[1]s.%[4]q
+				WHERE "USER_ID" IS NOT NULL
+			);`,
+			schemaIdentifier, usersTable,
+			strings.Join(userColNames, ","),
+			identifiesTable,
+		)
+		sf.logger.Infow("copying users data", append(logFields, lf.Query, sqlStatement)...)
+		if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
+			sf.logger.Warnw("failure copying users data",
+				append(logFields, lf.Query, sqlStatement, lf.Error, err.Error())...,
+			)
+			return map[string]error{
+				identifiesTable: nil,
+				usersTable:      fmt.Errorf("failure copying users data: %w", err),
+			}
+		}
+
+		sf.logger.Infow("Completed loading for users and identifies tables", logFields...)
+
+		return map[string]error{
+			identifiesTable: nil,
+			usersTable:      nil,
+		}
+	}
+
 	stagingTableName := whutils.StagingTableName(provider, usersTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[1]s.%[2]q AS (
@@ -784,7 +814,6 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		strings.Join(identifyColNames, ","),
 	)
 
-	logFields = append(logFields, lf.TableName, whutils.UsersTable)
 	sf.logger.Infow("creating staging table for users",
 		append(logFields, lf.StagingTableName, stagingTableName, lf.Query, sqlStatement)...,
 	)
@@ -800,7 +829,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 
 	var (
 		primaryKey     = `"ID"`
-		columnNames    = append([]string{`"ID"`}, userColNames...)
+		columnNames    = append([]string{primaryKey}, userColNames...)
 		columnNamesStr = strings.Join(columnNames, ",")
 	)
 
