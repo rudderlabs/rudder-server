@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/archiver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
@@ -200,6 +202,20 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
+	defer schemaDB.Close()
+
+	archivalDB := jobsdb.NewForReadWrite(
+		"arc",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithJobMaxAge(
+			func() time.Duration {
+				return config.GetDuration("archival.jobRetention", 24, time.Hour)
+			},
+		),
+	)
+	defer archivalDB.Close()
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
@@ -229,6 +245,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		errDBForRead,
 		errDBForWrite,
 		schemaDB,
+		archivalDB,
 		reportingI,
 		transientSources,
 		fileUploaderProvider,
@@ -272,9 +289,17 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		BatchRouterDB:   batchRouterDB,
 		ErrorDB:         errDBForRead,
 		EventSchemaDB:   schemaDB,
+		ArchivalDB:      archivalDB,
 		Processor:       proc,
 		Router:          rt,
 		SchemaForwarder: schemaForwarder,
+		Archiver: archiver.New(
+			archivalDB,
+			fileUploaderProvider,
+			config,
+			stats.Default,
+			archiver.WithAdaptiveLimit(adaptiveLimit),
+		),
 	}
 
 	rateLimiter, err := gwThrottler.New(stats.Default)
