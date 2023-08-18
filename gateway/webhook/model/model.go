@@ -1,8 +1,10 @@
 package model
 
+import gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+
 type FailedWebhookPayload struct {
-	WriteKey   string
-	Payload    []byte
-	SourceType string
-	Reason     string
+	RequestContext *gwtypes.AuthRequestContext
+	Payload        []byte
+	SourceType     string
+	Reason         string
 }

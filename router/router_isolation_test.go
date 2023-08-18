@@ -360,7 +360,6 @@ func (rtIsolationMethods) newMockConfigBackend(t testing.TB, path string) *httpt
 // seedRtDB seeds the router database with jobs based on the provided spec
 func (m rtIsolationMethods) seedRtDB(t testing.TB, spec *RtIsolationScenarioSpec, url string) {
 	jobsdb.Init()
-	jobsdb.Init2()
 	rtJobsDB := jobsdb.NewForWrite("rt")
 	require.NoError(t, rtJobsDB.Start(), "it should be able to start the jobsdb")
 	defer rtJobsDB.Stop()

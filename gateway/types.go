@@ -6,12 +6,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 // RequestHandler interface for abstracting out server-side import request processing and rest of the calls
 type RequestHandler interface {
-	ProcessRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string
+	ProcessRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, arctx *gwtypes.AuthRequestContext) string
 }
 
 // webRequestT acts as a basic unit for web requests.
@@ -21,7 +22,7 @@ type webRequestT struct {
 	done           chan<- string
 	reqType        string
 	requestPayload []byte
-	writeKey       string
+	authContext    *gwtypes.AuthRequestContext
 	ipAddr         string
 	userIDHeader   string
 	errors         []string

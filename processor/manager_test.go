@@ -37,7 +37,6 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/stash"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -128,8 +127,6 @@ func initJobsDB() {
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
-	archiver.Init()
 }
 
 func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
@@ -196,6 +193,8 @@ func TestProcessorManager(t *testing.T) {
 	defer writeErrDB.TearDown()
 	eschDB := jobsdb.NewForReadWrite("esch")
 	defer eschDB.Close()
+	archDB := jobsdb.NewForReadWrite("archival")
+	defer archDB.Close()
 
 	clearDb := false
 	ctx := context.Background()
@@ -209,6 +208,7 @@ func TestProcessorManager(t *testing.T) {
 		readErrDB,
 		writeErrDB,
 		eschDB,
+		archDB,
 		&reporting.NOOP{},
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),
@@ -260,6 +260,8 @@ func TestProcessorManager(t *testing.T) {
 		defer gwDB.Stop()
 		require.NoError(t, eschDB.Start())
 		defer eschDB.Stop()
+		require.NoError(t, archDB.Start())
+		defer archDB.Stop()
 		require.NoError(t, rtDB.Start())
 		defer rtDB.Stop()
 		require.NoError(t, brtDB.Start())

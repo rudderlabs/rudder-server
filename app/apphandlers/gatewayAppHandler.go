@@ -142,9 +142,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}()
 
 	g.Go(func() error {
-		return gw.StartAdminHandler(ctx)
-	})
-	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
 	})
 	return g.Wait()

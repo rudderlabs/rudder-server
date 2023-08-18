@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -1232,16 +1231,18 @@ func TestMaxAgeCleanup(t *testing.T) {
 			return triggerJobCleanup
 		},
 	}
+	tablePrefix := strings.ToLower(rsRand.String(5))
 	err := jobsDB.Setup(
 		ReadWrite,
 		true,
-		strings.ToLower(rsRand.String(5)),
+		tablePrefix,
 		[]prebackup.Handler{},
 		fileuploader.NewDefaultProvider(),
 	)
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
+	// store some jobs
 	require.NoError(
 		t,
 		jobsDB.Store(
@@ -1261,6 +1262,20 @@ func TestMaxAgeCleanup(t *testing.T) {
 		})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(unprocessed.Jobs))
+
+	// store some journal entries
+	timeDelay := time.Duration(-12) * time.Hour * 24
+	t.Log(time.Now().Add(timeDelay))
+	_, err = jobsDB.dbHandle.Exec(
+		fmt.Sprintf(`insert into %s_journal (operation, done, operation_payload, start_time, owner)
+				values ($1, $2, $3, $4, $5) returning id`, tablePrefix),
+		addDSOperation,
+		true,
+		[]byte(`{"testKey":"testValue"}`),
+		time.Now().Add(timeDelay),
+		"",
+	)
+	require.NoError(t, err)
 
 	triggerJobCleanup <- time.Now()
 	triggerJobCleanup <- time.Now()
@@ -1291,6 +1306,11 @@ func TestMaxAgeCleanup(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
+
+	var journalEntryCount int
+	err = jobsDB.dbHandle.QueryRow(`select count(*) from ` + tablePrefix + `_journal`).Scan(&journalEntryCount)
+	require.NoError(t, err)
+	require.Equal(t, 1, journalEntryCount) // one from jd.Setup(addDS) - the one added during the test is cleaned up
 }
 
 func TestConstructParameterJSONQuery(t *testing.T) {
@@ -1564,6 +1584,4 @@ func initJobsDB() {
 	admin.Init()
 	misc.Init()
 	Init()
-	Init2()
-	archiver.Init()
 }

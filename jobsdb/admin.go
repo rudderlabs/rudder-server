@@ -166,10 +166,10 @@ func (jd *HandleT) startCleanupLoop(ctx context.Context) {
 }
 
 func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
-	jobs := make([]*JobT, 0)
-
-	gather := func(f func(ctx context.Context, params GetQueryParamsT) (JobsResult, error), params GetQueryParamsT) ([]*JobT, error) {
-		res := make([]*JobT, 0)
+	// 1. cleanup old jobs
+	statusList := make([]*JobStatusT, 0)
+	gather := func(f func(ctx context.Context, params GetQueryParamsT) (JobsResult, error), params GetQueryParamsT) ([]*JobStatusT, error) {
+		res := make([]*JobStatusT, 0)
 		var done bool
 		var afterJobID *int64
 		for !done {
@@ -180,10 +180,23 @@ func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
 			if err != nil {
 				return nil, err
 			}
-			jobs := lo.Filter(jobsResult.Jobs, func(job *JobT, _ int) bool { return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge)) })
+			jobs := lo.Filter(
+				jobsResult.Jobs,
+				func(job *JobT, _ int) bool {
+					return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge()))
+				},
+			)
 			if len(jobs) > 0 {
 				afterJobID = &(jobs[len(jobs)-1].JobID)
-				res = append(res, jobs...)
+				res = append(res, lo.Map(jobs, func(job *JobT, _ int) *JobStatusT {
+					return &JobStatusT{
+						JobID:         job.JobID,
+						JobState:      Aborted.State,
+						ErrorCode:     "0",
+						AttemptNum:    job.LastJobStatus.AttemptNum,
+						ErrorResponse: []byte(`{"reason": "job max age exceeded"}`),
+					}
+				})...)
 			}
 			if len(jobs) < batchSize {
 				done = true
@@ -196,29 +209,37 @@ func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
 	if err != nil {
 		return err
 	}
-	jobs = append(jobs, unprocessed...)
+	statusList = append(statusList, unprocessed...)
 
 	processed, err := gather(jd.GetProcessed, GetQueryParamsT{StateFilters: []string{Failed.State, Executing.State, Waiting.State}})
 	if err != nil {
 		return err
 	}
-	jobs = append(jobs, processed...)
+	statusList = append(statusList, processed...)
 
-	if len(jobs) > 0 {
-		statusList := make([]*JobStatusT, 0)
-		for _, job := range jobs {
-			statusList = append(statusList, &JobStatusT{
-				JobID:         job.JobID,
-				JobState:      Aborted.State,
-				ErrorCode:     "0",
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ErrorResponse: []byte(`{"reason": "job max age exceeded"}`),
-			})
-		}
+	if len(statusList) > 0 {
 		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
 			return err
 		}
-		jd.logger.Infof("cleaned up %d old jobs", len(jobs))
+		jd.logger.Infof("cleaned up %d old jobs", len(statusList))
 	}
+
+	// 2. cleanup journal
+	{
+		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY' returning id"
+		var journalEntryCount int64
+		if err := jd.dbHandle.QueryRowContext(
+			ctx,
+			fmt.Sprintf(
+				deleteStmt,
+				jd.tablePrefix,
+				config.GetInt("JobsDB.archivalTimeInDays", 10),
+			),
+		).Scan(&journalEntryCount); err != nil {
+			return err
+		}
+		jd.logger.Infof("cleaned up %d journal entries", journalEntryCount)
+	}
+
 	return nil
 }
