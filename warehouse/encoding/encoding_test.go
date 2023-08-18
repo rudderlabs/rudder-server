@@ -379,7 +379,4 @@ func TestReaderLoader(t *testing.T) {
 			require.Equal(t, output, []string{})
 		})
 	})
-
-	t.Run("Invalid files", func(t *testing.T) {
-	})
 }

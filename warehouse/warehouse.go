@@ -52,28 +52,26 @@ import (
 )
 
 var (
-	application                         app.App
-	webPort                             int
-	dbHandle                            *sql.DB
-	wrappedDBHandle                     *sqlquerywrapper.DB
-	dbHandleTimeout                     time.Duration
-	notifier                            pgnotifier.PGNotifier
-	tenantManager                       *multitenant.Manager
-	controlPlaneClient                  *controlplane.Client
-	uploadFreqInS                       int64
-	lastProcessedMarkerMap              map[string]int64
-	lastProcessedMarkerExp              = expvar.NewMap("lastProcessedMarkerMap")
-	lastProcessedMarkerMapLock          sync.RWMutex
-	warehouseMode                       string
-	bcManager                           *backendConfigManager
-	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
-	triggerUploadsMapLock               sync.RWMutex
-	longRunningUploadStatThresholdInMin time.Duration
-	pkgLogger                           logger.Logger
-	tableCountQueryTimeout              time.Duration
-	runningMode                         string
-	ShouldForceSetLowerVersion          bool
-	asyncWh                             *jobs.AsyncJobWh
+	application                app.App
+	webPort                    int
+	dbHandle                   *sql.DB
+	wrappedDBHandle            *sqlquerywrapper.DB
+	dbHandleTimeout            time.Duration
+	notifier                   pgnotifier.PGNotifier
+	tenantManager              *multitenant.Manager
+	controlPlaneClient         *controlplane.Client
+	uploadFreqInS              int64
+	lastProcessedMarkerMap     map[string]int64
+	lastProcessedMarkerExp     = expvar.NewMap("lastProcessedMarkerMap")
+	lastProcessedMarkerMapLock sync.RWMutex
+	warehouseMode              string
+	bcManager                  *backendConfigManager
+	triggerUploadsMap          map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
+	triggerUploadsMapLock      sync.RWMutex
+	pkgLogger                  logger.Logger
+	runningMode                string
+	ShouldForceSetLowerVersion bool
+	asyncWh                    *jobs.AsyncJobWh
 )
 
 var (
@@ -117,10 +115,8 @@ func loadConfig() {
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	triggerUploadsMap = map[string]bool{}
-	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
 	runningMode = config.GetString("Warehouse.runningMode", "")
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
 	config.RegisterDurationConfigVariable(5, &dbHandleTimeout, true, time.Minute, []string{"Warehouse.dbHandleTimeout", "Warehouse.dbHanndleTimeoutInMin"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
@@ -197,6 +193,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 
 				router, err := newRouter(
 					ctx,
+					application,
 					destination.DestinationDefinition.Name,
 					config.Default,
 					pkgLogger,

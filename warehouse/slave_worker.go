@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
@@ -236,6 +237,8 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 
 	bufScanner := bufio.NewScanner(jr.stagingFileReader)
 	bufScanner.Buffer(make([]byte, maxCapacity), maxCapacity)
+
+	columnCountLimitMap := integrationsconfig.ColumnCountLimitMap(jr.conf)
 
 	for {
 		ok := bufScanner.Scan()

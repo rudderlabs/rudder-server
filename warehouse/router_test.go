@@ -40,7 +40,6 @@ import (
 
 func TestRouter(t *testing.T) {
 	pgnotifier.Init()
-	Init()
 	Init4()
 
 	pool, err := dockertest.NewPool("")
@@ -54,9 +53,6 @@ func TestRouter(t *testing.T) {
 	mockApp.EXPECT().Features().Return(&app.Features{
 		Reporting: report,
 	}).AnyTimes()
-
-	application = mockApp
-	pkgLogger = logger.NOP
 
 	sourceID := "test-source-id"
 	destinationID := "test-destination-id"
@@ -97,9 +93,8 @@ func TestRouter(t *testing.T) {
 		require.NoError(t, err)
 
 		db := sqlmiddleware.New(pgResource.DB)
-		wrappedDBHandle = db
 
-		notifier, err = pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
+		notifier, err := pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		tenantManager := &multitenant.Manager{
@@ -121,7 +116,20 @@ func TestRouter(t *testing.T) {
 
 		em := encoding.NewManager(config.Default)
 
-		r, err := newRouter(ctx, destinationType, config.Default, logger.NOP, stats.Default, db, &notifier, tenantManager, cp, bcm, em)
+		r, err := newRouter(
+			ctx,
+			mockApp,
+			destinationType,
+			config.Default,
+			logger.NOP,
+			stats.Default,
+			db,
+			&notifier,
+			tenantManager,
+			cp,
+			bcm,
+			em,
+		)
 		require.NoError(t, err)
 
 		cancel()
@@ -141,7 +149,6 @@ func TestRouter(t *testing.T) {
 		require.NoError(t, err)
 
 		db := sqlmiddleware.New(pgResource.DB)
-		wrappedDBHandle = db
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
@@ -177,6 +184,7 @@ func TestRouter(t *testing.T) {
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
+		r.conf = config.Default
 		r.config.stagingFilesBatchSize = 100
 		r.config.warehouseSyncFreqIgnore = true
 		r.config.enableJitterForSyncs = true
@@ -294,7 +302,6 @@ func TestRouter(t *testing.T) {
 		require.NoError(t, err)
 
 		db := sqlmiddleware.New(pgResource.DB)
-		wrappedDBHandle = db
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
@@ -333,6 +340,7 @@ func TestRouter(t *testing.T) {
 		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
+		r.conf = config.Default
 		r.config.stagingFilesBatchSize = 100
 		r.config.warehouseSyncFreqIgnore = true
 		r.config.enableJitterForSyncs = true
@@ -399,7 +407,6 @@ func TestRouter(t *testing.T) {
 		require.NoError(t, err)
 
 		db := sqlmiddleware.New(pgResource.DB)
-		wrappedDBHandle = db
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
@@ -447,8 +454,11 @@ func TestRouter(t *testing.T) {
 		}
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
-			stats:    r.statsFactory,
-			dbHandle: r.dbHandle,
+			app:          mockApp,
+			conf:         config.Default,
+			logger:       logger.NOP,
+			statsFactory: r.statsFactory,
+			dbHandle:     r.dbHandle,
 		}
 		r.stats.processingPendingJobsStat = r.statsFactory.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 			"destType": r.destType,
@@ -529,7 +539,6 @@ func TestRouter(t *testing.T) {
 		require.NoError(t, err)
 
 		db := sqlmiddleware.New(pgResource.DB)
-		wrappedDBHandle = db
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
@@ -583,8 +592,11 @@ func TestRouter(t *testing.T) {
 		r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
-			stats:    r.statsFactory,
-			dbHandle: r.dbHandle,
+			app:          mockApp,
+			conf:         config.Default,
+			logger:       logger.NOP,
+			statsFactory: r.statsFactory,
+			dbHandle:     r.dbHandle,
 		}
 		r.workerChannelMap = map[string]chan *UploadJob{
 			r.workerIdentifier(warehouse): make(chan *UploadJob, 1),
@@ -680,7 +692,6 @@ func TestRouter(t *testing.T) {
 			require.NoError(t, err)
 
 			db := sqlmiddleware.New(pgResource.DB)
-			wrappedDBHandle = db
 
 			now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
@@ -731,8 +742,11 @@ func TestRouter(t *testing.T) {
 			r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
 			r.warehouses = []model.Warehouse{warehouse}
 			r.uploadJobFactory = UploadJobFactory{
-				stats:    r.statsFactory,
-				dbHandle: r.dbHandle,
+				app:          mockApp,
+				conf:         config.Default,
+				logger:       logger.NOP,
+				statsFactory: r.statsFactory,
+				dbHandle:     r.dbHandle,
 			}
 			r.workerChannelMap = map[string]chan *UploadJob{
 				r.workerIdentifier(warehouse): make(chan *UploadJob, 1),
@@ -786,7 +800,6 @@ func TestRouter(t *testing.T) {
 			require.NoError(t, err)
 
 			db := sqlmiddleware.New(pgResource.DB)
-			wrappedDBHandle = db
 
 			now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
@@ -804,6 +817,7 @@ func TestRouter(t *testing.T) {
 			r.warehouseDBHandle = NewWarehouseDB(db)
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
+			r.conf = config.Default
 			r.config.stagingFilesBatchSize = 100
 			r.config.warehouseSyncFreqIgnore = true
 			r.config.enableJitterForSyncs = true
@@ -942,7 +956,6 @@ func TestRouter(t *testing.T) {
 		require.NoError(t, err)
 
 		db := sqlmiddleware.New(pgResource.DB)
-		wrappedDBHandle = db
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {

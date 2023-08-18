@@ -107,6 +107,7 @@ type jobRun struct {
 	now func() time.Time
 
 	stats                          stats.Stats
+	conf                           *config.Config
 	uploadTimeStat                 stats.Measurement
 	totalUploadTimeStat            stats.Measurement
 	downloadStagingFileStat        stats.Measurement
@@ -127,6 +128,7 @@ func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.S
 		job:             job,
 		identifier:      warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 		stats:           stat,
+		conf:            conf,
 		since:           time.Since,
 		logger:          log,
 		now:             timeutil.Now,
