@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/services/alerta"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
@@ -23,14 +22,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
-	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -91,7 +85,6 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 }
 
 func TestColumnCountStat(t *testing.T) {
-	Init()
 	Init4()
 
 	var (
@@ -110,9 +103,8 @@ func TestColumnCountStat(t *testing.T) {
 		statExpected     bool
 	}{
 		{
-			name:             "Datalakes destination",
-			destinationType:  warehouseutils.S3Datalake,
-			columnCountLimit: 1,
+			name:            "Datalakes destination",
+			destinationType: warehouseutils.S3Datalake,
 		},
 		{
 			name:            "Unknown destination",
@@ -120,13 +112,13 @@ func TestColumnCountStat(t *testing.T) {
 		},
 		{
 			name:             "Greater than threshold",
-			destinationType:  "test-destination",
+			destinationType:  warehouseutils.RS,
 			columnCountLimit: 1,
 			statExpected:     true,
 		},
 		{
 			name:             "Lesser than threshold",
-			destinationType:  "test-destination",
+			destinationType:  warehouseutils.RS,
 			columnCountLimit: 10,
 			statExpected:     true,
 		},
@@ -138,11 +130,11 @@ func TestColumnCountStat(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			columnCountLimitMap = map[string]int{
-				"test-destination": tc.columnCountLimit,
-			}
+			conf := config.New()
+			conf.Set(fmt.Sprintf("Warehouse.%s.columnCountLimit", strings.ToLower(warehouseutils.WHDestNameMap[tc.destinationType])), tc.columnCountLimit)
 
 			j := UploadJob{
+				conf: conf,
 				upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
@@ -159,7 +151,7 @@ func TestColumnCountStat(t *testing.T) {
 						Name: sourceName,
 					},
 				},
-				stats: store,
+				statsFactory: store,
 				schemaHandle: &Schema{
 					schemaInWarehouse: model.Schema{
 						tableName: model.TableSchema{
@@ -190,114 +182,6 @@ func TestColumnCountStat(t *testing.T) {
 	}
 }
 
-var _ = Describe("Upload", Ordered, func() {
-	var (
-		sourceID        = "test-sourceID"
-		destinationID   = "test-destinationID"
-		destinationName = "test-destinationName"
-		namespace       = "test-namespace"
-		destinationType = "POSTGRES"
-		g               = GinkgoT()
-	)
-
-	var (
-		pgResource *resource.PostgresResource
-		job        *UploadJob
-	)
-
-	BeforeAll(func() {
-		pool, err := dockertest.NewPool("")
-		Expect(err).To(BeNil())
-
-		pgResource = setupWarehouseJobsDB(pool, GinkgoT())
-
-		initWarehouse()
-
-		err = setupDB(context.Background(), getConnectionString())
-		Expect(err).To(BeNil())
-
-		sqlStatement, err := os.ReadFile("testdata/sql/upload_test.sql")
-		Expect(err).To(BeNil())
-
-		_, err = pgResource.DB.Exec(string(sqlStatement))
-		Expect(err).To(BeNil())
-
-		pkgLogger = logger.NOP
-	})
-
-	BeforeEach(func() {
-		job = &UploadJob{
-			warehouse: model.Warehouse{
-				Type: destinationType,
-				Destination: backendconfig.DestinationT{
-					ID:   destinationID,
-					Name: destinationName,
-				},
-				Source: backendconfig.SourceT{
-					ID:   sourceID,
-					Name: destinationName,
-				},
-			},
-			upload: model.Upload{
-				ID:                 1,
-				DestinationID:      destinationID,
-				SourceID:           sourceID,
-				StagingFileStartID: 1,
-				StagingFileEndID:   5,
-				Namespace:          namespace,
-			},
-			stagingFileIDs: []int64{1, 2, 3, 4, 5},
-			dbHandle:       sqlmiddleware.New(pgResource.DB),
-			ctx:            context.Background(),
-		}
-	})
-
-	It("Total rows in load files", func() {
-		count := job.getTotalRowsInLoadFiles(context.Background())
-		Expect(count).To(BeEquivalentTo(5))
-	})
-
-	It("Total rows in staging files", func() {
-		count, err := repo.NewStagingFiles(sqlquerywrapper.New(pgResource.DB)).TotalEventsForUpload(context.Background(), job.upload)
-		Expect(err).To(BeNil())
-		Expect(count).To(BeEquivalentTo(5))
-	})
-
-	It("Get uploads timings", func() {
-		exportedData, err := time.Parse(time.RFC3339, "2020-04-21T15:26:34.344356Z")
-		Expect(err).To(BeNil())
-		exportingData, err := time.Parse(time.RFC3339, "2020-04-21T15:16:19.687716Z")
-		Expect(err).To(BeNil())
-		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.Background(), job.upload.ID)).
-			To(BeEquivalentTo(model.Timings{
-				{
-					"exported_data":  exportedData,
-					"exporting_data": exportingData,
-				},
-			}))
-	})
-
-	Describe("Staging files and load files events match", func() {
-		When("Matched", func() {
-			It("Should not send stats", func() {
-				job.matchRowsInStagingAndLoadFiles(context.Background())
-			})
-		})
-
-		When("Not matched", func() {
-			It("Should send stats", func() {
-				mockStats, mockMeasurement := getMockStats(g)
-				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(mockMeasurement)
-				mockMeasurement.EXPECT().Gauge(gomock.Any()).Times(1)
-
-				job.stats = mockStats
-				job.stagingFileIDs = []int64{1, 2}
-				job.matchRowsInStagingAndLoadFiles(context.Background())
-			})
-		})
-	})
-})
-
 type mockAlertSender struct {
 	mockError error
 }
@@ -309,7 +193,6 @@ func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpt
 func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 	t.Parallel()
 
-	Init()
 	Init4()
 
 	var (
@@ -372,16 +255,24 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					rs.DB = sqlmiddleware.New(pgResource.DB)
 					rs.Namespace = testNamespace
 
-					job := &UploadJob{
-						whManager: rs,
-						upload: model.Upload{
+					ujf := &UploadJobFactory{
+						conf:         config.Default,
+						logger:       logger.NOP,
+						statsFactory: stats.Default,
+						dbHandle:     sqlmiddleware.New(pgResource.DB),
+					}
+
+					job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
+						Upload: model.Upload{
 							DestinationID:   testDestinationID,
 							DestinationType: testDestinationType,
 						},
-						alertSender: &mockAlertSender{
-							mockError: tc.mockAlertError,
+						Warehouse: model.Warehouse{
+							Type: testDestinationType,
 						},
-						ctx: context.Background(),
+					}, rs)
+					job.alertSender = &mockAlertSender{
+						mockError: tc.mockAlertError,
 					}
 
 					_, err = rs.DB.Exec(
@@ -440,15 +331,23 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			rs.DB = sqlmiddleware.New(pgResource.DB)
 			rs.Namespace = testNamespace
 
-			job := &UploadJob{
-				whManager: rs,
-				upload: model.Upload{
+			ujf := &UploadJobFactory{
+				conf:         config.Default,
+				logger:       logger.NOP,
+				statsFactory: stats.Default,
+				dbHandle:     sqlmiddleware.New(pgResource.DB),
+			}
+
+			job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
+				Upload: model.Upload{
 					DestinationID:   testDestinationID,
 					DestinationType: testDestinationType,
 				},
-				alertSender: &mockAlertSender{},
-				ctx:         context.Background(),
-			}
+				Warehouse: model.Warehouse{
+					Type: testDestinationType,
+				},
+			}, rs)
+			job.alertSender = &mockAlertSender{}
 
 			_, err = rs.DB.Exec(
 				fmt.Sprintf("CREATE SCHEMA %s;",
@@ -561,11 +460,11 @@ func TestUploadJobT_Aborted(t *testing.T) {
 			t.Parallel()
 
 			job := &UploadJob{
-				minRetryAttempts: minAttempts,
-				retryTimeWindow:  minRetryWindow,
-				now:              func() time.Time { return now },
-				ctx:              context.Background(),
+				now: func() time.Time { return now },
+				ctx: context.Background(),
 			}
+			job.config.minRetryAttempts = minAttempts
+			job.config.retryTimeWindow = minRetryWindow
 
 			require.Equal(t, tc.expected, job.Aborted(tc.attempts, tc.startTime))
 		})
@@ -725,10 +624,9 @@ func TestUploadJob_DurationBeforeNextAttempt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			job := &UploadJob{
-				minUploadBackoff: time.Second * 60,
-				maxUploadBackoff: time.Second * 1800,
-			}
+			job := &UploadJob{}
+			job.config.minUploadBackoff = time.Second * 60
+			job.config.maxUploadBackoff = time.Second * 1800
 			require.Equal(t, tc.expected, job.durationBeforeNextAttempt(int64(tc.attempt)))
 		})
 	}

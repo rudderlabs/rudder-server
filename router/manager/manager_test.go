@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -164,8 +163,6 @@ func initRouter() {
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
-	archiver.Init()
 }
 
 func TestRouterManager(t *testing.T) {

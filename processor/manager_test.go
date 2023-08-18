@@ -37,7 +37,6 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/stash"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -128,8 +127,6 @@ func initJobsDB() {
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
-	archiver.Init()
 }
 
 func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {

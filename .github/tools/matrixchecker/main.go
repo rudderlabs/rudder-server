@@ -18,6 +18,7 @@ var IgnorePackages = []string{
 	"warehouse/integrations/middleware",
 	"warehouse/integrations/testhelper",
 	"warehouse/integrations/testdata",
+	"warehouse/integrations/config",
 }
 
 func main() {

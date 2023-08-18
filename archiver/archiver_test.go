@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	arch "github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -71,8 +70,7 @@ func TestJobsArchival(t *testing.T) {
 		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
 	}
 
-	arch.Init()
-	jobsdb.Init2()
+	jobsdb.Init()
 	misc.Init()
 	jd := &jobsdb.HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
