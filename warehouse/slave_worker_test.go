@@ -299,8 +299,11 @@ func TestSlaveWorker(t *testing.T) {
 				subscribeCh: subscribeCh,
 			}
 
+			c := config.New()
+			c.Set("Warehouse.s3_datalake.columnCountLimit", 10)
+
 			slaveWorker := newSlaveWorker(
-				config.Default,
+				c,
 				logger.NOP,
 				stats.Default,
 				notifier,
@@ -308,10 +311,6 @@ func TestSlaveWorker(t *testing.T) {
 				newConstraintsManager(config.Default),
 				workerIdx,
 			)
-
-			columnCountLimitMap = map[string]int{
-				warehouseutils.S3Datalake: 10,
-			}
 
 			p := payload{
 				UploadID:                     1,
