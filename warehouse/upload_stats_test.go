@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"testing"
 	"time"
@@ -28,25 +29,7 @@ import (
 )
 
 func TestUploadJob_Stats(t *testing.T) {
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	pgResource, err := resource.SetupPostgres(pool, t)
-	require.NoError(t, err)
-
-	t.Log("db:", pgResource.DBDsn)
-
-	err = (&migrator.Migrator{
-		Handle:          pgResource.DB,
-		MigrationsTable: "wh_schema_migrations",
-	}).Migrate("warehouse")
-	require.NoError(t, err)
-
-	sqlStatement, err := os.ReadFile("testdata/sql/stats_test.sql")
-	require.NoError(t, err)
-
-	_, err = pgResource.DB.Exec(string(sqlStatement))
-	require.NoError(t, err)
+	db := setupUploadTest(t, "testdata/sql/stats_test.sql")
 
 	t.Run("Generate upload success metrics", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
@@ -61,7 +44,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: mockStats,
-			dbHandle:     sqlmiddleware.New(pgResource.DB),
+			dbHandle:     sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -91,7 +74,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: mockStats,
-			dbHandle:     sqlmiddleware.New(pgResource.DB),
+			dbHandle:     sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -122,7 +105,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: mockStats,
-			dbHandle:     sqlmiddleware.New(pgResource.DB),
+			dbHandle:     sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -151,7 +134,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: mockStats,
-			dbHandle:     sqlmiddleware.New(pgResource.DB),
+			dbHandle:     sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -164,7 +147,7 @@ func TestUploadJob_Stats(t *testing.T) {
 			},
 		}, nil)
 
-		err = job.recordLoadFileGenerationTimeStat(1, 4)
+		err := job.recordLoadFileGenerationTimeStat(1, 4)
 		require.NoError(t, err)
 	})
 }
@@ -178,32 +161,14 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		destinationType = "POSTGRES"
 	)
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	pgResource, err := resource.SetupPostgres(pool, t)
-	require.NoError(t, err)
-
-	t.Log("db:", pgResource.DBDsn)
-
-	err = (&migrator.Migrator{
-		Handle:          pgResource.DB,
-		MigrationsTable: "wh_schema_migrations",
-	}).Migrate("warehouse")
-	require.NoError(t, err)
-
-	sqlStatement, err := os.ReadFile("testdata/sql/upload_test.sql")
-	require.NoError(t, err)
-
-	_, err = pgResource.DB.Exec(string(sqlStatement))
-	require.NoError(t, err)
+	db := setupUploadTest(t, "testdata/sql/upload_test.sql")
 
 	t.Run("Total rows in load files", func(t *testing.T) {
 		ujf := &UploadJobFactory{
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: stats.Default,
-			dbHandle:     sqlmiddleware.New(pgResource.DB),
+			dbHandle:     sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -243,7 +208,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: stats.Default,
-			dbHandle:     sqlmiddleware.New(pgResource.DB),
+			dbHandle:     sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -274,7 +239,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			},
 		}, nil)
 
-		count, err := repo.NewStagingFiles(sqlmiddleware.New(pgResource.DB)).TotalEventsForUpload(context.Background(), job.upload)
+		count, err := repo.NewStagingFiles(sqlmiddleware.New(db)).TotalEventsForUpload(context.Background(), job.upload)
 		require.NoError(t, err)
 		require.EqualValues(t, 5, count)
 	})
@@ -284,7 +249,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			conf:         config.Default,
 			logger:       logger.NOP,
 			statsFactory: stats.Default,
-			dbHandle:     sqlmiddleware.New(pgResource.DB),
+			dbHandle:     sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
@@ -371,7 +336,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 					conf:         config.Default,
 					logger:       logger.NOP,
 					statsFactory: mockStats,
-					dbHandle:     sqlmiddleware.New(pgResource.DB),
+					dbHandle:     sqlmiddleware.New(db),
 				}
 				job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 					Upload: model.Upload{
@@ -401,4 +366,30 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			})
 		}
 	})
+}
+
+func setupUploadTest(t testing.TB, migrationsPath string) *sql.DB {
+	t.Helper()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	pgResource, err := resource.SetupPostgres(pool, t)
+	require.NoError(t, err)
+
+	t.Log("db:", pgResource.DBDsn)
+
+	err = (&migrator.Migrator{
+		Handle:          pgResource.DB,
+		MigrationsTable: "wh_schema_migrations",
+	}).Migrate("warehouse")
+	require.NoError(t, err)
+
+	sqlStatement, err := os.ReadFile(migrationsPath)
+	require.NoError(t, err)
+
+	_, err = pgResource.DB.Exec(string(sqlStatement))
+	require.NoError(t, err)
+
+	return pgResource.DB
 }
