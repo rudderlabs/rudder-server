@@ -491,7 +491,7 @@ type HandleT struct {
 	refreshDSTimeout time.Duration
 
 	TriggerJobCleanUp func() <-chan time.Time
-	JobMaxAge         time.Duration
+	JobMaxAge         func() time.Duration
 
 	lifecycle struct {
 		mu      sync.Mutex
@@ -537,7 +537,6 @@ func (jd *HandleT) registerBackUpSettings() {
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
 	config.RegisterDurationConfigVariable(10, &jd.refreshDSTimeout, true, time.Minute, "JobsDB.refreshDS.timeout")
-	config.RegisterDurationConfigVariable(720, &jd.JobMaxAge, false, time.Hour, "JobsDB.jobMaxAge")
 	config.RegisterDurationConfigVariable(10, &jd.migrateDSTimeout, true, time.Minute, "JobsDB.migrateDS.timeout")
 
 	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
@@ -685,7 +684,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(24, &jobCleanupFrequency, true, time.Hour, []string{"JobsDB.jobCleanupFrequency"}...)
 }
 
-func Init2() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("jobsdb")
 }
@@ -721,6 +720,12 @@ func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 func WithFileUploaderProvider(fileUploaderProvider fileuploader.Provider) OptsFunc {
 	return func(jd *HandleT) {
 		jd.fileUploaderProvider = fileUploaderProvider
+	}
+}
+
+func WithJobMaxAge(maxAgeFunc func() time.Duration) OptsFunc {
+	return func(jd *HandleT) {
+		jd.JobMaxAge = maxAgeFunc
 	}
 }
 
@@ -800,6 +805,12 @@ func (jd *HandleT) init() {
 	if jd.TriggerJobCleanUp == nil {
 		jd.TriggerJobCleanUp = func() <-chan time.Time {
 			return time.After(jobCleanupFrequency)
+		}
+	}
+
+	if jd.JobMaxAge == nil {
+		jd.JobMaxAge = func() time.Duration {
+			return config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
 		}
 	}
 
@@ -997,11 +1008,6 @@ func (jd *HandleT) readerSetup(ctx context.Context, l lock.LockToken) {
 	jd.startBackupDSLoop(ctx)
 	jd.startMigrateDSLoop(ctx)
 	jd.startCleanupLoop(ctx)
-
-	g.Go(misc.WithBugsnag(func() error {
-		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
-		return nil
-	}))
 }
 
 func (jd *HandleT) writerSetup(ctx context.Context, l lock.LockToken) {
@@ -1030,11 +1036,6 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 	jd.startBackupDSLoop(ctx)
 	jd.startMigrateDSLoop(ctx)
 	jd.startCleanupLoop(ctx)
-
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
-		return nil
-	}))
 }
 
 // Stop stops the background goroutines and waits until they finish.

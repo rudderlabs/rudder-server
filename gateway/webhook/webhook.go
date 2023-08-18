@@ -21,7 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -45,11 +45,11 @@ func Init() {
 }
 
 type webhookT struct {
-	request    *http.Request
-	writer     http.ResponseWriter
-	done       chan<- transformerResponse
-	sourceType string
-	writeKey   string
+	request     *http.Request
+	writer      http.ResponseWriter
+	done        chan<- transformerResponse
+	sourceType  string
+	authContext *gwtypes.AuthRequestContext
 }
 
 type batchWebhookT struct {
@@ -69,7 +69,7 @@ type HandleT struct {
 	requestQ      map[string]chan *webhookT
 	batchRequestQ chan *batchWebhookT
 	netClient     *retryablehttp.Client
-	gwHandle      GatewayI
+	gwHandle      Gateway
 	stats         stats.Stats
 	ackCount      uint64
 	recvCount     uint64
@@ -102,17 +102,6 @@ type batchWebhookTransformerT struct {
 
 type batchTransformerOption func(bt *batchWebhookTransformerT)
 
-func parseWriteKey(req *http.Request) (writeKey string, found bool) {
-	queryParams := req.URL.Query()
-	writeKeys, found := queryParams["writeKey"]
-	if found && writeKeys[0] != "" {
-		writeKey = writeKeys[0]
-	} else {
-		writeKey, _, found = req.BasicAuth()
-	}
-	return
-}
-
 func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int) {
 	statusCode := http.StatusBadRequest
 	if code != 0 {
@@ -120,46 +109,14 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	}
 	pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, reason)
 	http.Error(w, reason, statusCode)
-	webhook.gwHandle.IncrementAckCount(1)
 }
 
 func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
+	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
+	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 	pkgLogger.LogRequest(r)
-	webhook.gwHandle.IncrementRecvCount(1)
 	atomic.AddUint64(&webhook.recvCount, 1)
-
-	writeKey, ok := parseWriteKey(r)
-	if !ok {
-		stat := &gwstats.SourceStat{
-			Source:  "noWriteKey",
-			ReqType: "webhook",
-		}
-		stat.RequestFailed("noWriteKey")
-		stat.Report(webhook.stats)
-		webhook.failRequest(
-			w,
-			r,
-			response.GetStatus(response.NoWriteKeyInQueryParams),
-			response.GetErrorStatusCode(response.NoWriteKeyInQueryParams),
-		)
-		atomic.AddUint64(&webhook.ackCount, 1)
-		return
-	}
-
-	sourceDefName, ok := webhook.gwHandle.GetWebhookSourceDefName(writeKey)
-	if !ok {
-		stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
-		stat.RequestFailed("invalidWriteKey")
-		stat.Report(webhook.stats)
-		webhook.failRequest(
-			w,
-			r,
-			response.GetStatus(response.InvalidWriteKey),
-			response.GetErrorStatusCode(response.InvalidWriteKey),
-		)
-		atomic.AddUint64(&webhook.ackCount, 1)
-		return
-	}
+	sourceDefName := arctx.SourceDefName
 
 	var postFrom url.Values
 	var multipartForm *multipart.Form
@@ -170,7 +127,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
 			stat.RequestFailed("couldNotParseForm")
 			stat.Report(webhook.stats)
 
@@ -186,7 +143,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		postFrom = r.PostForm
 	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
 			stat.RequestFailed("couldNotParseMultiform")
 			stat.Report(webhook.stats)
 
@@ -208,7 +165,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil {
 		jsonByte, err = json.Marshal(multipartForm)
 		if err != nil {
-			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -223,7 +180,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	} else if len(postFrom) != 0 {
 		jsonByte, err = json.Marshal(postFrom)
 		if err != nil {
-			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -243,7 +200,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	done := make(chan transformerResponse)
-	req := webhookT{request: r, writer: w, done: done, sourceType: sourceDefName, writeKey: writeKey}
+	req := webhookT{request: r, writer: w, done: done, sourceType: sourceDefName, authContext: arctx}
 	webhook.requestQMu.RLock()
 	requestQ := webhook.requestQ[sourceDefName]
 	requestQ <- &req
@@ -251,11 +208,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Wait for batcher process to be done
 	resp := <-done
-	webhook.gwHandle.IncrementAckCount(1)
 	atomic.AddUint64(&webhook.ackCount, 1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
-	ss := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+	ss := webhook.gwHandle.NewSourceStat(arctx, reqType)
 
 	if resp.Err != "" {
 		code := http.StatusBadRequest
@@ -397,10 +353,10 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			failedWebhookPayloads := make([]*model.FailedWebhookPayload, len(webRequests))
 			for i, webRequest := range webRequests {
 				failedWebhookPayloads[i] = &model.FailedWebhookPayload{
-					WriteKey:   webRequest.writeKey,
-					Payload:    payloadArr[i],
-					SourceType: breq.sourceType,
-					Reason:     batchResponse.batchError.Error(),
+					RequestContext: webRequest.authContext,
+					Payload:        payloadArr[i],
+					SourceType:     breq.sourceType,
+					Reason:         batchResponse.batchError.Error(),
 				}
 			}
 			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
@@ -427,15 +383,15 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 				if errMessage != "" {
 					pkgLogger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
-					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.writeKey, reason, response.GetErrorStatusCode(errMessage), 1)
-					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{WriteKey: webRequest.writeKey, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
+					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, reason, response.GetErrorStatusCode(errMessage), 1)
+					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
 					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
-				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{WriteKey: webRequest.writeKey, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: resp.Err})
+				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: resp.Err})
 				pkgLogger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
-				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.writeKey, "non 200 response", resp.StatusCode, 1)
+				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, "non 200 response", resp.StatusCode, 1)
 			}
 
 			webRequest.done <- resp
@@ -453,14 +409,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
 	// replace body with transformed event (it comes in a batch format)
 	req.request.Body = io.NopCloser(bytes.NewReader(payload))
-	// set write key in basic auth header
-	req.request.SetBasicAuth(req.writeKey, "")
 	payload, err := io.ReadAll(req.request.Body)
 	_ = req.request.Body.Close()
 	if err != nil {
 		return err.Error()
 	}
-	return webhook.gwHandle.ProcessWebRequest(&req.writer, req.request, "batch", payload, req.writeKey)
+	return webhook.gwHandle.ProcessWebRequest(&req.writer, req.request, "batch", payload, req.authContext)
 }
 
 func (webhook *HandleT) Register(name string) {
@@ -492,10 +446,10 @@ func (webhook *HandleT) Shutdown() error {
 	return webhook.backgroundWait()
 }
 
-func (webhook *HandleT) countWebhookErrors(sourceType, writeKey, reason string, statusCode, count int) {
-	stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+func (webhook *HandleT) countWebhookErrors(sourceType string, arctx *gwtypes.AuthRequestContext, reason string, statusCode, count int) {
+	stat := webhook.gwHandle.NewSourceStat(arctx, "webhook")
 	webhook.stats.NewTaggedStat("webhook_num_errors", stats.CountType, stats.Tags{
-		"writeKey":    writeKey,
+		"writeKey":    arctx.WriteKey,
 		"workspaceId": stat.WorkspaceID,
 		"sourceID":    stat.SourceID,
 		"statusCode":  strconv.Itoa(statusCode),
@@ -505,12 +459,12 @@ func (webhook *HandleT) countWebhookErrors(sourceType, writeKey, reason string, 
 }
 
 func (webhook *HandleT) recordWebhookErrors(sourceType, reason string, reqs []*webhookT, statusCode int) {
-	reqsGroupedByWriteKey := lo.GroupBy(reqs, func(request *webhookT) string {
-		return request.writeKey
+	reqsGroupedBySource := lo.GroupBy(reqs, func(request *webhookT) gwtypes.AuthRequestContext {
+		return *request.authContext
 	})
 
-	for writeKey, reqs := range reqsGroupedByWriteKey {
-		webhook.countWebhookErrors(sourceType, writeKey, reason, statusCode, len(reqs))
+	for si, reqs := range reqsGroupedBySource {
+		webhook.countWebhookErrors(sourceType, &si, reason, statusCode, len(reqs))
 	}
 }
 

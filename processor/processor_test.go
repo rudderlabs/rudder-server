@@ -55,6 +55,7 @@ type testContext struct {
 	mockReadProcErrorsDB  *mocksJobsDB.MockJobsDB
 	mockWriteProcErrorsDB *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB    *mocksJobsDB.MockJobsDB
+	mockArchivalDB        *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReporting
 	MockDedup             *mockDedup.MockDedup
 	MockRsourcesService   *rsources.MockJobService
@@ -69,6 +70,7 @@ func (c *testContext) Setup() {
 	c.mockReadProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockWriteProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockEventSchemasDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockArchivalDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.MockRsourcesService = rsources.NewMockJobService(c.mockCtrl)
 
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
@@ -97,6 +99,8 @@ const (
 	WriteKeyEnabledNoUT2  = "enabled-write-key-no-ut2"
 	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
 	SourceIDEnabled       = "enabled-source"
+	SourceIDTransient     = "transient-source"
+	WriteKeyTransient     = "transient-write-key"
 	SourceIDEnabledNoUT   = "enabled-source-no-ut"
 	SourceIDEnabledOnlyUT = "enabled-source-only-ut"
 	SourceIDEnabledNoUT2  = "enabled-source-no-ut2"
@@ -384,6 +388,68 @@ var sampleBackendConfig = backendconfig.ConfigT{
 				},
 			},
 		},
+		{
+			ID:        SourceIDTransient,
+			WriteKey:  WriteKeyTransient,
+			Enabled:   true,
+			Transient: true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledA,
+					Name:               "A",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-a-definition-id",
+						Name:        "enabled-destination-a-definition-name",
+						DisplayName: "enabled-destination-a-definition-display-name",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestinationIDEnabledB,
+					Name:               "B",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-b-definition-id",
+						Name:        "MINIO",
+						DisplayName: "enabled-destination-b-definition-display-name",
+						Config:      map[string]interface{}{},
+					},
+					Transformations: []backendconfig.TransformationT{
+						{
+							VersionID: "transformation-version-id",
+						},
+					},
+				},
+				{
+					ID:                 DestinationIDEnabledC,
+					Name:               "C",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-c-definition-id",
+						Name:        "WEBHOOK",
+						DisplayName: "enabled-destination-c-definition-display-name",
+						Config:      map[string]interface{}{"transformAtV1": "none"},
+					},
+				},
+				// This destination should receive no events
+				{
+					ID:                 DestinationIDDisabled,
+					Name:               "C",
+					Enabled:            false,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-disabled",
+						Name:        "destination-definition-name-disabled",
+						DisplayName: "destination-definition-display-name-disabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
 	},
 }
 
@@ -572,6 +638,356 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					Expect(jobs).To(HaveLen(2))
 				})
 
+			c.mockArchivalDB.EXPECT().
+				WithStoreSafeTx(
+					gomock.Any(),
+					gomock.Any(),
+				).Times(1)
+			c.mockArchivalDB.EXPECT().
+				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+				Times(0)
+
+			processor := prepareHandle(NewHandle(mockTransformer))
+
+			Setup(processor, c, false, false)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			GinkgoT().Log("Processor setup and init done")
+			_ = processor.processJobsForDest(
+				"",
+				subJob{
+					subJobs: unprocessedJobsList,
+				},
+			)
+		})
+	})
+})
+
+var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
+	initProcessor()
+
+	var c *testContext
+	transformerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"routerTransform": {}}`))
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	prepareHandle := func(proc *Handle) *Handle {
+		proc.config.transformerURL = transformerServer.URL
+		proc.archivalDB = c.mockArchivalDB
+		proc.config.archivalEnabled = true
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		Expect(err).To(BeNil())
+		proc.isolationStrategy = isolationStrategy
+		return proc
+	}
+
+	BeforeEach(func() {
+		c = &testContext{}
+		c.Setup()
+		// crash recovery check
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+	})
+
+	AfterEach(func() {
+		c.Finish()
+	})
+
+	AfterAll(func() {
+		transformerServer.Close()
+	})
+
+	Context("archival DB", func() {
+		It("should process events and write to archival DB", func() {
+			messages := map[string]mockEventData{
+				// this message should be delivered only to destination A
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+				// this message should not be delivered to destination A
+				"message-2": {
+					id:                        "2",
+					jobid:                     1010,
+					originalTimestamp:         "2000-02-02T01:23:45",
+					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+				},
+				// this message should be delivered to all destinations
+				"message-3": {
+					id:                 "3",
+					jobid:              2010,
+					originalTimestamp:  "malformed timestamp",
+					sentAt:             "2000-03-02T01:23:15",
+					expectedSentAt:     "2000-03-02T01:23:15.000Z",
+					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+					integrations:       map[string]bool{"All": true},
+				},
+				// this message should be delivered to all destinations (default All value)
+				"message-4": {
+					id:                        "4",
+					jobid:                     2010,
+					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{},
+				},
+				// this message should not be delivered to any destination
+				"message-5": {
+					id:                 "5",
+					jobid:              2010,
+					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+					integrations:       map[string]bool{"All": false},
+				},
+			}
+
+			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:          uuid.New(),
+					JobID:         1002,
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:      uuid.New(),
+					JobID:     1010,
+					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayload(
+						WriteKeyEnabledNoUT,
+						"2001-01-02T02:23:45.000Z",
+						[]mockEventData{
+							messages["message-1"],
+							messages["message-2"],
+						},
+						createMessagePayloadWithoutSources, // should be stored
+					),
+					EventCount:    2,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+				},
+				{
+					UUID:          uuid.New(),
+					JobID:         2002,
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:          uuid.New(),
+					JobID:         2003,
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:      uuid.New(),
+					JobID:     2010,
+					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayload(
+						WriteKeyEnabledNoUT,
+						"2002-01-02T02:23:45.000Z",
+						[]mockEventData{
+							messages["message-3"],
+							messages["message-4"],
+							messages["message-5"],
+						},
+						createMessagePayload, // shouldn't be stored to archivedb
+					),
+					EventCount: 3,
+					Parameters: createBatchParameters(SourceIDEnabledNoUT),
+				},
+			}
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+
+			c.mockArchivalDB.EXPECT().
+				WithStoreSafeTx(
+					gomock.Any(),
+					gomock.Any(),
+				).Times(1).
+				Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+					_ = f(jobsdb.EmptyStoreSafeTx())
+				}).Return(nil)
+			c.mockArchivalDB.EXPECT().
+				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+				Times(1).
+				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+				})
+
+			processor := prepareHandle(NewHandle(mockTransformer))
+
+			Setup(processor, c, false, false)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			GinkgoT().Log("Processor setup and init done")
+			_ = processor.processJobsForDest(
+				"",
+				subJob{
+					subJobs: unprocessedJobsList,
+				},
+			)
+		})
+
+		It("should skip writing events belonging to transient sources in archival DB", func() {
+			messages := map[string]mockEventData{
+				// this message should be delivered only to destination A
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+				// this message should not be delivered to destination A
+				"message-2": {
+					id:                        "2",
+					jobid:                     1010,
+					originalTimestamp:         "2000-02-02T01:23:45",
+					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+				},
+				// this message should be delivered to all destinations
+				"message-3": {
+					id:                 "3",
+					jobid:              2010,
+					originalTimestamp:  "malformed timestamp",
+					sentAt:             "2000-03-02T01:23:15",
+					expectedSentAt:     "2000-03-02T01:23:15.000Z",
+					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+					integrations:       map[string]bool{"All": true},
+				},
+				// this message should be delivered to all destinations (default All value)
+				"message-4": {
+					id:                        "4",
+					jobid:                     2010,
+					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{},
+				},
+				// this message should not be delivered to any destination
+				"message-5": {
+					id:                 "5",
+					jobid:              2010,
+					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+					integrations:       map[string]bool{"All": false},
+				},
+			}
+
+			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:          uuid.New(),
+					JobID:         1002,
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:      uuid.New(),
+					JobID:     1010,
+					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayload(
+						WriteKeyTransient,
+						"2001-01-02T02:23:45.000Z",
+						[]mockEventData{
+							messages["message-1"],
+							messages["message-2"],
+						},
+						createMessagePayloadWithoutSources,
+					),
+					EventCount:    2,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDTransient),
+				},
+				{
+					UUID:          uuid.New(),
+					JobID:         2002,
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:          uuid.New(),
+					JobID:         2003,
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:      uuid.New(),
+					JobID:     2010,
+					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayload(
+						WriteKeyTransient,
+						"2002-01-02T02:23:45.000Z",
+						[]mockEventData{
+							messages["message-3"],
+							messages["message-4"],
+							messages["message-5"],
+						},
+						createMessagePayload,
+					),
+					EventCount: 3,
+					Parameters: createBatchParameters(SourceIDTransient),
+				},
+			}
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+
+			c.mockArchivalDB.EXPECT().
+				WithStoreSafeTx(
+					gomock.Any(),
+					gomock.Any(),
+				).Times(0)
+			c.mockArchivalDB.EXPECT().
+				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+				Times(0)
+
 			processor := prepareHandle(NewHandle(mockTransformer))
 
 			Setup(processor, c, false, false)
@@ -628,7 +1044,22 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				nil,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -641,7 +1072,22 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				nil,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -659,7 +1105,22 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(mockTransformer))
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, c.MockReportingI, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				c.MockReportingI,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1147,6 +1608,15 @@ var _ = Describe("Processor", Ordered, func() {
 			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0)).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
+			c.mockArchivalDB.EXPECT().
+				WithStoreSafeTx(
+					gomock.Any(),
+					gomock.Any(),
+				).Times(1)
+			c.mockArchivalDB.EXPECT().
+				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+				Times(0)
+
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
@@ -1525,7 +1995,22 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			processor.config.featuresRetryMaxAttempts = 0
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, nil, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				nil,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 
 			setMainLoopTimeout(processor, 1*time.Second)
 
@@ -1568,7 +2053,22 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			processor.config.featuresRetryMaxAttempts = 0
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockReadProcErrorsDB, c.mockWriteProcErrorsDB, nil, c.MockReportingI, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			processor.Setup(
+				c.mockBackendConfig,
+				c.mockGatewayJobsDB,
+				c.mockRouterJobsDB,
+				c.mockBatchRouterJobsDB,
+				c.mockReadProcErrorsDB,
+				c.mockWriteProcErrorsDB,
+				nil,
+				nil,
+				c.MockReportingI,
+				transientsource.NewEmptyService(),
+				fileuploader.NewDefaultProvider(),
+				c.MockRsourcesService,
+				destinationdebugger.NewNoOpService(),
+				transformationdebugger.NewNoOpService(),
+			)
 			defer processor.Shutdown()
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
@@ -3006,8 +3506,9 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		c.mockReadProcErrorsDB,
 		c.mockWriteProcErrorsDB,
 		c.mockEventSchemasDB,
+		c.mockArchivalDB,
 		c.MockReportingI,
-		transientsource.NewEmptyService(),
+		transientsource.NewStaticService([]string{SourceIDTransient}),
 		fileuploader.NewDefaultProvider(),
 		c.MockRsourcesService,
 		destinationdebugger.NewNoOpService(),

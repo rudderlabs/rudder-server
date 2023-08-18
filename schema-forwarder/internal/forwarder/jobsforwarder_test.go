@@ -34,7 +34,6 @@ func Test_JobsForwarder(t *testing.T) {
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 
 	jobsdb.Init()
-	jobsdb.Init2()
 	postgres, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)

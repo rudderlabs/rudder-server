@@ -37,7 +37,6 @@ import (
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -330,10 +329,8 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
-	archiver.Init()
 	pgnotifier.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
 	warehouse.Init()
 	warehouse.Init4()
 	validations.Init()
