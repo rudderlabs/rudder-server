@@ -391,13 +391,13 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		return "", fmt.Errorf("create directory: %w", err)
 	}
 
-	em := encoding.NewManager(config.Default)
-	writer, err = em.NewLoadFileWriter(loadFileType, filePath, tableSchemaMap, destinationType)
+	ef := encoding.NewFactory(config.Default)
+	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, tableSchemaMap, destinationType)
 	if err != nil {
 		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
 	}
 
-	eventLoader := em.NewEventLoader(writer, loadFileType, destinationType)
+	eventLoader := ef.NewEventLoader(writer, loadFileType, destinationType)
 	for _, column := range []string{"id", "val"} {
 		eventLoader.AddColumn(column, tableSchemaMap[column], payloadMap[column])
 	}

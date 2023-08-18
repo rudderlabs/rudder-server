@@ -44,10 +44,10 @@ type Identity struct {
 	uploadID         int64
 	warehouseManager WarehouseManager
 	downloader       downloader.Downloader
-	encodingManager  *encoding.Manager
+	encodingFactory  *encoding.Factory
 }
 
-func New(warehouse model.Warehouse, db *sqlmiddleware.DB, uploader warehouseutils.Uploader, uploadID int64, warehouseManager WarehouseManager, loadFileDownloader downloader.Downloader, manager *encoding.Manager) *Identity {
+func New(warehouse model.Warehouse, db *sqlmiddleware.DB, uploader warehouseutils.Uploader, uploadID int64, warehouseManager WarehouseManager, loadFileDownloader downloader.Downloader, encodingFactory *encoding.Factory) *Identity {
 	return &Identity{
 		warehouse:        warehouse,
 		db:               db,
@@ -55,7 +55,7 @@ func New(warehouse model.Warehouse, db *sqlmiddleware.DB, uploader warehouseutil
 		uploadID:         uploadID,
 		warehouseManager: warehouseManager,
 		downloader:       loadFileDownloader,
-		encodingManager:  manager,
+		encodingFactory:  encodingFactory,
 	}
 }
 
@@ -184,7 +184,7 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 	}
 	columnNames := []string{"merge_property_type", "merge_property_value", "rudder_id", "updated_at"}
 	for _, row := range rows {
-		eventLoader := idr.encodingManager.NewEventLoader(gzWriter, idr.uploader.GetLoadFileType(), idr.warehouse.Type)
+		eventLoader := idr.encodingFactory.NewEventLoader(gzWriter, idr.uploader.GetLoadFileType(), idr.warehouse.Type)
 		// TODO : support add row for parquet loader
 		eventLoader.AddRow(columnNames, row)
 		data, _ := eventLoader.WriteToString()
@@ -237,7 +237,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 		}
 		defer gzipReader.Close()
 
-		eventReader := idr.encodingManager.NewEventReader(gzipReader, idr.warehouse.Type)
+		eventReader := idr.encodingFactory.NewEventReader(gzipReader, idr.warehouse.Type)
 		columnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
 		for {
 			var record []string
@@ -354,7 +354,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 		columnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
 		for rows.Next() {
 			var rowData []string
-			eventLoader := idr.encodingManager.NewEventLoader(gzWriter, idr.uploader.GetLoadFileType(), idr.warehouse.Type)
+			eventLoader := idr.encodingFactory.NewEventLoader(gzWriter, idr.uploader.GetLoadFileType(), idr.warehouse.Type)
 			var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
 			err = rows.Scan(
 				&prop1Type,

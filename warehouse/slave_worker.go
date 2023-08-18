@@ -51,7 +51,7 @@ type slaveWorker struct {
 	notifier           slaveNotifier
 	bcManager          *backendConfigManager
 	constraintsManager *constraintsManager
-	encodingManager    *encoding.Manager
+	encodingFactory    *encoding.Factory
 	workerIdx          int
 
 	config struct {
@@ -72,7 +72,7 @@ func newSlaveWorker(
 	notifier slaveNotifier,
 	bcManager *backendConfigManager,
 	constraintsManager *constraintsManager,
-	encodingManager *encoding.Manager,
+	encodingFactory *encoding.Factory,
 	workerIdx int,
 ) *slaveWorker {
 	s := &slaveWorker{}
@@ -83,7 +83,7 @@ func newSlaveWorker(
 	s.notifier = notifier
 	s.bcManager = bcManager
 	s.constraintsManager = constraintsManager
-	s.encodingManager = encodingManager
+	s.encodingFactory = encodingFactory
 	s.workerIdx = workerIdx
 
 	conf.RegisterIntConfigVariable(10240, &s.config.maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
@@ -189,7 +189,7 @@ func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob p
 func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]uploadResult, error) {
 	processStartTime := time.Now()
 
-	jr := newJobRun(job, sw.conf, sw.log, sw.statsFactory, sw.encodingManager)
+	jr := newJobRun(job, sw.conf, sw.log, sw.statsFactory, sw.encodingFactory)
 
 	sw.log.Debugf("[WH]: Starting processing staging file: %v at %s for %s",
 		job.StagingFileID,
@@ -277,7 +277,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 			return nil, err
 		}
 
-		eventLoader := sw.encodingManager.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
+		eventLoader := sw.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
 
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {

@@ -102,7 +102,7 @@ type jobRun struct {
 	identifier           string
 	since                func(time.Time) time.Duration
 	logger               logger.Logger
-	encodingManager      *encoding.Manager
+	encodingFactory      *encoding.Factory
 
 	now func() time.Time
 
@@ -123,7 +123,7 @@ type jobRun struct {
 	}
 }
 
-func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.Stats, encodingManager *encoding.Manager) jobRun {
+func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.Stats, encodingFactory *encoding.Factory) jobRun {
 	jr := jobRun{
 		job:             job,
 		identifier:      warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
@@ -132,7 +132,7 @@ func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.S
 		since:           time.Since,
 		logger:          log,
 		now:             timeutil.Now,
-		encodingManager: encodingManager,
+		encodingFactory: encodingFactory,
 	}
 
 	if conf.IsSet("Warehouse.slaveUploadTimeout") {
@@ -411,7 +411,7 @@ func (jr *jobRun) writer(tableName string) (encoding.LoadFileWriter, error) {
 
 	outputFilePath := jr.loadFilePath(tableName)
 
-	writer, err := jr.encodingManager.NewLoadFileWriter(jr.job.LoadFileType, outputFilePath, jr.job.UploadSchema[tableName], jr.job.DestinationType)
+	writer, err := jr.encodingFactory.NewLoadFileWriter(jr.job.LoadFileType, outputFilePath, jr.job.UploadSchema[tableName], jr.job.DestinationType)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +464,7 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal int
 		}
 	}
 	if hasID && hasReceivedAt {
-		eventLoader := jr.encodingManager.NewEventLoader(discardWriter, jr.job.LoadFileType, jr.job.DestinationType)
+		eventLoader := jr.encodingFactory.NewEventLoader(discardWriter, jr.job.LoadFileType, jr.job.DestinationType)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)

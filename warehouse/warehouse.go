@@ -203,7 +203,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 					tenantManager,
 					controlPlaneClient,
 					bcManager,
-					encoding.NewManager(config.Default),
+					encoding.NewFactory(config.Default),
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
@@ -842,9 +842,9 @@ func Start(ctx context.Context, app app.App) error {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			cm := newConstraintsManager(config.Default)
-			em := encoding.NewManager(config.Default)
+			ef := encoding.NewFactory(config.Default)
 
-			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm, em)
+			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm, ef)
 			return slave.setupSlave(gCtx)
 		}))
 	}

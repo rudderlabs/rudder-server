@@ -74,7 +74,7 @@ func TestSlaveWorker(t *testing.T) {
 		jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
 
 		schemaMap := stagingSchema(t)
-		em := encoding.NewManager(config.Default)
+		ef := encoding.NewFactory(config.Default)
 
 		t.Run("success", func(t *testing.T) {
 			subscribeCh := make(chan *pgnotifier.ClaimResponse)
@@ -91,7 +91,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
-				em,
+				ef,
 				workerIdx,
 			)
 
@@ -189,7 +189,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
-				em,
+				ef,
 				workerIdx,
 			)
 
@@ -314,7 +314,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
-				em,
+				ef,
 				workerIdx,
 			)
 
@@ -379,7 +379,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
-				em,
+				ef,
 				workerIdx,
 			)
 
@@ -525,7 +525,7 @@ func TestSlaveWorker(t *testing.T) {
 			BackendConfig: mockBackendConfig,
 		}
 		bcm := newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP)
-		em := encoding.NewManager(config.Default)
+		ef := encoding.NewFactory(config.Default)
 
 		setupCh := make(chan struct{})
 		go func() {
@@ -555,7 +555,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				bcm,
 				newConstraintsManager(config.Default),
-				em,
+				ef,
 				workerIdx,
 			)
 
@@ -619,7 +619,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				bcm,
 				newConstraintsManager(config.Default),
-				em,
+				ef,
 				workerIdx,
 			)
 

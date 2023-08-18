@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"github.com/spf13/cast"
 )
 
 type jsonReader struct {
@@ -30,7 +32,11 @@ func (js *jsonReader) Read(columnNames []string) ([]string, error) {
 
 	var record []string
 	for _, columnName := range columnNames {
-		record = append(record, fmt.Sprintf("%v", jsonData[columnName]))
+		data, err := cast.ToStringE(jsonData[columnName])
+		if err != nil {
+			return []string{}, fmt.Errorf("cast to string: %w", err)
+		}
+		record = append(record, data)
 	}
 
 	return record, nil

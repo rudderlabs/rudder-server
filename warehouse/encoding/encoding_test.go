@@ -58,16 +58,16 @@ func TestReaderLoader(t *testing.T) {
 		)
 		t.Log("Parquet", outputFilePath)
 
-		em := encoding.NewManager(config.Default)
+		ef := encoding.NewFactory(config.Default)
 
-		writer, err := em.NewLoadFileWriter(loadFileType, outputFilePath, schema, destinationType)
+		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, schema, destinationType)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, os.Remove(writer.GetLoadFile().Name()))
 		})
 
 		for i := 0; i < lines; i++ {
-			c := em.NewEventLoader(writer, loadFileType, destinationType)
+			c := ef.NewEventLoader(writer, loadFileType, destinationType)
 
 			c.AddColumn("column1", "bigint", 1234567890)
 			c.AddEmptyColumn("column10")
@@ -162,7 +162,7 @@ func TestReaderLoader(t *testing.T) {
 
 			require.EqualValues(t, *data[i].Column1, int64(1234567890))
 			require.EqualValues(t, *data[i].Column2, int64(2))
-			require.EqualValues(t, *data[i].Column3, float64(1.11))
+			require.EqualValues(t, *data[i].Column3, 1.11)
 			require.EqualValues(t, *data[i].Column4, "RudderStack")
 			require.EqualValues(t, *data[i].Column5, "RudderStack")
 			require.EqualValues(t, *data[i].Column6, true)
@@ -205,16 +205,16 @@ func TestReaderLoader(t *testing.T) {
 			lines           = 100
 		)
 
-		em := encoding.NewManager(config.Default)
+		ef := encoding.NewFactory(config.Default)
 
-		writer, err := em.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
+		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, os.Remove(writer.GetLoadFile().Name()))
 		})
 
 		for i := 0; i < lines; i++ {
-			c := em.NewEventLoader(writer, loadFileType, destinationType)
+			c := ef.NewEventLoader(writer, loadFileType, destinationType)
 			c.AddColumn("column1", "bigint", 1234567890)
 			c.AddColumn("column2", "int", 2)
 			c.AddColumn("column3", "float", 1.11)
@@ -251,11 +251,11 @@ func TestReaderLoader(t *testing.T) {
 			require.NoError(t, gzipReader.Close())
 		})
 
-		r := em.NewEventReader(gzipReader, destinationType)
+		r := ef.NewEventReader(gzipReader, destinationType)
 		for i := 0; i < lines; i++ {
 			output, err := r.Read([]string{"column1", "column2", "column3", "column4", "column5", "column6", "column7", "column8", "column9", "column10", "colum11", "column12"})
 			require.NoError(t, err)
-			require.Equal(t, output, []string{"1.23456789e+09", "2", "1.11", "RudderStack", "RudderStack", "true", "false", "2022-01-20T13:39:21.033Z", "<nil>", "<nil>", "RudderStack-row", "RudderStack-row"})
+			require.Equal(t, output, []string{"1234567890", "2", "1.11", "RudderStack", "RudderStack", "true", "false", "2022-01-20T13:39:21.033Z", "", "", "RudderStack-row", "RudderStack-row"})
 		}
 	})
 
@@ -267,16 +267,16 @@ func TestReaderLoader(t *testing.T) {
 			lines           = 100
 		)
 
-		em := encoding.NewManager(config.Default)
+		ef := encoding.NewFactory(config.Default)
 
-		writer, err := em.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
+		writer, err := ef.NewLoadFileWriter(loadFileType, outputFilePath, nil, destinationType)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, os.Remove(writer.GetLoadFile().Name()))
 		})
 
 		for i := 0; i < lines; i++ {
-			c := em.NewEventLoader(writer, loadFileType, destinationType)
+			c := ef.NewEventLoader(writer, loadFileType, destinationType)
 			c.AddColumn("column1", "bigint", 1234567890)
 			c.AddColumn("column2", "int", 2)
 			c.AddColumn("column3", "float", 1.11)
@@ -311,7 +311,7 @@ func TestReaderLoader(t *testing.T) {
 			require.NoError(t, gzipReader.Close())
 		})
 
-		r := em.NewEventReader(gzipReader, destinationType)
+		r := ef.NewEventReader(gzipReader, destinationType)
 		for i := 0; i < lines; i++ {
 			output, err := r.Read([]string{"column1", "column2", "column3", "column4", "column5", "column6", "column7", "column8", "column9", "column10", "colum11", "column12"})
 			require.NoError(t, err)
@@ -320,12 +320,12 @@ func TestReaderLoader(t *testing.T) {
 	})
 
 	t.Run("Empty files", func(t *testing.T) {
-		em := encoding.NewManager(config.Default)
+		ef := encoding.NewFactory(config.Default)
 
 		t.Run("csv", func(t *testing.T) {
 			destinationType := warehouseutils.RS
 			csvFilePath := tmpDir + "/" + uuid.New().String() + ".csv.gz"
-			csvWriter, err := em.NewLoadFileWriter(warehouseutils.LoadFileTypeCsv, csvFilePath, nil, destinationType)
+			csvWriter, err := ef.NewLoadFileWriter(warehouseutils.LoadFileTypeCsv, csvFilePath, nil, destinationType)
 			require.NoError(t, err)
 			require.NoError(t, csvWriter.Close())
 
@@ -344,7 +344,7 @@ func TestReaderLoader(t *testing.T) {
 				require.NoError(t, gzipReader.Close())
 			})
 
-			r := em.NewEventReader(gzipReader, destinationType)
+			r := ef.NewEventReader(gzipReader, destinationType)
 
 			output, err := r.Read([]string{"column1", "column2", "column3", "column4", "column5", "column6", "column7", "column8", "column9", "column10", "colum11", "column12"})
 			require.Error(t, err, io.EOF)
@@ -354,7 +354,7 @@ func TestReaderLoader(t *testing.T) {
 		t.Run("json", func(t *testing.T) {
 			destinationType := warehouseutils.BQ
 			jsonFilepath := tmpDir + "/" + uuid.New().String() + ".json.gz"
-			csvWriter, err := em.NewLoadFileWriter(warehouseutils.LoadFileTypeJson, jsonFilepath, nil, destinationType)
+			csvWriter, err := ef.NewLoadFileWriter(warehouseutils.LoadFileTypeJson, jsonFilepath, nil, destinationType)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
@@ -372,7 +372,7 @@ func TestReaderLoader(t *testing.T) {
 				require.NoError(t, gzipReader.Close())
 			})
 
-			r := em.NewEventReader(gzipReader, destinationType)
+			r := ef.NewEventReader(gzipReader, destinationType)
 
 			output, err := r.Read([]string{"column1", "column2", "column3", "column4", "column5", "column6", "column7", "column8", "column9", "column10", "colum11", "column12"})
 			require.Error(t, err, io.EOF)

@@ -93,7 +93,7 @@ func TestSlave(t *testing.T) {
 		notifier,
 		newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 		newConstraintsManager(config.Default),
-		encoding.NewManager(config.Default),
+		encoding.NewFactory(config.Default),
 	)
 	slave.config.noOfSlaveWorkerRoutines = workers
 

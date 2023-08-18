@@ -117,7 +117,7 @@ func newRouter(
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
-	encodingManager *encoding.Manager,
+	encodingFactory *encoding.Factory,
 ) (*router, error) {
 	r := &router{}
 
@@ -164,7 +164,7 @@ func newRouter(
 			ControlPlaneClient: controlPlaneClient,
 		},
 		recovery:        service.NewRecovery(destType, r.uploadRepo),
-		encodingManager: encodingManager,
+		encodingFactory: encodingFactory,
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)
 

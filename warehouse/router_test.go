@@ -114,7 +114,7 @@ func TestRouter(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		em := encoding.NewManager(config.Default)
+		ef := encoding.NewFactory(config.Default)
 
 		r, err := newRouter(
 			ctx,
@@ -128,7 +128,7 @@ func TestRouter(t *testing.T) {
 			tenantManager,
 			cp,
 			bcm,
-			em,
+			ef,
 		)
 		require.NoError(t, err)
 

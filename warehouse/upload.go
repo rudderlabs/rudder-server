@@ -79,7 +79,7 @@ type UploadJobFactory struct {
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
-	encodingManager      *encoding.Manager
+	encodingFactory      *encoding.Factory
 }
 
 type UploadJob struct {
@@ -130,7 +130,7 @@ type UploadJob struct {
 	}
 
 	errorHandler    ErrorHandler
-	encodingManager *encoding.Manager
+	encodingFactory *encoding.Factory
 
 	stats struct {
 		uploadTime                         stats.Measurement
@@ -211,7 +211,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		now: timeutil.Now,
 
 		errorHandler:    ErrorHandler{whManager},
-		encodingManager: f.encodingManager,
+		encodingFactory: f.encodingFactory,
 	}
 
 	uj.config.refreshPartitionBatchSize = f.conf.GetInt("Warehouse.refreshPartitionBatchSize", 100)
@@ -806,7 +806,7 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 		job.upload.ID,
 		job.whManager,
 		downloader.NewDownloader(&job.warehouse, job, 8),
-		job.encodingManager,
+		job.encodingFactory,
 	)
 	if populateHistoricIdentities {
 		return idr.ResolveHistoricIdentities(job.ctx)

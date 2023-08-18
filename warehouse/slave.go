@@ -28,7 +28,7 @@ type slave struct {
 	notifier           slaveNotifier
 	bcManager          *backendConfigManager
 	constraintsManager *constraintsManager
-	encodingManager    *encoding.Manager
+	encodingFactory    *encoding.Factory
 
 	config struct {
 		noOfSlaveWorkerRoutines int
@@ -42,7 +42,7 @@ func newSlave(
 	notifier slaveNotifier,
 	bcManager *backendConfigManager,
 	constraintsManager *constraintsManager,
-	encodingManager *encoding.Manager,
+	encodingFactory *encoding.Factory,
 ) *slave {
 	s := &slave{}
 
@@ -52,7 +52,7 @@ func newSlave(
 	s.notifier = notifier
 	s.bcManager = bcManager
 	s.constraintsManager = constraintsManager
-	s.encodingManager = encodingManager
+	s.encodingFactory = encodingFactory
 
 	conf.RegisterIntConfigVariable(4, &s.config.noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 
@@ -70,7 +70,7 @@ func (s *slave) setupSlave(ctx context.Context) error {
 		idx := workerIdx
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			slaveWorker := newSlaveWorker(s.conf, s.log, s.stats, s.notifier, s.bcManager, s.constraintsManager, s.encodingManager, idx)
+			slaveWorker := newSlaveWorker(s.conf, s.log, s.stats, s.notifier, s.bcManager, s.constraintsManager, s.encodingFactory, idx)
 			slaveWorker.start(gCtx, jobNotificationChannel, slaveID)
 			return nil
 		}))

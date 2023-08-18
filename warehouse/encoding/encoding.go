@@ -18,15 +18,15 @@ const (
 	BQUuidTSFormat   = "2006-01-02 15:04:05 Z"
 )
 
-type Manager struct {
+type Factory struct {
 	config struct {
 		maxStagingFileReadBufferCapacityInK int
 		parquetParallelWriters              int64
 	}
 }
 
-func NewManager(conf *config.Config) *Manager {
-	m := &Manager{}
+func NewFactory(conf *config.Config) *Factory {
+	m := &Factory{}
 
 	conf.RegisterIntConfigVariable(10240, &m.config.maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	conf.RegisterInt64ConfigVariable(8, &m.config.parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
@@ -43,7 +43,7 @@ type LoadFileWriter interface {
 	GetLoadFile() *os.File
 }
 
-func (m *Manager) NewLoadFileWriter(loadFileType, outputFilePath string, schema model.TableSchema, destType string) (LoadFileWriter, error) {
+func (m *Factory) NewLoadFileWriter(loadFileType, outputFilePath string, schema model.TableSchema, destType string) (LoadFileWriter, error) {
 	switch loadFileType {
 	case warehouseutils.LoadFileTypeParquet:
 		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters)
@@ -64,7 +64,7 @@ type EventLoader interface {
 	Write() error
 }
 
-func (m *Manager) NewEventLoader(w LoadFileWriter, loadFileType, destinationType string) EventLoader {
+func (m *Factory) NewEventLoader(w LoadFileWriter, loadFileType, destinationType string) EventLoader {
 	switch loadFileType {
 	case warehouseutils.LoadFileTypeJson:
 		return newJSONLoader(w, destinationType)
@@ -80,7 +80,7 @@ type EventReader interface {
 	Read(columnNames []string) (record []string, err error)
 }
 
-func (m *Manager) NewEventReader(r io.Reader, destType string) EventReader {
+func (m *Factory) NewEventReader(r io.Reader, destType string) EventReader {
 	switch destType {
 	case warehouseutils.BQ:
 		return newJSONReader(r, m.config.maxStagingFileReadBufferCapacityInK)
