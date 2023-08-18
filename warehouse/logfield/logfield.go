@@ -26,4 +26,5 @@ const (
 	Query                      = "query"
 	QueryExecutionTime         = "queryExecutionTime"
 	StagingTableName           = "stagingTableName"
+	SampleDuplicateMessages    = "sampleDuplicateMessages"
 )

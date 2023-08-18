@@ -188,6 +188,8 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", 180, time.Minute)
 	}
 
+	ctx = warehouseutils.CtxWithUploadID(ctx, dto.Upload.ID)
+
 	return &UploadJob{
 		ctx:                  ctx,
 		dbHandle:             f.dbHandle,
