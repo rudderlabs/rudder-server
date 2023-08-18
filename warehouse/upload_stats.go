@@ -37,11 +37,11 @@ func (job *UploadJob) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
 }
 
 func (job *UploadJob) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	return job.stats.NewTaggedStat(name, stats.TimerType, job.buildTags(extraTags...))
+	return job.statsFactory.NewTaggedStat(name, stats.TimerType, job.buildTags(extraTags...))
 }
 
 func (job *UploadJob) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
-	return job.stats.NewTaggedStat(name, stats.CountType, job.buildTags(extraTags...))
+	return job.statsFactory.NewTaggedStat(name, stats.CountType, job.buildTags(extraTags...))
 }
 
 func (job *UploadJob) guageStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
@@ -49,7 +49,7 @@ func (job *UploadJob) guageStat(name string, extraTags ...warehouseutils.Tag) st
 		Name:  "sourceCategory",
 		Value: job.warehouse.Source.SourceDefinition.Category,
 	})
-	return job.stats.NewTaggedStat(name, stats.GaugeType, job.buildTags(extraTags...))
+	return job.statsFactory.NewTaggedStat(name, stats.GaugeType, job.buildTags(extraTags...))
 }
 
 func (job *UploadJob) generateUploadSuccessMetrics() {
@@ -64,7 +64,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		[]string{},
 	)
 	if err != nil {
-		pkgLogger.Warnw("sum of total exported events for upload",
+		job.logger.Warnw("sum of total exported events for upload",
 			logfield.UploadJobID, job.upload.ID,
 			logfield.SourceID, job.upload.SourceID,
 			logfield.DestinationID, job.upload.DestinationID,
@@ -75,12 +75,12 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		return
 	}
 
-	numStagedEvents, err = repo.NewStagingFiles(wrappedDBHandle).TotalEventsForUpload(
+	numStagedEvents, err = repo.NewStagingFiles(job.dbHandle).TotalEventsForUpload(
 		job.ctx,
 		job.upload,
 	)
 	if err != nil {
-		pkgLogger.Warnw("total events for upload",
+		job.logger.Warnw("total events for upload",
 			logfield.UploadJobID, job.upload.ID,
 			logfield.SourceID, job.upload.SourceID,
 			logfield.DestinationID, job.upload.DestinationID,
@@ -91,9 +91,9 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		return
 	}
 
-	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
-	job.counterStat("num_staged_events").Count(int(numStagedEvents))
-	job.counterStat("upload_success").Count(1)
+	job.stats.totalRowsSynced.Count(int(numUploadedEvents))
+	job.stats.numStagedEvents.Count(int(numStagedEvents))
+	job.stats.uploadSuccess.Count(1)
 }
 
 func (job *UploadJob) generateUploadAbortedMetrics() {
@@ -108,7 +108,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		[]string{},
 	)
 	if err != nil {
-		pkgLogger.Warnw("sum of total exported events for upload",
+		job.logger.Warnw("sum of total exported events for upload",
 			logfield.UploadJobID, job.upload.ID,
 			logfield.SourceID, job.upload.SourceID,
 			logfield.DestinationID, job.upload.DestinationID,
@@ -119,12 +119,12 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		return
 	}
 
-	numStagedEvents, err = repo.NewStagingFiles(wrappedDBHandle).TotalEventsForUpload(
+	numStagedEvents, err = repo.NewStagingFiles(job.dbHandle).TotalEventsForUpload(
 		job.ctx,
 		job.upload,
 	)
 	if err != nil {
-		pkgLogger.Warnw("total events for upload",
+		job.logger.Warnw("total events for upload",
 			logfield.UploadJobID, job.upload.ID,
 			logfield.SourceID, job.upload.SourceID,
 			logfield.DestinationID, job.upload.DestinationID,
@@ -135,8 +135,8 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		return
 	}
 
-	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
-	job.counterStat("num_staged_events").Count(int(numStagedEvents))
+	job.stats.totalRowsSynced.Count(int(numUploadedEvents))
+	job.stats.numStagedEvents.Count(int(numStagedEvents))
 }
 
 func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
@@ -163,17 +163,17 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		Value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
-	firstEventAt, err := repo.NewStagingFiles(wrappedDBHandle).FirstEventForUpload(job.ctx, job.upload)
+	firstEventAt, err := repo.NewStagingFiles(job.dbHandle).FirstEventForUpload(job.ctx, job.upload)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
+		job.logger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 
 	if !job.upload.Retried {
-		config := job.warehouse.Destination.Config
+		conf := job.warehouse.Destination.Config
 		syncFrequency := "1440"
-		if config[warehouseutils.SyncFrequency] != nil {
-			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
+		if conf[warehouseutils.SyncFrequency] != nil {
+			syncFrequency, _ = conf[warehouseutils.SyncFrequency].(string)
 		}
 		job.timerStat("event_delivery_time",
 			warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tableName)},
@@ -191,10 +191,11 @@ func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) (er
 	var timeTakenInS time.Duration
 	err = job.dbHandle.QueryRowContext(job.ctx, stmt).Scan(&timeTakenInS)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load file generation time stat: %s, Err: %v", job.warehouse.Identifier, err)
+		job.logger.Errorf("[WH]: Failed to generate load file generation time stat: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
-	job.timerStat("load_file_generation_time").SendTiming(timeTakenInS * time.Second)
+
+	job.stats.loadFileGenerationTime.SendTiming(timeTakenInS * time.Second)
 	return nil
 }
 

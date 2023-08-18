@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/app"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"golang.org/x/exp/slices"
@@ -103,6 +105,7 @@ type router struct {
 
 func newRouter(
 	ctx context.Context,
+	app app.App,
 	destType string,
 	conf *config.Config,
 	logger logger.Logger,
@@ -143,7 +146,10 @@ func newRouter(
 	r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
 
 	r.uploadJobFactory = UploadJobFactory{
-		stats:                r.statsFactory,
+		app:                  app,
+		conf:                 r.conf,
+		logger:               r.logger,
+		statsFactory:         r.statsFactory,
 		dbHandle:             r.dbHandle,
 		pgNotifier:           r.notifier,
 		destinationValidator: validations.NewDestinationValidator(),
@@ -475,9 +481,7 @@ func (r *router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 			Warehouse:    warehouse,
 			Upload:       upload,
 			StagingFiles: stagingFilesList,
-		},
-			whManager,
-		)
+		}, whManager)
 
 		uploadJobs = append(uploadJobs, uploadJob)
 	}
