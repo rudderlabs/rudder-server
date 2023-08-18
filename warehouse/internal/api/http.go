@@ -108,8 +108,9 @@ func (api *WarehouseAPI) Handler() http.Handler {
 }
 
 func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	defer r.Body.Close()
+	api.Logger.LogRequest(r)
+
+	defer func() { _ = r.Body.Close() }()
 
 	var payload stagingFileSchema
 	err := json.NewDecoder(r.Body).Decode(&payload)
@@ -131,7 +132,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if _, err := api.Repo.Insert(ctx, &stagingFile); err != nil {
+	if _, err := api.Repo.Insert(r.Context(), &stagingFile); err != nil {
 		api.Logger.Errorf("Error inserting staging file: %v", err)
 		http.Error(w, "can't insert staging file", http.StatusInternalServerError)
 		return

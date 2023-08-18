@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -166,9 +169,10 @@ func TestAPI_Process(t *testing.T) {
 				err: tc.storeErr,
 			}
 
-			m := &multitenant.Manager{
-				DegradedWorkspaceIDs: tc.degradedWorkspaceIDs,
-			}
+			c := config.New()
+			c.Set("Warehouse.degradedWorkspaceIDs", tc.degradedWorkspaceIDs)
+
+			m := multitenant.New(c, backendConfig.DefaultBackendConfig)
 
 			wAPI := api.WarehouseAPI{
 				Repo:        r,
