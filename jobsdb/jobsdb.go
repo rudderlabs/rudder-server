@@ -772,7 +772,6 @@ func (jd *Handle) init() {
 
 	if !jd.enableReaderQueue || !jd.enableWriterQueue {
 		jd.dbHandle.SetMaxOpenConns(jd.maxOpenConnections)
-		return
 	} else {
 		maxOpenConnections := 2 // buffer
 		maxOpenConnections += jd.maxReaders + jd.maxWriters
