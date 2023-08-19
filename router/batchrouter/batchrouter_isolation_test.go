@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -258,7 +259,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	config.Set("RUDDER_TMPDIR", os.TempDir())
 
 	t.Logf("Seeding batch_rt jobsdb with jobs")
-	m.seedBrtDB(t, spec)
+	m.seedBrtDB(t, spec, postgresContainer.DB)
 
 	t.Logf("Starting rudder server")
 	svcDone := make(chan struct{})
@@ -471,8 +472,8 @@ func (brtIsolationMethods) newMockWarehouse() *httptest.Server {
 }
 
 // seedBrtDB seeds the batch router database with jobs based on the provided spec
-func (m brtIsolationMethods) seedBrtDB(t testing.TB, spec *BrtIsolationScenarioSpec) {
-	brtJobsDB := jobsdb.NewForWrite("batch_rt")
+func (m brtIsolationMethods) seedBrtDB(t testing.TB, spec *BrtIsolationScenarioSpec, dbHandle *sql.DB) {
+	brtJobsDB := jobsdb.NewForWrite("batch_rt", jobsdb.WithDBHandle(dbHandle))
 	require.NoError(t, brtJobsDB.Start(), "it should be able to start the jobsdb")
 	defer brtJobsDB.Stop()
 	for _, batch := range m.generateJobs(spec.jobs, 100) {
