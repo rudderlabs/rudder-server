@@ -21,7 +21,6 @@ func Test_AbortingForwarder(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	jobsdb.Init()
 	postgres, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)

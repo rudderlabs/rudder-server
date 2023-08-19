@@ -126,7 +126,6 @@ func initJobsDB() {
 	logger.Reset()
 	stash.Init()
 	admin.Init()
-	jobsdb.Init()
 }
 
 func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {

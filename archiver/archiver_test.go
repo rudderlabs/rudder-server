@@ -71,7 +71,6 @@ func TestJobsArchival(t *testing.T) {
 		t.Setenv("JOBS_DB_USER", postgresResource.User)
 		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
 	}
-	jobsdb.Init()
 	misc.Init()
 	jd := &jobsdb.Handle{
 		TriggerAddNewDS: func() <-chan time.Time {

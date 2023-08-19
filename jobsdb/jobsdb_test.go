@@ -37,7 +37,6 @@ import (
 
 var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
 	BeforeAll(func() {
-		pkgLogger = logger.NOP
 	})
 
 	DescribeTable("newDSIdx tests",
@@ -150,7 +149,6 @@ var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
 
 var _ = Describe("jobsdb", Ordered, func() {
 	BeforeAll(func() {
-		pkgLogger = logger.NOP
 	})
 
 	Context("getDSList", func() {
@@ -1582,5 +1580,4 @@ func initJobsDB() {
 	logger.Reset()
 	admin.Init()
 	misc.Init()
-	Init()
 }

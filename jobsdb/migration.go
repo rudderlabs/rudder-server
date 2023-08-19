@@ -219,7 +219,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 
 	toVacuumFull := []string{}
 	for _, ds := range dsList {
-		if tableSizes[ds.JobStatusTable] > vacuumFullStatusTableThreshold {
+		if tableSizes[ds.JobStatusTable] > jd.config.vacuumFullStatusTableThreshold() {
 			toVacuumFull = append(toVacuumFull, ds.JobStatusTable)
 		}
 	}
@@ -269,10 +269,10 @@ func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) (
 			if jobs == 0 { // using max ds size if we have no stats for the number of jobs
 				jobs = float64(*jd.MaxDSSize)
 			}
-			return statuses/jobs > jobStatusMigrateThres
+			return statuses/jobs > jd.config.jobStatusMigrateThres()
 		})
 
-	return lo.Slice(datasets, 0, maxMigrateDSProbe), nil
+	return lo.Slice(datasets, 0, jd.config.maxMigrateDSProbe), nil
 }
 
 // based on an estimate cleans up the status tables
@@ -332,7 +332,7 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 }
 
 // cleanStatusTable deletes all rows except for the latest status for each job
-func (*Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) (vacuum bool, err error) {
+func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBeVacuumed bool) (vacuum bool, err error) {
 	result, err := tx.ExecContext(
 		ctx,
 		fmt.Sprintf(`DELETE FROM %[1]q
@@ -349,7 +349,7 @@ func (*Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, canBe
 		return false, err
 	}
 
-	if numJobStatusDeleted > vacuumAnalyzeStatusTableThreshold && canBeVacuumed {
+	if numJobStatusDeleted > jd.config.vacuumAnalyzeStatusTableThreshold() && canBeVacuumed {
 		vacuum = true
 	} else {
 		_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, table))
@@ -381,7 +381,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, p
 			idxCheck = idx == len(dsList)-1
 		}
 
-		if liveDSCount >= maxMigrateOnce || pendingJobsCount >= maxDSSize || idxCheck {
+		if liveDSCount >= jd.config.maxMigrateOnce || pendingJobsCount >= maxDSSize || idxCheck {
 			break
 		}
 
@@ -412,7 +412,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, p
 			}
 		} else {
 			waiting = nil // if there was a small DS waiting, we should remove it since its next dataset is not eligible for migration
-			if liveDSCount > 0 || migrateDSProbeCount > maxMigrateDSProbe {
+			if liveDSCount > 0 || migrateDSProbeCount > jd.config.maxMigrateDSProbe {
 				// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
 				break
 			}
@@ -573,12 +573,12 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 		}
 	}
 
-	smallThreshold := jobMinRowsMigrateThres * float64(*jd.MaxDSSize)
+	smallThreshold := jd.config.jobMinRowsMigrateThres() * float64(*jd.MaxDSSize)
 	isSmall := func() bool {
 		return float64(totalCount) < smallThreshold
 	}
 
-	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres {
+	if float64(delCount)/float64(totalCount) > jd.config.jobDoneMigrateThres() {
 		return true, isSmall(), recordsLeft, nil
 	}
 

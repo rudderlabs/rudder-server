@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -206,6 +207,8 @@ func TestMigration(t *testing.T) {
 
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
+		config.Reset()
+		c := config.New()
 
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
@@ -214,7 +217,8 @@ func TestMigration(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			MaxDSSize: &maxDSSize,
+			MaxDSSize:    &maxDSSize,
+			configGetter: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		require.NoError(t, jobDB.Setup(
@@ -294,9 +298,17 @@ func TestMigration(t *testing.T) {
 		// capture table sizes
 		originalTableSizes := getTableSizes(jobDB.getDSList())
 
-		jobStatusMigrateThres = 1
-		vacuumAnalyzeStatusTableThreshold = 4
-		vacuumFullStatusTableThreshold = originalTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)] - 1
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.jobStatusMigrateThreshold"), "1")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.vacuumAnalyzeStatusTableThreshold"), "4")
+		t.Setenv(
+			config.ConfigKeyToEnv(
+				config.DefaultEnvPrefix,
+				"JobsDB.vacuumFullStatusTableThreshold",
+			),
+			fmt.Sprint(
+				originalTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)]-1,
+			),
+		)
 
 		// run cleanup status tables
 		require.NoError(t, jobDB.cleanupStatusTables(context.Background(), jobDB.getDSList()))

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -565,8 +566,9 @@ func TestJobsDB(t *testing.T) {
 		}
 
 		maxDSSize := 10
-		jobDoneMigrateThres = 0.7
-		jobMinRowsMigrateThres = 0.6
+		config.Reset()
+		c := config.New()
+
 		jobDB := Handle{
 			MaxDSSize: &maxDSSize,
 			TriggerAddNewDS: func() <-chan time.Time {
@@ -575,8 +577,11 @@ func TestJobsDB(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
+			configGetter: c,
 		}
 		prefix := strings.ToLower(rand.String(5))
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.jobDoneMigrateThreshold"), "0.7")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.jobMinRowsMigrateThreshold"), "0.6")
 		err := jobDB.Setup(ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
