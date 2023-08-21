@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -31,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -39,7 +40,6 @@ import (
 )
 
 func TestRouter(t *testing.T) {
-	pgnotifier.Init()
 	Init4()
 
 	pool, err := dockertest.NewPool("")
@@ -94,7 +94,7 @@ func TestRouter(t *testing.T) {
 
 		db := sqlmiddleware.New(pgResource.DB)
 
-		notifier, err := pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
+		notifier, err := notifier2.New(workspaceIdentifier, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		tenantManager := &multitenant.Manager{

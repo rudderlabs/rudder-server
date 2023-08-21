@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -19,8 +20,8 @@ type mockNotifier struct {
 	tables   []string
 }
 
-func (n *mockNotifier) Publish(_ context.Context, payload pgnotifier.MessagePayload, _ *warehouseutils.Schema, _ int) (chan []pgnotifier.Response, error) {
-	var responses []pgnotifier.Response
+func (n *mockNotifier) Publish(_ context.Context, payload notifier.MessagePayload, _ *warehouseutils.Schema, _ int) (chan []notifier.Response, error) {
+	var responses []notifier.Response
 	for _, p := range payload.Jobs {
 		var req loadfiles.WorkerJobRequest
 		err := json.Unmarshal(p, &req)
@@ -55,7 +56,7 @@ func (n *mockNotifier) Publish(_ context.Context, payload pgnotifier.MessagePayl
 			status = "aborted"
 		}
 
-		responses = append(responses, pgnotifier.Response{
+		responses = append(responses, notifier.Response{
 			JobID:  req.StagingFileID,
 			Output: out,
 			Error:  errString,
@@ -63,7 +64,7 @@ func (n *mockNotifier) Publish(_ context.Context, payload pgnotifier.MessagePayl
 		})
 	}
 
-	ch := make(chan []pgnotifier.Response, 1)
+	ch := make(chan []notifier.Response, 1)
 	ch <- responses
 	return ch, nil
 }

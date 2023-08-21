@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -23,7 +24,7 @@ import (
 func InitWarehouseJobsAPI(
 	ctx context.Context,
 	dbHandle *sql.DB,
-	notifier *pgnotifier.PGNotifier,
+	notifier *notifier.PGNotifier,
 ) *AsyncJobWh {
 	return &AsyncJobWh{
 		dbHandle:   dbHandle,
@@ -186,7 +187,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 			_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
 			continue
 		}
-		messagePayload := pgnotifier.MessagePayload{
+		messagePayload := notifier.MessagePayload{
 			Jobs:    notifierClaims,
 			JobType: AsyncJobType,
 		}
@@ -217,7 +218,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 	}
 }
 
-func (a *AsyncJobWh) updateStatusJobPayloadsFromPgNotifierResponse(r []pgnotifier.Response, m map[string]AsyncJobStatus) {
+func (a *AsyncJobWh) updateStatusJobPayloadsFromPgNotifierResponse(r []notifier.Response, m map[string]AsyncJobStatus) {
 	for _, resp := range r {
 		var pgNotifierOutput PGNotifierOutput
 		err := json.Unmarshal(resp.Output, &pgNotifierOutput)

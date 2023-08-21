@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/golang/mock/gomock"
@@ -24,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -77,7 +78,7 @@ func TestSlaveWorker(t *testing.T) {
 		ef := encoding.NewFactory(config.Default)
 
 		t.Run("success", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier2.ClaimResponse)
 			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
@@ -119,7 +120,7 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
+			claim := notifier2.Claim{
 				ID:        1,
 				BatchID:   uuid.New().String(),
 				Payload:   payloadJson,
@@ -175,7 +176,7 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("clickhouse bool", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier2.ClaimResponse)
 			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
@@ -217,7 +218,7 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
+			claim := notifier2.Claim{
 				ID:        1,
 				BatchID:   uuid.New().String(),
 				Payload:   payloadJson,
@@ -297,7 +298,7 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("schema limit exceeded", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier2.ClaimResponse)
 			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
@@ -342,7 +343,7 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
+			claim := notifier2.Claim{
 				ID:        1,
 				BatchID:   uuid.New().String(),
 				Payload:   payloadJson,
@@ -365,7 +366,7 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("discards", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier2.ClaimResponse)
 			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
@@ -419,7 +420,7 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
+			claim := notifier2.Claim{
 				ID:        1,
 				BatchID:   uuid.New().String(),
 				Payload:   payloadJson,
@@ -538,7 +539,7 @@ func TestSlaveWorker(t *testing.T) {
 		<-setupCh
 
 		t.Run("success", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier2.ClaimResponse)
 			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
@@ -572,7 +573,7 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := pgnotifier.Claim{
+			claim := notifier2.Claim{
 				ID:        1,
 				BatchID:   uuid.New().String(),
 				Payload:   payloadJson,
@@ -602,7 +603,7 @@ func TestSlaveWorker(t *testing.T) {
 		})
 
 		t.Run("invalid configurations", func(t *testing.T) {
-			subscribeCh := make(chan *pgnotifier.ClaimResponse)
+			subscribeCh := make(chan *notifier2.ClaimResponse)
 			defer close(subscribeCh)
 
 			notifier := &mockSlaveNotifier{
@@ -635,7 +636,7 @@ func TestSlaveWorker(t *testing.T) {
 					sourceID:      sourceID,
 					destinationID: destinationID,
 					jobType:       "invalid_job_type",
-					expectedError: errors.New("invalid AsyncJobType"),
+					expectedError: errors.New("invalid asyncJob"),
 				},
 				{
 					name:          "invalid parameters",
@@ -675,7 +676,7 @@ func TestSlaveWorker(t *testing.T) {
 					payloadJson, err := json.Marshal(p)
 					require.NoError(t, err)
 
-					claim := pgnotifier.Claim{
+					claim := notifier2.Claim{
 						ID:        1,
 						BatchID:   uuid.New().String(),
 						Payload:   payloadJson,

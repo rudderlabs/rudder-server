@@ -3,7 +3,7 @@ package jobs
 import (
 	"encoding/json"
 
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 )
 
 func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayload, status string, err error) map[string]AsyncJobStatus {
@@ -19,8 +19,8 @@ func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayload, st
 }
 
 // convert to pgNotifier Payload and return the array of payloads
-func getMessagePayloadsFromAsyncJobPayloads(asyncJobPayloads []AsyncJobPayload) ([]pgnotifier.JobPayload, error) {
-	var messages []pgnotifier.JobPayload
+func getMessagePayloadsFromAsyncJobPayloads(asyncJobPayloads []AsyncJobPayload) ([]notifier.JobPayload, error) {
+	var messages []notifier.JobPayload
 	for _, job := range asyncJobPayloads {
 		message, err := json.Marshal(job)
 		if err != nil {

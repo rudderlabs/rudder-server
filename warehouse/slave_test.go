@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 
+	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"golang.org/x/sync/errgroup"
@@ -20,23 +22,22 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 type mockSlaveNotifier struct {
-	subscribeCh    chan *pgnotifier.ClaimResponse
-	publishCh      chan pgnotifier.Claim
+	subscribeCh    chan *notifier2.ClaimResponse
+	publishCh      chan notifier2.Claim
 	maintenanceErr error
 }
 
-func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) chan pgnotifier.Claim {
+func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) chan notifier2.Claim {
 	return m.publishCh
 }
 
-func (m *mockSlaveNotifier) UpdateClaimedEvent(_ *pgnotifier.Claim, response *pgnotifier.ClaimResponse) {
+func (m *mockSlaveNotifier) UpdateClaimedEvent(_ *notifier2.Claim, response *notifier2.ClaimResponse) {
 	m.subscribeCh <- response
 }
 
@@ -73,8 +74,8 @@ func TestSlave(t *testing.T) {
 
 	schemaMap := stagingSchema(t)
 
-	publishCh := make(chan pgnotifier.Claim)
-	subscriberCh := make(chan *pgnotifier.ClaimResponse)
+	publishCh := make(chan notifier2.Claim)
+	subscriberCh := make(chan *notifier2.ClaimResponse)
 	defer close(publishCh)
 	defer close(subscriberCh)
 
@@ -128,7 +129,7 @@ func TestSlave(t *testing.T) {
 	payloadJson, err := json.Marshal(p)
 	require.NoError(t, err)
 
-	claim := pgnotifier.Claim{
+	claim := notifier2.Claim{
 		ID:        1,
 		BatchID:   uuid.New().String(),
 		Payload:   payloadJson,

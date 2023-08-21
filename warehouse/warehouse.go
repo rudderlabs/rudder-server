@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -35,7 +37,6 @@ import (
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -57,7 +58,7 @@ var (
 	dbHandle                   *sql.DB
 	wrappedDBHandle            *sqlquerywrapper.DB
 	dbHandleTimeout            time.Duration
-	notifier                   pgnotifier.PGNotifier
+	notifier                   notifier2.PGNotifier
 	tenantManager              *multitenant.Manager
 	controlPlaneClient         *controlplane.Client
 	uploadFreqInS              int64
@@ -800,7 +801,7 @@ func Start(ctx context.Context, app app.App) error {
 	}
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
-	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
+	notifier, err = notifier2.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}

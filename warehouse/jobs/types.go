@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 )
 
 // StartJobReqPayload For processing requests payload in handlers.go
@@ -26,7 +27,7 @@ type StartJobReqPayload struct {
 type AsyncJobWh struct {
 	dbHandle              *sql.DB
 	enabled               bool
-	pgnotifier            *pgnotifier.PGNotifier
+	pgnotifier            *notifier.PGNotifier
 	context               context.Context
 	logger                logger.Logger
 	maxBatchSizeToProcess int

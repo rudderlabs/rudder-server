@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/samber/lo"
 
 	"golang.org/x/exp/slices"
@@ -16,7 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -35,7 +36,7 @@ const (
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
 type Notifier interface {
-	Publish(ctx context.Context, payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (ch chan []pgnotifier.Response, err error)
+	Publish(ctx context.Context, payload notifier.MessagePayload, schema *warehouseutils.Schema, priority int) (ch chan []notifier.Response, err error)
 }
 
 type StageFileRepo interface {
@@ -193,7 +194,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	var sampleError error
 	for _, chunk := range lo.Chunk(toProcessStagingFiles, publishBatchSize) {
 		// td : add prefix to payload for s3 dest
-		var messages []pgnotifier.JobPayload
+		var messages []notifier.JobPayload
 		for _, stagingFile := range chunk {
 			payload := WorkerJobRequest{
 				UploadID:                     job.Upload.ID,
@@ -232,7 +233,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		schema := &job.Upload.UploadSchema
 
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		messagePayload := pgnotifier.MessagePayload{
+		messagePayload := notifier.MessagePayload{
 			Jobs:    messages,
 			JobType: "upload",
 		}

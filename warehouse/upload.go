@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -26,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -75,7 +76,7 @@ type UploadJobFactory struct {
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
 	recovery             *service.Recovery
-	pgNotifier           *pgnotifier.PGNotifier
+	pgNotifier           *notifier2.PGNotifier
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -91,7 +92,7 @@ type UploadJob struct {
 	tableUploadsRepo     *repo.TableUploads
 	recovery             *service.Recovery
 	whManager            manager.Manager
-	pgNotifier           *pgnotifier.PGNotifier
+	pgNotifier           *notifier2.PGNotifier
 	schemaHandle         *Schema
 	conf                 *config.Config
 	logger               logger.Logger

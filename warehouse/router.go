@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -28,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -77,7 +78,7 @@ type router struct {
 	tenantManager    *multitenant.Manager
 	bcManager        *backendConfigManager
 	uploadJobFactory UploadJobFactory
-	notifier         *pgnotifier.PGNotifier
+	notifier         *notifier2.PGNotifier
 
 	config struct {
 		noOfWorkers                       int
@@ -113,7 +114,7 @@ func newRouter(
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	db *sqlquerywrapper.DB,
-	pgNotifier *pgnotifier.PGNotifier,
+	pgNotifier *notifier2.PGNotifier,
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
