@@ -685,6 +685,12 @@ func WithConfig(c *config.Config) OptsFunc {
 	}
 }
 
+func WithLogger(l logger.Logger) OptsFunc {
+	return func(jd *HandleT) {
+		jd.logger = l
+	}
+}
+
 func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 	return func(jd *Handle) {
 		jd.skipMaintenanceError = ignore
