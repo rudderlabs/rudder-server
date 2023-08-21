@@ -227,9 +227,6 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 
 	if err != nil && err != sql.ErrNoRows {
 		if err == context.DeadlineExceeded {
-			stats.Default.NewTaggedStat(
-				"db_query_timeout", stats.CountType, stats.Tags{"query": "get_min_reported_at"},
-			).Count(1)
 			return nil, 0, true
 		} else {
 			panic(err)
