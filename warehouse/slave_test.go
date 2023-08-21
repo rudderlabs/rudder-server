@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/google/uuid"
@@ -91,6 +93,7 @@ func TestSlave(t *testing.T) {
 		notifier,
 		newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 		newConstraintsManager(config.Default),
+		encoding.NewFactory(config.Default),
 	)
 	slave.config.noOfSlaveWorkerRoutines = workers
 

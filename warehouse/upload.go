@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app"
 
@@ -77,6 +79,7 @@ type UploadJobFactory struct {
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
+	encodingFactory      *encoding.Factory
 }
 
 type UploadJob struct {
@@ -102,7 +105,6 @@ type UploadJob struct {
 	schemaLock     sync.Mutex
 	uploadLock     sync.Mutex
 	alertSender    alerta.AlertSender
-	errorHandler   ErrorHandler
 	now            func() time.Time
 
 	pendingTableUploads      []model.PendingTableUpload
@@ -126,6 +128,9 @@ type UploadJob struct {
 		longRunningUploadStatThresholdInMin              time.Duration
 		tableCountQueryTimeout                           time.Duration
 	}
+
+	errorHandler    ErrorHandler
+	encodingFactory *encoding.Factory
 
 	stats struct {
 		uploadTime                         stats.Measurement
@@ -205,7 +210,8 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		),
 		now: timeutil.Now,
 
-		errorHandler: ErrorHandler{whManager},
+		errorHandler:    ErrorHandler{whManager},
+		encodingFactory: f.encodingFactory,
 	}
 
 	uj.config.refreshPartitionBatchSize = f.conf.GetInt("Warehouse.refreshPartitionBatchSize", 100)
@@ -800,6 +806,7 @@ func (job *UploadJob) resolveIdentities(populateHistoricIdentities bool) (err er
 		job.upload.ID,
 		job.whManager,
 		downloader.NewDownloader(&job.warehouse, job, 8),
+		job.encodingFactory,
 	)
 	if populateHistoricIdentities {
 		return idr.ResolveHistoricIdentities(job.ctx)

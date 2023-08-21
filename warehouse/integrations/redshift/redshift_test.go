@@ -23,14 +23,13 @@ import (
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
+	"github.com/lib/pq"
+	"github.com/ory/dockertest/v3"
+
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/lib/pq"
-	"github.com/ory/dockertest/v3"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
@@ -94,7 +93,6 @@ func TestIntegration(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 

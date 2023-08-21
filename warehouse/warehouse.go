@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/go-chi/chi/v5"
@@ -201,6 +203,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 					tenantManager,
 					controlPlaneClient,
 					bcManager,
+					encoding.NewFactory(config.Default),
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
@@ -839,7 +842,9 @@ func Start(ctx context.Context, app app.App) error {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			cm := newConstraintsManager(config.Default)
-			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm)
+			ef := encoding.NewFactory(config.Default)
+
+			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm, ef)
 			return slave.setupSlave(gCtx)
 		}))
 	}
