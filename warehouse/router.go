@@ -10,6 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
+	"github.com/rudderlabs/rudder-server/app"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"golang.org/x/exp/slices"
@@ -103,6 +107,7 @@ type router struct {
 
 func newRouter(
 	ctx context.Context,
+	app app.App,
 	destType string,
 	conf *config.Config,
 	logger logger.Logger,
@@ -112,6 +117,7 @@ func newRouter(
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
+	encodingFactory *encoding.Factory,
 ) (*router, error) {
 	r := &router{}
 
@@ -143,7 +149,10 @@ func newRouter(
 	r.inProgressMap = make(map[WorkerIdentifierT][]JobID)
 
 	r.uploadJobFactory = UploadJobFactory{
-		stats:                r.statsFactory,
+		app:                  app,
+		conf:                 r.conf,
+		logger:               r.logger,
+		statsFactory:         r.statsFactory,
 		dbHandle:             r.dbHandle,
 		pgNotifier:           r.notifier,
 		destinationValidator: validations.NewDestinationValidator(),
@@ -154,7 +163,8 @@ func newRouter(
 			LoadRepo:           repo.NewLoadFiles(db),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		recovery: service.NewRecovery(destType, r.uploadRepo),
+		recovery:        service.NewRecovery(destType, r.uploadRepo),
+		encodingFactory: encodingFactory,
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)
 
@@ -475,9 +485,7 @@ func (r *router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 			Warehouse:    warehouse,
 			Upload:       upload,
 			StagingFiles: stagingFilesList,
-		},
-			whManager,
-		)
+		}, whManager)
 
 		uploadJobs = append(uploadJobs, uploadJob)
 	}

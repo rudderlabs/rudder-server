@@ -5,48 +5,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"github.com/spf13/cast"
 )
 
-type JsonReader struct {
+type jsonReader struct {
 	scanner *bufio.Scanner
 }
 
-func (js *JsonReader) Read(columnNames []string) ([]string, error) {
-	var (
-		record []string
-		err    error
-	)
-
+func (js *jsonReader) Read(columnNames []string) ([]string, error) {
 	ok := js.scanner.Scan()
 	if !ok {
-		err = js.scanner.Err()
-		if err != nil {
+		if err := js.scanner.Err(); err != nil {
 			return []string{}, fmt.Errorf("scanner scan: %w", err)
 		}
 		return []string{}, io.EOF
 	}
 
 	lineBytes := js.scanner.Bytes()
-	jsonData := make(map[string]string)
+	jsonData := make(map[string]interface{})
 
-	err = json.Unmarshal(lineBytes, &jsonData)
+	err := json.Unmarshal(lineBytes, &jsonData)
 	if err != nil {
 		return []string{}, fmt.Errorf("json unmarshal: %w", err)
 	}
 
+	var record []string
 	for _, columnName := range columnNames {
-		record = append(record, jsonData[columnName])
+		data, err := cast.ToStringE(jsonData[columnName])
+		if err != nil {
+			return []string{}, fmt.Errorf("cast to string: %w", err)
+		}
+		record = append(record, data)
 	}
+
 	return record, nil
 }
 
-// NewJSONReader returns a new JSON reader
+// newJSONReader returns a new JSON reader
 // default scanner buffer maxCapacity is 64K
 // set it to higher value to avoid read stop on read size error
-func NewJSONReader(r io.Reader) *JsonReader {
+func newJSONReader(r io.Reader, bufferCapacityInK int) *jsonReader {
+	maxCapacity := bufferCapacityInK * 1024
+
 	scanner := bufio.NewScanner(r)
-	maxCapacity := maxStagingFileReadBufferCapacityInK * 1024
-	buf := make([]byte, maxCapacity)
-	scanner.Buffer(buf, maxCapacity)
-	return &JsonReader{scanner: scanner}
+	scanner.Buffer(make([]byte, maxCapacity), maxCapacity)
+
+	return &jsonReader{scanner: scanner}
 }

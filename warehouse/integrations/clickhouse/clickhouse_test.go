@@ -24,8 +24,6 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
@@ -54,7 +52,6 @@ func TestIntegration(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
@@ -407,7 +404,6 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	minioPort := c.Port("minio", 9000)
 	clickhousePort := c.Port("clickhouse", 9000)
@@ -670,7 +666,6 @@ func TestClickhouse_TestConnection(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	clickhousePort := c.Port("clickhouse", 9000)
 
@@ -771,7 +766,6 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	clickhousePort := c.Port("clickhouse", 9000)
 
@@ -875,7 +869,6 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	clickhousePort := c.Port("clickhouse", 9000)
 

@@ -39,7 +39,7 @@ func IsMasterBackupEnabled() bool {
 	return masterBackupEnabled
 }
 
-func (jd *HandleT) backupDSLoop(ctx context.Context) {
+func (jd *Handle) backupDSLoop(ctx context.Context) {
 	sleepMultiplier := time.Duration(1)
 
 	jd.logger.Info("BackupDS loop is running")
@@ -120,7 +120,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 }
 
 // backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
-func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
+func (jd *Handle) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	if err := jd.WithTx(func(tx *Tx) error {
 		_, err := jd.cleanStatusTable(ctx, tx, backupDSRange.ds.JobStatusTable, false)
 		return err
@@ -139,7 +139,7 @@ func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) e
 	return nil
 }
 
-func (jd *HandleT) uploadDumps(ctx context.Context, dumps map[string]string) error {
+func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(config.GetInt("JobsDB.JobsBackupUploadWorkers", 100))
 	for workspaceID, filePath := range dumps {
@@ -162,7 +162,7 @@ func (jd *HandleT) uploadDumps(ctx context.Context, dumps map[string]string) err
 	return g.Wait()
 }
 
-func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRangeT) error {
+func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobStatusTable
 
 	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
@@ -213,7 +213,7 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 	return nil
 }
 
-func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRangeT) error {
+func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobTable
 
 	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
@@ -275,7 +275,7 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 	return nil
 }
 
-func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSetRangeT) error {
+func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobStatusTable
 
 	getRowCount := func(ctx context.Context) (totalCount int64, err error) {
@@ -329,7 +329,7 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 	return nil
 }
 
-func (jd *HandleT) completeBackup(ctx context.Context, backupDSRange *dataSetRangeT) error {
+func (jd *Handle) completeBackup(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	if err := jd.backupJobsTable(ctx, backupDSRange); err != nil {
 		return err
 	}
@@ -339,7 +339,7 @@ func (jd *HandleT) completeBackup(ctx context.Context, backupDSRange *dataSetRan
 	return nil
 }
 
-func (jd *HandleT) removeTableJSONDumps() {
+func (jd *Handle) removeTableJSONDumps() {
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	jd.assertError(err)
@@ -537,7 +537,7 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 	}
 }
 
-func (jd *HandleT) createTableDumps(ctx context.Context, queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64) (map[string]string, error) {
+func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64) (map[string]string, error) {
 	defer jd.getTimerStat(
 		"table_FileDump_TimeStat",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
@@ -611,7 +611,7 @@ func (jd *HandleT) createTableDumps(ctx context.Context, queryFunc func(int64) s
 	return dumps, nil
 }
 
-func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string) error {
+func (jd *Handle) uploadTableDump(ctx context.Context, workspaceID, path string) error {
 	defer jd.getTimerStat(
 		"fileUpload_TimeStat",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
@@ -641,7 +641,7 @@ func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string
 	return nil
 }
 
-func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, workspaceID string, pathPrefixes ...string) (filemanager.UploadedFile, error) {
+func (jd *Handle) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, workspaceID string, pathPrefixes ...string) (filemanager.UploadedFile, error) {
 	// get a file uploader
 	fileUploader, err := jd.fileUploaderProvider.GetFileManager(workspaceID)
 	if err != nil {
@@ -663,7 +663,7 @@ func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file 
 	return output, err
 }
 
-func (jd *HandleT) getBackupDSRange(ctx context.Context) (*dataSetRangeT, error) {
+func (jd *Handle) getBackupDSRange(ctx context.Context) (*dataSetRangeT, error) {
 	var backupDS dataSetT
 	var backupDSRange dataSetRangeT
 

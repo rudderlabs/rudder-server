@@ -313,7 +313,6 @@ func insertJobs(
 	numJobsPerSource int,
 ) (map[string][]*jobsdb.JobT, int) {
 	jobsdb.Init()
-	jobsdb.Init2()
 	t.Log(misc.GetConnectionString())
 	gwJobsDB := jobsdb.NewForWrite("gw")
 	require.NoError(t, gwJobsDB.Start(), "it should be able to start the jobsdb")

@@ -10,9 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// CsvLoader is common for non-BQ warehouses.
+// csvLoader is common for non-BQ warehouses.
 // If you need any custom logic, either extend this or use destType and if/else/switch.
-type CsvLoader struct {
+type csvLoader struct {
 	destType   string
 	csvRow     []string
 	buff       bytes.Buffer
@@ -20,46 +20,47 @@ type CsvLoader struct {
 	fileWriter LoadFileWriter
 }
 
-func NewCSVLoader(destType string, writer LoadFileWriter) *CsvLoader {
-	loader := &CsvLoader{destType: destType, fileWriter: writer}
+func newCSVLoader(writer LoadFileWriter, destType string) *csvLoader {
+	loader := &csvLoader{destType: destType, fileWriter: writer}
 	loader.csvRow = []string{}
 	loader.buff = bytes.Buffer{}
 	loader.csvWriter = csv.NewWriter(&loader.buff)
 	return loader
 }
 
-func (loader *CsvLoader) IsLoadTimeColumn(columnName string) bool {
+func (loader *csvLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == warehouseutils.ToProviderCase(loader.destType, UUIDTsColumn)
 }
 
-func (*CsvLoader) GetLoadTimeFormat(string) string {
+func (*csvLoader) GetLoadTimeFormat(string) string {
 	return misc.RFC3339Milli
 }
 
-func (loader *CsvLoader) AddColumn(_, _ string, val interface{}) {
+func (loader *csvLoader) AddColumn(_, _ string, val interface{}) {
 	valString := fmt.Sprintf("%v", val)
 	loader.csvRow = append(loader.csvRow, valString)
 }
 
-func (loader *CsvLoader) AddRow(_, row []string) {
+func (loader *csvLoader) AddRow(_, row []string) {
 	loader.csvRow = append(loader.csvRow, row...)
 }
 
-func (loader *CsvLoader) AddEmptyColumn(columnName string) {
+func (loader *csvLoader) AddEmptyColumn(columnName string) {
 	loader.AddColumn(columnName, "", "")
 }
 
-func (loader *CsvLoader) WriteToString() (string, error) {
+func (loader *csvLoader) WriteToString() (string, error) {
 	err := loader.csvWriter.Write(loader.csvRow)
 	if err != nil {
 		return "", fmt.Errorf("csvWriter write: %w", err)
 	}
 
 	loader.csvWriter.Flush()
+
 	return loader.buff.String(), nil
 }
 
-func (loader *CsvLoader) Write() error {
+func (loader *csvLoader) Write() error {
 	eventData, err := loader.WriteToString()
 	if err != nil {
 		return fmt.Errorf("writing to string: %w", err)

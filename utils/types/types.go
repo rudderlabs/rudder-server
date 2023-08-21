@@ -22,9 +22,14 @@ type SingularEventWithReceivedAt struct {
 // GatewayBatchRequest batch request structure
 type GatewayBatchRequest struct {
 	Batch      []SingularEventT `json:"batch"`
-	WriteKey   string           `json:"writeKey"`
 	RequestIP  string           `json:"requestIP"`
 	ReceivedAt time.Time        `json:"receivedAt"`
+}
+
+type EventParams struct {
+	SourceJobRunId  string `json:"source_job_run_id"`
+	SourceId        string `json:"source_id"`
+	SourceTaskRunId string `json:"source_task_run_id"`
 }
 
 // UserSuppression is interface to access Suppress user feature

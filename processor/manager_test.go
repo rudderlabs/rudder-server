@@ -37,7 +37,6 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/stash"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -128,8 +127,6 @@ func initJobsDB() {
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
-	archiver.Init()
 }
 
 func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
@@ -158,7 +155,7 @@ func TestProcessorManager(t *testing.T) {
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	// tempDB is created to observe/manage the GW DB from the outside without touching the actual GW DB.
-	tempDB := jobsdb.HandleT{
+	tempDB := jobsdb.Handle{
 		MaxDSSize: &maxDSSize,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
@@ -170,7 +167,7 @@ func TestProcessorManager(t *testing.T) {
 	defer tempDB.TearDown()
 
 	customVal := "GW"
-	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
+	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -248,7 +245,7 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		defer processor.Stop()
 		Eventually(func() int {
-			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -287,14 +284,14 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
+		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 		require.NoError(t, err, "failed to get unprocessed jobs")
 		Eventually(func() int {
-			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},

@@ -10,7 +10,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -21,7 +20,6 @@ func TestValidate(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-	encoding.Init()
 	validations.Init()
 
 	var (
