@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -133,6 +134,10 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if _, err := api.Repo.Insert(r.Context(), &stagingFile); err != nil {
+		if errors.Is(r.Context().Err(), context.Canceled) {
+			http.Error(w, "request canceled", http.StatusBadRequest)
+			return
+		}
 		api.Logger.Errorf("Error inserting staging file: %v", err)
 		http.Error(w, "can't insert staging file", http.StatusInternalServerError)
 		return

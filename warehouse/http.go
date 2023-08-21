@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -254,6 +255,10 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	pendingStagingFileCount, err := a.stagingRepo.CountPendingForSource(r.Context(), sourceID)
 	if err != nil {
+		if errors.Is(r.Context().Err(), context.Canceled) {
+			http.Error(w, "request canceled", http.StatusBadRequest)
+			return
+		}
 		a.logger.Errorf("fetching pending staging file: %v", err)
 		http.Error(w, "can't get pending staging file", http.StatusInternalServerError)
 		return
@@ -267,6 +272,10 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	pendingUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
 	if err != nil {
+		if errors.Is(r.Context().Err(), context.Canceled) {
+			http.Error(w, "request canceled", http.StatusBadRequest)
+			return
+		}
 		a.logger.Errorf("fetching pending uploads: %s", err)
 		http.Error(w, "can't get pending uploads", http.StatusInternalServerError)
 		return
@@ -279,6 +288,10 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	abortedUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
 	if err != nil {
+		if errors.Is(r.Context().Err(), context.Canceled) {
+			http.Error(w, "request canceled", http.StatusBadRequest)
+			return
+		}
 		a.logger.Errorf("fetching aborted uploads: %s", err.Error())
 		http.Error(w, "can't get aborted uploads", http.StatusInternalServerError)
 		return
@@ -380,6 +393,10 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 
 	tables, err := a.schemaRepo.GetTablesForConnection(r.Context(), connectionsTableRequest.Connections)
 	if err != nil {
+		if errors.Is(r.Context().Err(), context.Canceled) {
+			http.Error(w, "request canceled", http.StatusBadRequest)
+			return
+		}
 		a.logger.Errorf("fetching tables: %v", err)
 		http.Error(w, "can't fetch tables", http.StatusInternalServerError)
 		return

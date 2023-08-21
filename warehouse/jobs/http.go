@@ -1,14 +1,3 @@
-/*
-	Warehouse jobs package provides the capability to run arbitrary jobs on the warehouses using the query parameters provided.
-	Some jobs that can be run are
-	1) delete by task run id,
-	2) delete by job run id,
-	3) delete by update_at
-	4) any other update / clean up operations
-
-	The following handlers file is the entry point for the handlers.
-*/
-
 package jobs
 
 import (
