@@ -73,9 +73,9 @@ func New(destType string, conf *config.Config, logger logger.Logger, stats stats
 	case warehouseutils.CLICKHOUSE:
 		return clickhouse.New(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
-		return mssql.New(conf, logger), nil
+		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:
-		return azuresynapse.New(conf, logger), nil
+		return azuresynapse.New(conf, logger, stats), nil
 	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
 		return datalake.New(logger), nil
 	case warehouseutils.DELTALAKE:
@@ -98,9 +98,9 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 	case warehouseutils.CLICKHOUSE:
 		return clickhouse.New(conf, logger, stats), nil
 	case warehouseutils.MSSQL:
-		return mssql.New(conf, logger), nil
+		return mssql.New(conf, logger, stats), nil
 	case warehouseutils.AzureSynapse:
-		return azuresynapse.New(conf, logger), nil
+		return azuresynapse.New(conf, logger, stats), nil
 	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
 		return datalake.New(logger), nil
 	case warehouseutils.DELTALAKE:
