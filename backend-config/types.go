@@ -59,6 +59,7 @@ type DestinationT struct {
 
 type SourceT struct {
 	ID                         string
+	OriginalID                 string
 	Name                       string
 	SourceDefinition           SourceDefinitionT
 	Config                     map[string]interface{}
@@ -69,6 +70,10 @@ type SourceT struct {
 	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 	Transient                  bool
 	EventSchemasEnabled        bool
+}
+
+func (s *SourceT) IsReplaySource() bool {
+	return s.OriginalID != ""
 }
 
 type WorkspaceRegulationT struct {
@@ -87,13 +92,32 @@ type SourceRegulationT struct {
 }
 
 type ConfigT struct {
-	EnableMetrics   bool            `json:"enableMetrics"`
-	WorkspaceID     string          `json:"workspaceId"`
-	Sources         []SourceT       `json:"sources"`
-	Libraries       LibrariesT      `json:"libraries"`
-	ConnectionFlags ConnectionFlags `json:"flags"`
-	Settings        Settings        `json:"settings"`
-	UpdatedAt       time.Time       `json:"updatedAt"`
+	EnableMetrics   bool                         `json:"enableMetrics"`
+	WorkspaceID     string                       `json:"workspaceId"`
+	Sources         []SourceT                    `json:"sources"`
+	EventReplays    map[string]EventReplayConfig `json:"eventReplays"`
+	Libraries       LibrariesT                   `json:"libraries"`
+	ConnectionFlags ConnectionFlags              `json:"flags"`
+	Settings        Settings                     `json:"settings"`
+	UpdatedAt       time.Time                    `json:"updatedAt"`
+}
+
+func (c *ConfigT) SourcesMap() map[string]*SourceT {
+	sourcesMap := make(map[string]*SourceT)
+	for _, source := range c.Sources {
+		sourcesMap[source.ID] = &source
+	}
+	return sourcesMap
+}
+
+func (c *ConfigT) DestinationsMap() map[string]*DestinationT {
+	destinationsMap := make(map[string]*DestinationT)
+	for _, source := range c.Sources {
+		for _, destination := range source.Destinations {
+			destinationsMap[destination.ID] = &destination
+		}
+	}
+	return destinationsMap
 }
 
 type Settings struct {

@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
@@ -26,12 +27,13 @@ type LifecycleManager struct {
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
 	waitGroup        interface{ Wait() }
-	gatewayDB        *jobsdb.HandleT
-	routerDB         *jobsdb.HandleT
-	batchRouterDB    *jobsdb.HandleT
-	readErrDB        *jobsdb.HandleT
-	writeErrDB       *jobsdb.HandleT
-	esDB             *jobsdb.HandleT
+	gatewayDB        *jobsdb.Handle
+	routerDB         *jobsdb.Handle
+	batchRouterDB    *jobsdb.Handle
+	readErrDB        *jobsdb.Handle
+	writeErrDB       *jobsdb.Handle
+	esDB             *jobsdb.Handle
+	arcDB            *jobsdb.Handle
 	clearDB          *bool
 	ReportingI       types.Reporting // need not initialize again
 	BackendConfig    backendconfig.BackendConfig
@@ -52,7 +54,7 @@ func (proc *LifecycleManager) Start() error {
 	}
 
 	proc.Handle.Setup(
-		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.readErrDB, proc.writeErrDB, proc.esDB,
+		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.readErrDB, proc.writeErrDB, proc.esDB, proc.arcDB,
 		proc.ReportingI, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
 	)
 
@@ -61,7 +63,10 @@ func (proc *LifecycleManager) Start() error {
 
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
-
+	metric.Instance.Reset()
+	if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
+		return err
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -86,7 +91,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 }
 
 // New creates a new Processor instance
-func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB *jobsdb.HandleT,
+func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
 	reporting types.Reporting, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 	opts ...Opts,
@@ -100,6 +105,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDbForRead, er
 		readErrDB:        errDbForRead,
 		writeErrDB:       errDBForWrite,
 		esDB:             esDB,
+		arcDB:            arcDB,
 		clearDB:          clearDb,
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		ReportingI:       reporting,

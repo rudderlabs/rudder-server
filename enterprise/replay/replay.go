@@ -18,8 +18,8 @@ import (
 type Handler struct {
 	log                      logger.Logger
 	bucket                   string
-	db                       *jobsdb.HandleT
-	toDB                     *jobsdb.HandleT
+	db                       *jobsdb.Handle
+	toDB                     *jobsdb.Handle
 	noOfWorkers              int
 	workers                  []*SourceWorkerT
 	dumpsLoader              *dumpsLoaderHandleT
@@ -39,33 +39,25 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 	case <-handle.initSourceWorkersChannel:
 	}
 	for {
-		queryParams := jobsdb.GetQueryParamsT{
+		queryParams := jobsdb.GetQueryParams{
 			CustomValFilters: []string{"replay"},
 			JobsLimit:        handle.dbReadSize,
 		}
-		toRetry, err := handle.db.GetToRetry(context.TODO(), queryParams)
+		jobsResult, err := handle.db.GetJobs(context.TODO(), []string{jobsdb.Unprocessed.State, jobsdb.Failed.State}, queryParams)
 		if err != nil {
 			handle.log.Errorf("Error getting to retry jobs: %v", err)
 			panic(err)
 		}
-		combinedList := toRetry.Jobs
+		combinedList := jobsResult.Jobs
 
-		if !toRetry.LimitsReached {
-			queryParams.JobsLimit -= len(combinedList)
-			unprocessed, err := handle.db.GetUnprocessed(context.TODO(), queryParams)
-			if err != nil {
-				handle.log.Errorf("Error getting unprocessed jobs: %v", err)
-				panic(err)
-			}
-			combinedList = append(combinedList, unprocessed.Jobs...)
-		}
 		handle.log.Infof("length of combinedList : %d", len(combinedList))
 
 		if len(combinedList) == 0 {
 			if breakLoop {
-				executingList, err := handle.db.GetExecuting(
+				executingList, err := handle.db.GetJobs(
 					context.TODO(),
-					jobsdb.GetQueryParamsT{
+					[]string{jobsdb.Executing.State},
+					jobsdb.GetQueryParams{
 						CustomValFilters: []string{"replay"},
 						JobsLimit:        handle.dbReadSize,
 					},
@@ -155,7 +147,7 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 	handle.initSourceWorkersChannel <- true
 }
 
-func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandleT, db, toDB *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
+func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandleT, db, toDB *jobsdb.Handle, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
 	handle.log = log
 	handle.db = db
 	handle.toDB = toDB

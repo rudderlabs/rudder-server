@@ -6,6 +6,8 @@ import (
 	"os"
 	"sort"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -16,123 +18,123 @@ import (
 )
 
 const (
-	ParquetInt64           = "type=INT64, repetitiontype=OPTIONAL"
-	ParquetBoolean         = "type=BOOLEAN, repetitiontype=OPTIONAL"
-	ParquetDouble          = "type=DOUBLE, repetitiontype=OPTIONAL"
-	ParquetString          = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
-	ParquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
+	parquetInt64           = "type=INT64, repetitiontype=OPTIONAL"
+	parquetBoolean         = "type=BOOLEAN, repetitiontype=OPTIONAL"
+	parquetDouble          = "type=DOUBLE, repetitiontype=OPTIONAL"
+	parquetString          = "type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
+	parquetTimestampMicros = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
 var rudderDataTypeToParquetDataType = map[string]map[string]string{
 	warehouseutils.RS: {
-		"bigint":   ParquetInt64,
-		"int":      ParquetInt64,
-		"boolean":  ParquetBoolean,
-		"float":    ParquetDouble,
-		"string":   ParquetString,
-		"text":     ParquetString,
-		"datetime": ParquetTimestampMicros,
+		"bigint":   parquetInt64,
+		"int":      parquetInt64,
+		"boolean":  parquetBoolean,
+		"float":    parquetDouble,
+		"string":   parquetString,
+		"text":     parquetString,
+		"datetime": parquetTimestampMicros,
 	},
 	warehouseutils.S3Datalake: {
-		"bigint":   ParquetInt64,
-		"int":      ParquetInt64,
-		"boolean":  ParquetBoolean,
-		"float":    ParquetDouble,
-		"string":   ParquetString,
-		"text":     ParquetString,
-		"datetime": ParquetTimestampMicros,
+		"bigint":   parquetInt64,
+		"int":      parquetInt64,
+		"boolean":  parquetBoolean,
+		"float":    parquetDouble,
+		"string":   parquetString,
+		"text":     parquetString,
+		"datetime": parquetTimestampMicros,
 	},
 	warehouseutils.GCSDatalake: {
-		"int":      ParquetInt64,
-		"boolean":  ParquetBoolean,
-		"float":    ParquetDouble,
-		"string":   ParquetString,
-		"datetime": ParquetTimestampMicros,
+		"int":      parquetInt64,
+		"boolean":  parquetBoolean,
+		"float":    parquetDouble,
+		"string":   parquetString,
+		"datetime": parquetTimestampMicros,
 	},
 	warehouseutils.AzureDatalake: {
-		"int":      ParquetInt64,
-		"boolean":  ParquetBoolean,
-		"float":    ParquetDouble,
-		"string":   ParquetString,
-		"datetime": ParquetTimestampMicros,
+		"int":      parquetInt64,
+		"boolean":  parquetBoolean,
+		"float":    parquetDouble,
+		"string":   parquetString,
+		"datetime": parquetTimestampMicros,
 	},
 	warehouseutils.DELTALAKE: {
-		"int":      ParquetInt64,
-		"boolean":  ParquetBoolean,
-		"float":    ParquetDouble,
-		"string":   ParquetString,
-		"datetime": ParquetTimestampMicros,
+		"int":      parquetInt64,
+		"boolean":  parquetBoolean,
+		"float":    parquetDouble,
+		"string":   parquetString,
+		"datetime": parquetTimestampMicros,
 	},
 }
 
-type ParquetWriter struct {
+type parquetWriter struct {
 	writer     *writer.CSVWriter
 	fileWriter misc.BufferedWriter
 	schema     []string
 }
 
-func CreateParquetWriter(schema model.TableSchema, outputFilePath, destType string) (*ParquetWriter, error) {
+func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64) (LoadFileWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
 	if err != nil {
 		return nil, err
 	}
 
-	pSchema, err := getParquetSchema(schema, destType)
+	pSchema, err := parquetSchema(schema, destType)
 	if err != nil {
 		return nil, err
 	}
-	w, err := writer.NewCSVWriterFromWriter(pSchema, bufWriter, parquetParallelWriters)
+
+	w, err := writer.NewCSVWriterFromWriter(pSchema, bufWriter, maxParallelWriters)
 	if err != nil {
 		return nil, err
 	}
-	return &ParquetWriter{
+
+	return &parquetWriter{
 		writer:     w,
 		schema:     pSchema,
 		fileWriter: bufWriter,
 	}, nil
 }
 
-func (p *ParquetWriter) WriteRow(row []interface{}) error {
+func (p *parquetWriter) WriteRow(row []interface{}) error {
 	return p.writer.Write(row)
 }
 
-func (p *ParquetWriter) Close() error {
+func (p *parquetWriter) Close() error {
 	err := p.writer.WriteStop()
 	if err != nil {
 		return err
 	}
-	// close the bufWriter
+
 	return p.fileWriter.Close()
 }
 
-func (*ParquetWriter) WriteGZ(_ string) error {
+func (*parquetWriter) WriteGZ(_ string) error {
 	return errors.New("not implemented")
 }
 
-func (*ParquetWriter) Write(_ []byte) (int, error) {
+func (*parquetWriter) Write(_ []byte) (int, error) {
 	return 0, errors.New("not implemented")
 }
 
-func (p *ParquetWriter) GetLoadFile() *os.File {
+func (p *parquetWriter) GetLoadFile() *os.File {
 	return p.fileWriter.GetFile()
 }
 
-func getSortedTableColumns(schema model.TableSchema) []string {
-	var sortedColumns []string
-	for col := range schema {
-		sortedColumns = append(sortedColumns, col)
-	}
-	sort.Strings(sortedColumns)
-	return sortedColumns
+func sortedTableColumns(schema model.TableSchema) []string {
+	columns := lo.Keys(schema)
+	sort.Strings(columns)
+	return columns
 }
 
-func getParquetSchema(schema model.TableSchema, destType string) ([]string, error) {
+func parquetSchema(schema model.TableSchema, destType string) ([]string, error) {
 	whTypeMap, ok := rudderDataTypeToParquetDataType[destType]
 	if !ok {
 		return nil, errors.New("unsupported warehouse for parquet load files")
 	}
+
 	var pSchema []string
-	for _, col := range getSortedTableColumns(schema) {
+	for _, col := range sortedTableColumns(schema) {
 		pType := fmt.Sprintf("name=%s, %s", warehouseutils.ToProviderCase(destType, col), whTypeMap[schema[col]])
 		pSchema = append(pSchema, pType)
 	}

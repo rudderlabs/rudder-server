@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	arc "github.com/rudderlabs/rudder-server/archiver"
 	mock_jobs_forwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 
@@ -29,6 +30,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -40,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
@@ -163,8 +164,6 @@ func initJobsDB() {
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
-	archiver.Init()
 	Init()
 }
 
@@ -180,10 +179,15 @@ func TestDynamicClusterManager(t *testing.T) {
 	defer gwDB.TearDown()
 	eschDB := jobsdb.NewForReadWrite("esch")
 	defer eschDB.TearDown()
+	archiveDB := jobsdb.NewForReadWrite("archive")
+	defer archiveDB.TearDown()
 	rtDB := jobsdb.NewForReadWrite("rt")
 	defer rtDB.TearDown()
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
 	defer brtDB.TearDown()
+
+	archDB := jobsdb.NewForReadWrite("archival")
+	defer archDB.TearDown()
 	readErrDB := jobsdb.NewForRead("proc_error")
 	defer readErrDB.TearDown()
 	writeErrDB := jobsdb.NewForWrite("proc_error")
@@ -204,6 +208,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		readErrDB,
 		writeErrDB,
 		eschDB,
+		archDB,
 		&reporting.NOOP{},
 		transientsource.NewEmptyService(),
 		fileuploader.NewDefaultProvider(),
@@ -257,7 +262,14 @@ func TestDynamicClusterManager(t *testing.T) {
 		BatchRouterDB:   brtDB,
 		ErrorDB:         readErrDB,
 		EventSchemaDB:   eschDB,
+		ArchivalDB:      archDB,
 		SchemaForwarder: schemaForwarder,
+		Archiver: arc.New(
+			archiveDB,
+			nil,
+			config.Default,
+			stats.Default,
+		),
 
 		Processor: processor,
 		Router:    router,

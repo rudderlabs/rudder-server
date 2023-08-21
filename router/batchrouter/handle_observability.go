@@ -67,6 +67,60 @@ func sendDestStatusStats(batchDestination *Connection, jobStateCounts map[string
 	}
 }
 
+func (brt *Handle) recordAsyncDestinationDeliveryStatus(sourceID, destinationID string, statusList []*jobsdb.JobStatusT) {
+	var (
+		errorCode    string
+		jobState     string
+		errorResp    []byte
+		successCount int
+		failureCount int
+		failedReason string
+	)
+
+	for _, status := range statusList {
+		if status.JobState == jobsdb.Succeeded.State {
+			successCount++
+		} else {
+			failureCount++
+			failedReason = string(status.ErrorResponse)
+		}
+	}
+
+	if failureCount > 0 {
+		jobState = jobsdb.Failed.State
+		errorCode = "500"
+		errorResp, _ = json.Marshal(ErrorResponse{Error: "failed to deliver events. " + failedReason})
+	} else {
+		jobState = jobsdb.Succeeded.State
+		errorCode = "200"
+		errorResp = []byte(`{"success":"OK"}`)
+	}
+
+	// Payload and AttemptNum don't make sense in recording batch router delivery status,
+	// So they are set to default values.
+	payload, err := sjson.SetBytes([]byte(`{}`), "success", fmt.Sprint(successCount)+" events")
+	if err != nil {
+		payload = []byte(`{}`)
+	}
+	payload, err = sjson.SetBytes(payload, "failed", fmt.Sprint(failureCount)+" events")
+	if err != nil {
+		payload = []byte(`{}`)
+	}
+	deliveryStatus := destinationdebugger.DeliveryStatusT{
+		EventName:     fmt.Sprint(successCount+failureCount) + " events",
+		EventType:     "",
+		SentAt:        time.Now().Format(misc.RFC3339Milli),
+		DestinationID: destinationID,
+		SourceID:      sourceID,
+		Payload:       payload,
+		AttemptNum:    1,
+		JobState:      jobState,
+		ErrorCode:     errorCode,
+		ErrorResponse: errorResp,
+	}
+	brt.debugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus)
+}
+
 func (brt *Handle) recordDeliveryStatus(batchDestination Connection, output UploadResult, isWarehouse bool) {
 	var (
 		errorCode string

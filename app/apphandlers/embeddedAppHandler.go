@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/archiver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	gwThrottler "github.com/rudderlabs/rudder-server/gateway/throttler"
@@ -80,6 +82,7 @@ func (a *embeddedApp) Setup(options *app.Options) error {
 }
 
 func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+	config := config.Default
 	if !a.setupDone {
 		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
 	}
@@ -130,6 +133,18 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	if err != nil {
 		return err
 	}
+
+	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
+	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
+	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
+	gatewayDB := jobsdb.NewForWrite(
+		"gw",
+		jobsdb.WithClearDB(options.ClearDB),
+	)
+	if err = gatewayDB.Start(); err != nil {
+		return fmt.Errorf("could not start gateway: %w", err)
+	}
+	defer gatewayDB.Stop()
 
 	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
 	// Processor.
@@ -187,17 +202,31 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 	)
+	defer schemaDB.Close()
+
+	archivalDB := jobsdb.NewForReadWrite(
+		"arc",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
+		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithJobMaxAge(
+			func() time.Duration {
+				return config.GetDuration("archival.jobRetention", 24, time.Hour)
+			},
+		),
+	)
+	defer archivalDB.Close()
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
-		client, err := pulsar.NewClient(config.Default)
+		client, err := pulsar.NewClient(config)
 		if err != nil {
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config.Default, stats.Default)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -216,6 +245,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		errDBForRead,
 		errDBForWrite,
 		schemaDB,
+		archivalDB,
 		reportingI,
 		transientSources,
 		fileUploaderProvider,
@@ -259,30 +289,27 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		BatchRouterDB:   batchRouterDB,
 		ErrorDB:         errDBForRead,
 		EventSchemaDB:   schemaDB,
+		ArchivalDB:      archivalDB,
 		Processor:       proc,
 		Router:          rt,
 		SchemaForwarder: schemaForwarder,
+		Archiver: archiver.New(
+			archivalDB,
+			fileUploaderProvider,
+			config,
+			stats.Default,
+			archiver.WithAdaptiveLimit(adaptiveLimit),
+		),
 	}
 
 	rateLimiter, err := gwThrottler.New(stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create gw rate limiter: %w", err)
 	}
-	gw := gateway.HandleT{}
-	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
-	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
-	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
-	gatewayDB := jobsdb.NewForWrite(
-		"gw",
-		jobsdb.WithClearDB(options.ClearDB),
-	)
-	if err = gatewayDB.Start(); err != nil {
-		return fmt.Errorf("could not start gateway: %w", err)
-	}
-	defer gatewayDB.Stop()
-
+	gw := gateway.Handle{}
 	err = gw.Setup(
 		ctx,
+		config, logger.NewLogger().Child("gateway"), stats.Default,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDBForWrite,
 		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
@@ -296,13 +323,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}()
 
 	g.Go(func() error {
-		return gw.StartAdminHandler(ctx)
-	})
-	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
 	})
 	if a.config.enableReplay {
-		var replayDB jobsdb.HandleT
+		var replayDB jobsdb.Handle
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
 			prebackupHandlers, fileUploaderProvider,

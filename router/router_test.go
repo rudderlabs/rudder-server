@@ -395,7 +395,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -462,7 +462,7 @@ var _ = Describe("router", func() {
 			}
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
@@ -541,7 +541,7 @@ var _ = Describe("router", func() {
 			}
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
+			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
@@ -616,9 +616,9 @@ var _ = Describe("router", func() {
 					},
 					Parameters: []byte(fmt.Sprintf(`{
 						"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77",
-						"destination_id": "%s", 
-						"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", 
-						"received_at": "%s", 
+						"destination_id": "%s",
+						"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
+						"received_at": "%s",
 						"transform_at": "processor"
 					}`, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
 					WorkspaceId: workspaceID,
@@ -626,7 +626,7 @@ var _ = Describe("router", func() {
 			}
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
+			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
@@ -660,7 +660,7 @@ var _ = Describe("router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
 					Expect(drainList).To(HaveLen(1))
-					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, strconv.Itoa(routerUtils.DRAIN_ERROR_CODE), `{"reason": "retry limit reached"}`, jobs[0].LastJobStatus.AttemptNum)
+					assertJobStatus(jobs[0], drainList[0], jobsdb.Aborted.State, strconv.Itoa(routerUtils.DRAIN_ERROR_CODE), fmt.Sprintf(`{"reason": %s}`, fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))), jobs[0].LastJobStatus.AttemptNum)
 					routerAborted = true
 				})
 
@@ -768,7 +768,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -836,7 +836,7 @@ var _ = Describe("router", func() {
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(
 				gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -960,7 +960,7 @@ var _ = Describe("router", func() {
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
@@ -1096,7 +1096,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -1291,7 +1291,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -1478,7 +1478,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -1572,7 +1572,7 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState,
 	if attemptNum >= 1 {
 		Expect(gjson.GetBytes(status.ErrorResponse, "content-type").String()).To(Equal(gjson.Get(errorResponse, "content-type").String()))
 		Expect(gjson.GetBytes(status.ErrorResponse, "response").String()).To(Equal(gjson.Get(errorResponse, "response").String()))
-		Expect(gjson.GetBytes(status.ErrorResponse, "reason").String()).To(Equal(gjson.Get(errorResponse, "reason").String()))
+		Expect(gjson.Get(string(status.ErrorResponse), "reason").String()).To(Equal(gjson.Get(errorResponse, "reason").String()))
 	}
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
 	Expect(status.RetryTime).To(BeTemporally(">=", status.ExecTime, 10*time.Second))

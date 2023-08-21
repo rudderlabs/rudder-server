@@ -2,9 +2,9 @@
 
 < Replace with adequate description for this PR as per [Pull Request document](https://www.notion.so/rudderstacks/Pull-Requests-40a4c6bd7a5e4387ba9029bab297c9e3) >
 
-## Notion Ticket
+## Linear Ticket
 
-< Replace with Notion Link >
+< Replace with Linear Link >
 
 ## Security
 

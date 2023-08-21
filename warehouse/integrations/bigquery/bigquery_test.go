@@ -10,36 +10,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/compose-test/compose"
-
+	"cloud.google.com/go/bigquery"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-
+	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
-
-	"cloud.google.com/go/bigquery"
-
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
-	"github.com/stretchr/testify/require"
-
-	"github.com/stretchr/testify/assert"
-
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	whbigquery "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestIntegration(t *testing.T) {
@@ -56,7 +45,6 @@ func TestIntegration(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 
@@ -170,10 +158,12 @@ func TestIntegration(t *testing.T) {
 			stagingFilePrefix                   string
 		}{
 			{
-				name:                          "Merge mode",
-				writeKey:                      writeKey,
-				schema:                        namespace,
-				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "Merge mode",
+				writeKey: writeKey,
+				schema:   namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
@@ -215,9 +205,11 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/sources-job",
 			},
 			{
-				name:                          "Append mode",
-				schema:                        namespace,
-				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:   "Append mode",
+				schema: namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				writeKey:                      writeKey,
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
@@ -236,9 +228,11 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 			},
 			{
-				name:                                "Append mode with custom partition",
-				schema:                              namespace,
-				tables:                              []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:   "Append mode with custom partition",
+				schema: namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				writeKey:                            writeKey,
 				sourceID:                            sourceID,
 				destinationID:                       destinationID,
@@ -459,12 +453,12 @@ func appendEventsMap() testhelper.EventsCountMap {
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
-	credentials := bigquery2.BQCredentials{
+	credentials := whbigquery.BQCredentials{
 		ProjectID:   "projectId",
 		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 	}
 
-	_, err := bigquery2.Connect(context.Background(), &credentials)
+	_, err := whbigquery.Connect(context.Background(), &credentials)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }

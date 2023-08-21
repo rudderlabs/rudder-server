@@ -567,12 +567,13 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 	}
 
 	sf.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-		"sourceID":    sf.Warehouse.Source.ID,
-		"sourceType":  sf.Warehouse.Source.SourceDefinition.Name,
-		"destID":      sf.Warehouse.Destination.ID,
-		"destType":    sf.Warehouse.Destination.DestinationDefinition.Name,
-		"workspaceId": sf.Warehouse.WorkspaceID,
-		"tableName":   tableName,
+		"sourceID":       sf.Warehouse.Source.ID,
+		"sourceType":     sf.Warehouse.Source.SourceDefinition.Name,
+		"sourceCategory": sf.Warehouse.Source.SourceDefinition.Category,
+		"destID":         sf.Warehouse.Destination.ID,
+		"destType":       sf.Warehouse.Destination.DestinationDefinition.Name,
+		"workspaceId":    sf.Warehouse.WorkspaceID,
+		"tableName":      tableName,
 	}).Count(int(updated))
 
 	sf.logger.Infow("completed loading",
@@ -929,12 +930,13 @@ func (sf *Snowflake) loadUserTables(ctx context.Context) map[string]error {
 	}
 
 	sf.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-		"sourceID":    sf.Warehouse.Source.ID,
-		"sourceType":  sf.Warehouse.Source.SourceDefinition.Name,
-		"destID":      sf.Warehouse.Destination.ID,
-		"destType":    sf.Warehouse.Destination.DestinationDefinition.Name,
-		"workspaceId": sf.Warehouse.WorkspaceID,
-		"tableName":   warehouseutils.UsersTable,
+		"sourceID":       sf.Warehouse.Source.ID,
+		"sourceType":     sf.Warehouse.Source.SourceDefinition.Name,
+		"sourceCategory": sf.Warehouse.Source.SourceDefinition.Category,
+		"destID":         sf.Warehouse.Destination.ID,
+		"destType":       sf.Warehouse.Destination.DestinationDefinition.Name,
+		"workspaceId":    sf.Warehouse.WorkspaceID,
+		"tableName":      warehouseutils.UsersTable,
 	}).Count(int(updated))
 
 	sf.logger.Infow("completed loading for users and identifies tables",
@@ -987,6 +989,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmiddl
 	}
 	middleware := sqlmiddleware.New(
 		db,
+		sqlmiddleware.WithStats(sf.stats),
 		sqlmiddleware.WithLogger(sf.logger),
 		sqlmiddleware.WithKeyAndValues(
 			logfield.SourceID, sf.Warehouse.Source.ID,

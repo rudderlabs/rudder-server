@@ -75,7 +75,6 @@ func jobsDBInit(es envSetter, pgResource *resource.PostgresResource) {
 
 	admin.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
 }
 
 var _ = Describe("Event Schemas", Ordered, func() {

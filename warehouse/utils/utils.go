@@ -39,10 +39,6 @@ import (
 )
 
 const (
-	DestinationType = "destinationType"
-)
-
-const (
 	RS            = "RS"
 	BQ            = "BQ"
 	SNOWFLAKE     = "SNOWFLAKE"
@@ -978,9 +974,9 @@ func ReadAsBool(key string, config map[string]interface{}) bool {
 }
 
 func GetConnectionTimeout(destType, destID string) time.Duration {
-	destIDLevelConfig := fmt.Sprintf("warehouse.%s.%s.connectionTimeout", destType, destID)
-	destTypeLevelConfig := fmt.Sprintf("warehouse.%s.connectionTimeout", destType)
-	warehouseLevelConfig := "warehouse.connectionTimeout"
+	destIDLevelConfig := fmt.Sprintf("Warehouse.%s.%s.connectionTimeout", destType, destID)
+	destTypeLevelConfig := fmt.Sprintf("Warehouse.%s.connectionTimeout", destType)
+	warehouseLevelConfig := "Warehouse.connectionTimeout"
 
 	defaultTimeout := int64(3)
 	defaultTimeoutUnits := time.Hour

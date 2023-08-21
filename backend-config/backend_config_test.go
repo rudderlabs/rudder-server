@@ -189,7 +189,6 @@ func TestConfigUpdate(t *testing.T) {
 			ctx        = context.Background()
 			fakeError  = errors.New("fake error")
 			cacheError = errors.New("cache error")
-			workspaces = "foo"
 			cacheStore = cache.NewMockCache(ctrl)
 		)
 		defer ctrl.Finish()
@@ -202,7 +201,7 @@ func TestConfigUpdate(t *testing.T) {
 			cache:           cacheStore,
 		}
 		cacheStore.EXPECT().Get(ctx).Return([]byte{}, cacheError).Times(1)
-		bc.configUpdate(ctx, workspaces)
+		bc.configUpdate(ctx)
 		require.False(t, bc.initialized)
 	})
 
@@ -223,7 +222,7 @@ func TestConfigUpdate(t *testing.T) {
 			curSourceJSON:   map[string]ConfigT{workspaces: sampleBackendConfig}, // same as the one returned by the workspace config
 			cache:           cacheStore,
 		}
-		bc.configUpdate(ctx, workspaces)
+		bc.configUpdate(ctx)
 		require.True(t, bc.initialized)
 	})
 
@@ -251,7 +250,7 @@ func TestConfigUpdate(t *testing.T) {
 		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
 		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
 
-		bc.configUpdate(ctx, workspaces)
+		bc.configUpdate(ctx)
 		require.True(t, bc.initialized)
 		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: sampleFilteredSources})
 		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleBackendConfig})
@@ -433,7 +432,6 @@ func TestCache(t *testing.T) {
 		var (
 			ctrl        = gomock.NewController(t)
 			ctx, cancel = context.WithCancel(context.Background())
-			workspaces  = "foo"
 			cacheStore  = cache.NewMockCache(ctrl)
 		)
 		defer ctrl.Finish()
@@ -457,7 +455,7 @@ func TestCache(t *testing.T) {
 		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
 		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
 
-		bc.configUpdate(ctx, workspaces)
+		bc.configUpdate(ctx)
 		require.True(t, bc.initialized)
 		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{sampleWorkspaceID: sampleFilteredSources})
 		require.Equal(t, (<-chBackend).Data, unmarshalledConfig)
@@ -467,7 +465,6 @@ func TestCache(t *testing.T) {
 		var (
 			ctrl        = gomock.NewController(t)
 			ctx, cancel = context.WithCancel(context.Background())
-			workspaces  = "foo"
 			cacheStore  = cache.NewMockCache(ctrl)
 		)
 		defer ctrl.Finish()
@@ -484,7 +481,7 @@ func TestCache(t *testing.T) {
 		}
 		bc.curSourceJSON = map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig2}
 
-		bc.configUpdate(ctx, workspaces)
+		bc.configUpdate(ctx)
 		require.False(t, bc.initialized)
 	})
 

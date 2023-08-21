@@ -679,12 +679,13 @@ func (rs *Redshift) loadTable(ctx context.Context, tableName string, tableSchema
 		}
 
 		rs.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-			"sourceID":    rs.Warehouse.Source.ID,
-			"sourceType":  rs.Warehouse.Source.SourceDefinition.Name,
-			"destID":      rs.Warehouse.Destination.ID,
-			"destType":    rs.Warehouse.Destination.DestinationDefinition.Name,
-			"workspaceId": rs.Warehouse.WorkspaceID,
-			"tableName":   tableName,
+			"sourceID":       rs.Warehouse.Source.ID,
+			"sourceType":     rs.Warehouse.Source.SourceDefinition.Name,
+			"sourceCategory": rs.Warehouse.Source.SourceDefinition.Category,
+			"destID":         rs.Warehouse.Destination.ID,
+			"destType":       rs.Warehouse.Destination.DestinationDefinition.Name,
+			"workspaceId":    rs.Warehouse.WorkspaceID,
+			"tableName":      tableName,
 		}).Count(int(rowsAffected))
 	}
 
@@ -1060,6 +1061,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	}
 	middleware := sqlmiddleware.New(
 		db,
+		sqlmiddleware.WithStats(rs.stats),
 		sqlmiddleware.WithLogger(rs.logger),
 		sqlmiddleware.WithKeyAndValues(
 			logfield.SourceID, rs.Warehouse.Source.ID,

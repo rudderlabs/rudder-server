@@ -1,109 +1,119 @@
 package warehouse
 
 import (
-	"fmt"
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/iancoleman/strcase"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	constraintsMap              map[string][]Constraints
+type constraints interface {
+	violates(brEvent *BatchRouterEvent, columnName string) (cv *constraintsViolation)
+}
+
+type constraintsViolation struct {
+	isViolated         bool
+	violatedIdentifier string
+}
+
+type indexConstraint struct {
+	tableName    string
+	columnName   string
+	indexColumns []string
+	limit        int
+}
+
+type constraintsManager struct {
+	constraintsMap              map[string][]constraints
 	enableConstraintsViolations bool
-)
-
-type Constraints interface {
-	violates(brEvent *BatchRouterEvent, columnName string) (cv *ConstraintsViolation)
 }
 
-type ConstraintsViolation struct {
-	IsViolated         bool
-	ViolatedIdentifier string
-}
+func newConstraintsManager(conf *config.Config) *constraintsManager {
+	cm := &constraintsManager{}
 
-type IndexConstraint struct {
-	TableName    string
-	ColumnName   string
-	IndexColumns []string
-	Limit        int
-}
-
-func Init6() {
-	config.RegisterBoolConfigVariable(true, &enableConstraintsViolations, true, "Warehouse.enableConstraintsViolations")
-	constraintsMap = map[string][]Constraints{
+	cm.constraintsMap = map[string][]constraints{
 		warehouseutils.BQ: {
-			&IndexConstraint{
-				TableName:    "rudder_identity_merge_rules",
-				ColumnName:   "merge_property_1_value",
-				IndexColumns: []string{"merge_property_1_type", "merge_property_1_value"},
-				Limit:        512,
+			&indexConstraint{
+				tableName:    "rudder_identity_merge_rules",
+				columnName:   "merge_property_1_value",
+				indexColumns: []string{"merge_property_1_type", "merge_property_1_value"},
+				limit:        512,
 			},
-			&IndexConstraint{
-				TableName:    "rudder_identity_merge_rules",
-				ColumnName:   "merge_property_2_value",
-				IndexColumns: []string{"merge_property_2_type", "merge_property_2_value"},
-				Limit:        512,
+			&indexConstraint{
+				tableName:    "rudder_identity_merge_rules",
+				columnName:   "merge_property_2_value",
+				indexColumns: []string{"merge_property_2_type", "merge_property_2_value"},
+				limit:        512,
 			},
 		},
 		warehouseutils.SNOWFLAKE: {
-			&IndexConstraint{
-				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
-				ColumnName:   "MERGE_PROPERTY_1_VALUE",
-				IndexColumns: []string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE"},
-				Limit:        512,
+			&indexConstraint{
+				tableName:    "RUDDER_IDENTITY_MERGE_RULES",
+				columnName:   "MERGE_PROPERTY_1_VALUE",
+				indexColumns: []string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE"},
+				limit:        512,
 			},
-			&IndexConstraint{
-				TableName:    "RUDDER_IDENTITY_MERGE_RULES",
-				ColumnName:   "MERGE_PROPERTY_2_VALUE",
-				IndexColumns: []string{"MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"},
-				Limit:        512,
+			&indexConstraint{
+				tableName:    "RUDDER_IDENTITY_MERGE_RULES",
+				columnName:   "MERGE_PROPERTY_2_VALUE",
+				indexColumns: []string{"MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"},
+				limit:        512,
 			},
 		},
 	}
+	conf.RegisterBoolConfigVariable(true, &cm.enableConstraintsViolations, true, "Warehouse.enableConstraintsViolations")
+
+	return cm
 }
 
-func ViolatedConstraints(destinationType string, brEvent *BatchRouterEvent, columnName string) (cv *ConstraintsViolation) {
-	cv = &ConstraintsViolation{}
-	if !enableConstraintsViolations {
+func (cm *constraintsManager) violatedConstraints(destinationType string, brEvent *BatchRouterEvent, columnName string) (cv *constraintsViolation) {
+	cv = &constraintsViolation{}
+
+	if !cm.enableConstraintsViolations {
 		return
 	}
-	constraints, ok := constraintsMap[destinationType]
+
+	constraints, ok := cm.constraintsMap[destinationType]
 	if !ok {
 		return
 	}
+
 	for _, constraint := range constraints {
 		cv = constraint.violates(brEvent, columnName)
-		if cv.IsViolated {
+		if cv.isViolated {
 			return
 		}
 	}
 	return
 }
 
-func (ic *IndexConstraint) violates(brEvent *BatchRouterEvent, columnName string) (cv *ConstraintsViolation) {
-	if brEvent.Metadata.Table != ic.TableName || columnName != ic.ColumnName {
-		return &ConstraintsViolation{}
+func (ic *indexConstraint) violates(brEvent *BatchRouterEvent, columnName string) *constraintsViolation {
+	if brEvent.Metadata.Table != ic.tableName || columnName != ic.columnName {
+		return &constraintsViolation{}
 	}
+
 	concatenatedLength := 0
-	for _, column := range ic.IndexColumns {
+
+	for _, column := range ic.indexColumns {
 		columnInfo, ok := brEvent.GetColumnInfo(column)
 		if !ok {
 			continue
 		}
-		if columnInfo.Type == "string" {
-			columnVal, ok := columnInfo.Value.(string)
-			if !ok {
-				continue
-			}
-			concatenatedLength += len(columnVal)
+		if columnInfo.Type != "string" {
+			continue
 		}
+
+		columnVal, ok := columnInfo.Value.(string)
+		if !ok {
+			continue
+		}
+		concatenatedLength += len(columnVal)
 	}
-	return &ConstraintsViolation{
-		IsViolated:         concatenatedLength > ic.Limit,
-		ViolatedIdentifier: fmt.Sprintf(`%s-%s`, strcase.ToKebab(warehouseutils.DiscardsTable), misc.FastUUID().String()),
+	return &constraintsViolation{
+		isViolated:         concatenatedLength > ic.limit,
+		violatedIdentifier: strcase.ToKebab(warehouseutils.DiscardsTable) + "-" + misc.FastUUID().String(),
 	}
 }

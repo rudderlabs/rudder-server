@@ -235,13 +235,14 @@ func (pg *Postgres) loadTable(
 		}
 
 		pg.stats.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
-			"sourceID":     pg.Warehouse.Source.ID,
-			"sourceType":   pg.Warehouse.Source.SourceDefinition.Name,
-			"destID":       pg.Warehouse.Destination.ID,
-			"destType":     pg.Warehouse.Destination.DestinationDefinition.Name,
-			"workspaceId":  pg.Warehouse.WorkspaceID,
-			"tableName":    tableName,
-			"rowsAffected": fmt.Sprintf("%d", rowsAffected),
+			"sourceID":       pg.Warehouse.Source.ID,
+			"sourceType":     pg.Warehouse.Source.SourceDefinition.Name,
+			"sourceCategory": pg.Warehouse.Source.SourceDefinition.Category,
+			"destID":         pg.Warehouse.Destination.ID,
+			"destType":       pg.Warehouse.Destination.DestinationDefinition.Name,
+			"workspaceId":    pg.Warehouse.WorkspaceID,
+			"tableName":      tableName,
+			"rowsAffected":   fmt.Sprintf("%d", rowsAffected),
 		})
 	}
 

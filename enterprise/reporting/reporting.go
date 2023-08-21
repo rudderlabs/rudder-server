@@ -62,6 +62,7 @@ type HandleT struct {
 	sleepInterval                        time.Duration
 	mainLoopSleepInterval                time.Duration
 	sourcesWithEventNameTrackingDisabled []string
+	maxOpenConnections                   int
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -70,6 +71,7 @@ type HandleT struct {
 
 func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
+	var maxOpenConnections int
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("Reporting.sourcesWithEventNameTrackingDisabled", []string{})
@@ -77,12 +79,12 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
+	config.RegisterIntConfigVariable(32, &maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
-
 	return &HandleT{
 		init:                                 make(chan struct{}),
 		log:                                  log,
@@ -97,6 +99,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 		mainLoopSleepInterval:                mainLoopSleepInterval,
 		region:                               config.GetString("region", ""),
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
+		maxOpenConnections:                   maxOpenConnections,
 	}
 }
 
@@ -154,6 +157,7 @@ func (r *HandleT) AddClient(ctx context.Context, c types.Config) {
 	if err != nil {
 		panic(err)
 	}
+	dbHandle.SetMaxOpenConns(r.maxOpenConnections)
 
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,

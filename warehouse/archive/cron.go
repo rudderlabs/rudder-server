@@ -9,13 +9,13 @@ func CronArchiver(ctx context.Context, a *Archiver) {
 	for {
 		select {
 		case <-ctx.Done():
-			a.Logger.Infof("context is cancelled, stopped running archiving")
+			a.log.Infof("context is cancelled, stopped running archiving")
 			return
-		case <-time.After(archiverTickerTime):
-			if archiveUploadRelatedRecords {
+		case <-time.After(a.config.archiverTickerTime):
+			if a.config.archiveUploadRelatedRecords {
 				err := a.Do(ctx)
 				if err != nil {
-					a.Logger.Errorf(`Error archiving uploads: %v`, err)
+					a.log.Errorf(`Error archiving uploads: %v`, err)
 				}
 			}
 		}

@@ -17,13 +17,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func isJobTerminated(status int) bool {
-	if status == 429 {
-		return false
-	}
-	return status >= 200 && status < 500
-}
-
 func IsObjectStorageDestination(destType string) bool {
 	return slices.Contains(objectStoreDestinations, destType)
 }

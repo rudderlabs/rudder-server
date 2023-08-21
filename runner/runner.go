@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
-	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -38,7 +37,6 @@ import (
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -48,8 +46,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
-	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -333,18 +329,9 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
-	encoding.Init()
-	archiver.Init()
 	pgnotifier.Init()
 	jobsdb.Init()
-	jobsdb.Init2()
-	warehouse.Init()
-	warehouse.Init2()
-	warehouse.Init3()
 	warehouse.Init4()
-	warehouse.Init5()
-	warehouse.Init6()
-	warehousearchiver.Init()
 	validations.Init()
 	webhook.Init()
 	asyncdestinationmanager.Init()
@@ -355,7 +342,6 @@ func runAllInit() {
 	kafka.Init()
 	customdestinationmanager.Init()
 	routertransformer.Init()
-	gateway.Init()
 	alert.Init()
 	oauth.Init()
 }

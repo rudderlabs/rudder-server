@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -156,14 +155,14 @@ var _ = Describe("jobsdb", Ordered, func() {
 
 	Context("getDSList", func() {
 		var t *ginkgoTestingT
-		var jd *HandleT
+		var jd *Handle
 		var prefix string
 
 		BeforeEach(func() {
 			t = &ginkgoTestingT{}
 			_ = startPostgres(t)
 			prefix = strings.ToLower(rsRand.String(5))
-			jd = &HandleT{}
+			jd = &Handle{}
 
 			jd.skipSetupDBSetup = true
 			err := jd.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -183,7 +182,7 @@ var _ = Describe("jobsdb", Ordered, func() {
 
 	Context("Start & Stop", Ordered, func() {
 		var t *ginkgoTestingT
-		var jd *HandleT
+		var jd *Handle
 		var prefix string
 
 		BeforeAll(func() {
@@ -192,7 +191,7 @@ var _ = Describe("jobsdb", Ordered, func() {
 		})
 		BeforeEach(func() {
 			prefix = strings.ToLower(rsRand.String(5))
-			jd = &HandleT{}
+			jd = &Handle{}
 			jd.skipSetupDBSetup = true
 			err := jd.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 			Expect(err).To(BeNil())
@@ -383,7 +382,7 @@ func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
 func TestRefreshDSList(t *testing.T) {
 	_ = startPostgres(t)
 	triggerAddNewDS := make(chan time.Time)
-	jobsDB := &HandleT{
+	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -411,7 +410,7 @@ func TestJobsDBTimeout(t *testing.T) {
 	defaultWorkspaceID := "workspaceId"
 
 	maxDSSize := 10
-	jobDB := HandleT{
+	jobDB := Handle{
 		MaxDSSize: &maxDSSize,
 	}
 
@@ -448,7 +447,7 @@ func TestJobsDBTimeout(t *testing.T) {
 		var errorsCount int
 
 		jobs, err := misc.QueryWithRetries(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) (JobsResult, error) {
-			jobs, err := jobDB.GetUnprocessed(ctx, GetQueryParamsT{
+			jobs, err := jobDB.GetUnprocessed(ctx, GetQueryParams{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        1,
 				ParameterFilters: []ParameterFilterT{},
@@ -494,7 +493,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	maxDSSize := 1
 	triggerAddNewDS1 := make(chan time.Time)
 	// jobsDB-1 setup
-	jobsDB1 := &HandleT{
+	jobsDB1 := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS1
 		},
@@ -508,7 +507,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 
 	// jobsDB-2 setup
 	triggerAddNewDS2 := make(chan time.Time)
-	jobsDB2 := &HandleT{
+	jobsDB2 := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS2
 		},
@@ -592,7 +591,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 	t.Run("verify that `pgErrorCodeTableReadonly` exception is triggered, if we try to insert in any DS other than latest.", func(t *testing.T) {
 		maxDSSize := 1
 		triggerAddNewDS := make(chan time.Time)
-		jobsDB := &HandleT{
+		jobsDB := &Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
@@ -655,7 +654,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		triggerAddNewDS1 := make(chan time.Time)
 
 		// jobsDB-1 setup
-		jobsDB1 := &HandleT{
+		jobsDB1 := &Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS1
 			},
@@ -671,7 +670,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 
 		// jobsDB-2 setup
 		triggerAddNewDS2 := make(chan time.Time)
-		jobsDB2 := &HandleT{
+		jobsDB2 := &Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS2
 			},
@@ -687,7 +686,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 
 		// jobsDB-3 setup
 		triggerAddNewDS3 := make(chan time.Time)
-		jobsDB3 := &HandleT{
+		jobsDB3 := &Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS3
 			},
@@ -777,7 +776,7 @@ func TestCacheScenarios(t *testing.T) {
 
 	checkDSLimitJobs := func(t *testing.T, limit int) []*JobT {
 		maxDSSize := 1
-		var dbWithOneLimit *HandleT
+		var dbWithOneLimit *Handle
 		triggerAddNewDS := make(chan time.Time)
 		if limit > 0 {
 			dbWithOneLimit = NewForReadWrite(
@@ -803,7 +802,7 @@ func TestCacheScenarios(t *testing.T) {
 		err = dbWithOneLimit.Store(context.Background(), generateJobs(2, ""))
 		require.NoError(t, err)
 
-		res, err := dbWithOneLimit.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err := dbWithOneLimit.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs))
 
@@ -818,7 +817,7 @@ func TestCacheScenarios(t *testing.T) {
 
 		require.NoError(t, dbWithOneLimit.Store(context.Background(), generateJobs(3, "")))
 
-		res, err = dbWithOneLimit.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err = dbWithOneLimit.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		fmt.Println("res jobs:", len(res.Jobs))
 		return res.Jobs
@@ -846,19 +845,19 @@ func TestCacheScenarios(t *testing.T) {
 		require.NoError(t, gwDBForProcessor.Start())
 		defer gwDBForProcessor.TearDown()
 
-		res, err := gwDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err := gwDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(res.Jobs), "gwDB should report 0 unprocessed jobs")
-		res, err = gwDBForProcessor.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err = gwDBForProcessor.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(res.Jobs), "gwDBForProcessor should report 0 unprocessed jobs")
 
 		require.NoError(t, gwDB.Store(context.Background(), generateJobs(2, "")))
 
-		res, err = gwDBForProcessor.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err = gwDBForProcessor.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "gwDBForProcessor should report 2 unprocessed jobs since we added 2 jobs through gwDB")
-		res, err = gwDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err = gwDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "gwDB should report 2 unprocessed jobs since we added 2 jobs through gwDB")
 	})
@@ -870,26 +869,26 @@ func TestCacheScenarios(t *testing.T) {
 
 		destinationID := "destinationID"
 
-		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when not using parameter filters")
-		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		res, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id in parameter filters")
 
 		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, "")))
-		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when not using parameter filters, after we added 2 jobs")
-		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		res, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id in parameter filters, after we added 2 jobs but for another destination_id")
 
 		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 4, len(res.Jobs), "jobsDB should report 4 unprocessed jobs when not using parameter filters, after we added 2 more jobs")
-		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		res, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id in parameter filters, after we added 2 jobs for this destination_id")
 	})
@@ -901,12 +900,12 @@ func TestCacheScenarios(t *testing.T) {
 
 		destinationID := "destinationID"
 
-		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}}, JobsLimit: 100})
+		res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using both destination_id and source_id as filters")
 
 		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}}, JobsLimit: 100})
+		res, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using both destination_id and source_id as filters, after we added 2 jobs")
 	})
@@ -923,12 +922,12 @@ func TestCacheScenarios(t *testing.T) {
 
 		destinationID := "destinationID"
 
-		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id as filter")
 
 		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		res, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id as filter, after we added 2 jobs")
 	})
@@ -957,7 +956,7 @@ func TestCacheScenarios(t *testing.T) {
 
 		res, err := jobDB.GetUnprocessed(
 			context.Background(),
-			GetQueryParamsT{
+			GetQueryParams{
 				CustomValFilters: []string{customVal},
 				WorkspaceID:      workspaceID,
 				JobsLimit:        100,
@@ -973,7 +972,7 @@ func TestCacheScenarios(t *testing.T) {
 
 		res, err = jobDB.GetUnprocessed(
 			context.Background(),
-			GetQueryParamsT{
+			GetQueryParams{
 				CustomValFilters: []string{customVal},
 				ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: "someDestinationID"}},
 				JobsLimit:        100,
@@ -999,7 +998,7 @@ func Test_GetAdvisoryLockForOperation_Unique(t *testing.T) {
 	calculated := map[int64]string{}
 	for _, operation := range []string{"add_ds", "migrate_ds", "schema_migrate"} {
 		for _, prefix := range []string{"gw", "rt", "batch_rt", "proc_error"} {
-			h := &HandleT{tablePrefix: prefix}
+			h := &Handle{tablePrefix: prefix}
 			key := fmt.Sprintf("%s_%s", prefix, operation)
 			advLock := h.getAdvisoryLockForOperation(operation)
 			if dupKey, ok := calculated[advLock]; ok {
@@ -1029,35 +1028,35 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 	}
 
 	t.Run("get unprocessed", func(t *testing.T) {
-		var jobsDB *HandleT
+		var jobsDB *Handle
 		prefix := strings.ToLower(rsRand.String(5))
 		destinationID := strings.ToLower(rsRand.String(5))
 		jobsDB = NewForReadWrite(prefix)
 		require.NoError(t, jobsDB.Start())
 		defer jobsDB.TearDown()
 		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-		unprocessed, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		unprocessed, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(unprocessed.Jobs))
 
-		unprocessed1, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100, AfterJobID: &unprocessed.Jobs[0].JobID})
+		unprocessed1, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100, afterJobID: &unprocessed.Jobs[0].JobID})
 		require.NoError(t, err)
 		require.Equal(t, 1, len(unprocessed1.Jobs))
 
-		unprocessed2, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100, AfterJobID: &unprocessed.Jobs[1].JobID})
+		unprocessed2, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100, afterJobID: &unprocessed.Jobs[1].JobID})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(unprocessed2.Jobs))
 	})
 
 	t.Run("get processed", func(t *testing.T) {
-		var jobsDB *HandleT
+		var jobsDB *Handle
 		prefix := strings.ToLower(rsRand.String(5))
 		destinationID := strings.ToLower(rsRand.String(5))
 		jobsDB = NewForReadWrite(prefix)
 		require.NoError(t, jobsDB.Start())
 		defer jobsDB.TearDown()
 		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-		unprocessed, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		unprocessed, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(unprocessed.Jobs))
 
@@ -1077,11 +1076,11 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 		}
 		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{}))
 
-		processed1, err := jobsDB.GetToRetry(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100, AfterJobID: &unprocessed.Jobs[0].JobID})
+		processed1, err := jobsDB.GetFailed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100, afterJobID: &unprocessed.Jobs[0].JobID})
 		require.NoError(t, err)
 		require.Equal(t, 1, len(processed1.Jobs))
 
-		processed2, err := jobsDB.GetToRetry(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100, AfterJobID: &unprocessed.Jobs[1].JobID})
+		processed2, err := jobsDB.GetFailed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100, afterJobID: &unprocessed.Jobs[1].JobID})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(processed2.Jobs))
 	})
@@ -1105,14 +1104,14 @@ func TestDeleteExecuting(t *testing.T) {
 		return js
 	}
 
-	var jobsDB *HandleT
+	var jobsDB *Handle
 	prefix := strings.ToLower(rsRand.String(5))
 	destinationID := strings.ToLower(rsRand.String(5))
 	jobsDB = NewForReadWrite(prefix)
 	require.NoError(t, jobsDB.Start())
 	defer jobsDB.TearDown()
 	require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-	unprocessed, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	unprocessed, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(unprocessed.Jobs))
 	var statuses []*JobStatusT
@@ -1130,13 +1129,13 @@ func TestDeleteExecuting(t *testing.T) {
 		})
 	}
 	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{}))
-	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	unprocessed, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
 
 	jobsDB.DeleteExecuting()
 
-	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	unprocessed, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(unprocessed.Jobs))
 }
@@ -1159,14 +1158,14 @@ func TestFailExecuting(t *testing.T) {
 		return js
 	}
 
-	var jobsDB *HandleT
+	var jobsDB *Handle
 	prefix := strings.ToLower(rsRand.String(5))
 	destinationID := strings.ToLower(rsRand.String(5))
 	jobsDB = NewForReadWrite(prefix)
 	require.NoError(t, jobsDB.Start())
 	defer jobsDB.TearDown()
 	require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-	unprocessed, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	unprocessed, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(unprocessed.Jobs))
 
@@ -1186,17 +1185,17 @@ func TestFailExecuting(t *testing.T) {
 	}
 	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{}))
 
-	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	unprocessed, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
 
 	jobsDB.FailExecuting()
 
-	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	unprocessed, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
 
-	failed, err := jobsDB.GetToRetry(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	failed, err := jobsDB.GetFailed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(failed.Jobs))
 }
@@ -1227,21 +1226,23 @@ func TestMaxAgeCleanup(t *testing.T) {
 	destinationID := strings.ToLower(rsRand.String(5))
 	t.Setenv("RSERVER_JOBS_DB_JOB_MAX_AGE", "0")
 	triggerJobCleanup := make(chan time.Time)
-	jobsDB := &HandleT{
+	jobsDB := &Handle{
 		TriggerJobCleanUp: func() <-chan time.Time {
 			return triggerJobCleanup
 		},
 	}
+	tablePrefix := strings.ToLower(rsRand.String(5))
 	err := jobsDB.Setup(
 		ReadWrite,
 		true,
-		strings.ToLower(rsRand.String(5)),
+		tablePrefix,
 		[]prebackup.Handler{},
 		fileuploader.NewDefaultProvider(),
 	)
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
+	// store some jobs
 	require.NoError(
 		t,
 		jobsDB.Store(
@@ -1250,9 +1251,9 @@ func TestMaxAgeCleanup(t *testing.T) {
 		),
 	)
 
-	unprocessed, err := jobsDB.getUnprocessed(
+	unprocessed, err := jobsDB.GetUnprocessed(
 		context.Background(),
-		GetQueryParamsT{
+		GetQueryParams{
 			CustomValFilters: []string{customVal},
 			ParameterFilters: []ParameterFilterT{
 				{Name: "destination_id", Value: destinationID},
@@ -1262,26 +1263,39 @@ func TestMaxAgeCleanup(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, len(unprocessed.Jobs))
 
+	// store some journal entries
+	timeDelay := time.Duration(-12) * time.Hour * 24
+	t.Log(time.Now().Add(timeDelay))
+	_, err = jobsDB.dbHandle.Exec(
+		fmt.Sprintf(`insert into %s_journal (operation, done, operation_payload, start_time, owner)
+				values ($1, $2, $3, $4, $5) returning id`, tablePrefix),
+		addDSOperation,
+		true,
+		[]byte(`{"testKey":"testValue"}`),
+		time.Now().Add(timeDelay),
+		"",
+	)
+	require.NoError(t, err)
+
 	triggerJobCleanup <- time.Now()
 	triggerJobCleanup <- time.Now()
 
-	abortedJobs, err := jobsDB.GetProcessed(
+	abortedJobs, err := jobsDB.GetAborted(
 		context.Background(),
-		GetQueryParamsT{
+		GetQueryParams{
 			CustomValFilters: []string{customVal},
 			ParameterFilters: []ParameterFilterT{
 				{Name: "destination_id", Value: destinationID},
 			},
-			StateFilters: []string{Aborted.State},
-			JobsLimit:    100,
+			JobsLimit: 100,
 		},
 	)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(abortedJobs.Jobs))
 
-	unprocessed, err = jobsDB.getUnprocessed(
+	unprocessed, err = jobsDB.GetUnprocessed(
 		context.Background(),
-		GetQueryParamsT{
+		GetQueryParams{
 			CustomValFilters: []string{customVal},
 			ParameterFilters: []ParameterFilterT{
 				{Name: "destination_id", Value: destinationID},
@@ -1291,6 +1305,11 @@ func TestMaxAgeCleanup(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
+
+	var journalEntryCount int
+	err = jobsDB.dbHandle.QueryRow(`select count(*) from ` + tablePrefix + `_journal`).Scan(&journalEntryCount)
+	require.NoError(t, err)
+	require.Equal(t, 1, journalEntryCount) // one from jd.Setup(addDS) - the one added during the test is cleaned up
 }
 
 func TestConstructParameterJSONQuery(t *testing.T) {
@@ -1302,7 +1321,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	_ = startPostgres(t)
 	maxDSSize := 1
 	triggerAddNewDS := make(chan time.Time)
-	jobsDB := &HandleT{
+	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -1391,7 +1410,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
 
-	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParamsT{WorkspaceID: "ws-3", JobsLimit: 10})
+	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{WorkspaceID: "ws-3", JobsLimit: 10})
 	require.NoError(t, err)
 	statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
 		return &JobStatusT{
@@ -1413,7 +1432,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	_ = startPostgres(t)
 	maxDSSize := 1
 	triggerAddNewDS := make(chan time.Time)
-	jobsDB := &HandleT{
+	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -1485,7 +1504,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
 
-	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParamsT{ParameterFilters: []ParameterFilterT{{Name: "param", Value: "param-3"}}, JobsLimit: 10})
+	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{ParameterFilters: []ParameterFilterT{{Name: "param", Value: "param-3"}}, JobsLimit: 10})
 	require.NoError(t, err)
 	statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
 		return &JobStatusT{
@@ -1564,6 +1583,4 @@ func initJobsDB() {
 	admin.Init()
 	misc.Init()
 	Init()
-	Init2()
-	archiver.Init()
 }

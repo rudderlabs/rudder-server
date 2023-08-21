@@ -177,6 +177,7 @@ var _ = Describe("BatchRouter", func() {
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &Handle{}
 			batchrouter.Setup(s3DestinationDefinition.Name, c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, nil, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
+
 			batchrouter.readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
@@ -234,29 +235,17 @@ var _ = Describe("BatchRouter", func() {
 			}
 
 			payloadLimit := batchrouter.payloadLimit
-			var toRetryJobsListCalled bool
-			var unprocessedJobsListCalled bool
-			c.mockBatchRouterJobsDB.EXPECT().GetToRetry(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).DoAndReturn(func(ctx context.Context, params jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
-				if !toRetryJobsListCalled {
-					toRetryJobsListCalled = true
-					return jobsdb.JobsResult{Jobs: toRetryJobsList}, nil
+			var getJobsListCalled bool
+			c.mockBatchRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}, nil).DoAndReturn(func(ctx context.Context, params jobsdb.GetQueryParams, _ jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
+				var res jobsdb.MoreJobsResult
+				if !getJobsListCalled {
+					getJobsListCalled = true
+					jobs := append([]*jobsdb.JobT{}, toRetryJobsList...)
+					jobs = append(jobs, unprocessedJobsList...)
+					res.Jobs = jobs
+					return &res, nil
 				}
-				return jobsdb.JobsResult{}, nil
-			}).AnyTimes()
-			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).DoAndReturn(func(ctx context.Context, params jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
-				if !unprocessedJobsListCalled {
-					unprocessedJobsListCalled = true
-					return jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil
-				}
-				return jobsdb.JobsResult{}, nil
-			}).Times(1)
-
-			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).DoAndReturn(func(ctx context.Context, params jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
-				if !unprocessedJobsListCalled {
-					unprocessedJobsListCalled = true
-					return jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil
-				}
-				return jobsdb.JobsResult{}, nil
+				return &res, nil
 			}).AnyTimes()
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).

@@ -54,6 +54,7 @@ func (a *gatewayApp) Setup(options *app.Options) error {
 }
 
 func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+	config := config.Default
 	if !a.setupDone {
 		return fmt.Errorf("gateway cannot start, database is not setup")
 	}
@@ -116,7 +117,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		return dm.Run(ctx)
 	})
 
-	var gw gateway.HandleT
+	var gw gateway.Handle
 	rateLimiter, err := gwThrottler.New(stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create rate limiter: %w", err)
@@ -127,6 +128,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	err = gw.Setup(
 		ctx,
+		config, logger.NewLogger().Child("gateway"), stats.Default,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB, errDB,
 		rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
@@ -139,9 +141,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		}
 	}()
 
-	g.Go(func() error {
-		return gw.StartAdminHandler(ctx)
-	})
 	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
 	})

@@ -55,7 +55,6 @@ var (
 	disableDestinationWebhookURL string
 	webhook                      *whUtil.Recorder
 	disableDestinationWebhook    *whUtil.Recorder
-	overrideArm64Check           bool
 	writeKey                     string
 	workspaceID                  string
 	kafkaContainer               *kafka.Resource
@@ -91,9 +90,6 @@ func TestMainFlow(t *testing.T) {
 	}
 
 	hold = os.Getenv("HOLD") == "true"
-	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
-		overrideArm64Check = true
-	}
 
 	var tearDownStart time.Time
 	defer func() {

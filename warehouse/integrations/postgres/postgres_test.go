@@ -23,8 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/stretchr/testify/require"
@@ -40,13 +38,16 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+	c := testcompose.New(t, compose.FilePaths([]string{
+		"testdata/docker-compose.yml",
+		"../testdata/docker-compose.jobsdb.yml",
+		"../testdata/docker-compose.minio.yml",
+	}))
 	c.Start(context.Background())
 
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 	minioPort := c.Port("minio", 9000)
@@ -186,10 +187,12 @@ func TestIntegration(t *testing.T) {
 			stagingFilePrefix     string
 		}{
 			{
-				name:              "Upload Job",
-				writeKey:          writeKey,
-				schema:            namespace,
-				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "Upload Job",
+				writeKey: writeKey,
+				schema:   namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:          sourceID,
 				destinationID:     destinationID,
 				stagingFilePrefix: "testdata/upload-job",
@@ -323,10 +326,12 @@ func TestIntegration(t *testing.T) {
 			stagingFilePrefix     string
 		}{
 			{
-				name:              "upload job through ssh tunnelling",
-				writeKey:          tunnelledWriteKey,
-				schema:            tunnelledNamespace,
-				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				name:     "upload job through ssh tunnelling",
+				writeKey: tunnelledWriteKey,
+				schema:   tunnelledNamespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
 				sourceID:          tunnelledSourceID,
 				destinationID:     tunnelledDestinationID,
 				stagingFilePrefix: "testdata/upload-ssh-job",

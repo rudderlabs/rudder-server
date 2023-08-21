@@ -26,6 +26,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -49,8 +50,9 @@ func (brt *Handle) Setup(
 	debugger destinationdebugger.DestinationDebugger,
 ) {
 	brt.destType = destType
-
+	brt.backendConfig = backendConfig
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destType)
+
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
 		Timeout:   config.GetDuration("BatchRouter.httpTimeout", 10, time.Second),
@@ -58,7 +60,6 @@ func (brt *Handle) Setup(
 	brt.jobsDB = jobsDB
 	brt.errorDB = errorDB
 	brt.reporting = reporting
-	brt.backendConfig = backendConfig
 	brt.fileManagerFactory = filemanager.New
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
@@ -86,8 +87,8 @@ func (brt *Handle) Setup(
 	}); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
-
 	config.RegisterIntConfigVariable(10000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
+	config.RegisterIntConfigVariable(10000, &brt.maxPayloadSizeInBytes, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxPayloadSizeInBytes", "BatchRouter.maxPayloadSizeInBytes"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
@@ -126,17 +127,6 @@ func (brt *Handle) Setup(
 	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.uploadedRawDataJobsCache = make(map[string]map[string]bool)
-	brt.asyncDestinationStruct = make(map[string]*asyncdestinationmanager.AsyncDestinationStruct)
-
-	asyncStatTags := map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	}
-	brt.asyncPollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, asyncStatTags)
-	brt.asyncFailedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, asyncStatTags)
-	brt.asyncSuccessfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, asyncStatTags)
-	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
-	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
@@ -206,6 +196,29 @@ func (brt *Handle) Setup(
 		return nil
 	}))
 
+	if slices.Contains(asyncDestinations, brt.destType) {
+		brt.startAsyncDestinationManager()
+	}
+
+	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		brt.backendConfigSubscriber()
+		return nil
+	}))
+}
+
+func (brt *Handle) startAsyncDestinationManager() {
+	asyncStatTags := map[string]string{
+		"module":   "batch_router",
+		"destType": brt.destType,
+	}
+	brt.asyncPollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, asyncStatTags)
+	brt.asyncFailedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, asyncStatTags)
+	brt.asyncSuccessfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, asyncStatTags)
+	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
+	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
+
+	brt.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
+
 	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		brt.pollAsyncStatus(brt.backgroundCtx)
 		return nil
@@ -213,11 +226,6 @@ func (brt *Handle) Setup(
 
 	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		brt.asyncUploadWorker(brt.backgroundCtx)
-		return nil
-	}))
-
-	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		brt.backendConfigSubscriber()
 		return nil
 	}))
 }
@@ -236,6 +244,36 @@ func (brt *Handle) Start() {
 func (brt *Handle) Shutdown() {
 	brt.backgroundCancel()
 	_ = brt.backgroundWait()
+}
+
+func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
+	_, ok := brt.asyncDestinationStruct[destination.ID]
+	manager, err := asyncdestinationmanager.NewManager(destination, brt.backendConfig)
+	if err != nil {
+		brt.logger.Errorf("BRT: Error initializing async destination struct for %s destination: %v", destination.Name, err)
+		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
+			"module":   "batch_router",
+			"destType": destination.DestinationDefinition.Name,
+		})
+		destInitFailStat.Count(1)
+		manager = &common.InvalidManager{}
+	}
+	if !ok {
+		brt.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
+	}
+	brt.asyncDestinationStruct[destination.ID].Destination = destination
+	brt.asyncDestinationStruct[destination.ID].Manager = manager
+}
+
+func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
+	if slices.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+		asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
+		if ok && asyncDestStruct.Destination != nil &&
+			asyncDestStruct.Destination.RevisionID == destination.RevisionID {
+			return
+		}
+		brt.initAsyncDestinationStruct(&destination)
+	}
 }
 
 func (brt *Handle) crashRecover() {
@@ -342,6 +380,7 @@ func (brt *Handle) backendConfigSubscriber() {
 								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
+							brt.refreshDestination(destination)
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
 							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {

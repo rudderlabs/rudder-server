@@ -20,7 +20,10 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type WarehouseAdmin struct{}
+type Admin struct {
+	bcManager *backendConfigManager
+	logger    logger.Logger
+}
 
 type QueryInput struct {
 	DestID       string
@@ -37,13 +40,16 @@ type ConfigurationTestOutput struct {
 	Error string
 }
 
-func Init5() {
-	admin.RegisterAdminHandler("Warehouse", &WarehouseAdmin{})
+func RegisterAdmin(bcManager *backendConfigManager, logger logger.Logger) {
+	admin.RegisterAdminHandler("Warehouse", &Admin{
+		bcManager: bcManager,
+		logger:    logger.Child("admin"),
+	})
 }
 
 // TriggerUpload sets uploads to start without delay
-func (*WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
-	startUploadAlways = !off
+func (*Admin) TriggerUpload(off bool, reply *string) error {
+	startUploadAlways.Store(!off)
 	if off {
 		*reply = "Turned off explicit warehouse upload triggers.\nWarehouse uploads will continue to be done as per schedule in control plane."
 	} else {
@@ -53,17 +59,17 @@ func (*WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
 }
 
 // Query the underlying warehouse
-func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
+func (a *Admin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	var warehouse model.Warehouse
-	srcMap, ok := connectionsMap[s.DestID]
+	srcMap, ok := a.bcManager.ConnectionSourcesMap(s.DestID)
 	if !ok {
 		return errors.New("please specify a valid and existing destination ID")
 	}
 
+	var warehouse model.Warehouse
 	// use the sourceID-destID connection if sourceID is not empty
 	if s.SourceID != "" {
 		w, ok := srcMap[s.SourceID]
@@ -92,19 +98,19 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 	}
 	defer client.Close()
 
-	pkgLogger.Infof(`[WH Admin]: Querying warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
+	a.logger.Infof(`[WH Admin]: Querying warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 	*reply, err = client.Query(s.SQLStatement)
 	return err
 }
 
 // ConfigurationTest test the underlying warehouse destination
-func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) error {
+func (a *Admin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) error {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
 	var warehouse model.Warehouse
-	srcMap, ok := connectionsMap[s.DestID]
+	srcMap, ok := a.bcManager.ConnectionSourcesMap(s.DestID)
 	if !ok {
 		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
 	}
@@ -114,7 +120,7 @@ func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Config
 		break
 	}
 
-	pkgLogger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
+	a.logger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
 	destinationValidator := validations.NewDestinationValidator()
 	res := destinationValidator.Validate(context.TODO(), &warehouse.Destination)

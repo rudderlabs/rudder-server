@@ -9,7 +9,7 @@ import (
 )
 
 // SchemaMigrationTable returns the table name used for storing current schema version.
-func (jd *HandleT) SchemaMigrationTable() string {
+func (jd *Handle) SchemaMigrationTable() string {
 	return fmt.Sprintf("%s_schema_migrations", jd.tablePrefix)
 }
 
@@ -18,7 +18,7 @@ func (jd *HandleT) SchemaMigrationTable() string {
 // The following data are passed to JobsDB migration templates:
 // - Prefix: The table prefix used by this jobsdb instance.
 // - Datasets: Array of existing dataset indices.
-func (jd *HandleT) setupDatabaseTables(templateData map[string]interface{}) {
+func (jd *Handle) setupDatabaseTables(templateData map[string]interface{}) {
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
 		Handle:                     jd.dbHandle,
@@ -31,7 +31,7 @@ func (jd *HandleT) setupDatabaseTables(templateData map[string]interface{}) {
 	}
 }
 
-func (jd *HandleT) runAlwaysChangesets(templateData map[string]interface{}) {
+func (jd *Handle) runAlwaysChangesets(templateData map[string]interface{}) {
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
 		Handle:          jd.dbHandle,
@@ -44,7 +44,7 @@ func (jd *HandleT) runAlwaysChangesets(templateData map[string]interface{}) {
 	}
 }
 
-func (jd *HandleT) dropDatabaseTables(l lock.LockToken) {
+func (jd *Handle) dropDatabaseTables(l lock.LockToken) {
 	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 	jd.dropSchemaMigrationTables()
 	jd.assertError(jd.dropAllDS(l))
@@ -52,7 +52,7 @@ func (jd *HandleT) dropDatabaseTables(l lock.LockToken) {
 	jd.assertError(jd.dropAllBackupDS())
 }
 
-func (jd *HandleT) dropSchemaMigrationTables() {
+func (jd *Handle) dropSchemaMigrationTables() {
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s`, jd.SchemaMigrationTable())
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)

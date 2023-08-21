@@ -78,6 +78,7 @@ type Handle struct {
 	readErrorDB   jobsdb.JobsDB
 	writeErrorDB  jobsdb.JobsDB
 	eventSchemaDB jobsdb.JobsDB
+	archivalDB    jobsdb.JobsDB
 
 	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
@@ -119,8 +120,8 @@ type Handle struct {
 		maxEventsToProcess        int
 		transformBatchSize        int
 		userTransformBatchSize    int
-		writeKeyDestinationMap    map[string][]backendconfig.DestinationT
-		writeKeySourceMap         map[string]backendconfig.SourceT
+		sourceIdDestinationMap    map[string][]backendconfig.DestinationT
+		sourceIdSourceMap         map[string]backendconfig.SourceT
 		workspaceLibrariesMap     map[string]backendconfig.LibrariesT
 		destinationIDtoTypeMap    map[string]string
 		destConsentCategories     map[string][]string
@@ -137,6 +138,7 @@ type Handle struct {
 		GWCustomVal               string
 		asyncInit                 *misc.AsyncInit
 		eventSchemaV2Enabled      bool
+		archivalEnabled           bool
 		eventSchemaV2AllSources   bool
 	}
 
@@ -232,7 +234,6 @@ type MetricMetadata struct {
 }
 
 type (
-	WriteKeyT string
 	SourceIDT string
 )
 
@@ -323,7 +324,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB,
-	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB jobsdb.JobsDB, reporting types.Reporting,
+	batchRouterDB, readErrorDB, writeErrorDB, eventSchemaDB, archivalDB jobsdb.JobsDB, reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
@@ -343,6 +344,7 @@ func (proc *Handle) Setup(
 	proc.readErrorDB = readErrorDB
 	proc.writeErrorDB = writeErrorDB
 	proc.eventSchemaDB = eventSchemaDB
+	proc.archivalDB = archivalDB
 
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
@@ -451,10 +453,6 @@ func (proc *Handle) Setup(
 
 // Start starts this processor's main loops.
 func (proc *Handle) Start(ctx context.Context) error {
-	metric.Instance.Reset()
-	if err := proc.countPendingEvents(); err != nil {
-		return fmt.Errorf("counting pending events: %w", err)
-	}
 	g, ctx := errgroup.WithContext(ctx)
 	var err error
 	proc.logger.Infof("Starting processor in isolation mode: %s", proc.config.isolationMode)
@@ -599,6 +597,7 @@ func (proc *Handle) loadConfig() {
 	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	// EventSchemas2 feature.
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2Enabled, false, "EventSchemas2.enabled")
+	config.RegisterBoolConfigVariable(true, &proc.config.archivalEnabled, true, "Archival.enabled")
 	config.RegisterBoolConfigVariable(false, &proc.config.eventSchemaV2AllSources, false, "EventSchemas2.enableAllSources")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
@@ -714,16 +713,16 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		var (
 			destConsentCategories  = make(map[string][]string)
 			workspaceLibrariesMap  = make(map[string]backendconfig.LibrariesT, len(config))
-			writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
-			writeKeySourceMap      = map[string]backendconfig.SourceT{}
+			sourceIdDestinationMap = make(map[string][]backendconfig.DestinationT)
+			sourceIdSourceMap      = map[string]backendconfig.SourceT{}
 			destinationIDtoTypeMap = make(map[string]string)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
-				writeKeySourceMap[source.WriteKey] = *source
+				sourceIdSourceMap[source.ID] = *source
 				if source.Enabled {
-					writeKeyDestinationMap[source.WriteKey] = source.Destinations
+					sourceIdDestinationMap[source.ID] = source.Destinations
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
@@ -736,8 +735,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.configSubscriberLock.Lock()
 		proc.config.destConsentCategories = destConsentCategories
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
-		proc.config.writeKeyDestinationMap = writeKeyDestinationMap
-		proc.config.writeKeySourceMap = writeKeySourceMap
+		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
+		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.destinationIDtoTypeMap = destinationIDtoTypeMap
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
@@ -759,24 +758,24 @@ func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.Libr
 	return proc.config.workspaceLibrariesMap[workspaceID]
 }
 
-func (proc *Handle) getSourceByWriteKey(writeKey string) (*backendconfig.SourceT, error) {
+func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT, error) {
 	var err error
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
-	source, ok := proc.config.writeKeySourceMap[writeKey]
+	source, ok := proc.config.sourceIdSourceMap[sourceId]
 	if !ok {
-		err = errors.New("source not found for writeKey")
-		proc.logger.Errorf(`Processor : source not found for writeKey: %s`, writeKey)
+		err = errors.New("source not found for sourceId")
+		proc.logger.Errorf(`Processor : source not found for sourceId: %s`, sourceId)
 	}
 	return &source, err
 }
 
-func (proc *Handle) getEnabledDestinations(writeKey, destinationName string) []backendconfig.DestinationT {
+func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	var enabledDests []backendconfig.DestinationT
-	for i := range proc.config.writeKeyDestinationMap[writeKey] {
-		dest := &proc.config.writeKeyDestinationMap[writeKey][i]
+	for i := range proc.config.sourceIdDestinationMap[sourceId] {
+		dest := &proc.config.sourceIdDestinationMap[sourceId][i]
 		if destinationName == dest.DestinationDefinition.Name && dest.Enabled {
 			enabledDests = append(enabledDests, *dest)
 		}
@@ -784,12 +783,12 @@ func (proc *Handle) getEnabledDestinations(writeKey, destinationName string) []b
 	return enabledDests
 }
 
-func (proc *Handle) getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig.DestinationDefinitionT {
+func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[string]backendconfig.DestinationDefinitionT {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	enabledDestinationTypes := make(map[string]backendconfig.DestinationDefinitionT)
-	for i := range proc.config.writeKeyDestinationMap[writeKey] {
-		destination := &proc.config.writeKeyDestinationMap[writeKey][i]
+	for i := range proc.config.sourceIdDestinationMap[sourceId] {
+		destination := &proc.config.sourceIdDestinationMap[sourceId][i]
 		if destination.Enabled {
 			enabledDestinationTypes[destination.DestinationDefinition.DisplayName] = destination.DestinationDefinition
 		}
@@ -827,9 +826,9 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT) *transformer.Metadata {
+func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
-	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	commonMetadata.SourceID = source.ID
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = misc.GetInstanceID()
@@ -840,9 +839,9 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
-	commonMetadata.SourceJobRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
+	commonMetadata.SourceJobRunID = eventParams.SourceJobRunId
 	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
-	commonMetadata.SourceTaskRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_run_id").(string)
+	commonMetadata.SourceTaskRunID = eventParams.SourceTaskRunId
 	commonMetadata.RecordID = misc.MapLookup(singularEvent, "recordId")
 
 	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
@@ -1292,7 +1291,7 @@ func (proc *Handle) getFailedEventJobs(response transformer.Response, commonMeta
 	return failedEventsToStore, failedMetrics, failedCountMap
 }
 
-func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, writeKey string) {
+func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, sourceId string) {
 	// Any panics in this function are captured and ignore sending the stat
 	defer func() {
 		if r := recover(); r != nil {
@@ -1301,10 +1300,15 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, w
 	}()
 	var eventType string
 	var eventName string
+	source, err := proc.getSourceBySourceID(sourceId)
+	if err != nil {
+		proc.logger.Errorf("[Processor] Failed to get source by source id: %s", sourceId)
+		return
+	}
 	if val, ok := event["type"]; ok {
-		eventType = val.(string)
+		eventType, _ = val.(string)
 		tags := map[string]string{
-			"writeKey":   writeKey,
+			"writeKey":   source.WriteKey,
 			"event_type": eventType,
 		}
 		statEventType := proc.statsFactory.NewSampledTaggedStat("processor.event_type", stats.CountType, tags)
@@ -1314,13 +1318,13 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, w
 				eventName = eventType
 			} else {
 				if val, ok := event["event"]; ok {
-					eventName = val.(string)
+					eventName, _ = val.(string)
 				} else {
 					eventName = eventType
 				}
 			}
 			tagsDetailed := map[string]string{
-				"writeKey":   writeKey,
+				"writeKey":   source.WriteKey,
 				"event_type": eventType,
 				"event_name": eventName,
 			}
@@ -1378,10 +1382,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 	var statusList []*jobsdb.JobStatusT
 	groupedEvents := make(map[string][]transformer.TransformerEvent)
-	groupedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEvent)
+	groupedEventsBySourceId := make(map[SourceIDT][]transformer.TransformerEvent)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
+	archivalJobs := make([]*jobsdb.JobT, 0)
 
 	// Each block we receive from a client has a bunch of
 	// requests. We parse the block and take out individual
@@ -1396,7 +1401,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	marshalStart := time.Now()
-	uniqueMessageIds := make(map[string]struct{})
+	dedupKeys := make(map[string]struct{})
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	sourceDupStats := make(map[dupStatKey]int)
 
@@ -1417,32 +1422,37 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			proc.logger.Warnf("json parsing of event payload for %s: %v", batchEvent.JobID, err)
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 		}
-
-		writeKey := gatewayBatchEvent.WriteKey
+		var eventParams types.EventParams
+		err = jsonfast.Unmarshal(batchEvent.Parameters, &eventParams)
+		if err != nil {
+			panic(err)
+		}
+		sourceId := eventParams.SourceId
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
 		// Iterate through all the events in the batch
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := misc.GetStringifiedData(singularEvent["messageId"])
-			source, sourceError := proc.getSourceByWriteKey(writeKey)
+			source, sourceError := proc.getSourceBySourceID(sourceId)
 			if sourceError != nil {
-				proc.logger.Errorf("Dropping Job since Source not found for writeKey %q: %v", writeKey, sourceError)
+				proc.logger.Errorf("Dropping Job since Source not found for sourceId %q: %v", sourceId, sourceError)
 				continue
 			}
 
 			if proc.config.enableDedup {
 				payload, _ := jsonfast.Marshal(singularEvent)
 				messageSize := int64(len(payload))
-				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: messageId, Value: messageSize}); !ok {
-					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
+				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
+				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: dedupKey, Value: messageSize}); !ok {
+					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
 					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 					continue
 				}
-				uniqueMessageIds[messageId] = struct{}{}
+				dedupKeys[dedupKey] = struct{}{}
 			}
 
-			proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
+			proc.updateSourceEventStatsDetailed(singularEvent, sourceId)
 
 			// We count this as one, not destination specific ones
 			totalEvents++
@@ -1456,6 +1466,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				batchEvent,
 				receivedAt,
 				source,
+				eventParams,
 			)
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
@@ -1476,6 +1487,24 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				commonMetadataFromSingularEvent.SourceJobRunID == "" {
 				if payload := payloadFunc(); payload != nil {
 					eventSchemaJobs = append(eventSchemaJobs,
+						&jobsdb.JobT{
+							UUID:         batchEvent.UUID,
+							UserID:       batchEvent.UserID,
+							Parameters:   batchEvent.Parameters,
+							CustomVal:    batchEvent.CustomVal,
+							EventPayload: payload,
+							CreatedAt:    time.Now(),
+							ExpireAt:     time.Now(),
+							WorkspaceId:  batchEvent.WorkspaceId,
+						},
+					)
+				}
+			}
+
+			if proc.config.archivalEnabled &&
+				commonMetadataFromSingularEvent.SourceJobRunID == "" { // archival enabled
+				if payload := payloadFunc(); payload != nil {
+					archivalJobs = append(archivalJobs,
 						&jobsdb.JobT{
 							UUID:         batchEvent.UUID,
 							UserID:       batchEvent.UserID,
@@ -1515,12 +1544,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 			// Getting all the destinations which are enabled for this
 			// event
-			if !proc.isDestinationAvailable(singularEvent, writeKey) {
+			if !proc.isDestinationAvailable(singularEvent, sourceId) {
 				continue
 			}
 
-			if _, ok := groupedEventsByWriteKey[WriteKeyT(writeKey)]; !ok {
-				groupedEventsByWriteKey[WriteKeyT(writeKey)] = make([]transformer.TransformerEvent, 0)
+			if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
+				groupedEventsBySourceId[SourceIDT(sourceId)] = make([]transformer.TransformerEvent, 0)
 			}
 			shallowEventCopy := transformer.TransformerEvent{}
 			shallowEventCopy.Message = singularEvent
@@ -1538,7 +1567,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
 			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 
-			groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
+			groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 			if proc.isReportingEnabled() {
 				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) })
@@ -1561,9 +1590,14 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		statusList = append(statusList, &newStatus)
 	}
 
-	if len(eventSchemaJobs) > 0 {
+	g, groupCtx := errgroup.WithContext(context.Background())
+
+	g.Go(func() error {
+		if len(eventSchemaJobs) == 0 {
+			return nil
+		}
 		err := misc.RetryWithNotify(
-			context.Background(),
+			groupCtx,
 			proc.jobsDBCommandTimeout,
 			proc.jobdDBMaxRetries,
 			func(ctx context.Context) error {
@@ -1575,11 +1609,37 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				)
 			}, proc.sendRetryStoreStats)
 		if err != nil {
-			proc.logger.Errorf("Store into event schema table failed with error: %v", err)
-			proc.logger.Errorf("eventSchemaJobs: %v", eventSchemaJobs)
-			panic(err)
+			return fmt.Errorf("store into event schema table failed with error: %v", err)
 		}
 		proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(eventSchemaJobs))
+		return nil
+	})
+
+	g.Go(func() error {
+		if len(archivalJobs) == 0 {
+			return nil
+		}
+		err := misc.RetryWithNotify(
+			groupCtx,
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.archivalDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						return proc.archivalDB.StoreInTx(ctx, tx, archivalJobs)
+					},
+				)
+			}, proc.sendRetryStoreStats)
+		if err != nil {
+			return fmt.Errorf("store into archival table failed with error: %v", err)
+		}
+		proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(archivalJobs))
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		panic(err)
 	}
 
 	// REPORTING - GATEWAY metrics - START
@@ -1627,7 +1687,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
 	validateEventsStart := time.Now()
-	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
+	validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsBySourceId, eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
 	defer proc.stats.validateEventsTime.SendTiming(validateEventsTime)
 
@@ -1639,23 +1699,23 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// TRACKING PLAN - END
 
 	// The below part further segregates events by sourceID and DestinationID.
-	for writeKeyT, eventList := range validatedEventsByWriteKey {
+	for sourceIdT, eventList := range validatedEventsBySourceId {
 		for idx := range eventList {
 			event := &eventList[idx]
-			writeKey := string(writeKeyT)
+			sourceId := string(sourceIdT)
 			singularEvent := event.Message
 
-			backendEnabledDestTypes := proc.getBackendEnabledDestinationTypes(writeKey)
+			backendEnabledDestTypes := proc.getBackendEnabledDestinationTypes(sourceId)
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
-			source, _ := proc.getSourceByWriteKey(writeKey)
+			source, _ := proc.getSourceBySourceID(sourceId)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
 				enabledDestinationsList := proc.filterDestinations(
 					singularEvent,
-					proc.getEnabledDestinations(writeKey, *destType),
+					proc.getEnabledDestinations(sourceId, *destType),
 				)
 
 				// Adding a singular event multiple times if there are multiple destinations of same type
@@ -1714,7 +1774,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		statusList,
 		procErrorJobs,
 		sourceDupStats,
-		uniqueMessageIds,
+		dedupKeys,
 
 		totalEvents,
 		start,
@@ -1734,7 +1794,7 @@ type transformationMessage struct {
 	statusList                   []*jobsdb.JobStatusT
 	procErrorJobs                []*jobsdb.JobT
 	sourceDupStats               map[dupStatKey]int
-	uniqueMessageIds             map[string]struct{}
+	dedupKeys                    map[string]struct{}
 
 	totalEvents int
 	start       time.Time
@@ -1812,7 +1872,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 
 		in.reportMetrics,
 		in.sourceDupStats,
-		in.uniqueMessageIds,
+		in.dedupKeys,
 		in.totalEvents,
 		in.start,
 		in.hasMore,
@@ -1829,9 +1889,9 @@ type storeMessage struct {
 	procErrorJobs         []*jobsdb.JobT
 	routerDestIDs         []string
 
-	reportMetrics    []*types.PUReportedMetric
-	sourceDupStats   map[dupStatKey]int
-	uniqueMessageIds map[string]struct{}
+	reportMetrics  []*types.PUReportedMetric
+	sourceDupStats map[dupStatKey]int
+	dedupKeys      map[string]struct{}
 
 	totalEvents int
 	start       time.Time
@@ -1854,8 +1914,8 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	for dupStatKey, count := range subJob.sourceDupStats {
 		sm.sourceDupStats[dupStatKey] += count
 	}
-	for id, v := range subJob.uniqueMessageIds {
-		sm.uniqueMessageIds[id] = v
+	for id, v := range subJob.dedupKeys {
+		sm.dedupKeys[id] = v
 	}
 	sm.totalEvents += subJob.totalEvents
 }
@@ -2010,8 +2070,8 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}
 	if proc.config.enableDedup {
 		proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
-		if len(in.uniqueMessageIds) > 0 {
-			if err := proc.dedup.Commit(lo.Keys(in.uniqueMessageIds)); err != nil {
+		if len(in.dedupKeys) > 0 {
+			if err := proc.dedup.Commit(lo.Keys(in.dedupKeys)); err != nil {
 				panic(err)
 			}
 		}
@@ -2512,7 +2572,7 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	if !proc.config.enableEventCount {
 		eventCount = 0
 	}
-	queryParams := jobsdb.GetQueryParamsT{
+	queryParams := jobsdb.GetQueryParams{
 		CustomValFilters: []string{proc.config.GWCustomVal},
 		JobsLimit:        proc.config.maxEventsToProcess,
 		EventsLimit:      eventCount,
@@ -2724,10 +2784,10 @@ func (proc *Handle) filterDestinations(
 // check if event has eligible destinations to send to
 //
 // event will be dropped if no destination is found
-func (proc *Handle) isDestinationAvailable(event types.SingularEventT, writeKey string) bool {
+func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId string) bool {
 	enabledDestTypes := integrations.FilterClientIntegrations(
 		event,
-		proc.getBackendEnabledDestinationTypes(writeKey),
+		proc.getBackendEnabledDestinationTypes(sourceId),
 	)
 	if len(enabledDestTypes) == 0 {
 		proc.logger.Debug("No enabled destination types")
@@ -2740,7 +2800,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, writeKey 
 			lo.Map(
 				enabledDestTypes,
 				func(destType string, _ int) []backendconfig.DestinationT {
-					return proc.getEnabledDestinations(writeKey, destType)
+					return proc.getEnabledDestinations(sourceId, destType)
 				},
 			),
 		),
@@ -2791,15 +2851,15 @@ func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]m
 	}
 }
 
-func (proc *Handle) countPendingEvents() error {
-	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "brt": proc.batchRouterDB}
+func (proc *Handle) countPendingEvents(ctx context.Context) error {
+	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
 	var jobdDBQueryRequestTimeout time.Duration
 	var jobdDBMaxRetries int
 	config.RegisterDurationConfigVariable(600, &jobdDBQueryRequestTimeout, false, time.Second, []string{"JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterIntConfigVariable(2, &jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Processor." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 
 	for tablePrefix, db := range dbs {
-		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
+		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(ctx,
 			jobdDBQueryRequestTimeout,
 			jobdDBMaxRetries,
 			func(ctx context.Context) (map[string]map[string]int, error) {
@@ -2811,11 +2871,7 @@ func (proc *Handle) countPendingEvents() error {
 		if err != nil {
 			return err
 		}
-		for workspace := range pileUpStatMap {
-			for destType, jobCount := range pileUpStatMap[workspace] {
-				rmetrics.IncreasePendingEvents(tablePrefix, workspace, destType, float64(jobCount))
-			}
-		}
+		proc.IncreasePendingEvents(tablePrefix, pileUpStatMap)
 	}
 	return nil
 }
