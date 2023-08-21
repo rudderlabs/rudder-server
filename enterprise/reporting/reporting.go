@@ -393,7 +393,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		// for montering reports pileups
 		for {
 			currentMs := time.Now().UTC().Unix() / 60
-			fmt.Printf("%d    %d\n", currentMs, lastReportedAt)
+			fmt.Printf("%d    %d    %s\n", currentMs, lastReportedAt, clientName)
 			stats.Default.NewTaggedStat(
 				"reporting_metrics_pileup", stats.GaugeType, stats.Tags{"value": "value"},
 			).Gauge(int(currentMs - lastReportedAt))
