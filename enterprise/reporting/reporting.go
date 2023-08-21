@@ -395,7 +395,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			currentMs := time.Now().UTC().Unix() / 60
 			fmt.Printf("%d    %d    %s\n", currentMs, lastReportedAt, clientName)
 			stats.Default.NewTaggedStat(
-				"reporting_metrics_pileup", stats.GaugeType, stats.Tags{"value": "value"},
+				"reporting_metrics_pileup", stats.GaugeType, stats.Tags{"client": clientName},
 			).Gauge(int(currentMs - lastReportedAt))
 			time.Sleep(2 * time.Second)
 		}
