@@ -73,7 +73,7 @@ type Api struct {
 		readerHeaderTimeout time.Duration
 		runningMode         string
 		webPort             int
-		warehouseMode       string
+		mode                string
 	}
 }
 

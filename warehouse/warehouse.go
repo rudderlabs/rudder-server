@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
@@ -179,6 +181,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 					tenantManager,
 					controlPlaneClient,
 					bcManager,
+					encoding.NewFactory(config.Default),
 				)
 				if err != nil {
 					return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
@@ -367,13 +370,13 @@ func Setup(ctx context.Context) error {
 func Start(ctx context.Context, app app.App) error {
 	application = app
 
-	warehouseMode := config.GetString("Warehouse.mode", config.EmbeddedMode)
+	mode := config.GetString("Warehouse.mode", config.EmbeddedMode)
 
-	if dbHandle == nil && !isStandAloneSlave(warehouseMode) {
+	if dbHandle == nil && !isStandAloneSlave(mode) {
 		return errors.New("warehouse service cannot start, database connection is not setup")
 	}
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone(warehouseMode) && !db.IsNormalMode() {
+	if !isStandAlone(mode) && !db.IsNormalMode() {
 		pkgLogger.Infof("Skipping start of warehouse service...")
 		return nil
 	}
@@ -409,7 +412,7 @@ func Start(ctx context.Context, app app.App) error {
 	RegisterAdmin(bcManager, pkgLogger)
 
 	api := NewApi(
-		warehouseMode,
+		mode,
 		config.Default, pkgLogger, stats.Default,
 		backendconfig.DefaultBackendConfig, wrappedDBHandle, &notifier, tenantManager,
 		bcManager, asyncWh,
@@ -418,7 +421,7 @@ func Start(ctx context.Context, app app.App) error {
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
-		if isMaster(warehouseMode) {
+		if isMaster(mode) {
 			err := InitWarehouseAPI(dbHandle, bcManager, pkgLogger.Child("upload_api"))
 			if err != nil {
 				pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
@@ -438,7 +441,7 @@ func Start(ctx context.Context, app app.App) error {
 	// A different DB for warehouse is used when:
 	// 1. MultiTenant (uses RDS)
 	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
-	if (isStandAlone(warehouseMode) && isMaster(warehouseMode)) || (misc.GetConnectionString() != psqlInfo) {
+	if (isStandAlone(mode) && isMaster(mode)) || (misc.GetConnectionString() != psqlInfo) {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -447,7 +450,7 @@ func Start(ctx context.Context, app app.App) error {
 		}))
 	}
 
-	if isStandAlone(warehouseMode) && isMaster(warehouseMode) {
+	if isStandAlone(mode) && isMaster(mode) {
 		// Report warehouse features
 		g.Go(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(gCtx)
@@ -467,16 +470,18 @@ func Start(ctx context.Context, app app.App) error {
 		})
 	}
 
-	if isSlave(warehouseMode) {
+	if isSlave(mode) {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			cm := newConstraintsManager(config.Default)
-			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm)
+			ef := encoding.NewFactory(config.Default)
+
+			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm, ef)
 			return slave.setupSlave(gCtx)
 		}))
 	}
 
-	if isMaster(warehouseMode) {
+	if isMaster(mode) {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 
 		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)

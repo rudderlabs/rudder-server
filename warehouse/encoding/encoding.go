@@ -1,7 +1,12 @@
 package encoding
 
 import (
+	"io"
 	"os"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 )
@@ -13,11 +18,23 @@ const (
 	BQUuidTSFormat   = "2006-01-02 15:04:05 Z"
 )
 
-var (
-	maxStagingFileReadBufferCapacityInK int
-	parquetParallelWriters              int64
-)
+type Factory struct {
+	config struct {
+		maxStagingFileReadBufferCapacityInK int
+		parquetParallelWriters              int64
+	}
+}
 
+func NewFactory(conf *config.Config) *Factory {
+	m := &Factory{}
+
+	conf.RegisterIntConfigVariable(10240, &m.config.maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
+	conf.RegisterInt64ConfigVariable(8, &m.config.parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
+
+	return m
+}
+
+// LoadFileWriter is an interface for writing events to a load file
 type LoadFileWriter interface {
 	WriteGZ(s string) error
 	Write(p []byte) (int, error)
@@ -26,11 +43,48 @@ type LoadFileWriter interface {
 	GetLoadFile() *os.File
 }
 
-func Init() {
-	loadConfig()
+func (m *Factory) NewLoadFileWriter(loadFileType, outputFilePath string, schema model.TableSchema, destType string) (LoadFileWriter, error) {
+	switch loadFileType {
+	case warehouseutils.LoadFileTypeParquet:
+		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters)
+	default:
+		return misc.CreateGZ(outputFilePath)
+	}
 }
 
-func loadConfig() {
-	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-	config.RegisterInt64ConfigVariable(8, &parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
+// EventLoader is an interface for loading events into a load file
+// It's used to load singular BatchRouterEvent events into a load file
+type EventLoader interface {
+	IsLoadTimeColumn(columnName string) bool
+	GetLoadTimeFormat(columnName string) string
+	AddColumn(columnName, columnType string, val interface{})
+	AddRow(columnNames, values []string)
+	AddEmptyColumn(columnName string)
+	WriteToString() (string, error)
+	Write() error
+}
+
+func (m *Factory) NewEventLoader(w LoadFileWriter, loadFileType, destinationType string) EventLoader {
+	switch loadFileType {
+	case warehouseutils.LoadFileTypeJson:
+		return newJSONLoader(w, destinationType)
+	case warehouseutils.LoadFileTypeParquet:
+		return newParquetLoader(w, destinationType)
+	default:
+		return newCSVLoader(w, destinationType)
+	}
+}
+
+// EventReader is an interface for reading events from a load file
+type EventReader interface {
+	Read(columnNames []string) (record []string, err error)
+}
+
+func (m *Factory) NewEventReader(r io.Reader, destType string) EventReader {
+	switch destType {
+	case warehouseutils.BQ:
+		return newJSONReader(r, m.config.maxStagingFileReadBufferCapacityInK)
+	default:
+		return newCsvReader(r)
+	}
 }
