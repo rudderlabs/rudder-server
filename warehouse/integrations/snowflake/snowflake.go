@@ -307,9 +307,8 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 
 func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, skipClosingDBSession bool) (tableLoadResp, error) {
 	var (
-		csvObjectLocation string
-		db                *sqlmw.DB
-		err               error
+		db  *sqlmw.DB
+		err error
 	)
 
 	logFields := []interface{}{
@@ -332,23 +331,30 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		defer func() { _ = db.Close() }()
 	}
 
-	strKeys := whutils.GetColumnsFromTableSchema(tableSchemaInUpload)
-	sort.Strings(strKeys)
-	sortedColumnNames := whutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
-		return fmt.Sprintf(`%q`, name)
-	}, ",")
-
 	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := whutils.StagingTableName(provider, tableName, tableNameLimit)
+	strKeys := sf.getSortedColumnsFromTableSchema(tableSchemaInUpload)
+	sortedColumnNames := sf.joinColumnsWithFormatting(strKeys, "%q")
+
+	// Truncating the columns by default to avoid size limitation errors
+	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
+	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
+		err = sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, tableName, logFields)
+		if err != nil {
+			return tableLoadResp{}, err
+		}
+
+		sf.logger.Infow("completed loading", logFields...)
+		return tableLoadResp{db: db, stagingTable: tableName}, nil
+	}
+
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
 		schemaIdentifier,
 		stagingTableName,
 		tableName,
 	)
 
-	sf.logger.Debugw("creating temporary table",
-		append(logFields, lf.StagingTableName, stagingTableName)...,
-	)
+	sf.logger.Debugw("creating temporary table", append(logFields, lf.StagingTableName, stagingTableName)...)
 	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
 		sf.logger.Warnw("failure creating temporary table",
 			append(logFields, lf.StagingTableName, stagingTableName, lf.Error, err.Error())...,
@@ -356,58 +362,9 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		return tableLoadResp{}, fmt.Errorf("create temporary table: %w", err)
 	}
 
-	csvObjectLocation, err = sf.Uploader.GetSampleLoadFileLocation(ctx, tableName)
+	err = sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, stagingTableName, logFields)
 	if err != nil {
-		return tableLoadResp{}, fmt.Errorf("getting sample load file location: %w", err)
-	}
-	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
-
-	// Truncating the columns by default to avoid size limitation errors
-	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
-	copyTargetTable := stagingTableName
-	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
-		copyTargetTable = tableName
-	}
-	sqlStatement = fmt.Sprintf(
-		`COPY INTO
-			%s.%q(%v)
-		FROM
-		  '%v' %s
-		PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
-		TRUNCATECOLUMNS = TRUE;`,
-		schemaIdentifier, copyTargetTable,
-		sortedColumnNames,
-		loadFolder,
-		sf.authString(),
-	)
-
-	sanitisedQuery, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
-		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
-		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
-	})
-	if regexErr != nil {
-		sanitisedQuery = ""
-	}
-	sf.logger.Infow("copy command",
-		append(logFields, lf.Query, sanitisedQuery)...,
-	)
-
-	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
-		sf.logger.Warnw("failure running COPY command",
-			append(logFields, lf.Query, sanitisedQuery, lf.Error, err.Error()),
-		)
-		return tableLoadResp{}, fmt.Errorf("copy into table: %w", err)
-	}
-
-	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
-		sf.logger.Infow("completed loading", logFields...)
-
-		return tableLoadResp{
-			db:           db,
-			stagingTable: copyTargetTable,
-		}, nil
+		return tableLoadResp{}, err
 	}
 
 	var (
@@ -427,12 +384,8 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		partitionKey = column
 	}
 
-	stagingColumnNames := whutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
-		return fmt.Sprintf(`staging.%q`, name)
-	}, ",")
-	columnsWithValues := whutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
-		return fmt.Sprintf(`original.%[1]q = staging.%[1]q`, name)
-	}, ",")
+	stagingColumnNames := sf.joinColumnsWithFormatting(strKeys, `staging.%q`)
+	columnsWithValues := sf.joinColumnsWithFormatting(strKeys, `original.%[1]q = staging.%[1]q`)
 
 	if tableName == discardsTable {
 		additionalJoinClause = fmt.Sprintf(`AND original.%[1]q = staging.%[1]q AND original.%[2]q = staging.%[2]q`, "TABLE_NAME", "COLUMN_NAME")
@@ -489,6 +442,67 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		db:           db,
 		stagingTable: stagingTableName,
 	}, nil
+}
+
+func (sf *Snowflake) getSortedColumnsFromTableSchema(tableSchemaInUpload model.TableSchema) []string {
+	strKeys := whutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
+	return strKeys
+}
+
+func (sf *Snowflake) joinColumnsWithFormatting(columns []string, format string) string {
+	return whutils.JoinWithFormatting(columns, func(_ int, name string) string {
+		return fmt.Sprintf(format, name)
+	}, ",")
+}
+
+func (sf *Snowflake) copyInto(
+	ctx context.Context,
+	db *sqlmw.DB,
+	schemaIdentifier,
+	tableName,
+	sortedColumnNames,
+	copyTargetTable string,
+	logFields []interface{},
+) error {
+	csvObjectLocation, err := sf.Uploader.GetSampleLoadFileLocation(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("getting sample load file location: %w", err)
+	}
+
+	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
+	sqlStatement := fmt.Sprintf(
+		`COPY INTO
+			%s.%q(%v)
+		FROM
+		  '%v' %s
+		PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE)
+		TRUNCATECOLUMNS = TRUE;`,
+		schemaIdentifier, copyTargetTable,
+		sortedColumnNames,
+		loadFolder,
+		sf.authString(),
+	)
+
+	sanitisedQuery, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
+		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
+		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
+	})
+	if regexErr != nil {
+		sanitisedQuery = ""
+	}
+	sf.logger.Infow("copy command", append(logFields, lf.Query, sanitisedQuery)...)
+
+	if _, err := db.ExecContext(ctx, sqlStatement); err != nil {
+		sf.logger.Warnw("failure running COPY command",
+			append(logFields, lf.Query, sanitisedQuery, lf.Error, err.Error()),
+		)
+		return fmt.Errorf("copy into table: %w", err)
+	}
+
+	return nil
 }
 
 func (sf *Snowflake) mergeIntoStmt(
@@ -716,9 +730,41 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	defer func() { _ = resp.db.Close() }()
 
 	if len(usersSchema) == 0 {
-		return map[string]error{
-			identifiesTable: nil,
+		return map[string]error{identifiesTable: nil}
+	}
+
+	schemaIdentifier := sf.schemaIdentifier()
+	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
+		tmpIdentifiesStagingTable := whutils.StagingTableName(provider, identifiesTable, tableNameLimit)
+		sqlStatement := fmt.Sprintf(
+			`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
+			schemaIdentifier, tmpIdentifiesStagingTable, resp.stagingTable,
+		)
+		if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
+			return map[string]error{
+				identifiesTable: fmt.Errorf(
+					"cannot create identifies temp table %s: %w", tmpIdentifiesStagingTable, err,
+				),
+			}
 		}
+
+		strKeys := sf.getSortedColumnsFromTableSchema(identifiesSchema)
+		sortedColumnNames := sf.joinColumnsWithFormatting(strKeys, "%q")
+
+		err = sf.copyInto(
+			ctx, resp.db, schemaIdentifier, identifiesTable, sortedColumnNames, tmpIdentifiesStagingTable, logFields,
+		)
+		if err != nil {
+			return map[string]error{
+				identifiesTable: fmt.Errorf("loading identifies temp table %s: %w", identifiesTable, err),
+			}
+		}
+
+		// replace staging stable with temp table, because in APPEND mode the previous "loadTable" call
+		// did not leave us with the ability to determine which records were inserted
+		resp.stagingTable = tmpIdentifiesStagingTable
+
+		sf.logger.Infow("identifies temp table loaded", logFields...)
 	}
 
 	userColMap := sf.Uploader.GetTableSchemaInWarehouse(usersTable)
@@ -743,43 +789,6 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 			colName,
 		)
 		firstValProps = append(firstValProps, firstValPropsQuery)
-	}
-
-	schemaIdentifier := sf.schemaIdentifier()
-	if sf.config.loadTableStrategy == loadTableStrategyAppendMode {
-		// doing an INSERT OVERWRITE because we used APPEND for the IDENTIFIES table as well and
-		// the COPY INTO command does not give us any reference as to what was added
-		sqlStatement := fmt.Sprintf(`
-			INSERT OVERWRITE INTO %[1]s.%[2]q ("ID", %[3]s)
-			SELECT DISTINCT *
-			FROM (
-				SELECT "USER_ID" as "ID", %[4]s
-				FROM %[1]s.%[5]q
-				WHERE "USER_ID" IS NOT NULL
-			);`,
-			schemaIdentifier,
-			usersTable,
-			strings.Join(userColNames, ","),
-			strings.Join(firstValProps, ","),
-			resp.stagingTable,
-		)
-		sf.logger.Infow("copying users data", append(logFields, lf.Query, sqlStatement)...)
-		if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
-			sf.logger.Warnw("failure copying users data",
-				append(logFields, lf.Query, sqlStatement, lf.Error, err.Error())...,
-			)
-			return map[string]error{
-				identifiesTable: nil,
-				usersTable:      fmt.Errorf("failure copying users data: %w", err),
-			}
-		}
-
-		sf.logger.Infow("Completed loading for users and identifies tables", logFields...)
-
-		return map[string]error{
-			identifiesTable: nil,
-			usersTable:      nil,
-		}
 	}
 
 	stagingTableName := whutils.StagingTableName(provider, usersTable, tableNameLimit)
