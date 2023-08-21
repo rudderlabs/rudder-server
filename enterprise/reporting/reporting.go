@@ -79,7 +79,7 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
-	config.RegisterDurationConfigVariable(10, &dbQueryTimeout, true, time.Second, "Reporting.dbQueryTimeout")
+	config.RegisterDurationConfigVariable(60, &dbQueryTimeout, true, time.Second, "Reporting.dbQueryTimeout")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
 	config.RegisterIntConfigVariable(32, &maxOpenConnections, true, 1, "Reporting.maxOpenConnections")
 	// only send reports for wh actions sources if whActionsOnly is configured
@@ -212,7 +212,7 @@ func (r *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
 }
 
-func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64, isTimedout bool) {
+func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64, isQueryTimedout bool) {
 	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(clientName)
@@ -393,11 +393,10 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		// for montering reports pileups
 		for {
 			currentMs := time.Now().UTC().Unix() / 60
-			fmt.Printf("%d    %d    %s\n", currentMs, lastReportedAt, clientName)
 			stats.Default.NewTaggedStat(
 				"reporting_metrics_pileup", stats.GaugeType, stats.Tags{"client": clientName},
 			).Gauge(int(currentMs - lastReportedAt))
-			time.Sleep(2 * time.Second)
+			time.Sleep(2 * time.Minute)
 		}
 	}()
 
@@ -411,11 +410,11 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		currentMs := time.Now().UTC().Unix() / 60
 
 		getReportsStart := time.Now()
-		reports, reportedAt, isTimedout := r.getReports(currentMs, clientName)
+		reports, reportedAt, isQueryTimedout := r.getReports(currentMs, clientName)
 		getReportsTimer.Since(getReportsStart)
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
-			if !isTimedout {
+			if !isQueryTimedout {
 				lastReportedAt = currentMs
 			}
 			select {
@@ -453,18 +452,18 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			})
 		}
 
-		_ = errGroup.Wait()
-		// if err == nil {
-		// 	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ReportsTable, reportedAt)
-		// 	dbHandle, err := r.getDBHandle(clientName)
-		// 	if err != nil {
-		// 		panic(err)
-		// 	}
-		// 	_, err = dbHandle.Exec(sqlStatement)
-		// 	if err != nil {
-		// 		r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
-		// 	}
-		// }
+		err := errGroup.Wait()
+		if err == nil {
+			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ReportsTable, reportedAt)
+			dbHandle, err := r.getDBHandle(clientName)
+			if err != nil {
+				panic(err)
+			}
+			_, err = dbHandle.Exec(sqlStatement)
+			if err != nil {
+				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
+			}
+		}
 
 		mainLoopTimer.Since(loopStart)
 		select {
