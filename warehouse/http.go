@@ -112,13 +112,11 @@ func NewApi(
 }
 
 func (a *Api) Start(ctx context.Context) error {
-	if !isStandAlone(a.mode) {
-		return nil
-	}
-
 	srvMux := chi.NewRouter()
-	srvMux.Get("/health", a.healthHandler)
 
+	if isStandAlone(a.mode) {
+		srvMux.Get("/health", a.healthHandler)
+	}
 	if a.config.runningMode != DegradedMode {
 		if isMaster(a.mode) {
 			a.addWarehouseEndpoints(ctx, srvMux)

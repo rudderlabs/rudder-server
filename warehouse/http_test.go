@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
+
 	"golang.org/x/sync/errgroup"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -254,6 +256,7 @@ func TestHTTPApi(t *testing.T) {
 		SourceJobRunID:  sourceJobRunID,
 		SourceTaskRunID: sourceTaskRunID,
 	}})
+	require.NoError(t, err)
 	uploadID, err := uploadsRepo.CreateWithStagingFiles(ctx, model.Upload{
 		WorkspaceID:     workspaceID,
 		Namespace:       namespace,
@@ -270,6 +273,7 @@ func TestHTTPApi(t *testing.T) {
 		SourceJobRunID:  sourceJobRunID,
 		SourceTaskRunID: sourceTaskRunID,
 	}})
+	require.NoError(t, err)
 
 	err = tableUploadsRepo.Insert(ctx, uploadID, []string{
 		"test_table_1",
@@ -772,6 +776,10 @@ func TestHTTPApi(t *testing.T) {
 				if err != nil {
 					return false
 				}
+				defer func() {
+					httputil.CloseResponse(resp)
+				}()
+
 				return resp.StatusCode == http.StatusOK
 			},
 				time.Second*10,
@@ -816,6 +824,10 @@ func TestHTTPApi(t *testing.T) {
 			resp, err := (&http.Client{}).Do(req)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			defer func() {
+				httputil.CloseResponse(resp)
+			}()
 		})
 
 		t.Run("pending events", func(t *testing.T) {
@@ -832,6 +844,10 @@ func TestHTTPApi(t *testing.T) {
 			resp, err := (&http.Client{}).Do(req)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			defer func() {
+				httputil.CloseResponse(resp)
+			}()
 		})
 
 		t.Run("trigger upload", func(t *testing.T) {
@@ -848,14 +864,18 @@ func TestHTTPApi(t *testing.T) {
 			resp, err := (&http.Client{}).Do(req)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			defer func() {
+				httputil.CloseResponse(resp)
+			}()
 		})
 
 		t.Run("fetch tables", func(t *testing.T) {
-			for _, url := range []string{
+			for _, u := range []string{
 				fmt.Sprintf("%s/v1/warehouse/fetch-tables", serverURL),
 				fmt.Sprintf("%s/internal/v1/warehouse/fetch-tables", serverURL),
 			} {
-				req, err := http.NewRequest(http.MethodGet, url, bytes.NewReader([]byte(`
+				req, err := http.NewRequest(http.MethodGet, u, bytes.NewReader([]byte(`
 				{
 				  "connections": [
 					{
@@ -871,6 +891,10 @@ func TestHTTPApi(t *testing.T) {
 				resp, err := (&http.Client{}).Do(req)
 				require.NoError(t, err)
 				require.Equal(t, http.StatusOK, resp.StatusCode)
+
+				defer func() {
+					httputil.CloseResponse(resp)
+				}()
 			}
 		})
 
@@ -890,6 +914,10 @@ func TestHTTPApi(t *testing.T) {
 			resp, err := (&http.Client{}).Do(req)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			defer func() {
+				httputil.CloseResponse(resp)
+			}()
 		})
 
 		t.Run("jobs status", func(t *testing.T) {
@@ -908,6 +936,10 @@ func TestHTTPApi(t *testing.T) {
 			resp, err := (&http.Client{}).Do(req)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			defer func() {
+				httputil.CloseResponse(resp)
+			}()
 		})
 
 		stopServer()

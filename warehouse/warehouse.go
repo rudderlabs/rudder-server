@@ -411,13 +411,6 @@ func Start(ctx context.Context, app app.App) error {
 
 	RegisterAdmin(bcManager, pkgLogger)
 
-	api := NewApi(
-		mode,
-		config.Default, pkgLogger, stats.Default,
-		backendconfig.DefaultBackendConfig, wrappedDBHandle, &notifier, tenantManager,
-		bcManager, asyncWh,
-	)
-
 	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
@@ -428,6 +421,12 @@ func Start(ctx context.Context, app app.App) error {
 				return err
 			}
 		}
+
+		api := NewApi(
+			mode, config.Default, pkgLogger, stats.Default,
+			backendconfig.DefaultBackendConfig, wrappedDBHandle, nil, tenantManager,
+			bcManager, nil,
+		)
 		return api.Start(ctx)
 	}
 	var err error
@@ -528,6 +527,11 @@ func Start(ctx context.Context, app app.App) error {
 	}
 
 	g.Go(func() error {
+		api := NewApi(
+			mode, config.Default, pkgLogger, stats.Default,
+			backendconfig.DefaultBackendConfig, wrappedDBHandle, &notifier, tenantManager,
+			bcManager, asyncWh,
+		)
 		return api.Start(gCtx)
 	})
 
