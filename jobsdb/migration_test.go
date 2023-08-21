@@ -17,7 +17,10 @@ import (
 
 func TestMigration(t *testing.T) {
 	t.Run("main", func(t *testing.T) {
-		maxDSSize := 1
+		config.Reset()
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 1)
+
 		_ = startPostgres(t)
 
 		triggerAddNewDS := make(chan time.Time)
@@ -30,7 +33,7 @@ func TestMigration(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			MaxDSSize: &maxDSSize,
+			configGetter: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		err := jobDB.Setup(
@@ -43,7 +46,7 @@ func TestMigration(t *testing.T) {
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
-		jobDB.MaxDSRetentionPeriod = time.Millisecond
+		jobDB.config.maxDSRetentionPeriod = time.Millisecond
 
 		customVal := rand.String(5)
 		jobs := genJobs(defaultWorkspaceID, customVal, 30, 1)
@@ -202,13 +205,13 @@ func TestMigration(t *testing.T) {
 	})
 
 	t.Run("cleanup status tables", func(t *testing.T) {
-		maxDSSize := 1
 		_ = startPostgres(t)
 
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
 		config.Reset()
 		c := config.New()
+		c.Set("JobsDB.maxDSSize", 1)
 
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
@@ -217,7 +220,6 @@ func TestMigration(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			MaxDSSize:    &maxDSSize,
 			configGetter: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
@@ -230,7 +232,7 @@ func TestMigration(t *testing.T) {
 		))
 		defer jobDB.TearDown()
 
-		jobDB.MaxDSRetentionPeriod = time.Millisecond
+		jobDB.config.maxDSRetentionPeriod = time.Millisecond
 
 		// 3 datasets with 10 jobs each, 1 dataset with 0 jobs
 		for i := 0; i < 3; i++ {
@@ -298,17 +300,11 @@ func TestMigration(t *testing.T) {
 		// capture table sizes
 		originalTableSizes := getTableSizes(jobDB.getDSList())
 
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.jobStatusMigrateThreshold"), "1")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.vacuumAnalyzeStatusTableThreshold"), "4")
-		t.Setenv(
-			config.ConfigKeyToEnv(
-				config.DefaultEnvPrefix,
-				"JobsDB.vacuumFullStatusTableThreshold",
-			),
-			fmt.Sprint(
-				originalTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)]-1,
-			),
-		)
+		c.Set("JobsDB.jobStatusMigrateThreshold", 1)
+		c.Set("JobsDB.vacuumAnalyzeStatusTableThreshold", 4)
+		c.Set("JobsDB.vacuumFullStatusTableThreshold", fmt.Sprint(
+			originalTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)]-1,
+		))
 
 		// run cleanup status tables
 		require.NoError(t, jobDB.cleanupStatusTables(context.Background(), jobDB.getDSList()))

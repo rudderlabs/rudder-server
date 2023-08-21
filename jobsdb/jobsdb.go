@@ -326,6 +326,8 @@ type JobsDB interface {
 	JournalDeleteEntry(opID int64)
 	JournalMarkStart(opType string, opPayload json.RawMessage) (int64, error)
 	JournalMarkDone(opID int64) error
+
+	IsMasterBackupEnabled() bool
 }
 
 /*
@@ -337,8 +339,7 @@ type assertInterface interface {
 }
 
 var (
-	masterBackupEnabled bool
-	pathPrefix          string
+	pathPrefix string
 )
 
 /*
@@ -441,46 +442,32 @@ Handle is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a Handle object
 */
 type Handle struct {
-	dbHandle                      *sql.DB
-	ownerType                     OwnerType
-	tablePrefix                   string
-	datasetList                   []dataSetT
-	datasetRangeList              []dataSetRangeT
-	dsListLock                    *lock.Locker
-	dsMigrationLock               *lock.Locker
-	MinDSRetentionPeriod          time.Duration
-	MaxDSRetentionPeriod          time.Duration
-	noResultsCache                *cache.NoResultsCache[ParameterFilterT]
-	BackupSettings                *backupSettings
-	statTableCount                stats.Measurement
-	statPreDropTableCount         stats.Measurement
-	statDSCount                   stats.Measurement
+	dbHandle    *sql.DB
+	ownerType   OwnerType
+	tablePrefix string
+	logger      logger.Logger
+
+	datasetList      []dataSetT
+	datasetRangeList []dataSetRangeT
+	dsListLock       *lock.Locker
+	dsMigrationLock  *lock.Locker
+	noResultsCache   *cache.NoResultsCache[ParameterFilterT]
+
+	// table count stats
+	statTableCount        stats.Measurement
+	statPreDropTableCount stats.Measurement
+
+	// ds creation and drop period stats
 	statNewDSPeriod               stats.Measurement
 	newDSCreationTime             time.Time
-	invalidCacheKeyStat           stats.Measurement
 	statDropDSPeriod              stats.Measurement
 	dsDropTime                    time.Time
-	unionQueryTime                stats.Measurement
-	logger                        logger.Logger
-	writeCapacity                 chan struct{}
-	readCapacity                  chan struct{}
-	enableWriterQueue             bool
-	enableReaderQueue             bool
-	clearAll                      bool
-	skipMaintenanceError          bool
 	isStatNewDSPeriodInitialized  bool
 	isStatDropDSPeriodInitialized bool
-	dsLimit                       *int
-	maxReaders                    int
-	maxWriters                    int
-	maxOpenConnections            int
-	analyzeThreshold              int
-	MaxDSSize                     *int
-	backgroundCancel              context.CancelFunc
-	backgroundGroup               *errgroup.Group
-	maxBackupRetryTime            time.Duration
-	preBackupHandlers             []prebackup.Handler
-	fileUploaderProvider          fileuploader.Provider
+
+	backgroundCancel context.CancelFunc
+	backgroundGroup  *errgroup.Group
+
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
@@ -489,12 +476,9 @@ type Handle struct {
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS  func() <-chan time.Time
 	TriggerMigrateDS func() <-chan time.Time
-	migrateDSTimeout time.Duration
 	TriggerRefreshDS func() <-chan time.Time
-	refreshDSTimeout time.Duration
 
 	TriggerJobCleanUp func() <-chan time.Time
-	JobMaxAge         func() time.Duration
 
 	lifecycle struct {
 		mu      sync.Mutex
@@ -503,20 +487,50 @@ type Handle struct {
 
 	configGetter *config.Config
 	config       struct {
-		maxTableSize                               int64
-		cacheExpiration                            time.Duration
+		maxTableSize                   int64
+		cacheExpiration                time.Duration
+		addNewDSLoopSleepDuration      time.Duration
+		refreshDSListLoopSleepDuration time.Duration
+		jobCleanupFrequency            time.Duration
+		minDSRetentionPeriod           time.Duration
+		maxDSRetentionPeriod           time.Duration
+		refreshDSTimeout               time.Duration
+		jobMaxAge                      func() time.Duration
+		writeCapacity                  chan struct{}
+		readCapacity                   chan struct{}
+		enableWriterQueue              bool
+		enableReaderQueue              bool
+		clearAll                       bool
+		skipMaintenanceError           bool
+		dsLimit                        *int
+		maxReaders                     int
+		maxWriters                     int
+		maxOpenConnections             int
+		analyzeThreshold               int
+		MaxDSSize                      *int
+	}
+
+	migrationConfig struct {
 		maxMigrateOnce, maxMigrateDSProbe          int
 		vacuumFullStatusTableThreshold             func() int64
 		vacuumAnalyzeStatusTableThreshold          func() int64
 		jobDoneMigrateThres, jobStatusMigrateThres func() float64
 		jobMinRowsMigrateThres                     func() float64
 		migrateDSLoopSleepDuration                 time.Duration
-		addNewDSLoopSleepDuration                  time.Duration
-		refreshDSListLoopSleepDuration             time.Duration
-		backupCheckSleepDuration                   time.Duration
-		jobCleanupFrequency                        time.Duration
-		backupRowsBatchSize                        int64
-		backupMaxTotalPayloadSize                  int64
+		migrateDSTimeout                           time.Duration
+	}
+
+	backupConfig struct {
+		masterBackupEnabled       bool
+		maxBackupRetryTime        time.Duration
+		backupCheckSleepDuration  time.Duration
+		preBackupHandlers         []prebackup.Handler
+		fileUploaderProvider      fileuploader.Provider
+		instanceBackupEnabled     bool
+		FailedOnly                bool
+		PathPrefix                string
+		backupRowsBatchSize       int64
+		backupMaxTotalPayloadSize int64
 	}
 }
 
@@ -552,15 +566,18 @@ var dbInvalidJsonErrors = map[string]struct{}{
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *Handle) registerBackUpSettings() {
-	jd.configGetter.RegisterBoolConfigVariable(true, &masterBackupEnabled, true, "JobsDB.backup.enabled")
-	jd.configGetter.RegisterBoolConfigVariable(false, &jd.BackupSettings.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
-	jd.configGetter.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
+	jd.configGetter.RegisterBoolConfigVariable(true, &jd.backupConfig.masterBackupEnabled, true, "JobsDB.backup.enabled")
+	jd.configGetter.RegisterBoolConfigVariable(false, &jd.backupConfig.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
+	jd.configGetter.RegisterBoolConfigVariable(false, &jd.backupConfig.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
 	jd.configGetter.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
-	jd.configGetter.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
-	jd.configGetter.RegisterDurationConfigVariable(10, &jd.refreshDSTimeout, true, time.Minute, "JobsDB.refreshDS.timeout")
-	jd.configGetter.RegisterDurationConfigVariable(10, &jd.migrateDSTimeout, true, time.Minute, "JobsDB.migrateDS.timeout")
+	jd.configGetter.RegisterDurationConfigVariable(10, &jd.backupConfig.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
+	jd.configGetter.RegisterDurationConfigVariable(10, &jd.config.refreshDSTimeout, true, time.Minute, "JobsDB.refreshDS.timeout")
+	jd.configGetter.RegisterDurationConfigVariable(10, &jd.migrationConfig.migrateDSTimeout, true, time.Minute, "JobsDB.migrateDS.timeout")
+	jd.configGetter.RegisterInt64ConfigVariable(10000, &jd.backupConfig.backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
+	jd.configGetter.RegisterInt64ConfigVariable(64*bytesize.MB, &jd.backupConfig.backupMaxTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
+	jd.configGetter.RegisterDurationConfigVariable(5, &jd.backupConfig.backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 
-	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
+	jd.backupConfig.PathPrefix = strings.TrimSpace(pathPrefix)
 }
 
 // Some helper functions
@@ -656,20 +673,20 @@ type OptsFunc func(jd *Handle)
 // WithClearDB, if set to true it will remove all existing tables
 func WithClearDB(clearDB bool) OptsFunc {
 	return func(jd *Handle) {
-		jd.clearAll = clearDB
+		jd.config.clearAll = clearDB
 	}
 }
 
 // WithPreBackupHandlers, sets pre-backup handlers
 func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 	return func(jd *Handle) {
-		jd.preBackupHandlers = preBackupHandlers
+		jd.backupConfig.preBackupHandlers = preBackupHandlers
 	}
 }
 
 func WithDSLimit(limit *int) OptsFunc {
 	return func(jd *Handle) {
-		jd.dsLimit = limit
+		jd.config.dsLimit = limit
 	}
 }
 
@@ -685,27 +702,21 @@ func WithConfig(c *config.Config) OptsFunc {
 	}
 }
 
-func WithLogger(l logger.Logger) OptsFunc {
-	return func(jd *HandleT) {
-		jd.logger = l
-	}
-}
-
 func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 	return func(jd *Handle) {
-		jd.skipMaintenanceError = ignore
+		jd.config.skipMaintenanceError = ignore
 	}
 }
 
 func WithFileUploaderProvider(fileUploaderProvider fileuploader.Provider) OptsFunc {
 	return func(jd *Handle) {
-		jd.fileUploaderProvider = fileUploaderProvider
+		jd.backupConfig.fileUploaderProvider = fileUploaderProvider
 	}
 }
 
 func WithJobMaxAge(maxAgeFunc func() time.Duration) OptsFunc {
 	return func(jd *Handle) {
-		jd.JobMaxAge = maxAgeFunc
+		jd.config.jobMaxAge = maxAgeFunc
 	}
 }
 
@@ -747,10 +758,10 @@ func (jd *Handle) Setup(
 	preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
 ) error {
 	jd.ownerType = ownerType
-	jd.clearAll = clearAll
+	jd.config.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
-	jd.preBackupHandlers = preBackupHandlers
-	jd.fileUploaderProvider = fileUploaderProvider
+	jd.backupConfig.preBackupHandlers = preBackupHandlers
+	jd.backupConfig.fileUploaderProvider = fileUploaderProvider
 	jd.init()
 	return jd.Start()
 }
@@ -776,11 +787,11 @@ func (jd *Handle) init() {
 		jd.assertError(err)
 	}
 
-	if !jd.enableReaderQueue || !jd.enableWriterQueue {
-		jd.dbHandle.SetMaxOpenConns(jd.maxOpenConnections)
+	if !jd.config.enableReaderQueue || !jd.config.enableWriterQueue {
+		jd.dbHandle.SetMaxOpenConns(jd.config.maxOpenConnections)
 	} else {
 		maxOpenConnections := 2 // buffer
-		maxOpenConnections += jd.maxReaders + jd.maxWriters
+		maxOpenConnections += jd.config.maxReaders + jd.config.maxWriters
 		switch jd.ownerType {
 		case Read:
 			maxOpenConnections += 3 // backup, migrate, refreshDsList
@@ -789,10 +800,10 @@ func (jd *Handle) init() {
 		case ReadWrite:
 			maxOpenConnections += 4 // backup, migrate, addNewDS, archive
 		}
-		if maxOpenConnections < jd.maxOpenConnections {
+		if maxOpenConnections < jd.config.maxOpenConnections {
 			jd.dbHandle.SetMaxOpenConns(maxOpenConnections)
 		} else {
-			jd.dbHandle.SetMaxOpenConns(jd.maxOpenConnections)
+			jd.dbHandle.SetMaxOpenConns(jd.config.maxOpenConnections)
 		}
 	}
 
@@ -808,7 +819,7 @@ func (jd *Handle) init() {
 			// the latest schema version, before rudder-migrator starts introducing new tables.
 			jd.dsListLock.WithLock(func(l lock.LockToken) {
 				writer := jd.ownerType == Write || jd.ownerType == ReadWrite
-				if writer && jd.clearAll {
+				if writer && jd.config.clearAll {
 					jd.dropDatabaseTables(l)
 				}
 				templateData := func() map[string]interface{} {
@@ -866,14 +877,8 @@ func (jd *Handle) workersAndAuxSetup() {
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statTableCount = stats.Default.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
-	jd.statDSCount = stats.Default.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.unionQueryTime = stats.Default.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
-		"state":     "nonterminal",
-		"customVal": jd.tablePrefix,
-	})
 	jd.statNewDSPeriod = stats.Default.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.invalidCacheKeyStat = stats.Default.NewTaggedStat("jobsdb.invalid_cache_key", stats.CountType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
 /*
@@ -899,48 +904,45 @@ maxTableSizeInMB: Maximum Table size in MB
 func (jd *Handle) loadConfig() {
 	jd.configGetter.RegisterInt64ConfigVariable(300, &jd.config.maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
 	jd.configGetter.RegisterDurationConfigVariable(120, &jd.config.cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
-	jd.config.jobDoneMigrateThres = func() float64 { return jd.configGetter.GetFloat64("JobsDB.jobDoneMigrateThreshold", 0.7) }
-	jd.config.jobStatusMigrateThres = func() float64 { return jd.configGetter.GetFloat64("JobsDB.jobStatusMigrateThreshold", 3) }
-	jd.config.jobMinRowsMigrateThres = func() float64 { return jd.configGetter.GetFloat64("JobsDB.jobMinRowsMigrateThreshold", 0.2) }
-	jd.configGetter.RegisterIntConfigVariable(10, &jd.config.maxMigrateOnce, true, 1, "JobsDB.maxMigrateOnce")
-	jd.configGetter.RegisterIntConfigVariable(10, &jd.config.maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
-	jd.configGetter.RegisterInt64ConfigVariable(10000, &jd.config.backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
-	jd.config.vacuumFullStatusTableThreshold = func() int64 {
+	jd.migrationConfig.jobDoneMigrateThres = func() float64 { return jd.configGetter.GetFloat64("JobsDB.jobDoneMigrateThreshold", 0.7) }
+	jd.migrationConfig.jobStatusMigrateThres = func() float64 { return jd.configGetter.GetFloat64("JobsDB.jobStatusMigrateThreshold", 3) }
+	jd.migrationConfig.jobMinRowsMigrateThres = func() float64 { return jd.configGetter.GetFloat64("JobsDB.jobMinRowsMigrateThreshold", 0.2) }
+	jd.configGetter.RegisterIntConfigVariable(10, &jd.migrationConfig.maxMigrateOnce, true, 1, "JobsDB.maxMigrateOnce")
+	jd.configGetter.RegisterIntConfigVariable(10, &jd.migrationConfig.maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
+	jd.migrationConfig.vacuumFullStatusTableThreshold = func() int64 {
 		return jd.configGetter.GetInt64("JobsDB.vacuumFullStatusTableThreshold", 500*bytesize.MB)
 	}
-	jd.config.vacuumAnalyzeStatusTableThreshold = func() int64 {
+	jd.migrationConfig.vacuumAnalyzeStatusTableThreshold = func() int64 {
 		return jd.configGetter.GetInt64("JobsDB.vacuumAnalyzeStatusTableThreshold", 30000)
 	}
-	jd.configGetter.RegisterInt64ConfigVariable(64*bytesize.MB, &jd.config.backupMaxTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
-	jd.configGetter.RegisterDurationConfigVariable(30, &jd.config.migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
+	jd.configGetter.RegisterDurationConfigVariable(30, &jd.migrationConfig.migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
 	jd.configGetter.RegisterDurationConfigVariable(5, &jd.config.addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	jd.configGetter.RegisterDurationConfigVariable(10, &jd.config.refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
-	jd.configGetter.RegisterDurationConfigVariable(5, &jd.config.backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	jd.configGetter.RegisterDurationConfigVariable(24, &jd.config.jobCleanupFrequency, true, time.Hour, []string{"JobsDB.jobCleanupFrequency"}...)
 
 	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
-	jd.configGetter.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
+	jd.configGetter.RegisterBoolConfigVariable(true, &jd.config.enableWriterQueue, true, enableWriterQueueKeys...)
 	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
-	jd.configGetter.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
+	jd.configGetter.RegisterBoolConfigVariable(true, &jd.config.enableReaderQueue, true, enableReaderQueueKeys...)
 	maxWritersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxWriters", "JobsDB." + "maxWriters"}
-	jd.configGetter.RegisterIntConfigVariable(3, &jd.maxWriters, false, 1, maxWritersKeys...)
+	jd.configGetter.RegisterIntConfigVariable(3, &jd.config.maxWriters, false, 1, maxWritersKeys...)
 	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
-	jd.configGetter.RegisterIntConfigVariable(6, &jd.maxReaders, false, 1, maxReadersKeys...)
+	jd.configGetter.RegisterIntConfigVariable(6, &jd.config.maxReaders, false, 1, maxReadersKeys...)
 	maxOpenConnectionsKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxOpenConnections", "JobsDB." + "maxOpenConnections"}
-	jd.configGetter.RegisterIntConfigVariable(20, &jd.maxOpenConnections, false, 1, maxOpenConnectionsKeys...)
+	jd.configGetter.RegisterIntConfigVariable(20, &jd.config.maxOpenConnections, false, 1, maxOpenConnectionsKeys...)
 	analyzeThresholdKeys := []string{"JobsDB." + jd.tablePrefix + "." + "analyzeThreshold", "JobsDB." + "analyzeThreshold"}
-	jd.configGetter.RegisterIntConfigVariable(30000, &jd.analyzeThreshold, false, 1, analyzeThresholdKeys...)
+	jd.configGetter.RegisterIntConfigVariable(30000, &jd.config.analyzeThreshold, false, 1, analyzeThresholdKeys...)
 
 	minDSRetentionPeriodKeys := []string{"JobsDB." + jd.tablePrefix + "." + "minDSRetention", "JobsDB." + "minDSRetention"}
-	jd.configGetter.RegisterDurationConfigVariable(0, &jd.MinDSRetentionPeriod, true, time.Minute, minDSRetentionPeriodKeys...)
+	jd.configGetter.RegisterDurationConfigVariable(0, &jd.config.minDSRetentionPeriod, true, time.Minute, minDSRetentionPeriodKeys...)
 	maxDSRetentionPeriodKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxDSRetention", "JobsDB." + "maxDSRetention"}
-	jd.configGetter.RegisterDurationConfigVariable(90, &jd.MaxDSRetentionPeriod, true, time.Minute, maxDSRetentionPeriodKeys...)
+	jd.configGetter.RegisterDurationConfigVariable(90, &jd.config.maxDSRetentionPeriod, true, time.Minute, maxDSRetentionPeriodKeys...)
 
-	if jd.MaxDSSize == nil {
+	if jd.config.MaxDSSize == nil {
 		// passing `maxDSSize` by reference, so it can be hot reloaded
 		var maxDSSize int
 		jd.configGetter.RegisterIntConfigVariable(100000, &maxDSSize, true, 1, "JobsDB.maxDSSize")
-		jd.MaxDSSize = &maxDSSize
+		jd.config.MaxDSSize = &maxDSSize
 	}
 
 	if jd.TriggerAddNewDS == nil {
@@ -951,7 +953,7 @@ func (jd *Handle) loadConfig() {
 
 	if jd.TriggerMigrateDS == nil {
 		jd.TriggerMigrateDS = func() <-chan time.Time {
-			return time.After(jd.config.migrateDSLoopSleepDuration)
+			return time.After(jd.migrationConfig.migrateDSLoopSleepDuration)
 		}
 	}
 
@@ -967,13 +969,12 @@ func (jd *Handle) loadConfig() {
 		}
 	}
 
-	if jd.JobMaxAge == nil {
-		jd.JobMaxAge = func() time.Duration {
+	if jd.config.jobMaxAge == nil {
+		jd.config.jobMaxAge = func() time.Duration {
 			return jd.configGetter.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
 		}
 	}
 
-	jd.BackupSettings = &backupSettings{}
 	jd.registerBackUpSettings()
 }
 
@@ -987,8 +988,8 @@ func (jd *Handle) Start() error {
 	}
 	defer func() { jd.lifecycle.started = true }()
 
-	jd.writeCapacity = make(chan struct{}, jd.maxWriters)
-	jd.readCapacity = make(chan struct{}, jd.maxReaders)
+	jd.config.writeCapacity = make(chan struct{}, jd.config.maxWriters)
+	jd.config.readCapacity = make(chan struct{}, jd.config.maxReaders)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -1118,7 +1119,6 @@ func (jd *Handle) doRefreshDSList(l lock.LockToken) ([]dataSetT, error) {
 	}
 	// report table count metrics before shrinking the datasetList
 	jd.statTableCount.Gauge(len(jd.datasetList))
-	jd.statDSCount.Gauge(len(jd.datasetList))
 
 	// if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
 	// this shrank datasetList is used to compute DSRangeList
@@ -1215,7 +1215,7 @@ func (jd *Handle) getTableSize(jobTable string) int64 {
 }
 
 func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
-	if jd.MaxDSRetentionPeriod > 0 {
+	if jd.config.maxDSRetentionPeriod > 0 {
 		var minJobCreatedAt sql.NullTime
 		sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
 		row := tx.QueryRow(sqlStatement)
@@ -1223,7 +1223,7 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 		if err != nil && err != sql.ErrNoRows {
 			return false, err
 		}
-		if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
+		if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.config.maxDSRetentionPeriod {
 			return true, nil
 		}
 	}
@@ -1235,7 +1235,7 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	}
 
 	totalCount := jd.getTableRowCount(ds.JobTable)
-	if totalCount > *jd.MaxDSSize {
+	if totalCount > *jd.config.MaxDSSize {
 		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
 		return true, nil
 	}
@@ -1598,7 +1598,7 @@ func (jd *Handle) mustRenameDSInTx(tx *Tx, ds dataSetT) error {
 	if err != nil {
 		return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
 	}
-	for _, preBackupHandler := range jd.preBackupHandlers {
+	for _, preBackupHandler := range jd.backupConfig.preBackupHandlers {
 		err = preBackupHandler.Handle(context.TODO(), tx.Tx, renamedJobTable, renamedJobStatusTable)
 		if err != nil {
 			return err
@@ -2046,7 +2046,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 		if _, err = stmt.ExecContext(ctx); err != nil {
 			return err
 		}
-		if len(jobList) > jd.analyzeThreshold {
+		if len(jobList) > jd.config.analyzeThreshold {
 			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobTable))
 		}
 
@@ -2333,7 +2333,7 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 			return err
 		}
 
-		if len(statusList) > jd.analyzeThreshold {
+		if len(statusList) > jd.config.analyzeThreshold {
 			_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, ds.JobStatusTable))
 		}
 
@@ -2464,7 +2464,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			return nil
 		}
 		if err := addNewDS(); err != nil {
-			if !jd.skipMaintenanceError && ctx.Err() == nil {
+			if !jd.config.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
 			jd.logger.Errorw("addNewDSLoop", "error", err)
@@ -2497,10 +2497,10 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		timeoutCtx, cancel := context.WithTimeout(ctx, jd.refreshDSTimeout)
+		timeoutCtx, cancel := context.WithTimeout(ctx, jd.config.refreshDSTimeout)
 		if err := jd.refreshDSList(timeoutCtx); err != nil {
 			cancel()
-			if !jd.skipMaintenanceError && ctx.Err() == nil {
+			if !jd.config.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
 			jd.logger.Errorw("refreshDSListLoop", "error", err)
@@ -2721,7 +2721,7 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case postMigrateDSOperation:
 		migrateSrc := opPayloadJSON.From
 		for _, ds := range migrateSrc {
-			if jd.BackupSettings.isBackupEnabled() {
+			if jd.isBackupEnabled() {
 				jd.assertError(jd.renameDS(ds))
 			} else {
 				jd.dropDSForRecovery(ds)
@@ -3149,8 +3149,8 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	dsQueryCount := 0
 	cacheHitCount := 0
 	var dsLimit int
-	if jd.dsLimit != nil {
-		dsLimit = *jd.dsLimit
+	if jd.config.dsLimit != nil {
+		dsLimit = *jd.config.dsLimit
 	}
 	for idx, ds := range dsList {
 		if params.afterJobID != nil {

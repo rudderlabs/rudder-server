@@ -181,7 +181,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 			jobs := lo.Filter(
 				jobsResult.Jobs,
 				func(job *JobT, _ int) bool {
-					return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge()))
+					return job.CreatedAt.Before(time.Now().Add(-jd.config.jobMaxAge()))
 				},
 			)
 			if len(jobs) > 0 {

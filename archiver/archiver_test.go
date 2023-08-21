@@ -16,7 +16,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	c "github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -24,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -52,6 +50,20 @@ func TestJobsArchival(t *testing.T) {
 	postgresResource, err := resource.SetupPostgres(pool, cleanup)
 	require.NoError(t, err, "failed to setup postgres resource")
 
+	config.Reset()
+	defer config.Reset()
+	t.Setenv("MINIO_SSL", "false")
+	t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
+	t.Setenv("JOBS_DB_NAME", postgresResource.Database)
+	t.Setenv("JOBS_DB_HOST", postgresResource.Host)
+	t.Setenv("JOBS_DB_PORT", postgresResource.Port)
+	t.Setenv("JOBS_DB_USER", postgresResource.User)
+	t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
+	misc.Init()
+
+	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false))
+	require.NoError(t, jd.Start())
+
 	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
 		minioResource[i], err = destination.SetupMINIO(pool, cleanup)
@@ -60,31 +72,6 @@ func TestJobsArchival(t *testing.T) {
 
 	jobs, err := readGzipJobFile(seedJobsFileName)
 	require.NoError(t, err, "failed to read jobs file")
-
-	config.Reset()
-	{
-		t.Setenv("MINIO_SSL", "false")
-		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
-		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
-		t.Setenv("JOBS_DB_USER", postgresResource.User)
-		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
-	}
-	misc.Init()
-	jd := &jobsdb.Handle{
-		TriggerAddNewDS: func() <-chan time.Time {
-			return make(chan time.Time)
-		},
-	}
-	require.NoError(t, jd.Setup(
-		jobsdb.ReadWrite,
-		false,
-		"gw",
-		[]prebackup.Handler{},
-		nil,
-	))
-	require.NoError(t, jd.Start())
 
 	require.NoError(t, jd.Store(ctx, jobs))
 
@@ -150,7 +137,7 @@ func TestJobsArchival(t *testing.T) {
 	archiver := New(
 		jd,
 		fileUploaderProvider,
-		c.New(),
+		config.Default,
 		stats.Default,
 		WithArchiveTrigger(
 			func() <-chan time.Time {

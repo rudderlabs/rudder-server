@@ -406,10 +406,11 @@ func TestRefreshDSList(t *testing.T) {
 func TestJobsDBTimeout(t *testing.T) {
 	_ = startPostgres(t)
 	defaultWorkspaceID := "workspaceId"
+	c := config.New()
 
-	maxDSSize := 10
+	c.Set("JobsDB.maxDSSize", 10)
 	jobDB := Handle{
-		MaxDSSize: &maxDSSize,
+		configGetter: c,
 	}
 
 	customVal := "MOCKDS"
@@ -488,14 +489,15 @@ func TestJobsDBTimeout(t *testing.T) {
 
 func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	_ = startPostgres(t)
-	maxDSSize := 1
+	c := config.New()
+	c.Set("JobsDB.maxDSSize", 1)
 	triggerAddNewDS1 := make(chan time.Time)
 	// jobsDB-1 setup
 	jobsDB1 := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS1
 		},
-		MaxDSSize: &maxDSSize,
+		configGetter: c,
 	}
 	prefix := strings.ToLower(rsRand.String(5))
 	err := jobsDB1.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -509,7 +511,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS2
 		},
-		MaxDSSize: &maxDSSize,
+		configGetter: c,
 	}
 	err = jobsDB2.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
@@ -587,13 +589,14 @@ func TestThreadSafeJobStorage(t *testing.T) {
 	_ = startPostgres(t)
 
 	t.Run("verify that `pgErrorCodeTableReadonly` exception is triggered, if we try to insert in any DS other than latest.", func(t *testing.T) {
-		maxDSSize := 1
 		triggerAddNewDS := make(chan time.Time)
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 1)
 		jobsDB := &Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			MaxDSSize: &maxDSSize,
+			configGetter: c,
 		}
 		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
@@ -646,7 +649,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 
 	t.Run(`verify that even if jobsDB instance is unaware of new DS addition by other jobsDB instance.
 	 And, it tries to Store() in postgres, then the exception thrown is handled properly & DS cache is refreshed`, func(t *testing.T) {
-		maxDSSize := 1
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 1)
 
 		triggerRefreshDS := make(chan time.Time)
 		triggerAddNewDS1 := make(chan time.Time)
@@ -656,7 +660,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS1
 			},
-			MaxDSSize: &maxDSSize,
+			configGetter: c,
 		}
 		clearAllDS := true
 		prefix := strings.ToLower(rsRand.String(5))
@@ -675,7 +679,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerRefreshDS: func() <-chan time.Time {
 				return triggerRefreshDS
 			},
-			MaxDSSize: &maxDSSize,
+			configGetter: c,
 		}
 		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
@@ -691,7 +695,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerRefreshDS: func() <-chan time.Time {
 				return triggerRefreshDS
 			},
-			MaxDSSize: &maxDSSize,
+			configGetter: c,
 		}
 		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
@@ -786,7 +790,7 @@ func TestCacheScenarios(t *testing.T) {
 				"cache",
 			)
 		}
-		dbWithOneLimit.MaxDSSize = &maxDSSize
+		dbWithOneLimit.config.MaxDSSize = &maxDSSize
 		dbWithOneLimit.TriggerAddNewDS = func() <-chan time.Time {
 			return triggerAddNewDS
 		}
@@ -1317,13 +1321,14 @@ func TestConstructParameterJSONQuery(t *testing.T) {
 
 func TestGetActiveWorkspaces(t *testing.T) {
 	_ = startPostgres(t)
-	maxDSSize := 1
+	c := config.New()
+	c.Set("JobsDB.maxDSSize", 1)
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		MaxDSSize: &maxDSSize,
+		configGetter: c,
 	}
 	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
@@ -1428,13 +1433,14 @@ func TestGetActiveWorkspaces(t *testing.T) {
 
 func TestGetDistinctParameterValues(t *testing.T) {
 	_ = startPostgres(t)
-	maxDSSize := 1
+	c := config.New()
+	c.Set("JobsDB.maxDSSize", 1)
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		MaxDSSize: &maxDSSize,
+		configGetter: c,
 	}
 	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
