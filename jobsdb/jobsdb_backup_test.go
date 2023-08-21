@@ -398,7 +398,7 @@ func duplicateStatuses(statusList []*JobStatusT, duplicateCount int) []*JobStatu
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup, fileuploader fileuploader.Provider) {
 	triggerAddNewDS := make(chan time.Time)
 
-	jobsDB := &HandleT{
+	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -434,7 +434,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 
 func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup, fileUploaderProvider fileuploader.Provider) {
 	triggerAddNewDS := make(chan time.Time)
-	jobsDB := &HandleT{
+	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -635,7 +635,7 @@ func getStatusByWorkspace(jobStatus []*JobStatusT, jobsByWorkspace map[string][]
 	return jobStatusByWorkspace
 }
 
-func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string) (err error) {
+func (jd *Handle) copyJobStatusDS(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string) (err error) {
 	if len(statusList) == 0 {
 		return nil
 	}
@@ -656,7 +656,7 @@ func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *Tx, ds dataSetT, sta
 	return nil
 }
 
-func (jd *HandleT) copyJobsDS(tx *Tx, ds dataSetT, jobList []*JobT) error { // When fixing callers make sure error is handled with assertError
+func (jd *Handle) copyJobsDS(tx *Tx, ds dataSetT, jobList []*JobT) error { // When fixing callers make sure error is handled with assertError
 	defer jd.getTimerStat(
 		"copy_jobs",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
@@ -668,7 +668,7 @@ func (jd *HandleT) copyJobsDS(tx *Tx, ds dataSetT, jobList []*JobT) error { // W
 	return jd.copyJobsDSInTx(tx, ds, jobList)
 }
 
-func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
+func (*Handle) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
 

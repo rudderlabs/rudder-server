@@ -40,7 +40,7 @@ func initFileManager(log logger.Logger) (filemanager.FileManager, string, error)
 	return uploader, bucket, nil
 }
 
-func setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT, log logger.Logger) error {
+func setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle, log logger.Logger) error {
 	tablePrefix := config.GetString("TO_REPLAY", "gw")
 	replayToDB := config.GetString("REPLAY_TO_DB", "gw")
 	log.Infof("TO_REPLAY=%s and REPLAY_TO_DB=%s", tablePrefix, replayToDB)
@@ -53,7 +53,7 @@ func setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.
 	dumpsLoader.Setup(ctx, replayDB, tablePrefix, uploader, bucket, log)
 
 	var replayer Handler
-	var toDB *jobsdb.HandleT
+	var toDB *jobsdb.Handle
 	switch replayToDB {
 	case "gw":
 		toDB = gwDB
@@ -75,7 +75,7 @@ type Factory struct {
 }
 
 // Setup initializes Replay feature
-func (m *Factory) Setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+func (m *Factory) Setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle) {
 	if m.Log == nil {
 		m.Log = logger.NewLogger().Child("enterprise").Child("replay")
 	}

@@ -34,7 +34,7 @@ type Strategy interface {
 	// ActivePartitions returns the list of partitions that are active for the given strategy
 	ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error)
 	// AugmentQueryParams augments the given GetQueryParamsT with the strategy specific parameters
-	AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT)
+	AugmentQueryParams(partition string, params *jobsdb.GetQueryParams)
 }
 
 // noneStrategy implements isolation at no level
@@ -44,7 +44,7 @@ func (noneStrategy) ActivePartitions(_ context.Context, _ jobsdb.JobsDB) ([]stri
 	return []string{""}, nil
 }
 
-func (noneStrategy) AugmentQueryParams(_ string, _ *jobsdb.GetQueryParamsT) {
+func (noneStrategy) AugmentQueryParams(_ string, _ *jobsdb.GetQueryParams) {
 	// no-op
 }
 
@@ -56,7 +56,7 @@ func (workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB)
 	return db.GetActiveWorkspaces(ctx, "")
 }
 
-func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
+func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParams) {
 	params.WorkspaceID = partition
 }
 
@@ -69,6 +69,6 @@ func (sourceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([
 }
 
 // AugmentQueryParams augments the given GetQueryParamsT by adding the partition as sourceID parameter filter
-func (sourceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParamsT) {
+func (sourceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParams) {
 	params.ParameterFilters = append(params.ParameterFilters, jobsdb.ParameterFilterT{Name: "source_id", Value: partition})
 }

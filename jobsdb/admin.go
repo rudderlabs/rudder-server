@@ -14,7 +14,7 @@ import (
 /*
 Ping returns health check for pg database
 */
-func (jd *HandleT) Ping() error {
+func (jd *Handle) Ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, err := jd.dbHandle.ExecContext(ctx, `SELECT 'Rudder DB Health Check'::text as message`)
@@ -28,17 +28,17 @@ func (jd *HandleT) Ping() error {
 DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
-func (jd *HandleT) DeleteExecuting() {
+func (jd *Handle) DeleteExecuting() {
 	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
-	command := func() interface{} {
+	command := func() any {
 		jd.deleteJobStatus()
 		return nil
 	}
-	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
+	_ = executeDbRequest(jd, newWriteDbRequest("delete_job_status", &tags, command))
 }
 
 // deleteJobStatus deletes the latest status of a batch of jobs
-func (jd *HandleT) deleteJobStatus() {
+func (jd *Handle) deleteJobStatus() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
 		defer jd.getTimerStat(
 			"jobsdb_delete_job_status_time",
@@ -63,7 +63,7 @@ func (jd *HandleT) deleteJobStatus() {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
+func (jd *Handle) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
 	defer jd.getTimerStat(
 		"jobsdb_delete_job_status_ds_time",
 		&statTags{
@@ -87,19 +87,19 @@ FailExecuting fails events whose latest job state is executing.
 
 This is only done during recovery, which happens during the server start.
 */
-func (jd *HandleT) FailExecuting() {
+func (jd *Handle) FailExecuting() {
 	tags := statTags{
 		CustomValFilters: []string{jd.tablePrefix},
 	}
-	command := func() interface{} {
+	command := func() any {
 		jd.failExecuting()
 		return nil
 	}
-	_ = jd.executeDbRequest(newWriteDbRequest("fail_executing", &tags, command))
+	_ = executeDbRequest(jd, newWriteDbRequest("fail_executing", &tags, command))
 }
 
 // failExecuting sets the state of the executing jobs to failed
-func (jd *HandleT) failExecuting() {
+func (jd *Handle) failExecuting() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
 		defer jd.getTimerStat(
 			"jobsdb_fail_executing_time",
@@ -123,7 +123,7 @@ func (jd *HandleT) failExecuting() {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
+func (jd *Handle) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
 	defer jd.getTimerStat(
 		"jobsdb_fail_executing_ds_time",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
@@ -141,7 +141,7 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 	return err
 }
 
-func (jd *HandleT) startCleanupLoop(ctx context.Context) {
+func (jd *Handle) startCleanupLoop(ctx context.Context) {
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
@@ -165,18 +165,17 @@ func (jd *HandleT) startCleanupLoop(ctx context.Context) {
 	}))
 }
 
-func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
+func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 	// 1. cleanup old jobs
-	statusList := make([]*JobStatusT, 0)
-	gather := func(f func(ctx context.Context, params GetQueryParamsT) (JobsResult, error), params GetQueryParamsT) ([]*JobStatusT, error) {
+	gather := func(f func(ctx context.Context, states []string, params GetQueryParams) (JobsResult, error), states []string, params GetQueryParams) ([]*JobStatusT, error) {
 		res := make([]*JobStatusT, 0)
 		var done bool
 		var afterJobID *int64
 		for !done {
 			params.IgnoreCustomValFiltersInQuery = true
 			params.JobsLimit = batchSize
-			params.AfterJobID = afterJobID
-			jobsResult, err := f(ctx, params)
+			params.afterJobID = afterJobID
+			jobsResult, err := f(ctx, states, params)
 			if err != nil {
 				return nil, err
 			}
@@ -205,17 +204,10 @@ func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
 		return res, nil
 	}
 
-	unprocessed, err := gather(jd.getUnprocessed, GetQueryParamsT{})
+	statusList, err := gather(jd.GetJobs, []string{Failed.State, Executing.State, Waiting.State, Unprocessed.State}, GetQueryParams{})
 	if err != nil {
 		return err
 	}
-	statusList = append(statusList, unprocessed...)
-
-	processed, err := gather(jd.GetProcessed, GetQueryParamsT{StateFilters: []string{Failed.State, Executing.State, Waiting.State}})
-	if err != nil {
-		return err
-	}
-	statusList = append(statusList, processed...)
 
 	if len(statusList) > 0 {
 		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
