@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -192,14 +191,12 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	"db": %q,
 	"pgNotifier": %q,
 	"acceptingEvents": "TRUE",
-	"warehouseMode": %q,
-	"goroutines": "%d"
+	"warehouseMode": %q
 }
 	`,
 		dbService,
 		pgNotifierService,
 		strings.ToUpper(a.mode),
-		runtime.NumGoroutine(),
 	)
 
 	_, _ = w.Write([]byte(healthVal))
@@ -230,8 +227,8 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	var pendingEventsReq pendingEventsRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&pendingEventsReq); err != nil {
-		a.logger.Errorf("unmarshalling body for pending events: %v", err)
-		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
+		a.logger.Errorf("invalid JSON body for pending events: %v", err)
+		http.Error(w, "invalid JSON in request body", http.StatusBadRequest)
 		return
 	}
 
@@ -257,8 +254,8 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	pendingStagingFileCount, err := a.stagingRepo.CountPendingForSource(r.Context(), sourceID)
 	if err != nil {
-		a.logger.Errorf("getting pending staging file count %v", err)
-		http.Error(w, "can't get pending staging file count", http.StatusInternalServerError)
+		a.logger.Errorf("fetching pending staging file: %v", err)
+		http.Error(w, "can't get pending staging file", http.StatusInternalServerError)
 		return
 	}
 
@@ -270,8 +267,8 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	pendingUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
 	if err != nil {
-		a.logger.Errorf("getting pending uploads count", "error", err)
-		http.Error(w, fmt.Sprintf("getting pending uploads count: %s", err.Error()), http.StatusInternalServerError)
+		a.logger.Errorf("fetching pending uploads: %s", err)
+		http.Error(w, "can't get pending uploads", http.StatusInternalServerError)
 		return
 	}
 
@@ -282,8 +279,8 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	abortedUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
 	if err != nil {
-		a.logger.Errorf("getting aborted uploads count", "error", err.Error())
-		http.Error(w, fmt.Sprintf("getting aborted uploads count: %s", err), http.StatusInternalServerError)
+		a.logger.Errorf("fetching aborted uploads: %s", err.Error())
+		http.Error(w, "can't get aborted uploads", http.StatusInternalServerError)
 		return
 	}
 
@@ -291,10 +288,9 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	triggerPendingUpload, _ := strconv.ParseBool(r.URL.Query().Get(triggerUploadQPName))
 
 	if pendingEventsAvailable && triggerPendingUpload {
-		a.logger.Infof("Triggering upload for all wh destinations connected to source '%s'", sourceID)
+		a.logger.Infof("Triggering upload for all destinations connected to source '%s'", sourceID)
 
 		wh := a.bcManager.WarehousesBySourceID(sourceID)
-
 		if len(wh) == 0 {
 			a.logger.Warnf("no warehouse destinations found for source id '%s'", sourceID)
 			http.Error(w, "no warehouse found", http.StatusBadRequest)
@@ -313,8 +309,8 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		AbortedEvents:            abortedUploadCount > 0,
 	})
 	if err != nil {
-		a.logger.Errorf("unmarshall response for pending events: %v", err)
-		http.Error(w, "can't unmarshall response", http.StatusInternalServerError)
+		a.logger.Errorf("marshalling response for pending events: %v", err)
+		http.Error(w, "can't marshall response", http.StatusInternalServerError)
 		return
 	}
 
@@ -329,8 +325,8 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	var triggerUploadReq triggerUploadRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&triggerUploadReq); err != nil {
-		a.logger.Errorf("unmarshalling body for trigger upload: %v", err)
-		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
+		a.logger.Errorf("invalid JSON body for triggering upload: %v", err)
+		http.Error(w, "invalid JSON in request body", http.StatusBadRequest)
 		return
 	}
 
@@ -352,13 +348,12 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	var wh []model.Warehouse
 	if sourceID != "" && destinationID == "" {
 		wh = a.bcManager.WarehousesBySourceID(sourceID)
-	}
-	if destinationID != "" {
+	} else if destinationID != "" {
 		wh = a.bcManager.WarehousesByDestID(destinationID)
 	}
 
 	if len(wh) == 0 {
-		a.logger.Warnf("no warehouse destinations found for source id '%s'", sourceID)
+		a.logger.Warnf("no warehouse destinations found for source id '%s' or destination id '%s'", sourceID, destinationID)
 		http.Error(w, "no warehouse found", http.StatusBadRequest)
 		return
 	}
@@ -366,6 +361,7 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	for _, warehouse := range wh {
 		triggerUpload(warehouse)
 	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -377,15 +373,15 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 	var connectionsTableRequest fetchTablesRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&connectionsTableRequest); err != nil {
-		a.logger.Errorf("unmarshalling body for fetch tables: %v", err)
-		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
+		a.logger.Errorf("invalid JSON body for fetching tables: %v", err)
+		http.Error(w, "invalid JSON in request body", http.StatusBadRequest)
 		return
 	}
 
 	tables, err := a.schemaRepo.GetTablesForConnection(r.Context(), connectionsTableRequest.Connections)
 	if err != nil {
-		a.logger.Errorf("fetching tables for fetch tables: %v", err)
-		http.Error(w, "can't fetch tables from schemas repo", http.StatusInternalServerError)
+		a.logger.Errorf("fetching tables: %v", err)
+		http.Error(w, "can't fetch tables", http.StatusInternalServerError)
 		return
 	}
 
@@ -393,8 +389,8 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 		ConnectionsTables: tables,
 	})
 	if err != nil {
-		a.logger.Errorf("unmarshall response for fetch tables: %v", err)
-		http.Error(w, "can't unmarshall response", http.StatusInternalServerError)
+		a.logger.Errorf("marshalling response while fetching tables: %v", err)
+		http.Error(w, "can't marshall response", http.StatusInternalServerError)
 		return
 	}
 

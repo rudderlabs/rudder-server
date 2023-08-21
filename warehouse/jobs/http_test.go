@@ -26,7 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHttp(t *testing.T) {
+func TestAsyncJobHandlers(t *testing.T) {
 	pgnotifier.Init()
 
 	const (
@@ -156,7 +156,7 @@ func TestHttp(t *testing.T) {
 		}
 	})
 
-	t.Run("insert jobs", func(t *testing.T) {
+	t.Run("InsertJobHandler", func(t *testing.T) {
 		t.Run("Not enabled", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", nil)
 			resp := httptest.NewRecorder()
@@ -191,7 +191,7 @@ func TestHttp(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "can't unmarshall body\n", string(b))
+			require.Equal(t, "invalid JSON in request body\n", string(b))
 		})
 		t.Run("invalid request", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`{}`)))
@@ -240,7 +240,7 @@ func TestHttp(t *testing.T) {
 		})
 	})
 
-	t.Run("status job", func(t *testing.T) {
+	t.Run("StatusJobHandler", func(t *testing.T) {
 		t.Run("Not enabled", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
 			resp := httptest.NewRecorder()

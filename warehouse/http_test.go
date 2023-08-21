@@ -413,7 +413,6 @@ func TestHTTPApi(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, http.StatusOK, resp.Code)
 
-				delete(healthBody, "goroutines")
 				require.EqualValues(t, healthBody, tc.response)
 			})
 		}
@@ -430,7 +429,7 @@ func TestHTTPApi(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "can't unmarshall body\n", string(b))
+			require.Equal(t, "invalid JSON in request body\n", string(b))
 		})
 
 		t.Run("empty source id or task run id", func(t *testing.T) {
@@ -582,7 +581,7 @@ func TestHTTPApi(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "can't unmarshall body\n", string(b))
+			require.Equal(t, "invalid JSON in request body\n", string(b))
 		})
 
 		t.Run("empty connections", func(t *testing.T) {
@@ -599,7 +598,7 @@ func TestHTTPApi(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "can't fetch tables from schemas repo\n", string(b))
+			require.Equal(t, "can't fetch tables\n", string(b))
 		})
 
 		t.Run("succeed", func(t *testing.T) {
@@ -644,7 +643,7 @@ func TestHTTPApi(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "can't unmarshall body\n", string(b))
+			require.Equal(t, "invalid JSON in request body\n", string(b))
 		})
 
 		t.Run("workspace not found", func(t *testing.T) {
@@ -751,45 +750,46 @@ func TestHTTPApi(t *testing.T) {
 	})
 
 	t.Run("endpoints", func(t *testing.T) {
-		wenPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
+		t.Run("normal mode", func(t *testing.T) {
+			wenPort, err := kithelper.GetFreePort()
+			require.NoError(t, err)
 
-		c := config.New()
-		c.Set("Warehouse.webPort", wenPort)
+			c := config.New()
+			c.Set("Warehouse.webPort", wenPort)
 
-		srvCtx, stopServer := context.WithCancel(ctx)
+			srvCtx, stopServer := context.WithCancel(ctx)
 
-		a := NewApi(config.MasterMode, c, logger.NOP, stats.Default, mockBackendConfig, db, &notifier, tenantManager, bcManager, jobsManager)
+			a := NewApi(config.MasterMode, c, logger.NOP, stats.Default, mockBackendConfig, db, &notifier, tenantManager, bcManager, jobsManager)
 
-		serverSetupCh := make(chan struct{})
-		go func() {
-			require.NoError(t, a.Start(srvCtx))
+			serverSetupCh := make(chan struct{})
+			go func() {
+				require.NoError(t, a.Start(srvCtx))
 
-			close(serverSetupCh)
-		}()
+				close(serverSetupCh)
+			}()
 
-		serverURL := fmt.Sprintf("http://localhost:%d", wenPort)
+			serverURL := fmt.Sprintf("http://localhost:%d", wenPort)
 
-		t.Run("health", func(t *testing.T) {
-			require.Eventually(t, func() bool {
-				resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
-				if err != nil {
-					return false
-				}
-				defer func() {
-					httputil.CloseResponse(resp)
-				}()
+			t.Run("health", func(t *testing.T) {
+				require.Eventually(t, func() bool {
+					resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
+					if err != nil {
+						return false
+					}
+					defer func() {
+						httputil.CloseResponse(resp)
+					}()
 
-				return resp.StatusCode == http.StatusOK
-			},
-				time.Second*10,
-				time.Second,
-			)
-		})
+					return resp.StatusCode == http.StatusOK
+				},
+					time.Second*10,
+					time.Second,
+				)
+			})
 
-		t.Run("process", func(t *testing.T) {
-			pendingEventsURL := fmt.Sprintf("%s/v1/process", serverURL)
-			req, err := http.NewRequest(http.MethodPost, pendingEventsURL, bytes.NewReader([]byte(`
+			t.Run("process", func(t *testing.T) {
+				pendingEventsURL := fmt.Sprintf("%s/v1/process", serverURL)
+				req, err := http.NewRequest(http.MethodPost, pendingEventsURL, bytes.NewReader([]byte(`
 				{
 				  "WorkspaceID": "test_workspace_id",
 				  "Schema": {
@@ -818,71 +818,24 @@ func TestHTTPApi(t *testing.T) {
 				  "TimeWindow": "0001-01-01T00:40:00Z"
 				}
 			`)))
-			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/json")
+				require.NoError(t, err)
+				req.Header.Set("Content-Type", "application/json")
 
-			resp, err := (&http.Client{}).Do(req)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, resp.StatusCode)
+				resp, err := (&http.Client{}).Do(req)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, resp.StatusCode)
 
-			defer func() {
-				httputil.CloseResponse(resp)
-			}()
-		})
+				defer func() {
+					httputil.CloseResponse(resp)
+				}()
+			})
 
-		t.Run("pending events", func(t *testing.T) {
-			pendingEventsURL := fmt.Sprintf("%s/v1/warehouse/pending-events?triggerUpload=true", serverURL)
-			req, err := http.NewRequest(http.MethodPost, pendingEventsURL, bytes.NewReader([]byte(`
+			t.Run("pending events", func(t *testing.T) {
+				pendingEventsURL := fmt.Sprintf("%s/v1/warehouse/pending-events?triggerUpload=true", serverURL)
+				req, err := http.NewRequest(http.MethodPost, pendingEventsURL, bytes.NewReader([]byte(`
 				{
 				  "source_id": "test_source_id",
 				  "task_run_id": "test_source_task_run_id"
-				}
-			`)))
-			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := (&http.Client{}).Do(req)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, resp.StatusCode)
-
-			defer func() {
-				httputil.CloseResponse(resp)
-			}()
-		})
-
-		t.Run("trigger upload", func(t *testing.T) {
-			triggerUploadURL := fmt.Sprintf("%s/v1/warehouse/trigger-upload", serverURL)
-			req, err := http.NewRequest(http.MethodPost, triggerUploadURL, bytes.NewReader([]byte(`
-				{
-				  "source_id": "test_source_id",
-				  "destination_id": "test_destination_id"
-				}
-			`)))
-			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := (&http.Client{}).Do(req)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, resp.StatusCode)
-
-			defer func() {
-				httputil.CloseResponse(resp)
-			}()
-		})
-
-		t.Run("fetch tables", func(t *testing.T) {
-			for _, u := range []string{
-				fmt.Sprintf("%s/v1/warehouse/fetch-tables", serverURL),
-				fmt.Sprintf("%s/internal/v1/warehouse/fetch-tables", serverURL),
-			} {
-				req, err := http.NewRequest(http.MethodGet, u, bytes.NewReader([]byte(`
-				{
-				  "connections": [
-					{
-					  "source_id": "test_source_id",
-					  "destination_id": "test_destination_id"
-					}
-				  ]
 				}
 			`)))
 				require.NoError(t, err)
@@ -895,12 +848,59 @@ func TestHTTPApi(t *testing.T) {
 				defer func() {
 					httputil.CloseResponse(resp)
 				}()
-			}
-		})
+			})
 
-		t.Run("jobs", func(t *testing.T) {
-			jobsURL := fmt.Sprintf("%s/v1/warehouse/jobs", serverURL)
-			req, err := http.NewRequest(http.MethodPost, jobsURL, bytes.NewReader([]byte(`
+			t.Run("trigger upload", func(t *testing.T) {
+				triggerUploadURL := fmt.Sprintf("%s/v1/warehouse/trigger-upload", serverURL)
+				req, err := http.NewRequest(http.MethodPost, triggerUploadURL, bytes.NewReader([]byte(`
+				{
+				  "source_id": "test_source_id",
+				  "destination_id": "test_destination_id"
+				}
+			`)))
+				require.NoError(t, err)
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := (&http.Client{}).Do(req)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+
+				defer func() {
+					httputil.CloseResponse(resp)
+				}()
+			})
+
+			t.Run("fetch tables", func(t *testing.T) {
+				for _, u := range []string{
+					fmt.Sprintf("%s/v1/warehouse/fetch-tables", serverURL),
+					fmt.Sprintf("%s/internal/v1/warehouse/fetch-tables", serverURL),
+				} {
+					req, err := http.NewRequest(http.MethodGet, u, bytes.NewReader([]byte(`
+				{
+				  "connections": [
+					{
+					  "source_id": "test_source_id",
+					  "destination_id": "test_destination_id"
+					}
+				  ]
+				}
+			`)))
+					require.NoError(t, err)
+					req.Header.Set("Content-Type", "application/json")
+
+					resp, err := (&http.Client{}).Do(req)
+					require.NoError(t, err)
+					require.Equal(t, http.StatusOK, resp.StatusCode)
+
+					defer func() {
+						httputil.CloseResponse(resp)
+					}()
+				}
+			})
+
+			t.Run("jobs", func(t *testing.T) {
+				jobsURL := fmt.Sprintf("%s/v1/warehouse/jobs", serverURL)
+				req, err := http.NewRequest(http.MethodPost, jobsURL, bytes.NewReader([]byte(`
 				{
 				  "source_id": "test_source_id",
 				  "destination_id": "test_destination_id",
@@ -908,43 +908,154 @@ func TestHTTPApi(t *testing.T) {
 				  "task_run_id": "test_source_task_run_id"
 				}
 			`)))
-			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/json")
+				require.NoError(t, err)
+				req.Header.Set("Content-Type", "application/json")
 
-			resp, err := (&http.Client{}).Do(req)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, resp.StatusCode)
+				resp, err := (&http.Client{}).Do(req)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, resp.StatusCode)
 
-			defer func() {
-				httputil.CloseResponse(resp)
-			}()
+				defer func() {
+					httputil.CloseResponse(resp)
+				}()
+			})
+
+			t.Run("jobs status", func(t *testing.T) {
+				qp := url.Values{}
+				qp.Add("task_run_id", sourceTaskRunID)
+				qp.Add("job_run_id", sourceJobRunID)
+				qp.Add("source_id", sourceID)
+				qp.Add("destination_id", destinationID)
+				qp.Add("workspace_id", workspaceID)
+
+				jobsStatusURL := fmt.Sprintf("%s/v1/warehouse/jobs/status?"+qp.Encode(), serverURL)
+				req, err := http.NewRequest(http.MethodGet, jobsStatusURL, nil)
+				require.NoError(t, err)
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := (&http.Client{}).Do(req)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+
+				defer func() {
+					httputil.CloseResponse(resp)
+				}()
+			})
+
+			stopServer()
+
+			<-serverSetupCh
 		})
 
-		t.Run("jobs status", func(t *testing.T) {
-			qp := url.Values{}
-			qp.Add("task_run_id", sourceTaskRunID)
-			qp.Add("job_run_id", sourceJobRunID)
-			qp.Add("source_id", sourceID)
-			qp.Add("destination_id", destinationID)
-			qp.Add("workspace_id", workspaceID)
-
-			jobsStatusURL := fmt.Sprintf("%s/v1/warehouse/jobs/status?"+qp.Encode(), serverURL)
-			req, err := http.NewRequest(http.MethodGet, jobsStatusURL, nil)
+		t.Run("degraded mode", func(t *testing.T) {
+			wenPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
-			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := (&http.Client{}).Do(req)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, resp.StatusCode)
+			c := config.New()
+			c.Set("Warehouse.webPort", wenPort)
+			c.Set("Warehouse.runningMode", DegradedMode)
 
-			defer func() {
-				httputil.CloseResponse(resp)
+			srvCtx, stopServer := context.WithCancel(ctx)
+
+			a := NewApi(config.MasterMode, c, logger.NOP, stats.Default, mockBackendConfig, db, &notifier, tenantManager, bcManager, jobsManager)
+
+			serverSetupCh := make(chan struct{})
+			go func() {
+				require.NoError(t, a.Start(srvCtx))
+
+				close(serverSetupCh)
 			}()
+
+			serverURL := fmt.Sprintf("http://localhost:%d", wenPort)
+
+			t.Run("health endpoint should work", func(t *testing.T) {
+				require.Eventually(t, func() bool {
+					resp, err := http.Get(fmt.Sprintf("%s/health", serverURL))
+					if err != nil {
+						return false
+					}
+					defer func() {
+						httputil.CloseResponse(resp)
+					}()
+
+					return resp.StatusCode == http.StatusOK
+				},
+					time.Second*10,
+					time.Second,
+				)
+			})
+
+			t.Run("other endpoints should fail", func(t *testing.T) {
+				testCases := []struct {
+					name   string
+					url    string
+					method string
+					body   io.Reader
+				}{
+					{
+						name:   "process",
+						url:    fmt.Sprintf("%s/v1/process", serverURL),
+						method: http.MethodPost,
+						body:   bytes.NewReader([]byte(`{}`)),
+					},
+					{
+						name:   "pending events",
+						url:    fmt.Sprintf("%s/v1/warehouse/pending-events", serverURL),
+						method: http.MethodPost,
+						body:   bytes.NewReader([]byte(`{}`)),
+					},
+					{
+						name:   "trigger upload",
+						url:    fmt.Sprintf("%s/v1/warehouse/trigger-upload", serverURL),
+						method: http.MethodPost,
+						body:   bytes.NewReader([]byte(`{}`)),
+					},
+					{
+						name:   "jobs",
+						url:    fmt.Sprintf("%s/v1/warehouse/jobs", serverURL),
+						method: http.MethodPost,
+						body:   bytes.NewReader([]byte(`{}`)),
+					},
+					{
+						name:   "jobs status",
+						url:    fmt.Sprintf("%s/v1/warehouse/jobs/status", serverURL),
+						method: http.MethodGet,
+						body:   nil,
+					},
+					{
+						name:   "fetch tables",
+						url:    fmt.Sprintf("%s/v1/warehouse/fetch-tables", serverURL),
+						method: http.MethodGet,
+						body:   nil,
+					},
+					{
+						name:   "internal fetch tables",
+						url:    fmt.Sprintf("%s/internal/v1/warehouse/fetch-tables", serverURL),
+						method: http.MethodGet,
+						body:   nil,
+					},
+				}
+
+				for _, tc := range testCases {
+					t.Run(tc.name, func(t *testing.T) {
+						req, err := http.NewRequest(tc.method, tc.url, tc.body)
+						require.NoError(t, err)
+
+						resp, err := (&http.Client{}).Do(req)
+						require.NoError(t, err)
+						require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+						defer func() {
+							httputil.CloseResponse(resp)
+						}()
+					})
+				}
+			})
+
+			stopServer()
+
+			<-serverSetupCh
 		})
-
-		stopServer()
-
-		<-serverSetupCh
 	})
 
 	stopTest()
