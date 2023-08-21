@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
@@ -45,9 +44,8 @@ func TestJobsArchival(t *testing.T) {
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
-	cleanup := &testhelper.Cleanup{}
 
-	postgresResource, err := resource.SetupPostgres(pool, cleanup)
+	postgresResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err, "failed to setup postgres resource")
 	c := config.New()
 	c.Set("MINIO_SSL", "false")
@@ -63,7 +61,7 @@ func TestJobsArchival(t *testing.T) {
 
 	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = destination.SetupMINIO(pool, cleanup)
+		minioResource[i], err = destination.SetupMINIO(pool, t)
 		require.NoError(t, err, "failed to setup minio resource")
 	}
 
@@ -184,7 +182,7 @@ func TestJobsArchival(t *testing.T) {
 			require.NoError(t, err)
 			dJobs, err := readGzipJobFile(downloadFile.Name())
 			require.NoError(t, err)
-			cleanup.Cleanup(func() {
+			t.Cleanup(func() {
 				_ = os.Remove(downloadFile.Name())
 			})
 			downloadedJobs = append(downloadedJobs, dJobs...)
@@ -194,7 +192,6 @@ func TestJobsArchival(t *testing.T) {
 	archiver.Stop()
 	jd.Stop()
 	jd.Close()
-	cleanup.Run()
 }
 
 func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
