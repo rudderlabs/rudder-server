@@ -338,10 +338,6 @@ type assertInterface interface {
 	assertError(err error)
 }
 
-var (
-	pathPrefix string
-)
-
 /*
 UpdateJobStatusInTx updates the status of a batch of jobs in the past transaction
 customValFilters[] is passed, so we can efficiently mark empty cache
@@ -569,15 +565,12 @@ func (jd *Handle) registerBackUpSettings() {
 	jd.configGetter.RegisterBoolConfigVariable(true, &jd.backupConfig.masterBackupEnabled, true, "JobsDB.backup.enabled")
 	jd.configGetter.RegisterBoolConfigVariable(false, &jd.backupConfig.instanceBackupEnabled, true, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
 	jd.configGetter.RegisterBoolConfigVariable(false, &jd.backupConfig.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
-	jd.configGetter.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 	jd.configGetter.RegisterDurationConfigVariable(10, &jd.backupConfig.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
 	jd.configGetter.RegisterDurationConfigVariable(10, &jd.config.refreshDSTimeout, true, time.Minute, "JobsDB.refreshDS.timeout")
 	jd.configGetter.RegisterDurationConfigVariable(10, &jd.migrationConfig.migrateDSTimeout, true, time.Minute, "JobsDB.migrateDS.timeout")
 	jd.configGetter.RegisterInt64ConfigVariable(10000, &jd.backupConfig.backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
 	jd.configGetter.RegisterInt64ConfigVariable(64*bytesize.MB, &jd.backupConfig.backupMaxTotalPayloadSize, true, 1, "JobsDB.maxBackupTotalPayloadSize")
 	jd.configGetter.RegisterDurationConfigVariable(5, &jd.backupConfig.backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
-
-	jd.backupConfig.PathPrefix = strings.TrimSpace(pathPrefix)
 }
 
 // Some helper functions
@@ -782,7 +775,7 @@ func (jd *Handle) init() {
 	// Initialize dbHandle if not already set
 	if jd.dbHandle == nil {
 		var err error
-		psqlInfo := misc.GetConnectionString()
+		psqlInfo := misc.GetConnectionString(jd.configGetter)
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 	}

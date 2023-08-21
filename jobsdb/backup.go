@@ -181,7 +181,7 @@ func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRa
 		if err != nil {
 			return "", err
 		}
-		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
+		pathPrefix := strings.TrimPrefix(tableName, preDropTablePrefix)
 		return fmt.Sprintf(`%v%v_%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State, workspaceID), nil
 	}
 
@@ -233,7 +233,7 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 		if err != nil {
 			return "", err
 		}
-		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
+		pathPrefix := strings.TrimPrefix(tableName, preDropTablePrefix)
 		return fmt.Sprintf(`%v%v.%v.%v.%v.%v.%v.gz`,
 			tmpDirPath+backupPathDirName,
 			pathPrefix,
@@ -295,7 +295,7 @@ func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetR
 		if err != nil {
 			return "", err
 		}
-		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
+		pathPrefix := strings.TrimPrefix(tableName, preDropTablePrefix)
 		return fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, workspaceID), nil
 	}
 

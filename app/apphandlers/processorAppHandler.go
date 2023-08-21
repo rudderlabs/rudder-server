@@ -113,7 +113,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	reporting := a.app.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 	g.Go(misc.WithBugsnag(func() error {
-		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
+		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString(nil)})
 		return nil
 	}))
 

@@ -312,7 +312,6 @@ func insertJobs(
 	configMap map[string]backendconfig.ConfigT,
 	numJobsPerSource int,
 ) (map[string][]*jobsdb.JobT, int) {
-	t.Log(misc.GetConnectionString())
 	gwJobsDB := jobsdb.NewForWrite("gw")
 	require.NoError(t, gwJobsDB.Start(), "it should be able to start the jobsdb")
 	defer gwJobsDB.Stop()

@@ -49,19 +49,16 @@ func TestJobsArchival(t *testing.T) {
 
 	postgresResource, err := resource.SetupPostgres(pool, cleanup)
 	require.NoError(t, err, "failed to setup postgres resource")
-
-	config.Reset()
-	defer config.Reset()
-	t.Setenv("MINIO_SSL", "false")
-	t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
-	t.Setenv("JOBS_DB_NAME", postgresResource.Database)
-	t.Setenv("JOBS_DB_HOST", postgresResource.Host)
-	t.Setenv("JOBS_DB_PORT", postgresResource.Port)
-	t.Setenv("JOBS_DB_USER", postgresResource.User)
-	t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
+	c := config.New()
+	c.Set("MINIO_SSL", "false")
+	c.Set("DB.name", postgresResource.Database)
+	c.Set("DB.host", postgresResource.Host)
+	c.Set("DB.port", postgresResource.Port)
+	c.Set("DB.user", postgresResource.User)
+	c.Set("DB.password", postgresResource.Password)
 	misc.Init()
 
-	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false))
+	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c))
 	require.NoError(t, jd.Start())
 
 	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
@@ -137,7 +134,7 @@ func TestJobsArchival(t *testing.T) {
 	archiver := New(
 		jd,
 		fileUploaderProvider,
-		config.Default,
+		c,
 		stats.Default,
 		WithArchiveTrigger(
 			func() <-chan time.Time {

@@ -124,7 +124,7 @@ func getWorkspaceFromDB(dbHandle *sql.DB) (string, error) {
 }
 
 func createDBConnection() (*sql.DB, error) {
-	psqlInfo := misc.GetConnectionString()
+	psqlInfo := misc.GetConnectionString(nil)
 	var err error
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
@@ -274,7 +274,7 @@ func CheckAndValidateWorkspaceToken() error {
 	pkgLogger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
 
 	dbName := config.GetString("DB.name", "ubuntu")
-	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB)
+	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB, nil)
 
 	dbHandle, err = createDBConnection()
 	if err != nil {
