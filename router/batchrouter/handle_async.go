@@ -30,7 +30,7 @@ func (brt *Handle) getImportingJobs(ctx context.Context, destinationID string, l
 	return misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return brt.jobsDB.GetImporting(
 			ctx,
-			jobsdb.GetQueryParamsT{
+			jobsdb.GetQueryParams{
 				CustomValFilters: []string{brt.destType},
 				JobsLimit:        limit,
 				ParameterFilters: parameterFilters,
@@ -135,11 +135,11 @@ func (brt *Handle) getParamertsFromJobs(jobs []*jobsdb.JobT) map[int64]stdjson.R
 
 func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID string,
 	importingJob *jobsdb.JobT, pollResp common.PollStatusResponse,
-) (error, []*jobsdb.JobStatusT) {
+) ([]*jobsdb.JobStatusT, error) {
 	var statusList []*jobsdb.JobStatusT
 	list, err := brt.getImportingJobs(ctx, destinationID, brt.maxEventsInABatch)
 	if err != nil {
-		return err, statusList
+		return statusList, err
 	}
 	importingList := list.Jobs
 	if pollResp.StatusCode == http.StatusOK && pollResp.Complete {
@@ -147,11 +147,11 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 			statusList, _ = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State})
 			if err := brt.updateJobStatuses(ctx, destinationID, importingList, importingList, statusList); err != nil {
 				brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-				return err, statusList
+				return statusList, err
 			}
 			brt.asyncSuccessfulJobCount.Count(len(statusList))
 			brt.updateProcessedEventsMetrics(statusList)
-			return nil, statusList
+			return statusList, nil
 		} else {
 			getUploadStatsInput := common.GetUploadStatsInput{
 				FailedJobURLs: pollResp.FailedJobURLs,
@@ -165,7 +165,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 
 			if uploadStatsResp.StatusCode != http.StatusOK {
 				brt.logger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v", brt.destType, uploadStatsResp.StatusCode)
-				return errors.New("failed to fetch failed jobs"), statusList
+				return statusList, errors.New("failed to fetch failed jobs")
 			}
 
 			var completedJobsList []*jobsdb.JobT
@@ -222,7 +222,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 			}
 			if err := brt.updateJobStatuses(ctx, destinationID, importingList, completedJobsList, statusList); err != nil {
 				brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-				return err, statusList
+				return statusList, err
 			}
 			brt.updateProcessedEventsMetrics(statusList)
 		}
@@ -230,7 +230,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 		statusList, _ := brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", "poll failed with status code 400")})
 		if err := brt.updateJobStatuses(ctx, destinationID, importingList, importingList, statusList); err != nil {
 			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-			return err, statusList
+			return statusList, err
 		}
 		brt.asyncAbortedJobCount.Count(len(statusList))
 		brt.updateProcessedEventsMetrics(statusList)
@@ -238,13 +238,13 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 		statusList, abortedJobsList := brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Failed.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", "poll failed")})
 		if err := brt.updateJobStatuses(ctx, destinationID, importingList, abortedJobsList, statusList); err != nil {
 			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
-			return err, statusList
+			return statusList, err
 		}
 		brt.asyncFailedJobCount.Count(len(statusList))
 		brt.updateProcessedEventsMetrics(statusList)
 	}
 
-	return nil, statusList
+	return statusList, nil
 }
 
 func (brt *Handle) pollAsyncStatus(ctx context.Context) {
@@ -278,7 +278,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 					if pollResp.InProgress {
 						continue
 					}
-					err, statusList := brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
+					statusList, err := brt.updatePollStatusToDB(ctx, destinationID, importingJob, pollResp)
 					if err == nil {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = false
 						brt.recordAsyncDestinationDeliveryStatus(sourceID, destinationID, statusList)

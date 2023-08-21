@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"golang.org/x/exp/slices"
+
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -64,14 +64,9 @@ func getRetentionTimeForDestination(destID string) time.Duration {
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*DestinationWithSources) (bool, string) {
 	// drain if job is older than the destination's retention time
-	jobReceivedAt := gjson.GetBytes(job.Parameters, "received_at")
-	if jobReceivedAt.Exists() {
-		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
-		if err == nil {
-			if time.Since(jobReceivedAtTime) > getRetentionTimeForDestination(destID) {
-				return true, "job expired"
-			}
-		}
+	createdAt := job.CreatedAt
+	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
+		return true, "job expired"
 	}
 
 	if d, ok := destinationsMap[destID]; ok && !d.Destination.Enabled {

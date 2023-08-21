@@ -311,14 +311,14 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			start := time.Now()
 			var limitReached bool
 			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
-			queryParams := jobsdb.GetQueryParamsT{
+			queryParams := jobsdb.GetQueryParams{
 				CustomValFilters:              []string{""},
 				IgnoreCustomValFiltersInQuery: true,
 				JobsLimit:                     errDBReadBatchSize,
 				PayloadSizeLimit:              st.adaptiveLimit(payloadLimit),
 			}
-			toRetry, err := misc.QueryWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
-				return st.errorDB.GetToRetry(ctx, queryParams)
+			toProcess, err := misc.QueryWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
+				return st.errorDB.GetToProcess(ctx, queryParams, nil)
 			}, sendQueryRetryStats)
 			if err != nil {
 				if ctx.Err() != nil { // we are shutting down
@@ -329,27 +329,8 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				panic(err)
 			}
 
-			combinedList := toRetry.Jobs
-			limitReached = toRetry.LimitsReached
-			if !toRetry.LimitsReached {
-				queryParams.JobsLimit -= len(toRetry.Jobs)
-				if queryParams.PayloadSizeLimit > 0 {
-					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
-				}
-				unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
-					return st.errorDB.GetUnprocessed(ctx, queryParams)
-				}, sendQueryRetryStats)
-				if err != nil {
-					if ctx.Err() != nil { // we are shutting down
-						close(st.errProcessQ)
-						return
-					}
-					st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
-					panic(err)
-				}
-				combinedList = append(combinedList, unprocessed.Jobs...)
-				limitReached = unprocessed.LimitsReached
-			}
+			combinedList := toProcess.Jobs
+			limitReached = toProcess.LimitsReached
 			st.statErrDBR.Since(start)
 
 			if len(combinedList) == 0 {

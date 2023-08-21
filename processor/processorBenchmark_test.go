@@ -6,6 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/rudderlabs/rudder-server/utils/types"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
@@ -17,14 +19,19 @@ func Benchmark_makeCommonMetadataFromSingularEvent(b *testing.B) {
 				WorkspaceID: "test",
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name:     "test_def",
-					Category: "eventStream?",
+					Category: "eventStream",
 					ID:       "testDefId",
 				},
+			},
+			types.EventParams{
+				SourceTaskRunId: "source_task_run_id",
+				SourceJobRunId:  "source_job_run_id",
+				SourceId:        "source_id",
 			})
 	}
 }
 
-var dummySingularEvent map[string]interface{} = map[string]interface{}{
+var dummySingularEvent = map[string]interface{}{
 	"type":      "track",
 	"channel":   "android-srk",
 	"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
@@ -55,7 +62,7 @@ var dummySingularEvent map[string]interface{} = map[string]interface{}{
 	},
 }
 
-var dummyBatchEvent jobsdb.JobT = jobsdb.JobT{
+var dummyBatchEvent = jobsdb.JobT{
 	UUID:          uuid.New(),
 	JobID:         1,
 	UserID:        "anon_id",
@@ -69,9 +76,9 @@ var dummyBatchEvent jobsdb.JobT = jobsdb.JobT{
 	WorkspaceId:   "test",
 }
 
-var gwParameters []byte = []byte(`{"batch_id": 1, "source_id": "1rNMpysD4lTuzglyfmPzsmihAbK", "source_job_run_id": ""}`)
+var gwParameters = []byte(`{"batch_id": 1, "source_id": "1rNMpysD4lTuzglyfmPzsmihAbK", "source_job_run_id": ""}`)
 
-var payload []byte = []byte(
+var payload = []byte(
 	`{
 		"batch": [
 		  {

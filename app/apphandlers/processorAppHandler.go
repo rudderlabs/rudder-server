@@ -320,7 +320,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	return g.Wait()
 }
 
-func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.HandleT) error {
+func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Handle) error {
 	// Port where Processor health handler is running
 	a.log.Infof("Starting in %d", a.config.http.webPort)
 	srvMux := chi.NewMux()

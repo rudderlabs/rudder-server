@@ -439,8 +439,8 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	}
 }
 
-func (rt *Handle) getJobsFn(parentContext context.Context) func(context.Context, jobsdb.GetQueryParamsT, jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
-	return func(ctx context.Context, params jobsdb.GetQueryParamsT, resumeFrom jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
+func (rt *Handle) getJobsFn(parentContext context.Context) func(context.Context, jobsdb.GetQueryParams, jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
+	return func(ctx context.Context, params jobsdb.GetQueryParams, resumeFrom jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
 		jobs, err := misc.QueryWithRetriesAndNotify(parentContext, rt.reloadableConfig.jobsDBCommandTimeout, rt.reloadableConfig.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
 			return rt.jobsDB.GetToProcess(
 				ctx,
@@ -455,8 +455,8 @@ func (rt *Handle) getJobsFn(parentContext context.Context) func(context.Context,
 	}
 }
 
-func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQueryParamsT {
-	params := jobsdb.GetQueryParamsT{
+func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQueryParams {
+	params := jobsdb.GetQueryParams{
 		CustomValFilters: []string{rt.destType},
 		PayloadSizeLimit: rt.adaptiveLimit(rt.reloadableConfig.payloadLimit),
 		JobsLimit:        pickUpCount,

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	c "github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -60,6 +61,7 @@ func TestJobsArchival(t *testing.T) {
 	jobs, err := readGzipJobFile(seedJobsFileName)
 	require.NoError(t, err, "failed to read jobs file")
 
+	config.Reset()
 	{
 		t.Setenv("MINIO_SSL", "false")
 		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
@@ -69,10 +71,9 @@ func TestJobsArchival(t *testing.T) {
 		t.Setenv("JOBS_DB_USER", postgresResource.User)
 		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
 	}
-
 	jobsdb.Init()
 	misc.Init()
-	jd := &jobsdb.HandleT{
+	jd := &jobsdb.Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return make(chan time.Time)
 		},
@@ -166,14 +167,12 @@ func TestJobsArchival(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			succeeded, err := jd.GetProcessed(
+			succeeded, err := jd.GetSucceeded(
 				ctx,
-				jobsdb.GetQueryParamsT{
-					IgnoreCustomValFiltersInQuery: true,
-					StateFilters:                  []string{jobsdb.Succeeded.State},
-					JobsLimit:                     1000,
-					EventsLimit:                   1000,
-					PayloadSizeLimit:              bytesize.GB,
+				jobsdb.GetQueryParams{
+					JobsLimit:        1000,
+					EventsLimit:      1000,
+					PayloadSizeLimit: bytesize.GB,
 				},
 			)
 			require.NoError(t, err)
