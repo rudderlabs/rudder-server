@@ -129,6 +129,21 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// replaySourceIDAuth middleware to authenticate sourceID in the X-Rudder-Source-Id header.
+// If the sourceID is valid, i.e. it is a replay source and enabled, the source auth info is added to the request context.
+// If the sourceID is invalid, the request is rejected.
+func (gw *Handle) replaySourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
+	return gw.sourceIDAuth(func(w http.ResponseWriter, r *http.Request) {
+		arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
+		s, ok := gw.sourceIDSourceMap[arctx.SourceID]
+		if !ok || !s.IsReplaySource() {
+			gw.handleHttpError(w, r, response.InvalidReplaySource)
+			return
+		}
+		delegate.ServeHTTP(w, r)
+	})
+}
+
 // augmentAuthRequestContext adds source job run id and task run id from the request to the authentication context.
 func augmentAuthRequestContext(arctx *gwtypes.AuthRequestContext, r *http.Request) {
 	arctx.SourceJobRunID = r.Header.Get("X-Rudder-Job-Run-Id")
@@ -165,6 +180,7 @@ func sourceToRequestContext(s backendconfig.SourceT) *gwtypes.AuthRequestContext
 		SourceName:     s.Name,
 		SourceCategory: s.SourceDefinition.Category,
 		SourceDefName:  s.SourceDefinition.Name,
+		ReplaySource:   s.IsReplaySource(),
 	}
 	if arctx.SourceCategory == "" {
 		arctx.SourceCategory = eventStreamSourceCategory
