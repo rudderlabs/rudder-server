@@ -52,7 +52,7 @@ func EventToKeyValue(jsonData json.RawMessage) (string, map[string]interface{}) 
 }
 
 func SupportsKeyUpdate(jsonData json.RawMessage) bool {
-	return gjson.GetBytes(jsonData, "message.key").Exists() && gjson.GetBytes(jsonData, "message.fields").Exists() && gjson.GetBytes(jsonData, "message.hash").Exists()
+	return gjson.GetBytes(jsonData, "message.key").Exists() && gjson.GetBytes(jsonData, "message.value").Exists() && gjson.GetBytes(jsonData, "message.hash").Exists()
 }
 
 func EventToHashKeyValue(jsonData json.RawMessage) (string, string, string) {
