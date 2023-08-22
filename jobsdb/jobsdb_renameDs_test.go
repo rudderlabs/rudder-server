@@ -21,7 +21,7 @@ func Test_mustRenameDS(t *testing.T) {
 		tablePrefix: prefix,
 		dbHandle:    dbHandle,
 	}
-	jobsdb.backupConfig.preBackupHandlers = []prebackup.Handler{
+	jobsdb.conf.backup.preBackupHandlers = []prebackup.Handler{
 		prebackup.DropSourceIds(func() []string { return []string{"one", "two"} }),
 	}
 	var (
@@ -67,7 +67,7 @@ func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 		tablePrefix: prefix,
 		dbHandle:    dbHandle,
 	}
-	jobsdb.backupConfig.preBackupHandlers = []prebackup.Handler{
+	jobsdb.conf.backup.preBackupHandlers = []prebackup.Handler{
 		prebackup.DropSourceIds(func() []string { return []string{"one", "two"} }),
 	}
 	var (

@@ -22,11 +22,11 @@ import (
 )
 
 func (jd *Handle) isBackupEnabled() bool {
-	return jd.backupConfig.masterBackupEnabled && jd.backupConfig.instanceBackupEnabled
+	return jd.conf.backup.masterBackupEnabled && jd.conf.backup.instanceBackupEnabled
 }
 
 func (jd *Handle) IsMasterBackupEnabled() bool {
-	return jd.backupConfig.masterBackupEnabled
+	return jd.conf.backup.masterBackupEnabled
 }
 
 func (jd *Handle) backupDSLoop(ctx context.Context) {
@@ -36,7 +36,7 @@ func (jd *Handle) backupDSLoop(ctx context.Context) {
 
 	for {
 		select {
-		case <-time.After(sleepMultiplier * jd.backupConfig.backupCheckSleepDuration):
+		case <-time.After(sleepMultiplier * jd.conf.backup.backupCheckSleepDuration):
 			if !jd.isBackupEnabled() {
 				jd.logger.Debugf("backupDSLoop backup disabled %s", jd.tablePrefix)
 				continue
@@ -100,7 +100,7 @@ func (jd *Handle) backupDSLoop(ctx context.Context) {
 			})
 		}
 		if err := loop(); err != nil && ctx.Err() == nil {
-			if !jd.config.skipMaintenanceError {
+			if !jd.conf.skipMaintenanceError {
 				panic(err)
 			}
 			jd.logger.Errorf("[JobsDB] :: Failed to backup dataset. Err: %s", err.Error())
@@ -117,7 +117,7 @@ func (jd *Handle) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) er
 	}); err != nil {
 		return fmt.Errorf("error while cleaning status table: %w", err)
 	}
-	if jd.backupConfig.FailedOnly {
+	if jd.conf.backup.FailedOnly {
 		if err := jd.failedOnlyBackup(ctx, backupDSRange); err != nil {
 			return fmt.Errorf("error while backing up failed jobs: %w", err)
 		}
@@ -131,7 +131,7 @@ func (jd *Handle) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) er
 
 func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) error {
 	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(jd.configGetter.GetInt("JobsDB.JobsBackupUploadWorkers", 100))
+	g.SetLimit(jd.config.GetInt("JobsDB.JobsBackupUploadWorkers", 100))
 	for workspaceID, filePath := range dumps {
 		wrkId := workspaceID
 		path := filePath
@@ -144,7 +144,7 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 			return nil
 		}
 		g.Go(misc.WithBugsnag(func() error {
-			return backoff.RetryNotify(operation, backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(jd.configGetter.GetInt("JobsDB.backup.maxRetries", 100))), func(err error, d time.Duration) {
+			return backoff.RetryNotify(operation, backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(jd.config.GetInt("JobsDB.backup.maxRetries", 100))), func(err error, d time.Duration) {
 				jd.logger.Errorf("[JobsDB] :: Retrying upload workspaceId %v. Error: %s", wrkId, err.Error())
 			})
 		}))
@@ -185,7 +185,7 @@ func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRa
 		return fmt.Sprintf(`%v%v_%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State, workspaceID), nil
 	}
 
-	dumps, err := jd.createTableDumps(ctx, getFailedOnlyBackupQueryFn(backupDSRange, jd.backupConfig.backupRowsBatchSize, jd.backupConfig.backupMaxTotalPayloadSize), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(ctx, getFailedOnlyBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize, jd.conf.backup.backupMaxTotalPayloadSize), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -245,7 +245,7 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 		), nil
 	}
 
-	dumps, err := jd.createTableDumps(ctx, getJobsBackupQueryFn(backupDSRange, jd.backupConfig.backupRowsBatchSize, jd.backupConfig.backupMaxTotalPayloadSize), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(ctx, getJobsBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize, jd.conf.backup.backupMaxTotalPayloadSize), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -299,7 +299,7 @@ func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetR
 		return fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, workspaceID), nil
 	}
 
-	dumps, err := jd.createTableDumps(ctx, getStatusBackupQueryFn(backupDSRange, jd.backupConfig.backupRowsBatchSize), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(ctx, getStatusBackupQueryFn(backupDSRange, jd.conf.backup.backupRowsBatchSize), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -551,7 +551,7 @@ func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) st
 			if err != nil {
 				return fmt.Errorf("scanning row failed with error : %w", err)
 			}
-			preferences, err := jd.backupConfig.fileUploaderProvider.GetStoragePreferences(workspaceID)
+			preferences, err := jd.conf.backup.fileUploaderProvider.GetStoragePreferences(workspaceID)
 			if errors.Is(err, fileuploader.NoStorageForWorkspaceError) {
 				offset++
 				jd.logger.Infof("getting storage preferences failed with error: %w for workspaceID: %s", err, workspaceID)
@@ -615,10 +615,10 @@ func (jd *Handle) uploadTableDump(ctx context.Context, workspaceID, path string)
 
 	pathPrefixes := make([]string, 0)
 	// For empty path prefix, don't need to add anything to the array
-	if jd.backupConfig.PathPrefix != "" {
-		pathPrefixes = append(pathPrefixes, jd.backupConfig.PathPrefix, jd.configGetter.GetString("INSTANCE_ID", "1"))
+	if jd.conf.backup.PathPrefix != "" {
+		pathPrefixes = append(pathPrefixes, jd.conf.backup.PathPrefix, jd.config.GetString("INSTANCE_ID", "1"))
 	} else {
-		pathPrefixes = append(pathPrefixes, jd.configGetter.GetString("INSTANCE_ID", "1"))
+		pathPrefixes = append(pathPrefixes, jd.config.GetString("INSTANCE_ID", "1"))
 	}
 
 	var output filemanager.UploadedFile
@@ -633,14 +633,14 @@ func (jd *Handle) uploadTableDump(ctx context.Context, workspaceID, path string)
 
 func (jd *Handle) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, workspaceID string, pathPrefixes ...string) (filemanager.UploadedFile, error) {
 	// get a file uploader
-	fileUploader, err := jd.backupConfig.fileUploaderProvider.GetFileManager(workspaceID)
+	fileUploader, err := jd.conf.backup.fileUploaderProvider.GetFileManager(workspaceID)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
-	bo.MaxElapsedTime = jd.backupConfig.maxBackupRetryTime
-	boRetries := backoff.WithMaxRetries(bo, uint64(jd.configGetter.GetInt64("MAX_BACKOFF_RETRIES", 3)))
+	bo.MaxElapsedTime = jd.conf.backup.maxBackupRetryTime
+	boRetries := backoff.WithMaxRetries(bo, uint64(jd.config.GetInt64("MAX_BACKOFF_RETRIES", 3)))
 	boCtx := backoff.WithContext(boRetries, ctx)
 
 	var output filemanager.UploadedFile

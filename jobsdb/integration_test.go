@@ -69,7 +69,7 @@ func TestJobsDB(t *testing.T) {
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		configGetter: c,
+		config: c,
 	}
 	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestJobsDB(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			configGetter: c,
+			config: c,
 		}
 
 		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -315,7 +315,7 @@ func TestJobsDB(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			configGetter: c,
+			config: c,
 		}
 
 		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -355,7 +355,7 @@ func TestJobsDB(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			configGetter: c,
+			config: c,
 		}
 		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
@@ -385,7 +385,7 @@ func TestJobsDB(t *testing.T) {
 
 		c.Set("jobsdb.maxDSSize", 1)
 		jobDB := Handle{
-			configGetter: c,
+			config: c,
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
@@ -416,7 +416,7 @@ func TestJobsDB(t *testing.T) {
 
 		c.Set("jobsdb.maxDSSize", 4)
 		jobDB := Handle{
-			configGetter: c,
+			config: c,
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
@@ -460,7 +460,7 @@ func TestJobsDB(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			configGetter: c,
+			config: c,
 		}
 
 		tablePrefix := strings.ToLower(rand.String(5))
@@ -493,7 +493,7 @@ func TestJobsDB(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			configGetter: c,
+			config: c,
 		}
 
 		tablePrefix := strings.ToLower(rand.String(5))
@@ -579,7 +579,7 @@ func TestJobsDB(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			configGetter: c,
+			config: c,
 		}
 		prefix := strings.ToLower(rand.String(5))
 		c.Set("JobsDB.jobDoneMigrateThreshold", 0.7)
@@ -701,7 +701,7 @@ func TestJobsDB(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			configGetter: c,
+			config: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
@@ -808,7 +808,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	c := config.New()
 	c.Set("jobsdb.maxDSSize", 10)
 	jobDB := Handle{
-		configGetter: c,
+		config: c,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -893,7 +893,7 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 	c.Set("jobsdb.maxDSSize", 10)
 
 	jobDB := Handle{
-		configGetter: c,
+		config: c,
 	}
 	customVal := "MOCKDS"
 	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -977,8 +977,8 @@ func TestCreateDS(t *testing.T) {
 			c := config.New()
 			c.Set("jobsdb.maxDSSize", 1)
 			jobDB := Handle{
-				dbHandle:     postgresql.DB,
-				configGetter: c,
+				dbHandle: postgresql.DB,
+				config:   c,
 				TriggerAddNewDS: func() <-chan time.Time {
 					return triggerAddNewDS
 				},
@@ -1029,7 +1029,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 	c := config.New()
 	c.Set("jobsdb.maxDSSize", 10)
 	jobDB := Handle{
-		configGetter: c,
+		config: c,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -1236,7 +1236,7 @@ func BenchmarkLifecycle(b *testing.B) {
 	triggerAddNewDS := make(chan time.Time)
 
 	jobDB := &Handle{
-		configGetter: c,
+		config: c,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},

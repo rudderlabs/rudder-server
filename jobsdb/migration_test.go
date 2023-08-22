@@ -33,7 +33,7 @@ func TestMigration(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			configGetter: c,
+			config: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		err := jobDB.Setup(
@@ -46,7 +46,7 @@ func TestMigration(t *testing.T) {
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
-		jobDB.config.maxDSRetentionPeriod = time.Millisecond
+		jobDB.conf.maxDSRetentionPeriod = time.Millisecond
 
 		customVal := rand.String(5)
 		jobs := genJobs(defaultWorkspaceID, customVal, 30, 1)
@@ -220,7 +220,7 @@ func TestMigration(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			configGetter: c,
+			config: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		require.NoError(t, jobDB.Setup(
@@ -232,7 +232,7 @@ func TestMigration(t *testing.T) {
 		))
 		defer jobDB.TearDown()
 
-		jobDB.config.maxDSRetentionPeriod = time.Millisecond
+		jobDB.conf.maxDSRetentionPeriod = time.Millisecond
 
 		// 3 datasets with 10 jobs each, 1 dataset with 0 jobs
 		for i := 0; i < 3; i++ {

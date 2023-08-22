@@ -158,8 +158,8 @@ func TestProcessorManager(t *testing.T) {
 		"gw",
 		jobsdb.WithConfig(c),
 	)
-	defer tempDB.TearDown()
 	require.NoError(t, tempDB.Start())
+	defer tempDB.TearDown()
 
 	customVal := "GW"
 	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{

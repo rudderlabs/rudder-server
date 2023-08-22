@@ -410,7 +410,7 @@ func TestJobsDBTimeout(t *testing.T) {
 
 	c.Set("JobsDB.maxDSSize", 10)
 	jobDB := Handle{
-		configGetter: c,
+		config: c,
 	}
 
 	customVal := "MOCKDS"
@@ -497,7 +497,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS1
 		},
-		configGetter: c,
+		config: c,
 	}
 	prefix := strings.ToLower(rsRand.String(5))
 	err := jobsDB1.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -511,7 +511,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS2
 		},
-		configGetter: c,
+		config: c,
 	}
 	err = jobsDB2.Setup(ReadWrite, false, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
@@ -596,7 +596,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
-			configGetter: c,
+			config: c,
 		}
 		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
@@ -660,7 +660,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS1
 			},
-			configGetter: c,
+			config: c,
 		}
 		clearAllDS := true
 		prefix := strings.ToLower(rsRand.String(5))
@@ -679,7 +679,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerRefreshDS: func() <-chan time.Time {
 				return triggerRefreshDS
 			},
-			configGetter: c,
+			config: c,
 		}
 		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
@@ -695,7 +695,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			TriggerRefreshDS: func() <-chan time.Time {
 				return triggerRefreshDS
 			},
-			configGetter: c,
+			config: c,
 		}
 		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
@@ -790,7 +790,7 @@ func TestCacheScenarios(t *testing.T) {
 				"cache",
 			)
 		}
-		dbWithOneLimit.config.MaxDSSize = &maxDSSize
+		dbWithOneLimit.conf.MaxDSSize = &maxDSSize
 		dbWithOneLimit.TriggerAddNewDS = func() <-chan time.Time {
 			return triggerAddNewDS
 		}
@@ -1328,7 +1328,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		configGetter: c,
+		config: c,
 	}
 	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
@@ -1440,7 +1440,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
-		configGetter: c,
+		config: c,
 	}
 	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)

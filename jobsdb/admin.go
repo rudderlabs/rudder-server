@@ -149,9 +149,9 @@ func (jd *Handle) startCleanupLoop(ctx context.Context) {
 			case <-jd.TriggerJobCleanUp():
 				func() {
 					for {
-						if err := jd.doCleanup(ctx, jd.configGetter.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil && ctx.Err() == nil {
+						if err := jd.doCleanup(ctx, jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil && ctx.Err() == nil {
 							jd.logger.Errorf("error while cleaning up old jobs: %w", err)
-							if err := misc.SleepCtx(ctx, jd.configGetter.GetDuration("jobsdb.cleanupRetryInterval", 10, time.Second)); err != nil {
+							if err := misc.SleepCtx(ctx, jd.config.GetDuration("jobsdb.cleanupRetryInterval", 10, time.Second)); err != nil {
 								return
 							}
 							continue
@@ -181,7 +181,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 			jobs := lo.Filter(
 				jobsResult.Jobs,
 				func(job *JobT, _ int) bool {
-					return job.CreatedAt.Before(time.Now().Add(-jd.config.jobMaxAge()))
+					return job.CreatedAt.Before(time.Now().Add(-jd.conf.jobMaxAge()))
 				},
 			)
 			if len(jobs) > 0 {
@@ -224,7 +224,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 			fmt.Sprintf(
 				deleteStmt,
 				jd.tablePrefix,
-				jd.configGetter.GetInt("JobsDB.archivalTimeInDays", 10),
+				jd.config.GetInt("JobsDB.archivalTimeInDays", 10),
 			),
 		).Scan(&journalEntryCount); err != nil {
 			return err

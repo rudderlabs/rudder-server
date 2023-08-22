@@ -906,12 +906,6 @@ func TestRouter(t *testing.T) {
 				pgResource, err := resource.SetupPostgres(pool, t)
 				require.NoError(t, err)
 
-				config.Set("DB.host", pgResource.Host)
-				config.Set("DB.port", pgResource.Port)
-				config.Set("DB.user", pgResource.User)
-				config.Set("DB.password", pgResource.Password)
-				config.Set("DB.name", pgResource.Database)
-
 				t.Log("db:", pgResource.DBDsn)
 
 				err = (&migrator.Migrator{
