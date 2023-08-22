@@ -463,13 +463,13 @@ func (d *Deltalake) CreateTable(ctx context.Context, tableName string, columns m
 
 	_, err := d.DB.ExecContext(ctx, query)
 	if err != nil {
-		return fmt.Errorf("creating table: %w", d.trimErrorMessage(err))
+		return fmt.Errorf("creating table: %w", d.TrimErrorMessage(err))
 	}
 
 	return nil
 }
 
-func (d *Deltalake) trimErrorMessage(baseError error) error {
+func (d *Deltalake) TrimErrorMessage(baseError error) error {
 	errorString := baseError.Error()
 
 	if len(errorString) <= d.config.maxErrorLength {
