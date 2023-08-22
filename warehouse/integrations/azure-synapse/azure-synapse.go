@@ -17,6 +17,10 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
@@ -84,17 +88,20 @@ var mssqlDataTypesMapToRudder = map[string]string{
 }
 
 type AzureSynapse struct {
-	DB                 *sql.DB
+	DB                 *sqlmw.DB
 	Namespace          string
 	ObjectStorage      string
 	Warehouse          model.Warehouse
 	Uploader           warehouseutils.Uploader
 	connectTimeout     time.Duration
-	logger             logger.Logger
 	LoadFileDownLoader downloader.Downloader
+
+	stats  stats.Stats
+	logger logger.Logger
 
 	config struct {
 		numWorkersDownloadLoadFiles int
+		slowQueryThreshold          time.Duration
 	}
 }
 
@@ -120,35 +127,39 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func New(conf *config.Config, log logger.Logger) *AzureSynapse {
-	az := &AzureSynapse{}
-
-	az.logger = log.Child("integrations").Child("synapse")
+func New(conf *config.Config, log logger.Logger, stats stats.Stats) *AzureSynapse {
+	az := &AzureSynapse{
+		stats:  stats,
+		logger: log.Child("integrations").Child("synapse"),
+	}
 
 	az.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.azure_synapse.numWorkersDownloadLoadFiles", 1)
+	az.config.slowQueryThreshold = conf.GetDuration("Warehouse.azure_synapse.slowQueryThreshold", 5, time.Minute)
 
 	return az
 }
 
-func connect(cred credentials) (*sql.DB, error) {
-	// Create connection string
-	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
-	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
-	// TrustServerCertificate=true ; all options(disable, false, true) work with this
-	// if rds.forcessl=1; disable option doesn't work. true, false works alongside TrustServerCertificate=true
-	//		https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/SQLServer.Concepts.General.SSL.Using.html
-	// more combination explanations here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
+// connect to the azure synapse database
+// if TrustServerCertificate is set to true, all options(disable, false, true) works.
+// if forceSSL is set to 1, disable option doesn't work.
+// If forceSSL is set to true or false, it works alongside with TrustServerCertificate=true
+// more about combinations in here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
+func (as *AzureSynapse) connect() (*sqlmw.DB, error) {
+	cred := as.connectionCredentials()
+
+	port, err := strconv.Atoi(cred.port)
+	if err != nil {
+		return nil, fmt.Errorf("invalid port %q: %w", cred.port, err)
+	}
+
 	query := url.Values{}
 	query.Add("database", cred.dbName)
 	query.Add("encrypt", cred.sslMode)
+	query.Add("TrustServerCertificate", "true")
 	if cred.timeout > 0 {
 		query.Add("dial timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
 	}
-	query.Add("TrustServerCertificate", "true")
-	port, err := strconv.Atoi(cred.port)
-	if err != nil {
-		return nil, fmt.Errorf("invalid port: %w", err)
-	}
+
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
 		User:     url.UserPassword(cred.user, cred.password),
@@ -156,15 +167,24 @@ func connect(cred credentials) (*sql.DB, error) {
 		RawQuery: query.Encode(),
 	}
 
-	var db *sql.DB
-	if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
-		return nil, fmt.Errorf("synapse connection error : (%v)", err)
+	db, err := sql.Open("sqlserver", connUrl.String())
+	if err != nil {
+		return nil, fmt.Errorf("opening connection: %w", err)
 	}
-	return db, nil
+
+	middleware := sqlmw.New(
+		db,
+		sqlmw.WithStats(as.stats),
+		sqlmw.WithLogger(as.logger),
+		sqlmw.WithKeyAndValues(as.defaultLogFields()),
+		sqlmw.WithQueryTimeout(as.connectTimeout),
+		sqlmw.WithSlowQueryThreshold(as.config.slowQueryThreshold),
+	)
+	return middleware, nil
 }
 
-func (as *AzureSynapse) getConnectionCredentials() credentials {
-	return credentials{
+func (as *AzureSynapse) connectionCredentials() *credentials {
+	return &credentials{
 		host:     warehouseutils.GetConfigValue(host, as.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(dbName, as.Warehouse),
 		user:     warehouseutils.GetConfigValue(user, as.Warehouse),
@@ -172,6 +192,17 @@ func (as *AzureSynapse) getConnectionCredentials() credentials {
 		port:     warehouseutils.GetConfigValue(port, as.Warehouse),
 		sslMode:  warehouseutils.GetConfigValue(sslMode, as.Warehouse),
 		timeout:  as.connectTimeout,
+	}
+}
+
+func (as *AzureSynapse) defaultLogFields() []any {
+	return []any{
+		logfield.SourceID, as.Warehouse.Source.ID,
+		logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, as.Warehouse.Destination.ID,
+		logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, as.Warehouse.WorkspaceID,
+		logfield.Namespace, as.Namespace,
 	}
 }
 
@@ -665,7 +696,9 @@ func (as *AzureSynapse) Setup(_ context.Context, warehouse model.Warehouse, uplo
 	as.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.AzureSynapse, warehouse.Destination.Config, as.Uploader.UseRudderStorage())
 	as.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, as.config.numWorkersDownloadLoadFiles)
 
-	as.DB, err = connect(as.getConnectionCredentials())
+	if as.DB, err = as.connect(); err != nil {
+		return fmt.Errorf("connecting to azure synapse: %w", err)
+	}
 	return err
 }
 
@@ -823,12 +856,13 @@ func (as *AzureSynapse) GetTotalCountInTable(ctx context.Context, tableName stri
 func (as *AzureSynapse) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
-	dbHandle, err := connect(as.getConnectionCredentials())
+
+	db, err := as.connect()
 	if err != nil {
-		return client.Client{}, err
+		return client.Client{}, fmt.Errorf("connecting to azure synapse: %w", err)
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
 func (as *AzureSynapse) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
