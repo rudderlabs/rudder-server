@@ -3,10 +3,12 @@ package notifier
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
@@ -20,29 +22,18 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 )
 
-const (
-	waiting   = "waiting"
-	executing = "executing"
-	succeeded = "succeeded"
-	failed    = "failed"
-	aborted   = "aborted"
+/*
+	TODO: We should probably have a pg_notifier_queue_metadata for storing common metadata instead of sending them in payload.
+    TODO: Instead of claim, can we probably have trigger which updates when status is marked as failed or waiting.
+    TODO: Discuss whether it can be done from the master instead of the slaves, that way we would not be needing the lock. Earlier we used to have a separate server running in embedded mode, but now is not the case.
+*/
 
-	queueName = "pg_notifier_queue"
-
-	asyncJob = "async_job"
-)
-
-type PGNotifier struct {
-	dsn                 string
-	db                  *sqlmw.DB
-	workspaceIdentifier string
-}
+const queueName = "pg_notifier_queue"
 
 type Notifier struct {
 	conf                *config.Config
@@ -50,9 +41,15 @@ type Notifier struct {
 	statsFactory        stats.Stats
 	db                  *sqlmw.DB
 	repo                *repo.Notifier
-	dsn                 string
 	workspaceIdentifier string
 	batchIDGenerator    func() uuid.UUID
+	now                 func() time.Time
+	background          struct {
+		group  *errgroup.Group
+		ctx    context.Context
+		cancel context.CancelFunc
+		wait   func() error
+	}
 
 	config struct {
 		host                       string
@@ -73,26 +70,32 @@ type Notifier struct {
 		insertRecords      stats.Measurement
 		publish            stats.Measurement
 		publishTime        stats.Measurement
+		claimLag           stats.Measurement
 		claimSucceeded     stats.Measurement
 		claimSucceededTime stats.Measurement
 		claimFailed        stats.Measurement
 		claimFailedTime    stats.Measurement
 		claimUpdateFailed  stats.Measurement
+		abortedRecords     stats.Measurement
 	}
 }
 
-// New Given default connection info return pg notifier object from it
-func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PGNotifier, err error) {
-	return
+type Opt func(*Notifier)
+
+func WithNow(now func() time.Time) Opt {
+	return func(r *Notifier) {
+		r.now = now
+	}
 }
 
-func NewNotifier(
+func New(
 	ctx context.Context,
 	conf *config.Config,
 	log logger.Logger,
 	statsFactory stats.Stats,
 	workspaceIdentifier string,
 	fallbackDSN string,
+	opts ...Opt,
 ) (*Notifier, error) {
 	n := &Notifier{
 		conf:                conf,
@@ -100,21 +103,26 @@ func NewNotifier(
 		statsFactory:        statsFactory,
 		workspaceIdentifier: workspaceIdentifier,
 		batchIDGenerator:    misc.FastUUID,
+		now:                 time.Now,
+	}
+
+	for _, opt := range opts {
+		opt(n)
 	}
 
 	n.logger.Infof("Initializing Notifier...")
 
-	n.config.host = config.GetString("PGNOTIFIER_DB_HOST", "localhost")
-	n.config.user = config.GetString("PGNOTIFIER_DB_USER", "ubuntu")
-	n.config.database = config.GetString("PGNOTIFIER_DB_NAME", "ubuntu")
-	n.config.port = config.GetInt("PGNOTIFIER_DB_PORT", 5432)
-	n.config.password = config.GetString("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
-	n.config.sslMode = config.GetString("PGNOTIFIER_DB_SSL_MODE", "disable")
-	n.config.maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
-	n.config.maxAttempt = config.GetInt("PgNotifier.maxOpenConnections", 20)
-	n.config.shouldForceSetLowerVersion = config.GetBool("SQLMigrator.forceSetLowerVersion", true)
-	n.config.trackBatchInterval = config.GetDuration("PgNotifier.trackBatchIntervalInS", 2, time.Second)
-	n.config.queryTimeout = config.GetDuration("Warehouse.pgNotifierQueryTimeout", 5, time.Minute)
+	n.config.host = n.conf.GetString("PGNOTIFIER_DB_HOST", "localhost")
+	n.config.user = n.conf.GetString("PGNOTIFIER_DB_USER", "ubuntu")
+	n.config.database = n.conf.GetString("PGNOTIFIER_DB_NAME", "ubuntu")
+	n.config.port = n.conf.GetInt("PGNOTIFIER_DB_PORT", 5432)
+	n.config.password = n.conf.GetString("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
+	n.config.sslMode = n.conf.GetString("PGNOTIFIER_DB_SSL_MODE", "disable")
+	n.config.maxAttempt = n.conf.GetInt("PgNotifier.maxAttempt", 3)
+	n.config.maxOpenConnections = n.conf.GetInt("PgNotifier.maxOpenConnections", 20)
+	n.config.shouldForceSetLowerVersion = n.conf.GetBool("SQLMigrator.forceSetLowerVersion", true)
+	n.config.trackBatchInterval = n.conf.GetDuration("PgNotifier.trackBatchIntervalInS", 2, time.Second)
+	n.config.queryTimeout = n.conf.GetDuration("Warehouse.pgNotifierQueryTimeout", 5, time.Minute)
 
 	n.conf.RegisterDurationConfigVariable(5000, &n.config.maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
 	n.conf.RegisterDurationConfigVariable(120, &n.config.jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
@@ -138,6 +146,9 @@ func NewNotifier(
 	n.stats.publishTime = n.statsFactory.NewTaggedStat("pgnotifier.publishTime", stats.TimerType, stats.Tags{
 		"module": "pgnotifier",
 	})
+	n.stats.claimLag = n.statsFactory.NewTaggedStat("pgnotifier.claimLag", stats.TimerType, stats.Tags{
+		"module": "pgnotifier",
+	})
 	n.stats.claimSucceededTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
 		"module": "pgnotifier",
 		"status": "succeeded",
@@ -146,6 +157,16 @@ func NewNotifier(
 		"module": "pgnotifier",
 		"status": "failed",
 	})
+	n.stats.abortedRecords = n.statsFactory.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, stats.Tags{
+		"workspace": n.workspaceIdentifier,
+		"module":    "pg_notifier",
+		"queueName": "pg_notifier_queue",
+	})
+
+	ctx, cancel := context.WithCancel(ctx)
+	n.background.group, n.background.ctx = errgroup.WithContext(ctx)
+	n.background.cancel = cancel
+	n.background.wait = n.background.group.Wait
 
 	dsn := fallbackDSN
 	if n.checkForNotifierEnvVars() {
@@ -243,288 +264,12 @@ func (n *Notifier) ClearJobs(ctx context.Context) error {
 	return nil
 }
 
-type Response struct {
-	JobID   int64
-	Status  string
-	Output  json.RawMessage
-	Error   string
-	JobType string
-}
-
-type JobsResponse struct {
-	Status    string
-	Output    json.RawMessage
-	Error     string
-	JobType   string
-	JobRunID  string
-	TaskRunID string
-}
-type Claim struct {
-	ID        int64
-	BatchID   string
-	Status    string
-	Workspace string
-	Payload   json.RawMessage
-	Attempt   int
-	JobType   string
-}
-
-type ClaimResponse struct {
-	Payload json.RawMessage
-	Err     error
-}
-
-type MessagePayload struct {
-	Jobs    []model.Payload
-	JobType string
-}
-
 func (n *Notifier) GetDBHandle() *sql.DB {
 	return n.db.DB
 }
 
-// trackUploadBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
-func (n *Notifier) trackUploadBatch(ctx context.Context, batchID string, ch *chan []Response) {
-	rruntime.GoForWarehouse(func() {
-		for {
-			time.Sleep(n.config.trackBatchInterval)
-			// keep polling db for batch status
-			// or subscribe to triggers
-			stmt := fmt.Sprintf(`
-				SELECT
-				  count(*)
-				FROM
-				  %s
-				WHERE
-				  batch_id = '%s'
-				  AND status != '%s'
-				  AND status != '%s';
-`,
-				queueName,
-				batchID,
-				succeeded,
-				aborted,
-			)
-			var count int
-			err := n.db.QueryRowContext(ctx, stmt).Scan(&count)
-			if err != nil {
-				n.logger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s", stmt, n.dsn)
-				panic(err)
-			}
-
-			if count == 0 {
-				stmt = fmt.Sprintf(`
-					SELECT
-					  payload -> 'StagingFileID',
-					  payload -> 'Output',
-					  status,
-					  error
-					FROM
-					  %s
-					WHERE
-					  batch_id = '%s';
-`,
-					queueName,
-					batchID,
-				)
-				rows, err := n.db.QueryContext(ctx, stmt)
-				if err != nil {
-					panic(err)
-				}
-				var responses []Response
-				for rows.Next() {
-					var status, jobError, output sql.NullString
-					var jobID int64
-					err = rows.Scan(&jobID, &output, &status, &jobError)
-					if err != nil {
-						panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", stmt, err))
-					}
-					responses = append(responses, Response{
-						JobID:  jobID,
-						Output: []byte(output.String),
-						Status: status.String,
-						Error:  jobError.String,
-					})
-				}
-				if rows.Err() != nil {
-					panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", stmt, rows.Err()))
-				}
-				_ = rows.Close()
-				*ch <- responses
-				n.logger.Infof("PgNotifier: Completed processing all files  in batch: %s", batchID)
-				stmt = fmt.Sprintf(`
-					DELETE FROM
-					  %s
-					WHERE
-					  batch_id = '%s';
-`,
-					queueName,
-					batchID,
-				)
-				_, err = n.db.ExecContext(ctx, stmt)
-				if err != nil {
-					n.logger.Errorf("PgNotifier: Error deleting from %s for batch_id:%s : %v", queueName, batchID, err)
-				}
-				break
-			}
-			n.logger.Debugf("PgNotifier: Pending %d files to process in batch: %s", count, batchID)
-		}
-	})
-}
-
-// trackAsyncBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
-func (n *Notifier) trackAsyncBatch(ctx context.Context, batchID string, ch *chan []Response) {
-	rruntime.GoForWarehouse(func() {
-		// retry := 0
-		var responses []Response
-		for {
-			time.Sleep(n.config.trackBatchInterval)
-			// keep polling db for batch status
-			// or subscribe to triggers
-			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id=$1 AND status!=$2 AND status!=$3`, queueName)
-			var count int
-			err := n.db.QueryRowContext(ctx, stmt, batchID, succeeded, aborted).Scan(&count)
-			if err != nil {
-				*ch <- responses
-				n.logger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s, error : %s", stmt, n.dsn, err.Error())
-				break
-			}
-
-			if count == 0 {
-				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = $1`, queueName)
-				rows, err := n.db.QueryContext(ctx, stmt, batchID)
-				if err != nil {
-					*ch <- responses
-					n.logger.Errorf("PgNotifier: Failed to query for getting jobs for payload, status & error: %s, connInfo: %s, error : %s", stmt, n.dsn, err.Error())
-					break
-				}
-				for rows.Next() {
-					var status, jobError sql.NullString
-					var payload json.RawMessage
-					err = rows.Scan(&payload, &status, &jobError)
-					if err != nil {
-						continue
-					}
-					responses = append(responses, Response{
-						JobID:  0, // Not required for this as there is no concept of BatchFileId
-						Output: payload,
-						Status: status.String,
-						Error:  jobError.String,
-					})
-				}
-				if err := rows.Err(); err != nil {
-					*ch <- responses
-					n.logger.Errorf("PgNotifier: Failed to query for getting jobs for payload with rows error, status & error: %s, connInfo: %s, error : %v", stmt, n.dsn, err)
-					break
-				}
-				_ = rows.Close()
-				*ch <- responses
-				n.logger.Infof("PgNotifier: Completed processing asyncjobs in batch: %s", batchID)
-				stmt = fmt.Sprintf(`DELETE FROM %s WHERE batch_id = $1`, queueName)
-				n.logger.Infof("Query for deleting pgnotifier rows is %s for batchId : %s in queueName: %s", stmt, batchID, queueName)
-				_, err = n.db.ExecContext(ctx, stmt, batchID)
-				if err != nil {
-					n.logger.Errorf("PgNotifier: Error deleting from %s for batch_id:%s : %v", queueName, batchID, err)
-				}
-				break
-			}
-			n.logger.Debugf("PgNotifier: Pending %d files to process in batch: %s", count, batchID)
-		}
-	})
-}
-
-func (n *Notifier) UpdateClaimedEvent(claim *Claim, response *ClaimResponse) {
-	var err error
-	if response.Err != nil {
-		n.logger.Error(response.Err.Error())
-		stmt := fmt.Sprintf(`
-			UPDATE
-			  %[1]s
-			SET
-			  status =(
-				CASE WHEN attempt > %[2]d THEN CAST (
-				  '%[3]s' AS pg_notifier_status_type
-				) ELSE CAST(
-				  '%[4]s' AS pg_notifier_status_type
-				) END
-			  ),
-			  attempt = attempt + 1,
-			  updated_at = '%[5]s',
-			  error = %[6]s
-			WHERE
-			  id = %[7]v;
-`,
-			queueName,
-			n.config.maxAttempt,
-			aborted,
-			failed,
-			GetCurrentSQLTimestamp(),
-			misc.QuoteLiteral(response.Err.Error()),
-			claim.ID,
-		)
-		_, err = n.db.Exec(stmt)
-
-		// Sending stats when we mark pg_notifier status as aborted.
-		if claim.Attempt > n.config.maxAttempt {
-			stats.Default.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, map[string]string{
-				"queueName": queueName,
-				"workspace": claim.Workspace,
-				"module":    "pg_notifier",
-			}).Increment()
-		}
-	} else {
-		stmt := fmt.Sprintf(`
-			UPDATE
-			  %[1]s
-			SET
-			  status = '%[2]s',
-			  updated_at = '%[3]s',
-			  payload = $1
-			WHERE
-			  id = %[4]v;
-`,
-			queueName,
-			succeeded,
-			GetCurrentSQLTimestamp(),
-			claim.ID,
-		)
-		_, err = n.db.Exec(stmt, response.Payload)
-	}
-
-	if err != nil {
-		n.stats.claimUpdateFailed.Increment()
-		n.logger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
-	}
-}
-
-func (n *Notifier) claim(ctx context.Context, workerID string) (*model.Notifier, error) {
-	claimStartTime := time.Now()
-
-	claimedJob, err := n.repo.Claim(ctx, workerID)
-	if err != nil {
-		n.stats.claimFailedTime.Since(claimStartTime)
-		n.stats.claimFailedTime.Increment()
-
-		return nil, fmt.Errorf("claiming job: %w", err)
-	}
-
-	n.stats.claimSucceededTime.Since(claimStartTime)
-	n.stats.claimSucceeded.Increment()
-
-	return claimedJob, nil
-}
-
-func (n *Notifier) Publish(ctx context.Context, payload *model.PublishPayload) (ch chan []Response, err error) {
-	publishStartTime := time.Now()
-
-	defer func() {
-		if err == nil {
-			n.stats.publishTime.Since(publishStartTime)
-			n.stats.publish.Increment()
-		}
-	}()
-
-	ch = make(chan []Response)
+func (n *Notifier) Publish(ctx context.Context, payload *model.PublishRequest) (<-chan *model.PublishResponse, error) {
+	publishStartTime := n.now()
 
 	batchID := n.batchIDGenerator().String()
 
@@ -534,19 +279,81 @@ func (n *Notifier) Publish(ctx context.Context, payload *model.PublishPayload) (
 
 	n.logger.Infof("Inserted %d records into %s with batch length: %s", len(payload.Jobs), queueName, batchID)
 
-	n.stats.insertRecords.Count(len(payload.Jobs))
+	defer func() {
+		n.stats.insertRecords.Count(len(payload.Jobs))
+		n.stats.publishTime.Since(publishStartTime)
+		n.stats.publish.Increment()
+	}()
 
-	switch payload.Type {
-	case asyncJob:
-		n.trackAsyncBatch(ctx, batchID, &ch)
-	default:
-		n.trackUploadBatch(ctx, batchID, &ch)
-	}
-	return
+	return n.trackBatch(ctx, batchID), nil
 }
 
-func (n *Notifier) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan *model.Notifier {
-	jobsCh := make(chan *model.Notifier, jobsBufferSize)
+// trackBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
+func (n *Notifier) trackBatch(ctx context.Context, batchID string) <-chan *model.PublishResponse {
+	ch := make(chan *model.PublishResponse)
+
+	n.background.group.Go(func() error {
+		defer close(ch)
+
+		onUpdate := func(response *model.PublishResponse) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-n.background.ctx.Done():
+				return
+			case ch <- response:
+			}
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-n.background.ctx.Done():
+				return nil
+			case <-time.After(n.config.trackBatchInterval):
+			}
+
+			count, err := n.repo.PendingByBatchID(ctx, batchID)
+			if err != nil {
+				onUpdate(&model.PublishResponse{
+					Err: fmt.Errorf("could not get pending count for batch: %s: %w", batchID, err),
+				})
+				return nil
+			} else if count != 0 {
+				continue
+			}
+
+			notifiers, err := n.repo.GetByBatchID(ctx, batchID)
+			if err != nil {
+				onUpdate(&model.PublishResponse{
+					Err: fmt.Errorf("could not get notifiers for batch: %s: %w", batchID, err),
+				})
+				return nil
+			}
+
+			_, err = n.repo.DeleteByBatchID(ctx, batchID)
+			if err != nil {
+				onUpdate(&model.PublishResponse{
+					Err: fmt.Errorf("could not delete notifiers for batch: %s: %w", batchID, err),
+				})
+				return nil
+			}
+
+			n.logger.Infof("Completed processing all files in batch: %s", batchID)
+
+			onUpdate(&model.PublishResponse{
+				Notifiers: notifiers,
+			})
+			return nil
+		}
+	})
+
+	return ch
+}
+
+func (n *Notifier) Subscribe(ctx context.Context, workerId string, bufferSize int) <-chan *model.Notifier {
+	jobsCh := make(chan *model.Notifier, bufferSize)
 
 	nextPollInterval := func(pollSleep time.Duration) time.Duration {
 		pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
@@ -558,24 +365,25 @@ func (n *Notifier) Subscribe(ctx context.Context, workerId string, jobsBufferSiz
 		return n.config.maxPollSleep
 	}
 
-	rruntime.GoForWarehouse(func() {
+	n.background.group.Go(func() error {
 		defer close(jobsCh)
 
 		pollSleep := time.Duration(0)
 
 		for {
 			claimedJob, err := n.claim(ctx, workerId)
-			if err != nil {
+			if err == nil {
+				jobsCh <- claimedJob
+				pollSleep = time.Duration(0)
+			} else {
 				pollSleep = nextPollInterval(pollSleep)
-				continue
 			}
-
-			jobsCh <- claimedJob
-			pollSleep = time.Duration(0)
 
 			select {
 			case <-ctx.Done():
-				return
+				return nil
+			case <-n.background.ctx.Done():
+				return nil
 			case <-time.After(pollSleep):
 			}
 		}
@@ -583,10 +391,48 @@ func (n *Notifier) Subscribe(ctx context.Context, workerId string, jobsBufferSiz
 	return jobsCh
 }
 
-// GetCurrentSQLTimestamp to get sql complaint current datetime string
-func GetCurrentSQLTimestamp() string {
-	const SQLTimeFormat = "2006-01-02 15:04:05"
-	return time.Now().Format(SQLTimeFormat)
+func (n *Notifier) claim(ctx context.Context, workerID string) (*model.Notifier, error) {
+	claimStartTime := n.now()
+
+	claimedJob, err := n.repo.Claim(ctx, workerID)
+	if err != nil {
+		n.stats.claimFailedTime.Since(claimStartTime)
+		n.stats.claimFailed.Increment()
+
+		return nil, fmt.Errorf("claiming job: %w", err)
+	}
+
+	n.stats.claimLag.SendTiming(n.now().Sub(claimedJob.CreatedAt))
+	n.stats.claimSucceededTime.Since(claimStartTime)
+	n.stats.claimSucceeded.Increment()
+
+	return claimedJob, nil
+}
+
+// UpdateClaim updates the notifier with the claimResponse
+// In case if we are not able to update the claim, we are just logging it,
+// maintenance workers can again mark the status as waiting, and it will be again claimed by somebody else.
+// Although, there is a case that it is being picked up, but never getting updated. We can monitor it using claim lag.
+// claim lag also helps us to make sure that even the maintenance workers are able to monitor the jobs correctly.
+func (n *Notifier) UpdateClaim(ctx context.Context, notifier *model.Notifier, response *model.ClaimResponse) {
+	if response.Err != nil {
+		n.logger.Error(response.Err.Error())
+
+		if err := n.repo.OnFailed(ctx, notifier, n.config.maxAttempt, response.Err); err != nil {
+			n.stats.claimUpdateFailed.Increment()
+			n.logger.Errorf("claim update failed: %v", err)
+		}
+
+		if notifier.Attempt > n.config.maxAttempt {
+			n.stats.abortedRecords.Increment()
+		}
+		return
+	}
+
+	if err := n.repo.OnSuccess(ctx, notifier); err != nil {
+		n.stats.claimUpdateFailed.Increment()
+		n.logger.Errorf("claim update failed: %v", err)
+	}
 }
 
 // RunMaintenanceWorker re-triggers zombie jobs which were left behind by dead workers in executing state
@@ -602,36 +448,47 @@ func (n *Notifier) RunMaintenanceWorker(ctx context.Context) error {
 	defer func() {
 		if locked {
 			if err := maintenanceWorkerLock.Unlock(ctx); err != nil {
-				n.logger.Errorf("unlocking maintenance worker lock: %v", err)
+				n.logger.Warnf("unlocking maintenance worker lock: %v", err)
 			}
 		}
 	}()
 
-	wait := func() {
+	for {
+		if locked, err = maintenanceWorkerLock.Lock(ctx); err != nil {
+			n.logger.Warnf("acquiring maintenance worker lock: %v", err)
+		} else if locked {
+			break
+		}
+
 		select {
 		case <-ctx.Done():
+			return nil
 		case <-time.After(n.config.jobOrphanTimeout / 5):
 		}
 	}
 
 	for {
-		if locked, err = maintenanceWorkerLock.Lock(ctx); err != nil {
-			n.logger.Errorf("acquiring maintenance worker lock: %v", err)
-		} else if locked {
-			break
-		}
-
-		wait()
-	}
-
-	for {
-		orphanJobIDs, err := n.repo.OrphanJobIDs(ctx)
-		if err != nil {
+		orphanJobIDs, err := n.repo.OrphanJobIDs(ctx, int(n.config.jobOrphanTimeout/time.Second))
+		if errors.Is(err, context.Canceled) {
+			return nil
+		} else if err != nil {
 			return fmt.Errorf("fetching orphan job ids: %w", err)
 		}
 
-		n.logger.Debugf("PgNotifier: Re-triggered job ids: %v", orphanJobIDs)
+		n.logger.Debugf("Re-triggered job ids: %v", orphanJobIDs)
 
-		wait()
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(n.config.jobOrphanTimeout / 5):
+		}
 	}
+}
+
+func (n *Notifier) Wait(ctx context.Context) error {
+	<-ctx.Done()
+
+	n.logger.Infof("Shutting down")
+	n.background.cancel()
+	return n.background.group.Wait()
 }

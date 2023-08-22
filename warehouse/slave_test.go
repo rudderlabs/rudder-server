@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -28,16 +28,16 @@ import (
 )
 
 type mockSlaveNotifier struct {
-	subscribeCh    chan *notifier2.ClaimResponse
-	publishCh      chan notifier2.Claim
+	subscribeCh    chan *notifierModel.ClaimResponse
+	publishCh      chan *notifierModel.Notifier
 	maintenanceErr error
 }
 
-func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) chan notifier2.Claim {
+func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) chan *notifierModel.Notifier {
 	return m.publishCh
 }
 
-func (m *mockSlaveNotifier) UpdateClaimedEvent(_ *notifier2.Claim, response *notifier2.ClaimResponse) {
+func (m *mockSlaveNotifier) UpdateClaim(ctx context.Context, _ *notifierModel.Notifier, response *notifierModel.ClaimResponse) {
 	m.subscribeCh <- response
 }
 
@@ -74,8 +74,8 @@ func TestSlave(t *testing.T) {
 
 	schemaMap := stagingSchema(t)
 
-	publishCh := make(chan notifier2.Claim)
-	subscriberCh := make(chan *notifier2.ClaimResponse)
+	publishCh := make(chan *notifierModel.Notifier)
+	subscriberCh := make(chan *notifierModel.ClaimResponse)
 	defer close(publishCh)
 	defer close(subscriberCh)
 
@@ -129,13 +129,13 @@ func TestSlave(t *testing.T) {
 	payloadJson, err := json.Marshal(p)
 	require.NoError(t, err)
 
-	claim := notifier2.Claim{
-		ID:        1,
-		BatchID:   uuid.New().String(),
-		Payload:   payloadJson,
-		Status:    "waiting",
-		Workspace: "test_workspace",
-		JobType:   "upload",
+	claim := &notifierModel.Notifier{
+		ID:                  1,
+		BatchID:             uuid.New().String(),
+		Payload:             payloadJson,
+		Status:              "waiting",
+		WorkspaceIdentifier: "test_workspace",
+		JobType:             "upload",
 	}
 
 	g, _ := errgroup.WithContext(ctx)

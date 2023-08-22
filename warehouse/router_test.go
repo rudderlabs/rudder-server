@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -94,7 +94,7 @@ func TestRouter(t *testing.T) {
 
 		db := sqlmiddleware.New(pgResource.DB)
 
-		notifier, err := notifier2.New(workspaceIdentifier, pgResource.DBDsn)
+		n, err := notifier.New(context.Background(), config.Default, logger.NOP, stats.Default, workspaceIdentifier, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		tenantManager := &multitenant.Manager{
@@ -124,7 +124,7 @@ func TestRouter(t *testing.T) {
 			logger.NOP,
 			stats.Default,
 			db,
-			&notifier,
+			n,
 			tenantManager,
 			cp,
 			bcm,

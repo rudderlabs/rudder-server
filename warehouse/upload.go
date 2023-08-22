@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -76,7 +76,7 @@ type UploadJobFactory struct {
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
 	recovery             *service.Recovery
-	pgNotifier           *notifier2.PGNotifier
+	notifier             *notifier.Notifier
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -92,7 +92,7 @@ type UploadJob struct {
 	tableUploadsRepo     *repo.TableUploads
 	recovery             *service.Recovery
 	whManager            manager.Manager
-	pgNotifier           *notifier2.PGNotifier
+	notifier             *notifier.Notifier
 	schemaHandle         *Schema
 	conf                 *config.Config
 	logger               logger.Logger
@@ -185,7 +185,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
 		recovery:             f.recovery,
-		pgNotifier:           f.pgNotifier,
+		notifier:             f.notifier,
 		whManager:            whManager,
 		destinationValidator: f.destinationValidator,
 		conf:                 f.conf,

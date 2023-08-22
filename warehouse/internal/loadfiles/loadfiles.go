@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/notifier"
+	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
 
 	"github.com/samber/lo"
 
@@ -36,7 +36,7 @@ const (
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
 type Notifier interface {
-	Publish(ctx context.Context, payload notifier.MessagePayload, schema *warehouseutils.Schema, priority int) (ch chan []notifier.Response, err error)
+	Publish(ctx context.Context, payload *notifierModel.PublishRequest) (ch <-chan *notifierModel.PublishResponse, err error)
 }
 
 type StageFileRepo interface {
@@ -68,6 +68,11 @@ type LoadFileGenerator struct {
 }
 
 type WorkerJobResponse struct {
+	StagingFileID int64            `json:"StagingFileID"`
+	Output        []LoadFileUpload `json:"Output"`
+}
+
+type LoadFileUpload struct {
 	TableName             string
 	Location              string
 	TotalRows             int
@@ -98,7 +103,6 @@ type WorkerJobRequest struct {
 	StagingUseRudderStorage      bool
 	UniqueLoadGenID              string
 	RudderStoragePrefix          string
-	Output                       []WorkerJobResponse
 	LoadFilePrefix               string // prefix for the load file name
 	LoadFileType                 string
 }
@@ -194,7 +198,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	var sampleError error
 	for _, chunk := range lo.Chunk(toProcessStagingFiles, publishBatchSize) {
 		// td : add prefix to payload for s3 dest
-		var messages []notifier.JobPayload
+		var messages []notifierModel.Payload
 		for _, stagingFile := range chunk {
 			payload := WorkerJobRequest{
 				UploadID:                     job.Upload.ID,
@@ -230,15 +234,23 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			messages = append(messages, payloadJSON)
 		}
 
-		schema := &job.Upload.UploadSchema
-
-		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		messagePayload := notifier.MessagePayload{
-			Jobs:    messages,
-			JobType: "upload",
+		schemaJson, err := json.Marshal(struct {
+			UploadSchema model.Schema
+		}{
+			UploadSchema: job.Upload.UploadSchema,
+		})
+		if err != nil {
+			return 0, 0, fmt.Errorf("marshalling schema: %w", err)
 		}
 
-		ch, err := lf.Notifier.Publish(ctx, messagePayload, (*warehouseutils.Schema)(schema), job.Upload.Priority)
+		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
+
+		ch, err := lf.Notifier.Publish(ctx, &notifierModel.PublishRequest{
+			Jobs:     messages,
+			Type:     "upload",
+			Schema:   schemaJson,
+			Priority: job.Upload.Priority,
+		})
 		if err != nil {
 			return 0, 0, fmt.Errorf("error publishing to PgNotifier: %w", err)
 		}
@@ -247,54 +259,62 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		startId := chunk[0].ID
 		endId := chunk[len(chunk)-1].ID
 		g.Go(func() error {
-			responses := <-ch
+			responses, ok := <-ch
+			if !ok {
+				return fmt.Errorf("receiving channel closed")
+			}
+
 			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from PgNotifier",
 				"startId", startId,
 				"endID", endId,
 				logfield.DestinationID, destType,
 				logfield.DestinationType, destID,
 			)
+			if responses.Err != nil {
+				return fmt.Errorf("receiving responses from notifier: %w", responses.Err)
+			}
+
 			var loadFiles []model.LoadFile
 			var successfulStagingFileIDs []int64
-			for _, resp := range responses {
+			for _, resp := range responses.Notifiers {
 				// Error handling during generating_load_files step:
 				// 1. any error returned by pgnotifier is set on corresponding staging_file
 				// 2. any error effecting a batch/all the staging files like saving load file records to wh db
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
 					lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
-					sampleError = fmt.Errorf(resp.Error)
-					err = lf.StageRepo.SetErrorStatus(ctx, resp.JobID, sampleError)
+					sampleError = fmt.Errorf(resp.Error.Error())
+					err = lf.StageRepo.SetErrorStatus(ctx, resp.ID, sampleError)
 					if err != nil {
 						return fmt.Errorf("set staging file error status: %w", err)
 					}
 					continue
 				}
-				var output []WorkerJobResponse
-				err = json.Unmarshal(resp.Output, &output)
+				var jobResponse WorkerJobResponse
+				err = json.Unmarshal(resp.Payload, &jobResponse)
 				if err != nil {
 					return fmt.Errorf("unmarshalling response from pgnotifier: %w", err)
 				}
-				if len(output) == 0 {
+				if len(jobResponse.Output) == 0 {
 					lf.Logger.Errorf("[WH]: No LoadFiles returned by wh worker")
 					continue
 				}
-				for i := range output {
+				for _, output := range jobResponse.Output {
 					loadFiles = append(loadFiles, model.LoadFile{
-						TableName:             output[i].TableName,
-						Location:              output[i].Location,
-						TotalRows:             output[i].TotalRows,
-						ContentLength:         output[i].ContentLength,
-						StagingFileID:         output[i].StagingFileID,
-						DestinationRevisionID: output[i].DestinationRevisionID,
-						UseRudderStorage:      output[i].UseRudderStorage,
+						TableName:             output.TableName,
+						Location:              output.Location,
+						TotalRows:             output.TotalRows,
+						ContentLength:         output.ContentLength,
+						StagingFileID:         output.StagingFileID,
+						DestinationRevisionID: output.DestinationRevisionID,
+						UseRudderStorage:      output.UseRudderStorage,
 						SourceID:              job.Upload.SourceID,
 						DestinationID:         job.Upload.DestinationID,
 						DestinationType:       job.Upload.DestinationType,
 					})
 				}
 
-				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
+				successfulStagingFileIDs = append(successfulStagingFileIDs, jobResponse.StagingFileID)
 			}
 
 			if len(loadFiles) == 0 {

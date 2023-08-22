@@ -3,14 +3,14 @@ package loadfiles_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/services/notifier"
+	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type mockNotifier struct {
@@ -20,20 +20,20 @@ type mockNotifier struct {
 	tables   []string
 }
 
-func (n *mockNotifier) Publish(_ context.Context, payload notifier.MessagePayload, _ *warehouseutils.Schema, _ int) (chan []notifier.Response, error) {
-	var responses []notifier.Response
+func (n *mockNotifier) Publish(_ context.Context, payload *notifierModel.PublishRequest) (chan notifierModel.PublishResponse, error) {
+	var responses notifierModel.PublishResponse
 	for _, p := range payload.Jobs {
 		var req loadfiles.WorkerJobRequest
 		err := json.Unmarshal(p, &req)
 		require.NoError(n.t, err)
 
-		var resps []loadfiles.WorkerJobResponse
+		var loadFileUploads []loadfiles.LoadFileUpload
 		for _, tableName := range n.tables {
 			destinationRevisionID := req.DestinationRevisionID
 
 			n.requests = append(n.requests, req)
 
-			resps = append(resps, loadfiles.WorkerJobResponse{
+			loadFileUploads = append(loadFileUploads, loadfiles.LoadFileUpload{
 				TableName:             tableName,
 				Location:              req.StagingFileLocation + "/" + req.UniqueLoadGenID + "/" + tableName,
 				TotalRows:             10,
@@ -43,7 +43,11 @@ func (n *mockNotifier) Publish(_ context.Context, payload notifier.MessagePayloa
 				UseRudderStorage:      req.UseRudderStorage,
 			})
 		}
-		out, err := json.Marshal(resps)
+		jobResponse := loadfiles.WorkerJobResponse{
+			StagingFileID: req.StagingFileID,
+			Output:        loadFileUploads,
+		}
+		out, err := json.Marshal(jobResponse)
 
 		errString := ""
 		if err != nil {
@@ -56,15 +60,14 @@ func (n *mockNotifier) Publish(_ context.Context, payload notifier.MessagePayloa
 			status = "aborted"
 		}
 
-		responses = append(responses, notifier.Response{
-			JobID:  req.StagingFileID,
-			Output: out,
-			Error:  errString,
-			Status: status,
+		responses.Notifiers = append(responses.Notifiers, notifierModel.Notifier{
+			Payload: out,
+			Error:   errors.New(errString),
+			Status:  status,
 		})
 	}
 
-	ch := make(chan []notifier.Response, 1)
+	ch := make(chan notifierModel.PublishResponse, 1)
 	ch <- responses
 	return ch, nil
 }

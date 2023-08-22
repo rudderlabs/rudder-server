@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/notifier/model"
+
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/lib/pq"
@@ -24,14 +26,14 @@ import (
 func InitWarehouseJobsAPI(
 	ctx context.Context,
 	dbHandle *sql.DB,
-	notifier *notifier.PGNotifier,
+	notifier *notifier.Notifier,
 ) *AsyncJobWh {
 	return &AsyncJobWh{
-		dbHandle:   dbHandle,
-		enabled:    false,
-		pgnotifier: notifier,
-		context:    ctx,
-		logger:     logger.NewLogger().Child("asyncjob"),
+		dbHandle: dbHandle,
+		enabled:  false,
+		notifier: notifier,
+		context:  ctx,
+		logger:   logger.NewLogger().Child("asyncjob"),
 	}
 }
 
@@ -187,11 +189,12 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 			_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
 			continue
 		}
-		messagePayload := notifier.MessagePayload{
-			Jobs:    notifierClaims,
-			JobType: AsyncJobType,
-		}
-		ch, err := a.pgnotifier.Publish(ctx, messagePayload, &warehouseutils.Schema{}, 100)
+
+		ch, err := a.notifier.Publish(ctx, &model.PublishRequest{
+			Jobs:     notifierClaims,
+			Type:     AsyncJobType,
+			Priority: 100,
+		})
 		if err != nil {
 			a.logger.Errorf("[WH-Jobs]: unable to get publish async jobs to pgnotifier. Task failed with error %s", err.Error())
 			asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
@@ -205,7 +208,12 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 		case <-ctx.Done():
 			a.logger.Infof("[WH-Jobs]: Context cancelled for async job runner")
 			return nil
-		case responses := <-ch:
+		case responses, ok := <-ch:
+			if responses.Err != nil || !ok {
+				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
+				_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
+				return nil
+			}
 			a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
 			asyncJobsStatusMap := getAsyncStatusMapFromAsyncPayloads(pendingAsyncJobs)
 			a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
@@ -218,10 +226,10 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 	}
 }
 
-func (a *AsyncJobWh) updateStatusJobPayloadsFromPgNotifierResponse(r []notifier.Response, m map[string]AsyncJobStatus) {
-	for _, resp := range r {
+func (a *AsyncJobWh) updateStatusJobPayloadsFromPgNotifierResponse(r *model.PublishResponse, m map[string]AsyncJobStatus) {
+	for _, resp := range r.Notifiers {
 		var pgNotifierOutput PGNotifierOutput
-		err := json.Unmarshal(resp.Output, &pgNotifierOutput)
+		err := json.Unmarshal(resp.Payload, &pgNotifierOutput)
 		if err != nil {
 			a.logger.Errorf("error unmarshalling pgnotifier payload to AsyncJobStatusMa for Id: %s", pgNotifierOutput.Id)
 			continue
@@ -229,8 +237,8 @@ func (a *AsyncJobWh) updateStatusJobPayloadsFromPgNotifierResponse(r []notifier.
 
 		if output, ok := m[pgNotifierOutput.Id]; ok {
 			output.Status = resp.Status
-			if resp.Error != "" {
-				output.Error = fmt.Errorf(resp.Error)
+			if resp.Error != nil {
+				output.Error = fmt.Errorf(resp.Error.Error())
 			}
 			m[pgNotifierOutput.Id] = output
 		}

@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -58,7 +58,7 @@ var (
 	dbHandle                   *sql.DB
 	wrappedDBHandle            *sqlquerywrapper.DB
 	dbHandleTimeout            time.Duration
-	notifier                   notifier2.PGNotifier
+	pgNotifier                 *notifier.Notifier
 	tenantManager              *multitenant.Manager
 	controlPlaneClient         *controlplane.Client
 	uploadFreqInS              int64
@@ -200,7 +200,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 					pkgLogger,
 					stats.Default,
 					wrappedDBHandle,
-					&notifier,
+					pgNotifier,
 					tenantManager,
 					controlPlaneClient,
 					bcManager,
@@ -564,7 +564,7 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	defer cancel()
 
 	if runningMode != DegradedMode {
-		if !CheckPGHealth(ctx, notifier.GetDBHandle()) {
+		if !CheckPGHealth(ctx, pgNotifier.GetDBHandle()) {
 			http.Error(w, "Cannot connect to pgNotifierService", http.StatusInternalServerError)
 			return
 		}
@@ -799,12 +799,16 @@ func Start(ctx context.Context, app app.App) error {
 		}
 		return startWebHandler(ctx)
 	}
+
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
-	notifier, err = notifier2.New(workspaceIdentifier, psqlInfo)
+	pgNotifier, err = notifier.New(ctx, config.Default, pkgLogger, stats.Default, workspaceIdentifier, psqlInfo)
 	if err != nil {
 		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
+	g.Go(func() error {
+		return pgNotifier.Wait(gCtx)
+	})
 
 	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
 	// A different DB for warehouse is used when:
@@ -845,7 +849,7 @@ func Start(ctx context.Context, app app.App) error {
 			cm := newConstraintsManager(config.Default)
 			ef := encoding.NewFactory(config.Default)
 
-			slave := newSlave(config.Default, pkgLogger, stats.Default, &notifier, bcManager, cm, ef)
+			slave := newSlave(config.Default, pkgLogger, stats.Default, pgNotifier, bcManager, cm, ef)
 			return slave.setupSlave(gCtx)
 		}))
 	}
@@ -864,7 +868,7 @@ func Start(ctx context.Context, app app.App) error {
 		)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return notifier.ClearJobs(gCtx)
+			return pgNotifier.ClearJobs(gCtx)
 		}))
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -888,7 +892,7 @@ func Start(ctx context.Context, app app.App) error {
 			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 			return err
 		}
-		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, &notifier)
+		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, pgNotifier)
 		jobs.WithConfig(asyncWh, config.Default)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {

@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	notifier2 "github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -78,7 +78,7 @@ type router struct {
 	tenantManager    *multitenant.Manager
 	bcManager        *backendConfigManager
 	uploadJobFactory UploadJobFactory
-	notifier         *notifier2.PGNotifier
+	notifier         *notifier.Notifier
 
 	config struct {
 		noOfWorkers                       int
@@ -114,7 +114,7 @@ func newRouter(
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	db *sqlquerywrapper.DB,
-	pgNotifier *notifier2.PGNotifier,
+	notifier *notifier.Notifier,
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
@@ -136,7 +136,7 @@ func newRouter(
 	r.uploadRepo = repo.NewUploads(db)
 	r.whSchemaRepo = repo.NewWHSchemas(db)
 
-	r.notifier = pgNotifier
+	r.notifier = notifier
 	r.tenantManager = tenantManager
 	r.bcManager = bcManager
 	r.destType = destType
@@ -155,7 +155,7 @@ func newRouter(
 		logger:               r.logger,
 		statsFactory:         r.statsFactory,
 		dbHandle:             r.dbHandle,
-		pgNotifier:           r.notifier,
+		notifier:             r.notifier,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             r.logger.Child("loadfile"),

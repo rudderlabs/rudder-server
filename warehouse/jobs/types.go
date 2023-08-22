@@ -27,7 +27,7 @@ type StartJobReqPayload struct {
 type AsyncJobWh struct {
 	dbHandle              *sql.DB
 	enabled               bool
-	pgnotifier            *notifier.PGNotifier
+	notifier              *notifier.Notifier
 	context               context.Context
 	logger                logger.Logger
 	maxBatchSizeToProcess int
