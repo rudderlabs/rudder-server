@@ -1,4 +1,4 @@
-package warehouse
+package schema
 
 import (
 	"context"
@@ -6,16 +6,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/stretchr/testify/require"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestHandleSchemaChange(t *testing.T) {
@@ -322,7 +319,7 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 		sourceID      = "test_source"
 		destID        = "test_dest"
 		namespace     = "test_namespace"
-		warehouseType = warehouseutils.RS
+		warehouseType = whutils.RS
 		uploadID      = 1
 	)
 
@@ -408,7 +405,8 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 				require.ErrorContains(t, err, tc.wantError.Error())
 			}
 
-			err = sch.fetchSchemaFromLocal(ctx)
+			localSchema, err := sch.getLocalSchema(ctx)
+			require.Equal(t, tc.wantSchema, localSchema)
 			require.Equal(t, tc.wantSchema, sch.localSchema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
@@ -420,8 +418,6 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 }
 
 func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
-	Init4()
-
 	testCases := []struct {
 		name           string
 		mockSchema     model.Schema
@@ -571,13 +567,15 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 
 			ctx := context.Background()
 
-			err := sh.fetchSchemaFromWarehouse(ctx, &fechSchemaRepo)
+			schemaInWarehouse, unrecognizedSchemaInWarehouse, err := sh.fetchSchemaFromWarehouse(ctx, &fechSchemaRepo)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {
 				require.NoError(t, err)
 			}
+			require.Equal(t, tc.expectedSchema, schemaInWarehouse)
 			require.Equal(t, tc.expectedSchema, sh.schemaInWarehouse)
+			require.Equal(t, tc.expectedSchema, unrecognizedSchemaInWarehouse)
 			require.Equal(t, tc.expectedSchema, sh.unrecognizedSchemaInWarehouse)
 		})
 	}
@@ -589,14 +587,14 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 		tableName     string
 		currentSchema model.Schema
 		uploadSchema  model.Schema
-		expected      warehouseutils.TableSchemaDiff
+		expected      whutils.TableSchemaDiff
 	}{
 		{
 			name:          "empty current and upload schema",
 			tableName:     "test-table",
 			currentSchema: model.Schema{},
 			uploadSchema:  model.Schema{},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				ColumnMap:        model.TableSchema{},
 				UpdatedSchema:    model.TableSchema{},
 				AlteredColumnMap: model.TableSchema{},
@@ -611,7 +609,7 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column": "test-value",
 				},
 			},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: true,
 				ColumnMap: model.TableSchema{
@@ -636,7 +634,7 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column": "test-value-2",
 				},
 			},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				Exists:           false,
 				TableToBeCreated: false,
 				ColumnMap:        model.TableSchema{},
@@ -660,7 +658,7 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column": "test-value-2",
 				},
 			},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: false,
 				ColumnMap: model.TableSchema{
@@ -688,7 +686,7 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column": "text",
 				},
 			},
-			expected: warehouseutils.TableSchemaDiff{
+			expected: whutils.TableSchemaDiff{
 				Exists:           true,
 				TableToBeCreated: false,
 				ColumnMap:        model.TableSchema{},
@@ -710,9 +708,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 
 			sch := Schema{
 				schemaInWarehouse: tc.currentSchema,
-				uploadSchema:      tc.uploadSchema,
 			}
-			diff := sch.generateTableSchemaDiff(tc.tableName)
+			diff := sch.TableSchemaDiff(tc.tableName, tc.uploadSchema)
 			require.EqualValues(t, diff, tc.expected)
 		})
 	}
@@ -864,19 +861,17 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 
 			sch := &Schema{
 				warehouse: model.Warehouse{
-					Type: warehouseutils.SNOWFLAKE,
+					Type: whutils.SNOWFLAKE,
 				},
 				skipDeepEqualSchemas: tc.skipDeepEquals,
-				localSchema:          tc.localSchema,
-				schemaInWarehouse:    tc.schemaInWarehouse,
 			}
-			require.Equal(t, tc.expected, sch.hasSchemaChanged())
+			require.Equal(t, tc.expected, sch.hasSchemaChanged(tc.localSchema, tc.schemaInWarehouse))
 		})
 	}
 }
 
 func TestSchema_PrepareUploadSchema(t *testing.T) {
-	warehouseutils.Init()
+	whutils.Init()
 
 	const (
 		sourceID    = "test-source-id"
@@ -906,7 +901,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 	}{
 		{
 			name:          "error fetching staging schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas:   []model.Schema{},
 			mockErr:       errors.New("test error"),
 			wantError:     errors.New("consolidating staging files schema: getting staging files schema: test error"),
@@ -914,7 +909,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 
 		{
 			name:          "discards schema for bigquery",
-			warehouseType: warehouseutils.BQ,
+			warehouseType: whutils.BQ,
 			mockSchemas:   []model.Schema{},
 			expectedSchema: model.Schema{
 				"rudder_discards": model.TableSchema{
@@ -930,7 +925,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "discards schema for all destinations",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas:   []model.Schema{},
 			expectedSchema: model.Schema{
 				"rudder_discards": model.TableSchema{
@@ -945,7 +940,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "users and identifies should have similar schema except for id and user_id",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"identifies": model.TableSchema{
@@ -1009,7 +1004,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "users have extra properties as compared to identifies",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"identifies": model.TableSchema{
@@ -1077,7 +1072,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "users without identifies",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"users": model.TableSchema{
@@ -1117,7 +1112,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "unknown table in warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1161,7 +1156,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "unknown properties in warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1205,7 +1200,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "single staging schema with empty warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1239,7 +1234,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "single staging schema with warehouse schema and text data type override",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1286,7 +1281,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:                "id resolution without merge schema",
-			warehouseType:       warehouseutils.BQ,
+			warehouseType:       whutils.BQ,
 			idResolutionEnabled: true,
 			mockSchemas: []model.Schema{
 				{
@@ -1322,7 +1317,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:                "id resolution with merge schema",
-			warehouseType:       warehouseutils.BQ,
+			warehouseType:       whutils.BQ,
 			idResolutionEnabled: true,
 			mockSchemas: []model.Schema{
 				{
@@ -1372,7 +1367,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple staging schemas with empty warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table-1": model.TableSchema{
@@ -1424,7 +1419,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple staging schemas with empty warehouse schema and text datatype",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table-1": model.TableSchema{
@@ -1500,7 +1495,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple staging schemas with warehouse schema and text datatype",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table-1": model.TableSchema{
@@ -1588,7 +1583,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple schemas with same table and empty warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1626,7 +1621,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple schemas with same table and warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1670,7 +1665,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple schemas with preference to first schema and empty warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1714,7 +1709,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "multiple schemas with preference to warehouse schema",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"test-table": model.TableSchema{
@@ -1768,7 +1763,7 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 		},
 		{
 			name:          "warehouse users have extra properties as compared to identifies",
-			warehouseType: warehouseutils.RS,
+			warehouseType: whutils.RS,
 			mockSchemas: []model.Schema{
 				{
 					"identifies": model.TableSchema{
@@ -1901,13 +1896,13 @@ func TestSchema_PrepareUploadSchema(t *testing.T) {
 				stagingFilesSchemaPaginationSize: 2,
 			}
 
-			err := sh.prepareUploadSchema(ctx, stagingFiles)
+			uploadSchema, err := sh.ConsolidateLocalSchemaWithStagingFiles(ctx, stagingFiles)
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectedSchema, sh.uploadSchema)
+			require.Equal(t, tc.expectedSchema, uploadSchema)
 		})
 	}
 }

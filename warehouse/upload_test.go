@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 
 	"github.com/ory/dockertest/v3"
 
@@ -152,7 +153,7 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				statsFactory: store,
-				schemaHandle: &Schema{
+				schemaHandle: &schema.Schema{
 					schemaInWarehouse: model.Schema{
 						tableName: model.TableSchema{
 							"test-column-1": "string",

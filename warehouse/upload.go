@@ -12,17 +12,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/app"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -30,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -42,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -92,7 +91,10 @@ type UploadJob struct {
 	recovery             *service.Recovery
 	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PGNotifier
-	schemaHandle         *Schema
+	schemaHandle         *schema.Schema
+	schemaLock           sync.Mutex // TODO move to warehouse.schema.Schema
+	uploadSchema         model.Schema
+	uploadSchemaMu       sync.RWMutex
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -102,7 +104,6 @@ type UploadJob struct {
 	warehouse      model.Warehouse
 	stagingFiles   []*model.StagingFile
 	stagingFileIDs []int64
-	schemaLock     sync.Mutex
 	uploadLock     sync.Mutex
 	alertSender    alerta.AlertSender
 	now            func() time.Time
@@ -191,10 +192,11 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		logger:               f.logger,
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.dbHandle),
-		schemaHandle: NewSchema(
+		schemaHandle: schema.NewSchema(
 			f.dbHandle,
 			dto.Warehouse,
 			config.Default,
+			f.logger.Child("warehouse").Child("schema"),
 		),
 
 		upload:         dto.Upload,
@@ -305,16 +307,18 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 }
 
 func (job *UploadJob) generateUploadSchema() error {
-	if err := job.schemaHandle.prepareUploadSchema(
-		job.ctx,
-		job.stagingFiles,
-	); err != nil {
+	uploadSchema, err := job.schemaHandle.ConsolidateLocalSchemaWithStagingFiles(job.ctx, job.stagingFiles)
+	if err != nil {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
-	if err := job.setUploadSchema(job.schemaHandle.uploadSchema); err != nil {
+	if err := job.setUploadSchema(uploadSchema); err != nil {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
+
+	job.uploadSchemaMu.Lock()
+	job.uploadSchema = uploadSchema
+	job.uploadSchemaMu.Unlock()
 
 	return nil
 }
@@ -338,33 +342,6 @@ func (job *UploadJob) initTableUploads() error {
 		job.upload.ID,
 		tables,
 	)
-}
-
-func (job *UploadJob) syncRemoteSchema() (bool, error) {
-	if err := job.schemaHandle.fetchSchemaFromLocal(job.ctx); err != nil {
-		return false, fmt.Errorf("fetching schema from local: %w", err)
-	}
-	if err := job.schemaHandle.fetchSchemaFromWarehouse(job.ctx, job.whManager); err != nil {
-		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
-	}
-
-	schemaChanged := job.schemaHandle.hasSchemaChanged()
-	if schemaChanged {
-		job.logger.Infow("schema changed",
-			logfield.SourceID, job.warehouse.Source.ID,
-			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, job.warehouse.WorkspaceID,
-			logfield.Namespace, job.warehouse.Namespace,
-		)
-
-		if err := job.schemaHandle.updateLocalSchema(job.ctx, job.upload.ID, job.schemaHandle.schemaInWarehouse); err != nil {
-			return false, fmt.Errorf("updating local schema: %w", err)
-		}
-	}
-
-	return schemaChanged, nil
 }
 
 func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
@@ -452,16 +429,26 @@ func (job *UploadJob) run() (err error) {
 		return err
 	}
 
-	hasSchemaChanged, err := job.syncRemoteSchema()
+	whSchema, hasSchemaChanged, err := job.schemaHandle.SyncRemoteSchema(job.ctx, whManager, job.upload.ID)
 	if err != nil {
 		_, _ = job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
 	}
 	if hasSchemaChanged {
-		job.logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
+		job.logger.Infof("Remote schema changed",
+			logfield.SourceID, job.warehouse.Source.ID,
+			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, job.warehouse.Destination.ID,
+			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, job.warehouse.WorkspaceID,
+			logfield.Namespace, job.warehouse.Namespace,
+			logfield.WarehouseID, job.warehouse.Identifier,
+		)
 	}
 
-	job.schemaHandle.uploadSchema = job.upload.UploadSchema
+	job.uploadSchemaMu.Lock()
+	job.uploadSchema = whSchema
+	job.uploadSchemaMu.Unlock()
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -1029,7 +1016,11 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 }
 
 func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := job.schemaHandle.generateTableSchemaDiff(tName)
+	job.uploadSchemaMu.RLock()
+	uploadSchema := job.uploadSchema.Clone()
+	job.uploadSchemaMu.Unlock()
+
+	tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tName, uploadSchema)
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1505,7 +1496,11 @@ func (job *UploadJob) setUploadSchema(consolidatedSchema model.Schema) error {
 		panic(err)
 	}
 	job.upload.UploadSchema = consolidatedSchema
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadSchemaField, Value: marshalledSchema}}})
+	return job.setUploadColumns(UploadColumnsOpts{
+		Fields: []UploadColumn{
+			{Column: UploadSchemaField, Value: marshalledSchema},
+		},
+	})
 }
 
 // Set LoadFileIDs
@@ -1549,8 +1544,7 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
 		SET
 		  %s
 		WHERE
-		  id = $1;
-`,
+		  id = $1;`,
 		warehouseutils.WarehouseUploadsTable,
 		columns,
 	)

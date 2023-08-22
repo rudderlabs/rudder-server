@@ -11,9 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -21,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -338,7 +338,7 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 			violatedConstraints := sw.constraintsManager.violatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
-				newColumnVal, convError := handleSchemaChange(
+				newColumnVal, convError := schema.handleSchemaChange(
 					model.SchemaType(dataTypeInSchema),
 					model.SchemaType(columnType),
 					columnVal,
