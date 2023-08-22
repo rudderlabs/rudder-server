@@ -890,7 +890,7 @@ func (manager *EventSchemaManagerT) reloadSchemaVersion(offloadedVersion *Offloa
 
 // TODO: Move this into some DB manager
 func createDBConnection() *sql.DB {
-	psqlInfo := misc.GetConnectionString(nil)
+	psqlInfo := misc.GetConnectionString(config.Default)
 	var err error
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	if err != nil {

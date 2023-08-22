@@ -48,7 +48,6 @@ func TestJobsArchival(t *testing.T) {
 	postgresResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err, "failed to setup postgres resource")
 	c := config.New()
-	c.Set("MINIO_SSL", "false")
 	c.Set("DB.name", postgresResource.Database)
 	c.Set("DB.host", postgresResource.Host)
 	c.Set("DB.port", postgresResource.Port)
@@ -174,7 +173,7 @@ func TestJobsArchival(t *testing.T) {
 		require.Equal(t, sourcesPerWorkspace[i], len(files))
 
 		for j, file := range files {
-			downloadFile, err := os.CreateTemp("", fmt.Sprintf("backedupfile%d%d", i, j))
+			downloadFile, err := os.CreateTemp(t.TempDir(), fmt.Sprintf("backedupfile%d%d", i, j))
 			require.NoError(t, err)
 			err = fm.Download(context.Background(), downloadFile, file)
 			require.NoError(t, err, file)
@@ -182,9 +181,6 @@ func TestJobsArchival(t *testing.T) {
 			require.NoError(t, err)
 			dJobs, err := readGzipJobFile(downloadFile.Name())
 			require.NoError(t, err)
-			t.Cleanup(func() {
-				_ = os.Remove(downloadFile.Name())
-			})
 			downloadedJobs = append(downloadedJobs, dJobs...)
 		}
 	}

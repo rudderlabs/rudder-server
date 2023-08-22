@@ -12,9 +12,6 @@ import (
 
 // GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString(c *config.Config) string {
-	if c == nil {
-		c = config.Default
-	}
 	host := c.GetString("DB.host", "localhost")
 	user := c.GetString("DB.user", "ubuntu")
 	dbname := c.GetString("DB.name", "ubuntu")
@@ -34,9 +31,6 @@ ReplaceDB : Rename the OLD DB and create a new one.
 Since we are not journaling, this should be idemponent
 */
 func ReplaceDB(dbName, targetName string, c *config.Config) {
-	if c == nil {
-		c = config.Default
-	}
 	host := c.GetString("DB.host", "localhost")
 	user := c.GetString("DB.user", "ubuntu")
 	port := c.GetInt("DB.port", 5432)
