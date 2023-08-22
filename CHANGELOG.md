@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.12.2](https://github.com/rudderlabs/rudder-server/compare/v1.12.1...v1.12.2) (2023-08-22)
+
+
+### Bug Fixes
+
+* extend sql middleware for mssql, azure_synapse and clickhouse ([#3771](https://github.com/rudderlabs/rudder-server/issues/3771)) ([e8809bb](https://github.com/rudderlabs/rudder-server/commit/e8809bbbf123940548a3112529a7dbc0ca0125d7))
+
+
+### Miscellaneous
+
+* deltalake error message length ([#3766](https://github.com/rudderlabs/rudder-server/issues/3766)) ([fa09173](https://github.com/rudderlabs/rudder-server/commit/fa091738b2460c58fc8e575d381e74093ee46ba6))
+
 ## [1.12.1](https://github.com/rudderlabs/rudder-server/compare/v1.12.0...v1.12.1) (2023-08-16)
 
 
