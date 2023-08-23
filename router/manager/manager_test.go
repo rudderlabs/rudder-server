@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -163,9 +162,6 @@ func initRouter() {
 	logger.Reset()
 	stash.Init()
 	admin.Init()
-	jobsdb.Init()
-	jobsdb.Init2()
-	archiver.Init()
 }
 
 func TestRouterManager(t *testing.T) {
@@ -242,7 +238,7 @@ type mockJobsDB struct {
 	jobsdb.JobsDB
 }
 
-func (m *mockJobsDB) GetToProcess(ctx context.Context, params jobsdb.GetQueryParamsT, more jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
+func (m *mockJobsDB) GetToProcess(ctx context.Context, params jobsdb.GetQueryParams, more jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
 	m.called.Store(true)
 	return m.JobsDB.GetToProcess(ctx, params, more)
 }

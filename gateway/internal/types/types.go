@@ -13,14 +13,14 @@ const (
 
 // AuthRequestContext contains the authenticated source information for a request.
 type AuthRequestContext struct {
-	SourceEnabled  bool
-	SourceID       string
-	WriteKey       string
-	WorkspaceID    string
-	SourceName     string
-	SourceDefName  string
-	SourceCategory string
-
+	SourceEnabled   bool
+	SourceID        string
+	WriteKey        string
+	WorkspaceID     string
+	SourceName      string
+	SourceDefName   string
+	SourceCategory  string
+	ReplaySource    bool
 	SourceJobRunID  string
 	SourceTaskRunID string
 }

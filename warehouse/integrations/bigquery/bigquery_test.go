@@ -24,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	whbigquery "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
@@ -46,7 +45,6 @@ func TestIntegration(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	encoding.Init()
 
 	jobsDBPort := c.Port("jobsDb", 5432)
 

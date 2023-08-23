@@ -42,7 +42,7 @@ type worker struct {
 		uploadFrequency  time.Duration
 	}
 	lastUploadTime time.Time
-	queryParams    jobsdb.GetQueryParamsT
+	queryParams    jobsdb.GetQueryParams
 }
 
 func (w *worker) Work() bool {

@@ -72,6 +72,10 @@ type SourceT struct {
 	EventSchemasEnabled        bool
 }
 
+func (s *SourceT) IsReplaySource() bool {
+	return s.OriginalID != ""
+}
+
 type WorkspaceRegulationT struct {
 	ID             string
 	RegulationType string

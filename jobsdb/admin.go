@@ -7,14 +7,13 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 /*
 Ping returns health check for pg database
 */
-func (jd *HandleT) Ping() error {
+func (jd *Handle) Ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, err := jd.dbHandle.ExecContext(ctx, `SELECT 'Rudder DB Health Check'::text as message`)
@@ -28,17 +27,17 @@ func (jd *HandleT) Ping() error {
 DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
-func (jd *HandleT) DeleteExecuting() {
+func (jd *Handle) DeleteExecuting() {
 	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
-	command := func() interface{} {
+	command := func() any {
 		jd.deleteJobStatus()
 		return nil
 	}
-	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
+	_ = executeDbRequest(jd, newWriteDbRequest("delete_job_status", &tags, command))
 }
 
 // deleteJobStatus deletes the latest status of a batch of jobs
-func (jd *HandleT) deleteJobStatus() {
+func (jd *Handle) deleteJobStatus() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
 		defer jd.getTimerStat(
 			"jobsdb_delete_job_status_time",
@@ -63,7 +62,7 @@ func (jd *HandleT) deleteJobStatus() {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
+func (jd *Handle) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
 	defer jd.getTimerStat(
 		"jobsdb_delete_job_status_ds_time",
 		&statTags{
@@ -87,19 +86,19 @@ FailExecuting fails events whose latest job state is executing.
 
 This is only done during recovery, which happens during the server start.
 */
-func (jd *HandleT) FailExecuting() {
+func (jd *Handle) FailExecuting() {
 	tags := statTags{
 		CustomValFilters: []string{jd.tablePrefix},
 	}
-	command := func() interface{} {
+	command := func() any {
 		jd.failExecuting()
 		return nil
 	}
-	_ = jd.executeDbRequest(newWriteDbRequest("fail_executing", &tags, command))
+	_ = executeDbRequest(jd, newWriteDbRequest("fail_executing", &tags, command))
 }
 
 // failExecuting sets the state of the executing jobs to failed
-func (jd *HandleT) failExecuting() {
+func (jd *Handle) failExecuting() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
 		defer jd.getTimerStat(
 			"jobsdb_fail_executing_time",
@@ -123,7 +122,7 @@ func (jd *HandleT) failExecuting() {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
+func (jd *Handle) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
 	defer jd.getTimerStat(
 		"jobsdb_fail_executing_ds_time",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
@@ -141,7 +140,7 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 	return err
 }
 
-func (jd *HandleT) startCleanupLoop(ctx context.Context) {
+func (jd *Handle) startCleanupLoop(ctx context.Context) {
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		for {
 			select {
@@ -150,9 +149,9 @@ func (jd *HandleT) startCleanupLoop(ctx context.Context) {
 			case <-jd.TriggerJobCleanUp():
 				func() {
 					for {
-						if err := jd.doCleanup(ctx, config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil && ctx.Err() == nil {
+						if err := jd.doCleanup(ctx, jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil && ctx.Err() == nil {
 							jd.logger.Errorf("error while cleaning up old jobs: %w", err)
-							if err := misc.SleepCtx(ctx, config.GetDuration("jobsdb.cleanupRetryInterval", 10, time.Second)); err != nil {
+							if err := misc.SleepCtx(ctx, jd.config.GetDuration("jobsdb.cleanupRetryInterval", 10, time.Second)); err != nil {
 								return
 							}
 							continue
@@ -165,25 +164,37 @@ func (jd *HandleT) startCleanupLoop(ctx context.Context) {
 	}))
 }
 
-func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
-	jobs := make([]*JobT, 0)
-
-	gather := func(f func(ctx context.Context, params GetQueryParamsT) (JobsResult, error), params GetQueryParamsT) ([]*JobT, error) {
-		res := make([]*JobT, 0)
+func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
+	// 1. cleanup old jobs
+	gather := func(f func(ctx context.Context, states []string, params GetQueryParams) (JobsResult, error), states []string, params GetQueryParams) ([]*JobStatusT, error) {
+		res := make([]*JobStatusT, 0)
 		var done bool
 		var afterJobID *int64
 		for !done {
 			params.IgnoreCustomValFiltersInQuery = true
 			params.JobsLimit = batchSize
-			params.AfterJobID = afterJobID
-			jobsResult, err := f(ctx, params)
+			params.afterJobID = afterJobID
+			jobsResult, err := f(ctx, states, params)
 			if err != nil {
 				return nil, err
 			}
-			jobs := lo.Filter(jobsResult.Jobs, func(job *JobT, _ int) bool { return job.CreatedAt.Before(time.Now().Add(-jd.JobMaxAge())) })
+			jobs := lo.Filter(
+				jobsResult.Jobs,
+				func(job *JobT, _ int) bool {
+					return job.CreatedAt.Before(time.Now().Add(-jd.conf.jobMaxAge()))
+				},
+			)
 			if len(jobs) > 0 {
 				afterJobID = &(jobs[len(jobs)-1].JobID)
-				res = append(res, jobs...)
+				res = append(res, lo.Map(jobs, func(job *JobT, _ int) *JobStatusT {
+					return &JobStatusT{
+						JobID:         job.JobID,
+						JobState:      Aborted.State,
+						ErrorCode:     "0",
+						AttemptNum:    job.LastJobStatus.AttemptNum,
+						ErrorResponse: []byte(`{"reason": "job max age exceeded"}`),
+					}
+				})...)
 			}
 			if len(jobs) < batchSize {
 				done = true
@@ -192,33 +203,34 @@ func (jd *HandleT) doCleanup(ctx context.Context, batchSize int) error {
 		return res, nil
 	}
 
-	unprocessed, err := gather(jd.getUnprocessed, GetQueryParamsT{})
+	statusList, err := gather(jd.GetJobs, []string{Failed.State, Executing.State, Waiting.State, Unprocessed.State}, GetQueryParams{})
 	if err != nil {
 		return err
 	}
-	jobs = append(jobs, unprocessed...)
 
-	processed, err := gather(jd.GetProcessed, GetQueryParamsT{StateFilters: []string{Failed.State, Executing.State, Waiting.State}})
-	if err != nil {
-		return err
-	}
-	jobs = append(jobs, processed...)
-
-	if len(jobs) > 0 {
-		statusList := make([]*JobStatusT, 0)
-		for _, job := range jobs {
-			statusList = append(statusList, &JobStatusT{
-				JobID:         job.JobID,
-				JobState:      Aborted.State,
-				ErrorCode:     "0",
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ErrorResponse: []byte(`{"reason": "job max age exceeded"}`),
-			})
-		}
+	if len(statusList) > 0 {
 		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
 			return err
 		}
-		jd.logger.Infof("cleaned up %d old jobs", len(jobs))
+		jd.logger.Infof("cleaned up %d old jobs", len(statusList))
 	}
+
+	// 2. cleanup journal
+	{
+		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY' returning id"
+		var journalEntryCount int64
+		if err := jd.dbHandle.QueryRowContext(
+			ctx,
+			fmt.Sprintf(
+				deleteStmt,
+				jd.tablePrefix,
+				jd.config.GetInt("JobsDB.archivalTimeInDays", 10),
+			),
+		).Scan(&journalEntryCount); err != nil {
+			return err
+		}
+		jd.logger.Infof("cleaned up %d journal entries", journalEntryCount)
+	}
+
 	return nil
 }

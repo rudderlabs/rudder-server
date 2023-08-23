@@ -277,4 +277,64 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, "Source is disabled\n", string(body))
 		})
 	})
+
+	t.Run("replaySourceIDAuth", func(t *testing.T) {
+		t.Run("replay source", func(t *testing.T) {
+			sourceID := "123"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					ID:         sourceID,
+					Enabled:    true,
+					OriginalID: sourceID,
+				},
+			})
+			r := newSourceIDRequest(sourceID)
+			w := httptest.NewRecorder()
+			gw.replaySourceIDAuth(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusOK, w.Code, "authentication should succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "OK", string(body))
+		})
+
+		t.Run("invalid source using replay endpoint", func(t *testing.T) {
+			sourceID := "123"
+			invalidSource := "345"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					ID:         sourceID,
+					Enabled:    true,
+					OriginalID: "",
+				},
+			})
+			r := newSourceIDRequest(invalidSource)
+			w := httptest.NewRecorder()
+			gw.replaySourceIDAuth(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "Invalid source id\n", string(body))
+		})
+
+		t.Run("regular source using replay endpoint", func(t *testing.T) {
+			sourceID := "123"
+			gw := newGateway(nil, map[string]backendconfig.SourceT{
+				sourceID: {
+					ID:         sourceID,
+					Enabled:    true,
+					OriginalID: "",
+				},
+			})
+			r := newSourceIDRequest(sourceID)
+			w := httptest.NewRecorder()
+			gw.replaySourceIDAuth(delegate).ServeHTTP(w, r)
+
+			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
+			body, err := io.ReadAll(w.Body)
+			require.NoError(t, err, "reading response body should succeed")
+			require.Equal(t, "Invalid replay source\n", string(body))
+		})
+	})
 }

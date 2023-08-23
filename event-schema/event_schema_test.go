@@ -19,7 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper"
 )
@@ -74,8 +73,6 @@ func jobsDBInit(es envSetter, pgResource *resource.PostgresResource) {
 	es.Setenv("JOBS_DB_PORT", pgResource.Port)
 
 	admin.Init()
-	jobsdb.Init()
-	jobsdb.Init2()
 }
 
 var _ = Describe("Event Schemas", Ordered, func() {
