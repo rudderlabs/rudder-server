@@ -1018,7 +1018,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
 	job.uploadSchemaMu.RLock()
 	uploadSchema := job.uploadSchema.Clone()
-	job.uploadSchemaMu.Unlock()
+	job.uploadSchemaMu.RUnlock()
 
 	tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tName, uploadSchema)
 	if tableSchemaDiff.Exists {
