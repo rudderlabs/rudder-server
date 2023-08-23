@@ -204,9 +204,15 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	}
 }
 
-func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
+func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64, statusCode string) ([]int64, []int64) {
 	if len(keyMap) == 0 {
-		return []int64{}, importingJobIDs
+		if statusCode == "200" {
+			// putting in failed jobs list
+			return []int64{}, importingJobIDs
+		} else {
+			// putting in aborted jobs list
+			return importingJobIDs, []int64{}
+		}
 	}
 
 	_, ok := keyMap["successfulJobs"].([]interface{})
@@ -307,7 +313,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if statusCodeHTTP != 200 {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, statusCodeHTTP),
+			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, statusCodeHTTP), // we can do better here
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
@@ -342,7 +348,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 				DestinationID: destinationID,
 			}
 		}
-		successfulJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs)
+		successfulJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs, "200")
 
 		uploadResponse = common.AsyncUploadOutput{
 			ImportingJobIDs:     successfulJobIDs,
@@ -368,7 +374,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			"module":   "batch_router",
 			"destType": destType,
 		})
-		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs)
+		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs, "400")
 		errorMessageFromTransformer := gjson.GetBytes(bodyBytes, "error").String()
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = common.AsyncUploadOutput{
