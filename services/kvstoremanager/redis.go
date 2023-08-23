@@ -136,11 +136,11 @@ func (m *redisManagerT) HGetAll(key string) (result map[string]string, err error
 	return result, err
 }
 
-func (m *redisManagerT) HSet(key, field string, fields interface{}) (err error) {
+func (m *redisManagerT) HSet(hash, key string, value interface{}) (err error) {
 	if m.clusterMode {
-		_, err = m.clusterClient.HSet(key, field, fields).Result()
+		_, err = m.clusterClient.HSet(hash, key, value).Result()
 	} else {
-		_, err = m.client.HSet(key, field, fields).Result()
+		_, err = m.client.HSet(hash, key, value).Result()
 	}
 	return err
 }
