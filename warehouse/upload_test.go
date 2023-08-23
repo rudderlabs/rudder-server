@@ -153,16 +153,13 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				statsFactory: store,
-				schemaHandle: &schema.Schema{
-					schemaInWarehouse: model.Schema{
-						tableName: model.TableSchema{
-							"test-column-1": "string",
-							"test-column-2": "string",
-							"test-column-3": "string",
-						},
-					},
-				},
+				schemaHandle: &schema.Schema{},
 			}
+			j.schemaHandle.SetWarehouseTableSchema(tableName, model.TableSchema{
+				"test-column-1": "string",
+				"test-column-2": "string",
+				"test-column-3": "string",
+			})
 
 			tags := j.buildTags()
 			tags["tableName"] = tableName
@@ -173,7 +170,7 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := store.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				require.EqualValues(t, m1.LastValue(), len(j.schemaHandle.schemaInWarehouse[tableName]))
+				require.EqualValues(t, m1.LastValue(), j.schemaHandle.CurrentColumnsCount(tableName))
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
 			} else {
 				require.Nil(t, m1)

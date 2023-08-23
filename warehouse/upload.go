@@ -1978,11 +1978,19 @@ func (job *UploadJob) GetSchemaInWarehouse() (schema model.Schema) {
 	if job.schemaHandle == nil {
 		return
 	}
-	return job.schemaHandle.schemaInWarehouse
+	return job.schemaHandle.GetWarehouseSchemaCopy(job.ctx)
 }
 
 func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
-	return job.schemaHandle.schemaInWarehouse[tableName]
+	return job.schemaHandle.GetWarehouseTableSchema(tableName)
+}
+
+func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
+	return job.schemaHandle.GetLocalSchema(ctx)
+}
+
+func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
+	return job.schemaHandle.UpdateLocalSchema(ctx, job.upload.ID, schema)
 }
 
 func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {
@@ -2123,14 +2131,6 @@ func initializeStateMachine() {
 	createRemoteSchemaState.nextState = exportDataState
 	exportDataState.nextState = nil
 	abortState.nextState = nil
-}
-
-func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
-	return job.schemaHandle.getLocalSchema(ctx)
-}
-
-func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
-	return job.schemaHandle.UpdateLocalSchema(ctx, job.upload.ID, schema)
 }
 
 func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {

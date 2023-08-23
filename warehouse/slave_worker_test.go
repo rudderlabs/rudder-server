@@ -699,3 +699,262 @@ func TestSlaveWorker(t *testing.T) {
 		})
 	})
 }
+
+func TestHandleSchemaChange(t *testing.T) {
+	inputs := []struct {
+		name             string
+		existingDatatype string
+		currentDataType  string
+		value            any
+
+		newColumnVal any
+		convError    error
+	}{
+		{
+			name:             "should send int values if existing datatype is int, new datatype is float",
+			existingDatatype: "int",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     1,
+		},
+		{
+			name:             "should send float values if existing datatype is float, new datatype is int",
+			existingDatatype: "float",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     1.0,
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is boolean",
+			existingDatatype: "string",
+			currentDataType:  "boolean",
+			value:            false,
+			newColumnVal:     "false",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is int",
+			existingDatatype: "string",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     "1",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is float",
+			existingDatatype: "string",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     "1.501",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is datetime",
+			existingDatatype: "string",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			newColumnVal:     "2022-05-05T00:00:00.000Z",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is string",
+			existingDatatype: "string",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			newColumnVal:     `{"json":true}`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is boolean",
+			existingDatatype: "json",
+			currentDataType:  "boolean",
+			value:            false,
+			newColumnVal:     "false",
+		},
+		{
+			name:             "should send json string values if existing datatype is jso, new datatype is int",
+			existingDatatype: "json",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     "1",
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is float",
+			existingDatatype: "json",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     "1.501",
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is json",
+			existingDatatype: "json",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			newColumnVal:     `"2022-05-05T00:00:00.000Z"`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is string",
+			existingDatatype: "json",
+			currentDataType:  "string",
+			value:            "string value",
+			newColumnVal:     `"string value"`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is array",
+			existingDatatype: "json",
+			currentDataType:  "array",
+			value:            []any{false, 1, "string value"},
+			newColumnVal:     []any{false, 1, "string value"},
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is int",
+			existingDatatype: "boolean",
+			currentDataType:  "int",
+			value:            1,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is float",
+			existingDatatype: "boolean",
+			currentDataType:  "float",
+			value:            1.501,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is string",
+			existingDatatype: "boolean",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is datetime",
+			existingDatatype: "boolean",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is json",
+			existingDatatype: "boolean",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is boolean",
+			existingDatatype: "int",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is string",
+			existingDatatype: "int",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is datetime",
+			existingDatatype: "int",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is json",
+			existingDatatype: "int",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is float",
+			existingDatatype: "int",
+			currentDataType:  "float",
+			value:            1,
+			convError:        errIncompatibleSchemaConversion,
+		},
+		{
+			name:             "existing datatype is float, new datatype is boolean",
+			existingDatatype: "float",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is int",
+			existingDatatype: "float",
+			currentDataType:  "int",
+			value:            1.0,
+			convError:        errIncompatibleSchemaConversion,
+		},
+		{
+			name:             "existing datatype is float, new datatype is string",
+			existingDatatype: "float",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is datetime",
+			existingDatatype: "float",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is json",
+			existingDatatype: "float",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is boolean",
+			existingDatatype: "datetime",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is string",
+			existingDatatype: "datetime",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is int",
+			existingDatatype: "datetime",
+			currentDataType:  "int",
+			value:            1,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is float",
+			existingDatatype: "datetime",
+			currentDataType:  "float",
+			value:            1.501,
+			convError:        errSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is json",
+			existingDatatype: "datetime",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        errSchemaConversionNotSupported,
+		},
+	}
+	for _, ip := range inputs {
+		tc := ip
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			newColumnVal, convError := handleSchemaChange(
+				model.SchemaType(tc.existingDatatype),
+				model.SchemaType(tc.currentDataType),
+				tc.value,
+			)
+			require.Equal(t, newColumnVal, tc.newColumnVal)
+			require.ErrorIs(t, convError, tc.convError)
+		})
+	}
+}

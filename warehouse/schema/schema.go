@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -18,11 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-)
-
-var (
-	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
-	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
 )
 
 // deprecatedColumnsRegex
@@ -140,12 +134,12 @@ func (sh *Schema) SyncRemoteSchema(ctx context.Context, repo fetchSchemaRepo, up
 	bool,
 	error,
 ) {
-	localSchema, err := sh.getLocalSchema(ctx)
+	localSchema, err := sh.GetLocalSchema(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("fetching schema from local: %w", err)
 	}
 
-	warehouseSchema, _, err := sh.fetchSchemaFromWarehouse(ctx, repo)
+	warehouseSchema, _, err := sh.FetchSchemaFromWarehouse(ctx, repo)
 	if err != nil {
 		return nil, false, fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
@@ -200,8 +194,18 @@ func (sh *Schema) UpdateLocalSchema(ctx context.Context, uploadId int64, updated
 
 func (sh *Schema) SetWarehouseTableSchema(t string, ts model.TableSchema) {
 	sh.schemaInWarehouseMu.Lock()
+	if sh.schemaInWarehouse == nil {
+		sh.schemaInWarehouse = make(model.Schema)
+	}
 	sh.schemaInWarehouse[t] = ts
 	sh.schemaInWarehouseMu.Unlock()
+}
+
+func (sh *Schema) GetWarehouseTableSchema(t string) model.TableSchema {
+	sh.schemaInWarehouseMu.Lock()
+	ts := sh.schemaInWarehouse[t]
+	sh.schemaInWarehouseMu.Unlock()
+	return ts
 }
 
 func (sh *Schema) UpdateLocalSchemaWithWarehouseSchema(ctx context.Context, uploadId int64) error {
@@ -218,7 +222,7 @@ func (sh *Schema) CurrentColumnsCount(t string) int {
 	return len(sh.schemaInWarehouse[t])
 }
 
-func (sh *Schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
+func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.schemaRepo.GetForNamespace(
 		ctx,
 		sh.warehouse.Source.ID,
@@ -234,8 +238,14 @@ func (sh *Schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
 	return whSchema.Schema, nil
 }
 
-// fetchSchemaFromWarehouse fetches schema from warehouse
-func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) (
+func (sh *Schema) GetWarehouseSchemaCopy(_ context.Context) model.Schema {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	return sh.schemaInWarehouse.Clone()
+}
+
+// FetchSchemaFromWarehouse fetches schema from warehouse
+func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) (
 	model.Schema,
 	model.Schema,
 	error,
@@ -253,7 +263,6 @@ func (sh *Schema) fetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema.Clone()
 	sh.schemaInWarehouseMu.Unlock()
 
-	// TODO do we need to return also unrecognizedWarehouseSchema?
 	return warehouseSchema, unrecognizedWarehouseSchema, nil
 }
 
@@ -470,48 +479,4 @@ func enhanceSchemaWithIDResolution(
 		}
 	}
 	return consolidatedSchema
-}
-
-// handleSchemaChange checks if the existing column type is compatible with the new column type
-func handleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
-	var (
-		newColumnVal any
-		err          error
-	)
-
-	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
-		// only stringify if the previous type is non-string/text/json
-		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
-			newColumnVal = fmt.Sprintf("%v", value)
-		} else {
-			newColumnVal = value
-		}
-	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
-		intVal, ok := value.(int)
-		if !ok {
-			err = errIncompatibleSchemaConversion
-		} else {
-			newColumnVal = float64(intVal)
-		}
-	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
-		floatVal, ok := value.(float64)
-		if !ok {
-			err = errIncompatibleSchemaConversion
-		} else {
-			newColumnVal = int(floatVal)
-		}
-	} else if existingDataType == model.JSONDataType {
-		var interfaceSliceSample []any
-		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
-			newColumnVal = fmt.Sprintf("%v", value)
-		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
-			newColumnVal = value
-		} else {
-			newColumnVal = fmt.Sprintf(`"%v"`, value)
-		}
-	} else {
-		err = errSchemaConversionNotSupported
-	}
-
-	return newColumnVal, err
 }
