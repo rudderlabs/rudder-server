@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -137,9 +138,18 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	statusCode, ok := failedJobsResponse["status"].(int)
-	if !ok {
+	var marketoStatus int
+	if statusCodeFloat64, ok := failedJobsResponse["statusCode"].(float64); ok {
+		marketoStatus = int(statusCodeFloat64)
+	} else {
 		b.logger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", statusCode, string(failedBodyBytes))
+		return common.GetUploadStatsResponse{
+			StatusCode: 500,
+		}
+	}
+	_, ok := failedJobsResponse["error"].(string)
+	if ok {
+		b.logger.Errorf("[Batch Router] Failed to fetch status for Dest Type %v with body %v", "MARKETO_BULK_UPLOAD", string(failedBodyBytes))
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
 		}
@@ -158,23 +168,51 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 
 	if errFailed != nil || errWarning != nil || errSuccess != nil {
 		b.logger.Errorf("[Batch Router] Failed to get job IDs for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
-		statusCode = 500
+		return common.GetUploadStatsResponse{
+			StatusCode: 500,
+		}
+	}
+
+	failedReasonsMap := make(map[int64]string)
+	failedReasons, ok := metadata["failedReasons"].(map[string]interface{})
+	if !ok {
+		b.logger.Errorf("[Batch Router] Failed to typecast failedReasons for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
+		return common.GetUploadStatsResponse{
+			StatusCode: 500,
+		}
+	}
+	for jobID, reason := range failedReasons {
+		jobIDInt, err := strconv.ParseInt(strings.TrimPrefix(jobID, "jobID"), 10, 64)
+		if err != nil {
+			b.logger.Errorf("[Batch Router] Error converting jobID to int64: for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+			}
+		}
+		failedReasonsMap[jobIDInt] = reason.(string)
 	}
 
 	// Build the response body
 	return common.GetUploadStatsResponse{
-		StatusCode: statusCode,
+		StatusCode: marketoStatus,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    failedKeys,
 			WarningKeys:   warningKeys,
 			SucceededKeys: succeededKeys,
+			FailedReasons: failedReasonsMap,
 		},
 	}
 }
 
-func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
+func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64, statusCode string) ([]int64, []int64) {
 	if len(keyMap) == 0 {
-		return []int64{}, importingJobIDs
+		if statusCode == "200" {
+			// putting in failed jobs list
+			return []int64{}, importingJobIDs
+		} else {
+			// putting in aborted jobs list
+			return importingJobIDs, []int64{}
+		}
 	}
 
 	_, ok := keyMap["successfulJobs"].([]interface{})
@@ -275,7 +313,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if statusCodeHTTP != 200 {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, statusCodeHTTP),
+			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, statusCodeHTTP), // we can do better here
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
@@ -310,7 +348,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 				DestinationID: destinationID,
 			}
 		}
-		successfulJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs)
+		successfulJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs, "200")
 
 		uploadResponse = common.AsyncUploadOutput{
 			ImportingJobIDs:     successfulJobIDs,
@@ -336,16 +374,22 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			"module":   "batch_router",
 			"destType": destType,
 		})
-		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs)
+		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs, "400")
+		errorMessageFromTransformer := gjson.GetBytes(bodyBytes, "error").String()
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = common.AsyncUploadOutput{
 			AbortJobIDs:   abortedJobIDs,
 			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
-			FailedReason:  `Jobs flowed over the prescribed limit`,
 			AbortReason:   string(bodyBytes),
 			AbortCount:    len(importingJobIDs),
 			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID: destinationID,
+		}
+		if errorMessageFromTransformer != "" {
+			uploadResponse.FailedReason = errorMessageFromTransformer
+		} else {
+			uploadResponse.FailedReason = `Jobs flowed over the prescribed limit`
+
 		}
 	default:
 		uploadResponse = common.AsyncUploadOutput{
