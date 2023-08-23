@@ -22,6 +22,12 @@ type SettingsT struct {
 	Config   map[string]interface{}
 }
 
+var (
+	hashPath  = "message.hash"
+	keyPath   = "message.key"
+	valuePath = "message.value"
+)
+
 func New(provider string, config map[string]interface{}) (m KVStoreManager) {
 	return newManager(SettingsT{
 		Provider: provider,
@@ -51,14 +57,20 @@ func EventToKeyValue(jsonData json.RawMessage) (string, map[string]interface{}) 
 	return key, fields
 }
 
-func SupportsKeyUpdate(jsonData json.RawMessage) bool {
+// IsHSETCompatibleEvent identifies if the event supports HSET operation
+// To support HSET, the event must have the following fields:
+// - message.key
+// - message.value
+// - message.hash
+// It doesn't account for the value of the fields.
+func IsHSETCompatibleEvent(jsonData json.RawMessage) bool {
 	return gjson.GetBytes(jsonData, "message.key").Exists() && gjson.GetBytes(jsonData, "message.value").Exists() && gjson.GetBytes(jsonData, "message.hash").Exists()
 }
 
-func EventToHashKeyValue(jsonData json.RawMessage) (string, string, string) {
-	hash := gjson.GetBytes(jsonData, "message.hash").String()
-	value := gjson.GetBytes(jsonData, "message.value").String()
-	key := gjson.GetBytes(jsonData, "message.key").String()
+func ExtractHashKeyValueFromEvent(jsonData json.RawMessage) (hash, key, value string) {
+	hash = gjson.GetBytes(jsonData, hashPath).String()
+	key = gjson.GetBytes(jsonData, keyPath).String()
+	value = gjson.GetBytes(jsonData, valuePath).String()
 
 	return hash, key, value
 }
