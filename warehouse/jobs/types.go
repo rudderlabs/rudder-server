@@ -65,7 +65,7 @@ const (
 	AsyncJobType   string = "async_job"
 )
 
-type PGNotifierOutput struct {
+type NotifierResponse struct {
 	Id string `json:"id"`
 }
 

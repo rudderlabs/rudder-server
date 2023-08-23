@@ -20,9 +20,9 @@ type mockNotifier struct {
 	tables   []string
 }
 
-func (n *mockNotifier) Publish(_ context.Context, payload *notifierModel.PublishRequest) (chan notifierModel.PublishResponse, error) {
+func (n *mockNotifier) Publish(_ context.Context, payload *notifierModel.PublishRequest) (<-chan *notifierModel.PublishResponse, error) {
 	var responses notifierModel.PublishResponse
-	for _, p := range payload.Jobs {
+	for _, p := range payload.Payloads {
 		var req loadfiles.WorkerJobRequest
 		err := json.Unmarshal(p, &req)
 		require.NoError(n.t, err)
@@ -60,14 +60,14 @@ func (n *mockNotifier) Publish(_ context.Context, payload *notifierModel.Publish
 			status = "aborted"
 		}
 
-		responses.Notifiers = append(responses.Notifiers, notifierModel.Notifier{
+		responses.Notifiers = append(responses.Notifiers, notifierModel.Job{
 			Payload: out,
 			Error:   errors.New(errString),
 			Status:  status,
 		})
 	}
 
-	ch := make(chan notifierModel.PublishResponse, 1)
-	ch <- responses
+	ch := make(chan *notifierModel.PublishResponse, 1)
+	ch <- &responses
 	return ch, nil
 }

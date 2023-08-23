@@ -240,6 +240,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
+	config.Set("DB.host", postgresContainer.Host)
 
 	config.Set("Warehouse.mode", "off")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
@@ -472,7 +473,6 @@ func (brtIsolationMethods) newMockWarehouse() *httptest.Server {
 
 // seedBrtDB seeds the batch router database with jobs based on the provided spec
 func (m brtIsolationMethods) seedBrtDB(t testing.TB, spec *BrtIsolationScenarioSpec) {
-	jobsdb.Init()
 	brtJobsDB := jobsdb.NewForWrite("batch_rt")
 	require.NoError(t, brtJobsDB.Start(), "it should be able to start the jobsdb")
 	defer brtJobsDB.Stop()

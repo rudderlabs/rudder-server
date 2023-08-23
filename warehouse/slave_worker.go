@@ -100,7 +100,7 @@ func newSlaveWorker(
 	return s
 }
 
-func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notifierModel.Notifier, slaveID string) {
+func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notifierModel.Job, slaveID string) {
 	workerIdleTimeStart := time.Now()
 
 	for {
@@ -115,10 +115,10 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notif
 				claimedJob.ID,
 				sw.workerIdx,
 				slaveID,
-				claimedJob.JobType,
+				claimedJob.Type,
 			)
 
-			switch claimedJob.JobType {
+			switch claimedJob.Type {
 			case jobs.AsyncJobType:
 				sw.processClaimedAsyncJob(ctx, claimedJob)
 			default:
@@ -136,10 +136,10 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notif
 	}
 }
 
-func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob *notifierModel.Notifier) {
+func (sw *slaveWorker) processClaimedUploadJob(ctx context.Context, claimedJob *notifierModel.Job) {
 	sw.stats.workerClaimProcessingTime.RecordDuration()()
 
-	handleErr := func(err error, claimedJob *notifierModel.Notifier) {
+	handleErr := func(err error, claimedJob *notifierModel.Job) {
 		sw.stats.workerClaimProcessingFailed.Increment()
 
 		sw.notifier.UpdateClaim(ctx, claimedJob, &notifierModel.ClaimResponse{
@@ -410,8 +410,8 @@ func (sw *slaveWorker) processStagingFile(ctx context.Context, job payload) ([]u
 	return uploadsResults, err
 }
 
-func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifierModel.Notifier) {
-	handleErr := func(err error, claimedJob *notifierModel.Notifier) {
+func (sw *slaveWorker) processClaimedAsyncJob(ctx context.Context, claimedJob *notifierModel.Job) {
+	handleErr := func(err error, claimedJob *notifierModel.Job) {
 		sw.log.Errorf("[WH]: Error processing claim: %v", err)
 
 		sw.notifier.UpdateClaim(ctx, claimedJob, &notifierModel.ClaimResponse{

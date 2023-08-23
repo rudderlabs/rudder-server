@@ -70,7 +70,7 @@ func NewNotifier(db *sqlmw.DB, opts ...Opt) *Notifier {
 // - UpdatedAt
 func (n *Notifier) Insert(
 	ctx context.Context,
-	publishPayload *model.PublishRequest,
+	request *model.PublishRequest,
 	workspaceIdentifier string,
 	batchID string,
 ) error {
@@ -106,9 +106,9 @@ func (n *Notifier) Insert(
 	}
 	defer func() { _ = stmt.Close() }()
 
-	priority, jobType, schema := publishPayload.Priority, publishPayload.Type, publishPayload.Schema
+	priority, jobType, schema := request.Priority, request.JobType, request.Schema
 
-	for _, job := range publishPayload.Jobs {
+	for _, job := range request.Payloads {
 		_, err = stmt.ExecContext(
 			ctx,
 			batchID,
@@ -129,7 +129,8 @@ func (n *Notifier) Insert(
 	}
 
 	// Currently, we are doing this separately, since we don't want to keep huge schema in memory
-	_, err = txn.ExecContext(ctx, `
+	if schema != nil {
+		_, err = txn.ExecContext(ctx, `
 			UPDATE
 			  `+tableName+`
 			SET
@@ -137,11 +138,12 @@ func (n *Notifier) Insert(
 			WHERE
 			  batch_id = $2;
 	`,
-		string(schema),
-		batchID,
-	)
-	if err != nil {
-		return fmt.Errorf(`inserting into notifier: update schema: %w`, err)
+			string(schema),
+			batchID,
+		)
+		if err != nil {
+			return fmt.Errorf(`inserting into notifier: update schema: %w`, err)
+		}
 	}
 
 	if err := txn.Commit(); err != nil {
@@ -165,7 +167,7 @@ func (n *Notifier) ResetForWorkspace(ctx context.Context, workspaceIdentifier st
 	return nil
 }
 
-func (n *Notifier) GetByBatchID(ctx context.Context, batchID string) ([]model.Notifier, error) {
+func (n *Notifier) GetByBatchID(ctx context.Context, batchID string) ([]model.Job, error) {
 	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` WHERE batch_id = $1 ORDER BY id;`
 
 	rows, err := n.db.QueryContext(ctx, query, batchID)
@@ -174,9 +176,9 @@ func (n *Notifier) GetByBatchID(ctx context.Context, batchID string) ([]model.No
 	}
 	defer func() { _ = rows.Close() }()
 
-	var notifiers []model.Notifier
+	var notifiers []model.Job
 	for rows.Next() {
-		var notifier model.Notifier
+		var notifier model.Job
 		err := scanNotifier(rows.Scan, &notifier)
 		if err != nil {
 			return nil, fmt.Errorf("getting by batchID: scanning notifier: %w", err)
@@ -290,7 +292,7 @@ func (n *Notifier) OrphanJobIDs(ctx context.Context, intervalInSeconds int) ([]i
 	return ids, nil
 }
 
-func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Notifier, error) {
+func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Job, error) {
 	row := n.db.QueryRowContext(ctx, `
 		UPDATE
   		  `+tableName+`
@@ -324,7 +326,7 @@ func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Notifier,
 		model.Failed,
 	)
 
-	var notifier model.Notifier
+	var notifier model.Job
 	if err := scanNotifier(row.Scan, &notifier); err != nil {
 		return nil, fmt.Errorf("claiming job: %w", err)
 	}
@@ -332,7 +334,7 @@ func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Notifier,
 	return &notifier, nil
 }
 
-func (n *Notifier) OnFailed(ctx context.Context, notifier *model.Notifier, maxAttempt int, claimError error) error {
+func (n *Notifier) OnFailed(ctx context.Context, notifier *model.Job, claimError error, maxAttempt int) error {
 	query := fmt.Sprintf(`
 		UPDATE
 		  `+tableName+`
@@ -376,7 +378,7 @@ func (n *Notifier) OnFailed(ctx context.Context, notifier *model.Notifier, maxAt
 	return nil
 }
 
-func (n *Notifier) OnSuccess(ctx context.Context, notifier *model.Notifier) error {
+func (n *Notifier) OnSuccess(ctx context.Context, notifier *model.Job, payload model.Payload) error {
 	r, err := n.db.ExecContext(ctx, `
 		UPDATE
 		  `+tableName+`
@@ -389,7 +391,7 @@ func (n *Notifier) OnSuccess(ctx context.Context, notifier *model.Notifier) erro
 	`,
 		model.Succeeded,
 		n.now().UTC().Format(timeFormat),
-		notifier.Payload,
+		string(payload),
 		notifier.ID,
 	)
 	if err != nil {
@@ -407,7 +409,7 @@ func (n *Notifier) OnSuccess(ctx context.Context, notifier *model.Notifier) erro
 	return nil
 }
 
-func scanNotifier(scan scanFn, notifier *model.Notifier) error {
+func scanNotifier(scan scanFn, notifier *model.Job) error {
 	var (
 		jobTypeRaw  sql.NullString
 		errorRaw    sql.NullString
@@ -438,9 +440,9 @@ func scanNotifier(scan scanFn, notifier *model.Notifier) error {
 		notifier.WorkerID = workerIDRaw.String
 	}
 	if jobTypeRaw.Valid {
-		notifier.JobType = jobTypeRaw.String
+		notifier.Type = jobTypeRaw.String
 	} else {
-		notifier.JobType = "upload"
+		notifier.Type = "upload"
 	}
 	if errorRaw.Valid {
 		notifier.Error = errors.New(errorRaw.String)

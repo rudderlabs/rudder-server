@@ -558,17 +558,17 @@ func clearTriggeredUpload(wh model.Warehouse) {
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	var dbService, pgNotifierService string
+	var dbService, notifierService string
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if runningMode != DegradedMode {
 		if !CheckPGHealth(ctx, pgNotifier.GetDBHandle()) {
-			http.Error(w, "Cannot connect to pgNotifierService", http.StatusInternalServerError)
+			http.Error(w, "Cannot connect to notifierService", http.StatusInternalServerError)
 			return
 		}
-		pgNotifierService = "UP"
+		notifierService = "UP"
 	}
 
 	if isMaster() {
@@ -583,14 +583,14 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 		{
 			"server": "UP",
 			"db": %q,
-			"pgNotifier": %q,
+			"notifier": %q,
 			"acceptingEvents": "TRUE",
 			"warehouseMode": %q,
 			"goroutines": "%d"
 		}
 	`,
 		dbService,
-		pgNotifierService,
+		notifierService,
 		strings.ToUpper(warehouseMode),
 		runtime.NumGoroutine(),
 	)
@@ -616,7 +616,7 @@ func CheckPGHealth(ctx context.Context, db *sql.DB) bool {
 
 func getConnectionString() string {
 	if !CheckForWarehouseEnvVars() {
-		return misc.GetConnectionString()
+		return misc.GetConnectionString(config.Default)
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
@@ -804,7 +804,7 @@ func Start(ctx context.Context, app app.App) error {
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
 	pgNotifier, err = notifier.New(ctx, config.Default, pkgLogger, stats.Default, workspaceIdentifier, psqlInfo)
 	if err != nil {
-		return fmt.Errorf("cannot setup pgnotifier: %w", err)
+		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
 	g.Go(func() error {
 		return pgNotifier.Wait(gCtx)
@@ -814,7 +814,7 @@ func Start(ctx context.Context, app app.App) error {
 	// A different DB for warehouse is used when:
 	// 1. MultiTenant (uses RDS)
 	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
-	if (isStandAlone() && isMaster()) || (misc.GetConnectionString() != psqlInfo) {
+	if (isStandAlone() && isMaster()) || (misc.GetConnectionString(config.Default) != psqlInfo) {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {

@@ -17,9 +17,9 @@ import (
 )
 
 type slaveNotifier interface {
-	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *model.Notifier
+	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *model.Job
 	RunMaintenanceWorker(ctx context.Context) error
-	UpdateClaim(ctx context.Context, notifier *model.Notifier, response *model.ClaimResponse)
+	UpdateClaim(ctx context.Context, notifier *model.Job, response *model.ClaimResponse)
 }
 
 type slave struct {

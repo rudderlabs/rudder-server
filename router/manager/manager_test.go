@@ -162,7 +162,6 @@ func initRouter() {
 	logger.Reset()
 	stash.Init()
 	admin.Init()
-	jobsdb.Init()
 }
 
 func TestRouterManager(t *testing.T) {

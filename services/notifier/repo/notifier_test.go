@@ -53,14 +53,14 @@ func TestNotifierRepo(t *testing.T) {
 	}))
 
 	request := model.PublishRequest{
-		Jobs: []model.Payload{
+		Payloads: []model.Payload{
 			model.Payload(`{"id":"1"}`),
 			model.Payload(`{"id":"2"}`),
 			model.Payload(`{"id":"3"}`),
 			model.Payload(`{"id":"4"}`),
 			model.Payload(`{"id":"5"}`),
 		},
-		Type:     "upload",
+		JobType:  "upload",
 		Schema:   json.RawMessage(`{"sid":"1"}`),
 		Priority: 50,
 	}
@@ -74,13 +74,13 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			for i, notifier := range notifiers {
 				require.EqualValues(t, notifier.Payload, model.Payload(fmt.Sprintf(`{"id": "%d", "sid": "1"}`, i+1)))
 				require.EqualValues(t, notifier.WorkspaceIdentifier, workspaceIdentifier)
 				require.EqualValues(t, notifier.BatchID, batchID)
-				require.EqualValues(t, notifier.JobType, request.Type)
+				require.EqualValues(t, notifier.Type, request.JobType)
 				require.EqualValues(t, notifier.Priority, request.Priority)
 				require.EqualValues(t, notifier.Status, model.Waiting)
 				require.EqualValues(t, notifier.WorkerID, "")
@@ -121,11 +121,11 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			deletedCount, err := r.DeleteByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.EqualValues(t, deletedCount, len(request.Jobs))
+			require.EqualValues(t, deletedCount, len(request.Payloads))
 
 			notifiers, err = r.GetByBatchID(ctx, batchID)
 			require.EqualError(t, err, "getting by batchID: no notifiers found")
@@ -165,10 +165,10 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID1)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 			notifiers, err = r.GetByBatchID(ctx, batchID2)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			err = r.ResetForWorkspace(ctx, workspaceIdentifier1)
 			require.NoError(t, err)
@@ -178,7 +178,7 @@ func TestNotifierRepo(t *testing.T) {
 			require.Zero(t, notifiers, 0)
 			notifiers, err = r.GetByBatchID(ctx, batchID2)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
@@ -209,13 +209,13 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
-			err = r.OnSuccess(ctx, &notifiers[0])
+			err = r.OnSuccess(ctx, &notifiers[0], model.Payload(`{"test": "payload"}`))
 			require.NoError(t, err)
-			err = r.OnFailed(ctx, &notifiers[1], 100, errors.New("test error"))
+			err = r.OnFailed(ctx, &notifiers[1], errors.New("test error"), 100)
 			require.NoError(t, err)
-			err = r.OnFailed(ctx, &notifiers[2], -1, errors.New("test error"))
+			err = r.OnFailed(ctx, &notifiers[2], errors.New("test error"), -1)
 			require.NoError(t, err)
 
 			pendingCount, err := r.PendingByBatchID(ctx, batchID)
@@ -245,10 +245,10 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			for _, n := range notifiers {
-				require.NoError(t, r.OnSuccess(ctx, &n))
+				require.NoError(t, r.OnSuccess(ctx, &n, model.Payload(`{"test": "payload"}`)))
 			}
 
 			pendingCount, err := r.PendingByBatchID(ctx, batchID)
@@ -267,7 +267,7 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			t.Run("no orphans", func(t *testing.T) {
 				jobIDs, err := r.OrphanJobIDs(ctx, orphanInterval)
@@ -322,7 +322,7 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			for i, notifier := range notifiers {
 				claimedNotifier, err := ur.Claim(ctx, workerID+strconv.Itoa(i))
@@ -367,16 +367,16 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			for _, notifier := range notifiers {
 				notifier.Payload = payload
-				require.NoError(t, ur.OnSuccess(ctx, &notifier))
+				require.NoError(t, ur.OnSuccess(ctx, &notifier, model.Payload(`{"test": "payload"}`)))
 			}
 
 			successClaims, err := ur.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 			for _, notifier := range successClaims {
 				require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
 				require.EqualValues(t, notifier.Status, model.Succeeded)
@@ -394,9 +394,9 @@ func TestNotifierRepo(t *testing.T) {
 			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			err = ur.OnSuccess(ctx, &model.Notifier{
+			err = ur.OnSuccess(ctx, &model.Job{
 				ID: 1,
-			})
+			}, nil)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 
@@ -408,13 +408,13 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			_, err = r.DeleteByBatchID(ctx, batchID)
 			require.NoError(t, err)
 
 			for _, n := range notifiers {
-				err = ur.OnSuccess(ctx, &n)
+				err = ur.OnSuccess(ctx, &n, model.Payload(`{"test": "payload"}`))
 				require.EqualError(t, err, "on claim success: no rows affected")
 			}
 		})
@@ -434,18 +434,18 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			for i, notifier := range notifiers {
 				for j := 0; j < i+1; j++ {
-					require.NoError(t, ur.OnFailed(ctx, &notifier, 2, errors.New("test_error")))
+					require.NoError(t, ur.OnFailed(ctx, &notifier, errors.New("test_error"), 2))
 				}
 			}
 
 			failedClaims, err := ur.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
-			require.Equal(t, []string{model.Failed, model.Failed, model.Failed, model.Aborted, model.Aborted}, lo.Map(failedClaims, func(item model.Notifier, index int) string {
+			require.Len(t, notifiers, len(request.Payloads))
+			require.Equal(t, []string{model.Failed, model.Failed, model.Failed, model.Aborted, model.Aborted}, lo.Map(failedClaims, func(item model.Job, index int) string {
 				return item.Status
 			}))
 			for i, notifier := range failedClaims {
@@ -455,12 +455,12 @@ func TestNotifierRepo(t *testing.T) {
 			}
 
 			for _, notifier := range failedClaims {
-				require.NoError(t, ur.OnSuccess(ctx, &notifier))
+				require.NoError(t, ur.OnSuccess(ctx, &notifier, model.Payload(`{"test": "payload"}`)))
 			}
 
 			successClaims, err := ur.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 			for i, notifier := range successClaims {
 				require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
 				require.EqualValues(t, notifier.Status, model.Succeeded)
@@ -478,7 +478,7 @@ func TestNotifierRepo(t *testing.T) {
 			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			err = ur.OnFailed(ctx, &model.Notifier{ID: 1}, 0, errors.New("test_error"))
+			err = ur.OnFailed(ctx, &model.Job{ID: 1}, errors.New("test_error"), 0)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 
@@ -490,13 +490,13 @@ func TestNotifierRepo(t *testing.T) {
 
 			notifiers, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Jobs))
+			require.Len(t, notifiers, len(request.Payloads))
 
 			_, err = ur.DeleteByBatchID(ctx, batchID)
 			require.NoError(t, err)
 
 			for _, notifier := range notifiers {
-				err := ur.OnFailed(ctx, &notifier, 0, errors.New("test_error"))
+				err := ur.OnFailed(ctx, &notifier, errors.New("test_error"), 0)
 				require.EqualError(t, err, "on claim failed: no rows affected")
 			}
 		})

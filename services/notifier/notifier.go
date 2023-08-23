@@ -27,13 +27,10 @@ import (
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 )
 
-/*
-	TODO: We should probably have a pg_notifier_queue_metadata for storing common metadata instead of sending them in payload.
-    TODO: Instead of claim, can we probably have trigger which updates when status is marked as failed or waiting.
-    TODO: Discuss whether it can be done from the master instead of the slaves, that way we would not be needing the lock. Earlier we used to have a separate server running in embedded mode, but now is not the case.
-*/
-
-const queueName = "pg_notifier_queue"
+const (
+	queueName = "pg_notifier_queue"
+	module    = "pgnotifier"
+)
 
 type Notifier struct {
 	conf                *config.Config
@@ -71,20 +68,13 @@ type Notifier struct {
 		publish            stats.Measurement
 		publishTime        stats.Measurement
 		claimLag           stats.Measurement
+		trackBatchLag      stats.Measurement
 		claimSucceeded     stats.Measurement
 		claimSucceededTime stats.Measurement
 		claimFailed        stats.Measurement
 		claimFailedTime    stats.Measurement
 		claimUpdateFailed  stats.Measurement
 		abortedRecords     stats.Measurement
-	}
-}
-
-type Opt func(*Notifier)
-
-func WithNow(now func() time.Time) Opt {
-	return func(r *Notifier) {
-		r.now = now
 	}
 }
 
@@ -95,19 +85,14 @@ func New(
 	statsFactory stats.Stats,
 	workspaceIdentifier string,
 	fallbackDSN string,
-	opts ...Opt,
 ) (*Notifier, error) {
 	n := &Notifier{
 		conf:                conf,
-		logger:              log.Child("pgnotifier"),
+		logger:              log.Child("notifier"),
 		statsFactory:        statsFactory,
 		workspaceIdentifier: workspaceIdentifier,
 		batchIDGenerator:    misc.FastUUID,
 		now:                 time.Now,
-	}
-
-	for _, opt := range opts {
-		opt(n)
 	}
 
 	n.logger.Infof("Initializing Notifier...")
@@ -128,39 +113,42 @@ func New(
 	n.conf.RegisterDurationConfigVariable(120, &n.config.jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
 
 	n.stats.insertRecords = n.statsFactory.NewTaggedStat("pg_notifier_insert_records", stats.CountType, stats.Tags{
-		"module":    "pgnotifier",
-		"queueName": "pg_notifier_queue",
+		"module":    module,
+		"queueName": queueName,
 	})
 	n.stats.publish = n.statsFactory.NewTaggedStat("pgnotifier.publish", stats.CountType, stats.Tags{
-		"module": "pgnotifier",
+		"module": module,
 	})
 	n.stats.claimSucceeded = n.statsFactory.NewTaggedStat("pgnotifier.claim", stats.CountType, stats.Tags{
-		"module": "pgnotifier",
-		"status": "succeeded",
+		"module": module,
+		"status": model.Succeeded,
 	})
 	n.stats.claimFailed = n.statsFactory.NewTaggedStat("pgnotifier.claim", stats.CountType, stats.Tags{
-		"module": "pgnotifier",
-		"status": "failed",
+		"module": module,
+		"status": model.Failed,
 	})
 	n.stats.claimUpdateFailed = n.statsFactory.NewStat("pgnotifier.claimUpdateFailed", stats.CountType)
 	n.stats.publishTime = n.statsFactory.NewTaggedStat("pgnotifier.publishTime", stats.TimerType, stats.Tags{
-		"module": "pgnotifier",
+		"module": module,
 	})
 	n.stats.claimLag = n.statsFactory.NewTaggedStat("pgnotifier.claimLag", stats.TimerType, stats.Tags{
-		"module": "pgnotifier",
+		"module": module,
+	})
+	n.stats.trackBatchLag = n.statsFactory.NewTaggedStat("pgnotifier.trackBatchLag", stats.TimerType, stats.Tags{
+		"module": module,
 	})
 	n.stats.claimSucceededTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
-		"module": "pgnotifier",
-		"status": "succeeded",
+		"module": module,
+		"status": model.Succeeded,
 	})
 	n.stats.claimFailedTime = n.statsFactory.NewTaggedStat("pgnotifier.claimTime", stats.TimerType, stats.Tags{
-		"module": "pgnotifier",
-		"status": "failed",
+		"module": module,
+		"status": model.Failed,
 	})
 	n.stats.abortedRecords = n.statsFactory.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, stats.Tags{
 		"workspace": n.workspaceIdentifier,
 		"module":    "pg_notifier",
-		"queueName": "pg_notifier_queue",
+		"queueName": queueName,
 	})
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -277,10 +265,10 @@ func (n *Notifier) Publish(ctx context.Context, payload *model.PublishRequest) (
 		return nil, fmt.Errorf("inserting jobs: %w", err)
 	}
 
-	n.logger.Infof("Inserted %d records into %s with batch length: %s", len(payload.Jobs), queueName, batchID)
+	n.logger.Infof("Inserted %d records into %s with batch length: %s", len(payload.Payloads), queueName, batchID)
 
 	defer func() {
-		n.stats.insertRecords.Count(len(payload.Jobs))
+		n.stats.insertRecords.Count(len(payload.Payloads))
 		n.stats.publishTime.Since(publishStartTime)
 		n.stats.publish.Increment()
 	}()
@@ -306,6 +294,8 @@ func (n *Notifier) trackBatch(ctx context.Context, batchID string) <-chan *model
 		}
 
 		for {
+			trackBatchStartTime := n.now()
+
 			select {
 			case <-ctx.Done():
 				return nil
@@ -321,6 +311,7 @@ func (n *Notifier) trackBatch(ctx context.Context, batchID string) <-chan *model
 				})
 				return nil
 			} else if count != 0 {
+				n.stats.trackBatchLag.Since(trackBatchStartTime)
 				continue
 			}
 
@@ -352,8 +343,8 @@ func (n *Notifier) trackBatch(ctx context.Context, batchID string) <-chan *model
 	return ch
 }
 
-func (n *Notifier) Subscribe(ctx context.Context, workerId string, bufferSize int) <-chan *model.Notifier {
-	jobsCh := make(chan *model.Notifier, bufferSize)
+func (n *Notifier) Subscribe(ctx context.Context, workerId string, bufferSize int) <-chan *model.Job {
+	jobsCh := make(chan *model.Job, bufferSize)
 
 	nextPollInterval := func(pollSleep time.Duration) time.Duration {
 		pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
@@ -391,7 +382,8 @@ func (n *Notifier) Subscribe(ctx context.Context, workerId string, bufferSize in
 	return jobsCh
 }
 
-func (n *Notifier) claim(ctx context.Context, workerID string) (*model.Notifier, error) {
+// Claim claims a job from the notifier queue
+func (n *Notifier) claim(ctx context.Context, workerID string) (*model.Job, error) {
 	claimStartTime := n.now()
 
 	claimedJob, err := n.repo.Claim(ctx, workerID)
@@ -414,11 +406,11 @@ func (n *Notifier) claim(ctx context.Context, workerID string) (*model.Notifier,
 // maintenance workers can again mark the status as waiting, and it will be again claimed by somebody else.
 // Although, there is a case that it is being picked up, but never getting updated. We can monitor it using claim lag.
 // claim lag also helps us to make sure that even the maintenance workers are able to monitor the jobs correctly.
-func (n *Notifier) UpdateClaim(ctx context.Context, notifier *model.Notifier, response *model.ClaimResponse) {
+func (n *Notifier) UpdateClaim(ctx context.Context, notifier *model.Job, response *model.ClaimResponse) {
 	if response.Err != nil {
 		n.logger.Error(response.Err.Error())
 
-		if err := n.repo.OnFailed(ctx, notifier, n.config.maxAttempt, response.Err); err != nil {
+		if err := n.repo.OnFailed(ctx, notifier, response.Err, n.config.maxAttempt); err != nil {
 			n.stats.claimUpdateFailed.Increment()
 			n.logger.Errorf("claim update failed: %v", err)
 		}
@@ -429,7 +421,7 @@ func (n *Notifier) UpdateClaim(ctx context.Context, notifier *model.Notifier, re
 		return
 	}
 
-	if err := n.repo.OnSuccess(ctx, notifier); err != nil {
+	if err := n.repo.OnSuccess(ctx, notifier, response.Payload); err != nil {
 		n.stats.claimUpdateFailed.Increment()
 		n.logger.Errorf("claim update failed: %v", err)
 	}

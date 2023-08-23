@@ -254,6 +254,20 @@ func (mr *MockJobsDBMockRecorder) Identifier() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Identifier", reflect.TypeOf((*MockJobsDB)(nil).Identifier))
 }
 
+// IsMasterBackupEnabled mocks base method.
+func (m *MockJobsDB) IsMasterBackupEnabled() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsMasterBackupEnabled")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsMasterBackupEnabled indicates an expected call of IsMasterBackupEnabled.
+func (mr *MockJobsDBMockRecorder) IsMasterBackupEnabled() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsMasterBackupEnabled", reflect.TypeOf((*MockJobsDB)(nil).IsMasterBackupEnabled))
+}
+
 // JournalDeleteEntry mocks base method.
 func (m *MockJobsDB) JournalDeleteEntry(arg0 int64) {
 	m.ctrl.T.Helper()

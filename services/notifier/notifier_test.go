@@ -37,14 +37,14 @@ func TestNotifier(t *testing.T) {
 	ctx := context.Background()
 
 	payload := &model.PublishRequest{
-		Jobs: []model.Payload{
+		Payloads: []model.Payload{
 			model.Payload(`{"id":"1"}`),
 			model.Payload(`{"id":"2"}`),
 			model.Payload(`{"id":"3"}`),
 			model.Payload(`{"id":"4"}`),
 			model.Payload(`{"id":"5"}`),
 		},
-		Type:     "upload",
+		JobType:  "upload",
 		Schema:   json.RawMessage(`{"sid":"1"}`),
 		Priority: 50,
 	}
@@ -107,7 +107,7 @@ func TestNotifier(t *testing.T) {
 						switch job.ID % 4 {
 						case 0, 1, 2:
 							n.UpdateClaim(gCtx, job, &model.ClaimResponse{
-								Payload: json.RawMessage(`{"test": "payload"}`),
+								Payload: model.Payload(`{"test": "payload"}`),
 							})
 						case 3:
 							n.UpdateClaim(gCtx, job, &model.ClaimResponse{
@@ -129,8 +129,8 @@ func TestNotifier(t *testing.T) {
 		return n.Wait(gCtx)
 	})
 	g.Go(func() error {
-		failedResponses := make([]*model.Notifier, 0)
-		succeededResponses := make([]*model.Notifier, 0)
+		failedResponses := make([]*model.Job, 0)
+		succeededResponses := make([]*model.Job, 0)
 
 		for i := 0; i < jobs; i++ {
 			job := <-responses
@@ -145,8 +145,8 @@ func TestNotifier(t *testing.T) {
 			}
 		}
 
-		failedResCount := jobs * len(payload.Jobs) / 4
-		succeededResCount := (3 * jobs * len(payload.Jobs)) / 4
+		failedResCount := jobs * len(payload.Payloads) / 4
+		succeededResCount := (3 * jobs * len(payload.Payloads)) / 4
 
 		require.Equal(t, failedResCount, len(failedResponses))
 		require.Equal(t, succeededResCount, len(succeededResponses))
@@ -164,5 +164,5 @@ func TestNotifier(t *testing.T) {
 	require.EqualValues(t, statsStore.Get("pg_notifier_insert_records", stats.Tags{
 		"module":    "pgnotifier",
 		"queueName": "pg_notifier_queue",
-	}).LastValue(), jobs*len(payload.Jobs))
+	}).LastValue(), jobs*len(payload.Payloads))
 }

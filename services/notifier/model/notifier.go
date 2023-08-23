@@ -15,8 +15,8 @@ const (
 
 type Payload json.RawMessage
 
-// Notifier a domain model for a notifier.
-type Notifier struct {
+// Job a domain model for a notifier.
+type Job struct {
 	ID                  int64
 	BatchID             string
 	WorkerID            string
@@ -24,7 +24,7 @@ type Notifier struct {
 
 	Attempt  int
 	Status   string
-	JobType  string
+	Type     string
 	Priority int
 	Error    error
 
@@ -36,18 +36,18 @@ type Notifier struct {
 }
 
 type PublishRequest struct {
-	Jobs     []Payload
-	Type     string
+	Payloads []Payload
+	JobType  string
 	Schema   json.RawMessage
 	Priority int
 }
 
 type PublishResponse struct {
-	Notifiers []Notifier
+	Notifiers []Job
 	Err       error
 }
 
 type ClaimResponse struct {
-	Payload json.RawMessage
+	Payload Payload
 	Err     error
 }

@@ -29,15 +29,15 @@ import (
 
 type mockSlaveNotifier struct {
 	subscribeCh    chan *notifierModel.ClaimResponse
-	publishCh      chan *notifierModel.Notifier
+	publishCh      chan *notifierModel.Job
 	maintenanceErr error
 }
 
-func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) chan *notifierModel.Notifier {
+func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) <-chan *notifierModel.Job {
 	return m.publishCh
 }
 
-func (m *mockSlaveNotifier) UpdateClaim(ctx context.Context, _ *notifierModel.Notifier, response *notifierModel.ClaimResponse) {
+func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifierModel.Job, response *notifierModel.ClaimResponse) {
 	m.subscribeCh <- response
 }
 
@@ -74,7 +74,7 @@ func TestSlave(t *testing.T) {
 
 	schemaMap := stagingSchema(t)
 
-	publishCh := make(chan *notifierModel.Notifier)
+	publishCh := make(chan *notifierModel.Job)
 	subscriberCh := make(chan *notifierModel.ClaimResponse)
 	defer close(publishCh)
 	defer close(subscriberCh)
@@ -129,13 +129,13 @@ func TestSlave(t *testing.T) {
 	payloadJson, err := json.Marshal(p)
 	require.NoError(t, err)
 
-	claim := &notifierModel.Notifier{
+	claim := &notifierModel.Job{
 		ID:                  1,
 		BatchID:             uuid.New().String(),
 		Payload:             payloadJson,
 		Status:              "waiting",
 		WorkspaceIdentifier: "test_workspace",
-		JobType:             "upload",
+		Type:                "upload",
 	}
 
 	g, _ := errgroup.WithContext(ctx)

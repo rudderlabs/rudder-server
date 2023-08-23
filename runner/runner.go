@@ -28,7 +28,6 @@ import (
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/info"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -328,7 +327,6 @@ func runAllInit() {
 	diagnostics.Init()
 	backendconfig.Init()
 	warehouseutils.Init()
-	jobsdb.Init()
 	warehouse.Init4()
 	validations.Init()
 	webhook.Init()

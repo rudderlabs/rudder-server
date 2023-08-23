@@ -22,10 +22,9 @@ func Test_executeDbRequest_read_direct(t *testing.T) {
 }
 
 func Test_executeDbRequest_read_channel(t *testing.T) {
-	h := Handle{
-		enableReaderQueue: true,
-		readCapacity:      make(chan struct{}, 1),
-	}
+	h := Handle{}
+	h.conf.enableReaderQueue = true
+	h.conf.readCapacity = make(chan struct{}, 1)
 	res := executeDbRequest(&h, &dbRequest[string]{
 		reqType: readReqType,
 		name:    "test",
@@ -50,10 +49,9 @@ func Test_executeDbRequest_write_direct(t *testing.T) {
 }
 
 func Test_executeDbRequest_write_channel(t *testing.T) {
-	h := Handle{
-		enableWriterQueue: true,
-		writeCapacity:     make(chan struct{}, 1),
-	}
+	h := Handle{}
+	h.conf.enableWriterQueue = true
+	h.conf.writeCapacity = make(chan struct{}, 1)
 	res := executeDbRequest(&h, &dbRequest[string]{
 		reqType: writeReqType,
 		name:    "test",

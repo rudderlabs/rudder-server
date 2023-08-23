@@ -120,13 +120,13 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.Notifier{
+			claim := &notifierModel.Job{
 				ID:                  1,
 				BatchID:             uuid.New().String(),
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				JobType:             "upload",
+				Type:                "upload",
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -218,13 +218,13 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.Notifier{
+			claim := &notifierModel.Job{
 				ID:                  1,
 				BatchID:             uuid.New().String(),
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				JobType:             "upload",
+				Type:                "upload",
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -343,13 +343,13 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.Notifier{
+			claim := &notifierModel.Job{
 				ID:                  1,
 				BatchID:             uuid.New().String(),
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				JobType:             "upload",
+				Type:                "upload",
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -420,13 +420,13 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.Notifier{
+			claim := &notifierModel.Job{
 				ID:                  1,
 				BatchID:             uuid.New().String(),
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				JobType:             "upload",
+				Type:                "upload",
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -573,13 +573,13 @@ func TestSlaveWorker(t *testing.T) {
 			payloadJson, err := json.Marshal(p)
 			require.NoError(t, err)
 
-			claim := &notifierModel.Notifier{
+			claim := &notifierModel.Job{
 				ID:                  1,
 				BatchID:             uuid.New().String(),
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				JobType:             "async_job",
+				Type:                "async_job",
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -676,14 +676,14 @@ func TestSlaveWorker(t *testing.T) {
 					payloadJson, err := json.Marshal(p)
 					require.NoError(t, err)
 
-					claim := &notifierModel.Notifier{
+					claim := &notifierModel.Job{
 						ID:                  1,
 						BatchID:             uuid.New().String(),
 						Payload:             payloadJson,
 						Status:              "waiting",
 						WorkspaceIdentifier: "test_workspace",
 						Attempt:             0,
-						JobType:             "async_job",
+						Type:                "async_job",
 					}
 
 					claimedJobDone := make(chan struct{})
