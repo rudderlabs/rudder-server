@@ -58,7 +58,7 @@ func rudderCoreWorkSpaceTableSetup() error {
 func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
 	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.PoolSize", 5)
-	rsourcesConfig.LocalConn = misc.GetConnectionString()
+	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default)
 	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
 	rsourcesConfig.SharedConn = config.GetString("SharedDB.dsn", "")
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", true)

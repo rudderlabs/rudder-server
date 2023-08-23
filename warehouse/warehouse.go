@@ -307,7 +307,7 @@ func clearTriggeredUpload(wh model.Warehouse) {
 
 func getConnectionString() string {
 	if !CheckForWarehouseEnvVars() {
-		return misc.GetConnectionString()
+		return misc.GetConnectionString(config.Default)
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
@@ -440,7 +440,7 @@ func Start(ctx context.Context, app app.App) error {
 	// A different DB for warehouse is used when:
 	// 1. MultiTenant (uses RDS)
 	// 2. rudderstack-postgresql-warehouse pod in Hosted and Enterprise
-	if (isStandAlone(mode) && isMaster(mode)) || (misc.GetConnectionString() != psqlInfo) {
+	if (isStandAlone(mode) && isMaster(mode)) || (misc.GetConnectionString(config.Default) != psqlInfo) {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
