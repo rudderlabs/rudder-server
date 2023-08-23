@@ -120,8 +120,8 @@ func sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
-func backupEnabled() bool {
-	return errorStashEnabled && jobsdb.IsMasterBackupEnabled()
+func backupEnabled(jd jobsdb.JobsDB) bool {
+	return errorStashEnabled && jd.IsMasterBackupEnabled()
 }
 
 func (st *HandleT) runErrWorkers(ctx context.Context) {
@@ -339,7 +339,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				continue
 			}
 
-			canUpload := backupEnabled()
+			canUpload := backupEnabled(st.errorDB)
 
 			jobState := jobsdb.Executing.State
 

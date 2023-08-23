@@ -3,7 +3,6 @@ package jobsdb
 import (
 	"fmt"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 )
@@ -23,7 +22,7 @@ func (jd *Handle) setupDatabaseTables(templateData map[string]interface{}) {
 	m := &migrator.Migrator{
 		Handle:                     jd.dbHandle,
 		MigrationsTable:            jd.SchemaMigrationTable(),
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: jd.config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
 	// execute any necessary migrations
 	if err := m.MigrateFromTemplates("jobsdb", templateData); err != nil {

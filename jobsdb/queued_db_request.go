@@ -15,11 +15,11 @@ func executeDbRequest[T any](jd *Handle, c *dbRequest[T]) T {
 	var queueCap chan struct{}
 	switch c.reqType {
 	case readReqType:
-		queueEnabled = jd.enableReaderQueue
-		queueCap = jd.readCapacity
+		queueEnabled = jd.conf.enableReaderQueue
+		queueCap = jd.conf.readCapacity
 	case writeReqType:
-		queueEnabled = jd.enableWriterQueue
-		queueCap = jd.writeCapacity
+		queueEnabled = jd.conf.enableWriterQueue
+		queueCap = jd.conf.writeCapacity
 	case undefinedReqType:
 		fallthrough
 	default:
