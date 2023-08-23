@@ -93,11 +93,11 @@ func (sh *Schema) TableSchemaDiff(tableName string, schema model.Schema) whutils
 	}
 
 	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
 	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
 
 	if !ok {
 		if _, ok := schema[tableName]; !ok {
-			sh.schemaInWarehouseMu.RUnlock()
 			return diff
 		}
 		diff.Exists = true
@@ -106,8 +106,6 @@ func (sh *Schema) TableSchemaDiff(tableName string, schema model.Schema) whutils
 		diff.UpdatedSchema = schema[tableName]
 		return diff
 	}
-
-	defer sh.schemaInWarehouseMu.RUnlock()
 
 	for columnName, columnType := range currentTableSchema {
 		diff.UpdatedSchema[columnName] = columnType
