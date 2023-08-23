@@ -10,7 +10,7 @@ type KVStoreManager interface {
 	Connect()
 	Close() error
 	HMSet(key string, fields map[string]interface{}) error
-	HSet(key string, field string, value interface{}) error
+	HSet(key, field string, value interface{}) error
 	StatusCode(err error) int
 	DeleteKey(key string) (err error)
 	HMGet(key string, fields ...string) (result []interface{}, err error)
