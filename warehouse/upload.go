@@ -92,7 +92,6 @@ type UploadJob struct {
 	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PGNotifier
 	schemaHandle         *schema.Schema
-	schemaLock           sync.Mutex // TODO move to warehouse.schema.Schema
 	uploadSchema         model.Schema
 	uploadSchemaMu       sync.RWMutex
 	conf                 *config.Config
