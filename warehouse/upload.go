@@ -580,7 +580,7 @@ func (job *UploadJob) run() (err error) {
 					wg.Done()
 					return
 				}
-				err = job.exportUserTables(loadFilesTableMap)
+				err := job.exportUserTables(loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
@@ -600,7 +600,7 @@ func (job *UploadJob) run() (err error) {
 					wg.Done()
 					return
 				}
-				err = job.exportIdentities()
+				err := job.exportIdentities()
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
@@ -614,7 +614,7 @@ func (job *UploadJob) run() (err error) {
 				specialTables = append(specialTables, userTables...)
 				specialTables = append(specialTables, identityTables...)
 
-				err = job.exportRegularTables(specialTables, loadFilesTableMap)
+				err := job.exportRegularTables(specialTables, loadFilesTableMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
