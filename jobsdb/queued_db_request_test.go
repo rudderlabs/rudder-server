@@ -9,57 +9,55 @@ import (
 const expected = "expected"
 
 func Test_executeDbRequest_read_direct(t *testing.T) {
-	h := HandleT{}
+	h := Handle{}
 
-	res := h.executeDbRequest(&dbRequest{
+	res := executeDbRequest(&h, &dbRequest[string]{
 		reqType: readReqType,
 		name:    "test",
 		tags:    nil,
-		command: func() interface{} { return expected },
-	}).(string)
+		command: func() string { return expected },
+	})
 
 	require.Equal(t, expected, res, "Unexpected result")
 }
 
 func Test_executeDbRequest_read_channel(t *testing.T) {
-	h := HandleT{
-		enableReaderQueue: true,
-		readCapacity:      make(chan struct{}, 1),
-	}
-	res := h.executeDbRequest(&dbRequest{
+	h := Handle{}
+	h.conf.enableReaderQueue = true
+	h.conf.readCapacity = make(chan struct{}, 1)
+	res := executeDbRequest(&h, &dbRequest[string]{
 		reqType: readReqType,
 		name:    "test",
 		tags:    nil,
-		command: func() interface{} { return expected },
-	}).(string)
+		command: func() string { return expected },
+	})
 
 	require.Equal(t, expected, res, "Unexpected result")
 }
 
 func Test_executeDbRequest_write_direct(t *testing.T) {
-	h := HandleT{}
+	h := Handle{}
 
-	res := h.executeDbRequest(&dbRequest{
+	res := executeDbRequest(&h, &dbRequest[string]{
 		reqType: writeReqType,
 		name:    "test",
 		tags:    nil,
-		command: func() interface{} { return expected },
-	}).(string)
+		command: func() string { return expected },
+	})
 
 	require.Equal(t, expected, res, "Unexpected result")
 }
 
 func Test_executeDbRequest_write_channel(t *testing.T) {
-	h := HandleT{
-		enableWriterQueue: true,
-		writeCapacity:     make(chan struct{}, 1),
-	}
-	res := h.executeDbRequest(&dbRequest{
+	h := Handle{}
+	h.conf.enableWriterQueue = true
+	h.conf.writeCapacity = make(chan struct{}, 1)
+	res := executeDbRequest(&h, &dbRequest[string]{
 		reqType: writeReqType,
 		name:    "test",
 		tags:    nil,
-		command: func() interface{} { return expected },
-	}).(string)
+		command: func() string { return expected },
+	})
 
 	require.Equal(t, expected, res, "Unexpected result")
 }

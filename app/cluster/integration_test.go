@@ -163,7 +163,6 @@ func initJobsDB() {
 	logger.Reset()
 	stash.Init()
 	admin.Init()
-	jobsdb.Init()
 	Init()
 }
 

@@ -21,7 +21,6 @@ func Test_AbortingForwarder(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	jobsdb.Init()
 	postgres, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
@@ -61,9 +60,8 @@ func Test_AbortingForwarder(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		jobs, err := schemasDB.GetProcessed(context.Background(), jobsdb.GetQueryParamsT{
-			StateFilters: []string{jobsdb.Aborted.State},
-			JobsLimit:    10,
+		jobs, err := schemasDB.GetAborted(context.Background(), jobsdb.GetQueryParams{
+			JobsLimit: 10,
 		})
 		require.NoError(t, err)
 		return len(jobs.Jobs) == 10

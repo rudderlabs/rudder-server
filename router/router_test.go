@@ -395,7 +395,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -462,7 +462,7 @@ var _ = Describe("router", func() {
 			}
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
@@ -541,7 +541,7 @@ var _ = Describe("router", func() {
 			}
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
+			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
@@ -626,7 +626,7 @@ var _ = Describe("router", func() {
 			}
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
+			c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
@@ -768,7 +768,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -836,7 +836,7 @@ var _ = Describe("router", func() {
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(
 				gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -960,7 +960,7 @@ var _ = Describe("router", func() {
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 			payloadLimit := router.reloadableConfig.payloadLimit
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParamsT{
+			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal["GA"]},
 				ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 				PayloadSizeLimit: payloadLimit,
@@ -1096,7 +1096,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -1291,7 +1291,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,
@@ -1478,7 +1478,7 @@ var _ = Describe("router", func() {
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
-				jobsdb.GetQueryParamsT{
+				jobsdb.GetQueryParams{
 					CustomValFilters: []string{customVal["GA"]},
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit,

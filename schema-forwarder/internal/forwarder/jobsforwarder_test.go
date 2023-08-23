@@ -33,7 +33,6 @@ func Test_JobsForwarder(t *testing.T) {
 	conf.Set("SchemaForwarder.loopSleepTime", time.Millisecond)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t))
 
-	jobsdb.Init()
 	postgres, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
@@ -84,9 +83,8 @@ func Test_JobsForwarder(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			jobs, err := schemasDB.GetProcessed(context.Background(), jobsdb.GetQueryParamsT{
-				StateFilters: []string{jobsdb.Succeeded.State},
-				JobsLimit:    10,
+			jobs, err := schemasDB.GetSucceeded(context.Background(), jobsdb.GetQueryParams{
+				JobsLimit: 10,
 			})
 			require.NoError(t, err)
 			return len(jobs.Jobs) == 10
@@ -115,9 +113,8 @@ func Test_JobsForwarder(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			jobs, err := schemasDB.GetProcessed(context.Background(), jobsdb.GetQueryParamsT{
-				StateFilters: []string{jobsdb.Aborted.State},
-				JobsLimit:    10,
+			jobs, err := schemasDB.GetAborted(context.Background(), jobsdb.GetQueryParams{
+				JobsLimit: 10,
 			})
 			require.NoError(t, err)
 			return len(jobs.Jobs) == 10
