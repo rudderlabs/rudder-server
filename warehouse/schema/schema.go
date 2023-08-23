@@ -152,7 +152,7 @@ func (sh *Schema) SyncRemoteSchema(ctx context.Context, repo fetchSchemaRepo, up
 
 	schemaChanged := sh.hasSchemaChanged(localSchema, warehouseSchema)
 	if schemaChanged {
-		if err := sh.updateLocalSchema(ctx, uploadID, warehouseSchema); err != nil {
+		if err := sh.UpdateLocalSchema(ctx, uploadID, warehouseSchema); err != nil {
 			return nil, false, fmt.Errorf("updating local schema: %w", err)
 		}
 	}
@@ -160,7 +160,25 @@ func (sh *Schema) SyncRemoteSchema(ctx context.Context, repo fetchSchemaRepo, up
 	return warehouseSchema, schemaChanged, nil
 }
 
-func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
+func (sh *Schema) IsWarehouseSchemaEmpty() bool {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+
+	return len(sh.schemaInWarehouse) == 0
+}
+
+func (sh *Schema) IsColumnInUnrecognizedSchema(t, c string) bool {
+	sh.unrecognizedSchemaInWarehouseMu.RLock()
+	defer sh.unrecognizedSchemaInWarehouseMu.RUnlock()
+
+	s, ok := sh.unrecognizedSchemaInWarehouse[t]
+	if ok {
+		_, ok = s[c]
+	}
+	return ok
+}
+
+func (sh *Schema) UpdateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
 	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
 		UploadID:        uploadId,
 		SourceID:        sh.warehouse.Source.ID,
@@ -178,6 +196,26 @@ func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updated
 	sh.localSchemaMu.Unlock()
 
 	return nil
+}
+
+func (sh *Schema) SetWarehouseTableSchema(t string, ts model.TableSchema) {
+	sh.schemaInWarehouseMu.Lock()
+	sh.schemaInWarehouse[t] = ts
+	sh.schemaInWarehouseMu.Unlock()
+}
+
+func (sh *Schema) UpdateLocalSchemaWithWarehouseSchema(ctx context.Context, uploadId int64) error {
+	sh.schemaInWarehouseMu.RLock()
+	updatedSchema := sh.schemaInWarehouse.Clone()
+	sh.schemaInWarehouseMu.RUnlock()
+
+	return sh.UpdateLocalSchema(ctx, uploadId, updatedSchema)
+}
+
+func (sh *Schema) CurrentColumnsCount(t string) int {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	return len(sh.schemaInWarehouse[t])
 }
 
 func (sh *Schema) getLocalSchema(ctx context.Context) (model.Schema, error) {

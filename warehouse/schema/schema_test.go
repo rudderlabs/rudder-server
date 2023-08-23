@@ -398,7 +398,7 @@ func TestSchema_GetUpdateLocalSchema(t *testing.T) {
 
 			ctx := context.Background()
 
-			err := sch.updateLocalSchema(ctx, uploadID, tc.mockSchema.Schema)
+			err := sch.UpdateLocalSchema(ctx, uploadID, tc.mockSchema.Schema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 			} else {
