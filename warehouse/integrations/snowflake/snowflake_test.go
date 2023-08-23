@@ -160,7 +160,7 @@ func TestIntegration(t *testing.T) {
 	}
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
-	bootstrap := func(appendMode bool) func() {
+	bootstrap := func(t testing.TB, appendMode bool) func() {
 		loadTableStrategy := "MERGE"
 		if appendMode {
 			loadTableStrategy = "APPEND"
@@ -319,7 +319,7 @@ func TestIntegration(t *testing.T) {
 		for _, tc := range testcase {
 			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
-				cancel := bootstrap(tc.appendMode)
+				cancel := bootstrap(t, tc.appendMode)
 				defer cancel()
 
 				urlConfig := sfdb.Config{
