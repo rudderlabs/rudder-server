@@ -1315,7 +1315,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 		job.uploadSchemaMu.RLock()
 		uploadSchema := job.uploadSchema.Clone()
-		job.uploadSchemaMu.Unlock()
+		job.uploadSchemaMu.RUnlock()
 
 		tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tableName, uploadSchema)
 		if tableSchemaDiff.Exists {
