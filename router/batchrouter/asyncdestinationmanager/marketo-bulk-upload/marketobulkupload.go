@@ -389,7 +389,6 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			uploadResponse.FailedReason = errorMessageFromTransformer
 		} else {
 			uploadResponse.FailedReason = `Jobs flowed over the prescribed limit`
-
 		}
 	default:
 		uploadResponse = common.AsyncUploadOutput{
