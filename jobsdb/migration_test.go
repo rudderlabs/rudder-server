@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -16,7 +17,10 @@ import (
 
 func TestMigration(t *testing.T) {
 	t.Run("main", func(t *testing.T) {
-		maxDSSize := 1
+		config.Reset()
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 1)
+
 		_ = startPostgres(t)
 
 		triggerAddNewDS := make(chan time.Time)
@@ -29,7 +33,7 @@ func TestMigration(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			MaxDSSize: &maxDSSize,
+			config: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		err := jobDB.Setup(
@@ -42,7 +46,7 @@ func TestMigration(t *testing.T) {
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
-		jobDB.MaxDSRetentionPeriod = time.Millisecond
+		jobDB.conf.maxDSRetentionPeriod = time.Millisecond
 
 		customVal := rand.String(5)
 		jobs := genJobs(defaultWorkspaceID, customVal, 30, 1)
@@ -201,11 +205,13 @@ func TestMigration(t *testing.T) {
 	})
 
 	t.Run("cleanup status tables", func(t *testing.T) {
-		maxDSSize := 1
 		_ = startPostgres(t)
 
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
+		config.Reset()
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", 1)
 
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
@@ -214,7 +220,7 @@ func TestMigration(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
-			MaxDSSize: &maxDSSize,
+			config: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
 		require.NoError(t, jobDB.Setup(
@@ -226,7 +232,7 @@ func TestMigration(t *testing.T) {
 		))
 		defer jobDB.TearDown()
 
-		jobDB.MaxDSRetentionPeriod = time.Millisecond
+		jobDB.conf.maxDSRetentionPeriod = time.Millisecond
 
 		// 3 datasets with 10 jobs each, 1 dataset with 0 jobs
 		for i := 0; i < 3; i++ {
@@ -294,9 +300,11 @@ func TestMigration(t *testing.T) {
 		// capture table sizes
 		originalTableSizes := getTableSizes(jobDB.getDSList())
 
-		jobStatusMigrateThres = 1
-		vacuumAnalyzeStatusTableThreshold = 4
-		vacuumFullStatusTableThreshold = originalTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)] - 1
+		c.Set("JobsDB.jobStatusMigrateThreshold", 1)
+		c.Set("JobsDB.vacuumAnalyzeStatusTableThreshold", 4)
+		c.Set("JobsDB.vacuumFullStatusTableThreshold", fmt.Sprint(
+			originalTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)]-1,
+		))
 
 		// run cleanup status tables
 		require.NoError(t, jobDB.cleanupStatusTables(context.Background(), jobDB.getDSList()))

@@ -11,13 +11,13 @@ import (
 )
 
 // GetConnectionString Returns Jobs DB connection configuration
-func GetConnectionString() string {
-	host := config.GetString("DB.host", "localhost")
-	user := config.GetString("DB.user", "ubuntu")
-	dbname := config.GetString("DB.name", "ubuntu")
-	port := config.GetInt("DB.port", 5432)
-	password := config.GetString("DB.password", "ubuntu") // Reading secrets from
-	sslmode := config.GetString("DB.sslMode", "disable")
+func GetConnectionString(c *config.Config) string {
+	host := c.GetString("DB.host", "localhost")
+	user := c.GetString("DB.user", "ubuntu")
+	dbname := c.GetString("DB.name", "ubuntu")
+	port := c.GetInt("DB.port", 5432)
+	password := c.GetString("DB.password", "ubuntu") // Reading secrets from
+	sslmode := c.GetString("DB.sslMode", "disable")
 	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
 	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
 	appName := DefaultString("rudder-server").OnError(os.Hostname())
@@ -30,12 +30,12 @@ func GetConnectionString() string {
 ReplaceDB : Rename the OLD DB and create a new one.
 Since we are not journaling, this should be idemponent
 */
-func ReplaceDB(dbName, targetName string) {
-	host := config.GetString("DB.host", "localhost")
-	user := config.GetString("DB.user", "ubuntu")
-	port := config.GetInt("DB.port", 5432)
-	password := config.GetString("DB.password", "ubuntu") // Reading secrets from
-	sslmode := config.GetString("DB.sslMode", "disable")
+func ReplaceDB(dbName, targetName string, c *config.Config) {
+	host := c.GetString("DB.host", "localhost")
+	user := c.GetString("DB.user", "ubuntu")
+	port := c.GetInt("DB.port", 5432)
+	password := c.GetString("DB.password", "ubuntu") // Reading secrets from
+	sslmode := c.GetString("DB.sslMode", "disable")
 	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=%s",
 		host, port, user, password, sslmode)
 	db, err := sql.Open("postgres", connInfo)

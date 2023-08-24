@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -61,12 +62,14 @@ func TestJobsDB(t *testing.T) {
 	_ = startPostgres(t)
 
 	triggerAddNewDS := make(chan time.Time)
-	maxDSSize := 10
+	config.Reset()
+	c := config.New()
+	c.Set("jobsdb.maxDSSize", 10)
 	jobDB := Handle{
-		MaxDSSize: &maxDSSize,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
+		config: c,
 	}
 	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
@@ -221,12 +224,12 @@ func TestJobsDB(t *testing.T) {
 
 		triggerAddNewDS := make(chan time.Time)
 
-		maxDSSize := 9
+		c.Set("jobsdb.maxDSSize", 9)
 		jobDB := Handle{
-			MaxDSSize: &maxDSSize,
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
+			config: c,
 		}
 
 		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -307,12 +310,12 @@ func TestJobsDB(t *testing.T) {
 
 		triggerAddNewDS := make(chan time.Time)
 
-		maxDSSize := 2
+		c.Set("jobsdb.maxDSSize", 2)
 		jobDB := Handle{
-			MaxDSSize: &maxDSSize,
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
+			config: c,
 		}
 
 		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -347,12 +350,12 @@ func TestJobsDB(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
 
-		maxDSSize := 1
+		c.Set("jobsdb.maxDSSize", 1)
 		jobDB := Handle{
-			MaxDSSize: &maxDSSize,
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
+			config: c,
 		}
 		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
@@ -380,9 +383,9 @@ func TestJobsDB(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
 
-		maxDSSize := 1
+		c.Set("jobsdb.maxDSSize", 1)
 		jobDB := Handle{
-			MaxDSSize: &maxDSSize,
+			config: c,
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
@@ -411,9 +414,9 @@ func TestJobsDB(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
 
-		maxDSSize := 4
+		c.Set("jobsdb.maxDSSize", 4)
 		jobDB := Handle{
-			MaxDSSize: &maxDSSize,
+			config: c,
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
@@ -457,13 +460,14 @@ func TestJobsDB(t *testing.T) {
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
+			config: c,
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		tablePrefix := strings.ToLower(rand.String(5))
+		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
+		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
-
-		jobDB.MaxDSRetentionPeriod = time.Second
 
 		jobs := genJobs(defaultWorkspaceID, customVal, 1, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
@@ -481,6 +485,7 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
 
+		c := config.New()
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
@@ -488,13 +493,14 @@ func TestJobsDB(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
+			config: c,
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+		tablePrefix := strings.ToLower(rand.String(5))
+		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
+		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
-
-		jobDB.MaxDSRetentionPeriod = time.Second
 
 		jobs := genJobs(defaultWorkspaceID, customVal, 10, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
@@ -564,19 +570,20 @@ func TestJobsDB(t *testing.T) {
 			triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 		}
 
-		maxDSSize := 10
-		jobDoneMigrateThres = 0.7
-		jobMinRowsMigrateThres = 0.6
+		c.Set("jobsdb.maxDSSize", 10)
+
 		jobDB := Handle{
-			MaxDSSize: &maxDSSize,
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
+			config: c,
 		}
 		prefix := strings.ToLower(rand.String(5))
+		c.Set("JobsDB.jobDoneMigrateThreshold", 0.7)
+		c.Set("JobsDB.jobMinRowsMigrateThreshold", 0.6)
 		err := jobDB.Setup(ReadWrite, true, prefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
@@ -685,6 +692,8 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
 
+		config.Reset()
+		c := config.New()
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
@@ -692,13 +701,13 @@ func TestJobsDB(t *testing.T) {
 			TriggerMigrateDS: func() <-chan time.Time {
 				return triggerMigrateDS
 			},
+			config: c,
 		}
 		tablePrefix := strings.ToLower(rand.String(5))
+		c.Set(fmt.Sprintf("JobsDB.%s.maxDSRetention", tablePrefix), "1s")
 		err := jobDB.Setup(ReadWrite, true, tablePrefix, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 		require.NoError(t, err)
 		defer jobDB.TearDown()
-
-		jobDB.MaxDSRetentionPeriod = time.Second
 
 		var (
 			numTotalJobs       = 30
@@ -795,9 +804,11 @@ func TestJobsDB(t *testing.T) {
 func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	_ = startPostgres(t)
 	triggerAddNewDS := make(chan time.Time)
-	maxDSSize := 10
+	config.Reset()
+	c := config.New()
+	c.Set("jobsdb.maxDSSize", 10)
 	jobDB := Handle{
-		MaxDSSize: &maxDSSize,
+		config: c,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -877,9 +888,12 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 	t.Setenv("RSERVER_JOBS_DB_ANALYZE_THRESHOLD", "0")
 	_ = startPostgres(t)
 
-	maxDSSize := 10
+	config.Reset()
+	c := config.New()
+	c.Set("jobsdb.maxDSSize", 10)
+
 	jobDB := Handle{
-		MaxDSSize: &maxDSSize,
+		config: c,
 	}
 	customVal := "MOCKDS"
 	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), []prebackup.Handler{}, fileuploader.NewDefaultProvider())
@@ -960,10 +974,11 @@ func TestCreateDS(t *testing.T) {
 			require.NoError(t, err)
 
 			triggerAddNewDS := make(chan time.Time)
-			maxDSSize := 1
+			c := config.New()
+			c.Set("jobsdb.maxDSSize", 1)
 			jobDB := Handle{
-				dbHandle:  postgresql.DB,
-				MaxDSSize: &maxDSSize,
+				dbHandle: postgresql.DB,
+				config:   c,
 				TriggerAddNewDS: func() <-chan time.Time {
 					return triggerAddNewDS
 				},
@@ -1011,9 +1026,10 @@ func requireSequential(t *testing.T, jobs []*JobT) {
 func TestJobsDB_IncompatiblePayload(t *testing.T) {
 	_ = startPostgres(t)
 	triggerAddNewDS := make(chan time.Time)
-	maxDSSize := 10
+	c := config.New()
+	c.Set("jobsdb.maxDSSize", 10)
 	jobDB := Handle{
-		MaxDSSize: &maxDSSize,
+		config: c,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
@@ -1210,19 +1226,22 @@ func chunkJobs(slice []JobT, chunkSize int) [][]*JobT {
 
 func BenchmarkLifecycle(b *testing.B) {
 	_ = startPostgres(b)
-	jobDB := NewForReadWrite("test")
-	defer jobDB.TearDown()
+	c := config.New()
 
 	const writeConcurrency = 10
 	const newJobs = 100
 
 	dsSize := writeConcurrency * newJobs
+	c.Set("jobsdb.maxDSSize", dsSize)
 	triggerAddNewDS := make(chan time.Time)
 
-	jobDB.MaxDSSize = &dsSize
-	jobDB.TriggerAddNewDS = func() <-chan time.Time {
-		return triggerAddNewDS
+	jobDB := &Handle{
+		config: c,
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
 	}
+	defer jobDB.TearDown()
 
 	b.Run("Start, Work, Stop, Repeat", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
