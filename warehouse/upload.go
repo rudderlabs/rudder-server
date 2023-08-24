@@ -422,7 +422,6 @@ func (job *UploadJob) run() (err error) {
 	}
 	defer whManager.Cleanup(job.ctx)
 
-	// TODO what does Recover really do?
 	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
