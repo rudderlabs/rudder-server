@@ -64,7 +64,7 @@ func EventToKeyValue(jsonData json.RawMessage) (string, map[string]interface{}) 
 // - message.hash
 // It doesn't account for the value of the fields.
 func IsHSETCompatibleEvent(jsonData json.RawMessage) bool {
-	return gjson.GetBytes(jsonData, "message.key").Exists() && gjson.GetBytes(jsonData, "message.value").Exists() && gjson.GetBytes(jsonData, "message.hash").Exists()
+	return gjson.GetBytes(jsonData, hashPath).Exists() && gjson.GetBytes(jsonData, keyPath).Exists() && gjson.GetBytes(jsonData, valuePath).Exists()
 }
 
 func ExtractHashKeyValueFromEvent(jsonData json.RawMessage) (hash, key, value string) {
