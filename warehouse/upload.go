@@ -103,7 +103,6 @@ type UploadJob struct {
 	warehouse      model.Warehouse
 	stagingFiles   []*model.StagingFile
 	stagingFileIDs []int64
-	uploadLock     sync.Mutex
 	alertSender    alerta.AlertSender
 	now            func() time.Time
 
@@ -402,9 +401,10 @@ func (job *UploadJob) run() (err error) {
 		ch <- struct{}{}
 	}()
 
-	job.uploadLock.Lock()
-	defer job.uploadLock.Unlock()
-	_ = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{{Column: UploadLastExecAtField, Value: job.now()}, {Column: UploadInProgress, Value: true}}})
+	_ = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumn{
+		{Column: UploadLastExecAtField, Value: job.now()},
+		{Column: UploadInProgress, Value: true},
+	}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("no staging files found")
@@ -1560,8 +1560,6 @@ func (job *UploadJob) setUploadColumns(opts UploadColumnsOpts) error {
 }
 
 func (job *UploadJob) triggerUploadNow() (err error) {
-	job.uploadLock.Lock()
-	defer job.uploadLock.Unlock()
 	newJobState := model.Waiting
 
 	metadata := repo.ExtractUploadMetadata(job.upload)
