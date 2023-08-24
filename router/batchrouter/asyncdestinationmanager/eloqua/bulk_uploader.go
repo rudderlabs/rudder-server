@@ -82,9 +82,10 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
 		Body:          importDefinitionBody,
+		DynamicPart:   customObjectId,
 	}
 
-	importDefinition, err := CreateImportDefinition(&importDefinitionData)
+	importDefinition, err := CreateImportDefinition(&importDefinitionData, eventType)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),

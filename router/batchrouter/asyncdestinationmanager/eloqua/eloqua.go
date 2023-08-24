@@ -46,7 +46,7 @@ func getBaseEndpoint(data *Data) (string, error) {
 func FetchFields(data *Data) (*Fields, error) {
 	var endpoint string
 	if data.DynamicPart != "" {
-		endpoint = data.BaseEndpoint + "/api/bulk/2.0/customObjects" + data.DynamicPart + "/fields"
+		endpoint = data.BaseEndpoint + "/api/bulk/2.0/customObjects/" + data.DynamicPart + "/fields"
 	} else {
 		endpoint = data.BaseEndpoint + "/api/bulk/2.0/contacts/fields"
 	}
@@ -69,13 +69,20 @@ func FetchFields(data *Data) (*Fields, error) {
 	return &unmarshalledBody, nil
 }
 
-func CreateImportDefinition(data *Data) (*ImportDefinition, error) {
+func CreateImportDefinition(data *Data, eventType string) (*ImportDefinition, error) {
 
 	marshalledData, err := json.Marshal(data.Body)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", data.BaseEndpoint+"/api/bulk/2.0/contacts/imports", strings.NewReader(string(marshalledData)))
+	var endpoint string
+	if eventType == "track" {
+		endpoint = data.BaseEndpoint + "/api/bulk/2.0/customObjects/" + data.DynamicPart + "/imports"
+	} else {
+		endpoint = data.BaseEndpoint + "/api/bulk/2.0/contacts/imports"
+	}
+
+	req, err := http.NewRequest("POST", endpoint, strings.NewReader(string(marshalledData)))
 
 	req.Header.Add("Authorization", data.Authorization)
 	req.Header.Add("Content-Type", "application/json")

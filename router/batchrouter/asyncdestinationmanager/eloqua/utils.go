@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -25,9 +26,9 @@ func checkEventType(file *os.File) (string, string, error) {
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			return "", "", fmt.Errorf("error in unmarshalling data, %v", err)
 		}
-		if data.Message.IdentifierFieldName == "" && data.Message.CustomObjectId != "" && data.Message.MapDataCardsSourceField != "" {
-			return "track", data.Message.CustomObjectId, nil
-		} else if data.Message.IdentifierFieldName != "" && data.Message.CustomObjectId == "" && data.Message.MapDataCardsSourceField == "" {
+		if data.Message.IdentifierFieldName == "" && strconv.Itoa(data.Message.CustomObjectId) != "" && data.Message.MapDataCardsSourceField != "" {
+			return "track", strconv.Itoa(data.Message.CustomObjectId), nil
+		} else if data.Message.IdentifierFieldName != "" && strconv.Itoa(data.Message.CustomObjectId) == "" && data.Message.MapDataCardsSourceField == "" {
 			return "identify", "", nil
 		} else {
 			return "", "", fmt.Errorf("unable to find evnet format")
@@ -130,16 +131,11 @@ func createBodyForImportDefinition(evenType string, fields []string, eloquaField
 			}
 		}
 		return map[string]interface{}{
-			"name":                           "Rudderstack-CustomObject-Import",
-			"mapDataCards":                   "true",
-			"mapDataCardsEntityField":        "{{Contact.Field(C_EmailAddress)}}",
-			"mapDataCardsEntityType":         "Contact",
-			"mapDataCardsCaseSensitiveMatch": "false",
-			"updateRule":                     "always",
-			"fields":                         customObjectFieldStatement,
-			"mapDataCardsSourceField":        data.Message.MapDataCardsSourceField,
-			"identifierFieldName":            data.Message.MapDataCardsSourceField,
-			"isSyncTriggeredOnImport":        false,
+			"name":                    "Rudderstack-CustomObject-Import",
+			"updateRule":              "always",
+			"fields":                  customObjectFieldStatement,
+			"identifierFieldName":     data.Message.MapDataCardsSourceField,
+			"isSyncTriggeredOnImport": false,
 		}, nil
 	}
 
