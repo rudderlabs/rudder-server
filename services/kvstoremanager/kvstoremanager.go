@@ -22,7 +22,7 @@ type SettingsT struct {
 	Config   map[string]interface{}
 }
 
-var (
+const (
 	hashPath  = "message.hash"
 	keyPath   = "message.key"
 	valuePath = "message.value"
