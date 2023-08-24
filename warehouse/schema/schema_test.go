@@ -324,17 +324,16 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 
 func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 	testCases := []struct {
-		name          string
-		tableName     string
-		currentSchema model.Schema
-		uploadSchema  model.Schema
-		expected      whutils.TableSchemaDiff
+		name              string
+		tableName         string
+		currentSchema     model.Schema
+		uploadTableSchema model.TableSchema
+		expected          whutils.TableSchemaDiff
 	}{
 		{
-			name:          "empty current and upload schema",
+			name:          "empty current and upload table schema",
 			tableName:     "test-table",
 			currentSchema: model.Schema{},
-			uploadSchema:  model.Schema{},
 			expected: whutils.TableSchemaDiff{
 				ColumnMap:        model.TableSchema{},
 				UpdatedSchema:    model.TableSchema{},
@@ -345,10 +344,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 			name:          "empty current schema",
 			tableName:     "test-table",
 			currentSchema: model.Schema{},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value",
 			},
 			expected: whutils.TableSchemaDiff{
 				Exists:           true,
@@ -370,10 +367,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column": "test-value-1",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-2",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value-2",
 			},
 			expected: whutils.TableSchemaDiff{
 				Exists:           false,
@@ -394,10 +389,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column-2": "test-value-2",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-2",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "test-value-2",
 			},
 			expected: whutils.TableSchemaDiff{
 				Exists:           true,
@@ -422,10 +415,8 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 					"test-column-2": "test-value-2",
 				},
 			},
-			uploadSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "text",
-				},
+			uploadTableSchema: model.TableSchema{
+				"test-column": "text",
 			},
 			expected: whutils.TableSchemaDiff{
 				Exists:           true,
@@ -450,7 +441,7 @@ func TestSchema_GetUploadSchemaDiff(t *testing.T) {
 			sch := Schema{
 				schemaInWarehouse: tc.currentSchema,
 			}
-			diff := sch.TableSchemaDiff(tc.tableName, tc.uploadSchema)
+			diff := sch.TableSchemaDiff(tc.tableName, tc.uploadTableSchema)
 			require.EqualValues(t, diff, tc.expected)
 		})
 	}

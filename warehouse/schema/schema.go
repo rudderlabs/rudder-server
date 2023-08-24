@@ -84,8 +84,8 @@ func (sh *Schema) ConsolidateLocalSchemaWithStagingFiles(
 	return consolidatedSchema, nil
 }
 
-// TableSchemaDiff returns the diff between the warehouse schema and the upload schema
-func (sh *Schema) TableSchemaDiff(tableName string, schema model.Schema) whutils.TableSchemaDiff {
+// TableSchemaDiff returns the diff between the warehouse schema and the upload table schema
+func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchema) whutils.TableSchemaDiff {
 	diff := whutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
 		UpdatedSchema:    make(model.TableSchema),
@@ -97,13 +97,13 @@ func (sh *Schema) TableSchemaDiff(tableName string, schema model.Schema) whutils
 	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
 
 	if !ok {
-		if _, ok := schema[tableName]; !ok {
+		if len(tableSchema) == 0 {
 			return diff
 		}
 		diff.Exists = true
 		diff.TableToBeCreated = true
-		diff.ColumnMap = schema[tableName]
-		diff.UpdatedSchema = schema[tableName]
+		diff.ColumnMap = tableSchema
+		diff.UpdatedSchema = tableSchema
 		return diff
 	}
 
@@ -112,7 +112,7 @@ func (sh *Schema) TableSchemaDiff(tableName string, schema model.Schema) whutils
 	}
 
 	diff.ColumnMap = make(model.TableSchema)
-	for columnName, columnType := range schema[tableName] {
+	for columnName, columnType := range tableSchema {
 		if _, ok := currentTableSchema[columnName]; !ok {
 			diff.ColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType

@@ -93,7 +93,6 @@ type UploadJob struct {
 	pgNotifier           *pgnotifier.PGNotifier
 	schemaHandle         *schema.Schema
 	uploadSchema         model.Schema
-	uploadSchemaMu       sync.RWMutex
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -314,9 +313,7 @@ func (job *UploadJob) generateUploadSchema() error {
 		return fmt.Errorf("set upload schema: %w", err)
 	}
 
-	job.uploadSchemaMu.Lock()
 	job.uploadSchema = uploadSchema
-	job.uploadSchemaMu.Unlock()
 
 	return nil
 }
@@ -412,6 +409,8 @@ func (job *UploadJob) run() (err error) {
 		return err
 	}
 
+	// TODO can't we use a Manager factory instead and get a new instance of the "Manager" every time
+	// instead of using the same one?
 	whManager := job.whManager
 	whManager.SetConnectionTimeout(warehouseutils.GetConnectionTimeout(
 		job.warehouse.Type, job.warehouse.Destination.ID,
@@ -423,6 +422,7 @@ func (job *UploadJob) run() (err error) {
 	}
 	defer whManager.Cleanup(job.ctx)
 
+	// TODO what does Recover really do?
 	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
@@ -445,9 +445,7 @@ func (job *UploadJob) run() (err error) {
 		)
 	}
 
-	job.uploadSchemaMu.Lock()
 	job.uploadSchema = whSchema
-	job.uploadSchemaMu.Unlock()
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -1016,11 +1014,8 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 }
 
 func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
-	job.uploadSchemaMu.RLock()
-	uploadSchema := job.uploadSchema.Clone()
-	job.uploadSchemaMu.RUnlock()
-
-	tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tName, uploadSchema)
+	uploadTableSchema := job.uploadSchema[tName]
+	tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tName, uploadTableSchema)
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1296,7 +1291,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 	}
 
 	errorMap := make(map[string]error)
-	// var generated bool
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(job.ctx); !generated {
 		if err := job.resolveIdentities(populateHistoricIdentities); err != nil {
 			job.logger.Errorf(` ID Resolution operation failed: %v`, err)
@@ -1313,11 +1307,8 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 		errorMap[tableName] = nil
 
-		job.uploadSchemaMu.RLock()
-		uploadSchema := job.uploadSchema.Clone()
-		job.uploadSchemaMu.RUnlock()
-
-		tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tableName, uploadSchema)
+		uploadTableSchema := job.uploadSchema[tableName]
+		tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tableName, uploadTableSchema)
 		if tableSchemaDiff.Exists {
 			err := job.UpdateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -1991,8 +1982,6 @@ func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema
 }
 
 func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {
-	job.uploadSchemaMu.RLock()
-	defer job.uploadSchemaMu.RUnlock()
 	return job.uploadSchema[tableName]
 }
 
