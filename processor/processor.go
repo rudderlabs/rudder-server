@@ -1446,10 +1446,17 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				proc.logger.Errorf("Dropping Job since Source not found for sourceId %q: %v", sourceId, sourceError)
 				continue
 			}
+			payload := ro.Memoize(func() json.RawMessage {
+				payloadBytes, err := jsonfast.Marshal(singularEvent)
+				if err != nil {
+					return nil
+				}
+				return payloadBytes
+			})
 
 			if proc.config.enableDedup {
-				payload, _ := jsonfast.Marshal(singularEvent)
-				messageSize := int64(len(payload))
+				p := payload()
+				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
 				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: dedupKey, Value: messageSize}); !ok {
 					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
@@ -1480,11 +1487,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				if proc.transientSources.Apply(source.ID) {
 					return nil
 				}
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
-					return nil
-				}
-				return payloadBytes
+				return payload()
 			},
 			)
 			if proc.config.eventSchemaV2Enabled && // schemas enabled
