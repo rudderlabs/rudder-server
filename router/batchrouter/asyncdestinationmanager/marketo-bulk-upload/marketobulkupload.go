@@ -112,7 +112,16 @@ func (b *MarketoBulkUploader) generateFailedPayload(jobs []*jobsdb.JobT, importI
 }
 
 func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	failedJobUrl := UploadStatsInput.FailedJobURLs
+	var finalURL string
+	failedReasonsMap := make(map[int64]string)
+	var finalMap map[string]interface{}
+
+	if UploadStatsInput.FailedJobURLs != "" {
+		finalURL = UploadStatsInput.FailedJobURLs
+	} else {
+		finalURL = UploadStatsInput.WarningJobURLs
+	}
+
 	parameters := UploadStatsInput.Parameters
 	importId := gjson.GetBytes(parameters, "importId").String()
 	csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
@@ -123,7 +132,7 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.transformUrl+failedJobUrl, payload, b.timeout)
+	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.transformUrl+finalURL, payload, b.timeout)
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{
 			StatusCode: statusCode,
@@ -173,15 +182,23 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	failedReasonsMap := make(map[int64]string)
-	failedReasons, ok := metadata["failedReasons"].(map[string]interface{})
-	if !ok {
-		b.logger.Errorf("[Batch Router] Failed to typecast failedReasons for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
+	failedReasons, gotFailedReason := metadata["failedReasons"].(map[string]interface{})
+	warningReasons, gotWarningReason := metadata["warningReasons"].(map[string]interface{})
+
+	if !gotFailedReason && !gotWarningReason {
+		b.logger.Errorf("[Batch Router] Failed to typecast failedReasons or warningReasons for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
 		}
 	}
-	for jobID, reason := range failedReasons {
+
+	if gotFailedReason {
+		finalMap = failedReasons
+	} else {
+		finalMap = warningReasons
+	}
+
+	for jobID, reason := range finalMap {
 		jobIDInt, err := strconv.ParseInt(strings.TrimPrefix(jobID, "jobID"), 10, 64)
 		if err != nil {
 			b.logger.Errorf("[Batch Router] Error converting jobID to int64: for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)

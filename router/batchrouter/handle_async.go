@@ -143,7 +143,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 	}
 	importingList := list.Jobs
 	if pollResp.StatusCode == http.StatusOK && pollResp.Complete {
-		if !pollResp.HasFailed {
+		if !pollResp.HasFailed && !pollResp.HasWarning {
 			statusList, _ = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State})
 			if err := brt.updateJobStatuses(ctx, destinationID, importingList, importingList, statusList); err != nil {
 				brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
@@ -154,9 +154,10 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 			return statusList, nil
 		} else {
 			getUploadStatsInput := common.GetUploadStatsInput{
-				FailedJobURLs: pollResp.FailedJobURLs,
-				Parameters:    importingJob.LastJobStatus.Parameters,
-				ImportingList: importingList,
+				FailedJobURLs:  pollResp.FailedJobURLs,
+				WarningJobURLs: pollResp.WarningJobURLs,
+				Parameters:     importingJob.LastJobStatus.Parameters,
+				ImportingList:  importingList,
 			}
 			startFailedJobsPollTime := time.Now()
 			brt.logger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
@@ -176,7 +177,9 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 				jobID := job.JobID
 				var status *jobsdb.JobStatusT
 				if slices.Contains(successfulJobIDs, jobID) {
-					_, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, routerutils.EmptyPayload)
+					warningRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
+					warningResp, _ := json.Marshal(WarningResponse{Remarks: warningRespString})
+					_, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, warningResp)
 					status = &jobsdb.JobStatusT{
 						JobID:         jobID,
 						JobState:      jobsdb.Succeeded.State,
@@ -189,7 +192,8 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 						WorkspaceId:   job.WorkspaceId,
 					}
 					completedJobsList = append(completedJobsList, job)
-				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) {
+				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) ||
+					slices.Contains(uploadStatsResp.Metadata.WarningKeys, jobID) {
 					errorRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
 					errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
 					_, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, errorResp)

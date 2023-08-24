@@ -28,7 +28,7 @@ type PollStatusResponse struct {
 	HasFailed      bool
 	HasWarning     bool
 	FailedJobURLs  string
-	WarningJobsURL string
+	WarningJobURLs string
 }
 type AsyncUploadOutput struct {
 	ImportingJobIDs     []int64
@@ -119,6 +119,7 @@ type GetUploadStatsInput struct {
 	Parameters         stdjson.RawMessage
 	ImportingList      []*jobsdb.JobT
 	PollResultFileURLs string
+	WarningJobURLs     string
 }
 
 type EventStatMeta struct {
