@@ -18,6 +18,10 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -81,18 +85,21 @@ var mssqlDataTypesMapToRudder = map[string]string{
 }
 
 type MSSQL struct {
-	DB                 *sql.DB
+	DB                 *sqlmw.DB
 	Namespace          string
 	ObjectStorage      string
 	Warehouse          model.Warehouse
 	Uploader           warehouseutils.Uploader
 	connectTimeout     time.Duration
-	logger             logger.Logger
 	LoadFileDownLoader downloader.Downloader
+
+	stats  stats.Stats
+	logger logger.Logger
 
 	config struct {
 		enableDeleteByJobs          bool
 		numWorkersDownloadLoadFiles int
+		slowQueryThreshold          time.Duration
 	}
 }
 
@@ -125,38 +132,39 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-func New(conf *config.Config, log logger.Logger) *MSSQL {
-	ms := &MSSQL{}
-
-	ms.logger = log.Child("integrations").Child("mssql")
-
+func New(conf *config.Config, log logger.Logger, stats stats.Stats) *MSSQL {
+	ms := &MSSQL{
+		stats:  stats,
+		logger: log.Child("integrations").Child("mssql"),
+	}
 	ms.config.enableDeleteByJobs = conf.GetBool("Warehouse.mssql.enableDeleteByJobs", false)
 	ms.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.mssql.numWorkersDownloadLoadFiles", 1)
+	ms.config.slowQueryThreshold = conf.GetDuration("Warehouse.mssql.slowQueryThreshold", 5, time.Minute)
 
 	return ms
 }
 
-func Connect(cred credentials) (*sql.DB, error) {
-	// Create connection string
-	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
-	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
-	// TrustServerCertificate=true ; all options(disable, false, true) work with this
-	// if rds.forcessl=1; disable option doesn't work. true, false works alongside TrustServerCertificate=true
-	//		https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/SQLServer.Concepts.General.SSL.Using.html
-	// more combination explanations here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
+// connect to mssql database
+// if TrustServerCertificate is set to true, all options(disable, false, true) works.
+// if forceSSL is set to 1, disable option doesn't work.
+// If forceSSL is set to true or false, it works alongside with TrustServerCertificate=true
+// more about combinations in here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
+func (ms *MSSQL) connect() (*sqlmw.DB, error) {
+	cred := ms.connectionCredentials()
+
+	port, err := strconv.Atoi(cred.port)
+	if err != nil {
+		return nil, fmt.Errorf("invalid port %q: %w", cred.port, err)
+	}
+
 	query := url.Values{}
 	query.Add("database", cred.database)
 	query.Add("encrypt", cred.sslMode)
-
+	query.Add("TrustServerCertificate", "true")
 	if cred.timeout > 0 {
 		query.Add("dial timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
 	}
 
-	query.Add("TrustServerCertificate", "true")
-	port, err := strconv.Atoi(cred.port)
-	if err != nil {
-		return nil, fmt.Errorf("invalid port: %w", err)
-	}
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
 		User:     url.UserPassword(cred.user, cred.password),
@@ -164,17 +172,24 @@ func Connect(cred credentials) (*sql.DB, error) {
 		RawQuery: query.Encode(),
 	}
 
-	var db *sql.DB
-
-	if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
-		return nil, fmt.Errorf("opening connection to mssql server: %w", err)
+	db, err := sql.Open("sqlserver", connUrl.String())
+	if err != nil {
+		return nil, fmt.Errorf("opening connection: %w", err)
 	}
 
-	return db, nil
+	middleware := sqlmw.New(
+		db,
+		sqlmw.WithStats(ms.stats),
+		sqlmw.WithLogger(ms.logger),
+		sqlmw.WithKeyAndValues(ms.defaultLogFields()),
+		sqlmw.WithQueryTimeout(ms.connectTimeout),
+		sqlmw.WithSlowQueryThreshold(ms.config.slowQueryThreshold),
+	)
+	return middleware, nil
 }
 
-func (ms *MSSQL) getConnectionCredentials() credentials {
-	creds := credentials{
+func (ms *MSSQL) connectionCredentials() *credentials {
+	return &credentials{
 		host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
 		database: warehouseutils.GetConfigValue(dbName, ms.Warehouse),
 		user:     warehouseutils.GetConfigValue(user, ms.Warehouse),
@@ -183,8 +198,17 @@ func (ms *MSSQL) getConnectionCredentials() credentials {
 		sslMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
 		timeout:  ms.connectTimeout,
 	}
+}
 
-	return creds
+func (ms *MSSQL) defaultLogFields() []any {
+	return []any{
+		logfield.SourceID, ms.Warehouse.Source.ID,
+		logfield.SourceType, ms.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, ms.Warehouse.Destination.ID,
+		logfield.DestinationType, ms.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, ms.Warehouse.WorkspaceID,
+		logfield.Namespace, ms.Namespace,
+	}
 }
 
 func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
@@ -702,7 +726,9 @@ func (ms *MSSQL) Setup(_ context.Context, warehouse model.Warehouse, uploader wa
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 	ms.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, ms.config.numWorkersDownloadLoadFiles)
 
-	ms.DB, err = Connect(ms.getConnectionCredentials())
+	if ms.DB, err = ms.connect(); err != nil {
+		return fmt.Errorf("connecting to mssql: %w", err)
+	}
 	return err
 }
 
@@ -863,12 +889,13 @@ func (ms *MSSQL) Connect(_ context.Context, warehouse model.Warehouse) (client.C
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
 	)
-	dbHandle, err := Connect(ms.getConnectionCredentials())
+
+	db, err := ms.connect()
 	if err != nil {
-		return client.Client{}, err
+		return client.Client{}, fmt.Errorf("connecting to mssql: %w", err)
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
 func (ms *MSSQL) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
