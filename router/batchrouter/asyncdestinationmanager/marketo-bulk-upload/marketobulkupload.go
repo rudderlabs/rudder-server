@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -112,14 +111,13 @@ func (b *MarketoBulkUploader) generateFailedPayload(jobs []*jobsdb.JobT, importI
 }
 
 func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	var finalURL string
-	failedReasonsMap := make(map[int64]string)
-	var finalMap map[string]interface{}
+	var jobsURL string
+	var finalMap map[int64]string
 
 	if UploadStatsInput.FailedJobURLs != "" {
-		finalURL = UploadStatsInput.FailedJobURLs
+		jobsURL = UploadStatsInput.FailedJobURLs
 	} else {
-		finalURL = UploadStatsInput.WarningJobURLs
+		jobsURL = UploadStatsInput.WarningJobURLs
 	}
 
 	parameters := UploadStatsInput.Parameters
@@ -132,13 +130,13 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.transformUrl+finalURL, payload, b.timeout)
+	failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(b.transformUrl+jobsURL, payload, b.timeout)
 	if statusCode != 200 {
 		return common.GetUploadStatsResponse{
 			StatusCode: statusCode,
 		}
 	}
-	var failedJobsResponse map[string]interface{}
+	var failedJobsResponse common.GetUploadStatsResponse
 	err := json.Unmarshal(failedBodyBytes, &failedJobsResponse)
 	if err != nil {
 		b.logger.Errorf("Error in Unmarshalling Failed Jobs Response: %v", err)
@@ -147,76 +145,30 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 		}
 	}
 
-	var marketoStatus int
-	if statusCodeFloat64, ok := failedJobsResponse["statusCode"].(float64); ok {
-		marketoStatus = int(statusCodeFloat64)
-	} else {
-		b.logger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", statusCode, string(failedBodyBytes))
-		return common.GetUploadStatsResponse{
-			StatusCode: 500,
-		}
-	}
-	_, ok := failedJobsResponse["error"].(string)
-	if ok {
+	if failedJobsResponse.Error != "" {
 		b.logger.Errorf("[Batch Router] Failed to fetch status for Dest Type %v with body %v", "MARKETO_BULK_UPLOAD", string(failedBodyBytes))
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
 		}
 	}
-	metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
-	if !ok {
-		b.logger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v", "MARKETO_BULK_UPLOAD", statusCode, string(failedBodyBytes))
-		return common.GetUploadStatsResponse{
-			StatusCode: 500,
-		}
-	}
 
-	failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
-	warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
-	succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(metadata["succeededKeys"])
+	failedReasons := failedJobsResponse.Metadata.FailedReasons
+	warningReasons := failedJobsResponse.Metadata.WarningReasons
 
-	if errFailed != nil || errWarning != nil || errSuccess != nil {
-		b.logger.Errorf("[Batch Router] Failed to get job IDs for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
-		return common.GetUploadStatsResponse{
-			StatusCode: 500,
-		}
-	}
-
-	failedReasons, gotFailedReason := metadata["failedReasons"].(map[string]interface{})
-	warningReasons, gotWarningReason := metadata["warningReasons"].(map[string]interface{})
-
-	if !gotFailedReason && !gotWarningReason {
-		b.logger.Errorf("[Batch Router] Failed to typecast failedReasons or warningReasons for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
-		return common.GetUploadStatsResponse{
-			StatusCode: 500,
-		}
-	}
-
-	if gotFailedReason {
+	if failedReasons != nil {
 		finalMap = failedReasons
 	} else {
 		finalMap = warningReasons
 	}
 
-	for jobID, reason := range finalMap {
-		jobIDInt, err := strconv.ParseInt(strings.TrimPrefix(jobID, "jobID"), 10, 64)
-		if err != nil {
-			b.logger.Errorf("[Batch Router] Error converting jobID to int64: for Dest Type %v with metata %v", "MARKETO_BULK_UPLOAD", metadata)
-			return common.GetUploadStatsResponse{
-				StatusCode: 500,
-			}
-		}
-		failedReasonsMap[jobIDInt] = reason.(string)
-	}
-
 	// Build the response body
 	return common.GetUploadStatsResponse{
-		StatusCode: marketoStatus,
+		StatusCode: failedJobsResponse.StatusCode,
 		Metadata: common.EventStatMeta{
-			FailedKeys:    failedKeys,
-			WarningKeys:   warningKeys,
-			SucceededKeys: succeededKeys,
-			FailedReasons: failedReasonsMap,
+			FailedKeys:    failedJobsResponse.Metadata.FailedKeys,
+			WarningKeys:   failedJobsResponse.Metadata.WarningKeys,
+			SucceededKeys: failedJobsResponse.Metadata.SucceededKeys,
+			FailedReasons: finalMap,
 		},
 	}
 }
