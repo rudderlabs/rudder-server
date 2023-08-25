@@ -153,7 +153,11 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	}
 
 	if failedJobsResponse.Error != "" {
-		b.logger.Errorf("[Batch Router] Failed to fetch status for Dest Type %v with body %v", "MARKETO_BULK_UPLOAD", string(failedBodyBytes))
+		b.logger.Errorw("[Batch Router] Failed to fetch status for", 
+		lf.DestinationType, "MARKETO_BULK_UPLOAD", 
+		"body", string(failedBodyBytes),
+		lf.Error, failedJobsResponse.Error,
+		)
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
 		}
