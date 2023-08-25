@@ -7,18 +7,18 @@ go 1.20
 // the same version is used both here and in the require section
 replace (
 	github.com/containerd/containerd => github.com/containerd/containerd v1.6.20
-	github.com/docker/docker => github.com/docker/docker v23.0.4+incompatible
-	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.7.7
-	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.5
-	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.15.0
+	github.com/docker/docker => github.com/docker/docker v24.0.5+incompatible
+	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.9.1
+	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.9
+	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.16.0
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.1.0
-	github.com/spf13/viper => github.com/spf13/viper v1.15.0
+	github.com/spf13/viper => github.com/spf13/viper v1.16.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2
 	go.mongodb.org/mongo-driver => go.mongodb.org/mongo-driver v1.11.4
-	golang.org/x/crypto => golang.org/x/crypto v0.8.0
-	golang.org/x/image => golang.org/x/image v0.5.0
-	golang.org/x/net => golang.org/x/net v0.9.0
-	golang.org/x/text => golang.org/x/text v0.9.0
+	golang.org/x/crypto => golang.org/x/crypto v0.12.0
+	golang.org/x/image => golang.org/x/image v0.11.0
+	golang.org/x/net => golang.org/x/net v0.14.0
+	golang.org/x/text => golang.org/x/text v0.12.0
 	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
 	k8s.io/kubernetes => k8s.io/kubernetes v1.22.2
@@ -41,7 +41,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.2.0
-	github.com/docker/docker v23.0.4+incompatible
+	github.com/docker/docker v24.0.5+incompatible
 	github.com/go-chi/chi/v5 v5.0.10
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -101,6 +101,8 @@ require (
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.31.0
 )
+
+require github.com/containerd/containerd v1.6.8 // indirect
 
 require (
 	cloud.google.com/go v0.110.6 // indirect
@@ -167,7 +169,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
-	github.com/goccy/go-json v0.10.0 // indirect
+	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/goccy/go-reflect v1.2.0 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -220,7 +222,7 @@ require (
 	github.com/mtibben/percent v0.2.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b // indirect
-	github.com/opencontainers/runc v1.1.5 // indirect
+	github.com/opencontainers/runc v1.1.9 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
 	github.com/pierrec/lz4 v2.0.5+incompatible // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
@@ -228,9 +230,9 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
-	github.com/prometheus/client_golang v1.15.1 // indirect
+	github.com/prometheus/client_golang v1.16.0 // indirect
 	github.com/prometheus/common v0.44.0 // indirect
-	github.com/prometheus/procfs v0.9.0 // indirect
+	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/rivo/uniseg v0.1.0 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/rs/zerolog v1.28.0 // indirect
@@ -277,7 +279,7 @@ require (
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect
-	golang.org/x/term v0.8.0 // indirect
+	golang.org/x/term v0.11.0 // indirect
 	golang.org/x/text v0.12.0 // indirect
 	golang.org/x/tools v0.12.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
