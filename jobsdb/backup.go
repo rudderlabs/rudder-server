@@ -137,7 +137,11 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 		path := filePath
 		operation := func() error {
 			if err := jd.uploadTableDump(ctx, wrkId, path); err != nil {
-				jd.logger.Errorf("[JobsDB] :: Failed to upload workspaceId %v. Error: %s", wrkId, err.Error())
+				jd.logger.Errorw(
+					"failed backup for workspaceId",
+					"workspaceID", wrkId,
+					"error", err.Error(),
+				)
 				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": wrkId}).Increment()
 				return err
 			}
@@ -256,7 +260,10 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 	}()
 	err = jd.uploadDumps(ctx, dumps)
 	if err != nil {
-		jd.logger.Errorf("[JobsDB] :: Failed to upload dumps for table: %s. Error: %v", tableName, err)
+		jd.logger.Errorw(
+			"Failed to upload backup",
+			"error", err,
+		)
 		return nil
 	}
 
@@ -554,7 +561,10 @@ func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) st
 			preferences, err := jd.conf.backup.fileUploaderProvider.GetStoragePreferences(workspaceID)
 			if errors.Is(err, fileuploader.NoStorageForWorkspaceError) {
 				offset++
-				jd.logger.Infof("getting storage preferences failed with error: %w for workspaceID: %s", err, workspaceID)
+				jd.logger.Debugw(
+					"getting storage preferences failed",
+					"workspaceID", workspaceID,
+				)
 				continue
 			}
 			if err != nil {
@@ -562,7 +572,10 @@ func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) st
 			}
 			if !preferences.Backup(jd.tablePrefix) {
 				offset++
-				jd.logger.Infof("Skipping backup for workspace: %s. Preferences: %v and tablePrefix: %s", workspaceID, preferences, jd.tablePrefix)
+				jd.logger.Debugw(
+					fmt.Sprintf("Skipping backup Preferences: %v", preferences),
+					"workspaceID", workspaceID,
+				)
 				continue
 			}
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
