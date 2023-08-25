@@ -2,8 +2,13 @@ package jobs
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+
+	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/samber/lo"
 )
@@ -15,34 +20,31 @@ type insertJobResponse struct {
 
 // InsertJobHandler adds a job to the warehouse_jobs table
 func (a *AsyncJobWh) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
-	a.logger.LogRequest(r)
-
 	defer func() { _ = r.Body.Close() }()
 
 	if !a.enabled {
-		a.logger.Error("jobs api not initialized")
-		http.Error(w, "warehouse jobs api not initialized", http.StatusInternalServerError)
+		a.logger.Error("jobs api not initialized for inserting async job")
+		http.Error(w, ierrors.ErrJobsApiNotInitialized.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	var payload StartJobReqPayload
-
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		a.logger.Errorf("invalid JSON body for inserting async jobs: %v", err)
-		http.Error(w, "invalid JSON in request body", http.StatusBadRequest)
+		a.logger.Warnw("invalid JSON in request body for inserting async jobs", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if !validatePayload(&payload) {
-		a.logger.Errorf("invalid request while inserting async job %v", payload)
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	if err := validatePayload(&payload); err != nil {
+		a.logger.Warnw("invalid payload for inserting async job", lf.Error, err.Error())
+		http.Error(w, fmt.Sprintf("invalid payload: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	// TODO: Move to repository
 	tableNames, err := a.tableNamesBy(payload.SourceID, payload.DestinationID, payload.JobRunID, payload.TaskRunID)
 	if err != nil {
-		a.logger.Errorf("extracting tableNames while inserting async job for payload: %v, with error: %v", payload, err)
+		a.logger.Errorw("extracting tableNames for inserting async job", lf.Error, err.Error())
 		http.Error(w, "can't extract tableNames", http.StatusInternalServerError)
 		return
 	}
@@ -65,7 +67,7 @@ func (a *AsyncJobWh) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 			JobType:   AsyncJobType,
 		})
 		if err != nil {
-			a.logger.Errorf("marshalling metadata while inserting async job for payload: %v with error: %v", payload, err)
+			a.logger.Errorw("marshalling metadata for inserting async job", lf.Error, err.Error())
 			http.Error(w, "can't marshall metadata", http.StatusInternalServerError)
 			return
 		}
@@ -80,7 +82,7 @@ func (a *AsyncJobWh) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 			WorkspaceID:   payload.WorkspaceID,
 		})
 		if err != nil {
-			a.logger.Errorf("inserting async job: %v", err)
+			a.logger.Errorw("inserting async job", lf.Error, err.Error())
 			http.Error(w, "can't insert async job", http.StatusInternalServerError)
 			return
 		}
@@ -93,8 +95,8 @@ func (a *AsyncJobWh) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 		Err:    nil,
 	})
 	if err != nil {
-		a.logger.Errorf("marshalling response while inserting async job: %v", err)
-		http.Error(w, "can't marshall response", http.StatusInternalServerError)
+		a.logger.Errorw("marshalling response for inserting async job", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -103,13 +105,11 @@ func (a *AsyncJobWh) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 
 // StatusJobHandler The following handler gets called for getting the status of the async job
 func (a *AsyncJobWh) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
-	a.logger.LogRequest(r)
-
 	defer func() { _ = r.Body.Close() }()
 
 	if !a.enabled {
-		a.logger.Error("jobs api not initialized")
-		http.Error(w, "warehouse jobs api not initialized", http.StatusInternalServerError)
+		a.logger.Error("jobs api not initialized for async job status")
+		http.Error(w, ierrors.ErrJobsApiNotInitialized.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -121,25 +121,35 @@ func (a *AsyncJobWh) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 		DestinationID: queryParams.Get("destination_id"),
 		WorkspaceID:   queryParams.Get("workspace_id"),
 	}
-	if !validatePayload(&payload) {
-		a.logger.Errorf("invalid request while getting status for async job: %v", payload)
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	if err := validatePayload(&payload); err != nil {
+		a.logger.Warnw("invalid payload for async job status", lf.Error, err.Error())
+		http.Error(w, fmt.Sprintf("invalid request: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	// TODO: Move to repository
 	jobStatus := a.jobStatus(&payload)
-
 	resBody, err := json.Marshal(jobStatus)
 	if err != nil {
-		a.logger.Errorf("marshalling response while getting status for async job: %v", err)
-		http.Error(w, "can't marshall response", http.StatusInternalServerError)
+		a.logger.Errorw("marshalling response for async job status", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	_, _ = w.Write(resBody)
 }
 
-func validatePayload(payload *StartJobReqPayload) bool {
-	return payload.SourceID != "" && payload.JobRunID != "" && payload.TaskRunID != "" && payload.DestinationID != ""
+func validatePayload(payload *StartJobReqPayload) error {
+	switch true {
+	case payload.SourceID == "":
+		return errors.New("source_id is required")
+	case payload.DestinationID == "":
+		return errors.New("destination_id is required")
+	case payload.JobRunID == "":
+		return errors.New("job_run_id is required")
+	case payload.TaskRunID == "":
+		return errors.New("task_run_id is required")
+	default:
+		return nil
+	}
 }

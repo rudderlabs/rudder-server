@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,10 @@ import (
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
+	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -21,7 +26,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
@@ -119,49 +123,52 @@ func (a *Api) Start(ctx context.Context) error {
 	}
 	if a.config.runningMode != DegradedMode {
 		if isMaster(a.mode) {
-			a.addWarehouseEndpoints(ctx, srvMux)
+			a.addMasterEndpoints(ctx, srvMux)
 
-			a.logger.Infof("Starting warehouse master service in %d", a.config.webPort)
+			a.logger.Infow("Starting warehouse master service on" + strconv.Itoa(a.config.webPort))
 		} else {
-			a.logger.Infof("Starting warehouse slave service in %d", a.config.webPort)
+			a.logger.Infow("Starting warehouse slave service on" + strconv.Itoa(a.config.webPort))
 		}
 	}
 
 	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", a.config.webPort),
+		Addr:              net.JoinHostPort("", strconv.Itoa(a.config.webPort)),
 		Handler:           bugsnag.Handler(srvMux),
 		ReadHeaderTimeout: a.config.readerHeaderTimeout,
 	}
 	return kithttputil.ListenAndServe(ctx, srv)
 }
 
-func (a *Api) addWarehouseEndpoints(ctx context.Context, mux *chi.Mux) {
-	a.logger.Infof("waiting for BackendConfig before starting on %d", a.config.webPort)
+func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
+	a.logger.Infow("waiting for BackendConfig before starting on " + strconv.Itoa(a.config.webPort))
 
 	a.bcConfig.WaitForConfig(ctx)
 
-	// process the staging file
-	mux.Handle("/v1/process", (&api.WarehouseAPI{
+	r.Handle("/v1/process", (&api.WarehouseAPI{
 		Logger:      a.logger,
 		Stats:       a.statsFactory,
 		Repo:        a.stagingRepo,
 		Multitenant: a.tenantManager,
 	}).Handler())
 
-	// triggers upload only when there are pending events and triggerUpload is sent for a sourceId
-	mux.Post("/v1/warehouse/pending-events", a.pendingEventsHandler)
+	r.Route("/v1", func(r chi.Router) {
+		r.Route("/warehouse", func(r chi.Router) {
+			r.Post("/pending-events", a.logMidddleware(a.pendingEventsHandler))
+			r.Post("/trigger-upload", a.logMidddleware(a.triggerUploadHandler))
 
-	// triggers uploads for a source
-	mux.Post("/v1/warehouse/trigger-upload", a.triggerUploadHandler)
+			r.Post("/jobs", a.logMidddleware(a.asyncManager.InsertJobHandler))       // TODO: add degraded mode
+			r.Get("/jobs/status", a.logMidddleware(a.asyncManager.StatusJobHandler)) // TODO: add degraded mode
 
-	// Warehouse Async Job end-points
-	mux.Post("/v1/warehouse/jobs", a.asyncManager.InsertJobHandler)       // FIXME: add degraded mode
-	mux.Get("/v1/warehouse/jobs/status", a.asyncManager.StatusJobHandler) // FIXME: add degraded mode
-
-	// TODO: Remove this endpoint once sources change is released
-	// fetch schema info
-	mux.Get("/v1/warehouse/fetch-tables", a.fetchTablesHandler)
-	mux.Get("/internal/v1/warehouse/fetch-tables", a.fetchTablesHandler)
+			r.Get("/fetch-tables", a.logMidddleware(a.fetchTablesHandler)) // TODO: Remove this endpoint once sources change is released
+		})
+	})
+	r.Route("/internal", func(r chi.Router) {
+		r.Route("/v1", func(r chi.Router) {
+			r.Route("/warehouse", func(r chi.Router) {
+				r.Get("/fetch-tables", a.logMidddleware(a.fetchTablesHandler))
+			})
+		})
+	})
 }
 
 func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -221,46 +228,46 @@ func checkHealth(ctx context.Context, db *sql.DB) bool {
 
 // pendingEventsHandler check whether there are any pending staging files or uploads for the given source id
 func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
-	a.logger.LogRequest(r)
-
 	defer func() { _ = r.Body.Close() }()
 
-	var pendingEventsReq pendingEventsRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&pendingEventsReq); err != nil {
-		a.logger.Errorf("invalid JSON body for pending events: %v", err)
-		http.Error(w, "invalid JSON in request body", http.StatusBadRequest)
+	var request pendingEventsRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		a.logger.Warnw("invalid JSON in request body for pending events", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
-	sourceID, taskRunID := pendingEventsReq.SourceID, pendingEventsReq.TaskRunID
+	sourceID, taskRunID := request.SourceID, request.TaskRunID
 	if sourceID == "" || taskRunID == "" {
-		a.logger.Errorf("empty source_id or task_run_id in the pending events request")
-		http.Error(w, "empty source_id or task_run_id", http.StatusBadRequest)
+		a.logger.Warnw("empty source or task run id for pending events",
+			lf.SourceID, request.SourceID,
+			lf.TaskRunID, request.TaskRunID,
+		)
+		http.Error(w, "empty source or task run id", http.StatusBadRequest)
 		return
 	}
 
 	workspaceID, err := a.tenantManager.SourceToWorkspace(r.Context(), sourceID)
 	if err != nil {
-		a.logger.Errorf("checking if source is degraded: %v", err)
-		http.Error(w, "workspaceID from sourceID not found", http.StatusBadRequest)
+		a.logger.Warnw("workspace from source not found for pending events", lf.SourceID, request.SourceID)
+		http.Error(w, ierrors.ErrWorkspaceFromSourceNotFound.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if a.tenantManager.DegradedWorkspace(workspaceID) {
-		a.logger.Infof("workspace (id: %q) is degrade", workspaceID)
-		http.Error(w, "workspace is degraded", http.StatusServiceUnavailable)
+		a.logger.Infow("workspace is degraded for pending events", lf.WorkspaceID, workspaceID)
+		http.Error(w, ierrors.ErrWorkspaceDegraded.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
 	pendingStagingFileCount, err := a.stagingRepo.CountPendingForSource(r.Context(), sourceID)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
-			http.Error(w, "request canceled", http.StatusBadRequest)
+			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorf("fetching pending staging file: %v", err)
-		http.Error(w, "can't get pending staging file", http.StatusInternalServerError)
+		a.logger.Errorw("counting pending staging files", lf.Error, err.Error())
+		http.Error(w, "can't get pending staging files count", http.StatusInternalServerError)
 		return
 	}
 
@@ -273,27 +280,27 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	pendingUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
-			http.Error(w, "request canceled", http.StatusBadRequest)
+			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorf("fetching pending uploads: %s", err)
-		http.Error(w, "can't get pending uploads", http.StatusInternalServerError)
+		a.logger.Errorw("counting pending uploads", lf.Error, err.Error())
+		http.Error(w, "can't get pending uploads count", http.StatusInternalServerError)
 		return
 	}
 
 	filters = []repo.FilterBy{
 		{Key: "source_id", Value: sourceID},
-		{Key: "metadata->>'source_task_run_id'", Value: pendingEventsReq.TaskRunID},
+		{Key: "metadata->>'source_task_run_id'", Value: request.TaskRunID},
 		{Key: "status", Value: "aborted"},
 	}
 	abortedUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
-			http.Error(w, "request canceled", http.StatusBadRequest)
+			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorf("fetching aborted uploads: %s", err.Error())
-		http.Error(w, "can't get aborted uploads", http.StatusInternalServerError)
+		a.logger.Errorw("counting aborted uploads", lf.Error, err.Error())
+		http.Error(w, "can't get aborted uploads count", http.StatusInternalServerError)
 		return
 	}
 
@@ -301,12 +308,18 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	triggerPendingUpload, _ := strconv.ParseBool(r.URL.Query().Get(triggerUploadQPName))
 
 	if pendingEventsAvailable && triggerPendingUpload {
-		a.logger.Infof("Triggering upload for all destinations connected to source '%s'", sourceID)
+		a.logger.Infow("triggering upload for all destinations connected to source",
+			lf.WorkspaceID, workspaceID,
+			lf.SourceID, request.SourceID,
+		)
 
 		wh := a.bcManager.WarehousesBySourceID(sourceID)
 		if len(wh) == 0 {
-			a.logger.Warnf("no warehouse destinations found for source id '%s'", sourceID)
-			http.Error(w, "no warehouse found", http.StatusBadRequest)
+			a.logger.Warnw("no warehouse found for pending events",
+				lf.WorkspaceID, workspaceID,
+				lf.SourceID, request.SourceID,
+			)
+			http.Error(w, ierrors.ErrNoWarehouseFound.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -322,8 +335,8 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		AbortedEvents:            abortedUploadCount > 0,
 	})
 	if err != nil {
-		a.logger.Errorf("marshalling response for pending events: %v", err)
-		http.Error(w, "can't marshall response", http.StatusInternalServerError)
+		a.logger.Errorw("marshalling response for pending events", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -331,43 +344,41 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
-	a.logger.LogRequest(r)
-
 	defer func() { _ = r.Body.Close() }()
 
-	var triggerUploadReq triggerUploadRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&triggerUploadReq); err != nil {
-		a.logger.Errorf("invalid JSON body for triggering upload: %v", err)
-		http.Error(w, "invalid JSON in request body", http.StatusBadRequest)
+	var request triggerUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		a.logger.Warnw("invalid JSON in request body for triggering upload", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
-	sourceID, destinationID := triggerUploadReq.SourceID, triggerUploadReq.DestinationID
-
-	workspaceID, err := a.tenantManager.SourceToWorkspace(r.Context(), sourceID)
+	workspaceID, err := a.tenantManager.SourceToWorkspace(r.Context(), request.SourceID)
 	if err != nil {
-		a.logger.Errorf("checking if source is degraded: %v", err)
-		http.Error(w, "workspaceID from sourceID not found", http.StatusBadRequest)
+		a.logger.Warnw("workspace from source not found for triggering upload", lf.SourceID, request.SourceID)
+		http.Error(w, ierrors.ErrWorkspaceFromSourceNotFound.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if a.tenantManager.DegradedWorkspace(workspaceID) {
-		a.logger.Infof("workspace (id: %q) is degrade", workspaceID)
-		http.Error(w, "workspace is degraded", http.StatusServiceUnavailable)
+		a.logger.Infow("workspace is degraded for triggering upload", lf.WorkspaceID, workspaceID)
+		http.Error(w, ierrors.ErrWorkspaceDegraded.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
 	var wh []model.Warehouse
-	if sourceID != "" && destinationID == "" {
-		wh = a.bcManager.WarehousesBySourceID(sourceID)
-	} else if destinationID != "" {
-		wh = a.bcManager.WarehousesByDestID(destinationID)
+	if request.SourceID != "" && request.DestinationID == "" {
+		wh = a.bcManager.WarehousesBySourceID(request.SourceID)
+	} else if request.DestinationID != "" {
+		wh = a.bcManager.WarehousesByDestID(request.DestinationID)
 	}
-
 	if len(wh) == 0 {
-		a.logger.Warnf("no warehouse destinations found for source id '%s' or destination id '%s'", sourceID, destinationID)
-		http.Error(w, "no warehouse found", http.StatusBadRequest)
+		a.logger.Warnw("no warehouse found for triggering upload",
+			lf.WorkspaceID, workspaceID,
+			lf.SourceID, request.SourceID,
+			lf.DestinationID, request.DestinationID,
+		)
+		http.Error(w, ierrors.ErrNoWarehouseFound.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -379,25 +390,22 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
-	a.logger.LogRequest(r)
-
 	defer func() { _ = r.Body.Close() }()
 
-	var connectionsTableRequest fetchTablesRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&connectionsTableRequest); err != nil {
-		a.logger.Errorf("invalid JSON body for fetching tables: %v", err)
-		http.Error(w, "invalid JSON in request body", http.StatusBadRequest)
+	var request fetchTablesRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		a.logger.Warnw("invalid JSON in request body for fetching tables", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
-	tables, err := a.schemaRepo.GetTablesForConnection(r.Context(), connectionsTableRequest.Connections)
+	tables, err := a.schemaRepo.GetTablesForConnection(r.Context(), request.Connections)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
-			http.Error(w, "request canceled", http.StatusBadRequest)
+			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorf("fetching tables: %v", err)
+		a.logger.Errorw("fetching tables", lf.Error, err.Error())
 		http.Error(w, "can't fetch tables", http.StatusInternalServerError)
 		return
 	}
@@ -406,10 +414,17 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 		ConnectionsTables: tables,
 	})
 	if err != nil {
-		a.logger.Errorf("marshalling response while fetching tables: %v", err)
-		http.Error(w, "can't marshall response", http.StatusInternalServerError)
+		a.logger.Errorw("marshalling response for fetching tables", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	_, _ = w.Write(resBody)
+}
+
+func (a *Api) logMidddleware(delegate http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a.logger.LogRequest(r)
+		delegate.ServeHTTP(w, r)
+	}
 }

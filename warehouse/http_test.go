@@ -447,7 +447,7 @@ func TestHTTPApi(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "empty source_id or task_run_id\n", string(b))
+			require.Equal(t, "empty source or task run id\n", string(b))
 		})
 
 		t.Run("workspace not found", func(t *testing.T) {
@@ -465,7 +465,7 @@ func TestHTTPApi(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "workspaceID from sourceID not found\n", string(b))
+			require.Equal(t, "workspace from source not found\n", string(b))
 		})
 
 		t.Run("degraded workspace", func(t *testing.T) {
@@ -661,7 +661,7 @@ func TestHTTPApi(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "workspaceID from sourceID not found\n", string(b))
+			require.Equal(t, "workspace from source not found\n", string(b))
 		})
 
 		t.Run("degraded workspaces", func(t *testing.T) {

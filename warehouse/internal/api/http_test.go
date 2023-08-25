@@ -118,13 +118,13 @@ func TestAPI_Process(t *testing.T) {
 			degradedWorkspaceIDs: []string{"279L3V7FSpx43LaNJ0nIs9KRaNC"},
 
 			respCode: http.StatusServiceUnavailable,
-			respBody: "Workspace is degraded\n",
+			respBody: "workspace is degraded\n",
 		},
 		{
 			name: "invalid request body missing",
 
 			respCode: http.StatusBadRequest,
-			respBody: "can't unmarshal body\n",
+			respBody: "invalid JSON in request body\n",
 		},
 		{
 			name:    "invalid request workspace id missing",

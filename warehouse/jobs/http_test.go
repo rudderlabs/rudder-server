@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -127,31 +128,70 @@ func TestAsyncJobHandlers(t *testing.T) {
 
 	t.Run("validate payload", func(t *testing.T) {
 		testCases := []struct {
-			name    string
-			payload StartJobReqPayload
-			isvalid bool
+			name          string
+			payload       StartJobReqPayload
+			expectedError error
 		}{
 			{
-				name:    "invalid payload",
-				payload: StartJobReqPayload{},
+				name: "invalid source",
+				payload: StartJobReqPayload{
+					JobRunID:      "job_run_id",
+					TaskRunID:     "task_run_id",
+					SourceID:      "",
+					DestinationID: "destination_id",
+					WorkspaceID:   "workspace_id",
+				},
+				expectedError: errors.New("source_id is required"),
+			},
+			{
+				name: "invalid destination",
+				payload: StartJobReqPayload{
+					JobRunID:      "job_run_id",
+					TaskRunID:     "task_run_id",
+					SourceID:      "source_id",
+					DestinationID: "",
+					WorkspaceID:   "workspace_id",
+				},
+				expectedError: errors.New("destination_id is required"),
+			},
+			{
+				name: "invalid task run",
+				payload: StartJobReqPayload{
+					JobRunID:      "job_run_id",
+					TaskRunID:     "",
+					SourceID:      "source_id",
+					DestinationID: "destination_id",
+					WorkspaceID:   "workspace_id",
+				},
+				expectedError: errors.New("task_run_id is required"),
+			},
+			{
+				name: "invalid job run",
+				payload: StartJobReqPayload{
+					JobRunID:      "",
+					TaskRunID:     "task_run_id",
+					SourceID:      "source_id",
+					DestinationID: "destination_id",
+					WorkspaceID:   "workspace_id",
+				},
+				expectedError: errors.New("job_run_id is required"),
 			},
 			{
 				name: "valid payload",
 				payload: StartJobReqPayload{
-					JobRunID:      "abc",
-					TaskRunID:     "bbc",
-					SourceID:      "cbc",
-					DestinationID: "dbc",
-					WorkspaceID:   "ebc",
+					JobRunID:      "job_run_id",
+					TaskRunID:     "task_run_id",
+					SourceID:      "source_id",
+					DestinationID: "destination_id",
+					WorkspaceID:   "workspace_id",
 				},
-				isvalid: true,
 			},
 		}
 		for _, tc := range testCases {
 			tc := tc
 
 			t.Run(tc.name, func(t *testing.T) {
-				require.Equal(t, tc.isvalid, validatePayload(&tc.payload))
+				require.Equal(t, tc.expectedError, validatePayload(&tc.payload))
 			})
 		}
 	})
@@ -209,7 +249,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "invalid request\n", string(b))
+			require.Equal(t, "invalid payload: source_id is required\n", string(b))
 		})
 		t.Run("success", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`
@@ -275,7 +315,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, "invalid request\n", string(b))
+			require.Equal(t, "invalid request: source_id is required\n", string(b))
 		})
 		t.Run("success", func(t *testing.T) {
 			_, err := db.ExecContext(ctx, `
