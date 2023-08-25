@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// status
 const (
 	Waiting   = "waiting"
 	Executing = "executing"

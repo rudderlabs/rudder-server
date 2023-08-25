@@ -210,11 +210,14 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 			return nil
 		case responses, ok := <-ch:
 			if !ok {
+				a.logger.Error("[WH-Jobs]: Notifier track batch channel closed")
+				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, fmt.Errorf("receiving channel closed"))
+				_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
 				continue
 			}
 			if responses.Err != nil {
 				a.logger.Errorf("[WH-Jobs]: Error received from the notifier track batch %s", responses.Err.Error())
-				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, err)
+				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(pendingAsyncJobs, WhJobFailed, responses.Err)
 				_ = a.updateAsyncJobs(ctx, asyncJobStatusMap)
 				continue
 			}
