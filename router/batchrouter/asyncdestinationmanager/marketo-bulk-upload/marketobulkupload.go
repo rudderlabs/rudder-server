@@ -345,7 +345,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 			"module":   "batch_router",
 			"destType": destType,
 		})
-		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs, "400")
+		abortedJobIDs, failedJobIDsTrans := extractJobStats(responseStruct.Metadata, importingJobIDs, http.StatusBadRequest)
 		errorMessageFromTransformer := gjson.GetBytes(bodyBytes, "error").String()
 		eventsAbortedStat.Count(len(abortedJobIDs))
 		uploadResponse = common.AsyncUploadOutput{
