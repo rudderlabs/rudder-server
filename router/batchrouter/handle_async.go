@@ -177,7 +177,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 				jobID := job.JobID
 				var status *jobsdb.JobStatusT
 				if slices.Contains(successfulJobIDs, jobID) {
-					warningRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
+					warningRespString := uploadStatsResp.Metadata.WarningReasons[jobID]
 					warningResp, _ := json.Marshal(WarningResponse{Remarks: warningRespString})
 					_, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, warningResp)
 					status = &jobsdb.JobStatusT{
@@ -192,8 +192,7 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID strin
 						WorkspaceId:   job.WorkspaceId,
 					}
 					completedJobsList = append(completedJobsList, job)
-				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) ||
-					slices.Contains(uploadStatsResp.Metadata.WarningKeys, jobID) {
+				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) {
 					errorRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
 					errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
 					_, resp := enhanceErrorResponseWithFirstAttemptedAtt(job.LastJobStatus.ErrorResponse, errorResp)

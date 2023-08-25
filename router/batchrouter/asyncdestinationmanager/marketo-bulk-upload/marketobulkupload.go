@@ -120,7 +120,6 @@ func (b *MarketoBulkUploader) generateFailedPayload(jobs []*jobsdb.JobT, importI
 
 func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	var jobsURL string
-	var finalMap map[int64]string
 
 	if UploadStatsInput.FailedJobURLs != "" {
 		jobsURL = UploadStatsInput.FailedJobURLs
@@ -163,20 +162,15 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	failedReasons := failedJobsResponse.Metadata.FailedReasons
 	warningReasons := failedJobsResponse.Metadata.WarningReasons
 
-	if failedReasons != nil {
-		finalMap = failedReasons
-	} else {
-		finalMap = warningReasons
-	}
-
 	// Build the response body
 	return common.GetUploadStatsResponse{
 		StatusCode: failedJobsResponse.StatusCode,
 		Metadata: common.EventStatMeta{
-			FailedKeys:    failedJobsResponse.Metadata.FailedKeys,
-			WarningKeys:   failedJobsResponse.Metadata.WarningKeys,
-			SucceededKeys: failedJobsResponse.Metadata.SucceededKeys,
-			FailedReasons: finalMap,
+			FailedKeys:     failedJobsResponse.Metadata.FailedKeys,
+			WarningKeys:    failedJobsResponse.Metadata.WarningKeys,
+			SucceededKeys:  failedJobsResponse.Metadata.SucceededKeys,
+			FailedReasons:  failedReasons,
+			WarningReasons: warningReasons,
 		},
 	}
 }
