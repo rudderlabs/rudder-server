@@ -522,9 +522,7 @@ func TestSlaveWorker(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		tenantManager := &multitenant.Manager{
-			BackendConfig: mockBackendConfig,
-		}
+		tenantManager := multitenant.New(config.Default, mockBackendConfig)
 		bcm := newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP)
 		ef := encoding.NewFactory(config.Default)
 
