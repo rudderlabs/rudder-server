@@ -79,6 +79,14 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			HasFailed:  true,
 		}
 	}
+
+	if asyncResponse.Error != "" {
+		b.logger.Errorf("[Batch Router] Failed to poll status for Dest Type %v with body %v", "MARKETO_BULK_UPLOAD", string(bodyBytes))
+		return common.PollStatusResponse{
+			StatusCode: 500,
+			HasFailed:  true,
+		}
+	}
 	return asyncResponse
 }
 
