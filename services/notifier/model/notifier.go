@@ -14,7 +14,10 @@ const (
 	Aborted   = "aborted"
 )
 
-type Payload json.RawMessage
+type (
+	Payload  json.RawMessage
+	Metadata json.RawMessage
+)
 
 type JobType string
 
@@ -36,7 +39,8 @@ type Job struct {
 	Priority int
 	Error    error
 
-	Payload Payload
+	Payload  Payload
+	Metadata Metadata
 
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -45,8 +49,8 @@ type Job struct {
 
 type PublishRequest struct {
 	Payloads []Payload
+	Metadata Metadata
 	JobType  JobType
-	Schema   json.RawMessage
 	Priority int
 }
 

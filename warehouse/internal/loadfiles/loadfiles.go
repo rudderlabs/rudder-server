@@ -87,7 +87,6 @@ type WorkerJobRequest struct {
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
-	UploadSchema                 model.Schema
 	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string
@@ -105,6 +104,10 @@ type WorkerJobRequest struct {
 	RudderStoragePrefix          string
 	LoadFilePrefix               string // prefix for the load file name
 	LoadFileType                 string
+}
+
+type WorkerJobRequestMetadata struct {
+	UploadSchema model.Schema
 }
 
 func WithConfig(ld *LoadFileGenerator, config *config.Config) {
@@ -235,13 +238,12 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			messages = append(messages, payloadJSON)
 		}
 
-		schemaJson, err := json.Marshal(struct {
-			UploadSchema model.Schema
-		}{
+		metadata := WorkerJobRequestMetadata{
 			UploadSchema: job.Upload.UploadSchema,
-		})
+		}
+		metadataJSON, err := json.Marshal(metadata)
 		if err != nil {
-			return 0, 0, fmt.Errorf("marshalling schema: %w", err)
+			return 0, 0, fmt.Errorf("error marshalling metadata: %w", err)
 		}
 
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
@@ -249,7 +251,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		ch, err := lf.Notifier.Publish(ctx, &notifierModel.PublishRequest{
 			Payloads: messages,
 			JobType:  notifierModel.JobTypeUpload,
-			Schema:   schemaJson,
+			Metadata: metadataJSON,
 			Priority: job.Upload.Priority,
 		})
 		if err != nil {

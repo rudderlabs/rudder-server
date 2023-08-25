@@ -2,7 +2,7 @@ package repo_test
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -61,7 +61,7 @@ func TestNotifierRepo(t *testing.T) {
 			model.Payload(`{"id":"5"}`),
 		},
 		JobType:  model.JobTypeUpload,
-		Schema:   json.RawMessage(`{"sid":"1"}`),
+		Metadata: model.Metadata(`{"mid":"1"}`),
 		Priority: 50,
 	}
 
@@ -77,7 +77,8 @@ func TestNotifierRepo(t *testing.T) {
 			require.Len(t, notifiers, len(request.Payloads))
 
 			for i, notifier := range notifiers {
-				require.EqualValues(t, notifier.Payload, model.Payload(fmt.Sprintf(`{"id": "%d", "sid": "1"}`, i+1)))
+				require.EqualValues(t, notifier.Payload, model.Payload(fmt.Sprintf(`{"id": "%d"}`, i+1)))
+				require.EqualValues(t, notifier.Metadata, model.Metadata(fmt.Sprint(`{"mid": "1"}`)))
 				require.EqualValues(t, notifier.WorkspaceIdentifier, workspaceIdentifier)
 				require.EqualValues(t, notifier.BatchID, batchID)
 				require.EqualValues(t, notifier.Type, request.JobType)
@@ -334,7 +335,7 @@ func TestNotifierRepo(t *testing.T) {
 			}
 
 			claimedNotifier, err := ur.Claim(ctx, workerID)
-			require.EqualError(t, err, "claiming job: scanning: sql: no rows in result set")
+			require.ErrorIs(t, err, sql.ErrNoRows)
 			require.Nil(t, claimedNotifier)
 		})
 
