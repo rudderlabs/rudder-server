@@ -44,6 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/constants"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 
@@ -2599,7 +2600,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	start := time.Now()
 	var err error
 	defer func() {
-		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{constants.CustomVal: jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 	}()
 	jd.dsListLock.RLock()
 	previousDS := jd.datasetList
@@ -2614,7 +2615,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	if previousLastDS.Index == nextLastDS.Index {
 		return nil
 	}
-	defer stats.Default.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
+	defer stats.Default.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{constants.CustomVal: jd.tablePrefix}).RecordDuration()()
 	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 		return jd.doRefreshDSRangeList(l)
 	})
