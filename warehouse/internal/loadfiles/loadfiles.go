@@ -201,24 +201,25 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		var messages []notifierModel.Payload
 		for _, stagingFile := range chunk {
 			payload := WorkerJobRequest{
-				UploadID:                     job.Upload.ID,
 				StagingFileID:                stagingFile.ID,
-				StagingFileLocation:          stagingFile.Location,
-				LoadFileType:                 job.Upload.LoadFileType,
-				SourceID:                     job.Warehouse.Source.ID,
-				SourceName:                   job.Warehouse.Source.Name,
-				DestinationID:                destID,
-				DestinationName:              job.Warehouse.Destination.Name,
-				DestinationType:              destType,
-				DestinationNamespace:         job.Warehouse.Namespace,
-				DestinationConfig:            job.Warehouse.Destination.Config,
-				WorkspaceID:                  job.Warehouse.Destination.WorkspaceID,
-				UniqueLoadGenID:              uniqueLoadGenID,
-				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
-				UseRudderStorage:             job.Upload.UseRudderStorage,
 				StagingUseRudderStorage:      stagingFile.UseRudderStorage,
-				DestinationRevisionID:        job.Warehouse.Destination.RevisionID,
 				StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
+				StagingFileLocation:          stagingFile.Location,
+
+				UniqueLoadGenID:       uniqueLoadGenID,
+				RudderStoragePrefix:   misc.GetRudderObjectStoragePrefix(),
+				UploadID:              job.Upload.ID,
+				LoadFileType:          job.Upload.LoadFileType,
+				UseRudderStorage:      job.Upload.UseRudderStorage,
+				SourceID:              job.Warehouse.Source.ID,
+				SourceName:            job.Warehouse.Source.Name,
+				DestinationID:         job.Warehouse.Destination.ID,
+				DestinationName:       job.Warehouse.Destination.Name,
+				DestinationConfig:     job.Warehouse.Destination.Config,
+				WorkspaceID:           job.Warehouse.Destination.WorkspaceID,
+				DestinationRevisionID: job.Warehouse.Destination.RevisionID,
+				DestinationType:       job.Warehouse.Destination.DestinationDefinition.Name,
+				DestinationNamespace:  job.Warehouse.Namespace,
 			}
 			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
 				payload.StagingDestinationConfig = revisionConfig.Config
