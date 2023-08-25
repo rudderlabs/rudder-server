@@ -153,36 +153,36 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Route("/warehouse", func(r chi.Router) {
-			r.Post("/pending-events", a.logMidddleware(a.pendingEventsHandler))
-			r.Post("/trigger-upload", a.logMidddleware(a.triggerUploadHandler))
+			r.Post("/pending-events", a.logMiddleware(a.pendingEventsHandler))
+			r.Post("/trigger-upload", a.logMiddleware(a.triggerUploadHandler))
 
-			r.Post("/jobs", a.logMidddleware(a.asyncManager.InsertJobHandler))       // TODO: add degraded mode
-			r.Get("/jobs/status", a.logMidddleware(a.asyncManager.StatusJobHandler)) // TODO: add degraded mode
+			r.Post("/jobs", a.logMiddleware(a.asyncManager.InsertJobHandler))       // TODO: add degraded mode
+			r.Get("/jobs/status", a.logMiddleware(a.asyncManager.StatusJobHandler)) // TODO: add degraded mode
 
-			r.Get("/fetch-tables", a.logMidddleware(a.fetchTablesHandler)) // TODO: Remove this endpoint once sources change is released
+			r.Get("/fetch-tables", a.logMiddleware(a.fetchTablesHandler)) // TODO: Remove this endpoint once sources change is released
 		})
 	})
 	r.Route("/internal", func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {
 			r.Route("/warehouse", func(r chi.Router) {
-				r.Get("/fetch-tables", a.logMidddleware(a.fetchTablesHandler))
+				r.Get("/fetch-tables", a.logMiddleware(a.fetchTablesHandler))
 			})
 		})
 	})
 }
 
 func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
-	var dbService, pgNotifierService string
+	var dbService, notifierService string
 
 	ctx, cancel := context.WithTimeout(r.Context(), a.config.healthTimeout)
 	defer cancel()
 
 	if a.config.runningMode != DegradedMode {
 		if !checkHealth(ctx, a.notifier.GetDBHandle()) {
-			http.Error(w, "Cannot connect to pgNotifierService", http.StatusInternalServerError)
+			http.Error(w, "Cannot connect to notifierService", http.StatusInternalServerError)
 			return
 		}
-		pgNotifierService = "UP"
+		notifierService = "UP"
 	}
 
 	if isMaster(a.mode) {
@@ -197,13 +197,13 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 {
 	"server": "UP",
 	"db": %q,
-	"pgNotifier": %q,
+	"notifier": %q,
 	"acceptingEvents": "TRUE",
 	"warehouseMode": %q
 }
 	`,
 		dbService,
-		pgNotifierService,
+		notifierService,
 		strings.ToUpper(a.mode),
 	)
 
@@ -230,18 +230,18 @@ func checkHealth(ctx context.Context, db *sql.DB) bool {
 func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
-	var request pendingEventsRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	var payload pendingEventsRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		a.logger.Warnw("invalid JSON in request body for pending events", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
-	sourceID, taskRunID := request.SourceID, request.TaskRunID
+	sourceID, taskRunID := payload.SourceID, payload.TaskRunID
 	if sourceID == "" || taskRunID == "" {
 		a.logger.Warnw("empty source or task run id for pending events",
-			lf.SourceID, request.SourceID,
-			lf.TaskRunID, request.TaskRunID,
+			lf.SourceID, payload.SourceID,
+			lf.TaskRunID, payload.TaskRunID,
 		)
 		http.Error(w, "empty source or task run id", http.StatusBadRequest)
 		return
@@ -249,7 +249,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	workspaceID, err := a.tenantManager.SourceToWorkspace(r.Context(), sourceID)
 	if err != nil {
-		a.logger.Warnw("workspace from source not found for pending events", lf.SourceID, request.SourceID)
+		a.logger.Warnw("workspace from source not found for pending events", lf.SourceID, payload.SourceID)
 		http.Error(w, ierrors.ErrWorkspaceFromSourceNotFound.Error(), http.StatusBadRequest)
 		return
 	}
@@ -290,7 +290,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	filters = []repo.FilterBy{
 		{Key: "source_id", Value: sourceID},
-		{Key: "metadata->>'source_task_run_id'", Value: request.TaskRunID},
+		{Key: "metadata->>'source_task_run_id'", Value: payload.TaskRunID},
 		{Key: "status", Value: "aborted"},
 	}
 	abortedUploadCount, err := a.uploadRepo.Count(r.Context(), filters...)
@@ -310,14 +310,14 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	if pendingEventsAvailable && triggerPendingUpload {
 		a.logger.Infow("triggering upload for all destinations connected to source",
 			lf.WorkspaceID, workspaceID,
-			lf.SourceID, request.SourceID,
+			lf.SourceID, payload.SourceID,
 		)
 
 		wh := a.bcManager.WarehousesBySourceID(sourceID)
 		if len(wh) == 0 {
 			a.logger.Warnw("no warehouse found for pending events",
 				lf.WorkspaceID, workspaceID,
-				lf.SourceID, request.SourceID,
+				lf.SourceID, payload.SourceID,
 			)
 			http.Error(w, ierrors.ErrNoWarehouseFound.Error(), http.StatusBadRequest)
 			return
@@ -346,16 +346,16 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
-	var request triggerUploadRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	var payload triggerUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		a.logger.Warnw("invalid JSON in request body for triggering upload", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
-	workspaceID, err := a.tenantManager.SourceToWorkspace(r.Context(), request.SourceID)
+	workspaceID, err := a.tenantManager.SourceToWorkspace(r.Context(), payload.SourceID)
 	if err != nil {
-		a.logger.Warnw("workspace from source not found for triggering upload", lf.SourceID, request.SourceID)
+		a.logger.Warnw("workspace from source not found for triggering upload", lf.SourceID, payload.SourceID)
 		http.Error(w, ierrors.ErrWorkspaceFromSourceNotFound.Error(), http.StatusBadRequest)
 		return
 	}
@@ -367,16 +367,16 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var wh []model.Warehouse
-	if request.SourceID != "" && request.DestinationID == "" {
-		wh = a.bcManager.WarehousesBySourceID(request.SourceID)
-	} else if request.DestinationID != "" {
-		wh = a.bcManager.WarehousesByDestID(request.DestinationID)
+	if payload.SourceID != "" && payload.DestinationID == "" {
+		wh = a.bcManager.WarehousesBySourceID(payload.SourceID)
+	} else if payload.DestinationID != "" {
+		wh = a.bcManager.WarehousesByDestID(payload.DestinationID)
 	}
 	if len(wh) == 0 {
 		a.logger.Warnw("no warehouse found for triggering upload",
 			lf.WorkspaceID, workspaceID,
-			lf.SourceID, request.SourceID,
-			lf.DestinationID, request.DestinationID,
+			lf.SourceID, payload.SourceID,
+			lf.DestinationID, payload.DestinationID,
 		)
 		http.Error(w, ierrors.ErrNoWarehouseFound.Error(), http.StatusBadRequest)
 		return
@@ -392,14 +392,14 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
-	var request fetchTablesRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	var payload fetchTablesRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		a.logger.Warnw("invalid JSON in request body for fetching tables", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
-	tables, err := a.schemaRepo.GetTablesForConnection(r.Context(), request.Connections)
+	tables, err := a.schemaRepo.GetTablesForConnection(r.Context(), payload.Connections)
 	if err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
@@ -422,7 +422,7 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(resBody)
 }
 
-func (a *Api) logMidddleware(delegate http.HandlerFunc) http.HandlerFunc {
+func (a *Api) logMiddleware(delegate http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		a.logger.LogRequest(r)
 		delegate.ServeHTTP(w, r)

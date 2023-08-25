@@ -23,7 +23,7 @@ func (a *AsyncJobWh) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	if !a.enabled {
-		a.logger.Error("jobs api not initialized for inserting async job")
+		a.logger.Errorw("jobs api not initialized for inserting async job")
 		http.Error(w, ierrors.ErrJobsApiNotInitialized.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -108,7 +108,7 @@ func (a *AsyncJobWh) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	if !a.enabled {
-		a.logger.Error("jobs api not initialized for async job status")
+		a.logger.Errorw("jobs api not initialized for async job status")
 		http.Error(w, ierrors.ErrJobsApiNotInitialized.Error(), http.StatusInternalServerError)
 		return
 	}

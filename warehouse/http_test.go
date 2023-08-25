@@ -323,7 +323,7 @@ func TestHTTPApi(t *testing.T) {
 				response: map[string]string{
 					"acceptingEvents": "TRUE",
 					"db":              "UP",
-					"pgNotifier":      "UP",
+					"notifier":        "UP",
 					"server":          "UP",
 					"warehouseMode":   "EMBEDDED",
 				},
@@ -334,7 +334,7 @@ func TestHTTPApi(t *testing.T) {
 				response: map[string]string{
 					"acceptingEvents": "TRUE",
 					"db":              "UP",
-					"pgNotifier":      "UP",
+					"notifier":        "UP",
 					"server":          "UP",
 					"warehouseMode":   "MASTER",
 				},
@@ -346,7 +346,7 @@ func TestHTTPApi(t *testing.T) {
 				response: map[string]string{
 					"acceptingEvents": "TRUE",
 					"db":              "UP",
-					"pgNotifier":      "",
+					"notifier":        "",
 					"server":          "UP",
 					"warehouseMode":   "MASTER",
 				},
@@ -357,7 +357,7 @@ func TestHTTPApi(t *testing.T) {
 				response: map[string]string{
 					"acceptingEvents": "TRUE",
 					"db":              "UP",
-					"pgNotifier":      "UP",
+					"notifier":        "UP",
 					"server":          "UP",
 					"warehouseMode":   "MASTER_AND_SLAVE",
 				},
@@ -368,7 +368,7 @@ func TestHTTPApi(t *testing.T) {
 				response: map[string]string{
 					"acceptingEvents": "TRUE",
 					"db":              "UP",
-					"pgNotifier":      "UP",
+					"notifier":        "UP",
 					"server":          "UP",
 					"warehouseMode":   "EMBEDDED_MASTER",
 				},
@@ -379,7 +379,7 @@ func TestHTTPApi(t *testing.T) {
 				response: map[string]string{
 					"acceptingEvents": "TRUE",
 					"db":              "",
-					"pgNotifier":      "UP",
+					"notifier":        "UP",
 					"server":          "UP",
 					"warehouseMode":   "SLAVE",
 				},
@@ -390,7 +390,7 @@ func TestHTTPApi(t *testing.T) {
 				response: map[string]string{
 					"acceptingEvents": "TRUE",
 					"db":              "",
-					"pgNotifier":      "UP",
+					"notifier":        "UP",
 					"server":          "UP",
 					"warehouseMode":   "OFF",
 				},
