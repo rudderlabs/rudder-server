@@ -64,10 +64,6 @@ func NewNotifier(db *sqlmw.DB, opts ...Opt) *Notifier {
 }
 
 // Insert inserts a job into the notifier table.
-//
-// NOTE: The following fields are ignored and set by the database:
-// - CreatedAt
-// - UpdatedAt
 func (n *Notifier) Insert(
 	ctx context.Context,
 	request *model.PublishRequest,
@@ -152,6 +148,7 @@ func (n *Notifier) Insert(
 	return nil
 }
 
+// ResetForWorkspace resets all the jobs for a workspace to waiting state.
 func (n *Notifier) ResetForWorkspace(ctx context.Context, workspaceIdentifier string) error {
 	_, err := n.db.ExecContext(ctx, `
 		DELETE FROM
@@ -167,6 +164,7 @@ func (n *Notifier) ResetForWorkspace(ctx context.Context, workspaceIdentifier st
 	return nil
 }
 
+// GetByBatchID returns all the jobs for a batchID.
 func (n *Notifier) GetByBatchID(ctx context.Context, batchID string) ([]model.Job, error) {
 	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` WHERE batch_id = $1 ORDER BY id;`
 
@@ -196,6 +194,7 @@ func (n *Notifier) GetByBatchID(ctx context.Context, batchID string) ([]model.Jo
 	return notifiers, err
 }
 
+// DeleteByBatchID deletes all the jobs for a batchID.
 func (n *Notifier) DeleteByBatchID(ctx context.Context, batchID string) (int64, error) {
 	r, err := n.db.ExecContext(ctx, `
 		DELETE FROM
@@ -219,6 +218,7 @@ func (n *Notifier) DeleteByBatchID(ctx context.Context, batchID string) (int64, 
 	return rowsAffected, nil
 }
 
+// PendingByBatchID returns the number of pending jobs for a batchID.
 func (n *Notifier) PendingByBatchID(ctx context.Context, batchID string) (int64, error) {
 	var count int64
 
@@ -246,6 +246,7 @@ func (n *Notifier) PendingByBatchID(ctx context.Context, batchID string) (int64,
 	return count, err
 }
 
+// OrphanJobIDs returns the IDs of the jobs that are in executing state for more than the given interval.
 func (n *Notifier) OrphanJobIDs(ctx context.Context, intervalInSeconds int) ([]int64, error) {
 	rows, err := n.db.QueryContext(ctx, `
 		UPDATE
@@ -292,6 +293,7 @@ func (n *Notifier) OrphanJobIDs(ctx context.Context, intervalInSeconds int) ([]i
 	return ids, nil
 }
 
+// Claim claims a job for a worker.
 func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Job, error) {
 	row := n.db.QueryRowContext(ctx, `
 		UPDATE
@@ -334,6 +336,7 @@ func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Job, erro
 	return &notifier, nil
 }
 
+// OnFailed updates the status of a job to failed.
 func (n *Notifier) OnFailed(ctx context.Context, notifier *model.Job, claimError error, maxAttempt int) error {
 	query := fmt.Sprintf(`
 		UPDATE
@@ -378,6 +381,7 @@ func (n *Notifier) OnFailed(ctx context.Context, notifier *model.Job, claimError
 	return nil
 }
 
+// OnSuccess updates the status of a job to succeeded.
 func (n *Notifier) OnSuccess(ctx context.Context, notifier *model.Job, payload model.Payload) error {
 	r, err := n.db.ExecContext(ctx, `
 		UPDATE

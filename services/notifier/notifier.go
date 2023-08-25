@@ -237,7 +237,7 @@ func (n *Notifier) setupTables() error {
 	return nil
 }
 
-// ClearJobs deletes all jobs from notifier if workspaceIdentifier is set
+// ClearJobs deletes all jobs for the current workspace.
 func (n *Notifier) ClearJobs(ctx context.Context) error {
 	if n.workspaceIdentifier == "" {
 		return nil
@@ -256,6 +256,7 @@ func (n *Notifier) GetDBHandle() *sql.DB {
 	return n.db.DB
 }
 
+// Publish inserts the payloads into the database and returns a channel of type PublishResponse
 func (n *Notifier) Publish(ctx context.Context, payload *model.PublishRequest) (<-chan *model.PublishResponse, error) {
 	publishStartTime := n.now()
 
@@ -276,7 +277,7 @@ func (n *Notifier) Publish(ctx context.Context, payload *model.PublishRequest) (
 	return n.trackBatch(ctx, batchID), nil
 }
 
-// trackBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
+// trackBatch tracks the batch and returns a channel of type PublishResponse
 func (n *Notifier) trackBatch(ctx context.Context, batchID string) <-chan *model.PublishResponse {
 	ch := make(chan *model.PublishResponse)
 
@@ -343,6 +344,7 @@ func (n *Notifier) trackBatch(ctx context.Context, batchID string) <-chan *model
 	return ch
 }
 
+// Subscribe returns a channel of type Job
 func (n *Notifier) Subscribe(ctx context.Context, workerId string, bufferSize int) <-chan *model.Job {
 	jobsCh := make(chan *model.Job, bufferSize)
 
@@ -477,6 +479,7 @@ func (n *Notifier) RunMaintenanceWorker(ctx context.Context) error {
 	}
 }
 
+// Wait waits for all the background jobs to be drained off.
 func (n *Notifier) Wait(ctx context.Context) error {
 	<-ctx.Done()
 
