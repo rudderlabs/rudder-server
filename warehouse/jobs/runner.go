@@ -192,7 +192,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 
 		ch, err := a.notifier.Publish(ctx, &model.PublishRequest{
 			Payloads: notifierClaims,
-			JobType:  AsyncJobType,
+			JobType:  model.JobTypeAsync,
 			Priority: 100,
 		})
 		if err != nil {

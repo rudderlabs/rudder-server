@@ -81,7 +81,7 @@ func TestSlaveWorker(t *testing.T) {
 			subscribeCh := make(chan *notifierModel.ClaimResponse)
 			defer close(subscribeCh)
 
-			n := &mockSlaveNotifier{
+			slaveNotifier := &mockSlaveNotifier{
 				subscribeCh: subscribeCh,
 			}
 
@@ -89,7 +89,7 @@ func TestSlaveWorker(t *testing.T) {
 				config.Default,
 				logger.NOP,
 				stats.Default,
-				n,
+				slaveNotifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
 				ef,
@@ -126,7 +126,7 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				Type:                "upload",
+				Type:                notifierModel.JobTypeUpload,
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -224,7 +224,7 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				Type:                "upload",
+				Type:                notifierModel.JobTypeUpload,
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -349,7 +349,7 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				Type:                "upload",
+				Type:                notifierModel.JobTypeUpload,
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -426,7 +426,7 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				Type:                "upload",
+				Type:                notifierModel.JobTypeUpload,
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -577,7 +577,7 @@ func TestSlaveWorker(t *testing.T) {
 				Payload:             payloadJson,
 				Status:              "waiting",
 				WorkspaceIdentifier: "test_workspace",
-				Type:                "async_job",
+				Type:                notifierModel.JobTypeAsync,
 			}
 
 			claimedJobDone := make(chan struct{})
@@ -681,7 +681,7 @@ func TestSlaveWorker(t *testing.T) {
 						Status:              "waiting",
 						WorkspaceIdentifier: "test_workspace",
 						Attempt:             0,
-						Type:                "async_job",
+						Type:                notifierModel.JobTypeAsync,
 					}
 
 					claimedJobDone := make(chan struct{})

@@ -247,7 +247,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 		ch, err := lf.Notifier.Publish(ctx, &notifierModel.PublishRequest{
 			Payloads: messages,
-			JobType:  "upload",
+			JobType:  notifierModel.JobTypeUpload,
 			Schema:   schemaJson,
 			Priority: job.Upload.Priority,
 		})

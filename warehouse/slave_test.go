@@ -135,7 +135,7 @@ func TestSlave(t *testing.T) {
 		Payload:             payloadJson,
 		Status:              "waiting",
 		WorkspaceIdentifier: "test_workspace",
-		Type:                "upload",
+		Type:                notifierModel.JobTypeUpload,
 	}
 
 	g, _ := errgroup.WithContext(ctx)

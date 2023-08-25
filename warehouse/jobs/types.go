@@ -62,7 +62,6 @@ const (
 	WhJobSucceeded string = "succeeded"
 	WhJobAborted   string = "aborted"
 	WhJobFailed    string = "failed"
-	AsyncJobType   string = "async_job"
 )
 
 type NotifierResponse struct {

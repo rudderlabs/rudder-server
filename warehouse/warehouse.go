@@ -47,7 +47,7 @@ var (
 	dbHandle                   *sql.DB
 	wrappedDBHandle            *sqlquerywrapper.DB
 	dbHandleTimeout            time.Duration
-	pgNotifier                 *notifier.Notifier
+	notifierInstance           *notifier.Notifier
 	tenantManager              *multitenant.Manager
 	controlPlaneClient         *controlplane.Client
 	uploadFreqInS              int64
@@ -178,7 +178,7 @@ func onConfigDataEvent(ctx context.Context, configMap map[string]backendconfig.C
 					pkgLogger,
 					stats.Default,
 					wrappedDBHandle,
-					pgNotifier,
+					notifierInstance,
 					tenantManager,
 					controlPlaneClient,
 					bcManager,
@@ -433,12 +433,12 @@ func Start(ctx context.Context, app app.App) error {
 
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
-	pgNotifier, err = notifier.New(ctx, config.Default, pkgLogger, stats.Default, workspaceIdentifier, psqlInfo)
+	notifierInstance, err = notifier.New(ctx, config.Default, pkgLogger, stats.Default, workspaceIdentifier, psqlInfo)
 	if err != nil {
 		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
 	g.Go(func() error {
-		return pgNotifier.Wait(gCtx)
+		return notifierInstance.Wait(gCtx)
 	})
 
 	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
@@ -480,7 +480,7 @@ func Start(ctx context.Context, app app.App) error {
 			cm := newConstraintsManager(config.Default)
 			ef := encoding.NewFactory(config.Default)
 
-			slave := newSlave(config.Default, pkgLogger, stats.Default, pgNotifier, bcManager, cm, ef)
+			slave := newSlave(config.Default, pkgLogger, stats.Default, notifierInstance, bcManager, cm, ef)
 			return slave.setupSlave(gCtx)
 		}))
 	}
@@ -499,7 +499,7 @@ func Start(ctx context.Context, app app.App) error {
 		)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return pgNotifier.ClearJobs(gCtx)
+			return notifierInstance.ClearJobs(gCtx)
 		}))
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -523,7 +523,7 @@ func Start(ctx context.Context, app app.App) error {
 			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 			return err
 		}
-		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, pgNotifier)
+		asyncWh = jobs.InitWarehouseJobsAPI(gCtx, dbHandle, notifierInstance)
 		jobs.WithConfig(asyncWh, config.Default)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -534,7 +534,7 @@ func Start(ctx context.Context, app app.App) error {
 	g.Go(func() error {
 		api := NewApi(
 			mode, config.Default, pkgLogger, stats.Default,
-			backendconfig.DefaultBackendConfig, wrappedDBHandle, pgNotifier, tenantManager,
+			backendconfig.DefaultBackendConfig, wrappedDBHandle, notifierInstance, tenantManager,
 			bcManager, asyncWh,
 		)
 		return api.Start(gCtx)

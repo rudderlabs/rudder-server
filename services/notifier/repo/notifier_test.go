@@ -60,7 +60,7 @@ func TestNotifierRepo(t *testing.T) {
 			model.Payload(`{"id":"4"}`),
 			model.Payload(`{"id":"5"}`),
 		},
-		JobType:  "upload",
+		JobType:  model.JobTypeUpload,
 		Schema:   json.RawMessage(`{"sid":"1"}`),
 		Priority: 50,
 	}

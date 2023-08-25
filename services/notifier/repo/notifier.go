@@ -440,9 +440,14 @@ func scanNotifier(scan scanFn, notifier *model.Job) error {
 		notifier.WorkerID = workerIDRaw.String
 	}
 	if jobTypeRaw.Valid {
-		notifier.Type = jobTypeRaw.String
+		switch jobTypeRaw.String {
+		case string(model.JobTypeUpload), string(model.JobTypeAsync):
+			notifier.Type = model.JobType(jobTypeRaw.String)
+		default:
+			return fmt.Errorf("scanning: unknown job type: %s", jobTypeRaw.String)
+		}
 	} else {
-		notifier.Type = "upload"
+		notifier.Type = model.JobTypeUpload
 	}
 	if errorRaw.Valid {
 		notifier.Error = errors.New(errorRaw.String)

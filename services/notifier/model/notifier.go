@@ -15,6 +15,13 @@ const (
 
 type Payload json.RawMessage
 
+type JobType string
+
+const (
+	JobTypeUpload JobType = "upload"
+	JobTypeAsync  JobType = "async_job"
+)
+
 // Job a domain model for a notifier.
 type Job struct {
 	ID                  int64
@@ -24,7 +31,7 @@ type Job struct {
 
 	Attempt  int
 	Status   string
-	Type     string
+	Type     JobType
 	Priority int
 	Error    error
 
@@ -37,7 +44,7 @@ type Job struct {
 
 type PublishRequest struct {
 	Payloads []Payload
-	JobType  string
+	JobType  JobType
 	Schema   json.RawMessage
 	Priority int
 }

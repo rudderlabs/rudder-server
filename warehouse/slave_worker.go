@@ -119,7 +119,7 @@ func (sw *slaveWorker) start(ctx context.Context, notificationChan <-chan *notif
 			)
 
 			switch claimedJob.Type {
-			case jobs.AsyncJobType:
+			case notifierModel.JobTypeAsync:
 				sw.processClaimedAsyncJob(ctx, claimedJob)
 			default:
 				sw.processClaimedUploadJob(ctx, claimedJob)
