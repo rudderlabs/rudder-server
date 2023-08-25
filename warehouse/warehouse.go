@@ -225,37 +225,6 @@ func setupTables(dbHandle *sql.DB) error {
 	return nil
 }
 
-func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {
-	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
-
-	query := fmt.Sprintf(`
-		SELECT
-		  COUNT(*)
-		FROM
-		  %[1]s
-		WHERE
-		  %[1]s.status NOT IN ('%[2]s', '%[3]s')
-	`,
-		warehouseutils.WarehouseUploadsTable,
-		model.ExportedData,
-		model.Aborted,
-	)
-
-	args := make([]interface{}, 0)
-	for i, filter := range filters {
-		query += fmt.Sprintf(" AND %s=$%d", filter.Key, i+1)
-		args = append(args, filter.Value)
-	}
-
-	err = wrappedDBHandle.QueryRow(query, args...).Scan(&uploadCount)
-	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("query: %s failed with Error : %w", query, err)
-		return
-	}
-
-	return uploadCount, nil
-}
-
 func TriggerUploadHandler(sourceID, destID string) error {
 	// return error if source id and dest id is empty
 	if sourceID == "" && destID == "" {
@@ -400,9 +369,14 @@ func Start(ctx context.Context, app app.App) error {
 		return nil
 	})
 
+	grpc, err := NewGRPC(config.Default, pkgLogger, stats.Default, wrappedDBHandle, bcManager)
+	if err != nil {
+		return fmt.Errorf("grpc server failed to start: %v", err)
+	}
+
 	bcManager = newBackendConfigManager(
 		config.Default, wrappedDBHandle, tenantManager,
-		pkgLogger.Child("wh_bc_manager"),
+		pkgLogger.Child("wh_bc_manager"), grpc,
 	)
 	g.Go(func() error {
 		bcManager.Start(gCtx)
@@ -429,7 +403,6 @@ func Start(ctx context.Context, app app.App) error {
 		)
 		return api.Start(ctx)
 	}
-	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {

@@ -180,7 +180,6 @@ func TestRouter(t *testing.T) {
 		r := router{}
 		r.now = time.Now
 		r.dbHandle = db
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -337,7 +336,6 @@ func TestRouter(t *testing.T) {
 		r := router{}
 		r.dbHandle = db
 		r.statsFactory = statsStore
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.conf = config.Default
@@ -439,7 +437,6 @@ func TestRouter(t *testing.T) {
 
 		r := router{}
 		r.dbHandle = db
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -571,7 +568,6 @@ func TestRouter(t *testing.T) {
 
 		r := router{}
 		r.dbHandle = db
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()
@@ -719,7 +715,6 @@ func TestRouter(t *testing.T) {
 
 			r := router{}
 			r.dbHandle = db
-			r.warehouseDBHandle = NewWarehouseDB(db)
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
 			r.statsFactory = memstats.New()
@@ -808,7 +803,6 @@ func TestRouter(t *testing.T) {
 			r := router{}
 			r.dbHandle = db
 			r.statsFactory = statsStore
-			r.warehouseDBHandle = NewWarehouseDB(db)
 			r.uploadRepo = repoUpload
 			r.stagingRepo = repoStaging
 			r.conf = config.Default
@@ -1034,7 +1028,6 @@ func TestRouter(t *testing.T) {
 
 		r := router{}
 		r.dbHandle = db
-		r.warehouseDBHandle = NewWarehouseDB(db)
 		r.uploadRepo = repoUpload
 		r.stagingRepo = repoStaging
 		r.statsFactory = memstats.New()

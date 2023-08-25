@@ -28,6 +28,7 @@ func newBackendConfigManager(
 	db *sqlquerywrapper.DB,
 	tenantManager *multitenant.Manager,
 	log logger.Logger,
+	grpc *GRPC,
 ) *backendConfigManager {
 	if c == nil {
 		c = config.Default
@@ -43,6 +44,7 @@ func newBackendConfigManager(
 		logger:               log,
 		initialConfigFetched: make(chan struct{}),
 		connectionsMap:       make(map[string]map[string]model.Warehouse),
+		grpc:                 grpc,
 	}
 	if c.GetBool("ENABLE_TUNNELLING", true) {
 		bcm.internalControlPlaneClient = cpclient.NewInternalClientWithCache(
@@ -64,6 +66,7 @@ type backendConfigManager struct {
 	tenantManager              *multitenant.Manager
 	internalControlPlaneClient cpclient.InternalControlPlane
 	logger                     logger.Logger
+	grpc                       *GRPC
 
 	initialConfigFetched          chan struct{}
 	closeInitialConfigFetchedOnce sync.Once
@@ -209,9 +212,7 @@ func (s *backendConfigManager) processData(ctx context.Context, data map[string]
 	s.subscriptionsMu.Unlock()
 
 	if val, ok := connectionFlags.Services["warehouse"]; ok {
-		if UploadAPI.connectionManager != nil {
-			UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
-		}
+		s.grpc.Apply(connectionFlags.URL, val)
 	}
 }
 

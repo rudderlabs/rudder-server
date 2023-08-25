@@ -43,11 +43,10 @@ import (
 type router struct {
 	destType string
 
-	dbHandle          *sqlquerywrapper.DB
-	warehouseDBHandle *DB
-	stagingRepo       *repo.StagingFiles
-	uploadRepo        *repo.Uploads
-	whSchemaRepo      *repo.WHSchema
+	dbHandle     *sqlquerywrapper.DB
+	stagingRepo  *repo.StagingFiles
+	uploadRepo   *repo.Uploads
+	whSchemaRepo *repo.WHSchema
 
 	isEnabled atomic.Bool
 
@@ -130,7 +129,6 @@ func newRouter(
 	r.dbHandle = db
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
-	r.warehouseDBHandle = NewWarehouseDB(db)
 	r.stagingRepo = repo.NewStagingFiles(db)
 	r.uploadRepo = repo.NewUploads(db)
 	r.whSchemaRepo = repo.NewWHSchemas(db)
@@ -629,16 +627,16 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 }
 
 func (r *router) latestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
-	uploadID, status, priority, err := r.warehouseDBHandle.GetLatestUploadStatus(
-		ctx,
-		warehouse.Source.ID,
-		warehouse.Destination.ID,
-	)
-	if err != nil {
-		r.logger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
-	}
+	//uploadID, status, priority, err := r.warehouseDBHandle.GetLatestUploadStatus(
+	//	ctx,
+	//	warehouse.Source.ID,
+	//	warehouse.Destination.ID,
+	//)
+	//if err != nil {
+	//	r.logger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
+	//}
 
-	return uploadID, status, priority
+	return 0, "", 0
 }
 
 func (r *router) uploadStartAfterTime() time.Time {
