@@ -32,7 +32,7 @@ func (jd *Handle) IsMasterBackupEnabled() bool {
 func (jd *Handle) backupDSLoop(ctx context.Context) {
 	sleepMultiplier := time.Duration(1)
 
-	jd.logger.Info("BackupDS loop is running")
+	jd.logger.Info("backupDSLoop is running")
 
 	for {
 		select {
@@ -103,7 +103,7 @@ func (jd *Handle) backupDSLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError {
 				panic(err)
 			}
-			jd.logger.Errorf("[JobsDB] :: Failed to backup dataset. Err: %s", err.Error())
+			jd.logger.Errorw("failed to backup dataset", "error", err.Error())
 		}
 
 	}
@@ -138,7 +138,7 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 		operation := func() error {
 			if err := jd.uploadTableDump(ctx, wrkId, path); err != nil {
 				jd.logger.Errorw(
-					"failed backup for workspaceId",
+					"failed backup upload",
 					"workspaceID", wrkId,
 					"error", err.Error(),
 				)
@@ -149,7 +149,11 @@ func (jd *Handle) uploadDumps(ctx context.Context, dumps map[string]string) erro
 		}
 		g.Go(misc.WithBugsnag(func() error {
 			return backoff.RetryNotify(operation, backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(jd.config.GetInt("JobsDB.backup.maxRetries", 100))), func(err error, d time.Duration) {
-				jd.logger.Errorf("[JobsDB] :: Retrying upload workspaceId %v. Error: %s", wrkId, err.Error())
+				jd.logger.Errorw(
+					"retrying backup upload",
+					"workspaceID", wrkId,
+					"error", err.Error(),
+				)
 			})
 		}))
 	}
@@ -176,7 +180,7 @@ func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRa
 		return nil
 	}
 
-	jd.logger.Infof("[JobsDB] :: Backing up table (failed only backup): %v", tableName)
+	jd.logger.Infow("backing up table (failed only backup)", "table", tableName)
 
 	start := time.Now()
 	getFileName := func(workspaceID string) (string, error) {
@@ -200,7 +204,11 @@ func (jd *Handle) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRa
 	}()
 	err = jd.uploadDumps(ctx, dumps)
 	if err != nil {
-		jd.logger.Errorf("[JobsDB] :: Failed to upload dumps for table: %s. Error: %v", tableName, err)
+		jd.logger.Errorw(
+			"failed to upload failedOnly jobs backup",
+			"table", tableName,
+			"error", err.Error(),
+		)
 		return nil
 	}
 	stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(start)
@@ -227,7 +235,7 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 		return nil
 	}
 
-	jd.logger.Infof("[JobsDB] :: Backing up table (jobs table): %v", tableName)
+	jd.logger.Infow("backing up table (jobs table)", "table", tableName)
 
 	start := time.Now()
 
@@ -261,7 +269,8 @@ func (jd *Handle) backupJobsTable(ctx context.Context, backupDSRange *dataSetRan
 	err = jd.uploadDumps(ctx, dumps)
 	if err != nil {
 		jd.logger.Errorw(
-			"Failed to upload backup",
+			"failed to upload jobs backup",
+			"table", tableName,
 			"error", err,
 		)
 		return nil
@@ -292,7 +301,7 @@ func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetR
 		return nil
 	}
 
-	jd.logger.Infof("[JobsDB] :: Backing up table (status table): %v", tableName)
+	jd.logger.Infow("backing up table (status table)", "table", tableName)
 
 	start := time.Now()
 
@@ -317,7 +326,11 @@ func (jd *Handle) backupStatusTable(ctx context.Context, backupDSRange *dataSetR
 	}()
 	err = jd.uploadDumps(ctx, dumps)
 	if err != nil {
-		jd.logger.Errorf("[JobsDB] :: Failed to upload dumps for table: %s. Error: %v", tableName, err)
+		jd.logger.Errorw(
+			"failed to upload jobStatus backup",
+			"table", tableName,
+			"error", err.Error(),
+		)
 		return nil
 	}
 
@@ -564,6 +577,7 @@ func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) st
 				jd.logger.Debugw(
 					"getting storage preferences failed",
 					"workspaceID", workspaceID,
+					"error", err.Error(),
 				)
 				continue
 			}
@@ -573,8 +587,9 @@ func (jd *Handle) createTableDumps(ctx context.Context, queryFunc func(int64) st
 			if !preferences.Backup(jd.tablePrefix) {
 				offset++
 				jd.logger.Debugw(
-					fmt.Sprintf("Skipping backup Preferences: %v", preferences),
+					"skipping backup Preferences",
 					"workspaceID", workspaceID,
+					"preferences", preferences,
 				)
 				continue
 			}
@@ -637,10 +652,12 @@ func (jd *Handle) uploadTableDump(ctx context.Context, workspaceID, path string)
 	var output filemanager.UploadedFile
 	output, err = jd.backupUploadWithExponentialBackoff(ctx, file, workspaceID, pathPrefixes...)
 	if err != nil {
-		jd.logger.Errorf("[JobsDB] :: Failed to upload table dump for workspaceId %s. Error: %s", workspaceID, err.Error())
-		return err
+		return fmt.Errorf("failed to upload table dump: %w", err)
 	}
-	jd.logger.Infof("[JobsDB] :: Backed up table at %s for workspaceId %s", output.Location, workspaceID)
+	jd.logger.Debugw("backed up table dump",
+		"location", output.Location,
+		"workspaceID", workspaceID,
+	)
 	return nil
 }
 
