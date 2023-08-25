@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
 type MarketoBulkUploader struct {
@@ -81,11 +83,11 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	}
 
 	if asyncResponse.Error != "" {
-		b.logger.Errorw("[Batch Router] Failed to fetch status for", 
-			lf.DestinationType, "MARKETO_BULK_UPLOAD", 
-			"body", string(failedBodyBytes[:512]),
-			lf.Error, failedJobsResponse.Error,
-			)
+		b.logger.Errorw("[Batch Router] Failed to fetch status for",
+			lf.DestinationType, "MARKETO_BULK_UPLOAD",
+			"body", string(bodyBytes[:512]),
+			lf.Error, asyncResponse.Error,
+		)
 		return common.PollStatusResponse{
 			StatusCode: 500,
 			HasFailed:  true,
@@ -157,10 +159,10 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	}
 
 	if failedJobsResponse.Error != "" {
-		b.logger.Errorw("[Batch Router] Failed to fetch status for", 
-		lf.DestinationType, "MARKETO_BULK_UPLOAD", 
-		"body", string(failedBodyBytes),
-		lf.Error, failedJobsResponse.Error,
+		b.logger.Errorw("[Batch Router] Failed to fetch status for",
+			lf.DestinationType, "MARKETO_BULK_UPLOAD",
+			"body", string(failedBodyBytes),
+			lf.Error, failedJobsResponse.Error,
 		)
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
@@ -183,9 +185,9 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 	}
 }
 
-func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64, statusCode string) ([]int64, []int64) {
+func extractJobStats(keyMap map[string]interface{}, importingJobIDs []int64, statusCode int) ([]int64, []int64) {
 	if len(keyMap) == 0 {
-		if statusCode == "200" {
+		if statusCode == http.StatusOK {
 			// putting in failed jobs list
 			return []int64{}, importingJobIDs
 		} else {
