@@ -4,6 +4,7 @@ const (
 	UploadJobID                = "uploadJobID"
 	UploadStatus               = "uploadStatus"
 	UseRudderStorage           = "useRudderStorage"
+	TaskRunID                  = "taskRunID"
 	SourceID                   = "sourceID"
 	SourceType                 = "sourceType"
 	DestinationID              = "destinationID"
