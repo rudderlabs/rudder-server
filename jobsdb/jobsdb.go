@@ -1843,65 +1843,8 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
 
-func (jd *Handle) GetPileUpCounts(ctx context.Context) (map[string]map[string]int, error) {
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
-	}
-	defer jd.dsMigrationLock.RUnlock()
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
-	}
-	dsList := jd.getDSList()
-	jd.dsListLock.RUnlock()
+func (jd *Handle) GetPileUpCounts(_ context.Context) (map[string]map[string]int, error) {
 	statMap := make(map[string]map[string]int)
-
-	for _, ds := range dsList {
-		queryString := fmt.Sprintf(`with joined as (
-			select
-			  j.job_id as jobID,
-			  j.custom_val as customVal,
-			  s.id as statusID,
-			  s.job_state as jobState,
-			  j.workspace_id as workspace
-			from
-			  %[1]q j
-			  left join "v_last_%[2]s" s on j.job_id = s.job_id
-			where (
-			  s.job_state not in ('aborted', 'succeeded', 'migrated')
-			  or s.job_id is null
-			)
-		  )
-		  select
-			count(*),
-			customVal,
-			workspace
-		  from
-			joined
-		  group by
-			customVal,
-			workspace;`, ds.JobTable, ds.JobStatusTable)
-		rows, err := jd.dbHandle.QueryContext(ctx, queryString)
-		if err != nil {
-			return nil, err
-		}
-
-		for rows.Next() {
-			var count sql.NullInt64
-			var customVal string
-			var workspace string
-			err := rows.Scan(&count, &customVal, &workspace)
-			if err != nil {
-				return statMap, err
-			}
-			if _, ok := statMap[workspace]; !ok {
-				statMap[workspace] = make(map[string]int)
-			}
-			statMap[workspace][customVal] += int(count.Int64)
-		}
-		if err = rows.Err(); err != nil {
-			return statMap, err
-		}
-	}
 	return statMap, nil
 }
 
