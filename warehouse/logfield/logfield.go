@@ -22,9 +22,11 @@ const (
 	Retried                    = "retried"
 	Attempt                    = "attempt"
 	LoadFileType               = "loadFileType"
+	LoadTableStrategy          = "loadTableStrategy"
 	ErrorMapping               = "errorMapping"
 	DestinationCredsValid      = "destinationCredsValid"
 	Query                      = "query"
 	QueryExecutionTime         = "queryExecutionTime"
 	StagingTableName           = "stagingTableName"
+	TotalRows                  = "totalRows"
 )

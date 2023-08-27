@@ -8,8 +8,14 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 
 	"github.com/rudderlabs/compose-test/compose"
 
@@ -372,6 +378,44 @@ func TestIntegration(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestDeltalake_TrimErrorMessage(t *testing.T) {
+	tempError := errors.New("temp error")
+
+	testCases := []struct {
+		name          string
+		inputError    error
+		expectedError error
+	}{
+		{
+			name:          "error message is above max length",
+			inputError:    errors.New(strings.Repeat(tempError.Error(), 100)),
+			expectedError: errors.New(strings.Repeat(tempError.Error(), 25)),
+		},
+		{
+			name:          "error message is below max length",
+			inputError:    errors.New(strings.Repeat(tempError.Error(), 25)),
+			expectedError: errors.New(strings.Repeat(tempError.Error(), 25)),
+		},
+		{
+			name:          "error message is equal to max length",
+			inputError:    errors.New(strings.Repeat(tempError.Error(), 10)),
+			expectedError: errors.New(strings.Repeat(tempError.Error(), 10)),
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.New()
+			c.Set("Warehouse.deltalake.maxErrorLength", len(tempError.Error())*25)
+
+			d := deltalake.New(c, logger.NOP, stats.Default)
+			require.Equal(t, d.TrimErrorMessage(tc.inputError), tc.expectedError)
+		})
+	}
 }
 
 func mergeEventsMap() testhelper.EventsCountMap {

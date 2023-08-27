@@ -34,6 +34,13 @@ func WithDrainConcurrencyLimit(drainLimit int) OptFn {
 	}
 }
 
+// WithDebugInfoProvider sets the debug info provider for the barrier (used for debugging purposes in case an illegal job sequence is detected)
+func WithDebugInfoProvider(debugInfoProvider func(key string) string) OptFn {
+	return func(b *Barrier) {
+		b.debugInfo = debugInfoProvider
+	}
+}
+
 // NewBarrier creates a new properly initialized Barrier
 func NewBarrier(fns ...OptFn) *Barrier {
 	b := &Barrier{
@@ -66,6 +73,7 @@ type Barrier struct {
 
 	concurrencyLimit int // maximum number of concurrent jobs for a given key (0 means no limit)
 	drainLimit       int // maximum number of concurrent jobs to accept after a previously failed job has been aborted
+	debugInfo        func(key string) string
 }
 
 // Enter the barrier for this key and jobID. If there is not already a barrier for this key
@@ -99,7 +107,11 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 		failedJob := *barrier.failedJobID
 		previousFailedJobID = &failedJob
 		if failedJob > jobID {
-			panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: key %q, previousFailedJob:%d > jobID:%d", b.metadata, key, failedJob, jobID))
+			var debugInfo string
+			if b.debugInfo != nil {
+				debugInfo = "DEBUG INFO:\n" + b.debugInfo(key)
+			}
+			panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: key %q, previousFailedJob:%d > jobID:%d%s", b.metadata, key, failedJob, jobID, debugInfo))
 		}
 		accepted = jobID == failedJob
 	} else {
@@ -150,7 +162,11 @@ func (b *Barrier) Wait(key string, jobID int64) (wait bool, previousFailedJobID 
 	if barrier.failedJobID != nil {
 		failedJob := *barrier.failedJobID
 		if failedJob > jobID {
-			panic(fmt.Errorf("detected illegal job sequence during barrier wait %+v: key %q, previousFailedJob:%d > jobID:%d", b.metadata, key, failedJob, jobID))
+			var debugInfo string
+			if b.debugInfo != nil {
+				debugInfo = "DEBUG INFO:\n" + b.debugInfo(key)
+			}
+			panic(fmt.Errorf("detected illegal job sequence during barrier wait %+v: key %q, previousFailedJob:%d > jobID:%d%s", b.metadata, key, failedJob, jobID, debugInfo))
 		}
 		return jobID > failedJob, &failedJob // wait if this is not the failed job
 	}
@@ -315,7 +331,11 @@ func (c *jobFailedCommand) execute(b *Barrier) {
 	if barrier.failedJobID == nil {
 		barrier.failedJobID = &c.jobID
 	} else if *barrier.failedJobID > c.jobID {
-		panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: key %q, previousFailedJob:%d > jobID:%d", b.metadata, c.key, *barrier.failedJobID, c.jobID))
+		var debugInfo string
+		if b.debugInfo != nil {
+			debugInfo = "DEBUG INFO:\n" + b.debugInfo(c.key)
+		}
+		panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: key %q, previousFailedJob:%d > jobID:%d%s", b.metadata, c.key, *barrier.failedJobID, c.jobID, debugInfo))
 	}
 	barrier.drainLimiter = nil // turn off drain limiter
 }

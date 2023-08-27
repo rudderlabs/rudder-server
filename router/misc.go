@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -59,6 +60,11 @@ func getWorkerPartition(key string, noOfWorkers int) int {
 
 func jobOrderKey(userID, destinationID string) string {
 	return userID + ":" + destinationID
+}
+
+func parseJobOrderKey(key string) (string, string) {
+	colonIndex := strings.LastIndex(key, ":")
+	return key[:colonIndex], key[colonIndex+1:]
 }
 
 func isolationMode(destType string, config *config.Config) isolation.Mode {
