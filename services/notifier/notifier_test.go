@@ -2,7 +2,6 @@ package notifier_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -45,7 +44,7 @@ func TestNotifier(t *testing.T) {
 			model.Payload(`{"id":"5"}`),
 		},
 		JobType:  model.JobTypeUpload,
-		Schema:   json.RawMessage(`{"sid":"1"}`),
+		Metadata: model.Metadata(`{"sid":"1"}`),
 		Priority: 50,
 	}
 

@@ -17,7 +17,9 @@ import (
 )
 
 const (
-	tableName    = "pg_notifier_queue"
+	tableName         = "pg_notifier_queue"
+	metadataTableName = "pg_notifier_queue_metadata"
+
 	tableColumns = `
 		id,
 		batch_id,
@@ -102,7 +104,7 @@ func (n *Notifier) Insert(
 	}
 	defer func() { _ = stmt.Close() }()
 
-	priority, jobType, schema := request.Priority, request.JobType, request.Schema
+	priority, jobType, metadata := request.Priority, request.JobType, request.Metadata
 
 	for _, job := range request.Payloads {
 		_, err = stmt.ExecContext(
@@ -124,18 +126,13 @@ func (n *Notifier) Insert(
 		return fmt.Errorf(`inserting into notifier: CopyIn final exec: %w`, err)
 	}
 
-	// Currently, we are doing this separately, since we don't want to keep huge schema in memory
-	if schema != nil {
+	if metadata != nil {
 		_, err = txn.ExecContext(ctx, `
-			UPDATE
-			  `+tableName+`
-			SET
-			  payload = payload || $1
-			WHERE
-			  batch_id = $2;
+			INSERT INTO `+metadataTableName+` (batch_id, metadata)
+			VALUES ($1, $2);
 	`,
-			string(schema),
 			batchID,
+			string(metadata),
 		)
 		if err != nil {
 			return fmt.Errorf(`inserting into notifier: update schema: %w`, err)
@@ -151,10 +148,8 @@ func (n *Notifier) Insert(
 // ResetForWorkspace resets all the jobs for a workspace to waiting state.
 func (n *Notifier) ResetForWorkspace(ctx context.Context, workspaceIdentifier string) error {
 	_, err := n.db.ExecContext(ctx, `
-		DELETE FROM
-  			`+tableName+`
-		WHERE
-  			workspace = $1;
+		DELETE FROM `+tableName+`
+		WHERE workspace = $1;
 	`,
 		workspaceIdentifier,
 	)
@@ -189,6 +184,15 @@ func (n *Notifier) GetByBatchID(ctx context.Context, batchID string) ([]model.Jo
 	}
 	if len(notifiers) == 0 {
 		return nil, fmt.Errorf("getting by batchID: no notifiers found")
+	}
+
+	metadata, err := n.metadataByBatchID(ctx, batchID)
+	if err != nil {
+		return nil, fmt.Errorf("getting metadata by batchID: %w", err)
+	}
+
+	for i := range notifiers {
+		notifiers[i].Metadata = metadata
 	}
 
 	return notifiers, err
@@ -329,11 +333,31 @@ func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Job, erro
 	)
 
 	var notifier model.Job
-	if err := scanNotifier(row.Scan, &notifier); err != nil {
-		return nil, fmt.Errorf("claiming job: %w", err)
+	err := scanNotifier(row.Scan, &notifier)
+	if err != nil {
+		return nil, fmt.Errorf("getting by batchID: scanning notifier: %w", err)
 	}
 
+	metadata, err := n.metadataByBatchID(ctx, notifier.BatchID)
+	if err != nil {
+		return nil, fmt.Errorf("getting metadata by batchID: %w", err)
+	}
+
+	notifier.Metadata = metadata
+
 	return &notifier, nil
+}
+
+func (n *Notifier) metadataByBatchID(ctx context.Context, batchID string) (model.Metadata, error) {
+	var metadata model.Metadata
+	err := n.db.QueryRowContext(ctx, `SELECT metadata FROM `+metadataTableName+` WHERE batch_id = $1`, batchID).Scan(&metadata)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting metadata: %w", err)
+	}
+	return metadata, nil
 }
 
 // OnFailed updates the status of a job to failed.

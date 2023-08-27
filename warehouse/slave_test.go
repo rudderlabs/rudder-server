@@ -109,7 +109,6 @@ func TestSlave(t *testing.T) {
 		UploadID:                     1,
 		StagingFileID:                1,
 		StagingFileLocation:          jobLocation,
-		UploadSchema:                 schemaMap,
 		WorkspaceID:                  "test_workspace_id",
 		SourceID:                     "test_source_id",
 		SourceName:                   "test_source_name",
@@ -125,14 +124,20 @@ func TestSlave(t *testing.T) {
 		RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 		LoadFileType:                 "csv",
 	}
+	pMeta := payloadMetadata{
+		UploadSchema: schemaMap,
+	}
 
 	payloadJson, err := json.Marshal(p)
+	require.NoError(t, err)
+	payloadMetaJson, err := json.Marshal(pMeta)
 	require.NoError(t, err)
 
 	claim := &notifierModel.Job{
 		ID:                  1,
 		BatchID:             uuid.New().String(),
 		Payload:             payloadJson,
+		Metadata:            payloadMetaJson,
 		Status:              "waiting",
 		WorkspaceIdentifier: "test_workspace",
 		Type:                notifierModel.JobTypeUpload,

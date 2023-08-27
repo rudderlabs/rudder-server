@@ -55,6 +55,10 @@ type payload struct {
 	LoadFileType                 string
 }
 
+type payloadMetadata struct {
+	UploadSchema model.Schema
+}
+
 func (p *payload) discardsTable() string {
 	return warehouseutils.ToProviderCase(p.DestinationType, warehouseutils.DiscardsTable)
 }
