@@ -94,7 +94,7 @@ func TestRouter(t *testing.T) {
 
 		db := sqlmiddleware.New(pgResource.DB)
 
-		n, err := notifier.New(context.Background(), config.Default, logger.NOP, stats.Default, workspaceIdentifier, pgResource.DBDsn)
+		notifier, err := notifier.New(context.Background(), config.Default, logger.NOP, stats.Default, workspaceIdentifier, pgResource.DBDsn)
 		require.NoError(t, err)
 
 		ctrl := gomock.NewController(t)
@@ -124,7 +124,7 @@ func TestRouter(t *testing.T) {
 			logger.NOP,
 			stats.Default,
 			db,
-			n,
+			notifier,
 			tenantManager,
 			cp,
 			bcm,

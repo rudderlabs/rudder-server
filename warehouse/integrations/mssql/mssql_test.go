@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
 	"github.com/rudderlabs/compose-test/compose"
 
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -25,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )

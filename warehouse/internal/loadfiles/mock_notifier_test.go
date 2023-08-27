@@ -60,7 +60,7 @@ func (n *mockNotifier) Publish(_ context.Context, payload *notifierModel.Publish
 			status = "aborted"
 		}
 
-		responses.Notifiers = append(responses.Notifiers, notifierModel.Job{
+		responses.Jobs = append(responses.Jobs, notifierModel.Job{
 			Payload: out,
 			Error:   errors.New(errString),
 			Status:  status,

@@ -5,20 +5,6 @@ import (
 	"time"
 )
 
-// status
-const (
-	Waiting   = "waiting"
-	Executing = "executing"
-	Succeeded = "succeeded"
-	Failed    = "failed"
-	Aborted   = "aborted"
-)
-
-type (
-	Payload  json.RawMessage
-	Metadata json.RawMessage
-)
-
 type JobType string
 
 const (
@@ -39,27 +25,34 @@ type Job struct {
 	Priority int
 	Error    error
 
-	Payload  Payload
-	Metadata Metadata
+	Payload json.RawMessage
 
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	LastExecTime time.Time
 }
 
+type JobMetadata json.RawMessage
+
 type PublishRequest struct {
-	Payloads []Payload
-	Metadata Metadata
-	JobType  JobType
-	Priority int
+	Payloads        []json.RawMessage
+	PayloadMetadata json.RawMessage
+	JobType         JobType
+	Priority        int
 }
 
 type PublishResponse struct {
-	Notifiers []Job
-	Err       error
+	Jobs        []Job
+	JobMetadata JobMetadata
+	Err         error
 }
 
-type ClaimResponse struct {
-	Payload Payload
+type ClaimJob struct {
+	Job         *Job
+	JobMetadata JobMetadata
+}
+
+type ClaimJobResponse struct {
+	Payload json.RawMessage
 	Err     error
 }

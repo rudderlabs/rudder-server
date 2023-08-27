@@ -438,7 +438,7 @@ func Start(ctx context.Context, app app.App) error {
 		return fmt.Errorf("cannot setup notifier: %w", err)
 	}
 	g.Go(func() error {
-		return notifierInstance.Wait(gCtx)
+		return notifierInstance.Wait()
 	})
 
 	// Setting up reporting client only if standalone master or embedded connecting to different DB for warehouse
@@ -498,6 +498,9 @@ func Start(ctx context.Context, app app.App) error {
 			controlplane.WithRegion(region),
 		)
 
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return notifierInstance.RunMaintenanceWorker(gCtx)
+		}))
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifierInstance.ClearJobs(gCtx)
 		}))

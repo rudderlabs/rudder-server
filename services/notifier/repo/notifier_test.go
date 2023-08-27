@@ -3,6 +3,7 @@ package repo_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -52,50 +53,51 @@ func TestNotifierRepo(t *testing.T) {
 		return now
 	}))
 
-	request := model.PublishRequest{
-		Payloads: []model.Payload{
-			model.Payload(`{"id":"1"}`),
-			model.Payload(`{"id":"2"}`),
-			model.Payload(`{"id":"3"}`),
-			model.Payload(`{"id":"4"}`),
-			model.Payload(`{"id":"5"}`),
+	publishRequest := model.PublishRequest{
+		Payloads: []json.RawMessage{
+			json.RawMessage(`{"id":"1"}`),
+			json.RawMessage(`{"id":"2"}`),
+			json.RawMessage(`{"id":"3"}`),
+			json.RawMessage(`{"id":"4"}`),
+			json.RawMessage(`{"id":"5"}`),
 		},
-		JobType:  model.JobTypeUpload,
-		Metadata: model.Metadata(`{"mid":"1"}`),
-		Priority: 50,
+		JobType:         model.JobTypeUpload,
+		PayloadMetadata: json.RawMessage(`{"mid":"1"}`),
+		Priority:        50,
 	}
 
 	t.Run("Insert and get", func(t *testing.T) {
 		t.Run("create notifier", func(t *testing.T) {
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, jobMetadata, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
+			require.Len(t, jobs, len(publishRequest.Payloads))
+			require.EqualValues(t, jobMetadata, json.RawMessage(`{"mid": "1"}`))
 
-			for i, notifier := range notifiers {
-				require.EqualValues(t, notifier.Payload, model.Payload(fmt.Sprintf(`{"id": "%d"}`, i+1)))
-				require.EqualValues(t, notifier.Metadata, model.Metadata(fmt.Sprint(`{"mid": "1"}`)))
-				require.EqualValues(t, notifier.WorkspaceIdentifier, workspaceIdentifier)
-				require.EqualValues(t, notifier.BatchID, batchID)
-				require.EqualValues(t, notifier.Type, request.JobType)
-				require.EqualValues(t, notifier.Priority, request.Priority)
-				require.EqualValues(t, notifier.Status, model.Waiting)
-				require.EqualValues(t, notifier.WorkerID, "")
-				require.EqualValues(t, notifier.Attempt, 0)
-				require.EqualValues(t, notifier.CreatedAt.UTC(), now.UTC())
-				require.EqualValues(t, notifier.UpdatedAt.UTC(), now.UTC())
-				require.Nil(t, notifier.Error)
+			for i, job := range jobs {
+				require.EqualValues(t, job.Payload, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i+1)))
+				require.EqualValues(t, job.WorkspaceIdentifier, workspaceIdentifier)
+				require.EqualValues(t, job.BatchID, batchID)
+				require.EqualValues(t, job.Type, publishRequest.JobType)
+				require.EqualValues(t, job.Priority, publishRequest.Priority)
+				require.EqualValues(t, job.Status, model.Waiting)
+				require.EqualValues(t, job.WorkerID, "")
+				require.EqualValues(t, job.Attempt, 0)
+				require.EqualValues(t, job.CreatedAt.UTC(), now.UTC())
+				require.EqualValues(t, job.UpdatedAt.UTC(), now.UTC())
+				require.Nil(t, job.Error)
 			}
 		})
 
 		t.Run("missing batch id", func(t *testing.T) {
-			notifiers, err := r.GetByBatchID(ctx, "missing_batch_id")
-			require.EqualError(t, err, "getting by batchID: no notifiers found")
-			require.Nil(t, notifiers)
+			jobs, jobMetadata, err := r.GetByBatchID(ctx, "missing_batch_id")
+			require.EqualError(t, err, "getting by batchID: no jobs found")
+			require.Nil(t, jobs)
+			require.Nil(t, jobMetadata)
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
@@ -104,12 +106,13 @@ func TestNotifierRepo(t *testing.T) {
 
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, jobMetadata, err := r.GetByBatchID(ctx, batchID)
 			require.ErrorIs(t, err, context.Canceled)
-			require.Nil(t, notifiers)
+			require.Nil(t, jobs)
+			require.Nil(t, jobMetadata)
 		})
 	})
 
@@ -117,20 +120,21 @@ func TestNotifierRepo(t *testing.T) {
 		t.Run("success", func(t *testing.T) {
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, jobMetadata, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
+			require.Len(t, jobs, len(publishRequest.Payloads))
+			require.EqualValues(t, jobMetadata, json.RawMessage(`{"mid": "1"}`))
 
-			deletedCount, err := r.DeleteByBatchID(ctx, batchID)
+			err = r.DeleteByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.EqualValues(t, deletedCount, len(request.Payloads))
 
-			notifiers, err = r.GetByBatchID(ctx, batchID)
-			require.EqualError(t, err, "getting by batchID: no notifiers found")
-			require.Nil(t, notifiers)
+			jobs, jobMetadata, err = r.GetByBatchID(ctx, batchID)
+			require.EqualError(t, err, "getting by batchID: no jobs found")
+			require.Nil(t, jobs)
+			require.Nil(t, jobMetadata)
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
@@ -139,47 +143,79 @@ func TestNotifierRepo(t *testing.T) {
 
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			deletedCount, err := r.DeleteByBatchID(ctx, batchID)
+			err = r.DeleteByBatchID(ctx, batchID)
 			require.ErrorIs(t, err, context.Canceled)
-			require.Zero(t, deletedCount)
-		})
-
-		t.Run("missing batch id", func(t *testing.T) {
-			deletedCount, err := r.DeleteByBatchID(ctx, "missing_batch_id")
-			require.EqualError(t, err, "deleting by batchID: no rows affected")
-			require.Zero(t, deletedCount)
 		})
 	})
 
 	t.Run("reset workspace", func(t *testing.T) {
 		t.Run("success", func(t *testing.T) {
-			batchID1, batchID2 := uuid.New().String(), uuid.New().String()
-			workspaceIdentifier1, workspaceIdentifier2 := "test_workspace_1", "test_workspace_2"
+			var workspaceIdentifiers []string
+			var batchIDs []string
 
-			err := r.Insert(ctx, &request, workspaceIdentifier1, batchID1)
-			require.NoError(t, err)
-			err = r.Insert(ctx, &request, workspaceIdentifier2, batchID2)
+			for i := 0; i < 10; i++ {
+				batchID := uuid.New().String()
+				workspaceIdentifier := workspaceIdentifier + "_" + uuid.New().String()
+				workspaceIdentifiers = append(workspaceIdentifiers, workspaceIdentifier)
+
+				err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+				require.NoError(t, err)
+			}
+			for _, batchID := range batchIDs {
+				jobs, jobMetadata, err := r.GetByBatchID(ctx, batchID)
+				require.NoError(t, err)
+				require.Len(t, jobs, len(publishRequest.Payloads))
+				require.EqualValues(t, jobMetadata, json.RawMessage(`{"mid": "1"}`))
+			}
+
+			for i, workspaceIdentifier := range workspaceIdentifiers {
+				if i%4 == 0 {
+					continue
+				}
+
+				err = r.ResetForWorkspace(ctx, workspaceIdentifier)
+				require.NoError(t, err)
+			}
+
+			for i, batchID := range batchIDs {
+				if i%4 == 0 {
+					jobs, jobMetadata, err := r.GetByBatchID(ctx, batchID)
+					require.EqualError(t, err, "getting by batchID: no jobs found")
+					require.Nil(t, jobs)
+					require.Nil(t, jobMetadata)
+					continue
+				}
+
+				jobs, jobMetadata, err := r.GetByBatchID(ctx, batchID)
+				require.NoError(t, err)
+				require.Len(t, jobs, len(publishRequest.Payloads))
+				require.EqualValues(t, jobMetadata, json.RawMessage(`{"mid": "1"}`))
+			}
+		})
+
+		t.Run("without metadata", func(t *testing.T) {
+			publishRequest := model.PublishRequest{
+				Payloads: []json.RawMessage{
+					json.RawMessage(`{"id":"11"}`),
+				},
+				JobType:  model.JobTypeUpload,
+				Priority: 75,
+			}
+
+			batchID := uuid.New().String()
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID1)
-			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
-			notifiers, err = r.GetByBatchID(ctx, batchID2)
-			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
-
-			err = r.ResetForWorkspace(ctx, workspaceIdentifier1)
+			err = r.ResetForWorkspace(ctx, workspaceIdentifier)
 			require.NoError(t, err)
 
-			notifiers, err = r.GetByBatchID(ctx, batchID1)
-			require.EqualError(t, err, "getting by batchID: no notifiers found")
-			require.Zero(t, notifiers, 0)
-			notifiers, err = r.GetByBatchID(ctx, batchID2)
-			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
+			jobs, jobMetadata, err := r.GetByBatchID(ctx, batchID)
+			require.EqualError(t, err, "getting by batchID: no jobs found")
+			require.Nil(t, jobs)
+			require.Nil(t, jobMetadata)
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
@@ -188,7 +224,7 @@ func TestNotifierRepo(t *testing.T) {
 
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
 			err = r.ResetForWorkspace(ctx, batchID)
@@ -205,18 +241,18 @@ func TestNotifierRepo(t *testing.T) {
 		t.Run("success", func(t *testing.T) {
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, _, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
+			require.Len(t, jobs, len(publishRequest.Payloads))
 
-			err = r.OnSuccess(ctx, &notifiers[0], model.Payload(`{"test": "payload"}`))
+			err = r.OnClaimSuccess(ctx, &jobs[0], json.RawMessage(`{"test": "payload"}`))
 			require.NoError(t, err)
-			err = r.OnFailed(ctx, &notifiers[1], errors.New("test error"), 100)
+			err = r.OnClaimFailed(ctx, &jobs[1], errors.New("test error"), 100)
 			require.NoError(t, err)
-			err = r.OnFailed(ctx, &notifiers[2], errors.New("test error"), -1)
+			err = r.OnClaimFailed(ctx, &jobs[2], errors.New("test error"), -1)
 			require.NoError(t, err)
 
 			pendingCount, err := r.PendingByBatchID(ctx, batchID)
@@ -230,7 +266,7 @@ func TestNotifierRepo(t *testing.T) {
 
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
 			pendingCount, err := r.PendingByBatchID(ctx, batchID)
@@ -241,15 +277,14 @@ func TestNotifierRepo(t *testing.T) {
 		t.Run("no pending", func(t *testing.T) {
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, _, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
 
-			for _, n := range notifiers {
-				require.NoError(t, r.OnSuccess(ctx, &n, model.Payload(`{"test": "payload"}`)))
+			for _, job := range jobs {
+				require.NoError(t, r.OnClaimSuccess(ctx, &job, json.RawMessage(`{"test": "payload"}`)))
 			}
 
 			pendingCount, err := r.PendingByBatchID(ctx, batchID)
@@ -263,12 +298,11 @@ func TestNotifierRepo(t *testing.T) {
 			batchID := uuid.New().String()
 			orphanInterval := 5
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, _, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
 
 			t.Run("no orphans", func(t *testing.T) {
 				jobIDs, err := r.OrphanJobIDs(ctx, orphanInterval)
@@ -277,15 +311,15 @@ func TestNotifierRepo(t *testing.T) {
 			})
 
 			t.Run("few orphans", func(t *testing.T) {
-				for _, notifier := range notifiers[:3] {
+				for _, notifier := range jobs[:3] {
 					_, err := db.ExecContext(ctx, `UPDATE pg_notifier_queue SET status = 'executing', last_exec_time = NOW() - $1 * INTERVAL '1 SECOND' WHERE id = $2;`, 2*orphanInterval, notifier.ID)
 					require.NoError(t, err)
 				}
 
 				jobIDs, err := r.OrphanJobIDs(ctx, orphanInterval)
 				require.NoError(t, err)
-				require.Len(t, jobIDs, len(notifiers[:3]))
-				for _, notifier := range notifiers[:3] {
+				require.Len(t, jobIDs, len(jobs[:3]))
+				for _, notifier := range jobs[:3] {
 					require.Contains(t, jobIDs, notifier.ID)
 				}
 			})
@@ -297,7 +331,7 @@ func TestNotifierRepo(t *testing.T) {
 
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
 			jobIDs, err := r.OrphanJobIDs(ctx, 0)
@@ -313,30 +347,31 @@ func TestNotifierRepo(t *testing.T) {
 		}))
 
 		t.Run("success", func(t *testing.T) {
-			_, err := db.ExecContext(ctx, "TRUNCATE TABLE pg_notifier_queue;")
+			_, err := db.ExecContext(ctx, "TRUNCATE TABLE pg_notifier_queue; TRUNCATE TABLE pg_notifier_queue_metadata;")
 			require.NoError(t, err)
 
 			batchID := uuid.New().String()
 
-			err = r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err = r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, _, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
 
-			for i, notifier := range notifiers {
-				claimedNotifier, err := ur.Claim(ctx, workerID+strconv.Itoa(i))
+			for i, job := range jobs {
+				claimedNotifier, metadata, err := ur.Claim(ctx, workerID+strconv.Itoa(i))
 				require.NoError(t, err)
-				require.EqualValues(t, claimedNotifier.ID, notifier.ID)
+				require.EqualValues(t, metadata, json.RawMessage(`{"mid": "1"}`))
+				require.EqualValues(t, claimedNotifier.ID, job.ID)
 				require.EqualValues(t, claimedNotifier.Status, model.Executing)
 				require.EqualValues(t, claimedNotifier.WorkerID, workerID+strconv.Itoa(i))
 				require.EqualValues(t, claimedNotifier.LastExecTime.UTC(), uNow.UTC())
 			}
 
-			claimedNotifier, err := ur.Claim(ctx, workerID)
+			claimedNotifier, metadata, err := ur.Claim(ctx, workerID)
 			require.ErrorIs(t, err, sql.ErrNoRows)
 			require.Nil(t, claimedNotifier)
+			require.Nil(t, metadata)
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
@@ -345,11 +380,13 @@ func TestNotifierRepo(t *testing.T) {
 
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			_, err = ur.Claim(ctx, workerID)
+			claimedNotifier, metadata, err := ur.Claim(ctx, workerID)
 			require.ErrorIs(t, err, context.Canceled)
+			require.Nil(t, claimedNotifier)
+			require.Nil(t, metadata)
 		})
 	})
 
@@ -361,23 +398,20 @@ func TestNotifierRepo(t *testing.T) {
 
 		t.Run("success", func(t *testing.T) {
 			batchID := uuid.New().String()
-			payload := model.Payload(`{"test": "payload"}`)
+			payload := json.RawMessage(`{"test": "payload"}`)
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, _, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
 
-			for _, notifier := range notifiers {
-				notifier.Payload = payload
-				require.NoError(t, ur.OnSuccess(ctx, &notifier, model.Payload(`{"test": "payload"}`)))
+			for _, job := range jobs {
+				require.NoError(t, ur.OnClaimSuccess(ctx, &job, json.RawMessage(`{"test": "payload"}`)))
 			}
 
-			successClaims, err := ur.GetByBatchID(ctx, batchID)
+			successClaims, _, err := ur.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
 			for _, notifier := range successClaims {
 				require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
 				require.EqualValues(t, notifier.Status, model.Succeeded)
@@ -392,32 +426,11 @@ func TestNotifierRepo(t *testing.T) {
 
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			err = ur.OnSuccess(ctx, &model.Job{
-				ID: 1,
-			}, nil)
+			err = ur.OnClaimSuccess(ctx, &model.Job{ID: 1}, nil)
 			require.ErrorIs(t, err, context.Canceled)
-		})
-
-		t.Run("no claims", func(t *testing.T) {
-			batchID := uuid.New().String()
-
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
-			require.NoError(t, err)
-
-			notifiers, err := r.GetByBatchID(ctx, batchID)
-			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
-
-			_, err = r.DeleteByBatchID(ctx, batchID)
-			require.NoError(t, err)
-
-			for _, n := range notifiers {
-				err = ur.OnSuccess(ctx, &n, model.Payload(`{"test": "payload"}`))
-				require.EqualError(t, err, "on claim success: no rows affected")
-			}
 		})
 	})
 
@@ -427,47 +440,52 @@ func TestNotifierRepo(t *testing.T) {
 			return uNow
 		}))
 
-		t.Run("success", func(t *testing.T) {
+		t.Run("first failed and then succeeded", func(t *testing.T) {
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.NoError(t, err)
 
-			notifiers, err := r.GetByBatchID(ctx, batchID)
+			jobs, _, err := r.GetByBatchID(ctx, batchID)
 			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
 
-			for i, notifier := range notifiers {
-				for j := 0; j < i+1; j++ {
-					require.NoError(t, ur.OnFailed(ctx, &notifier, errors.New("test_error"), 2))
+			t.Run("marking failed", func(t *testing.T) {
+				for i, job := range jobs {
+					for j := 0; j < i+1; j++ {
+						require.NoError(t, ur.OnClaimFailed(ctx, &job, errors.New("test_error"), 2))
+					}
 				}
-			}
 
-			failedClaims, err := ur.GetByBatchID(ctx, batchID)
-			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
-			require.Equal(t, []string{model.Failed, model.Failed, model.Failed, model.Aborted, model.Aborted}, lo.Map(failedClaims, func(item model.Job, index int) string {
-				return item.Status
-			}))
-			for i, notifier := range failedClaims {
-				require.EqualValues(t, notifier.Error, errors.New("'test_error'"))
-				require.EqualValues(t, notifier.Attempt, i+1)
-				require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
-			}
+				failedClaims, _, err := ur.GetByBatchID(ctx, batchID)
+				require.NoError(t, err)
+				require.Equal(t, []string{model.Failed, model.Failed, model.Failed, model.Aborted, model.Aborted}, lo.Map(failedClaims, func(item model.Job, index int) string {
+					return item.Status
+				}))
 
-			for _, notifier := range failedClaims {
-				require.NoError(t, ur.OnSuccess(ctx, &notifier, model.Payload(`{"test": "payload"}`)))
-			}
+				for i, notifier := range failedClaims {
+					require.EqualValues(t, notifier.Error, errors.New("'test_error'"))
+					require.EqualValues(t, notifier.Attempt, i+1)
+					require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
+				}
+			})
 
-			successClaims, err := ur.GetByBatchID(ctx, batchID)
-			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
-			for i, notifier := range successClaims {
-				require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
-				require.EqualValues(t, notifier.Status, model.Succeeded)
-				require.EqualValues(t, notifier.Attempt, i+1)
-				require.EqualValues(t, notifier.Error, errors.New("'test_error'"))
-			}
+			t.Run("marking succeeded", func(t *testing.T) {
+				failedClaims, _, err := ur.GetByBatchID(ctx, batchID)
+				require.NoError(t, err)
+
+				for _, notifier := range failedClaims {
+					require.NoError(t, ur.OnClaimSuccess(ctx, &notifier, json.RawMessage(`{"test": "payload"}`)))
+				}
+
+				successClaims, _, err := ur.GetByBatchID(ctx, batchID)
+				require.NoError(t, err)
+				for i, notifier := range successClaims {
+					require.EqualValues(t, notifier.UpdatedAt.UTC(), uNow.UTC())
+					require.EqualValues(t, notifier.Status, model.Succeeded)
+					require.EqualValues(t, notifier.Attempt, i+1)
+					require.EqualValues(t, notifier.Error, errors.New("'test_error'"))
+				}
+			})
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
@@ -476,30 +494,11 @@ func TestNotifierRepo(t *testing.T) {
 
 			batchID := uuid.New().String()
 
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
+			err := r.Insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 			require.ErrorIs(t, err, context.Canceled)
 
-			err = ur.OnFailed(ctx, &model.Job{ID: 1}, errors.New("test_error"), 0)
+			err = ur.OnClaimFailed(ctx, &model.Job{ID: 1}, errors.New("test_error"), 0)
 			require.ErrorIs(t, err, context.Canceled)
-		})
-
-		t.Run("no claims", func(t *testing.T) {
-			batchID := uuid.New().String()
-
-			err := r.Insert(ctx, &request, workspaceIdentifier, batchID)
-			require.NoError(t, err)
-
-			notifiers, err := r.GetByBatchID(ctx, batchID)
-			require.NoError(t, err)
-			require.Len(t, notifiers, len(request.Payloads))
-
-			_, err = ur.DeleteByBatchID(ctx, batchID)
-			require.NoError(t, err)
-
-			for _, notifier := range notifiers {
-				err := ur.OnFailed(ctx, &notifier, errors.New("test_error"), 0)
-				require.EqualError(t, err, "on claim failed: no rows affected")
-			}
 		})
 	})
 }

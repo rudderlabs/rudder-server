@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,10 +18,8 @@ import (
 )
 
 const (
-	tableName         = "pg_notifier_queue"
-	metadataTableName = "pg_notifier_queue_metadata"
-
-	tableColumns = `
+	notifierTableName    = "pg_notifier_queue"
+	notifierTableColumns = `
 		id,
 		batch_id,
 		worker_id,
@@ -36,7 +35,10 @@ const (
 		last_exec_time
 `
 
+	notifierMetadataTableName = "pg_notifier_queue_metadata"
+
 	timeFormat = "2006-01-02 15:04:05"
+	version    = "warehouse/v1"
 )
 
 type Opt func(*Notifier)
@@ -65,16 +67,16 @@ func NewNotifier(db *sqlmw.DB, opts ...Opt) *Notifier {
 	return r
 }
 
-// Insert inserts a job into the notifier table.
+// Insert inserts a jobs into the notifier queue.
 func (n *Notifier) Insert(
 	ctx context.Context,
-	request *model.PublishRequest,
+	publishRequest *model.PublishRequest,
 	workspaceIdentifier string,
 	batchID string,
 ) error {
 	txn, err := n.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("inserting into notifier: begin transaction: %w", err)
+		return fmt.Errorf("inserting: begin transaction: %w", err)
 	}
 	defer func() {
 		if err != nil {
@@ -88,138 +90,169 @@ func (n *Notifier) Insert(
 	stmt, err := txn.PrepareContext(
 		ctx,
 		pq.CopyIn(
-			tableName,
+			notifierTableName,
 			"batch_id",
 			"status",
 			"payload",
 			"workspace",
 			"priority",
 			"job_type",
+			"topic",
 			"created_at",
 			"updated_at",
 		),
 	)
 	if err != nil {
-		return fmt.Errorf(`inserting into notifier: CopyIn: %w`, err)
+		return fmt.Errorf(`inserting: CopyIn: %w`, err)
 	}
 	defer func() { _ = stmt.Close() }()
 
-	priority, jobType, metadata := request.Priority, request.JobType, request.Metadata
-
-	for _, job := range request.Payloads {
+	for _, payload := range publishRequest.Payloads {
 		_, err = stmt.ExecContext(
 			ctx,
 			batchID,
 			model.Waiting,
-			string(job),
+			string(payload),
 			workspaceIdentifier,
-			priority,
-			jobType,
+			publishRequest.Priority,
+			publishRequest.JobType,
+			version,
 			now.UTC(),
 			now.UTC(),
 		)
 		if err != nil {
-			return fmt.Errorf(`inserting into notifier: CopyIn exec: %w`, err)
+			return fmt.Errorf(`inserting: CopyIn exec: %w`, err)
 		}
 	}
 	if _, err = stmt.ExecContext(ctx); err != nil {
-		return fmt.Errorf(`inserting into notifier: CopyIn final exec: %w`, err)
+		return fmt.Errorf(`inserting: CopyIn final exec: %w`, err)
 	}
 
-	if metadata != nil {
+	if publishRequest.PayloadMetadata != nil {
 		_, err = txn.ExecContext(ctx, `
-			INSERT INTO `+metadataTableName+` (batch_id, metadata)
+			INSERT INTO `+notifierMetadataTableName+` (batch_id, metadata)
 			VALUES ($1, $2);
 	`,
 			batchID,
-			string(metadata),
+			string(publishRequest.PayloadMetadata),
 		)
 		if err != nil {
-			return fmt.Errorf(`inserting into notifier: update schema: %w`, err)
+			return fmt.Errorf(`inserting: metadata: %w`, err)
 		}
 	}
 
-	if err := txn.Commit(); err != nil {
-		return fmt.Errorf(`inserting into notifier: commit: %w`, err)
+	if err = txn.Commit(); err != nil {
+		return fmt.Errorf(`inserting: commit: %w`, err)
 	}
 	return nil
 }
 
-// ResetForWorkspace resets all the jobs for a workspace to waiting state.
+// ResetForWorkspace deletes all the jobs for a specified workspace.
 func (n *Notifier) ResetForWorkspace(ctx context.Context, workspaceIdentifier string) error {
-	_, err := n.db.ExecContext(ctx, `
-		DELETE FROM `+tableName+`
+	txn, err := n.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("reset: begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = txn.Rollback()
+			return
+		}
+	}()
+
+	_, err = txn.ExecContext(ctx, `
+		DELETE FROM `+notifierMetadataTableName+`
+		WHERE batch_id IN (
+			SELECT DISTINCT batch_id FROM `+notifierTableName+`
+			WHERE workspace = $1
+		);
+	`,
+		workspaceIdentifier,
+	)
+	if err != nil {
+		return fmt.Errorf("reset: delete metadata for workspace %s: %w", workspaceIdentifier, err)
+	}
+
+	_, err = txn.ExecContext(ctx, `
+		DELETE FROM `+notifierTableName+`
 		WHERE workspace = $1;
 	`,
 		workspaceIdentifier,
 	)
 	if err != nil {
-		return fmt.Errorf("reset for workspace %s: %w", workspaceIdentifier, err)
+		return fmt.Errorf("reset: delete for workspace %s: %w", workspaceIdentifier, err)
 	}
+
+	if err = txn.Commit(); err != nil {
+		return fmt.Errorf("reset: commit: %w", err)
+	}
+
 	return nil
 }
 
 // GetByBatchID returns all the jobs for a batchID.
-func (n *Notifier) GetByBatchID(ctx context.Context, batchID string) ([]model.Job, error) {
-	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` WHERE batch_id = $1 ORDER BY id;`
+func (n *Notifier) GetByBatchID(ctx context.Context, batchID string) ([]model.Job, model.JobMetadata, error) {
+	query := `SELECT ` + notifierTableColumns + ` FROM ` + notifierTableName + ` WHERE batch_id = $1 ORDER BY id;`
 
 	rows, err := n.db.QueryContext(ctx, query, batchID)
 	if err != nil {
-		return nil, fmt.Errorf("getting by batchID: %w", err)
+		return nil, nil, fmt.Errorf("getting by batchID: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var notifiers []model.Job
+	var jobs []model.Job
 	for rows.Next() {
-		var notifier model.Job
-		err := scanNotifier(rows.Scan, &notifier)
+		var job model.Job
+		err := scanJob(rows.Scan, &job)
 		if err != nil {
-			return nil, fmt.Errorf("getting by batchID: scanning notifier: %w", err)
+			return nil, nil, fmt.Errorf("getting by batchID: scan: %w", err)
 		}
 
-		notifiers = append(notifiers, notifier)
+		jobs = append(jobs, job)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("getting by batchID: iterating over rows: %w", err)
+		return nil, nil, fmt.Errorf("getting by batchID: rows err: %w", err)
 	}
-	if len(notifiers) == 0 {
-		return nil, fmt.Errorf("getting by batchID: no notifiers found")
+	if len(jobs) == 0 {
+		return nil, nil, fmt.Errorf("getting by batchID: no jobs found")
 	}
 
-	metadata, err := n.metadataByBatchID(ctx, batchID)
+	metadata, err := n.metadataForBatchID(ctx, batchID)
 	if err != nil {
-		return nil, fmt.Errorf("getting metadata by batchID: %w", err)
+		return nil, nil, fmt.Errorf("getting by batchID: metadata: %w", err)
 	}
 
-	for i := range notifiers {
-		notifiers[i].Metadata = metadata
-	}
-
-	return notifiers, err
+	return jobs, metadata, err
 }
 
 // DeleteByBatchID deletes all the jobs for a batchID.
-func (n *Notifier) DeleteByBatchID(ctx context.Context, batchID string) (int64, error) {
-	r, err := n.db.ExecContext(ctx, `
-		DELETE FROM
-		  `+tableName+`
-		WHERE
-	  	  batch_id = $1;
-`,
-		batchID,
-	)
+func (n *Notifier) DeleteByBatchID(ctx context.Context, batchID string) error {
+	txn, err := n.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return 0, fmt.Errorf("deleting by batchID: %w", err)
+		return fmt.Errorf("reset: begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = txn.Rollback()
+			return
+		}
+	}()
+
+	_, err = txn.ExecContext(ctx, `DELETE FROM `+notifierTableName+` WHERE batch_id = $1;`, batchID)
+	if err != nil {
+		return fmt.Errorf("deleting by batchID: %w", err)
 	}
 
-	rowsAffected, err := r.RowsAffected()
+	_, err = txn.ExecContext(ctx, `DELETE FROM `+notifierMetadataTableName+` WHERE batch_id = $1`, batchID)
 	if err != nil {
-		return 0, fmt.Errorf("deleting by batchID: rows affected: %w", err)
-	} else if rowsAffected == 0 {
-		return 0, fmt.Errorf("deleting by batchID: no rows affected")
+		return fmt.Errorf("deleting metadata by batchID: %w", err)
 	}
 
-	return rowsAffected, nil
+	if err = txn.Commit(); err != nil {
+		return fmt.Errorf("deleting by batchID: commit: %w", err)
+	}
+
+	return nil
 }
 
 // PendingByBatchID returns the number of pending jobs for a batchID.
@@ -230,11 +263,11 @@ func (n *Notifier) PendingByBatchID(ctx context.Context, batchID string) (int64,
 		SELECT
 		  COUNT(*)
 		FROM
-  		  `+tableName+`
+  		  `+notifierTableName+`
 		WHERE
-		  batch_id = $1
-          AND status != $2
-		  AND status != $3
+		  batch_id = $1 AND
+          status != $2  AND
+		  status != $3
 `,
 		batchID,
 		model.Succeeded,
@@ -254,7 +287,7 @@ func (n *Notifier) PendingByBatchID(ctx context.Context, batchID string) (int64,
 func (n *Notifier) OrphanJobIDs(ctx context.Context, intervalInSeconds int) ([]int64, error) {
 	rows, err := n.db.QueryContext(ctx, `
 		UPDATE
-          `+tableName+`
+          `+notifierTableName+`
 		SET
 		  status = $1,
 		  updated_at = $2
@@ -263,10 +296,11 @@ func (n *Notifier) OrphanJobIDs(ctx context.Context, intervalInSeconds int) ([]i
 			SELECT
 			  id
 			FROM
-              `+tableName+`
+              `+notifierTableName+`
 			WHERE
 			  status = $3
-			AND last_exec_time <= NOW() - $4 * INTERVAL '1 SECOND' FOR
+			AND last_exec_time <= NOW() - $4 * INTERVAL '1 SECOND'
+		    FOR
 			UPDATE
 		  	SKIP LOCKED
 	  	) RETURNING id;
@@ -298,10 +332,10 @@ func (n *Notifier) OrphanJobIDs(ctx context.Context, intervalInSeconds int) ([]i
 }
 
 // Claim claims a job for a worker.
-func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Job, error) {
+func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Job, model.JobMetadata, error) {
 	row := n.db.QueryRowContext(ctx, `
 		UPDATE
-  		  `+tableName+`
+  		  `+notifierTableName+`
 		SET
 		  status = $1,
 		  updated_at = $2,
@@ -312,59 +346,69 @@ func (n *Notifier) Claim(ctx context.Context, workerID string) (*model.Job, erro
 			SELECT
 			  id
 			FROM
-      		  `+tableName+`
+      		  `+notifierTableName+`
 			WHERE
-			  status = $4
-			  OR status = $5
+			  (status = $4 OR status = $5) AND
+              topic = $6
 			ORDER BY
 			  priority ASC,
-			  id ASC FOR
+			  id ASC
+			FOR
 			UPDATE
-			  SKIP LOCKED
+			SKIP LOCKED
 			LIMIT
 			  1
-		  ) RETURNING `+tableColumns+`;
+		  ) RETURNING `+notifierTableColumns+`;
 `,
 		model.Executing,
 		n.now().Format(timeFormat),
 		workerID,
 		model.Waiting,
 		model.Failed,
+		version,
 	)
 
 	var notifier model.Job
-	err := scanNotifier(row.Scan, &notifier)
+	err := scanJob(row.Scan, &notifier)
 	if err != nil {
-		return nil, fmt.Errorf("getting by batchID: scanning notifier: %w", err)
+		return nil, nil, fmt.Errorf("claim for workerID %s: scan: %w", workerID, err)
 	}
 
-	metadata, err := n.metadataByBatchID(ctx, notifier.BatchID)
+	metadata, err := n.metadataForBatchID(ctx, notifier.BatchID)
 	if err != nil {
-		return nil, fmt.Errorf("getting metadata by batchID: %w", err)
+		return nil, nil, fmt.Errorf("claim for workerID %s: metadata: %w", workerID, err)
 	}
 
-	notifier.Metadata = metadata
-
-	return &notifier, nil
+	return &notifier, metadata, nil
 }
 
-func (n *Notifier) metadataByBatchID(ctx context.Context, batchID string) (model.Metadata, error) {
-	var metadata model.Metadata
-	err := n.db.QueryRowContext(ctx, `SELECT metadata FROM `+metadataTableName+` WHERE batch_id = $1`, batchID).Scan(&metadata)
+func (n *Notifier) metadataForBatchID(ctx context.Context, batchID string) (model.JobMetadata, error) {
+	var metadata model.JobMetadata
+
+	err := n.db.QueryRowContext(ctx, `
+		SELECT
+		  metadata
+		FROM
+		  `+notifierMetadataTableName+`
+		WHERE
+		  batch_id = $1;
+`,
+		batchID,
+	).Scan(&metadata)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("getting metadata: %w", err)
+		return nil, fmt.Errorf("metadata by batchID: %w", err)
 	}
 	return metadata, nil
 }
 
-// OnFailed updates the status of a job to failed.
-func (n *Notifier) OnFailed(ctx context.Context, notifier *model.Job, claimError error, maxAttempt int) error {
+// OnClaimFailed updates the status of a job to failed.
+func (n *Notifier) OnClaimFailed(ctx context.Context, job *model.Job, claimError error, maxAttempt int) error {
 	query := fmt.Sprintf(`
 		UPDATE
-		  `+tableName+`
+		  `+notifierTableName+`
 		SET
 		  status =(
 			CASE WHEN attempt > $1 THEN CAST (
@@ -383,33 +427,25 @@ func (n *Notifier) OnFailed(ctx context.Context, notifier *model.Job, claimError
 		model.Failed,
 	)
 
-	r, err := n.db.ExecContext(ctx,
+	_, err := n.db.ExecContext(ctx,
 		query,
 		maxAttempt,
 		n.now().UTC().Format(timeFormat),
 		misc.QuoteLiteral(claimError.Error()),
-		notifier.ID,
+		job.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("on claim failed: %w", err)
 	}
 
-	rowsAffected, err := r.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("on claim failed: rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return errors.New("on claim failed: no rows affected")
-	}
-
 	return nil
 }
 
-// OnSuccess updates the status of a job to succeeded.
-func (n *Notifier) OnSuccess(ctx context.Context, notifier *model.Job, payload model.Payload) error {
-	r, err := n.db.ExecContext(ctx, `
+// OnClaimSuccess updates the status of a job to succeed.
+func (n *Notifier) OnClaimSuccess(ctx context.Context, job *model.Job, payload json.RawMessage) error {
+	_, err := n.db.ExecContext(ctx, `
 		UPDATE
-		  `+tableName+`
+		  `+notifierTableName+`
 		SET
 		  status = $1,
 		  updated_at = $2,
@@ -420,24 +456,16 @@ func (n *Notifier) OnSuccess(ctx context.Context, notifier *model.Job, payload m
 		model.Succeeded,
 		n.now().UTC().Format(timeFormat),
 		string(payload),
-		notifier.ID,
+		job.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("on claim success: %w", err)
 	}
 
-	rowsAffected, err := r.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("on claim success: rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return errors.New("on claim success: no rows affected")
-	}
-
 	return nil
 }
 
-func scanNotifier(scan scanFn, notifier *model.Job) error {
+func scanJob(scan scanFn, job *model.Job) error {
 	var (
 		jobTypeRaw  sql.NullString
 		errorRaw    sql.NullString
@@ -446,18 +474,18 @@ func scanNotifier(scan scanFn, notifier *model.Job) error {
 	)
 
 	err := scan(
-		&notifier.ID,
-		&notifier.BatchID,
+		&job.ID,
+		&job.BatchID,
 		&workerIDRaw,
-		&notifier.WorkspaceIdentifier,
-		&notifier.Attempt,
-		&notifier.Status,
+		&job.WorkspaceIdentifier,
+		&job.Attempt,
+		&job.Status,
 		&jobTypeRaw,
-		&notifier.Priority,
+		&job.Priority,
 		&errorRaw,
-		&notifier.Payload,
-		&notifier.CreatedAt,
-		&notifier.UpdatedAt,
+		&job.Payload,
+		&job.CreatedAt,
+		&job.UpdatedAt,
 		&lasExecTime,
 	)
 	if err != nil {
@@ -465,23 +493,23 @@ func scanNotifier(scan scanFn, notifier *model.Job) error {
 	}
 
 	if workerIDRaw.Valid {
-		notifier.WorkerID = workerIDRaw.String
+		job.WorkerID = workerIDRaw.String
 	}
 	if jobTypeRaw.Valid {
 		switch jobTypeRaw.String {
 		case string(model.JobTypeUpload), string(model.JobTypeAsync):
-			notifier.Type = model.JobType(jobTypeRaw.String)
+			job.Type = model.JobType(jobTypeRaw.String)
 		default:
 			return fmt.Errorf("scanning: unknown job type: %s", jobTypeRaw.String)
 		}
 	} else {
-		notifier.Type = model.JobTypeUpload
+		job.Type = model.JobTypeUpload
 	}
 	if errorRaw.Valid {
-		notifier.Error = errors.New(errorRaw.String)
+		job.Error = errors.New(errorRaw.String)
 	}
 	if lasExecTime.Valid {
-		notifier.LastExecTime = lasExecTime.Time
+		job.LastExecTime = lasExecTime.Time
 	}
 
 	return nil

@@ -28,16 +28,16 @@ import (
 )
 
 type mockSlaveNotifier struct {
-	subscribeCh    chan *notifierModel.ClaimResponse
-	publishCh      chan *notifierModel.Job
+	subscribeCh    chan *notifierModel.ClaimJobResponse
+	publishCh      chan *notifierModel.ClaimJob
 	maintenanceErr error
 }
 
-func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) <-chan *notifierModel.Job {
+func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) <-chan *notifierModel.ClaimJob {
 	return m.publishCh
 }
 
-func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifierModel.Job, response *notifierModel.ClaimResponse) {
+func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifierModel.ClaimJob, response *notifierModel.ClaimJobResponse) {
 	m.subscribeCh <- response
 }
 
@@ -74,8 +74,8 @@ func TestSlave(t *testing.T) {
 
 	schemaMap := stagingSchema(t)
 
-	publishCh := make(chan *notifierModel.Job)
-	subscriberCh := make(chan *notifierModel.ClaimResponse)
+	publishCh := make(chan *notifierModel.ClaimJob)
+	subscriberCh := make(chan *notifierModel.ClaimJobResponse)
 	defer close(publishCh)
 	defer close(subscriberCh)
 
@@ -133,14 +133,18 @@ func TestSlave(t *testing.T) {
 	payloadMetaJson, err := json.Marshal(pMeta)
 	require.NoError(t, err)
 
-	claim := &notifierModel.Job{
-		ID:                  1,
-		BatchID:             uuid.New().String(),
-		Payload:             payloadJson,
-		Metadata:            payloadMetaJson,
-		Status:              "waiting",
-		WorkspaceIdentifier: "test_workspace",
-		Type:                notifierModel.JobTypeUpload,
+	batchID := uuid.New().String()
+
+	claim := &notifierModel.ClaimJob{
+		Job: &notifierModel.Job{
+			ID:                  1,
+			BatchID:             batchID,
+			Payload:             payloadJson,
+			Status:              "waiting",
+			WorkspaceIdentifier: "test_workspace",
+			Type:                notifierModel.JobTypeUpload,
+		},
+		JobMetadata: payloadMetaJson,
 	}
 
 	g, _ := errgroup.WithContext(ctx)
@@ -159,7 +163,7 @@ func TestSlave(t *testing.T) {
 			var uploadPayload payload
 			err := json.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
-			require.Equal(t, uploadPayload.BatchID, claim.BatchID)
+			require.Equal(t, uploadPayload.BatchID, claim.Job.BatchID)
 			require.Equal(t, uploadPayload.UploadID, p.UploadID)
 			require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
 			require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)

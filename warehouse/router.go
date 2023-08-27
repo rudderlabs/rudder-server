@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
@@ -394,16 +395,16 @@ loop:
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
 		if err != nil {
-			if errors.Is(err, context.Canceled) ||
-				errors.Is(err, context.DeadlineExceeded) ||
-				strings.Contains(err.Error(), "pq: canceling statement due to user request") {
-
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				break loop
-			} else {
-				r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
-
-				panic(err)
 			}
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "57014" {
+				break loop
+			}
+
+			r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
+
+			panic(err)
 		}
 
 		for _, uploadJob := range uploadJobsToProcess {

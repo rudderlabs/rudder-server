@@ -17,9 +17,9 @@ import (
 )
 
 type slaveNotifier interface {
-	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *model.Job
+	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *model.ClaimJob
 	RunMaintenanceWorker(ctx context.Context) error
-	UpdateClaim(ctx context.Context, notifier *model.Job, response *model.ClaimResponse)
+	UpdateClaim(ctx context.Context, job *model.ClaimJob, response *model.ClaimJobResponse)
 }
 
 type slave struct {
@@ -76,10 +76,5 @@ func (s *slave) setupSlave(ctx context.Context) error {
 			return nil
 		}))
 	}
-
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return s.notifier.RunMaintenanceWorker(gCtx)
-	}))
-
 	return g.Wait()
 }

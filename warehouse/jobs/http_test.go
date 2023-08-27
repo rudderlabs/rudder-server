@@ -61,7 +61,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 
 	ctx := context.Background()
 
-	n, err := notifier.New(context.Background(), config.Default, logger.NOP, stats.Default, workspaceIdentifier, pgResource.DBDsn)
+	notifier, err := notifier.New(context.Background(), config.Default, logger.NOP, stats.Default, workspaceIdentifier, pgResource.DBDsn)
 	require.NoError(t, err)
 
 	now := time.Now().Truncate(time.Second).UTC()
@@ -207,7 +207,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 				enabled:  false,
 				logger:   logger.NOP,
 				context:  ctx,
-				notifier: n,
+				notifier: notifier,
 			}
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusInternalServerError, resp.Code)
@@ -225,7 +225,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
-				notifier: n,
+				notifier: notifier,
 			}
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
@@ -243,7 +243,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
-				notifier: n,
+				notifier: notifier,
 			}
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
@@ -268,7 +268,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
-				notifier: n,
+				notifier: notifier,
 			}
 			jobsManager.InsertJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)
@@ -291,7 +291,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 				enabled:  false,
 				logger:   logger.NOP,
 				context:  ctx,
-				notifier: n,
+				notifier: notifier,
 			}
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusInternalServerError, resp.Code)
@@ -309,7 +309,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
-				notifier: n,
+				notifier: notifier,
 			}
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusBadRequest, resp.Code)
@@ -340,7 +340,7 @@ func TestAsyncJobHandlers(t *testing.T) {
 				enabled:  true,
 				logger:   logger.NOP,
 				context:  ctx,
-				notifier: n,
+				notifier: notifier,
 			}
 			jobsManager.StatusJobHandler(resp, req)
 			require.Equal(t, http.StatusOK, resp.Code)

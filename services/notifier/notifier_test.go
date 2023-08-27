@@ -2,22 +2,42 @@ package notifier_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 	"testing"
 
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/services/notifier/model"
+
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 )
+
+func setup(t testing.TB) *resource.PostgresResource {
+	t.Helper()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	pgResource, err := resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=1000"))
+	require.NoError(t, err)
+
+	t.Log("db:", pgResource.DBDsn)
+
+	return pgResource
+}
 
 func TestNotifier(t *testing.T) {
 	const (
@@ -25,143 +45,352 @@ func TestNotifier(t *testing.T) {
 		workerID            = "test_worker"
 	)
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
+	t.Run("basic workflow", func(t *testing.T) {
+		t.Parallel()
 
-	pgResource, err := resource.SetupPostgres(pool, t, postgres.WithOptions("max_connections=200"))
-	require.NoError(t, err)
+		pgResource := setup(t)
+		ctx := context.Background()
 
-	t.Log("db:", pgResource.DBDsn)
+		publishRequest := &model.PublishRequest{
+			Payloads: []json.RawMessage{
+				json.RawMessage(`{"id":"1"}`),
+				json.RawMessage(`{"id":"2"}`),
+				json.RawMessage(`{"id":"3"}`),
+				json.RawMessage(`{"id":"4"}`),
+				json.RawMessage(`{"id":"5"}`),
+			},
+			JobType:         model.JobTypeUpload,
+			PayloadMetadata: json.RawMessage(`{"mid": "1"}`),
+			Priority:        50,
+		}
 
-	ctx := context.Background()
+		statsStore := memstats.New()
 
-	payload := &model.PublishRequest{
-		Payloads: []model.Payload{
-			model.Payload(`{"id":"1"}`),
-			model.Payload(`{"id":"2"}`),
-			model.Payload(`{"id":"3"}`),
-			model.Payload(`{"id":"4"}`),
-			model.Payload(`{"id":"5"}`),
-		},
-		JobType:  model.JobTypeUpload,
-		Metadata: model.Metadata(`{"sid":"1"}`),
-		Priority: 50,
-	}
+		c := config.New()
+		c.Set("PgNotifier.maxAttempt", 1)
+		c.Set("PgNotifier.maxOpenConnections", 500)
+		c.Set("PgNotifier.trackBatchIntervalInS", "1s")
+		c.Set("PgNotifier.maxPollSleep", "1s")
+		c.Set("PgNotifier.jobOrphanTimeout", "30s")
 
-	statsStore := memstats.New()
+		groupCtx, groupCancel := context.WithCancel(ctx)
+		g, gCtx := errgroup.WithContext(groupCtx)
 
-	c := config.New()
-	c.Set("PgNotifier.db.host", pgResource.Host)
-	c.Set("PgNotifier.db.user", pgResource.User)
-	c.Set("PgNotifier.db.name", pgResource.Database)
-	c.Set("PgNotifier.db.password", pgResource.Password)
-	c.Set("PgNotifier.db.port", pgResource.Port)
-	c.Set("PgNotifier.maxAttempt", 1)
-	c.Set("PgNotifier.maxOpenConnections", 100)
-	c.Set("PgNotifier.trackBatchIntervalInS", "1s")
-	c.Set("PgNotifier.maxPollSleep", "1s")
-	c.Set("PgNotifier.jobOrphanTimeout", "1s")
+		n, err := notifier.New(groupCtx, c, logger.NOP, statsStore, workspaceIdentifier,
+			pgResource.DBDsn,
+		)
+		require.NoError(t, err)
 
-	n, err := notifier.New(ctx, c, logger.NOP, statsStore, workspaceIdentifier,
-		pgResource.DBDsn,
-	)
-	require.NoError(t, err)
-	require.NoError(t, n.ClearJobs(ctx))
+		const (
+			jobs              = 64
+			subscribers       = 32
+			subscriberWorkers = 4
+		)
 
-	const (
-		jobs              = 120
-		subscribers       = 8
-		subscriberWorkers = 4
-	)
+		publishResponses := make(chan *model.PublishResponse)
 
-	groupCtx, groupCancel := context.WithCancel(ctx)
-	g, gCtx := errgroup.WithContext(groupCtx)
+		for i := 0; i < jobs; i++ {
+			g.Go(func() error {
+				publishCh, err := n.Publish(gCtx, publishRequest)
+				require.NoError(t, err)
 
-	responses := make(chan *model.PublishResponse)
+				response, ok := <-publishCh
+				require.True(t, ok)
+				require.NotNil(t, response)
 
-	for i := 0; i < jobs; i++ {
-		g.Go(func() error {
-			publishCh, err := n.Publish(gCtx, payload)
-			require.NoError(t, err)
+				publishResponses <- response
 
-			response, ok := <-publishCh
-			require.True(t, ok)
-			require.NotNil(t, response)
+				response, ok = <-publishCh
+				require.False(t, ok)
+				require.Nil(t, response)
 
-			responses <- response
+				return nil
+			})
+		}
+		for i := 0; i < subscribers; i++ {
+			g.Go(func() error {
+				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
 
-			response, ok = <-publishCh
-			require.False(t, ok)
-			require.Nil(t, response)
+				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
 
-			return nil
-		})
-	}
-	for i := 0; i < subscribers; i++ {
-		g.Go(func() error {
-			subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
-			for j := 0; j < subscriberWorkers; j++ {
-				g.Go(func() error {
-					for job := range subscriberCh {
-						switch job.ID % 4 {
-						case 0, 1, 2:
-							n.UpdateClaim(gCtx, job, &model.ClaimResponse{
-								Payload: model.Payload(`{"test": "payload"}`),
-							})
-						case 3:
-							n.UpdateClaim(gCtx, job, &model.ClaimResponse{
-								Err: errors.New("test error"),
-							})
+				for j := 0; j < subscriberWorkers; j++ {
+					slaveGroup.Go(func() error {
+						for job := range subscriberCh {
+							switch job.Job.ID % 4 {
+							case 0, 1, 2:
+								n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+									Payload: json.RawMessage(`{"test": "payload"}`),
+								})
+							case 3:
+								n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+									Err: errors.New("test error"),
+								})
+							}
 						}
-					}
-					return nil
-				})
-			}
-			return nil
-		})
-
+						return nil
+					})
+				}
+				return slaveGroup.Wait()
+			})
+		}
 		g.Go(func() error {
 			return n.RunMaintenanceWorker(gCtx)
 		})
-	}
-	g.Go(func() error {
-		return n.Wait(gCtx)
-	})
-	g.Go(func() error {
-		failedResponses := make([]*model.Job, 0)
-		succeededResponses := make([]*model.Job, 0)
+		g.Go(func() error {
+			return n.Wait()
+		})
+		g.Go(func() error {
+			failedResponses := make([]*model.Job, 0)
+			succeededResponses := make([]*model.Job, 0)
 
-		for i := 0; i < jobs; i++ {
-			job := <-responses
-			require.NoError(t, job.Err)
+			for i := 0; i < jobs; i++ {
+				job := <-publishResponses
+				require.NoError(t, job.Err)
+				require.EqualValues(t, job.JobMetadata, model.JobMetadata(publishRequest.PayloadMetadata))
 
-			for _, n := range job.Notifiers {
-				if n.Error != nil {
-					failedResponses = append(failedResponses, &n)
-				} else {
-					succeededResponses = append(succeededResponses, &n)
+				for _, n := range job.Jobs {
+					if n.Error != nil {
+						failedResponses = append(failedResponses, &n)
+					} else {
+						succeededResponses = append(succeededResponses, &n)
+					}
 				}
 			}
+
+			failedResCount := jobs * len(publishRequest.Payloads) / 4
+			succeededResCount := (3 * jobs * len(publishRequest.Payloads)) / 4
+
+			require.Equal(t, failedResCount, len(failedResponses))
+			require.Equal(t, succeededResCount, len(succeededResponses))
+
+			close(publishResponses)
+			groupCancel()
+
+			return nil
+		})
+		require.NoError(t, g.Wait())
+		require.NoError(t, n.ClearJobs(ctx))
+		require.EqualValues(t, statsStore.Get("pgnotifier.publish", stats.Tags{
+			"module": "pgnotifier",
+		}).LastValue(), jobs)
+		require.EqualValues(t, statsStore.Get("pg_notifier_insert_records", stats.Tags{
+			"module":    "pgnotifier",
+			"queueName": "pg_notifier_queue",
+		}).LastValue(), jobs*len(publishRequest.Payloads))
+	})
+
+	t.Run("bigger batches and many subscribers", func(t *testing.T) {
+		t.Parallel()
+
+		pgResource := setup(t)
+		ctx := context.Background()
+
+		const (
+			batchSize         = 1000
+			jobs              = 1
+			subscribers       = 100
+			subscriberWorkers = 10
+		)
+
+		var payloads []json.RawMessage
+		for i := 0; i < batchSize; i++ {
+			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
 		}
 
-		failedResCount := jobs * len(payload.Payloads) / 4
-		succeededResCount := (3 * jobs * len(payload.Payloads)) / 4
+		publishRequest := &model.PublishRequest{
+			Payloads:        payloads,
+			JobType:         model.JobTypeUpload,
+			PayloadMetadata: json.RawMessage(`{"mid": "1"}`),
+			Priority:        50,
+		}
 
-		require.Equal(t, failedResCount, len(failedResponses))
-		require.Equal(t, succeededResCount, len(succeededResponses))
+		c := config.New()
+		c.Set("PgNotifier.maxAttempt", 1)
+		c.Set("PgNotifier.maxOpenConnections", 900)
+		c.Set("PgNotifier.trackBatchIntervalInS", "1s")
+		c.Set("PgNotifier.maxPollSleep", "100ms")
+		c.Set("PgNotifier.jobOrphanTimeout", "30s")
 
-		close(responses)
-		groupCancel()
+		groupCtx, groupCancel := context.WithCancel(ctx)
+		g, gCtx := errgroup.WithContext(groupCtx)
 
-		return nil
+		n, err := notifier.New(groupCtx, c, logger.NOP, stats.Default, workspaceIdentifier,
+			pgResource.DBDsn,
+		)
+		require.NoError(t, err)
+
+		publishResponses := make(chan *model.PublishResponse)
+
+		for i := 0; i < jobs; i++ {
+			g.Go(func() error {
+				publishCh, err := n.Publish(gCtx, publishRequest)
+				require.NoError(t, err)
+
+				publishResponses <- <-publishCh
+
+				return nil
+			})
+		}
+
+		for i := 0; i < subscribers; i++ {
+			g.Go(func() error {
+				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
+
+				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
+
+				for j := 0; j < subscriberWorkers; j++ {
+					slaveGroup.Go(func() error {
+						for job := range subscriberCh {
+							n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+								Payload: json.RawMessage(`{"test": "payload"}`),
+							})
+						}
+						return nil
+					})
+				}
+				return slaveGroup.Wait()
+			})
+		}
+		g.Go(func() error {
+			for i := 0; i < jobs; i++ {
+				response := <-publishResponses
+				require.NoError(t, response.Err)
+				require.Len(t, response.Jobs, len(publishRequest.Payloads))
+			}
+			close(publishResponses)
+			groupCancel()
+			return nil
+		})
+		g.Go(func() error {
+			return n.RunMaintenanceWorker(gCtx)
+		})
+		g.Go(func() error {
+			return n.Wait()
+		})
+		require.NoError(t, g.Wait())
 	})
-	require.NoError(t, g.Wait())
-	require.NoError(t, n.ClearJobs(ctx))
-	require.EqualValues(t, statsStore.Get("pgnotifier.publish", stats.Tags{
-		"module": "pgnotifier",
-	}).LastValue(), jobs)
-	require.EqualValues(t, statsStore.Get("pg_notifier_insert_records", stats.Tags{
-		"module":    "pgnotifier",
-		"queueName": "pg_notifier_queue",
-	}).LastValue(), jobs*len(payload.Payloads))
+
+	t.Run("round robin and maintenance workers", func(t *testing.T) {
+		t.Parallel()
+
+		pgResource := setup(t)
+		ctx := context.Background()
+
+		const (
+			batchSize         = 1
+			jobs              = 1
+			subscribers       = 1
+			subscriberWorkers = 4
+		)
+
+		var payloads []json.RawMessage
+		for i := 0; i < batchSize; i++ {
+			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
+		}
+
+		publishRequest := &model.PublishRequest{
+			Payloads:        payloads,
+			JobType:         model.JobTypeUpload,
+			PayloadMetadata: json.RawMessage(`{"mid": "1"}`),
+			Priority:        50,
+		}
+
+		c := config.New()
+		c.Set("PgNotifier.maxAttempt", 1)
+		c.Set("PgNotifier.maxOpenConnections", 900)
+		c.Set("PgNotifier.trackBatchIntervalInS", "1s")
+		c.Set("PgNotifier.maxPollSleep", "100ms")
+		c.Set("PgNotifier.jobOrphanTimeout", "5s")
+
+		groupCtx, groupCancel := context.WithCancel(ctx)
+		g, gCtx := errgroup.WithContext(groupCtx)
+
+		n, err := notifier.New(groupCtx, c, logger.NOP, stats.Default, workspaceIdentifier,
+			pgResource.DBDsn,
+		)
+		require.NoError(t, err)
+
+		publishResponses := make(chan *model.PublishResponse)
+
+		for i := 0; i < jobs; i++ {
+			g.Go(func() error {
+				publishCh, err := n.Publish(gCtx, publishRequest)
+				require.NoError(t, err)
+
+				publishResponses <- <-publishCh
+
+				return nil
+			})
+		}
+
+		for i := 0; i < subscribers; i++ {
+			g.Go(func() error {
+				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
+
+				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
+				claimedWorkers := atomic.NewInt64(0)
+				blockSub := make(chan struct{})
+
+				for i := 0; i < subscriberWorkers; i++ {
+					slaveGroup.Go(func() error {
+						for job := range subscriberCh {
+							claimedWorkers.Add(1)
+
+							if claimedWorkers.Load() < subscriberWorkers {
+								select {
+								case blockSub <- struct{}{}:
+								case <-slaveCtx.Done():
+								}
+							}
+
+							n.UpdateClaim(slaveCtx, job, &model.ClaimJobResponse{
+								Payload: json.RawMessage(`{"test": "payload"}`),
+							})
+						}
+						return nil
+					})
+				}
+				return slaveGroup.Wait()
+			})
+		}
+		g.Go(func() error {
+			for i := 0; i < jobs; i++ {
+				response := <-publishResponses
+				require.NoError(t, response.Err)
+				require.Len(t, response.Jobs, len(publishRequest.Payloads))
+			}
+			close(publishResponses)
+			groupCancel()
+			return nil
+		})
+		g.Go(func() error {
+			return n.RunMaintenanceWorker(gCtx)
+		})
+		g.Go(func() error {
+			return n.Wait()
+		})
+		require.NoError(t, g.Wait())
+	})
+
+	t.Run("env vars", func(t *testing.T) {
+		t.Parallel()
+
+		pgResource := setup(t)
+		ctx := context.Background()
+
+		port, err := strconv.Atoi(pgResource.Port)
+		require.NoError(t, err)
+
+		c := config.New()
+		c.Set("PGNOTIFIER_DB_HOST", pgResource.Host)
+		c.Set("PGNOTIFIER_DB_USER", pgResource.User)
+		c.Set("PGNOTIFIER_DB_NAME", pgResource.Database)
+		c.Set("PGNOTIFIER_DB_PORT", port)
+		c.Set("PGNOTIFIER_DB_PASSWORD", pgResource.Password)
+
+		_, err = notifier.New(ctx, c, logger.NOP, stats.Default, workspaceIdentifier,
+			"postgres://localhost:5432/invalid",
+		)
+		require.NoError(t, err)
+	})
 }

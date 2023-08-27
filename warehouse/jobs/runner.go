@@ -234,7 +234,7 @@ func (a *AsyncJobWh) startAsyncJobRunner(ctx context.Context) error {
 }
 
 func (a *AsyncJobWh) updateStatusJobPayloadsFromNotifierResponse(r *model.PublishResponse, m map[string]AsyncJobStatus) {
-	for _, resp := range r.Notifiers {
+	for _, resp := range r.Jobs {
 		var response NotifierResponse
 		err := json.Unmarshal(resp.Payload, &response)
 		if err != nil {

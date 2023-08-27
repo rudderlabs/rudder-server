@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	stdjson "encoding/json"
+
 	notifierModel "github.com/rudderlabs/rudder-server/services/notifier/model"
 
 	"github.com/samber/lo"
@@ -201,28 +203,27 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	var sampleError error
 	for _, chunk := range lo.Chunk(toProcessStagingFiles, publishBatchSize) {
 		// td : add prefix to payload for s3 dest
-		var messages []notifierModel.Payload
+		var messages []stdjson.RawMessage
 		for _, stagingFile := range chunk {
 			payload := WorkerJobRequest{
+				UploadID:                     job.Upload.ID,
 				StagingFileID:                stagingFile.ID,
-				StagingUseRudderStorage:      stagingFile.UseRudderStorage,
-				StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
 				StagingFileLocation:          stagingFile.Location,
-
-				UniqueLoadGenID:       uniqueLoadGenID,
-				RudderStoragePrefix:   misc.GetRudderObjectStoragePrefix(),
-				UploadID:              job.Upload.ID,
-				LoadFileType:          job.Upload.LoadFileType,
-				UseRudderStorage:      job.Upload.UseRudderStorage,
-				SourceID:              job.Warehouse.Source.ID,
-				SourceName:            job.Warehouse.Source.Name,
-				DestinationID:         job.Warehouse.Destination.ID,
-				DestinationName:       job.Warehouse.Destination.Name,
-				DestinationConfig:     job.Warehouse.Destination.Config,
-				WorkspaceID:           job.Warehouse.Destination.WorkspaceID,
-				DestinationRevisionID: job.Warehouse.Destination.RevisionID,
-				DestinationType:       job.Warehouse.Destination.DestinationDefinition.Name,
-				DestinationNamespace:  job.Warehouse.Namespace,
+				LoadFileType:                 job.Upload.LoadFileType,
+				SourceID:                     job.Warehouse.Source.ID,
+				SourceName:                   job.Warehouse.Source.Name,
+				DestinationID:                destID,
+				DestinationName:              job.Warehouse.Destination.Name,
+				DestinationType:              destType,
+				DestinationNamespace:         job.Warehouse.Namespace,
+				DestinationConfig:            job.Warehouse.Destination.Config,
+				WorkspaceID:                  job.Warehouse.Destination.WorkspaceID,
+				UniqueLoadGenID:              uniqueLoadGenID,
+				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+				UseRudderStorage:             job.Upload.UseRudderStorage,
+				StagingUseRudderStorage:      stagingFile.UseRudderStorage,
+				DestinationRevisionID:        job.Warehouse.Destination.RevisionID,
+				StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
 			}
 			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
 				payload.StagingDestinationConfig = revisionConfig.Config
@@ -249,10 +250,10 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
 
 		ch, err := lf.Notifier.Publish(ctx, &notifierModel.PublishRequest{
-			Payloads: messages,
-			JobType:  notifierModel.JobTypeUpload,
-			Metadata: metadataJSON,
-			Priority: job.Upload.Priority,
+			Payloads:        messages,
+			JobType:         notifierModel.JobTypeUpload,
+			PayloadMetadata: metadataJSON,
+			Priority:        job.Upload.Priority,
 		})
 		if err != nil {
 			return 0, 0, fmt.Errorf("error publishing to notifier: %w", err)
@@ -264,7 +265,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		g.Go(func() error {
 			responses, ok := <-ch
 			if !ok {
-				return fmt.Errorf("receiving channel closed")
+				return fmt.Errorf("receiving notifier channel closed")
 			}
 
 			lf.Logger.Infow("Received responses for staging files %d:%d for %s:%s from Notifier",
@@ -279,29 +280,32 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 			var loadFiles []model.LoadFile
 			var successfulStagingFileIDs []int64
-			for _, resp := range responses.Notifiers {
+			for _, resp := range responses.Jobs {
 				// Error handling during generating_load_files step:
 				// 1. any error returned by notifier is set on corresponding staging_file
 				// 2. any error effecting a batch/all the staging files like saving load file records to wh db
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
-				if resp.Status == "aborted" {
-					lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
-					sampleError = fmt.Errorf(resp.Error.Error())
-					err = lf.StageRepo.SetErrorStatus(ctx, resp.ID, sampleError)
-					if err != nil {
-						return fmt.Errorf("set staging file error status: %w", err)
-					}
-					continue
-				}
 				var jobResponse WorkerJobResponse
 				err = json.Unmarshal(resp.Payload, &jobResponse)
 				if err != nil {
 					return fmt.Errorf("unmarshalling response from notifier: %w", err)
 				}
-				if len(jobResponse.Output) == 0 {
-					lf.Logger.Errorf("[WH]: No LoadFiles returned by wh worker")
+
+				if resp.Status == notifierModel.Aborted && resp.Error != nil {
+					lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
+					sampleError = fmt.Errorf(resp.Error.Error())
+					err = lf.StageRepo.SetErrorStatus(ctx, jobResponse.StagingFileID, sampleError)
+					if err != nil {
+						return fmt.Errorf("set staging file error status: %w", err)
+					}
 					continue
 				}
+
+				if len(jobResponse.Output) == 0 {
+					lf.Logger.Errorf("[WH]: No LoadFiles returned by worker")
+					continue
+				}
+
 				for _, output := range jobResponse.Output {
 					loadFiles = append(loadFiles, model.LoadFile{
 						TableName:             output.TableName,
