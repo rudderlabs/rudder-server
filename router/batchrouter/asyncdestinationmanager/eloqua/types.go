@@ -150,7 +150,7 @@ type Message struct {
 	Data                    map[string]interface{} `json:"data"`
 	IdentifierFieldName     string                 `json:"identifierFieldName"`
 	MapDataCardsSourceField string                 `json:"mapDataCardsSourceField"`
-	CustomObjectId          int                    `json:"customObjectId"`
+	CustomObjectId          string                 `json:"customObjectId"`
 }
 type Metadata struct {
 	JobID int64 `json:"job_id"`

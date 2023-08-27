@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -26,9 +25,9 @@ func checkEventType(file *os.File) (string, string, error) {
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			return "", "", fmt.Errorf("error in unmarshalling data, %v", err)
 		}
-		if data.Message.IdentifierFieldName == "" && strconv.Itoa(data.Message.CustomObjectId) != "" && data.Message.MapDataCardsSourceField != "" {
-			return "track", strconv.Itoa(data.Message.CustomObjectId), nil
-		} else if data.Message.IdentifierFieldName != "" && strconv.Itoa(data.Message.CustomObjectId) == "" && data.Message.MapDataCardsSourceField == "" {
+		if data.Message.IdentifierFieldName != "" && data.Message.CustomObjectId != "" && data.Message.MapDataCardsSourceField != "" {
+			return "track", data.Message.CustomObjectId, nil
+		} else if data.Message.IdentifierFieldName != "" && data.Message.CustomObjectId == "" && data.Message.MapDataCardsSourceField == "" {
 			return "identify", "", nil
 		} else {
 			return "", "", fmt.Errorf("unable to find evnet format")

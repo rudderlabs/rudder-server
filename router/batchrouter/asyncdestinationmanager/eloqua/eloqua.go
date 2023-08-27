@@ -11,14 +11,17 @@ import (
 )
 
 type Eloqua interface {
+	GetBaseEndpoint(data *Data) (string, error)
 	FetchFields(*Data) (*Fields, error)
 	CreateImportDefinition(*Data) (*Fields, error)
 	UploadData(*Data) error
 	RunSync(*Data) error
+	CheckSyncStatus(data *Data) (string, error)
 	DeleteImportDefinition(*Data) error
+	CheckRejectedData(*Data) (*RejectResponse, error)
 }
 
-func getBaseEndpoint(data *Data) (string, error) {
+func GetBaseEndpoint(data *Data) (string, error) {
 	req, err := http.NewRequest("GET", "https://login.eloqua.com/id", nil)
 	if err != nil {
 		return "", err

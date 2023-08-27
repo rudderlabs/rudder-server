@@ -67,7 +67,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 
 	filePAth, _ := createCSVFile(fields, file)
-
+	defer os.Remove(filePAth)
 	importDefinitionBody, err := createBodyForImportDefinition(eventType, fields, eloquaFields, file)
 	if err != nil {
 		return common.AsyncUploadOutput{
