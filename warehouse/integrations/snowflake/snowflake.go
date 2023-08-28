@@ -59,7 +59,7 @@ var partitionKeyMap = map[string]string{
 	discardsTable:   `"ROW_ID", "COLUMN_NAME", "TABLE_NAME"`,
 }
 
-var appendSourceCategoryMap = map[string]struct{}{
+var mergeSourceCategoryMap = map[string]struct{}{
 	"cloud":           {},
 	"singer-protocol": {},
 }
@@ -820,14 +820,12 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 	return nil
 }
 
-// ShouldAppend returns true if the load table strategy is append mode and the source is event stream
-// currently, source category can either be (cloud, singer-protocol, warehouse, webhook)
+// ShouldAppend returns true if the load table strategy is append mode and the source category is not in "mergeSourceCategoryMap"
 func (sf *Snowflake) ShouldAppend() bool {
 	sourceCategory := sf.Warehouse.Source.SourceDefinition.Category
-	if _, isAppendCategory := appendSourceCategoryMap[sourceCategory]; isAppendCategory {
-		return false
-	}
-	return sf.config.loadTableStrategy == loadTableStrategyAppendMode
+	_, isMergeCategory := mergeSourceCategoryMap[sourceCategory]
+
+	return !isMergeCategory && sf.config.loadTableStrategy == loadTableStrategyAppendMode
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
