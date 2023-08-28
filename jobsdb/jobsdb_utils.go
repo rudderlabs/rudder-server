@@ -109,18 +109,18 @@ func checkValidJobState(jd assertInterface, stateFilters []string) {
 		jobStateMap[js.State] = js
 	}
 	for _, st := range stateFilters {
-		js, ok := jobStateMap[st]
+		_, ok := jobStateMap[st]
 		jd.assert(ok, fmt.Sprintf("state %s is not found in jobStates: %v", st, jobStates))
-		jd.assert(js.isValid, fmt.Sprintf("jobState : %v is not valid", js))
 	}
 }
 
 // constructQueryOR construct a query were paramKey is any of the values in paramValues
-func constructQueryOR(paramKey string, paramList []string) string {
+func constructQueryOR(paramKey string, paramList []string, additionalPredicates ...string) string {
 	var queryList []string
 	for _, p := range paramList {
 		queryList = append(queryList, "("+paramKey+"='"+p+"')")
 	}
+	queryList = append(queryList, additionalPredicates...)
 	return "(" + strings.Join(queryList, " OR ") + ")"
 }
 
@@ -142,7 +142,7 @@ type statTags struct {
 	WorkspaceID      string
 }
 
-func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.Measurement {
+func (jd *Handle) getTimerStat(stat string, tags *statTags) stats.Measurement {
 	return stats.Default.NewTaggedStat(
 		stat,
 		stats.TimerType,

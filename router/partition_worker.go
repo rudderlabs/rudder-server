@@ -37,6 +37,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 			}),
 				eventorder.WithConcurrencyLimit(rt.barrierConcurrencyLimit),
 				eventorder.WithDrainConcurrencyLimit(rt.drainConcurrencyLimit),
+				eventorder.WithDebugInfoProvider(rt.eventOrderDebugInfo),
 			),
 			rt:                        rt,
 			deliveryTimeStat:          stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType}),

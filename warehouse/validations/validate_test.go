@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/ory/dockertest/v3"
@@ -64,7 +62,6 @@ func TestValidator(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-	encoding.Init()
 	validations.Init()
 
 	var (

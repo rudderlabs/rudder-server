@@ -25,7 +25,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
-	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -126,7 +125,6 @@ func initJobsDB() {
 	logger.Reset()
 	stash.Init()
 	admin.Init()
-	jobsdb.Init()
 }
 
 func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
@@ -152,22 +150,19 @@ func TestProcessorManager(t *testing.T) {
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
 	RegisterTestingT(t)
-	triggerAddNewDS := make(chan time.Time)
-	maxDSSize := 10
+	config.Reset()
+	c := config.New()
+	c.Set("JobsDB.maxDSSize", 10)
 	// tempDB is created to observe/manage the GW DB from the outside without touching the actual GW DB.
-	tempDB := jobsdb.HandleT{
-		MaxDSSize: &maxDSSize,
-		TriggerAddNewDS: func() <-chan time.Time {
-			return triggerAddNewDS
-		},
-	}
-
-	err := tempDB.Setup(jobsdb.Write, true, "gw", []prebackup.Handler{}, fileuploader.NewDefaultProvider())
-	require.NoError(t, err)
+	tempDB := jobsdb.NewForWrite(
+		"gw",
+		jobsdb.WithConfig(c),
+	)
+	require.NoError(t, tempDB.Start())
 	defer tempDB.TearDown()
 
 	customVal := "GW"
-	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
+	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -180,20 +175,34 @@ func TestProcessorManager(t *testing.T) {
 	err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 	require.NoError(t, err)
 
-	gwDB := jobsdb.NewForReadWrite("gw")
+	gwDB := jobsdb.NewForReadWrite("gw",
+		jobsdb.WithConfig(c),
+	)
 	defer gwDB.Close()
-	rtDB := jobsdb.NewForReadWrite("rt")
+	rtDB := jobsdb.NewForReadWrite("rt",
+		jobsdb.WithConfig(c),
+	)
 	defer rtDB.Close()
-	brtDB := jobsdb.NewForReadWrite("batch_rt")
+	brtDB := jobsdb.NewForReadWrite("batch_rt",
+		jobsdb.WithConfig(c),
+	)
 	defer brtDB.Close()
-	readErrDB := jobsdb.NewForRead("proc_error")
+	readErrDB := jobsdb.NewForRead("proc_error",
+		jobsdb.WithConfig(c),
+	)
 	defer readErrDB.Close()
-	writeErrDB := jobsdb.NewForWrite("proc_error")
+	writeErrDB := jobsdb.NewForWrite("proc_error",
+		jobsdb.WithConfig(c),
+	)
 	require.NoError(t, writeErrDB.Start())
 	defer writeErrDB.TearDown()
-	eschDB := jobsdb.NewForReadWrite("esch")
+	eschDB := jobsdb.NewForReadWrite("esch",
+		jobsdb.WithConfig(c),
+	)
 	defer eschDB.Close()
-	archDB := jobsdb.NewForReadWrite("archival")
+	archDB := jobsdb.NewForReadWrite("archival",
+		jobsdb.WithConfig(c),
+	)
 	defer archDB.Close()
 
 	clearDb := false
@@ -245,7 +254,7 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		defer processor.Stop()
 		Eventually(func() int {
-			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
@@ -284,14 +293,14 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
+		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 		require.NoError(t, err, "failed to get unprocessed jobs")
 		Eventually(func() int {
-			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParams{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},

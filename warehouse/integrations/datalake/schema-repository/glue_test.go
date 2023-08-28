@@ -7,8 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -120,7 +118,6 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			misc.Init()
 			warehouseutils.Init()
-			encoding.Init()
 
 			ctx := context.Background()
 

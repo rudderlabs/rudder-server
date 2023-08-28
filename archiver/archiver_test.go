@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	c "github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -23,11 +23,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
@@ -46,45 +44,28 @@ func TestJobsArchival(t *testing.T) {
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err, "Failed to create docker pool")
-	cleanup := &testhelper.Cleanup{}
 
-	postgresResource, err := resource.SetupPostgres(pool, cleanup)
+	postgresResource, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err, "failed to setup postgres resource")
+	c := config.New()
+	c.Set("DB.name", postgresResource.Database)
+	c.Set("DB.host", postgresResource.Host)
+	c.Set("DB.port", postgresResource.Port)
+	c.Set("DB.user", postgresResource.User)
+	c.Set("DB.password", postgresResource.Password)
+	misc.Init()
+
+	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c))
+	require.NoError(t, jd.Start())
 
 	minioResource = make([]*destination.MINIOResource, uniqueWorkspaces)
 	for i := 0; i < uniqueWorkspaces; i++ {
-		minioResource[i], err = destination.SetupMINIO(pool, cleanup)
+		minioResource[i], err = destination.SetupMINIO(pool, t)
 		require.NoError(t, err, "failed to setup minio resource")
 	}
 
 	jobs, err := readGzipJobFile(seedJobsFileName)
 	require.NoError(t, err, "failed to read jobs file")
-
-	{
-		t.Setenv("MINIO_SSL", "false")
-		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
-		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
-		t.Setenv("JOBS_DB_USER", postgresResource.User)
-		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
-	}
-
-	jobsdb.Init()
-	misc.Init()
-	jd := &jobsdb.HandleT{
-		TriggerAddNewDS: func() <-chan time.Time {
-			return make(chan time.Time)
-		},
-	}
-	require.NoError(t, jd.Setup(
-		jobsdb.ReadWrite,
-		false,
-		"gw",
-		[]prebackup.Handler{},
-		nil,
-	))
-	require.NoError(t, jd.Start())
 
 	require.NoError(t, jd.Store(ctx, jobs))
 
@@ -150,7 +131,7 @@ func TestJobsArchival(t *testing.T) {
 	archiver := New(
 		jd,
 		fileUploaderProvider,
-		c.New(),
+		c,
 		stats.Default,
 		WithArchiveTrigger(
 			func() <-chan time.Time {
@@ -166,14 +147,12 @@ func TestJobsArchival(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			succeeded, err := jd.GetProcessed(
+			succeeded, err := jd.GetSucceeded(
 				ctx,
-				jobsdb.GetQueryParamsT{
-					IgnoreCustomValFiltersInQuery: true,
-					StateFilters:                  []string{jobsdb.Succeeded.State},
-					JobsLimit:                     1000,
-					EventsLimit:                   1000,
-					PayloadSizeLimit:              bytesize.GB,
+				jobsdb.GetQueryParams{
+					JobsLimit:        1000,
+					EventsLimit:      1000,
+					PayloadSizeLimit: bytesize.GB,
 				},
 			)
 			require.NoError(t, err)
@@ -194,7 +173,7 @@ func TestJobsArchival(t *testing.T) {
 		require.Equal(t, sourcesPerWorkspace[i], len(files))
 
 		for j, file := range files {
-			downloadFile, err := os.CreateTemp("", fmt.Sprintf("backedupfile%d%d", i, j))
+			downloadFile, err := os.CreateTemp(t.TempDir(), fmt.Sprintf("backedupfile%d%d", i, j))
 			require.NoError(t, err)
 			err = fm.Download(context.Background(), downloadFile, file)
 			require.NoError(t, err, file)
@@ -202,9 +181,6 @@ func TestJobsArchival(t *testing.T) {
 			require.NoError(t, err)
 			dJobs, err := readGzipJobFile(downloadFile.Name())
 			require.NoError(t, err)
-			cleanup.Cleanup(func() {
-				_ = os.Remove(downloadFile.Name())
-			})
 			downloadedJobs = append(downloadedJobs, dJobs...)
 		}
 	}
@@ -212,7 +188,6 @@ func TestJobsArchival(t *testing.T) {
 	archiver.Stop()
 	jd.Stop()
 	jd.Close()
-	cleanup.Run()
 }
 
 func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {

@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -72,6 +74,7 @@ func TestSlaveWorker(t *testing.T) {
 		jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
 
 		schemaMap := stagingSchema(t)
+		ef := encoding.NewFactory(config.Default)
 
 		t.Run("success", func(t *testing.T) {
 			subscribeCh := make(chan *pgnotifier.ClaimResponse)
@@ -88,6 +91,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
+				ef,
 				workerIdx,
 			)
 
@@ -185,6 +189,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
+				ef,
 				workerIdx,
 			)
 
@@ -309,6 +314,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
+				ef,
 				workerIdx,
 			)
 
@@ -373,6 +379,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP),
 				newConstraintsManager(config.Default),
+				ef,
 				workerIdx,
 			)
 
@@ -514,10 +521,9 @@ func TestSlaveWorker(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
-		tenantManager := &multitenant.Manager{
-			BackendConfig: mockBackendConfig,
-		}
+		tenantManager := multitenant.New(config.Default, mockBackendConfig)
 		bcm := newBackendConfigManager(config.Default, nil, tenantManager, logger.NOP)
+		ef := encoding.NewFactory(config.Default)
 
 		setupCh := make(chan struct{})
 		go func() {
@@ -547,6 +553,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				bcm,
 				newConstraintsManager(config.Default),
+				ef,
 				workerIdx,
 			)
 
@@ -610,6 +617,7 @@ func TestSlaveWorker(t *testing.T) {
 				notifier,
 				bcm,
 				newConstraintsManager(config.Default),
+				ef,
 				workerIdx,
 			)
 

@@ -60,6 +60,8 @@ const (
 	NoSourceIdInHeader = "Failed to read source id from header"
 	// InvalidSourceID - Invalid source id
 	InvalidSourceID = "Invalid source id"
+	// InvalidReplaySource - Invalid replay source
+	InvalidReplaySource = "Invalid replay source"
 
 	transPixelResponse = "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x21\xF9\x04" +
 		"\x01\x00\x00\x00\x00\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3B"
@@ -79,6 +81,7 @@ var statusMap = map[string]status{
 	InvalidJSON:             {message: InvalidJSON, code: http.StatusBadRequest},
 	NoSourceIdInHeader:      {message: NoSourceIdInHeader, code: http.StatusUnauthorized},
 	InvalidSourceID:         {message: InvalidSourceID, code: http.StatusUnauthorized},
+	InvalidReplaySource:     {message: InvalidReplaySource, code: http.StatusUnauthorized},
 
 	// webhook specific status
 	InvalidWebhookSource:                           {message: InvalidWebhookSource, code: http.StatusNotFound},

@@ -54,16 +54,16 @@ func enhanceWithViolation(response transformer.Response, trackingPlanId string, 
 
 // validateEvents If the TrackingPlanId exist for a particular write key then we are going to Validate from the transformer.
 // The Response will contain both the Events and FailedEvents
-// 1. eventsToTransform gets added to validatedEventsByWriteKey
+// 1. eventsToTransform gets added to validatedEventsBySourceId
 // 2. failedJobs gets added to validatedErrorJobs
-func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEvent, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
-	validatedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEvent)
+func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]transformer.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[SourceIDT][]transformer.TransformerEvent, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
+	validatedEventsBySourceId := make(map[SourceIDT][]transformer.TransformerEvent)
 	validatedReportMetrics := make([]*types.PUReportedMetric, 0)
 	validatedErrorJobs := make([]*jobsdb.JobT, 0)
 	trackingPlanEnabledMap := make(map[SourceIDT]bool)
 
-	for writeKey := range groupedEventsByWriteKey {
-		eventList := groupedEventsByWriteKey[writeKey]
+	for sourceId := range groupedEventsBySourceId {
+		eventList := groupedEventsBySourceId[sourceId]
 		validationStat := proc.newValidationStat(&eventList[0].Metadata)
 		validationStat.numEvents.Count(len(eventList))
 		proc.logger.Debug("Validation input size", len(eventList))
@@ -72,8 +72,8 @@ func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]trans
 		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
 		if !isTpExists {
 			// pass on the jobs for transformation(User, Dest)
-			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEvent, 0)
-			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
+			validatedEventsBySourceId[sourceId] = make([]transformer.TransformerEvent, 0)
+			validatedEventsBySourceId[sourceId] = append(validatedEventsBySourceId[sourceId], eventList...)
 			continue
 		}
 
@@ -85,8 +85,8 @@ func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]trans
 		// This is a safety check we are adding so that if something unexpected comes from transformer
 		// We are ignoring it.
 		if (len(response.Events) + len(response.FailedEvents)) != len(eventList) {
-			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEvent, 0)
-			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
+			validatedEventsBySourceId[sourceId] = make([]transformer.TransformerEvent, 0)
+			validatedEventsBySourceId[sourceId] = append(validatedEventsBySourceId[sourceId], eventList...)
 			continue
 		}
 
@@ -122,10 +122,10 @@ func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]trans
 		if len(eventsToTransform) == 0 {
 			continue
 		}
-		validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEvent, 0)
-		validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventsToTransform...)
+		validatedEventsBySourceId[sourceId] = make([]transformer.TransformerEvent, 0)
+		validatedEventsBySourceId[sourceId] = append(validatedEventsBySourceId[sourceId], eventsToTransform...)
 	}
-	return validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap
+	return validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap
 }
 
 // makeCommonMetadataFromTransformerEvent Creates a new Metadata instance

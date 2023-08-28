@@ -4,17 +4,13 @@ import (
 	"context"
 )
 
-type key int
-
-const (
-	uploadID key = iota
-)
+type uploadIDContextKey struct{}
 
 func CtxWithUploadID(ctx context.Context, uid int64) context.Context {
-	return context.WithValue(ctx, uploadID, uid)
+	return context.WithValue(ctx, uploadIDContextKey{}, uid)
 }
 
 func UploadIDFromCtx(ctx context.Context) (int64, bool) {
-	userIP, ok := ctx.Value(uploadID).(int64)
-	return userIP, ok
+	uploadID, ok := ctx.Value(uploadIDContextKey{}).(int64)
+	return uploadID, ok
 }

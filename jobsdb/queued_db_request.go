@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
+func executeDbRequest[T any](jd *Handle, c *dbRequest[T]) T {
 	defer jd.getTimerStat(
 		fmt.Sprintf("%s_total_time", c.name),
 		c.tags,
@@ -15,11 +15,11 @@ func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
 	var queueCap chan struct{}
 	switch c.reqType {
 	case readReqType:
-		queueEnabled = jd.enableReaderQueue
-		queueCap = jd.readCapacity
+		queueEnabled = jd.conf.enableReaderQueue
+		queueCap = jd.conf.readCapacity
 	case writeReqType:
-		queueEnabled = jd.enableWriterQueue
-		queueCap = jd.writeCapacity
+		queueEnabled = jd.conf.enableWriterQueue
+		queueCap = jd.conf.writeCapacity
 	case undefinedReqType:
 		fallthrough
 	default:
@@ -45,15 +45,15 @@ const (
 	writeReqType
 )
 
-type dbRequest struct {
+type dbRequest[T any] struct {
 	reqType dbReqType
 	name    string
 	tags    *statTags
-	command func() interface{}
+	command func() T
 }
 
-func newReadDbRequest(name string, tags *statTags, command func() interface{}) *dbRequest {
-	return &dbRequest{
+func newReadDbRequest[T any](name string, tags *statTags, command func() T) *dbRequest[T] {
+	return &dbRequest[T]{
 		reqType: readReqType,
 		name:    name,
 		tags:    tags,
@@ -61,8 +61,8 @@ func newReadDbRequest(name string, tags *statTags, command func() interface{}) *
 	}
 }
 
-func newWriteDbRequest(name string, tags *statTags, command func() interface{}) *dbRequest {
-	return &dbRequest{
+func newWriteDbRequest[T any](name string, tags *statTags, command func() T) *dbRequest[T] {
+	return &dbRequest[T]{
 		reqType: writeReqType,
 		name:    name,
 		tags:    tags,

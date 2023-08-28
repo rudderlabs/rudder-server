@@ -43,7 +43,7 @@ func WithConfig(a *AsyncJobWh, config *config.Config) {
 	a.asyncJobTimeOut = config.GetDuration("Warehouse.jobs.asyncJobTimeOut", 300, time.Second)
 }
 
-func (a *AsyncJobWh) getTableNamesBy(sourceID, destinationID, jobRunID, taskRunID string) ([]string, error) {
+func (a *AsyncJobWh) tableNamesBy(sourceID, destinationID, jobRunID, taskRunID string) ([]string, error) {
 	a.logger.Infof("[WH-Jobs]: Extracting table names for the job run id %s", jobRunID)
 	var tableNames []string
 	var err error
@@ -348,7 +348,7 @@ func (a *AsyncJobWh) updateAsyncJobAttempt(ctx context.Context, Id string) error
 // returns status and errMessage
 // Only succeeded, executing & waiting states should have empty errMessage
 // Rest of the states failed, aborted should send an error message conveying a message
-func (a *AsyncJobWh) getStatusAsyncJob(payload *StartJobReqPayload) WhStatusResponse {
+func (a *AsyncJobWh) jobStatus(payload *StartJobReqPayload) WhStatusResponse {
 	var statusResponse WhStatusResponse
 	a.logger.Info("[WH-Jobs]: Getting status for wh async jobs %v", payload)
 	// Need to check for count first and see if there are any rows matching the job_run_id and task_run_id. If none, then raise an error instead of showing complete

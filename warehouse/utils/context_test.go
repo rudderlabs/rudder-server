@@ -16,6 +16,7 @@ func TestContext(t *testing.T) {
 			require.True(t, ok)
 			require.Equal(t, int64(1), uploadID)
 		})
+
 		t.Run("should return false if uploadID is not present in context", func(t *testing.T) {
 			ctx := context.Background()
 			uploadID, ok := UploadIDFromCtx(ctx)

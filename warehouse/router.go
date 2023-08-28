@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+
 	"github.com/rudderlabs/rudder-server/app"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -115,6 +117,7 @@ func newRouter(
 	tenantManager *multitenant.Manager,
 	controlPlaneClient *controlplane.Client,
 	bcManager *backendConfigManager,
+	encodingFactory *encoding.Factory,
 ) (*router, error) {
 	r := &router{}
 
@@ -160,7 +163,8 @@ func newRouter(
 			LoadRepo:           repo.NewLoadFiles(db),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		recovery: service.NewRecovery(destType, r.uploadRepo),
+		recovery:        service.NewRecovery(destType, r.uploadRepo),
+		encodingFactory: encodingFactory,
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)
 

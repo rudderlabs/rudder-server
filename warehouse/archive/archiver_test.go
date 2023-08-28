@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/golang/mock/gomock"
@@ -147,15 +149,18 @@ func TestArchiver(t *testing.T) {
 			`, tc.workspaceID, now)
 			require.NoError(t, err)
 
+			c := config.New()
+			c.Set("Warehouse.degradedWorkspaceIDs", tc.degradedWorkspaceIDs)
+
+			tenantManager := multitenant.New(c, backendConfig.DefaultBackendConfig)
+
 			archiver := archive.New(
 				config.Default,
 				logger.NOP,
 				mockStats,
 				pgResource.DB,
 				filemanager.New,
-				&multitenant.Manager{
-					DegradedWorkspaceIDs: tc.degradedWorkspaceIDs,
-				},
+				tenantManager,
 			)
 
 			ctx, cancel := context.WithCancel(context.Background())
