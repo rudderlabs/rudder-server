@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -144,6 +146,15 @@ type optionalCreds struct {
 	schemaName string
 }
 
+type duplicateMessage struct {
+	id         string
+	receivedAt time.Time
+}
+
+func (m *duplicateMessage) String() string {
+	return `{"id": "` + m.id + `", "receivedAt": "` + m.receivedAt.Format("2006-01-02 15:04:05") + `", "lag": "` + time.Since(m.receivedAt).String() + `"}`
+}
+
 type Snowflake struct {
 	DB             *sqlmw.DB
 	Namespace      string
@@ -159,6 +170,11 @@ type Snowflake struct {
 		loadTableStrategy  string
 		slowQueryThreshold time.Duration
 		enableDeleteByJobs bool
+
+		debugDuplicateWorkspaceIDs   []string
+		debugDuplicateTables         []string
+		debugDuplicateIntervalInDays int
+		debugDuplicateLimit          int
 	}
 }
 
@@ -180,6 +196,12 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) (*Snowflake, 
 
 	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
 	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
+	sf.config.debugDuplicateWorkspaceIDs = conf.GetStringSlice("Warehouse.snowflake.debugDuplicateWorkspaceIDs", nil)
+	sf.config.debugDuplicateIntervalInDays = conf.GetInt("Warehouse.snowflake.debugDuplicateIntervalInDays", 30)
+	sf.config.debugDuplicateLimit = conf.GetInt("Warehouse.snowflake.debugDuplicateLimit", 100)
+	sf.config.debugDuplicateTables = lo.Map(conf.GetStringSlice("Warehouse.snowflake.debugDuplicateTables", nil), func(item string, index int) string {
+		return strings.ToUpper(item)
+	})
 
 	return sf, nil
 }
@@ -451,6 +473,24 @@ func (sf *Snowflake) loadTable(ctx context.Context, tableName string, tableSchem
 		"tableName":      tableName,
 	}).Count(int(updated))
 
+	if updated > 0 {
+		duplicates, err := sf.sampleDuplicateMessages(ctx, db, tableName, stagingTableName)
+		if err != nil {
+			log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
+		} else if len(duplicates) > 0 {
+			uploadID, _ := whutils.UploadIDFromCtx(ctx)
+
+			sort.Slice(duplicates, func(i, j int) bool {
+				return duplicates[i].receivedAt.Before(duplicates[j].receivedAt)
+			})
+
+			formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
+				return item.String()
+			})
+			log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
+		}
+	}
+
 	log.Infow("completed loading")
 
 	return tableLoadResp{
@@ -469,6 +509,66 @@ func (sf *Snowflake) joinColumnsWithFormatting(columns []string, format string) 
 	return whutils.JoinWithFormatting(columns, func(_ int, name string) string {
 		return fmt.Sprintf(format, name)
 	}, ",")
+}
+
+func (sf *Snowflake) sampleDuplicateMessages(ctx context.Context, db *sqlmw.DB, mainTableName, stagingTableName string) ([]duplicateMessage, error) {
+	if !lo.Contains(sf.config.debugDuplicateWorkspaceIDs, sf.Warehouse.WorkspaceID) {
+		return nil, nil
+	}
+	if !lo.Contains(sf.config.debugDuplicateTables, mainTableName) {
+		return nil, nil
+	}
+
+	identifier := sf.schemaIdentifier()
+	mainTable := fmt.Sprintf("%s.%q", identifier, mainTableName)
+	stagingTable := fmt.Sprintf("%s.%q", identifier, stagingTableName)
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT
+			ID,
+			RECEIVED_AT
+		FROM
+			`+mainTable+`
+		WHERE
+		  	RECEIVED_AT > (SELECT DATEADD(day,-?,current_date())) AND
+		  	ID IN (
+				SELECT
+			  		ID
+				FROM
+			  		`+stagingTable+`
+		  	)
+		LIMIT
+		  ?;
+`,
+		sf.config.debugDuplicateIntervalInDays,
+		sf.config.debugDuplicateLimit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying for duplicate rows: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var duplicateMessagesIDs []duplicateMessage
+	for rows.Next() {
+		var id string
+		var receivedAt time.Time
+
+		if err := rows.Scan(&id, &receivedAt); err != nil {
+			return nil, fmt.Errorf("scanning duplicate row: %w", err)
+		}
+
+		duplicateMessagesIDs = append(duplicateMessagesIDs, duplicateMessage{
+			id:         id,
+			receivedAt: receivedAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over duplicate rows: %w", err)
+	}
+
+	return duplicateMessagesIDs, nil
 }
 
 func (sf *Snowflake) copyInto(

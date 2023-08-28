@@ -25,6 +25,11 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+var (
+	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
+	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
+)
+
 type uploadProcessingResult struct {
 	result uploadResult
 	err    error
@@ -524,4 +529,48 @@ func (sw *slaveWorker) destinationFromSlaveConnectionMap(destinationId, sourceId
 	}
 
 	return conn, nil
+}
+
+// handleSchemaChange checks if the existing column type is compatible with the new column type
+func handleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
+	var (
+		newColumnVal any
+		err          error
+	)
+
+	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
+		// only stringify if the previous type is non-string/text/json
+		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else {
+			newColumnVal = value
+		}
+	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
+		intVal, ok := value.(int)
+		if !ok {
+			err = errIncompatibleSchemaConversion
+		} else {
+			newColumnVal = float64(intVal)
+		}
+	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
+		floatVal, ok := value.(float64)
+		if !ok {
+			err = errIncompatibleSchemaConversion
+		} else {
+			newColumnVal = int(floatVal)
+		}
+	} else if existingDataType == model.JSONDataType {
+		var interfaceSliceSample []any
+		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
+			newColumnVal = value
+		} else {
+			newColumnVal = fmt.Sprintf(`"%v"`, value)
+		}
+	} else {
+		err = errSchemaConversionNotSupported
+	}
+
+	return newColumnVal, err
 }
