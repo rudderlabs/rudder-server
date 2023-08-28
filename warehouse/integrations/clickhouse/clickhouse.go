@@ -20,6 +20,9 @@ import (
 	"strings"
 	"time"
 
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -50,7 +53,7 @@ const (
 	secure         = "secure"
 	skipVerify     = "skipVerify"
 	caCertificate  = "caCertificate"
-	Cluster        = "cluster"
+	cluster        = "cluster"
 	partitionField = "received_at"
 )
 
@@ -136,15 +139,16 @@ var errorsMappings = []model.JobError{
 }
 
 type Clickhouse struct {
-	DB                 *sql.DB
+	DB                 *sqlmw.DB
 	Namespace          string
 	ObjectStorage      string
 	Warehouse          model.Warehouse
 	Uploader           warehouseutils.Uploader
 	connectTimeout     time.Duration
-	logger             logger.Logger
-	stats              stats.Stats
 	LoadFileDownloader downloader.Downloader
+
+	logger logger.Logger
+	stats  stats.Stats
 
 	config struct {
 		queryDebugLogs              string
@@ -159,6 +163,7 @@ type Clickhouse struct {
 		loadTableFailureRetries     int
 		numWorkersDownloadLoadFiles int
 		s3EngineEnabledWorkspaceIDs []string
+		slowQueryThreshold          time.Duration
 	}
 }
 
@@ -214,47 +219,6 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 	}
 }
 
-// connectToClickhouse connects to clickhouse with provided credentials
-func (ch *Clickhouse) connectToClickhouse(cred credentials, includeDBInConn bool) (*sql.DB, error) {
-	dsn := url.URL{
-		Scheme: "tcp",
-		Host:   fmt.Sprintf("%s:%s", cred.host, cred.port),
-	}
-
-	values := url.Values{
-		"username":      []string{cred.user},
-		"password":      []string{cred.password},
-		"block_size":    []string{ch.config.blockSize},
-		"pool_size":     []string{ch.config.poolSize},
-		"debug":         []string{ch.config.queryDebugLogs},
-		"secure":        []string{cred.secure},
-		"skip_verify":   []string{cred.skipVerify},
-		"tls_config":    []string{cred.tlsConfig},
-		"read_timeout":  []string{ch.config.readTimeout},
-		"write_timeout": []string{ch.config.writeTimeout},
-		"compress":      []string{strconv.FormatBool(ch.config.compress)},
-	}
-
-	if includeDBInConn {
-		values.Add("database", cred.database)
-	}
-	if cred.timeout > 0 {
-		values.Add("timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
-	}
-
-	dsn.RawQuery = values.Encode()
-
-	var (
-		err error
-		db  *sql.DB
-	)
-
-	if db, err = sql.Open("clickhouse", dsn.String()); err != nil {
-		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
-	}
-	return db, nil
-}
-
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch := &Clickhouse{}
 
@@ -273,33 +237,63 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.loadTableFailureRetries = conf.GetInt("Warehouse.clickhouse.loadTableFailureRetries", 3)
 	ch.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.clickhouse.numWorkersDownloadLoadFiles", 8)
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
+	ch.config.slowQueryThreshold = conf.GetDuration("Warehouse.clickhouse.slowQueryThreshold", 5, time.Minute)
 
 	return ch
 }
 
-/*
-registerTLSConfig will create a global map, use different names for the different tls config.
-clickhouse will access the config by mentioning the key in connection string
-*/
-func registerTLSConfig(key, certificate string) {
-	tlsConfig := &tls.Config{} // skipcq: GO-S1020
-	caCert := []byte(certificate)
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-	tlsConfig.RootCAs = caCertPool
-	_ = clickhouse.RegisterTLSConfig(key, tlsConfig)
+func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, error) {
+	cred, err := ch.connectionCredentials()
+	if err != nil {
+		return nil, fmt.Errorf("could not get connection credentials: %w", err)
+	}
+
+	values := url.Values{
+		"username":      []string{cred.user},
+		"password":      []string{cred.password},
+		"block_size":    []string{ch.config.blockSize},
+		"pool_size":     []string{ch.config.poolSize},
+		"debug":         []string{ch.config.queryDebugLogs},
+		"secure":        []string{cred.secure},
+		"skip_verify":   []string{cred.skipVerify},
+		"tls_config":    []string{cred.tlsConfig},
+		"read_timeout":  []string{ch.config.readTimeout},
+		"write_timeout": []string{ch.config.writeTimeout},
+		"compress":      []string{strconv.FormatBool(ch.config.compress)},
+	}
+	if includeDBInConn {
+		values.Add("database", cred.database)
+	}
+	if cred.timeout > 0 {
+		values.Add("timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
+	}
+
+	dsn := url.URL{
+		Scheme:   "tcp",
+		Host:     fmt.Sprintf("%s:%s", cred.host, cred.port),
+		RawQuery: values.Encode(),
+	}
+
+	db, err := sql.Open("clickhouse", dsn.String())
+	if err != nil {
+		return nil, fmt.Errorf("opening connection: %w", err)
+	}
+
+	middleware := sqlmw.New(
+		db,
+		sqlmw.WithStats(ch.stats),
+		sqlmw.WithLogger(ch.logger),
+		sqlmw.WithKeyAndValues(ch.defaultLogFields()),
+		sqlmw.WithQueryTimeout(ch.connectTimeout),
+		sqlmw.WithSlowQueryThreshold(ch.config.slowQueryThreshold),
+	)
+	return middleware, nil
 }
 
-// getConnectionCredentials gives clickhouse credentials
-func (ch *Clickhouse) getConnectionCredentials() credentials {
-	tlsName := ""
-	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
-	if strings.TrimSpace(certificate) != "" {
-		// each destination will have separate tls config, hence using destination id as tlsName
-		tlsName = ch.Warehouse.Destination.ID
-		registerTLSConfig(tlsName, certificate)
-	}
-	credentials := credentials{
+// connectionCredentials returns the credentials for connecting to clickhouse
+// Each destination will have separate tls config, hence using destination id as tlsName
+func (ch *Clickhouse) connectionCredentials() (*credentials, error) {
+	credentials := &credentials{
 		host:       warehouseutils.GetConfigValue(host, ch.Warehouse),
 		database:   warehouseutils.GetConfigValue(dbName, ch.Warehouse),
 		user:       warehouseutils.GetConfigValue(user, ch.Warehouse),
@@ -307,10 +301,40 @@ func (ch *Clickhouse) getConnectionCredentials() credentials {
 		port:       warehouseutils.GetConfigValue(port, ch.Warehouse),
 		secure:     warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
 		skipVerify: warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
-		tlsConfig:  tlsName,
 		timeout:    ch.connectTimeout,
 	}
-	return credentials
+
+	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
+	if strings.TrimSpace(certificate) != "" {
+		if err := registerTLSConfig(ch.Warehouse.Destination.ID, certificate); err != nil {
+			return nil, fmt.Errorf("registering tls config: %w", err)
+		}
+
+		credentials.tlsConfig = ch.Warehouse.Destination.ID
+	}
+	return credentials, nil
+}
+
+// registerTLSConfig will create a global map, use different names for the different tls config.
+// clickhouse will access the config by mentioning the key in connection string
+func registerTLSConfig(key, certificate string) error {
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM([]byte(certificate))
+
+	return clickhouse.RegisterTLSConfig(key, &tls.Config{
+		RootCAs: caCertPool,
+	})
+}
+
+func (ch *Clickhouse) defaultLogFields() []any {
+	return []any{
+		logfield.SourceID, ch.Warehouse.Source.ID,
+		logfield.SourceType, ch.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, ch.Warehouse.Destination.ID,
+		logfield.DestinationType, ch.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, ch.Warehouse.WorkspaceID,
+		logfield.Namespace, ch.Namespace,
+	}
 }
 
 // ColumnsWithDataTypes creates columns and its datatype into sql format for creating table
@@ -597,7 +621,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	ch.logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Started", ch.GetLogIdentifier(tableName))
 	defer ch.logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Completed", ch.GetLogIdentifier(tableName))
 
-	var txn *sql.Tx
+	var txn *sqlmw.Tx
 	var err error
 
 	onError := func(err error) {
@@ -753,34 +777,6 @@ func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exis
 	return
 }
 
-// createSchema creates a database in clickhouse
-func (ch *Clickhouse) createSchema(ctx context.Context) (err error) {
-	var schemaExists bool
-	schemaExists, err = ch.schemaExists(ctx, ch.Namespace)
-	if err != nil {
-		ch.logger.Errorf("CH: Error checking if database: %s exists: %v", ch.Namespace, err)
-		return err
-	}
-	if schemaExists {
-		ch.logger.Infof("CH: Skipping creating database: %s since it already exists", ch.Namespace)
-		return
-	}
-	dbHandle, err := ch.connectToClickhouse(ch.getConnectionCredentials(), false)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = dbHandle.Close() }()
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
-	clusterClause := ""
-	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
-	}
-	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %q %s`, ch.Namespace, clusterClause)
-	ch.logger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = dbHandle.ExecContext(ctx, sqlStatement)
-	return
-}
-
 /*
 createUsersTable creates a user's table with engine AggregatingMergeTree,
 this lets us choose aggregation logic before merging records with same user id.
@@ -792,7 +788,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 	clusterClause := ""
 	engine := "AggregatingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
@@ -834,7 +830,7 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 	clusterClause := ""
 	engine := "ReplacingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
@@ -858,35 +854,23 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 }
 
 func (ch *Clickhouse) DropTable(ctx context.Context, tableName string) (err error) {
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
-	clusterClause := ""
-	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
-	}
-	sqlStatement := fmt.Sprintf(`DROP TABLE %q.%q %s `, ch.Warehouse.Namespace, tableName, clusterClause)
+	sqlStatement := fmt.Sprintf(`DROP TABLE %q.%q %s `, ch.Warehouse.Namespace, tableName, ch.clusterClause())
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
 func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
-		query         string
-		queryBuilder  strings.Builder
-		cluster       string
-		clusterClause string
+		query        string
+		queryBuilder strings.Builder
 	)
-
-	cluster = warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
-	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
-	}
 
 	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %q.%q %s`,
 		ch.Namespace,
 		tableName,
-		clusterClause,
+		ch.clusterClause(),
 	))
 
 	for _, columnInfo := range columnsInfo {
@@ -907,12 +891,37 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 	return
 }
 
-func (ch *Clickhouse) CreateSchema(ctx context.Context) (err error) {
+func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
 		return nil
 	}
-	err = ch.createSchema(ctx)
-	return err
+
+	if schemaExists, err := ch.schemaExists(ctx, ch.Namespace); err != nil {
+		return fmt.Errorf("checking if database: %s exists: %v", ch.Namespace, err)
+	} else if schemaExists {
+		return nil
+	}
+
+	db, err := ch.connectToClickhouse(false)
+	if err != nil {
+		return fmt.Errorf("connecting to clickhouse: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	ch.logger.Infow("Creating schema", append(ch.defaultLogFields(), "clusterClause", ch.clusterClause()))
+
+	query := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %q %s`, ch.Namespace, ch.clusterClause())
+	if _, err = db.ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("creating database: %v", err)
+	}
+	return nil
+}
+
+func (ch *Clickhouse) clusterClause() string {
+	if cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse); len(strings.TrimSpace(cluster)) > 0 {
+		return fmt.Sprintf(`ON CLUSTER %q`, cluster)
+	}
+	return ""
 }
 
 func (*Clickhouse) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
@@ -939,7 +948,9 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	ch.LoadFileDownloader = downloader.NewDownloader(&warehouse, uploader, ch.config.numWorkersDownloadLoadFiles)
 
-	ch.DB, err = ch.connectToClickhouse(ch.getConnectionCredentials(), true)
+	if ch.DB, err = ch.connectToClickhouse(true); err != nil {
+		return fmt.Errorf("connecting to clickhouse: %w", err)
+	}
 	return err
 }
 
@@ -1072,12 +1083,13 @@ func (ch *Clickhouse) Connect(_ context.Context, warehouse model.Warehouse) (cli
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ch.Warehouse.Destination.Config),
 	)
-	dbHandle, err := ch.connectToClickhouse(ch.getConnectionCredentials(), true)
+
+	db, err := ch.connectToClickhouse(true)
 	if err != nil {
-		return client.Client{}, err
+		return client.Client{}, fmt.Errorf("connecting to clickhouse: %w", err)
 	}
 
-	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
 func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
