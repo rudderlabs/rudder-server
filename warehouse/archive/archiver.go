@@ -276,7 +276,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 		hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetdata)
 
 		// archive staging files
-		stagingFileIDs, stagingFileLocations, err := a.getStagingFilesData(ctx, txn, u)
+		stagingFileIDs, err := a.getStagingFilesData(ctx, txn, u)
 		if err != nil {
 			a.log.Errorf(`[Archiver]: Error getting staging files data for upload %d: %v`, u.uploadID, err)
 			_ = txn.Rollback()
@@ -296,16 +296,6 @@ func (a *Archiver) Do(ctx context.Context) error {
 				})
 				if err != nil {
 					a.log.Errorf(`[Archiver]: Error backing up staging files for upload: %d: %v`, u.uploadID, err)
-					_ = txn.Rollback()
-					continue
-				}
-			} else {
-				a.log.Debugf(`[Archiver]: Object storage not configured to archive upload related staging file records.`+
-					`Deleting the ones that need to be archived for upload: %d`, u.uploadID)
-
-				err = a.deleteFilesInStorage(ctx, stagingFileLocations)
-				if err != nil {
-					a.log.Errorf(`[Archiver]: Error deleting staging files from Rudder S3. Error: %v`, err)
 					_ = txn.Rollback()
 					continue
 				}
@@ -371,11 +361,10 @@ func (a *Archiver) Do(ctx context.Context) error {
 	return nil
 }
 
-func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uploadRecord) ([]int64, []string, error) {
+func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uploadRecord) ([]int64, error) {
 	stmt := fmt.Sprintf(`
 		SELECT
-		  id,
-		  location
+		  id
 		FROM
 		  %s
 		WHERE
@@ -393,34 +382,24 @@ func (a *Archiver) getStagingFilesData(ctx context.Context, txn *sql.Tx, u *uplo
 		u.endStagingFileId,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("cannot query staging files data: %w", err)
+		return nil, fmt.Errorf("cannot query staging files data: %w", err)
 	}
 	defer func() { _ = stagingFileRows.Close() }()
 
-	var (
-		stagingFileIDs       []int64
-		stagingFileLocations []string
-	)
+	var stagingFileIDs []int64
 	for stagingFileRows.Next() {
-		var (
-			stagingFileID       int64
-			stagingFileLocation string
-		)
-		err = stagingFileRows.Scan(
-			&stagingFileID,
-			&stagingFileLocation,
-		)
+		var stagingFileID int64
+		err = stagingFileRows.Scan(&stagingFileID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("scanning staging file id: %w", err)
+			return nil, fmt.Errorf("scanning staging file id: %w", err)
 		}
 		stagingFileIDs = append(stagingFileIDs, stagingFileID)
-		stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
 	}
 	if err = stagingFileRows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("iterating staging file ids: %w", err)
+		return nil, fmt.Errorf("iterating staging file ids: %w", err)
 	}
 
-	return stagingFileIDs, stagingFileLocations, nil
+	return stagingFileIDs, nil
 }
 
 func (a *Archiver) deleteLoadFileRecords(
