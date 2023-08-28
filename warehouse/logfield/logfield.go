@@ -29,4 +29,5 @@ const (
 	QueryExecutionTime         = "queryExecutionTime"
 	StagingTableName           = "stagingTableName"
 	TotalRows                  = "totalRows"
+	SampleDuplicateMessages    = "sampleDuplicateMessages"
 )
