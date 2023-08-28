@@ -212,7 +212,7 @@ func (r *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
 }
 
-func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64, isQueryTimedout bool) {
+func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(clientName)
@@ -225,16 +225,12 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 	defer cancel()
 	err = dbHandle.QueryRowContext(ctx, sqlStatement).Scan(&queryMin)
 
-	if err != nil && err != sql.ErrNoRows {
-		if err == context.DeadlineExceeded {
-			return nil, 0, true
-		} else {
-			panic(err)
-		}
+	if err != nil && err != sql.ErrNoRows && err != context.DeadlineExceeded {
+		panic(err)
 	}
 	r.getMinReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
-		return nil, 0, false
+		return nil, 0, err
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, count, violation_count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type, error_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
@@ -280,7 +276,7 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 		metricReports = append(metricReports, &metricReport)
 	}
 
-	return metricReports, queryMin.Int64, false
+	return metricReports, queryMin.Int64, err
 }
 
 func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
@@ -391,9 +387,13 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		for {
 			currentMs := time.Now().UTC().Unix() / 60
 			stats.Default.NewTaggedStat(
-				"reporting_metrics_pileup", stats.GaugeType, stats.Tags{"client": clientName},
+				"reporting_metrics_ lag_minutes", stats.GaugeType, stats.Tags{"client": clientName},
 			).Gauge(int(currentMs - lastReportedAt))
-			time.Sleep(2 * time.Minute)
+			select {
+			case <-ctx.Done():
+				break
+			case <-time.After(2 * time.Minute):
+			}
 		}
 	}()
 
@@ -407,11 +407,11 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 		currentMs := time.Now().UTC().Unix() / 60
 
 		getReportsStart := time.Now()
-		reports, reportedAt, isQueryTimedout := r.getReports(currentMs, clientName)
+		reports, reportedAt, err := r.getReports(currentMs, clientName)
 		getReportsTimer.Since(getReportsStart)
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
-			if !isQueryTimedout {
+			if err != context.DeadlineExceeded {
 				lastReportedAt = currentMs
 			}
 			select {
@@ -449,7 +449,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			})
 		}
 
-		err := errGroup.Wait()
+		err = errGroup.Wait()
 		if err == nil {
 			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ReportsTable, reportedAt)
 			dbHandle, err := r.getDBHandle(clientName)
