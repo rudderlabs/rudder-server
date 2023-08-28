@@ -93,7 +93,7 @@ type UploadJob struct {
 	tableUploadsRepo     *repo.TableUploads
 	recovery             *service.Recovery
 	whManager            manager.Manager
-	pgNotifier           *notifier.Notifier
+	notifier             *notifier.Notifier
 	schemaHandle         *schema.Schema
 	uploadSchema         model.Schema
 	conf                 *config.Config
