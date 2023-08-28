@@ -72,7 +72,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/compose-test v0.1.2
 	github.com/rudderlabs/rudder-go-kit v0.15.7
-	github.com/rudderlabs/sql-tunnels v0.1.3
+	github.com/rudderlabs/sql-tunnels v0.1.4
 	github.com/samber/lo v1.38.1
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/snowflakedb/gosnowflake v1.6.24
@@ -223,7 +223,7 @@ require (
 	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
 	github.com/pierrec/lz4 v2.0.5+incompatible // indirect
-	github.com/pierrec/lz4/v4 v4.1.17 // indirect
+	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
