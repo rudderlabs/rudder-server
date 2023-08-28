@@ -65,6 +65,10 @@ type ErrorResponse struct {
 	Error string
 }
 
+type WarningResponse struct {
+	Remarks string
+}
+
 type BatchedJobs struct {
 	Jobs       []*jobsdb.JobT
 	Connection *Connection
