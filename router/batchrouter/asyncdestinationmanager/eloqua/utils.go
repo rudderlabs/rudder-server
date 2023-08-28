@@ -59,7 +59,7 @@ func getFields(file *os.File) []string {
 	}
 	return getKeys(data.Message.Data)
 }
-func createCSVFile(fields []string, file *os.File) (string, error) {
+func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (string, error) {
 	file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, 50000*1024)
@@ -75,21 +75,31 @@ func createCSVFile(fields []string, file *os.File) (string, error) {
 	csvWriter.Write(fields)
 	csvWriter.Flush()
 	var line string
+	index := 0
 	for scanner.Scan() {
 		line = scanner.Text()
 		var data TransformedData
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			fmt.Println("Error in unmarshalling data")
 		}
-
 		var values []string
 		for _, field := range fields {
 			values = append(values, data.Message.Data[field].(string))
 		}
+		fileInfo, err := csvFile.Stat()
+		if err != nil {
+			return "", err
+		}
+		fmt.Println(fileInfo.Size())
+		if fileInfo.Size() > uploadJobInfo.fileSizeLimit {
+			uploadJobInfo.failedJobs = append(uploadJobInfo.failedJobs, difference(uploadJobInfo.importingJobs, uploadJobInfo.succeededJobs)...)
+			break
+		}
+		uploadJobInfo.succeededJobs = append(uploadJobInfo.succeededJobs, uploadJobInfo.importingJobs[index])
+		index += 1
 		csvWriter.Write(values)
+		csvWriter.Flush()
 	}
-
-	csvWriter.Flush()
 	return csvFilePath, nil
 }
 
@@ -155,14 +165,14 @@ func difference(a, b []int64) []int64 {
 	return diff
 }
 
-func parseRejectedData(data *Data, importingList []*jobsdb.JobT) (*common.EventStatMeta, error) {
+func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, service Eloqua) (*common.EventStatMeta, error) {
 	jobIDs := []int64{}
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
 	}
 	slices.Sort(jobIDs)
 	initialJOBId := jobIDs[0]
-	rejectResponse, err := CheckRejectedData(data)
+	rejectResponse, err := service.CheckRejectedData(data)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +185,7 @@ func parseRejectedData(data *Data, importingList []*jobsdb.JobT) (*common.EventS
 			offset = i * 1000
 			data.Offset = offset
 			if offset != 0 {
-				rejectResponse, err = CheckRejectedData(data)
+				rejectResponse, err = service.CheckRejectedData(data)
 				if err != nil {
 					return nil, err
 				}

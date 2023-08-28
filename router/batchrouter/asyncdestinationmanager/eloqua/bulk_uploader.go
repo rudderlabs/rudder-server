@@ -1,165 +1,140 @@
 package eloqua
 
 import (
+	"encoding/json"
 	stdjson "encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
+
+func createAsyncUploadOutput(errorString string, err error, destinationId string, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+	return common.AsyncUploadOutput{
+		FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+		FailedReason:  fmt.Sprintf(errorString+"%v", err),
+		FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+		DestinationID: destinationId,
+	}
+}
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 
 	file, err := os.Open(asyncDestStruct.FileName)
 	if err != nil {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  fmt.Sprintf("got error while opening the file. %v", err),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
+		return createAsyncUploadOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)
 	}
 	defer file.Close()
 	eventType, customObjectId, err := checkEventType(file)
 	if err != nil {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  fmt.Sprintf("got error while checking the event type. %v", err),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
+		return createAsyncUploadOutput("got error while checking the event type. ", err, destination.ID, asyncDestStruct)
 	}
 
 	fields := getFields(file)
 
 	var eloquaFields *Fields
 
+	customObjectData := HttpRequestData{
+		BaseEndpoint:  b.baseEndpoint,
+		Authorization: b.authorization,
+	}
 	if eventType == "track" {
-		customObjectData := Data{
-			BaseEndpoint:  b.baseEndpoint,
-			Authorization: b.authorization,
-			DynamicPart:   customObjectId,
-		}
-		eloquaFields, err = FetchFields(&customObjectData)
-		if err != nil {
-			return common.AsyncUploadOutput{
-				FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-				FailedReason:  fmt.Sprintf("got error while fetching fields. %v", err),
-				FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-				DestinationID: destination.ID,
-			}
-		}
-	} else {
-		customObjectData := Data{
-			BaseEndpoint:  b.baseEndpoint,
-			Authorization: b.authorization,
-		}
-		eloquaFields, err = FetchFields(&customObjectData)
-		if err != nil {
-			return common.AsyncUploadOutput{
-				FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-				FailedReason:  fmt.Sprintf("got error while fetching fields. %v", err),
-				FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-				DestinationID: destination.ID,
-			}
-		}
+		customObjectData.DynamicPart = customObjectId
+	}
+	eloquaFields, err = b.service.FetchFields(&customObjectData)
+	if err != nil {
+		return createAsyncUploadOutput("got error while fetching fields. ", err, destination.ID, asyncDestStruct)
 	}
 
-	filePAth, _ := createCSVFile(fields, file)
+	uploadJobInfo := JobInfo{
+		fileSizeLimit: b.fileSizeLimit,
+		importingJobs: asyncDestStruct.ImportingJobIDs,
+	}
+	filePAth, _ := createCSVFile(fields, file, &uploadJobInfo)
 	defer os.Remove(filePAth)
 	importDefinitionBody, err := createBodyForImportDefinition(eventType, fields, eloquaFields, file)
 	if err != nil {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  fmt.Sprintf("%v", err),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
+		return createAsyncUploadOutput("got error while creating body for import definition. ", err, destination.ID, asyncDestStruct)
 	}
-
-	importDefinitionData := Data{
+	marshalledData, err := json.Marshal(importDefinitionBody)
+	if err != nil {
+		return createAsyncUploadOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
+	}
+	importDefinitionData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
-		Body:          importDefinitionBody,
+		Body:          strings.NewReader(string(marshalledData)),
 		DynamicPart:   customObjectId,
 	}
 
-	importDefinition, err := CreateImportDefinition(&importDefinitionData, eventType)
+	importDefinition, err := b.service.CreateImportDefinition(&importDefinitionData, eventType)
 	if err != nil {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  fmt.Sprintf("unable to create importdefinition", err),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
+		return createAsyncUploadOutput("unable to create importdefinition. ", err, destination.ID, asyncDestStruct)
 	}
 
 	defer func() {
-		deleteImportDefinitionData := Data{
+		deleteImportDefinitionData := HttpRequestData{
 			BaseEndpoint:  b.baseEndpoint,
 			Authorization: b.authorization,
 			DynamicPart:   importDefinition.URI,
 		}
-		err := DeleteImportDefinition(&deleteImportDefinitionData)
+		err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
 		if err != nil {
 			b.logger.Error("Error while deleting import definition", err)
 		}
 	}()
-	uploadDataData := Data{
+	uploadDataData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		DynamicPart:   importDefinition.URI,
 		Authorization: b.authorization,
 	}
 
-	err = UploadData(&uploadDataData, filePAth)
+	err = b.service.UploadData(&uploadDataData, filePAth)
 	if err != nil {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  fmt.Sprintf("unable to upload the data", err),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
+		return createAsyncUploadOutput("unable to upload the data. ", err, destination.ID, asyncDestStruct)
 	}
 	runSyncBody := map[string]interface{}{
 		"syncedInstanceUri": importDefinition.URI,
 	}
-	runSyncData := Data{
+	marshalledData, err = json.Marshal(runSyncBody)
+	if err != nil {
+		return createAsyncUploadOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
+	}
+	runSyncData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
-		Body:          runSyncBody,
+		Body:          strings.NewReader(string(marshalledData)),
 	}
-	syncURI, err := RunSync(&runSyncData)
+	syncURI, err := b.service.RunSync(&runSyncData)
 	if err != nil {
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
-			FailedReason:  fmt.Sprintf("unable to run the sync after uploading the file", err),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
-			DestinationID: destination.ID,
-		}
+		return createAsyncUploadOutput("unable to run the sync after uploading the file. ", err, destination.ID, asyncDestStruct)
 	}
 
 	var parameters common.ImportParameters
 	parameters.ImportId = syncURI
 	importParameters, err := stdjson.Marshal(parameters)
+
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     asyncDestStruct.ImportingJobIDs,
-		FailedReason:        "failed due to some unknown reason",
-		ImportingCount:      len(asyncDestStruct.ImportingJobIDs),
-		FailedCount:         len(asyncDestStruct.FailedJobIDs),
-		DestinationID:       asyncDestStruct.Destination.ID,
+		ImportingJobIDs:     uploadJobInfo.succeededJobs,
+		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, uploadJobInfo.failedJobs...),
+		FailedReason:        "failed as the fileSizeLimit has over",
 		ImportingParameters: importParameters,
+		ImportingCount:      len(uploadJobInfo.succeededJobs),
+		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(uploadJobInfo.failedJobs),
+		DestinationID:       asyncDestStruct.Destination.ID,
 	}
 }
 
 func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-	checkSyncStatusData := Data{
+	checkSyncStatusData := HttpRequestData{
 		DynamicPart:   pollInput.ImportId,
 		BaseEndpoint:  b.baseEndpoint,
 		Authorization: b.authorization,
 	}
 
-	uploadStatus, err := CheckSyncStatus(&checkSyncStatusData)
+	uploadStatus, err := b.service.CheckSyncStatus(&checkSyncStatusData)
 	if err != nil {
 		return common.PollStatusResponse{
 			Complete:   false,
@@ -217,12 +192,12 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 }
 
 func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	checkRejectedData := Data{
+	checkRejectedData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		DynamicPart:   UploadStatsInput.FailedJobURLs,
 		Authorization: b.authorization,
 	}
-	eventStatMeta, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList)
+	eventStatMeta, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b.service)
 	if err != nil {
 		b.logger.Error("Error while parsing rejected data", err)
 		return common.GetUploadStatsResponse{

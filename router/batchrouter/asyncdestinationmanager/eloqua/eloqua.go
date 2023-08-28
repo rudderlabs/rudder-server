@@ -7,34 +7,38 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 )
 
-type Eloqua interface {
-	GetBaseEndpoint(data *Data) (string, error)
-	FetchFields(*Data) (*Fields, error)
-	CreateImportDefinition(*Data) (*Fields, error)
-	UploadData(*Data) error
-	RunSync(*Data) error
-	CheckSyncStatus(data *Data) (string, error)
-	DeleteImportDefinition(*Data) error
-	CheckRejectedData(*Data) (*RejectResponse, error)
+type implementEloqua struct {
 }
 
-func GetBaseEndpoint(data *Data) (string, error) {
-	req, err := http.NewRequest("GET", "https://login.eloqua.com/id", nil)
+func (e *implementEloqua) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error) {
+	req, err := http.NewRequest(data.Method, data.Endpoint, data.Body)
 	if err != nil {
-		return "", err
+		return nil, 500, err
 	}
 	req.Header.Add("Authorization", data.Authorization)
+	req.Header.Add("content-type", data.ContentType)
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, 500, err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, 500, err
+	}
+	return body, res.StatusCode, err
+}
+
+func (e *implementEloqua) GetBaseEndpoint(data *HttpRequestData) (string, error) {
+
+	data.Method = "GET"
+	data.Endpoint = "https://login.eloqua.com/id"
+
+	body, _, err := e.MakeHTTPRequest(data)
 	if err != nil {
 		return "", err
 	}
@@ -46,38 +50,28 @@ func GetBaseEndpoint(data *Data) (string, error) {
 	return loginDetailsResponse.Urls.Base, nil
 }
 
-func FetchFields(data *Data) (*Fields, error) {
+func (e *implementEloqua) FetchFields(data *HttpRequestData) (*Fields, error) {
 	var endpoint string
 	if data.DynamicPart != "" {
 		endpoint = data.BaseEndpoint + "/api/bulk/2.0/customObjects/" + data.DynamicPart + "/fields"
 	} else {
 		endpoint = data.BaseEndpoint + "/api/bulk/2.0/contacts/fields"
 	}
-	req, err := http.NewRequest("GET", endpoint, nil)
-	req.Header.Set("Authorization", data.Authorization)
-	if err != nil {
-		return nil, err
-	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
+	data.Method = "GET"
+	data.Endpoint = endpoint
+	body, _, err := e.MakeHTTPRequest(data)
 	if err != nil {
 		return nil, err
 	}
 	unmarshalledBody := Fields{}
-	json.Unmarshal(body, &unmarshalledBody)
-	return &unmarshalledBody, nil
-}
-
-func CreateImportDefinition(data *Data, eventType string) (*ImportDefinition, error) {
-
-	marshalledData, err := json.Marshal(data.Body)
+	err = json.Unmarshal(body, &unmarshalledBody)
 	if err != nil {
 		return nil, err
 	}
+	return &unmarshalledBody, nil
+}
+
+func (e *implementEloqua) CreateImportDefinition(data *HttpRequestData, eventType string) (*ImportDefinition, error) {
 	var endpoint string
 	if eventType == "track" {
 		endpoint = data.BaseEndpoint + "/api/bulk/2.0/customObjects/" + data.DynamicPart + "/imports"
@@ -85,142 +79,108 @@ func CreateImportDefinition(data *Data, eventType string) (*ImportDefinition, er
 		endpoint = data.BaseEndpoint + "/api/bulk/2.0/contacts/imports"
 	}
 
-	req, err := http.NewRequest("POST", endpoint, strings.NewReader(string(marshalledData)))
-
-	req.Header.Add("Authorization", data.Authorization)
-	req.Header.Add("Content-Type", "application/json")
-	if err != nil {
-		return nil, err
-	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
+	data.Method = "POST"
+	data.Endpoint = endpoint
+	data.ContentType = "application/json"
+	body, _, err := e.MakeHTTPRequest(data)
 	if err != nil {
 		return nil, err
 	}
 	unmarshalledBody := ImportDefinition{}
-	json.Unmarshal(body, &unmarshalledBody)
+	err = json.Unmarshal(body, &unmarshalledBody)
+	if err != nil {
+		return nil, err
+	}
 	return &unmarshalledBody, nil
 }
 
-func UploadData(data *Data, filePath string) error {
+func (e *implementEloqua) UploadData(data *HttpRequestData, filePath string) error {
 
-	body1, err := os.Open(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", data.BaseEndpoint+"/api/bulk/2.0"+data.DynamicPart+"/data", body1)
-
-	req.Header.Add("Authorization", data.Authorization)
-	req.Header.Add("Content-Type", "text/csv")
+	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0" + data.DynamicPart + "/data"
+	data.Method = "POST"
+	data.ContentType = "text/csv"
+	data.Body = file
+	_, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {
 		return err
 	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
+	if statusCode != 204 {
+		return fmt.Errorf("Upload failed with status code: %d", statusCode)
 	}
-	if res.StatusCode != 204 {
-		return fmt.Errorf("Upload failed with status code: %d", res.StatusCode)
-	}
-	defer res.Body.Close()
 	return nil
 }
 
-func RunSync(data *Data) (string, error) {
-	marshalledData, err := json.Marshal(data.Body)
-	body1 := strings.NewReader(string(marshalledData))
-	req, err := http.NewRequest("POST", data.BaseEndpoint+"/api/bulk/2.0/syncs", body1)
-
-	req.Header.Add("Authorization", data.Authorization)
-	req.Header.Add("Content-Type", "application/json")
-	if err != nil {
-		return "", err
+func (e *implementEloqua) RunSync(data *HttpRequestData) (string, error) {
+	data.Method = "POST"
+	data.ContentType = "application/json"
+	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0/syncs"
+	body, statusCode, err := e.MakeHTTPRequest(data)
+	if statusCode != 201 {
+		return "", fmt.Errorf("Upload failed with status code: %d", statusCode)
 	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	if res.StatusCode != 201 {
-		return "", fmt.Errorf("Upload failed with status code: %d", res.StatusCode)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", err
 	}
 	unmarshalledBody := SyncResponse{}
-	json.Unmarshal(body, &unmarshalledBody)
+	err = json.Unmarshal(body, &unmarshalledBody)
+	if err != nil {
+		return "", err
+	}
 	return unmarshalledBody.Uri, nil
 }
 
-func CheckSyncStatus(data *Data) (string, error) {
-	req, err := http.NewRequest("GET", data.BaseEndpoint+"/api/bulk/2.0"+data.DynamicPart, nil)
+func (e *implementEloqua) CheckSyncStatus(data *HttpRequestData) (string, error) {
+	data.Method = "GET"
+	data.ContentType = "application/json"
+	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0" + data.DynamicPart
 
-	req.Header.Add("Authorization", data.Authorization)
-	req.Header.Add("Content-Type", "application/json")
-	if err != nil {
-		return "", err
+	body, statusCode, err := e.MakeHTTPRequest(data)
+	if statusCode != 200 {
+		return "", fmt.Errorf("Upload failed with status code: %d", statusCode)
 	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	if res.StatusCode != 200 {
-		return "", fmt.Errorf("Upload failed with status code: %d", res.StatusCode)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", err
 	}
 	unmarshalledBody := SyncStatusResponse{}
-	json.Unmarshal(body, &unmarshalledBody)
+	err = json.Unmarshal(body, &unmarshalledBody)
+	if err != nil {
+		return "nil", err
+	}
 	return unmarshalledBody.Status, nil
 }
 
-func DeleteImportDefinition(data *Data) error {
-
-	req, err := http.NewRequest("DELETE", data.BaseEndpoint+"/api/bulk/2.0"+data.DynamicPart, nil)
-
-	req.Header.Set("Authorization", data.Authorization)
+func (e *implementEloqua) DeleteImportDefinition(data *HttpRequestData) error {
+	data.Method = "DELETE"
+	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0" + data.DynamicPart
+	_, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {
 		return err
 	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
+	if statusCode != 204 {
+		return fmt.Errorf("unable to delete the import definition with status code: %d", statusCode)
 	}
-	if res.StatusCode != 204 {
-		return fmt.Errorf("unable to delete the import definition with status code: %d", res.StatusCode)
-	}
-	defer res.Body.Close()
 	return nil
 }
 
-func CheckRejectedData(data *Data) (*RejectResponse, error) {
-	req, err := http.NewRequest("GET", data.BaseEndpoint+"/api/bulk/2.0"+data.DynamicPart+"/rejects?offset="+strconv.Itoa(data.Offset), nil)
-	req.Header.Set("Authorization", data.Authorization)
-	req.Header.Add("Content-Type", "application/json")
-	if err != nil {
-		return nil, err
+func (e *implementEloqua) CheckRejectedData(data *HttpRequestData) (*RejectResponse, error) {
+	data.Method = "GET"
+	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0" + data.DynamicPart + "/rejects?offset=" + strconv.Itoa(data.Offset)
+	data.ContentType = "application/json"
+	body, statusCode, err := e.MakeHTTPRequest(data)
+	if statusCode != 200 {
+		return nil, fmt.Errorf("unable to delete the import definition with status code: %d", statusCode)
 	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("unable to delete the import definition with status code: %d", res.StatusCode)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
 	unmarshalledBody := RejectResponse{}
-	json.Unmarshal(body, &unmarshalledBody)
+	err = json.Unmarshal(body, &unmarshalledBody)
+	if err != nil {
+		return nil, err
+	}
 	return &unmarshalledBody, nil
 }

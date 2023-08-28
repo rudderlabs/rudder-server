@@ -25,20 +25,26 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 	authorization := destConfig.CompanyName + "\\" + destConfig.UserName + ":" + destConfig.Password
 	destName := destination.DestinationDefinition.Name
 	encodedAuthorizationString := "Basic " + base64.StdEncoding.EncodeToString([]byte(authorization))
-	eloquaData := Data{
+	eloquaData := HttpRequestData{
 		Authorization: encodedAuthorizationString,
 	}
-	baseEndpoint, err := GetBaseEndpoint(&eloquaData)
+	eloqua := &implementEloqua{}
+	baseEndpoint, err := eloqua.GetBaseEndpoint(&eloquaData)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting base endpoint: %v", err)
 	}
-	eloquaBulkUploader := EloquaBulkUploader{
-		destName:      destination.Name,
+
+	return NewEloquaBulkUploader(destName, encodedAuthorizationString, baseEndpoint, eloqua), nil
+}
+
+func NewEloquaBulkUploader(destinationName string, authorization string, baseEndpoint string, eloqua Eloqua) *EloquaBulkUploader {
+	return &EloquaBulkUploader{
+		destName:      destinationName,
 		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Eloqua").Child("EloquaBulkUploader"),
-		authorization: encodedAuthorizationString,
+		authorization: authorization,
 		baseEndpoint:  baseEndpoint,
-		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 32*bytesize.MB),
-		eventsLimit:   common.GetBatchRouterConfigInt64("MaxEventsLimit", destName, 1000000),
+		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 32*bytesize.MB),
+		eventsLimit:   common.GetBatchRouterConfigInt64("MaxEventsLimit", destinationName, 1000000),
+		service:       eloqua,
 	}
-	return &eloquaBulkUploader, nil
 }

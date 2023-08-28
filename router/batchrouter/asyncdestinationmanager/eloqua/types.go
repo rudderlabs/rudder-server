@@ -1,12 +1,23 @@
 package eloqua
 
 import (
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
+type Eloqua interface {
+	GetBaseEndpoint(*HttpRequestData) (string, error)
+	FetchFields(*HttpRequestData) (*Fields, error)
+	CreateImportDefinition(*HttpRequestData, string) (*ImportDefinition, error)
+	UploadData(*HttpRequestData, string) error
+	RunSync(*HttpRequestData) (string, error)
+	CheckSyncStatus(*HttpRequestData) (string, error)
+	DeleteImportDefinition(*HttpRequestData) error
+	CheckRejectedData(*HttpRequestData) (*RejectResponse, error)
+}
 type DestinationConfig struct {
 	CompanyName              string   `json:"companyName"`
 	Password                 string   `json:"password"`
@@ -15,12 +26,15 @@ type DestinationConfig struct {
 	RudderAccountID          string   `json:"rudderAccountId"`
 }
 
-type Data struct {
-	Body          map[string]interface{}
+type HttpRequestData struct {
+	Body          io.Reader
 	Authorization string
 	BaseEndpoint  string
+	Endpoint      string
 	DynamicPart   string
 	Offset        int
+	Method        string
+	ContentType   string
 }
 
 type URL struct {
@@ -41,6 +55,7 @@ type EloquaBulkUploader struct {
 	baseEndpoint  string
 	fileSizeLimit int64
 	eventsLimit   int64
+	service       Eloqua
 }
 
 type HttpClient interface {
@@ -160,4 +175,10 @@ type Metadata struct {
 type TransformedData struct {
 	Message  Message  `json:"message"`
 	Metadata Metadata `json:"metadata"`
+}
+type JobInfo struct {
+	succeededJobs []int64
+	failedJobs    []int64
+	fileSizeLimit int64
+	importingJobs []int64
 }
