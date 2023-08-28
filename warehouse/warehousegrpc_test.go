@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource"
-	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -641,9 +640,7 @@ func setupWarehouseGRPCTest(
 
 	pkgLogger = logger.NOP
 
-	tenantManager = &multitenant.Manager{
-		BackendConfig: backendConfig.DefaultBackendConfig,
-	}
+	tenantManager = multitenant.New(config.Default, backendconfig.DefaultBackendConfig)
 
 	bcManager = newBackendConfigManager(
 		config.Default, wrappedDBHandle, tenantManager, nil,

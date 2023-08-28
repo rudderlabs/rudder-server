@@ -209,7 +209,7 @@ func WithConstantRetries(operation func() error) error {
 	return err
 }
 
-func EnhanceWithDefaultEnvs(t *testing.T) {
+func EnhanceWithDefaultEnvs(t testing.TB) {
 	t.Setenv("JOBS_DB_HOST", jobsDBHost)
 	t.Setenv("JOBS_DB_NAME", jobsDBDatabase)
 	t.Setenv("JOBS_DB_DB_NAME", jobsDBDatabase)

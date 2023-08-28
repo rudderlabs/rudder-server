@@ -68,11 +68,6 @@ type PGNotifierOutput struct {
 	Id string `json:"id"`
 }
 
-type WhAddJobResponse struct {
-	JobIds []int64 `json:"jobids"`
-	Err    error   `json:"error"`
-}
-
 type WhStatusResponse struct {
 	Status string
 	Err    string

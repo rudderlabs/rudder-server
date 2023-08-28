@@ -97,9 +97,9 @@ func TestRouter(t *testing.T) {
 		notifier, err := pgnotifier.New(workspaceIdentifier, pgResource.DBDsn)
 		require.NoError(t, err)
 
-		tenantManager := &multitenant.Manager{
-			BackendConfig: mocksBackendConfig.NewMockBackendConfig(gomock.NewController(t)),
-		}
+		ctrl := gomock.NewController(t)
+
+		tenantManager := multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -449,9 +449,7 @@ func TestRouter(t *testing.T) {
 		r.config.warehouseSyncFreqIgnore = true
 		r.destType = destinationType
 		r.logger = logger.NOP
-		r.tenantManager = &multitenant.Manager{
-			BackendConfig: mocksBackendConfig.NewMockBackendConfig(ctrl),
-		}
+		r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
 			app:          mockApp,
@@ -586,9 +584,7 @@ func TestRouter(t *testing.T) {
 		r.config.uploadAllocatorSleep = time.Millisecond * 100
 		r.destType = warehouseutils.RS
 		r.logger = logger.NOP
-		r.tenantManager = &multitenant.Manager{
-			BackendConfig: mocksBackendConfig.NewMockBackendConfig(ctrl),
-		}
+		r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 		r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
 		r.warehouses = []model.Warehouse{warehouse}
 		r.uploadJobFactory = UploadJobFactory{
@@ -736,9 +732,7 @@ func TestRouter(t *testing.T) {
 			r.config.uploadAllocatorSleep = time.Millisecond * 100
 			r.destType = warehouseutils.RS
 			r.logger = logger.NOP
-			r.tenantManager = &multitenant.Manager{
-				BackendConfig: mocksBackendConfig.NewMockBackendConfig(ctrl),
-			}
+			r.tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 			r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
 			r.warehouses = []model.Warehouse{warehouse}
 			r.uploadJobFactory = UploadJobFactory{
@@ -920,8 +914,10 @@ func TestRouter(t *testing.T) {
 				_, err = pgResource.DB.Exec(string(sqlStatement))
 				require.NoError(t, err)
 
+				ctrl := gomock.NewController(t)
+
 				ctx := context.Background()
-				tenantManager = &multitenant.Manager{}
+				tenantManager = multitenant.New(config.Default, mocksBackendConfig.NewMockBackendConfig(ctrl))
 
 				jobStats, err := repo.NewUploads(sqlmiddleware.New(pgResource.DB), repo.WithNow(func() time.Time {
 					// nowSQL := "'2022-12-06 22:00:00'"
@@ -1046,9 +1042,7 @@ func TestRouter(t *testing.T) {
 		r.logger = logger.NOP
 		r.destType = warehouseutils.RS
 		r.config.maxConcurrentUploadJobs = 1
-		r.tenantManager = &multitenant.Manager{
-			BackendConfig: mockBackendConfig,
-		}
+		r.tenantManager = multitenant.New(config.Default, mockBackendConfig)
 		r.bcManager = newBackendConfigManager(r.conf, r.dbHandle, r.tenantManager, r.logger)
 
 		go func() {

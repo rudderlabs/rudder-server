@@ -31,13 +31,6 @@ func getMessagePayloadsFromAsyncJobPayloads(asyncJobPayloads []AsyncJobPayload) 
 	return messages, nil
 }
 
-func validatePayload(payload StartJobReqPayload) bool {
-	if payload.SourceID == "" || payload.JobRunID == "" || payload.TaskRunID == "" || payload.DestinationID == "" {
-		return false
-	}
-	return true
-}
-
 func getAsyncStatusMapFromAsyncPayloads(payloads []AsyncJobPayload) map[string]AsyncJobStatus {
 	asyncJobStatusMap := make(map[string]AsyncJobStatus)
 	for _, payload := range payloads {

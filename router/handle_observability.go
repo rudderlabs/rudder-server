@@ -1,10 +1,12 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -146,4 +148,34 @@ func (rt *Handle) pipelineDelayStats(partition string, first, last *jobsdb.JobT)
 	}
 	stats.Default.NewTaggedStat("pipeline_delay_min_seconds", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition, "module": "router"}).Gauge(lastJobDelay)
 	stats.Default.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition, "module": "router"}).Gauge(firstJobDelay)
+}
+
+// eventOrderDebugInfo provides some debug information for the given orderKey in case of a panic.
+// Top 100 job statuses for the given orderKey are returned.
+func (rt *Handle) eventOrderDebugInfo(orderKey string) (res string) {
+	defer func() {
+		if r := recover(); r != nil {
+			res = fmt.Sprintf("panic in EventOrderDebugInfo: %v", r)
+		}
+	}()
+	userID, destinationID := parseJobOrderKey(orderKey)
+	if err := rt.jobsDB.WithTx(func(tx *jobsdb.Tx) error {
+		rows, err := tx.Query(`SELECT * FROM joborderlog($1, $2, 10) LIMIT 100`, destinationID, userID)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = rows.Err()
+			_ = rows.Close()
+		}()
+		var out bytes.Buffer
+		if err := sqlutil.PrintRowsToTable(rows, &out); err != nil {
+			out.WriteString(fmt.Sprintf("error printing rows: %v", err))
+		}
+		res = out.String()
+		return nil
+	}); err != nil {
+		res = fmt.Sprintf("error in EventOrderDebugInfo: %v", err)
+	}
+	return res
 }

@@ -2,9 +2,13 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
+
+	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/go-chi/chi/v5"
 	jsoniter "github.com/json-iterator/go"
@@ -55,22 +59,22 @@ type stagingFileSchema struct {
 
 func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, error) {
 	if payload.WorkspaceID == "" {
-		return model.StagingFileWithSchema{}, fmt.Errorf("workspaceId is required")
+		return model.StagingFileWithSchema{}, errors.New("workspaceId is required")
 	}
 
 	if payload.Location == "" {
-		return model.StagingFileWithSchema{}, fmt.Errorf("location is required")
+		return model.StagingFileWithSchema{}, errors.New("location is required")
 	}
 
 	if payload.BatchDestination.Source.ID == "" {
-		return model.StagingFileWithSchema{}, fmt.Errorf("batchDestination.source.id is required")
+		return model.StagingFileWithSchema{}, errors.New("batchDestination.source.id is required")
 	}
 	if payload.BatchDestination.Destination.ID == "" {
-		return model.StagingFileWithSchema{}, fmt.Errorf("batchDestination.destination.id is required")
+		return model.StagingFileWithSchema{}, errors.New("batchDestination.destination.id is required")
 	}
 
 	if len(payload.Schema) == 0 {
-		return model.StagingFileWithSchema{}, fmt.Errorf("schema is required")
+		return model.StagingFileWithSchema{}, errors.New("schema is required")
 	}
 
 	var schema []byte
@@ -108,31 +112,35 @@ func (api *WarehouseAPI) Handler() http.Handler {
 }
 
 func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var payload stagingFileSchema
 	err := json.NewDecoder(r.Body).Decode(&payload)
 	if err != nil {
-		api.Logger.Errorf("Error parsing body: %v", err)
-		http.Error(w, "can't unmarshal body", http.StatusBadRequest)
+		api.Logger.Warnw("invalid JSON in request body for processing staging file", lf.Error, err.Error())
+		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
 	stagingFile, err := mapStagingFile(&payload)
 	if err != nil {
-		api.Logger.Warnf("invalid payload: %v", err)
+		api.Logger.Warnw("invalid payload for processing staging file", lf.Error, err.Error())
 		http.Error(w, fmt.Sprintf("invalid payload: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	if api.Multitenant.DegradedWorkspace(stagingFile.WorkspaceID) {
-		http.Error(w, "Workspace is degraded", http.StatusServiceUnavailable)
+		api.Logger.Infow("workspace is degraded for processing staging file", lf.WorkspaceID, stagingFile.WorkspaceID)
+		http.Error(w, ierrors.ErrWorkspaceDegraded.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
-	if _, err := api.Repo.Insert(ctx, &stagingFile); err != nil {
-		api.Logger.Errorf("Error inserting staging file: %v", err)
+	if _, err := api.Repo.Insert(r.Context(), &stagingFile); err != nil {
+		if errors.Is(r.Context().Err(), context.Canceled) {
+			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
+			return
+		}
+		api.Logger.Errorw("inserting staging file", lf.Error, err.Error())
 		http.Error(w, "can't insert staging file", http.StatusInternalServerError)
 		return
 	}
