@@ -46,7 +46,7 @@ func NewProducer(destination *backendconfig.DestinationT, opts common.Opts) (com
 		return bqstream.NewProducer(destination, opts)
 	case "LAMBDA":
 		return lambda.NewProducer(destination, opts)
-	case "GOOGLECLOUDFUNCTION":
+	case "GOOGLE_CLOUD_FUNCTION":
 		return cloudfunctions.NewProducer(destination, opts)
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
