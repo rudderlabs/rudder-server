@@ -749,15 +749,12 @@ func (uploads *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit in
 func (uploads *Uploads) syncsInfo(ctx context.Context, limit int, offset int, opts SyncUploadOptions, countOver bool) ([]model.SyncUploadInfo, int64, error) {
 	filterQuery, filterArgs := opts.filter()
 
-	queryArgs := []interface{}{limit, offset}
-	queryArgs = append(queryArgs, filterArgs...)
-
 	countOverClause := "0 AS total_uploads"
 	if countOver {
 		countOverClause = "COUNT(*) OVER() AS total_uploads"
 	}
 
-	rows, err := uploads.db.QueryContext(ctx, fmt.Sprintf(`
+	stmt := fmt.Sprintf(`
 		SELECT
 			id,
 			source_id,
@@ -782,14 +779,20 @@ func (uploads *Uploads) syncsInfo(ctx context.Context, limit int, offset int, op
 		ORDER BY
 		  	id DESC
 		LIMIT
-			$1
+			$%d
 		OFFSET
-			$2;
+			$%d;
 	`,
 		countOverClause,
 		filterQuery,
-	),
-		queryArgs...,
+		len(filterArgs)+1,
+		len(filterArgs)+2,
+	)
+
+	rows, err := uploads.db.QueryContext(
+		ctx,
+		stmt,
+		append([]interface{}{limit, offset}, filterArgs...)...,
 	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload info: %w", err)

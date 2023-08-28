@@ -369,7 +369,7 @@ func Start(ctx context.Context, app app.App) error {
 		return nil
 	})
 
-	grpc, err := NewGRPC(config.Default, pkgLogger, stats.Default, wrappedDBHandle, bcManager)
+	grpc, err := NewGRPC(config.Default, pkgLogger, wrappedDBHandle, bcManager)
 	if err != nil {
 		return fmt.Errorf("grpc server failed to start: %v", err)
 	}

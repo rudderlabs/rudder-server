@@ -28,7 +28,8 @@ type PollStatusResponse struct {
 	HasFailed      bool
 	HasWarning     bool
 	FailedJobURLs  string
-	WarningJobsURL string
+	WarningJobURLs string
+	Error          string `json:"error"`
 }
 type AsyncUploadOutput struct {
 	ImportingJobIDs     []int64
@@ -119,18 +120,21 @@ type GetUploadStatsInput struct {
 	Parameters         stdjson.RawMessage
 	ImportingList      []*jobsdb.JobT
 	PollResultFileURLs string
+	WarningJobURLs     string
 }
 
 type EventStatMeta struct {
-	FailedKeys    []int64
-	WarningKeys   []int64
-	SucceededKeys []int64
-	FailedReasons map[int64]string
+	FailedKeys     []int64
+	WarningKeys    []int64
+	SucceededKeys  []int64
+	FailedReasons  map[int64]string
+	WarningReasons map[int64]string
 }
 
 type GetUploadStatsResponse struct {
 	StatusCode int           `json:"statusCode"`
 	Metadata   EventStatMeta `json:"metadata"`
+	Error      string        `json:"error"`
 }
 
 func GetTransformedData(payload stdjson.RawMessage) string {

@@ -8,7 +8,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -19,16 +18,32 @@ import (
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"golang.org/x/exp/slices"
+	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
+	"net/http"
 	"os"
 )
 
+const (
+	TriggeredSuccessfully   = "Triggered successfully"
+	NoPendingEvents         = "No pending events to sync for this destination"
+	DownloadFileNamePattern = "downloadfile.*.tmp"
+	NoSuchSync              = "No such sync exist"
+)
+
 type GRPC struct {
+	proto.UnimplementedWarehouseServer
+
 	logger             logger.Logger
-	statsFactory       stats.Stats
-	db                 *sqlmw.DB
 	isMultiWorkspace   bool
 	cpClient           cpclient.InternalControlPlane
 	connectionManager  *controlplane.ConnectionManager
@@ -42,7 +57,7 @@ type GRPC struct {
 		region         string
 		cpRouterUseTLS bool
 		instanceID     string
-		controlPlane   struct {
+		configBackend  struct {
 			url      string
 			userName string
 			password string
@@ -54,14 +69,11 @@ type GRPC struct {
 func NewGRPC(
 	conf *config.Config,
 	logger logger.Logger,
-	statsFactory stats.Stats,
 	db *sqlmw.DB,
 	bcManager *backendConfigManager,
 ) (*GRPC, error) {
-	g := GRPC{
+	g := &GRPC{
 		logger:             logger.Child("grpc"),
-		statsFactory:       statsFactory,
-		db:                 db,
 		bcManager:          bcManager,
 		stagingRepo:        repo.NewStagingFiles(db),
 		uploadRepo:         repo.NewUploads(db),
@@ -72,16 +84,16 @@ func NewGRPC(
 	g.config.region = conf.GetString("REGION", "")
 	g.config.cpRouterUseTLS = conf.GetBool("CP_ROUTER_USE_TLS", true)
 	g.config.instanceID = conf.GetString("INSTANCE_ID", "1")
-	g.config.controlPlane.url = conf.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
-	g.config.controlPlane.userName = conf.GetString("CP_INTERNAL_API_USERNAME", "")
-	g.config.controlPlane.password = conf.GetString("CP_INTERNAL_API_PASSWORD", "")
+	g.config.configBackend.url = conf.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
+	g.config.configBackend.userName = conf.GetString("CP_INTERNAL_API_USERNAME", "")
+	g.config.configBackend.password = conf.GetString("CP_INTERNAL_API_PASSWORD", "")
 	g.config.enableTunnelling = conf.GetBool("ENABLE_TUNNELLING", true)
 
 	g.cpClient = cpclient.NewInternalClientWithCache(
-		g.config.controlPlane.url,
+		g.config.configBackend.url,
 		cpclient.BasicAuth{
-			Username: g.config.controlPlane.userName,
-			Password: g.config.controlPlane.password,
+			Username: g.config.configBackend.userName,
+			Password: g.config.configBackend.password,
 		},
 	)
 
@@ -108,17 +120,457 @@ func NewGRPC(
 		UseTLS:        g.config.cpRouterUseTLS,
 		Logger:        g.logger,
 		RegisterService: func(srv *grpc.Server) {
-			proto.RegisterWarehouseServer(srv, &GRPCServer{
-				GRPC: g,
-			})
+			proto.RegisterWarehouseServer(srv, g)
 		},
 	}
 
-	return &g, nil
+	return g, nil
 }
 
 func (g *GRPC) Apply(url string, active bool) {
 	g.connectionManager.Apply(url, active)
+}
+
+func (g *GRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
+	return wrapperspb.Bool(true), nil
+}
+
+func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
+	g.logger.Infow(
+		"Getting warehouse uploads",
+		lf.WorkspaceID, request.WorkspaceId,
+		lf.SourceID, request.SourceId,
+		lf.DestinationID, request.DestinationId,
+	)
+
+	limit, offset := request.Limit, request.Offset
+	if limit < 1 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
+	if len(sourceIDs) == 0 {
+		return &proto.WHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
+	}
+
+	syncOptions := repo.SyncUploadOptions{
+		SourceIDs:       sourceIDs,
+		DestinationID:   request.DestinationId,
+		DestinationType: request.DestinationType,
+		Status:          request.Status,
+	}
+
+	var syncUploadInfos []model.SyncUploadInfo
+	var totalUploads int64
+	var err error
+
+	if g.isMultiWorkspace {
+		syncUploadInfos, totalUploads, err = g.uploadRepo.SyncsInfoForMultiTenant(
+			ctx,
+			int(limit),
+			int(offset),
+			syncOptions,
+		)
+	} else {
+		syncUploadInfos, totalUploads, err = g.uploadRepo.SyncsInfoForNonMultiTenant(
+			ctx,
+			int(limit),
+			int(offset),
+			syncOptions,
+		)
+	}
+	if err != nil {
+		return &proto.WHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get syncs info: %v", err)
+	}
+
+	var uploads []*proto.WHUploadResponse
+	for _, syncUploadInfo := range syncUploadInfos {
+		uploads = append(uploads, &proto.WHUploadResponse{
+			Id:               syncUploadInfo.ID,
+			SourceId:         syncUploadInfo.SourceID,
+			DestinationId:    syncUploadInfo.DestinationID,
+			DestinationType:  syncUploadInfo.DestinationType,
+			Namespace:        syncUploadInfo.Namespace,
+			Error:            syncUploadInfo.Error,
+			Attempt:          syncUploadInfo.Attempt,
+			Status:           syncUploadInfo.Status,
+			CreatedAt:        timestamppb.New(syncUploadInfo.CreatedAt),
+			FirstEventAt:     timestamppb.New(syncUploadInfo.FirstEventAt),
+			LastEventAt:      timestamppb.New(syncUploadInfo.LastEventAt),
+			LastExecAt:       timestamppb.New(syncUploadInfo.LastExecAt),
+			NextRetryTime:    timestamppb.New(syncUploadInfo.NextRetryTime),
+			Duration:         syncUploadInfo.Duration,
+			Tables:           []*proto.WHTable{},
+			IsArchivedUpload: syncUploadInfo.IsArchivedUpload,
+		})
+	}
+
+	response := &proto.WHUploadsResponse{Uploads: uploads, Pagination: &proto.Pagination{
+		Limit:  limit,
+		Offset: offset,
+		Total:  int32(totalUploads),
+	}}
+	return response, nil
+}
+
+func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
+	g.logger.Infow("Getting warehouse upload",
+		lf.WorkspaceID, request.WorkspaceId,
+		lf.UploadJobID, request.UploadId,
+	)
+
+	if request.UploadId < 1 {
+		return &proto.WHUploadResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "upload_id is empty or should be greater than 0")
+	}
+
+	syncUploadInfos, _, err := g.uploadRepo.SyncsInfoForMultiTenant(ctx, 1, 0, repo.SyncUploadOptions{
+		UploadID: request.UploadId,
+	})
+	if err != nil {
+		return &proto.WHUploadResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get syncs info for id %d: %v", request.UploadId, err)
+	}
+	if len(syncUploadInfos) == 0 {
+		return &proto.WHUploadResponse{},
+			status.Errorf(codes.Code(code.Code_NOT_FOUND), "no sync found for id %d", request.UploadId)
+	}
+
+	syncUploadInfo := syncUploadInfos[0]
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
+	if len(sourceIDs) == 0 {
+		return &proto.WHUploadResponse{},
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
+	}
+	if !slices.Contains(sourceIDs, syncUploadInfo.SourceID) {
+		return &proto.WHUploadResponse{},
+			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
+	}
+
+	syncTableInfos, err := g.tableUploadsRepo.SyncsInfo(ctx, syncUploadInfo.ID)
+	if err != nil {
+		return &proto.WHUploadResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get table infos: %s", err.Error())
+	}
+
+	var tables []*proto.WHTable
+	for _, syncTableInfo := range syncTableInfos {
+		tables = append(tables, &proto.WHTable{
+			Id:         syncTableInfo.ID,
+			UploadId:   syncTableInfo.UploadID,
+			Name:       syncTableInfo.Name,
+			Status:     syncTableInfo.Status,
+			Error:      syncTableInfo.Error,
+			LastExecAt: timestamppb.New(syncUploadInfo.LastExecAt),
+			Count:      int32(syncTableInfo.Count),
+			Duration:   int32(syncTableInfo.Duration),
+		})
+	}
+
+	return &proto.WHUploadResponse{
+		Id:               syncUploadInfo.ID,
+		SourceId:         syncUploadInfo.SourceID,
+		DestinationId:    syncUploadInfo.DestinationID,
+		DestinationType:  syncUploadInfo.DestinationType,
+		Namespace:        syncUploadInfo.Namespace,
+		Error:            syncUploadInfo.Error,
+		Attempt:          syncUploadInfo.Attempt,
+		Status:           syncUploadInfo.Status,
+		CreatedAt:        timestamppb.New(syncUploadInfo.CreatedAt),
+		FirstEventAt:     timestamppb.New(syncUploadInfo.FirstEventAt),
+		LastEventAt:      timestamppb.New(syncUploadInfo.LastEventAt),
+		LastExecAt:       timestamppb.New(syncUploadInfo.LastExecAt),
+		NextRetryTime:    timestamppb.New(syncUploadInfo.NextRetryTime),
+		Duration:         syncUploadInfo.Duration,
+		Tables:           tables,
+		IsArchivedUpload: syncUploadInfo.IsArchivedUpload,
+	}, nil
+}
+
+func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
+	g.logger.Infow("Triggering warehouse uploads",
+		lf.WorkspaceID, request.WorkspaceId,
+		lf.SourceID, request.SourceId,
+		lf.DestinationID, request.DestinationId,
+	)
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
+	if len(sourceIDs) == 0 {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "no sources found for workspace: %v", request.WorkspaceId)
+	}
+
+	if request.DestinationId == "" {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destination id is required")
+	}
+
+	var (
+		pendingUploadCount       int64
+		pendingStagingFilesCount int64
+		err                      error
+	)
+
+	filters := []repo.FilterBy{
+		{Key: "destination_id", Value: request.DestinationId},
+		{Key: "status", Value: model.ExportedData, NotEquals: true},
+		{Key: "status", Value: model.Aborted, NotEquals: true},
+	}
+	pendingUploadCount, err = g.uploadRepo.Count(ctx, filters...)
+	if err != nil {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get penting uploads count: %v", err)
+	}
+
+	if pendingUploadCount == 0 {
+		pendingStagingFilesCount, err = g.stagingRepo.CountPendingForDestination(ctx, request.DestinationId)
+		if err != nil {
+			return &proto.TriggerWhUploadsResponse{},
+				status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get penting staging files count: %v", err)
+		}
+	}
+
+	if pendingUploadCount+pendingStagingFilesCount == 0 {
+		return &proto.TriggerWhUploadsResponse{
+			StatusCode: http.StatusOK,
+			Message:    NoPendingEvents,
+		}, nil
+	}
+
+	var wh []model.Warehouse
+	if request.SourceId != "" && request.DestinationId == "" {
+		wh = g.bcManager.WarehousesBySourceID(request.WorkspaceId)
+	} else if request.DestinationId != "" {
+		wh = g.bcManager.WarehousesByDestID(request.DestinationId)
+	}
+	if len(wh) == 0 {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "no warehouse found for sourceID: %s, destinationID: %s", request.SourceId, request.DestinationId)
+	}
+
+	for _, warehouse := range wh {
+		triggerUpload(warehouse)
+	}
+
+	return &proto.TriggerWhUploadsResponse{
+		StatusCode: http.StatusOK,
+		Message:    TriggeredSuccessfully,
+	}, nil
+}
+
+func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
+	g.logger.Infow("Triggering warehouse upload",
+		lf.WorkspaceID, request.WorkspaceId,
+		lf.UploadJobID, request.UploadId,
+	)
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
+	if len(sourceIDs) == 0 {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "no sources found for workspace: %v", request.WorkspaceId)
+	}
+
+	upload, err := g.uploadRepo.Get(ctx, request.UploadId)
+	if errors.Is(err, model.ErrUploadNotFound) {
+		return &proto.TriggerWhUploadsResponse{
+			Message:    NoSuchSync,
+			StatusCode: http.StatusOK,
+		}, nil
+	}
+	if err != nil {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get sync id %d: %v", request.UploadId, err)
+	}
+
+	if !slices.Contains(sourceIDs, upload.SourceID) {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
+	}
+
+	err = g.uploadRepo.TriggerUpload(ctx, request.UploadId)
+	if err != nil {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to trigger sync for id %d: %v", request.UploadId, err)
+	}
+
+	return &proto.TriggerWhUploadsResponse{
+		StatusCode: http.StatusOK,
+		Message:    TriggeredSuccessfully,
+	}, nil
+}
+
+func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
+	g.logger.Infow("Retrying warehouse syncs",
+		lf.WorkspaceID, req.WorkspaceId,
+		lf.SourceID, req.SourceId,
+		lf.DestinationID, req.DestinationId,
+		lf.DestinationType, req.DestinationType,
+		"intervalInHours", req.IntervalInHours,
+	)
+
+	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
+		return &proto.RetryWHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "please provide valid request parameters while retrying jobs with workspaceId or sourceId or destinationId")
+	}
+
+	if len(req.UploadIds) == 0 && req.IntervalInHours <= 0 {
+		return &proto.RetryWHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "please provide valid request parameters while retrying jobs with UploadIds or IntervalInHours")
+	}
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.WorkspaceId]
+	if len(sourceIDs) == 0 {
+		return &proto.RetryWHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", req.WorkspaceId)
+	}
+	if req.SourceId != "" && !slices.Contains(sourceIDs, req.SourceId) {
+		return &proto.RetryWHUploadsResponse{},
+			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
+	}
+
+	// Retry request should trigger on these cases.
+	// 1. Either provide the retry interval.
+	// 2. Or provide the List of Upload id's that needs to be re-triggered.
+	retryCount, err := g.uploadRepo.Retry(ctx, repo.TriggerOptions{
+		WorkspaceID:     req.WorkspaceId,
+		SourceIDs:       sourceIDs,
+		DestinationID:   req.DestinationId,
+		DestinationType: req.DestinationType,
+		ForceRetry:      req.ForceRetry,
+		UploadIds:       req.UploadIds,
+		IntervalInHours: req.IntervalInHours,
+	})
+	if err != nil {
+		return &proto.RetryWHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to retry: %v", err)
+	}
+
+	return &proto.RetryWHUploadsResponse{
+		StatusCode: http.StatusOK,
+		Count:      retryCount,
+	}, nil
+}
+
+func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
+	g.logger.Infow("Count syncs to retry",
+		lf.WorkspaceID, req.WorkspaceId,
+		lf.SourceID, req.SourceId,
+		lf.DestinationID, req.DestinationId,
+		lf.DestinationType, req.DestinationType,
+		"intervalInHours", req.IntervalInHours,
+	)
+
+	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
+		return &proto.RetryWHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "please provide valid request parameters while retrying jobs with workspaceId or sourceId or destinationId")
+	}
+
+	if len(req.UploadIds) == 0 && req.IntervalInHours <= 0 {
+		return &proto.RetryWHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "please provide valid request parameters while retrying jobs with UploadIds or IntervalInHours")
+	}
+
+	sourceIDs := g.bcManager.SourceIDsByWorkspace()[req.WorkspaceId]
+	if len(sourceIDs) == 0 {
+		return &proto.RetryWHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", req.WorkspaceId)
+	}
+	if req.SourceId != "" && !slices.Contains(sourceIDs, req.SourceId) {
+		return &proto.RetryWHUploadsResponse{},
+			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
+	}
+
+	retryCount, err := g.uploadRepo.RetryCount(ctx, repo.TriggerOptions{
+		WorkspaceID:     req.WorkspaceId,
+		SourceIDs:       sourceIDs,
+		DestinationID:   req.DestinationId,
+		DestinationType: req.DestinationType,
+		ForceRetry:      req.ForceRetry,
+		UploadIds:       req.UploadIds,
+		IntervalInHours: req.IntervalInHours,
+	})
+	if err != nil {
+		return &proto.RetryWHUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get counts to retry: %v", err)
+	}
+
+	return &proto.RetryWHUploadsResponse{
+		StatusCode: http.StatusOK,
+		Count:      retryCount,
+	}, nil
+}
+
+func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
+	g.logger.Infow("Validating destination", "Role", req.Role, "Path", req.Path, "Step", req.Step)
+
+	var (
+		err      error
+		reqModel struct {
+			Destination backendconfig.DestinationT `json:"destination"`
+		}
+	)
+
+	err = json.Unmarshal(json.RawMessage(req.Body), &reqModel)
+	if err != nil {
+		return &proto.WHValidationResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid JSON in request body for")
+	}
+
+	destination := reqModel.Destination
+	if len(destination.Config) == 0 {
+		return &proto.WHValidationResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destination config is empty")
+	}
+
+	// adding ssh tunnelling info, given we have
+	// useSSH enabled from upstream
+	if g.config.enableTunnelling {
+		err = g.manageTunnellingSecrets(ctx, destination.Config)
+		if err != nil {
+			return &proto.WHValidationResponse{},
+				status.Errorf(codes.Code(code.Code_INTERNAL), "unable to fetch ssh keys: %v", err)
+		}
+	}
+
+	res, err := validations.Validate(ctx, &model.ValidationRequest{
+		Path:        req.Path,
+		Step:        req.Step,
+		Destination: &destination,
+	})
+	if err != nil {
+		return &proto.WHValidationResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to validate: %v", err)
+	}
+	return &proto.WHValidationResponse{
+		Error: res.Error,
+		Data:  res.Data,
+	}, nil
+}
+
+func (g *GRPC) manageTunnellingSecrets(ctx context.Context, config map[string]interface{}) error {
+	if !warehouseutils.ReadAsBool("useSSH", config) {
+		return nil
+	}
+
+	sshKeyId, ok := config["sshKeyId"]
+	if !ok {
+		return fmt.Errorf("missing sshKeyId in validation payload")
+	}
+
+	keys, err := g.cpClient.GetSSHKeys(ctx, sshKeyId.(string))
+	if err != nil {
+		return fmt.Errorf("fetching destination ssh keys: %w", err)
+	}
+
+	config["sshPrivateKey"] = keys.PrivateKey
+
+	return nil
 }
 
 type validateObjectStorageRequest struct {
@@ -126,35 +578,90 @@ type validateObjectStorageRequest struct {
 	Config map[string]interface{} `json:"config"`
 }
 
-func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
-	switch request.Type {
-	case warehouseutils.AzureBlob:
-		if !checkMapForValidKey(request.Config, "containerName") {
-			return errors.New("containerName invalid or not present")
-		}
-	case warehouseutils.GCS, warehouseutils.MINIO, warehouseutils.S3, warehouseutils.DigitalOceanSpaces:
-		if !checkMapForValidKey(request.Config, "bucketName") {
-			return errors.New("bucketName invalid or not present")
-		}
-	default:
-		return fmt.Errorf("type: %v not supported", request.Type)
+type invalidDestinationCredErr struct {
+	Base      error
+	Operation string
+}
+
+func (err invalidDestinationCredErr) Error() string {
+	return fmt.Sprintf("Invalid destination creds, failed for operation: %s with err: \n%s", err.Operation, err.Base.Error())
+}
+
+func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+	g.logger.Infow("validating object storage", "ObjectStorageType", request.Type)
+
+	byt, err := json.Marshal(request)
+	if err != nil {
+		return &proto.ValidateObjectStorageResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to marshal the request proto message with error: \n%s", err.Error())
 	}
 
+	var validateRequest validateObjectStorageRequest
+	if err := json.Unmarshal(byt, &validateRequest); err != nil {
+		return &proto.ValidateObjectStorageResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to extract data into validation request with error: \n%s", err)
+	}
+
+	switch request.Type {
+	case warehouseutils.AzureBlob:
+		if !checkMapForValidKey(validateRequest.Config, "containerName") {
+			err = errors.New("containerName invalid or not present")
+		}
+	case warehouseutils.GCS, warehouseutils.MINIO, warehouseutils.S3, warehouseutils.DigitalOceanSpaces:
+		if !checkMapForValidKey(validateRequest.Config, "bucketName") {
+			err = errors.New("bucketName invalid or not present")
+		}
+	default:
+		err = fmt.Errorf("type: %v not supported", request.Type)
+	}
+	if err != nil {
+		return &proto.ValidateObjectStorageResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid argument err: \n%s", err.Error())
+	}
+
+	err = g.validateObjectStorage(ctx, validateRequest)
+	if err != nil {
+		if errors.Is(err, &invalidDestinationCredErr{}) {
+			return &proto.ValidateObjectStorageResponse{
+				IsValid: false,
+				Error:   err.Error(),
+			}, nil
+		}
+
+		return &proto.ValidateObjectStorageResponse{}, fmt.Errorf("unable to handle validate storage request call: %s", err)
+	}
+
+	return &proto.ValidateObjectStorageResponse{
+		IsValid: true,
+		Error:   "",
+	}, nil
+}
+
+// checkMapForValidKey checks the presence of key in map
+// and if yes verifies that the key is string and non-empty.
+func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
+	if value, ok := configMap[key]; !ok {
+		return false
+	} else if valStr, ok := value.(string); ok {
+		return valStr != ""
+	}
+	return false
+}
+
+func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
 	settings := &filemanager.Settings{
 		Provider: request.Type,
 		Config:   request.Config,
 	}
 
-	if err := overrideWithEnv(ctx, settings); err != nil {
-		return fmt.Errorf("overriding config with env: %w", err)
-	}
+	overrideWithEnv(ctx, settings)
 
 	fileManager, err := g.fileManagerFactory(settings)
 	if err != nil {
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}
 
-	filePath, err := validations.CreateTempLoadFile(&backendconfig.DestinationT{
+	tempFilePath, err := validations.CreateTempLoadFile(&backendconfig.DestinationT{
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: request.Type,
 		},
@@ -163,17 +670,17 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		return fmt.Errorf("unable to create temp load file: \n%w", err)
 	}
 	defer func() {
-		_ = os.Remove(filePath)
+		_ = os.Remove(tempFilePath)
 	}()
 
-	f, err := os.Open(filePath)
+	f, err := os.Open(tempFilePath)
 	if err != nil {
 		return fmt.Errorf("unable to open path to temporary file: \n%w", err)
 	}
 
 	uploadOutput, err := fileManager.Upload(ctx, f)
 	if err != nil {
-		return fmt.Errorf("unable to upload file: \n%w", err)
+		return invalidDestinationCredErr{Base: err, Operation: "upload"}
 	}
 	if err = f.Close(); err != nil {
 		return fmt.Errorf("unable to close file: \n%w", err)
@@ -198,7 +705,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location),
 	)
 	if err != nil {
-		return fmt.Errorf("unable to download file: \n%w", err)
+		return invalidDestinationCredErr{Base: err, Operation: "download"}
 	}
 	if err = f.Close(); err != nil {
 		return fmt.Errorf("unable to close file: \n%w", err)
@@ -207,28 +714,14 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 	return nil
 }
 
-// checkMapForValidKey checks the presence of key in map
-// and if yes verifies that the key is string and non-empty.
-func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
-	if value, ok := configMap[key]; !ok {
-		return false
-	} else if valStr, ok := value.(string); ok {
-		return valStr != ""
-	}
-	return false
-}
-
 // overrideWithEnv overrides the config keys in the fileManager settings
 // with fallback values pulled from env. Only supported for S3 for now.
-func overrideWithEnv(ctx context.Context, settings *filemanager.Settings) error {
-	envConfig := filemanager.GetProviderConfigFromEnv(
-		filemanagerutil.ProviderConfigOpts(
-			ctx,
-			settings.Provider,
-			config.Default,
-		),
-	)
-
+func overrideWithEnv(ctx context.Context, settings *filemanager.Settings) {
+	envConfig := filemanager.GetProviderConfigFromEnv(filemanagerutil.ProviderConfigOpts(
+		ctx,
+		settings.Provider,
+		config.Default,
+	))
 	if settings.Provider == warehouseutils.S3 {
 		ifNotExistThenSet("prefix", envConfig["prefix"], settings.Config)
 		ifNotExistThenSet("accessKeyID", envConfig["accessKeyID"], settings.Config)
@@ -238,7 +731,6 @@ func overrideWithEnv(ctx context.Context, settings *filemanager.Settings) error 
 		ifNotExistThenSet("externalID", envConfig["externalID"], settings.Config)
 		ifNotExistThenSet("regionHint", envConfig["regionHint"], settings.Config)
 	}
-	return ctx.Err()
 }
 
 func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap map[string]interface{}) {
@@ -246,77 +738,4 @@ func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap m
 		// In case we don't have the key, simply replace it with replaceWith
 		configMap[keyToReplace] = replaceWith
 	}
-}
-
-type validationRequest struct {
-	Path string
-	Step string
-	Body string
-}
-
-type validationResponse struct {
-	Error string
-	Data  string
-}
-
-func (g *GRPC) validate(ctx context.Context, req *validationRequest) (*validationResponse, error) {
-	var (
-		err      error
-		resModel struct {
-			Destination backendconfig.DestinationT `json:"destination"`
-		}
-	)
-
-	err = json.Unmarshal(json.RawMessage(req.Body), &resModel)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal request body: %w", err)
-	}
-
-	destination := resModel.Destination
-	if len(destination.Config) == 0 {
-		return nil, errors.New("destination config is empty")
-	}
-
-	// adding ssh tunnelling info, given we have
-	// useSSH enabled from upstream
-	if g.config.enableTunnelling {
-		err = g.manageTunnellingSecrets(ctx, destination.Config)
-		if err != nil {
-			return nil, fmt.Errorf("fetching destination ssh keys: %w", err)
-		}
-	}
-
-	res, err := validations.Validate(ctx, &model.ValidationRequest{
-		Path:        req.Path,
-		Step:        req.Step,
-		Destination: &destination,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("validating destination: %w", err)
-	}
-
-	return &validationResponse{
-		Error: res.Error,
-		Data:  res.Data,
-	}, nil
-}
-
-func (g *GRPC) manageTunnellingSecrets(ctx context.Context, config map[string]interface{}) error {
-	if !warehouseutils.ReadAsBool("useSSH", config) {
-		return nil
-	}
-
-	sshKeyId, ok := config["sshKeyId"]
-	if !ok {
-		return fmt.Errorf("missing sshKeyId in validation payload")
-	}
-
-	keys, err := g.cpClient.GetSSHKeys(ctx, sshKeyId.(string))
-	if err != nil {
-		return fmt.Errorf("fetching destination ssh keys: %w", err)
-	}
-
-	config["sshPrivateKey"] = keys.PrivateKey
-
-	return nil
 }
