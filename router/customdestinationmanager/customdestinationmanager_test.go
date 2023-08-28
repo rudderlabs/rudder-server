@@ -146,7 +146,7 @@ func TestSendDataWithStreamDestination(t *testing.T) {
 	customManager.SendData(event, someDestination.ID)
 }
 
-func TestKVManagerHSETInvocation(t *testing.T) {
+func TestKVManagerInvocations(t *testing.T) {
 	initCustomerManager()
 	customManager := New("REDIS", Opts{}).(*CustomManagerT)
 	someDestination := backendconfig.DestinationT{
@@ -158,49 +158,42 @@ func TestKVManagerHSETInvocation(t *testing.T) {
 	err := customManager.onNewDestination(someDestination)
 	assert.Nil(t, err)
 
-	event := json.RawMessage(`{
-		"message": {
-			"key": "someKey",
-			"value" : "someValue",
-			"hash": "someHash"
-		}
-	  }
-	`)
 	ctrl := gomock.NewController(t)
-	mockKVStoreManager := mock_kvstoremanager.NewMockKVStoreManager(ctrl)
-	mockKVStoreManager.EXPECT().HSet("someHash", "someKey", "someValue").Times(1)
-	mockKVStoreManager.EXPECT().StatusCode(nil).Times(1)
-	customManager.send(event, mockKVStoreManager, someDestination.Config)
-}
+	defer ctrl.Finish()
 
-func TestKVManagerHMSETInvocation(t *testing.T) {
-	initCustomerManager()
-	customManager := New("REDIS", Opts{}).(*CustomManagerT)
-	someDestination := backendconfig.DestinationT{
-		ID: "someDestinationID1",
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			Name: "REDIS",
-		},
-	}
-	err := customManager.onNewDestination(someDestination)
-	assert.Nil(t, err)
-
-	event := json.RawMessage(`{
-		"message": {
-			"key": "someKey",
-			"fields" : {
-				"field1": "value1",
-				"field2": "value2"
+	t.Run("HSET", func(t *testing.T) {
+		event := json.RawMessage(`{
+			"message": {
+				"key": "someKey",
+				"value" : "someValue",
+				"hash": "someHash"
 			}
-		}
-	  }
-	`)
-	ctrl := gomock.NewController(t)
-	mockKVStoreManager := mock_kvstoremanager.NewMockKVStoreManager(ctrl)
-	mockKVStoreManager.EXPECT().HMSet("someKey", map[string]interface{}{
-		"field1": "value1",
-		"field2": "value2",
-	}).Times(1)
-	mockKVStoreManager.EXPECT().StatusCode(nil).Times(1)
-	customManager.send(event, mockKVStoreManager, someDestination.Config)
+		  }
+		`)
+		ctrl := gomock.NewController(t)
+		mockKVStoreManager := mock_kvstoremanager.NewMockKVStoreManager(ctrl)
+		mockKVStoreManager.EXPECT().HSet("someHash", "someKey", "someValue").Times(1)
+		mockKVStoreManager.EXPECT().StatusCode(nil).Times(1)
+		customManager.send(event, mockKVStoreManager, someDestination.Config)
+	})
+
+	t.Run("HMSET", func(t *testing.T) {
+		event := json.RawMessage(`{
+			"message": {
+				"key": "someKey",
+				"fields" : {
+					"field1": "value1",
+					"field2": "value2"
+				}
+			}
+		  }
+		`)
+		mockKVStoreManager := mock_kvstoremanager.NewMockKVStoreManager(ctrl)
+		mockKVStoreManager.EXPECT().HMSet("someKey", map[string]interface{}{
+			"field1": "value1",
+			"field2": "value2",
+		}).Times(1)
+		mockKVStoreManager.EXPECT().StatusCode(nil).Times(1)
+		customManager.send(event, mockKVStoreManager, someDestination.Config)
+	})
 }
