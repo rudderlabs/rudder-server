@@ -22,7 +22,6 @@ func Test_BaseForwarder(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	jobsdb.Init()
 	postgres, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
@@ -74,7 +73,6 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	jobsdb.Init()
 	postgres, err := resource.SetupPostgres(pool, t)
 	require.NoError(t, err)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
