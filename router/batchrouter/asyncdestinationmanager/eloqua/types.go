@@ -162,10 +162,10 @@ type RejectResponse struct {
 }
 
 type Message struct {
-	Data                    map[string]interface{} `json:"data"`
-	IdentifierFieldName     string                 `json:"identifierFieldName"`
-	MapDataCardsSourceField string                 `json:"mapDataCardsSourceField"`
-	CustomObjectId          string                 `json:"customObjectId"`
+	Data                map[string]interface{} `json:"data"`
+	IdentifierFieldName string                 `json:"identifierFieldName"`
+	CustomObjectId      string                 `json:"customObjectId"`
+	Type                string                 `json:"type"`
 }
 type Metadata struct {
 	JobID int64 `json:"job_id"`

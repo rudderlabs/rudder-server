@@ -1,6 +1,9 @@
 package eloqua_test
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/golang/mock/gomock"
@@ -13,7 +16,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/eloqua"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	eloqua "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -29,6 +32,7 @@ var (
 		},
 		WorkspaceID: "workspace_id",
 	}
+	currentDir, _ = os.Getwd()
 )
 
 func initEloqua() {
@@ -64,6 +68,36 @@ var _ = Describe("Eloqua test", func() {
 				FailedReason:        "got error while opening the file. open : no such file or directory",
 				ImportingJobIDs:     nil,
 				FailedJobIDs:        []int64{1, 2, 3, 4},
+				ImportingParameters: nil,
+				ImportingCount:      0,
+				FailedCount:         4,
+			}
+			received := bulkUploader.Upload(&asyncDestination)
+			Expect(received).To(Equal(expected))
+		})
+		It("TestEloquaUploadWrongFilepath", func() {
+			initEloqua()
+			ctrl := gomock.NewController(GinkgoT())
+			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
+			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			asyncDestination := common.AsyncDestinationStruct{
+				ImportingJobIDs: []int64{1014, 1015, 1016, 1017},
+				FailedJobIDs:    []int64{},
+				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
+				Destination:     &destination,
+				Manager:         bulkUploader,
+			}
+			customObjectData := eloqua.HttpRequestData{
+				BaseEndpoint:  "baseEndpoint",
+				Authorization: "authorization",
+			}
+			// *Fields, error
+			eloquaService.EXPECT().FetchFields(customObjectData).Return(nil, fmt.Errorf("either authorization is wrong or the object is not found"))
+
+			expected := common.AsyncUploadOutput{
+				FailedReason:        "either authorization is wrong or the object is not found",
+				ImportingJobIDs:     nil,
+				FailedJobIDs:        []int64{1014, 1015, 1016, 1017},
 				ImportingParameters: nil,
 				ImportingCount:      0,
 				FailedCount:         4,

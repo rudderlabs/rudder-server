@@ -59,9 +59,12 @@ func (e *implementEloqua) FetchFields(data *HttpRequestData) (*Fields, error) {
 	}
 	data.Method = "GET"
 	data.Endpoint = endpoint
-	body, _, err := e.MakeHTTPRequest(data)
+	body, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {
 		return nil, err
+	}
+	if statusCode != 200 {
+		return nil, fmt.Errorf("either authorization is wrong or the object is not found")
 	}
 	unmarshalledBody := Fields{}
 	err = json.Unmarshal(body, &unmarshalledBody)

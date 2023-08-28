@@ -25,12 +25,12 @@ func checkEventType(file *os.File) (string, string, error) {
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			return "", "", fmt.Errorf("error in unmarshalling data, %v", err)
 		}
-		if data.Message.IdentifierFieldName != "" && data.Message.CustomObjectId != "" && data.Message.MapDataCardsSourceField != "" {
+		if data.Message.Type == "track" && data.Message.CustomObjectId != "" {
 			return "track", data.Message.CustomObjectId, nil
-		} else if data.Message.IdentifierFieldName != "" && data.Message.CustomObjectId == "" && data.Message.MapDataCardsSourceField == "" {
+		} else if data.Message.Type == "identify" && data.Message.CustomObjectId == "contacts" {
 			return "identify", "", nil
 		} else {
-			return "", "", fmt.Errorf("unable to find evnet format")
+			return "", "", fmt.Errorf("unable to find event format")
 		}
 	}
 	return "", "", fmt.Errorf("unable to scan data from the file")
@@ -49,7 +49,6 @@ func getFields(file *os.File) []string {
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, 50000*1024)
 	var line string
-	fmt.Print(scanner.Err())
 	if scanner.Scan() {
 		line = scanner.Text()
 	}
@@ -143,7 +142,7 @@ func createBodyForImportDefinition(evenType string, fields []string, eloquaField
 			"name":                    "Rudderstack-CustomObject-Import",
 			"updateRule":              "always",
 			"fields":                  customObjectFieldStatement,
-			"identifierFieldName":     data.Message.MapDataCardsSourceField,
+			"identifierFieldName":     data.Message.IdentifierFieldName,
 			"isSyncTriggeredOnImport": false,
 		}, nil
 	}
