@@ -820,7 +820,7 @@ func (w *worker) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destinat
 		"alert": strconv.FormatBool(alert),
 		// To specify at which point failure happened
 		"errorAt": errorAt,
-		"retry":   fmt.Sprint(status.AttemptNum > 1),
+		"retry":   strconv.FormatBool(status.AttemptNum > 1),
 	})
 	routerResponseStat.Count(1)
 }
