@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
+	"github.com/golang/mock/gomock"
+
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/docker/docker/pkg/fileutils"
@@ -35,42 +37,6 @@ type mockLoadFileUploader struct {
 func (m *mockLoadFileUploader) Download(_ context.Context, tableName string) ([]string, error) {
 	return m.mockFiles[tableName], m.mockError[tableName]
 }
-
-type mockUploader struct {
-	schema model.Schema
-}
-
-func (*mockUploader) GetSchemaInWarehouse() model.Schema { return model.Schema{} }
-func (*mockUploader) GetLocalSchema(context.Context) (model.Schema, error) {
-	return model.Schema{}, nil
-}
-func (*mockUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
-func (*mockUploader) UseRudderStorage() bool                                { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                               { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
-func (*mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-	return []warehouseutils.LoadFile{}
-}
-
-func (*mockUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
-	return warehouseutils.LoadFile{}, nil
-}
-
-func (*mockUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
-	return "", nil
-}
-
-func (m *mockUploader) GetTableSchemaInUpload(tableName string) model.TableSchema {
-	return m.schema[tableName]
-}
-
-func (m *mockUploader) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
-	return m.schema[tableName]
-}
-
-func (m *mockUploader) CanAppend() bool { return false }
 
 func cloneFiles(t *testing.T, files []string) []string {
 	tempFiles := make([]string, len(files))
@@ -255,19 +221,17 @@ func TestLoadTable(t *testing.T) {
 						tableName: tc.mockError,
 					},
 				}
-				pg.Uploader = &mockUploader{
-					schema: map[string]model.TableSchema{
-						tableName: {
-							"test_bool":     "boolean",
-							"test_datetime": "datetime",
-							"test_float":    "float",
-							"test_int":      "int",
-							"test_string":   "string",
-							"id":            "string",
-							"received_at":   "datetime",
-						},
+				pg.Uploader = newMockUploader(t, map[string]model.TableSchema{
+					tableName: {
+						"test_bool":     "boolean",
+						"test_datetime": "datetime",
+						"test_float":    "float",
+						"test_int":      "int",
+						"test_string":   "string",
+						"id":            "string",
+						"received_at":   "datetime",
 					},
-				}
+				})
 
 				err = pg.LoadTable(ctx, tableName)
 				if tc.wantError != nil {
@@ -377,11 +341,9 @@ func TestLoadTable(t *testing.T) {
 						tableName: tc.mockError,
 					},
 				}
-				pg.Uploader = &mockUploader{
-					schema: map[string]model.TableSchema{
-						tableName: warehouseutils.DiscardsSchema,
-					},
-				}
+				pg.Uploader = newMockUploader(t, map[string]model.TableSchema{
+					tableName: warehouseutils.DiscardsSchema,
+				})
 
 				err = pg.LoadTable(ctx, tableName)
 				if tc.wantError != nil {
@@ -582,12 +544,10 @@ func TestLoadUsersTable(t *testing.T) {
 					warehouseutils.IdentifiesTable: tc.mockIdentifiesError,
 				},
 			}
-			pg.Uploader = &mockUploader{
-				schema: map[string]model.TableSchema{
-					warehouseutils.UsersTable:      usersSchamaInUpload,
-					warehouseutils.IdentifiesTable: identifiesSchemaInUpload,
-				},
-			}
+			pg.Uploader = newMockUploader(t, map[string]model.TableSchema{
+				warehouseutils.UsersTable:      usersSchamaInUpload,
+				warehouseutils.IdentifiesTable: identifiesSchemaInUpload,
+			})
 
 			errorsMap := pg.LoadUserTables(ctx)
 			require.NotEmpty(t, errorsMap)
@@ -603,4 +563,13 @@ func TestLoadUsersTable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newMockUploader(t testing.TB, schema model.Schema) *mockuploader.MockUploader {
+	ctrl := gomock.NewController(t)
+	f := func(tableName string) model.TableSchema { return schema[tableName] }
+	u := mockuploader.NewMockUploader(ctrl)
+	u.EXPECT().GetTableSchemaInUpload(gomock.Any()).AnyTimes().DoAndReturn(f)
+	u.EXPECT().GetTableSchemaInWarehouse(gomock.Any()).AnyTimes().DoAndReturn(f)
+	return u
 }
