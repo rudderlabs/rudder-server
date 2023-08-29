@@ -6,12 +6,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-
+	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -20,43 +16,11 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-type mockUploader struct {
-	loadFiles []warehouseutils.LoadFile
-}
-
-func (*mockUploader) GetSchemaInWarehouse() model.Schema { return model.Schema{} }
-func (*mockUploader) GetLocalSchema(context.Context) (model.Schema, error) {
-	return model.Schema{}, nil
-}
-func (*mockUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                               { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
-func (*mockUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
-	return "", nil
-}
-func (*mockUploader) UseRudderStorage() bool { return false }
-func (*mockUploader) GetTableSchemaInWarehouse(string) model.TableSchema {
-	return model.TableSchema{}
-}
-
-func (*mockUploader) GetSingleLoadFile(context.Context, string) (warehouseutils.LoadFile, error) {
-	return warehouseutils.LoadFile{}, nil
-}
-
-func (*mockUploader) GetTableSchemaInUpload(string) model.TableSchema {
-	return model.TableSchema{}
-}
-
-func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-	return m.loadFiles
-}
-
-func (m *mockUploader) CanAppend() bool { return false }
 
 func TestDownloader(t *testing.T) {
 	t.Parallel()
@@ -188,9 +152,7 @@ func TestDownloader(t *testing.T) {
 						WorkspaceID: workspaceID,
 					},
 				},
-				&mockUploader{
-					loadFiles: loadFiles,
-				},
+				newMockUploader(t, loadFiles),
 				workers,
 			)
 
@@ -208,4 +170,12 @@ func TestDownloader(t *testing.T) {
 			require.Equal(t, len(fileNames), len(loadFiles))
 		})
 	}
+}
+
+func newMockUploader(t testing.TB, loadFiles []warehouseutils.LoadFile) *mockuploader.MockUploader {
+	ctrl := gomock.NewController(t)
+	u := mockuploader.NewMockUploader(ctrl)
+	u.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).AnyTimes().Return(loadFiles)
+	u.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+	return u
 }
