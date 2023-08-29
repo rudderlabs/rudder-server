@@ -56,6 +56,8 @@ func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetL
 	return m.loadFiles
 }
 
+func (m *mockUploader) CanAppend() bool { return false }
+
 func TestDownloader(t *testing.T) {
 	t.Parallel()
 

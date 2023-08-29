@@ -629,3 +629,75 @@ func TestUploadJob_DurationBeforeNextAttempt(t *testing.T) {
 		})
 	}
 }
+
+func TestUploadJob_CanAppend(t *testing.T) {
+	testCases := []struct {
+		name           string
+		sourceCategory string
+		sourceJobRunID string // if not empty then it's an ETL source
+		originalID     string // if not empty then it's a replay
+		expected       bool
+	}{
+		{
+			name:           "not a merge category",
+			sourceCategory: "event-stream",
+			sourceJobRunID: "",
+			originalID:     "",
+			expected:       true,
+		},
+		{
+			name:           "cloud merge category",
+			sourceCategory: "cloud",
+			sourceJobRunID: "",
+			originalID:     "",
+			expected:       false,
+		},
+		{
+			name:           "singer-protocol merge category",
+			sourceCategory: "singer-protocol",
+			sourceJobRunID: "",
+			originalID:     "",
+			expected:       false,
+		},
+		{
+			name:           "etl source",
+			sourceCategory: "event-stream",
+			sourceJobRunID: "some-job-run-id",
+			originalID:     "",
+			expected:       false,
+		},
+		{
+			name:           "replay",
+			sourceCategory: "event-stream",
+			sourceJobRunID: "",
+			originalID:     "some-original-id",
+			expected:       false,
+		},
+		{
+			name:           "replay of etl source in merge category map",
+			sourceCategory: "cloud",
+			sourceJobRunID: "some-job-run-id",
+			originalID:     "some-original-id",
+			expected:       false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			uj := UploadJob{
+				upload: model.Upload{
+					SourceJobRunID: tc.sourceJobRunID,
+				},
+				warehouse: model.Warehouse{
+					Source: backendconfig.SourceT{
+						OriginalID: tc.originalID,
+						SourceDefinition: backendconfig.SourceDefinitionT{
+							Category: tc.sourceCategory,
+						},
+					},
+				},
+			}
+			require.Equal(t, uj.CanAppend(), tc.expected)
+		})
+	}
+}

@@ -169,6 +169,10 @@ const (
 var (
 	alwaysMarkExported                               = []string{warehouseutils.DiscardsTable}
 	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE, warehouseutils.BQ}
+	mergeSourceCategoryMap                           = map[string]struct{}{
+		"cloud":           {},
+		"singer-protocol": {},
+	}
 )
 
 func init() {
@@ -751,6 +755,23 @@ func (job *UploadJob) exportRegularTables(specialTables []string, loadFilesTable
 	}
 
 	return
+}
+
+// CanAppend returns true if:
+// * the source is not an ETL source
+// * the source is not a replay source
+// * the source category is not in "mergeSourceCategoryMap"
+func (job *UploadJob) CanAppend() bool {
+	if isSourceETL := job.upload.SourceJobRunID != ""; isSourceETL {
+		return false
+	}
+	if job.warehouse.Source.IsReplaySource() {
+		return false
+	}
+	if _, isMergeCategory := mergeSourceCategoryMap[job.warehouse.Source.SourceDefinition.Category]; isMergeCategory {
+		return false
+	}
+	return true
 }
 
 func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[string]model.PendingTableUpload, error) {

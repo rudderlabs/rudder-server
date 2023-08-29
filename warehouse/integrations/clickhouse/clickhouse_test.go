@@ -398,6 +398,8 @@ func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetL
 	return m.metadata
 }
 
+func (m *mockUploader) CanAppend() bool { return false }
+
 func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
 	c.Start(context.Background())

@@ -70,6 +70,8 @@ func (m *mockUploader) GetTableSchemaInWarehouse(tableName string) model.TableSc
 	return m.schema[tableName]
 }
 
+func (m *mockUploader) CanAppend() bool { return false }
+
 func cloneFiles(t *testing.T, files []string) []string {
 	tempFiles := make([]string, len(files))
 	for i, file := range files {

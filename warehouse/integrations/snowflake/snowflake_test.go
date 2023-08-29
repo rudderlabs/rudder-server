@@ -12,17 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
+	"github.com/golang/mock/gomock"
 	sfdb "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -30,7 +28,9 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -499,46 +499,39 @@ func TestIntegration(t *testing.T) {
 
 func TestSnowflake_ShouldAppend(t *testing.T) {
 	testCases := []struct {
-		name              string
-		loadTableStrategy string
-		sourceCategory    string
-		expected          bool
+		name                  string
+		loadTableStrategy     string
+		uploaderCanAppend     bool
+		uploaderExpectedCalls int
+		expected              bool
 	}{
 		{
-			name:              "merge with event stream",
-			loadTableStrategy: "MERGE",
-			sourceCategory:    "event-stream",
-			expected:          false,
+			name:                  "uploader says we can append and we are in append mode",
+			loadTableStrategy:     "APPEND",
+			uploaderCanAppend:     true,
+			uploaderExpectedCalls: 1,
+			expected:              true,
 		},
 		{
-			name:              "append with event-stream",
-			loadTableStrategy: "MERGE",
-			sourceCategory:    "event-stream",
-			expected:          false,
+			name:                  "uploader says we cannot append and we are in append mode",
+			loadTableStrategy:     "APPEND",
+			uploaderCanAppend:     false,
+			uploaderExpectedCalls: 1,
+			expected:              false,
 		},
 		{
-			name:              "merge with extract cloud source",
-			loadTableStrategy: "MERGE",
-			sourceCategory:    "cloud",
-			expected:          false,
+			name:                  "uploader says we can append and we are in merge mode",
+			loadTableStrategy:     "MERGE",
+			uploaderCanAppend:     true,
+			uploaderExpectedCalls: 0,
+			expected:              false,
 		},
 		{
-			name:              "merge with extract singer protocol source",
-			loadTableStrategy: "MERGE",
-			sourceCategory:    "singer-protocol",
-			expected:          false,
-		},
-		{
-			name:              "append with extract cloud source",
-			loadTableStrategy: "APPEND",
-			sourceCategory:    "cloud",
-			expected:          false,
-		},
-		{
-			name:              "append with extract singer protocol source",
-			loadTableStrategy: "APPEND",
-			sourceCategory:    "singer-protocol",
-			expected:          false,
+			name:                  "uploader says we cannot append and we are in merge mode",
+			loadTableStrategy:     "MERGE",
+			uploaderCanAppend:     false,
+			uploaderExpectedCalls: 0,
+			expected:              false,
 		},
 	}
 
@@ -550,14 +543,11 @@ func TestSnowflake_ShouldAppend(t *testing.T) {
 			sf, err := snowflake.New(c, logger.NOP, stats.Default)
 			require.NoError(t, err)
 
-			sf.Warehouse = model.Warehouse{
-				Source: backendconfig.SourceT{
-					SourceDefinition: backendconfig.SourceDefinitionT{
-						Category: tc.sourceCategory,
-					},
-				},
-			}
+			mockCtrl := gomock.NewController(t)
+			uploader := mockuploader.NewMockUploader(mockCtrl)
+			uploader.EXPECT().CanAppend().Times(tc.uploaderExpectedCalls).Return(tc.uploaderCanAppend)
 
+			sf.Uploader = uploader
 			require.Equal(t, sf.ShouldAppend(), tc.expected)
 		})
 	}

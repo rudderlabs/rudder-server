@@ -103,6 +103,8 @@ func (m *dummyUploader) UseRudderStorage() bool {
 	return misc.IsConfiguredToUseRudderObjectStorage(m.dest.Config)
 }
 
+func (m *dummyUploader) CanAppend() bool { return false }
+
 func NewDestinationValidator() DestinationValidator {
 	return &destinationValidationImpl{}
 }

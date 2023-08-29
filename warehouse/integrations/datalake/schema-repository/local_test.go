@@ -50,6 +50,8 @@ func (m *mockUploader) UpdateLocalSchema(context.Context, model.Schema) error {
 	return m.mockError
 }
 
+func (m *mockUploader) CanAppend() bool { return false }
+
 func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 	t.Parallel()
 
