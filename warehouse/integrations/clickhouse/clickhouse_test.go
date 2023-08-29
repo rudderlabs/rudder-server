@@ -12,33 +12,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
-
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-
 	"github.com/rudderlabs/compose-test/testcompose"
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/stretchr/testify/require"
-
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestIntegration(t *testing.T) {
@@ -358,50 +353,11 @@ func TestClickhouse_UseS3CopyEngineForLoading(t *testing.T) {
 	}
 }
 
-type mockUploader struct {
-	minioPort   string
-	tableSchema model.TableSchema
-	metadata    []warehouseutils.LoadFile
-}
-
-func (*mockUploader) GetSchemaInWarehouse() model.Schema { return model.Schema{} }
-func (*mockUploader) GetLocalSchema(context.Context) (model.Schema, error) {
-	return model.Schema{}, nil
-}
-func (*mockUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
-func (*mockUploader) UseRudderStorage() bool                                { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                               { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInWarehouse(_ string) model.TableSchema {
-	return model.TableSchema{}
-}
-
-func (*mockUploader) GetSingleLoadFile(_ context.Context, _ string) (warehouseutils.LoadFile, error) {
-	return warehouseutils.LoadFile{}, nil
-}
-
-func (m *mockUploader) GetSampleLoadFileLocation(_ context.Context, _ string) (string, error) {
-	minioHostPort := fmt.Sprintf("localhost:%s", m.minioPort)
-
-	sampleLocation := m.metadata[0].Location
-	sampleLocation = strings.Replace(sampleLocation, minioHostPort, "minio:9000", 1)
-	return sampleLocation, nil
-}
-
-func (m *mockUploader) GetTableSchemaInUpload(string) model.TableSchema {
-	return m.tableSchema
-}
-
-func (m *mockUploader) GetLoadFilesMetadata(context.Context, warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFile {
-	return m.metadata
-}
-
-func (m *mockUploader) CanAppend() bool { return false }
-
 func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
-	c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.clickhouse.yml", "../testdata/docker-compose.minio.yml"}))
+	c := testcompose.New(t, compose.FilePaths([]string{
+		"testdata/docker-compose.clickhouse.yml",
+		"../testdata/docker-compose.minio.yml",
+	}))
 	c.Start(context.Background())
 
 	misc.Init()
@@ -487,28 +443,6 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 					},
 				},
 			}
-			mockUploader := &mockUploader{
-				tableSchema: model.TableSchema{
-					"alter_test_bool":     "boolean",
-					"alter_test_datetime": "datetime",
-					"alter_test_float":    "float",
-					"alter_test_int":      "int",
-					"alter_test_string":   "string",
-					"id":                  "string",
-					"received_at":         "datetime",
-					"test_array_bool":     "array(boolean)",
-					"test_array_datetime": "array(datetime)",
-					"test_array_float":    "array(float)",
-					"test_array_int":      "array(int)",
-					"test_array_string":   "array(string)",
-					"test_bool":           "boolean",
-					"test_datetime":       "datetime",
-					"test_float":          "float",
-					"test_int":            "int",
-					"test_string":         "string",
-				},
-				minioPort: strconv.Itoa(minioPort),
-			}
 
 			t.Log("Preparing load files metadata")
 			f, err := os.Open(tc.fileName)
@@ -532,13 +466,36 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			ctx := context.Background()
-
 			uploadOutput, err := fm.Upload(ctx, f, fmt.Sprintf("test_prefix_%d", i))
 			require.NoError(t, err)
 
-			mockUploader.metadata = append(mockUploader.metadata, warehouseutils.LoadFile{
-				Location: uploadOutput.Location,
-			})
+			mockUploaderTableSchema := model.TableSchema{
+				"alter_test_bool":     "boolean",
+				"alter_test_datetime": "datetime",
+				"alter_test_float":    "float",
+				"alter_test_int":      "int",
+				"alter_test_string":   "string",
+				"id":                  "string",
+				"received_at":         "datetime",
+				"test_array_bool":     "array(boolean)",
+				"test_array_datetime": "array(datetime)",
+				"test_array_float":    "array(float)",
+				"test_array_int":      "array(int)",
+				"test_array_string":   "array(string)",
+				"test_bool":           "boolean",
+				"test_datetime":       "datetime",
+				"test_float":          "float",
+				"test_int":            "int",
+				"test_string":         "string",
+			}
+			mockCtrl := gomock.NewController(t)
+			mockUploader := newMockUploader(mockCtrl,
+				strconv.Itoa(minioPort),
+				mockUploaderTableSchema,
+				[]warehouseutils.LoadFile{
+					{Location: uploadOutput.Location},
+				},
+			)
 
 			t.Log("Setting up clickhouse")
 			err = ch.Setup(ctx, warehouse, mockUploader)
@@ -744,7 +701,10 @@ func TestClickhouse_TestConnection(t *testing.T) {
 				},
 			}
 
-			err := ch.Setup(ctx, warehouse, &mockUploader{})
+			mockCtrl := gomock.NewController(t)
+			mockUploader := newMockUploader(mockCtrl, "", nil, nil)
+
+			err := ch.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			ch.SetConnectionTimeout(tc.timeout)
@@ -844,7 +804,10 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 				payload[k] = v
 			}
 
-			err := ch.Setup(ctx, warehouse, &mockUploader{})
+			mockCtrl := gomock.NewController(t)
+			mockUploader := newMockUploader(mockCtrl, "", nil, nil)
+
+			err := ch.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = ch.CreateSchema(ctx)
@@ -907,7 +870,10 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		mockCtrl := gomock.NewController(t)
+		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
+
+		err := ch.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		err = ch.CreateSchema(ctx)
@@ -952,7 +918,10 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		mockCtrl := gomock.NewController(t)
+		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
+
+		err := ch.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
@@ -978,7 +947,10 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		mockCtrl := gomock.NewController(t)
+		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
+
+		err := ch.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
@@ -1004,7 +976,10 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		mockCtrl := gomock.NewController(t)
+		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
+
+		err := ch.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		err = ch.CreateSchema(ctx)
@@ -1033,7 +1008,10 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		err := ch.Setup(ctx, warehouse, &mockUploader{})
+		mockCtrl := gomock.NewController(t)
+		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
+
+		err := ch.Setup(ctx, warehouse, mockUploader)
 		require.NoError(t, err)
 
 		err = ch.CreateSchema(ctx)
@@ -1234,4 +1212,26 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 			}))
 		}
 	}
+}
+
+func newMockUploader(
+	ctrl *gomock.Controller,
+	minioPort string,
+	tableSchema model.TableSchema,
+	metadata []warehouseutils.LoadFile,
+) *mockuploader.MockUploader {
+	var sampleLocation string
+	if len(metadata) > 0 {
+		minioHostPort := fmt.Sprintf("localhost:%s", minioPort)
+		sampleLocation = strings.Replace(metadata[0].Location, minioHostPort, "minio:9000", 1)
+	}
+
+	u := mockuploader.NewMockUploader(ctrl)
+	u.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(sampleLocation, nil).AnyTimes()
+	u.EXPECT().GetTableSchemaInUpload(gomock.Any()).Return(tableSchema).AnyTimes()
+	u.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(metadata).AnyTimes()
+	u.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+	u.EXPECT().GetSchemaInWarehouse().Return(nil).AnyTimes()
+
+	return u
 }
