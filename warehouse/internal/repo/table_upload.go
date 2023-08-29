@@ -379,15 +379,15 @@ func (repo *TableUploads) ExistsForUploadID(ctx context.Context, uploadId int64)
 	return count > 0, nil
 }
 
-func (repo *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]model.SyncTableInfo, error) {
+func (repo *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]model.TableUploadInfo, error) {
 	tableUploads, err := repo.GetByUploadID(ctx, uploadID)
 	if err != nil {
-		return nil, fmt.Errorf("getting table uploads by upload id: %w", err)
+		return nil, fmt.Errorf("table uploads for upload id: %w", err)
 	}
 
-	var syncsInfo []model.SyncTableInfo
+	var tableUploadInfos []model.TableUploadInfo
 	for _, tableUpload := range tableUploads {
-		syncsInfo = append(syncsInfo, model.SyncTableInfo{
+		tableUploadInfos = append(tableUploadInfos, model.TableUploadInfo{
 			ID:         tableUpload.ID,
 			UploadID:   tableUpload.UploadID,
 			Name:       tableUpload.TableName,
@@ -398,5 +398,5 @@ func (repo *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]mode
 			Duration:   int64(tableUpload.UpdatedAt.Sub(tableUpload.LastExecTime) / time.Second),
 		})
 	}
-	return syncsInfo, nil
+	return tableUploadInfos, nil
 }

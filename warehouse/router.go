@@ -576,17 +576,23 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 		return nil
 	}
 
-	priority := defaultUploadPriority
+	priority, err := r.handlePriorityForWaitingUploads(ctx, warehouse)
+	if err != nil {
+		return fmt.Errorf("handling priority for waiting uploads: %w", err)
+	}
 
-	uploadID, uploadStatus, uploadPriority := r.latestUploadStatus(ctx, &warehouse)
-	if uploadStatus == model.Waiting {
+	latestInfo, err := r.uploadRepo.GetLatestUploadInfo(ctx, warehouse.Source.ID, warehouse.Destination.ID)
+	if err != nil && !errors.Is(err, model.ErrUploadNotFound) {
+		return fmt.Errorf("getting latest upload info: %w", err)
+	}
+	if err != nil && latestInfo.Status == model.Waiting {
 		// If it is present do nothing else delete it
-		if _, inProgress := r.isUploadJobInProgress(warehouse, uploadID); !inProgress {
-			err := r.uploadRepo.DeleteWaiting(ctx, uploadID)
+		if _, inProgress := r.isUploadJobInProgress(warehouse, latestInfo.ID); !inProgress {
+			err := r.uploadRepo.DeleteWaiting(ctx, latestInfo.ID)
 			if err != nil {
-				r.logger.Error(err, "uploadID", uploadID, "warehouse", warehouse.Identifier)
+				r.logger.Error(err, "uploadID", latestInfo.ID, "warehouse", warehouse.Identifier)
 			}
-			priority = uploadPriority // copy the priority from the latest upload job.
+			priority = latestInfo.Priority // copy the priority from the latest upload job.
 		}
 	}
 
@@ -626,17 +632,26 @@ func (r *router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 	return nil
 }
 
-func (r *router) latestUploadStatus(ctx context.Context, warehouse *model.Warehouse) (int64, string, int) {
-	//uploadID, status, priority, err := r.warehouseDBHandle.GetLatestUploadStatus(
-	//	ctx,
-	//	warehouse.Source.ID,
-	//	warehouse.Destination.ID,
-	//)
-	//if err != nil {
-	//	r.logger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
-	//}
+func (r *router) handlePriorityForWaitingUploads(ctx context.Context, warehouse model.Warehouse) (int, error) {
+	latestInfo, err := r.uploadRepo.GetLatestUploadInfo(ctx, warehouse.Source.ID, warehouse.Destination.ID)
+	if err != nil {
+		if errors.Is(err, model.ErrUploadNotFound) {
+			return defaultUploadPriority, nil
+		}
+		return 0, err
+	}
 
-	return 0, "", 0
+	if latestInfo.Status != model.Waiting {
+		return defaultUploadPriority, nil
+	}
+
+	// If it is present do nothing else delete it
+	if _, inProgress := r.isUploadJobInProgress(warehouse, latestInfo.ID); !inProgress {
+		if err := r.uploadRepo.DeleteWaiting(ctx, latestInfo.ID); err != nil {
+			return 0, fmt.Errorf("deleting waiting upload: %w", err)
+		}
+	}
+	return latestInfo.Priority, nil
 }
 
 func (r *router) uploadStartAfterTime() time.Time {

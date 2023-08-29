@@ -157,26 +157,26 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
 	}
 
-	syncOptions := repo.SyncUploadOptions{
+	syncOptions := model.SyncUploadOptions{
 		SourceIDs:       sourceIDs,
 		DestinationID:   request.DestinationId,
 		DestinationType: request.DestinationType,
 		Status:          request.Status,
 	}
 
-	var syncUploadInfos []model.SyncUploadInfo
+	var uploadInfos []model.UploadInfo
 	var totalUploads int64
 	var err error
 
 	if g.isMultiWorkspace {
-		syncUploadInfos, totalUploads, err = g.uploadRepo.SyncsInfoForMultiTenant(
+		uploadInfos, totalUploads, err = g.uploadRepo.SyncsInfoForMultiTenant(
 			ctx,
 			int(limit),
 			int(offset),
 			syncOptions,
 		)
 	} else {
-		syncUploadInfos, totalUploads, err = g.uploadRepo.SyncsInfoForNonMultiTenant(
+		uploadInfos, totalUploads, err = g.uploadRepo.SyncsInfoForNonMultiTenant(
 			ctx,
 			int(limit),
 			int(offset),
@@ -189,7 +189,7 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 	}
 
 	var uploads []*proto.WHUploadResponse
-	for _, syncUploadInfo := range syncUploadInfos {
+	for _, syncUploadInfo := range uploadInfos {
 		uploads = append(uploads, &proto.WHUploadResponse{
 			Id:               syncUploadInfo.ID,
 			SourceId:         syncUploadInfo.SourceID,
@@ -197,14 +197,14 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 			DestinationType:  syncUploadInfo.DestinationType,
 			Namespace:        syncUploadInfo.Namespace,
 			Error:            syncUploadInfo.Error,
-			Attempt:          syncUploadInfo.Attempt,
+			Attempt:          int32(syncUploadInfo.Attempt),
 			Status:           syncUploadInfo.Status,
 			CreatedAt:        timestamppb.New(syncUploadInfo.CreatedAt),
 			FirstEventAt:     timestamppb.New(syncUploadInfo.FirstEventAt),
 			LastEventAt:      timestamppb.New(syncUploadInfo.LastEventAt),
 			LastExecAt:       timestamppb.New(syncUploadInfo.LastExecAt),
 			NextRetryTime:    timestamppb.New(syncUploadInfo.NextRetryTime),
-			Duration:         syncUploadInfo.Duration,
+			Duration:         int32(syncUploadInfo.Duration),
 			Tables:           []*proto.WHTable{},
 			IsArchivedUpload: syncUploadInfo.IsArchivedUpload,
 		})
@@ -229,19 +229,19 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "upload_id is empty or should be greater than 0")
 	}
 
-	syncUploadInfos, _, err := g.uploadRepo.SyncsInfoForMultiTenant(ctx, 1, 0, repo.SyncUploadOptions{
+	uploadInfos, _, err := g.uploadRepo.SyncsInfoForMultiTenant(ctx, 1, 0, model.SyncUploadOptions{
 		UploadID: request.UploadId,
 	})
 	if err != nil {
 		return &proto.WHUploadResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get syncs info for id %d: %v", request.UploadId, err)
 	}
-	if len(syncUploadInfos) == 0 {
+	if len(uploadInfos) == 0 {
 		return &proto.WHUploadResponse{},
 			status.Errorf(codes.Code(code.Code_NOT_FOUND), "no sync found for id %d", request.UploadId)
 	}
 
-	syncUploadInfo := syncUploadInfos[0]
+	syncUploadInfo := uploadInfos[0]
 
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
 	if len(sourceIDs) == 0 {
@@ -280,14 +280,14 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 		DestinationType:  syncUploadInfo.DestinationType,
 		Namespace:        syncUploadInfo.Namespace,
 		Error:            syncUploadInfo.Error,
-		Attempt:          syncUploadInfo.Attempt,
+		Attempt:          int32(syncUploadInfo.Attempt),
 		Status:           syncUploadInfo.Status,
 		CreatedAt:        timestamppb.New(syncUploadInfo.CreatedAt),
 		FirstEventAt:     timestamppb.New(syncUploadInfo.FirstEventAt),
 		LastEventAt:      timestamppb.New(syncUploadInfo.LastEventAt),
 		LastExecAt:       timestamppb.New(syncUploadInfo.LastExecAt),
 		NextRetryTime:    timestamppb.New(syncUploadInfo.NextRetryTime),
-		Duration:         syncUploadInfo.Duration,
+		Duration:         int32(syncUploadInfo.Duration),
 		Tables:           tables,
 		IsArchivedUpload: syncUploadInfo.IsArchivedUpload,
 	}, nil
@@ -394,6 +394,10 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 	}
 
 	err = g.uploadRepo.TriggerUpload(ctx, request.UploadId)
+	if errors.Is(err, model.ErrUploadNotFound) {
+		return &proto.TriggerWhUploadsResponse{},
+			status.Errorf(codes.Code(code.Code_NOT_FOUND), "no sync found for id %d", request.UploadId)
+	}
 	if err != nil {
 		return &proto.TriggerWhUploadsResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to trigger sync for id %d: %v", request.UploadId, err)
@@ -437,7 +441,7 @@ func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequ
 	// Retry request should trigger on these cases.
 	// 1. Either provide the retry interval.
 	// 2. Or provide the List of Upload id's that needs to be re-triggered.
-	retryCount, err := g.uploadRepo.Retry(ctx, repo.TriggerOptions{
+	retryCount, err := g.uploadRepo.Retry(ctx, model.RetryOptions{
 		WorkspaceID:     req.WorkspaceId,
 		SourceIDs:       sourceIDs,
 		DestinationID:   req.DestinationId,
@@ -486,7 +490,7 @@ func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUplo
 			status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
 	}
 
-	retryCount, err := g.uploadRepo.RetryCount(ctx, repo.TriggerOptions{
+	retryCount, err := g.uploadRepo.RetryCount(ctx, model.RetryOptions{
 		WorkspaceID:     req.WorkspaceId,
 		SourceIDs:       sourceIDs,
 		DestinationID:   req.DestinationId,

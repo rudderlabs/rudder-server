@@ -66,7 +66,7 @@ var (
 	port                                           int
 )
 
-var defaultUploadPriority = 100
+const defaultUploadPriority = 100
 
 const (
 	DegradedMode        = "degraded"

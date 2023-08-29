@@ -4,14 +4,14 @@ import (
 	"time"
 )
 
-type SyncUploadInfo struct {
+type UploadInfo struct {
 	ID               int64
 	SourceID         string
 	DestinationID    string
 	DestinationType  string
 	Namespace        string
 	Error            string
-	Attempt          int32
+	Attempt          int64
 	Status           string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -19,11 +19,11 @@ type SyncUploadInfo struct {
 	LastEventAt      time.Time
 	LastExecAt       time.Time
 	NextRetryTime    time.Time
-	Duration         int32
+	Duration         time.Duration
 	IsArchivedUpload bool
 }
 
-type SyncTableInfo struct {
+type TableUploadInfo struct {
 	ID         int64
 	UploadID   int64
 	Name       string
