@@ -220,6 +220,7 @@ func TestIntegration(t *testing.T) {
 			database                      string
 			asyncJob                      bool
 			stagingFilePrefix             string
+			jobRunID                      string
 			appendMode                    bool
 			customUserID                  string
 		}{
@@ -241,6 +242,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job",
+				jobRunID:          misc.FastUUID().String(),
 			},
 			{
 				name:     "Upload Job with Role",
@@ -260,6 +262,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-with-role",
+				jobRunID:          misc.FastUUID().String(),
 			},
 			{
 				name:     "Upload Job with Case Sensitive Database",
@@ -279,6 +282,7 @@ func TestIntegration(t *testing.T) {
 					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 				},
 				stagingFilePrefix: "testdata/upload-job-case-sensitive",
+				jobRunID:          misc.FastUUID().String(),
 			},
 			{
 				name:          "Async Job with Sources",
@@ -300,6 +304,7 @@ func TestIntegration(t *testing.T) {
 				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 				asyncJob:              true,
 				stagingFilePrefix:     "testdata/sources-job",
+				jobRunID:              misc.FastUUID().String(),
 			},
 			{
 				name:                          "Upload Job in append mode",
@@ -317,8 +322,11 @@ func TestIntegration(t *testing.T) {
 				warehouseEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
 				warehouseEventsMap2:           map[string]int{"identifies": 2, "users": 1, "tracks": 2},
 				stagingFilePrefix:             "testdata/append-job",
-				appendMode:                    true,
-				customUserID:                  testhelper.GetUserId("append_test"),
+				// an empty jobRunID means that the source is not an ETL one
+				// see Uploader.CanAppend()
+				jobRunID:     "",
+				appendMode:   true,
+				customUserID: testhelper.GetUserId("append_test"),
 			},
 		}
 
@@ -394,7 +402,7 @@ func TestIntegration(t *testing.T) {
 					JobsDB:                jobsDB,
 					HTTPPort:              httpPort,
 					Client:                sqlClient,
-					JobRunID:              misc.FastUUID().String(),
+					JobRunID:              tc.jobRunID,
 					TaskRunID:             misc.FastUUID().String(),
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
 					UserID:                userID,
@@ -427,7 +435,7 @@ func TestIntegration(t *testing.T) {
 					JobsDB:                jobsDB,
 					HTTPPort:              httpPort,
 					Client:                sqlClient,
-					JobRunID:              misc.FastUUID().String(),
+					JobRunID:              tc.jobRunID,
 					TaskRunID:             misc.FastUUID().String(),
 					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
 					UserID:                userID,
