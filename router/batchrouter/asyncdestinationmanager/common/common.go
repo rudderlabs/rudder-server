@@ -19,6 +19,13 @@ type AsyncDestinationManager interface {
 	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 }
 
+type abc struct {
+}
+
+func (a *abc) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
+	return AsyncUploadOutput{}
+}
+
 var AsyncDestinations = []string{"MARKETO_BULK_UPLOAD", "BING_ADS"}
 
 type PollStatusResponse struct {

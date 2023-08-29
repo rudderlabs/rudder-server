@@ -27,12 +27,10 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		return createAsyncUploadOutput("got error while opening the file. ", err, destination.ID, asyncDestStruct)
 	}
 	defer file.Close()
-	eventType, customObjectId, err := checkEventType(file)
+	eventType, customObjectId, fields, identifierFieldName, err := getEventDetails(file)
 	if err != nil {
 		return createAsyncUploadOutput("got error while checking the event type. ", err, destination.ID, asyncDestStruct)
 	}
-
-	fields := getFields(file)
 
 	var eloquaFields *Fields
 
@@ -54,7 +52,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 	filePAth, _ := createCSVFile(fields, file, &uploadJobInfo)
 	defer os.Remove(filePAth)
-	importDefinitionBody, err := createBodyForImportDefinition(eventType, fields, eloquaFields, file)
+	importDefinitionBody, err := createBodyForImportDefinition(eventType, fields, eloquaFields, identifierFieldName)
 	if err != nil {
 		return createAsyncUploadOutput("got error while creating body for import definition. ", err, destination.ID, asyncDestStruct)
 	}
@@ -115,7 +113,9 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	var parameters common.ImportParameters
 	parameters.ImportId = syncURI
 	importParameters, err := stdjson.Marshal(parameters)
-
+	if err != nil {
+		return createAsyncUploadOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
+	}
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     uploadJobInfo.succeededJobs,
 		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, uploadJobInfo.failedJobs...),
@@ -161,7 +161,7 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 			StatusCode:    200,
 			HasFailed:     true,
 			HasWarning:    false,
-			FailedJobURLs: pollInput.ImportId,
+			FailedJobURLs: "error",
 		}
 	case "warning":
 		return common.PollStatusResponse{
@@ -192,12 +192,28 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 }
 
 func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
+	jobIDs := []int64{}
+	failedReasons := map[int64]string{}
+	for _, job := range UploadStatsInput.ImportingList {
+		jobIDs = append(jobIDs, job.JobID)
+		failedReasons[job.JobID] = "error due to unknown reason"
+	}
+	eventStatMeta := common.EventStatMeta{}
+	if UploadStatsInput.FailedJobURLs == "error" {
+		eventStatMeta.FailedKeys = jobIDs
+		eventStatMeta.SucceededKeys = []int64{}
+		eventStatMeta.FailedReasons = failedReasons
+		return common.GetUploadStatsResponse{
+			StatusCode: 200,
+			Metadata:   eventStatMeta,
+		}
+	}
 	checkRejectedData := HttpRequestData{
 		BaseEndpoint:  b.baseEndpoint,
 		DynamicPart:   UploadStatsInput.FailedJobURLs,
 		Authorization: b.authorization,
 	}
-	eventStatMeta, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b.service)
+	eventStatMetaWithFailedJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b.service)
 	if err != nil {
 		b.logger.Error("Error while parsing rejected data", err)
 		return common.GetUploadStatsResponse{
@@ -206,7 +222,7 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 	}
 	uploadStatusResponse := common.GetUploadStatsResponse{
 		StatusCode: 200,
-		Metadata:   *eventStatMeta,
+		Metadata:   *eventStatMetaWithFailedJobs,
 	}
 	return uploadStatusResponse
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path"
 
@@ -12,28 +13,29 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 )
 
-func checkEventType(file *os.File) (string, string, error) {
-	file.Seek(0, 0)
+func getEventDetails(file *os.File) (string, string, []string, string, error) {
+	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, 50000*1024)
 	if scanner.Scan() {
 		line := scanner.Text()
 		var data TransformedData
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
-			return "", "", fmt.Errorf("error in unmarshalling data, %v", err)
+			return "", "", nil, "", fmt.Errorf("error in unmarshalling data, %v", err)
 		}
 		if data.Message.Type == "track" && data.Message.CustomObjectId != "" {
-			return "track", data.Message.CustomObjectId, nil
+			return "track", data.Message.CustomObjectId, getKeys(data.Message.Data), data.Message.IdentifierFieldName, nil
 		} else if data.Message.Type == "identify" && data.Message.CustomObjectId == "contacts" {
-			return "identify", "", nil
+			return "identify", "", getKeys(data.Message.Data), data.Message.IdentifierFieldName, nil
 		} else {
-			return "", "", fmt.Errorf("unable to find event format")
+			return "", "", nil, "", fmt.Errorf("unable to find event format")
 		}
 	}
-	return "", "", fmt.Errorf("unable to scan data from the file")
+	return "", "", nil, "", fmt.Errorf("unable to scan data from the file")
 }
 
 func getKeys(m map[string]interface{}) []string {
@@ -44,22 +46,8 @@ func getKeys(m map[string]interface{}) []string {
 	return keys
 }
 
-func getFields(file *os.File) []string {
-	file.Seek(0, 0)
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(nil, 50000*1024)
-	var line string
-	if scanner.Scan() {
-		line = scanner.Text()
-	}
-	var data TransformedData
-	if err := json.Unmarshal([]byte(line), &data); err != nil {
-		fmt.Println("Error in unmarshalling data")
-	}
-	return getKeys(data.Message.Data)
-}
 func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (string, error) {
-	file.Seek(0, 0)
+	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, 50000*1024)
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
@@ -70,8 +58,14 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (stri
 	path := path.Join(tmpDirPath, localTmpDirName, uuid.NewString())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	csvFile, err := os.Create(csvFilePath)
+	if err != nil {
+		return "", err
+	}
 	csvWriter := csv.NewWriter(csvFile)
-	csvWriter.Write(fields)
+	err = csvWriter.Write(fields)
+	if err != nil {
+		return "", err
+	}
 	csvWriter.Flush()
 	var line string
 	index := 0
@@ -90,58 +84,44 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (stri
 			return "", err
 		}
 		if fileInfo.Size() > uploadJobInfo.fileSizeLimit {
-			uploadJobInfo.failedJobs = append(uploadJobInfo.failedJobs, difference(uploadJobInfo.importingJobs, uploadJobInfo.succeededJobs)...)
+			left, _ := lo.Difference(uploadJobInfo.importingJobs, uploadJobInfo.succeededJobs)
+			uploadJobInfo.failedJobs = append(uploadJobInfo.failedJobs, left...)
 			break
 		}
 		uploadJobInfo.succeededJobs = append(uploadJobInfo.succeededJobs, uploadJobInfo.importingJobs[index])
 		index += 1
-		csvWriter.Write(values)
+		err = csvWriter.Write(values)
+		if err != nil {
+			return "", err
+		}
 		csvWriter.Flush()
 	}
 	return csvFilePath, nil
 }
 
-func createBodyForImportDefinition(evenType string, fields []string, eloquaFields *Fields, file *os.File) (map[string]interface{}, error) {
-	file.Seek(0, 0)
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(nil, 50000*1024)
-	data := TransformedData{}
-	if scanner.Scan() {
-		line := scanner.Text()
-		if err := json.Unmarshal([]byte(line), &data); err != nil {
-			return nil, fmt.Errorf("error in unmarshalling data while creating body for import definition. %v", err)
-		}
-	}
+func createBodyForImportDefinition(evenType string, fields []string, eloquaFields *Fields, identifierFieldName string) (map[string]interface{}, error) {
 
-	if evenType == "identify" {
-		var contactFieldStatement = make(map[string]string)
-		for _, val := range fields {
-			for _, val1 := range eloquaFields.Items {
-				if val1.InternalName == val {
-					contactFieldStatement[val] = val1.Statement
-				}
+	var fieldStatement = make(map[string]string)
+	for _, val := range fields {
+		for _, val1 := range eloquaFields.Items {
+			if val1.InternalName == val {
+				fieldStatement[val] = val1.Statement
 			}
 		}
+	}
+	if evenType == "identify" {
 		return map[string]interface{}{
 			"name":                    "Rudderstack-Contact-Import",
-			"fields":                  contactFieldStatement,
-			"identifierFieldName":     data.Message.IdentifierFieldName,
+			"fields":                  fieldStatement,
+			"identifierFieldName":     identifierFieldName,
 			"isSyncTriggeredOnImport": false,
 		}, nil
 	} else if evenType == "track" {
-		var customObjectFieldStatement = make(map[string]string)
-		for _, val := range fields {
-			for _, val1 := range eloquaFields.Items {
-				if val1.InternalName == val {
-					customObjectFieldStatement[val] = val1.Statement
-				}
-			}
-		}
 		return map[string]interface{}{
 			"name":                    "Rudderstack-CustomObject-Import",
 			"updateRule":              "always",
-			"fields":                  customObjectFieldStatement,
-			"identifierFieldName":     data.Message.IdentifierFieldName,
+			"fields":                  fieldStatement,
+			"identifierFieldName":     identifierFieldName,
 			"isSyncTriggeredOnImport": false,
 		}, nil
 	}
@@ -176,10 +156,13 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, serv
 	}
 	failedJobIDs := []int64{}
 	failedReasons := map[int64]string{}
+	/**
+	We have a limit of 1000 rejected events per api call. And the offset starts from 0. So we are fetching 1000 rejected events every time making the api call and updating the offset accordingly.
+	*/
 	if rejectResponse.Count > 0 {
-		iterations := rejectResponse.TotalResults / 1000
+		iterations := int(math.Ceil(float64(rejectResponse.TotalResults) / float64(1000)))
 		var offset int
-		for i := 0; i <= iterations; i++ {
+		for i := 0; i < iterations; i++ {
 			offset = i * 1000
 			data.Offset = offset
 			if offset != 0 {

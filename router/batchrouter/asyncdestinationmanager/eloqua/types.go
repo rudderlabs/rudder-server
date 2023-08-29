@@ -173,8 +173,8 @@ struct to unmarshal sync response. We need to run the sync after uploading the d
 type SyncResponse struct {
 	SyncedInstanceUri string    `json:"syncedInstanceUri"`
 	Status            string    `json:"status"`
-	CreatedAt         time.Time `json:createdAt`
-	Uri               string    `json:uri`
+	CreatedAt         time.Time `json:"createdAt"`
+	Uri               string    `json:"uri"`
 }
 
 /*
@@ -198,7 +198,7 @@ type SyncStatusResponse struct {
 	Status            string    `json:"status"`
 	CreatedAt         time.Time `json:"createdAt"`
 	CreatedBy         string    `json:"CreatedBy"`
-	Uri               string    `json:uri`
+	Uri               string    `json:"uri"`
 }
 
 /*

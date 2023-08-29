@@ -35,6 +35,18 @@ var (
 		WorkspaceID: "workspace_id",
 	}
 	currentDir, _ = os.Getwd()
+	jobs          = []*jobsdb.JobT{
+		&jobsdb.JobT{JobID: 1014},
+		&jobsdb.JobT{JobID: 1015},
+		&jobsdb.JobT{JobID: 1016},
+		&jobsdb.JobT{JobID: 1017},
+		&jobsdb.JobT{JobID: 1018},
+		&jobsdb.JobT{JobID: 1019},
+		&jobsdb.JobT{JobID: 1020},
+		&jobsdb.JobT{JobID: 1021},
+		&jobsdb.JobT{JobID: 1022},
+		&jobsdb.JobT{JobID: 1023},
+	}
 )
 
 func initEloqua() {
@@ -374,12 +386,9 @@ var _ = Describe("Eloqua test", func() {
 			eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
 			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
 
-			job := jobsdb.JobT{
-				JobID: 1022,
-			}
 			pollInput := common.GetUploadStatsInput{
 				FailedJobURLs: "/syncs/384",
-				ImportingList: []*jobsdb.JobT{&job},
+				ImportingList: jobs,
 			}
 			eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(nil, fmt.Errorf("some error occurred while fetching the failed events"))
 			expected := common.GetUploadStatsResponse{
@@ -388,5 +397,31 @@ var _ = Describe("Eloqua test", func() {
 			received := bulkUploader.GetUploadStats(pollInput)
 			Expect(received).To(Equal(expected))
 		})
+		// It("TestEloquaFailedToGetRejectedData", func() {
+		// 	ctrl := gomock.NewController(GinkgoT())
+		// 	eloquaService := mock_bulkservice.NewMockEloqua(ctrl)
+		// 	bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+
+		// 	pollInput := common.GetUploadStatsInput{
+		// 		FailedJobURLs: "/syncs/384",
+		// 		ImportingList: jobs,
+		// 	}
+		// 	type RejectedItem struct {
+		// 		FieldValues   map[string]string `json:"fieldValues"`
+		// 		Message       string            `json:"message"`
+		// 		StatusCode    string            `json:"statusCode"`
+		// 		RecordIndex   int64             `json:"recordIndex"`
+		// 		InvalidFields []string          `json:"invalidFields"`
+		// 	}
+
+		// 	eloquaService.EXPECT().CheckRejectedData(gomock.Any()).Return(eloqua.RejectResponse{
+		// 		Items:
+		// 	}, nil)
+		// 	expected := common.GetUploadStatsResponse{
+		// 		StatusCode: 500,
+		// 	}
+		// 	received := bulkUploader.GetUploadStats(pollInput)
+		// 	Expect(received).To(Equal(expected))
+		// })
 	})
 })
