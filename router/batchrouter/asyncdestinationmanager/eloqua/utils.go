@@ -89,7 +89,6 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo) (stri
 		if err != nil {
 			return "", err
 		}
-		fmt.Println(fileInfo.Size())
 		if fileInfo.Size() > uploadJobInfo.fileSizeLimit {
 			uploadJobInfo.failedJobs = append(uploadJobInfo.failedJobs, difference(uploadJobInfo.importingJobs, uploadJobInfo.succeededJobs)...)
 			break

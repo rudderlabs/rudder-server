@@ -2,7 +2,6 @@ package eloqua
 
 import (
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -17,6 +16,16 @@ type Eloqua interface {
 	CheckSyncStatus(*HttpRequestData) (string, error)
 	DeleteImportDefinition(*HttpRequestData) error
 	CheckRejectedData(*HttpRequestData) (*RejectResponse, error)
+}
+
+type EloquaBulkUploader struct {
+	destName      string
+	logger        logger.Logger
+	authorization string
+	baseEndpoint  string
+	fileSizeLimit int64
+	eventsLimit   int64
+	service       Eloqua
 }
 type DestinationConfig struct {
 	CompanyName              string   `json:"companyName"`
@@ -37,31 +46,70 @@ type HttpRequestData struct {
 	ContentType   string
 }
 
-type URL struct {
-	Base string                 `json:"base"`
-	Apis map[string]interface{} `json:"apis"`
-}
+/*
+*
+struct to unmarshal response of loginDetails
 
+	{
+	    "site": {
+	        .....
+	    },
+	    "user": {
+	        .....
+	    },
+	    "urls": {
+	        "base": "https://secure.p04.eloqua.com",
+	        "apis": {
+	        ....
+	        }
+	    }
+	}
+*/
 type LoginDetailsResponse struct {
 	Site map[string]interface{} `json:"site"`
 	User map[string]interface{} `json:"user"`
 	Urls URL                    `json:"urls"`
 }
-
-type EloquaBulkUploader struct {
-	destName      string
-	logger        logger.Logger
-	authorization string
-	baseEndpoint  string
-	fileSizeLimit int64
-	eventsLimit   int64
-	service       Eloqua
+type URL struct {
+	Base string                 `json:"base"`
+	Apis map[string]interface{} `json:"apis"`
 }
 
-type HttpClient interface {
-	Do(*http.Request) (*http.Response, error)
+/*
+*
+struct to unmarshal response fields fetched for object like contact traits
+
+	{
+	  "items": [
+	    {
+	      "name": "key1",
+	      "internalName": "key11",
+	      "dataType": "string",
+	      "defaultValue": "value1",
+	      "hasReadOnlyConstraint": false,
+	      "hasNotNullConstraint": false,
+	      "hasUniquenessConstraint": false,
+	      "statement": "{{CustomObject[172].Field[976]}}",
+	      "uri": "/customObjects/172/fields/976"
+	    },
+	    .....
+	  ],
+	  "totalResults": 8,
+	  "limit": 1000,
+	  "offset": 0,
+	  "count": 8,
+	  "hasMore": false
+	}
+*/
+type Fields struct {
+	Items        []Item `json:"items"`
+	TotalResults int    `json:"totalResults"`
+	Limit        int    `json:"limit"`
+	Offset       int    `json:"offset"`
+	Count        int    `json:"count"`
+	HasMore      bool   `json:"hasMore"`
 }
-type item struct {
+type Item struct {
 	CustomName              string    `json:"name"`
 	InternalName            string    `json:"internalName"`
 	DataType                string    `json:"dataType"`
@@ -74,15 +122,28 @@ type item struct {
 	UpdatedAt               time.Time `json:"updatedAt"`
 }
 
-type Fields struct {
-	Items        []item `json:"items"`
-	TotalResults int    `json:"totalResults"`
-	Limit        int    `json:"limit"`
-	Offset       int    `json:"offset"`
-	Count        int    `json:"count"`
-	HasMore      bool   `json:"hasMore"`
-}
+/*
+*
+struct to unmarshal importdefinition. Import definition is like the schema using which we will upload the data
 
+	{
+	    "name": "Test Import",
+	    "fields": {
+	        "C_FirstName": "{{Contact.Field(C_FirstName)}}",
+	        "C_LastName": "{{Contact.Field(C_LastName)}}",
+	        "C_EmailAddress": "{{Contact.Field(C_EmailAddress)}}"
+	    },
+	    "identifierFieldName": "C_EmailAddress",
+	    "isSyncTriggeredOnImport": false,
+	    "dataRetentionDuration": "P7D",
+	    "isUpdatingMultipleMatchedRecords": false,
+	    "uri": "/contacts/imports/384",
+	    "createdBy": "Marketing.Analytics",
+	    "createdAt": "2023-08-28T16:07:49.9730000Z",
+	    "updatedBy": "Marketing.Analytics",
+	    "updatedAt": "2023-08-28T16:07:49.9730000Z"
+	}
+*/
 type ImportDefinition struct {
 	Name                             string            `json:"name"`
 	Fields                           map[string]string `json:"fields"`
@@ -97,14 +158,18 @@ type ImportDefinition struct {
 	UpdatedAt                        time.Time         `json:"updatedAt"`
 }
 
-// {
-//     "syncedInstanceUri": "/contacts/imports/66",
-//     "status": "pending",
-//     "createdAt": "2023-08-17T15:39:41.0030000Z",
-//     "createdBy": "Marketing.Analytics",
-//     "uri": "/syncs/78"
-// }
+/*
+*
+struct to unmarshal sync response. We need to run the sync after uploading the data to staging area.
 
+	{
+	    "syncedInstanceUri": "/contacts/imports/384",
+	    "status": "pending",
+	    "createdAt": "2023-08-28T16:11:16.0100000Z",
+	    "createdBy": "Marketing.Analytics",
+	    "uri": "/syncs/384"
+	}
+*/
 type SyncResponse struct {
 	SyncedInstanceUri string    `json:"syncedInstanceUri"`
 	Status            string    `json:"status"`
@@ -112,6 +177,20 @@ type SyncResponse struct {
 	Uri               string    `json:uri`
 }
 
+/*
+*
+struct to verify the syncStatusResponse. After running the sync we need to verify if the sync completed or pending
+
+	{
+	    "syncedInstanceUri": "/contacts/imports/384",
+	    "syncStartedAt": "2023-08-28T16:11:16.5500000Z",
+	    "syncEndedAt": "2023-08-28T16:11:18.9330000Z",
+	    "status": "success",
+	    "createdAt": "2023-08-28T16:11:16.0100000Z",
+	    "createdBy": "Marketing.Analytics",
+	    "uri": "/syncs/384"
+	}
+*/
 type SyncStatusResponse struct {
 	SyncedInstanceUri string    `json:"syncedInstanceUri"`
 	SyncStartedAt     time.Time `json:"syncStartedAt"`
@@ -122,29 +201,42 @@ type SyncStatusResponse struct {
 	Uri               string    `json:uri`
 }
 
-//	{
-//	    "items": [
-//	        {
-//	            "fieldValues": {
-//	                "C_FirstName": "Weldon_Wintheiser60",
-//	                "C_LastName": "Vanuatu",
-//	                "C_EmailAddress": "Polar bear"
-//	            },
-//	            "message": "Invalid email address.",
-//	            "statusCode": "ELQ-00002",
-//	            "recordIndex": 1,
-//	            "invalidFields": [
-//	                "C_EmailAddress"
-//	            ]
-//	        }
-//	    ],
-//	    "totalResults": 871598,
-//	    "limit": 1,
-//	    "offset": 0,
-//	    "count": 1,
-//	    "hasMore": true
-//	}
-type Item struct {
+/*
+*
+struct to unmarshal RejectResponse. if we get any warning after running the sync we need to check the failed events.
+
+	{
+	    "items": [
+	        {
+	            "fieldValues": {
+	                "C_FirstName": "Weldon_Wintheiser60",
+	                "C_LastName": "Vanuatu",
+	                "C_EmailAddress": "Polar bear"
+	            },
+	            "message": "Invalid email address.",
+	            "statusCode": "ELQ-00002",
+	            "recordIndex": 1,
+	            "invalidFields": [
+	                "C_EmailAddress"
+	            ]
+	        }
+	    ],
+	    "totalResults": 871598,
+	    "limit": 1,
+	    "offset": 0,
+	    "count": 1,
+	    "hasMore": true
+	}
+*/
+type RejectResponse struct {
+	Items        []RejectedItem `json:"items"`
+	TotalResults int            `json:"totalResults"`
+	Limit        int            `json:"limit"`
+	Offset       int            `json:"offset"`
+	Count        int            `json:"count"`
+	HasMore      bool           `json:"hasMore"`
+}
+type RejectedItem struct {
 	FieldValues   map[string]string `json:"fieldValues"`
 	Message       string            `json:"message"`
 	StatusCode    string            `json:"statusCode"`
@@ -152,15 +244,15 @@ type Item struct {
 	InvalidFields []string          `json:"invalidFields"`
 }
 
-type RejectResponse struct {
-	Items        []Item `json:"items"`
-	TotalResults int    `json:"totalResults"`
-	Limit        int    `json:"limit"`
-	Offset       int    `json:"offset"`
-	Count        int    `json:"count"`
-	HasMore      bool   `json:"hasMore"`
+/*
+*
+This struct represent each line of the text file created by the batchrouter
+{"message":{"data":{"C_Address1":"xx/y3, abcd3 efgh3","C_EmailAddress":"test3@mail.com","C_FirstName":"Test3","C_LastName":"Name3"},"identifierFieldName":"C_EmailAddress","customObjectId": "contacts","type":"identify"},"metadata":{"job_id":1014}}
+*/
+type TransformedData struct {
+	Message  Message  `json:"message"`
+	Metadata Metadata `json:"metadata"`
 }
-
 type Message struct {
 	Data                map[string]interface{} `json:"data"`
 	IdentifierFieldName string                 `json:"identifierFieldName"`
@@ -171,11 +263,10 @@ type Metadata struct {
 	JobID int64 `json:"job_id"`
 }
 
-// This struct represent each line of the text file created by the batchrouter
-type TransformedData struct {
-	Message  Message  `json:"message"`
-	Metadata Metadata `json:"metadata"`
-}
+/*
+*
+struct to propagate jobs among functions
+*/
 type JobInfo struct {
 	succeededJobs []int64
 	failedJobs    []int64

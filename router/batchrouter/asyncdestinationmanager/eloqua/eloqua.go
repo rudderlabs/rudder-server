@@ -156,19 +156,6 @@ func (e *implementEloqua) CheckSyncStatus(data *HttpRequestData) (string, error)
 	return unmarshalledBody.Status, nil
 }
 
-func (e *implementEloqua) DeleteImportDefinition(data *HttpRequestData) error {
-	data.Method = "DELETE"
-	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0" + data.DynamicPart
-	_, statusCode, err := e.MakeHTTPRequest(data)
-	if err != nil {
-		return err
-	}
-	if statusCode != 204 {
-		return fmt.Errorf("unable to delete the import definition with status code: %d", statusCode)
-	}
-	return nil
-}
-
 func (e *implementEloqua) CheckRejectedData(data *HttpRequestData) (*RejectResponse, error) {
 	data.Method = "GET"
 	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0" + data.DynamicPart + "/rejects?offset=" + strconv.Itoa(data.Offset)
@@ -186,4 +173,17 @@ func (e *implementEloqua) CheckRejectedData(data *HttpRequestData) (*RejectRespo
 		return nil, err
 	}
 	return &unmarshalledBody, nil
+}
+
+func (e *implementEloqua) DeleteImportDefinition(data *HttpRequestData) error {
+	data.Method = "DELETE"
+	data.Endpoint = data.BaseEndpoint + "/api/bulk/2.0" + data.DynamicPart
+	_, statusCode, err := e.MakeHTTPRequest(data)
+	if err != nil {
+		return err
+	}
+	if statusCode != 204 {
+		return fmt.Errorf("unable to delete the import definition with status code: %d", statusCode)
+	}
+	return nil
 }
