@@ -469,32 +469,28 @@ func TestClickhouse_LoadTableRoundTrip(t *testing.T) {
 			uploadOutput, err := fm.Upload(ctx, f, fmt.Sprintf("test_prefix_%d", i))
 			require.NoError(t, err)
 
-			mockUploaderTableSchema := model.TableSchema{
-				"alter_test_bool":     "boolean",
-				"alter_test_datetime": "datetime",
-				"alter_test_float":    "float",
-				"alter_test_int":      "int",
-				"alter_test_string":   "string",
-				"id":                  "string",
-				"received_at":         "datetime",
-				"test_array_bool":     "array(boolean)",
-				"test_array_datetime": "array(datetime)",
-				"test_array_float":    "array(float)",
-				"test_array_int":      "array(int)",
-				"test_array_string":   "array(string)",
-				"test_bool":           "boolean",
-				"test_datetime":       "datetime",
-				"test_float":          "float",
-				"test_int":            "int",
-				"test_string":         "string",
-			}
-			mockCtrl := gomock.NewController(t)
-			mockUploader := newMockUploader(mockCtrl,
+			mockUploader := newMockUploader(t,
 				strconv.Itoa(minioPort),
-				mockUploaderTableSchema,
-				[]warehouseutils.LoadFile{
-					{Location: uploadOutput.Location},
+				model.TableSchema{
+					"alter_test_bool":     "boolean",
+					"alter_test_datetime": "datetime",
+					"alter_test_float":    "float",
+					"alter_test_int":      "int",
+					"alter_test_string":   "string",
+					"id":                  "string",
+					"received_at":         "datetime",
+					"test_array_bool":     "array(boolean)",
+					"test_array_datetime": "array(datetime)",
+					"test_array_float":    "array(float)",
+					"test_array_int":      "array(int)",
+					"test_array_string":   "array(string)",
+					"test_bool":           "boolean",
+					"test_datetime":       "datetime",
+					"test_float":          "float",
+					"test_int":            "int",
+					"test_string":         "string",
 				},
+				[]warehouseutils.LoadFile{{Location: uploadOutput.Location}},
 			)
 
 			t.Log("Setting up clickhouse")
@@ -701,10 +697,7 @@ func TestClickhouse_TestConnection(t *testing.T) {
 				},
 			}
 
-			mockCtrl := gomock.NewController(t)
-			mockUploader := newMockUploader(mockCtrl, "", nil, nil)
-
-			err := ch.Setup(ctx, warehouse, mockUploader)
+			err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 			require.NoError(t, err)
 
 			ch.SetConnectionTimeout(tc.timeout)
@@ -804,10 +797,7 @@ func TestClickhouse_LoadTestTable(t *testing.T) {
 				payload[k] = v
 			}
 
-			mockCtrl := gomock.NewController(t)
-			mockUploader := newMockUploader(mockCtrl, "", nil, nil)
-
-			err := ch.Setup(ctx, warehouse, mockUploader)
+			err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 			require.NoError(t, err)
 
 			err = ch.CreateSchema(ctx)
@@ -870,10 +860,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		mockCtrl := gomock.NewController(t)
-		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
-
-		err := ch.Setup(ctx, warehouse, mockUploader)
+		err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 		require.NoError(t, err)
 
 		err = ch.CreateSchema(ctx)
@@ -918,10 +905,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		mockCtrl := gomock.NewController(t)
-		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
-
-		err := ch.Setup(ctx, warehouse, mockUploader)
+		err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 		require.NoError(t, err)
 
 		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
@@ -947,10 +931,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		mockCtrl := gomock.NewController(t)
-		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
-
-		err := ch.Setup(ctx, warehouse, mockUploader)
+		err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 		require.NoError(t, err)
 
 		schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
@@ -976,10 +957,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		mockCtrl := gomock.NewController(t)
-		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
-
-		err := ch.Setup(ctx, warehouse, mockUploader)
+		err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 		require.NoError(t, err)
 
 		err = ch.CreateSchema(ctx)
@@ -1008,10 +986,7 @@ func TestClickhouse_FetchSchema(t *testing.T) {
 			},
 		}
 
-		mockCtrl := gomock.NewController(t)
-		mockUploader := newMockUploader(mockCtrl, "", nil, nil)
-
-		err := ch.Setup(ctx, warehouse, mockUploader)
+		err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 		require.NoError(t, err)
 
 		err = ch.CreateSchema(ctx)
@@ -1215,7 +1190,7 @@ func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables 
 }
 
 func newMockUploader(
-	ctrl *gomock.Controller,
+	t testing.TB,
 	minioPort string,
 	tableSchema model.TableSchema,
 	metadata []warehouseutils.LoadFile,
@@ -1226,6 +1201,7 @@ func newMockUploader(
 		sampleLocation = strings.Replace(metadata[0].Location, minioHostPort, "minio:9000", 1)
 	}
 
+	ctrl := gomock.NewController(t)
 	u := mockuploader.NewMockUploader(ctrl)
 	u.EXPECT().GetSampleLoadFileLocation(gomock.Any(), gomock.Any()).Return(sampleLocation, nil).AnyTimes()
 	u.EXPECT().GetTableSchemaInUpload(gomock.Any()).Return(tableSchema).AnyTimes()
